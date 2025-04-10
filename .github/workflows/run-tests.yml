@@ -35,18 +35,22 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
         python-version: ["3.10"]
       fail-fast: false
+    timeout-minutes: 5
 
     steps:
       - uses: actions/checkout@v4
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
 
       - name: Set up Python ${{ matrix.python-version }}
         run: uv python install ${{ matrix.python-version }}
 
       - name: Install FastMCP
-        run: uv sync
+        run: uv sync --dev
 
       - name: Fix pyreadline on Windows
         if: matrix.os == 'windows-latest'

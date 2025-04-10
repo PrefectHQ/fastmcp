@@ -9,6 +9,8 @@ dependencies = [
     "rich>=13.9.4",
     "typer>=0.15.2",
     "websockets>=15.0.1",
+    "fastapi>=0.115.12",
+    "openapi-pydantic>=0.5.1",
 ]
 requires-python = ">=3.10"
 readme = "README.md"
@@ -17,9 +19,8 @@ license = { text = "Apache-2.0" }
 [project.scripts]
 fastmcp = "fastmcp.cli:app"
 
-[build-system]
-requires = ["hatchling>=1.21.0", "hatch-vcs>=0.4.0"]
-build-backend = "hatchling.build"
+[project.optional-dependencies]
+
 
 [dependency-groups]
 dev = [
@@ -35,6 +36,13 @@ dev = [
     "pdbpp>=0.10.3",
     "dirty-equals>=0.9.0",
 ]
+[build-system]
+requires = ["hatchling>=1.21.0", "hatch-vcs>=0.4.0"]
+build-backend = "hatchling.build"
+
+[tool.uv]
+# no default groups
+default-groups = []
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

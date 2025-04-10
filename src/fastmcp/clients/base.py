@@ -1,7 +1,7 @@
 import abc
 import contextlib
 import datetime
-from typing import Any, AsyncContextManager, Optional, TypedDict
+from typing import Any, AsyncContextManager, TypedDict
 
 import mcp.types
 from mcp import ClientSession
@@ -46,9 +46,9 @@ class BaseClient(abc.ABC):
         message_handler: MessageHandlerFnT | None = None,
         read_timeout_seconds: datetime.timedelta | None = None,
     ):
-        self._transport: Any = None
-        self._session: Optional[ClientSession] = None
-        self._cm: Optional[AsyncContextManager] = None
+        self._transport: Any | None = None
+        self._session: ClientSession | None = None
+        self._cm: AsyncContextManager | None = None
 
         if roots is not None:
             if list_roots_callback is not None:

@@ -1,6 +1,5 @@
 import contextlib
 import os
-from typing import Dict, List, Optional
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
@@ -52,12 +51,12 @@ class UvxClient(BaseClient):
     def __init__(
         self,
         tool_name: str,
-        tool_args: Optional[List[str]] = None,
-        project_directory: Optional[str] = None,
-        python_version: Optional[str] = None,
-        with_packages: Optional[List[str]] = None,
-        from_package: Optional[str] = None,
-        env_vars: Optional[Dict[str, str]] = None,
+        tool_args: list[str] | None = None,
+        project_directory: str | None = None,
+        python_version: str | None = None,
+        with_packages: list[str] | None = None,
+        from_package: str | None = None,
+        env_vars: dict[str, str] | None = None,
         **kwargs: Unpack[ClientKwargs],
     ):
         """Initialize a UvxClient that uses uvx to run Python tools in isolated environments.

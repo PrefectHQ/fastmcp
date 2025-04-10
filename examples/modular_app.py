@@ -7,7 +7,7 @@ by separating functionality into domain-specific modules.
 
 import asyncio
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from fastmcp import Context, FastMCP
 
@@ -29,7 +29,7 @@ def get_all_users() -> List[Dict[str, Any]]:
 
 
 @data_app.resource("users://{user_id}")
-def get_user_by_id(user_id: str) -> Optional[Dict[str, Any]]:
+def get_user_by_id(user_id: str) -> dict[str, Any] | None:
     """Get a specific user by ID"""
     user_id_int = int(user_id)
     for user in users_db:
