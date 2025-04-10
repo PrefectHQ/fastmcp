@@ -1,7 +1,5 @@
 """FastMCP - A more ergonomic interface for MCP servers."""
 
-from __future__ import annotations as _annotations
-
 import inspect
 import json
 import re
@@ -61,8 +59,8 @@ logger = get_logger(__name__)
 
 
 def lifespan_wrapper(
-    app: FastMCP,
-    lifespan: Callable[[FastMCP], AbstractAsyncContextManager[LifespanResultT]],
+    app: "FastMCP",
+    lifespan: Callable[["FastMCP"], AbstractAsyncContextManager[LifespanResultT]],
 ) -> Callable[
     [MCPServer[LifespanResultT]], AbstractAsyncContextManager[LifespanResultT]
 ]:
