@@ -2,7 +2,7 @@
 
 <!-- omit in toc -->
 # FastMCP v2 🚀
-<strong>Build and interact with MCP applications the fast, Pythonic way.</strong>
+<strong>The fast, Pythonic way to build MCP servers.</strong>
 
 [![PyPI - Version](https://img.shields.io/pypi/v/fastmcp.svg)](https://pypi.org/project/fastmcp)
 [![Tests](https://github.com/jlowin/fastmcp/actions/workflows/run-tests.yml/badge.svg)](https://github.com/jlowin/fastmcp/actions/workflows/run-tests.yml)
