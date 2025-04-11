@@ -5,7 +5,8 @@ import pytest
 from dirty_equals import Contains
 
 from fastmcp import FastMCP
-from fastmcp.clients.fastmcp_client import FastMCPClient
+from fastmcp.client import Client
+from fastmcp.client.transports import FastMCPTransport
 from fastmcp.server.proxy import FastMCPProxy
 
 USERS = [
@@ -62,13 +63,13 @@ def fastmcp_server():
 @pytest.fixture
 async def proxy_server(fastmcp_server):
     """Fixture that creates a FastMCP proxy server."""
-    return await FastMCP.as_proxy(FastMCPClient(fastmcp_server))
+    return await FastMCP.as_proxy(Client(transport=FastMCPTransport(fastmcp_server)))
 
 
 async def test_create_proxy(fastmcp_server):
     """Test that the proxy server properly forwards requests to the original server."""
     # Create a client
-    client = FastMCPClient(fastmcp_server)
+    client = Client(transport=FastMCPTransport(fastmcp_server))
 
     server = await FastMCPProxy.from_client(client)
 
