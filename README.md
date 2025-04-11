@@ -43,8 +43,8 @@ FastMCP handles the complex protocol details and server management, letting you 
 
 *   **Simple Server Creation:** Build MCP servers with minimal boilerplate using intuitive decorators (`@tool`, `@resource`, `@prompt`).
 *   **Powerful Clients:** Programmatically interact with *any* MCP server, regardless of how it was built.
-*   **Flexible Proxying:** Create proxy servers to expose existing MCP servers or clients with modifications, or **convert between transport protocols** (e.g., expose a Stdio server via SSE for web access).
-*   **Server Mounting:** Compose complex applications by mounting multiple FastMCP servers together.
+*   **Proxy MCP Servers:** Create proxy servers to expose existing MCP servers or clients with modifications, or **convert between transport protocols** (e.g., expose a Stdio server via SSE for web access).
+*   **Compose MCP Servers:** Compose complex applications by mounting multiple FastMCP servers together.
 *   **API Generation:** Automatically create MCP servers from existing **OpenAPI specifications** or **FastAPI applications**.
 *   **Pythonic Interface:** Designed with familiar Python patterns like decorators and type hints.
 *   **Context Injection:** Easily access core MCP capabilities like sampling, logging, and progress reporting within your functions.
@@ -60,7 +60,7 @@ FastMCP v1's core approach of using the `@tool`, `@resource`, `@prompt` decorato
 **FastMCP v2 builds upon v1's foundation** and adds the advanced features listed above (Client, Proxy, Mounting, API Generation, and more).
 
 *   **Need just the basics?** Use FastMCP v1 (the official SDK).
-*   **Need advanced features like clients, proxies, or mounting?** Use FastMCP v2 (this library).
+*   **Need advanced features like clients, proxies, or composing servers?** Use FastMCP v2 (this library).
 
 ---
 
