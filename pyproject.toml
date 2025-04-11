@@ -16,12 +16,6 @@ requires-python = ">=3.10"
 readme = "README.md"
 license = { text = "Apache-2.0" }
 
-[project.scripts]
-fastmcp = "fastmcp.cli:app"
-
-[project.optional-dependencies]
-
-
 [dependency-groups]
 dev = [
     "pre-commit",
@@ -36,23 +30,32 @@ dev = [
     "pdbpp>=0.10.3",
     "dirty-equals>=0.9.0",
 ]
+
+[project.scripts]
+fastmcp = "fastmcp.cli:app"
+
 [build-system]
-requires = ["hatchling>=1.21.0", "hatch-vcs>=0.4.0"]
+requires = ["hatchling", "uv-dynamic-versioning>=0.7.0"]
 build-backend = "hatchling.build"
 
+[tool.hatch.version]
+source = "uv-dynamic-versioning"
+
+[tool.uv-dynamic-versioning]
+vcs = "git"
+style = "pep440"
+bump = true
+fallback-version = "0.0.0"
+
 [tool.uv]
-# no default groups
-default-groups = []
+# uncomment to omit `dev` default group
+# default-groups = []
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "session"
-filterwarnings = [
-    "ignore:Accessing the 'model_fields' attribute on the instance is deprecated:DeprecationWarning",
-]
+filterwarnings = []
 
-[tool.hatch.version]
-source = "vcs"
 
 [tool.pyright]
 include = ["src", "tests"]
@@ -67,7 +70,7 @@ venvPath = "."
 venv = ".venv"
 
 [tool.ruff.lint]
-extend-select = ["I"]
+extend-select = ["I", "UP"]
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401", "I001", "RUF013"]

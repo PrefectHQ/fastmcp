@@ -4,7 +4,8 @@ import enum
 import json
 import re
 from dataclasses import dataclass
-from typing import Any, Literal, Pattern
+from re import Pattern
+from typing import Any, Literal
 
 import httpx
 from pydantic.networks import AnyUrl

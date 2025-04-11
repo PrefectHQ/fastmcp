@@ -1,6 +1,7 @@
 import datetime
+from contextlib import AbstractAsyncContextManager
 from pathlib import Path
-from typing import Any, AsyncContextManager
+from typing import Any
 
 import mcp.types
 from mcp import ClientSession
@@ -48,7 +49,7 @@ class Client:
     ):
         self.transport = infer_transport(transport)
         self._session: ClientSession | None = None
-        self._session_cm: AsyncContextManager[ClientSession] | None = None
+        self._session_cm: AbstractAsyncContextManager[ClientSession] | None = None
 
         # Store common kwargs to pass to transport.connect_session
         if roots is not None and list_roots_callback is not None:
