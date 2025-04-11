@@ -6,26 +6,22 @@ from typing import Any
 import mcp.types
 from mcp import ClientSession
 from mcp.client.session import (
-    ListRootsFnT,
     LoggingFnT,
     MessageHandlerFnT,
-    SamplingFnT,
 )
-from mcp.shared.context import LifespanContextT, RequestContext
 from pydantic import AnyUrl
 
+from fastmcp.client.roots import (
+    RootsHandler,
+    RootsList,
+    create_roots_callback,
+)
+from fastmcp.client.sampling import SamplingHandler, create_sampling_callback
 from fastmcp.server import FastMCP
 
 from .transports import ClientTransport, SessionKwargs, infer_transport
 
-
-def _get_roots_callback(roots: list[mcp.types.Root]) -> ListRootsFnT | None:
-    async def _roots_callback(
-        context: RequestContext[ClientSession, LifespanContextT],
-    ) -> mcp.types.ListRootsResult:
-        return mcp.types.ListRootsResult(roots=roots)
-
-    return _roots_callback
+__all__ = ["Client", "RootsHandler", "RootsList"]
 
 
 class Client:
@@ -40,10 +36,9 @@ class Client:
         self,
         transport: ClientTransport | FastMCP | AnyUrl | Path | str,
         # Common args
-        roots: list[mcp.types.Root] | None = None,
-        sampling_callback: SamplingFnT | None = None,
-        list_roots_callback: ListRootsFnT | None = None,
-        logging_callback: LoggingFnT | None = None,
+        roots: RootsList | RootsHandler | None = None,
+        sampling_handler: SamplingHandler | None = None,
+        log_handler: LoggingFnT | None = None,
         message_handler: MessageHandlerFnT | None = None,
         read_timeout_seconds: datetime.timedelta | None = None,
     ):
@@ -51,20 +46,19 @@ class Client:
         self._session: ClientSession | None = None
         self._session_cm: AbstractAsyncContextManager[ClientSession] | None = None
 
-        # Store common kwargs to pass to transport.connect_session
-        if roots is not None and list_roots_callback is not None:
-            raise ValueError("Cannot provide both `roots` and `list_roots_callback`.")
-        resolved_list_roots_callback = list_roots_callback or (
-            _get_roots_callback(roots) if roots else None
-        )
-
         self._session_kwargs: SessionKwargs = {
-            "sampling_callback": sampling_callback,
-            "list_roots_callback": resolved_list_roots_callback,
-            "logging_callback": logging_callback,
+            "sampling_callback": None,
+            "list_roots_callback": None,
+            "logging_callback": log_handler,
             "message_handler": message_handler,
             "read_timeout_seconds": read_timeout_seconds,
         }
+
+        if roots is not None:
+            self.set_roots(roots)
+
+        if sampling_handler is not None:
+            self.set_sampling_callback(sampling_handler)
 
     @property
     def session(self) -> ClientSession:
@@ -74,6 +68,16 @@ class Client:
                 "Client is not connected. Use 'async with client:' context manager first."
             )
         return self._session
+
+    def set_roots(self, roots: RootsList | RootsHandler) -> None:
+        """Set the roots for the client. This does not automatically call `send_roots_list_changed`."""
+        self._session_kwargs["list_roots_callback"] = create_roots_callback(roots)
+
+    def set_sampling_callback(self, sampling_callback: SamplingHandler) -> None:
+        """Set the sampling callback for the client."""
+        self._session_kwargs["sampling_callback"] = create_sampling_callback(
+            sampling_callback
+        )
 
     def is_connected(self) -> bool:
         """Check if the client is currently connected."""
