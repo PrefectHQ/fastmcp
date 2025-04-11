@@ -4,7 +4,6 @@ FastMCP Echo Server
 
 from fastmcp import FastMCP
 
-
 # Create server
 mcp = FastMCP("Echo Server")
 

@@ -1,25 +1,30 @@
-"""FastMCP CLI tools."""
+"""FastmMCP CLI tools."""
 
 import importlib.metadata
 import importlib.util
 import os
+import platform
 import subprocess
 import sys
 from pathlib import Path
-from typing import Dict, Optional, Tuple
+from typing import Annotated
 
 import dotenv
 import typer
-from typing_extensions import Annotated
+from rich.console import Console
+from rich.table import Table
+from typer import Context, Exit
 
+import fastmcp
 from fastmcp.cli import claude
 from fastmcp.utilities.logging import get_logger
 
 logger = get_logger("cli")
+console = Console()
 
 app = typer.Typer(
     name="fastmcp",
-    help="FastMCP development tools",
+    help="FastMCP CLI",
     add_completion=False,
     no_args_is_help=True,  # Show help if no args provided
 )
@@ -41,7 +46,7 @@ def _get_npx_command():
     return "npx"  # On Unix-like systems, just use npx
 
 
-def _parse_env_var(env_var: str) -> Tuple[str, str]:
+def _parse_env_var(env_var: str) -> tuple[str, str]:
     """Parse environment variable string in format KEY=VALUE."""
     if "=" not in env_var:
         logger.error(
@@ -54,13 +59,13 @@ def _parse_env_var(env_var: str) -> Tuple[str, str]:
 
 def _build_uv_command(
     file_spec: str,
-    with_editable: Optional[Path] = None,
-    with_packages: Optional[list[str]] = None,
+    with_editable: Path | None = None,
+    with_packages: list[str] | None = None,
 ) -> list[str]:
-    """Build the uv run command that runs a FastMCP server through fastmcp run."""
+    """Build the uv run command that runs a MCP server through mcp run."""
     cmd = ["uv"]
 
-    cmd.extend(["run", "--with", "fastmcp"])
+    cmd.extend(["run", "--with", "mcp"])
 
     if with_editable:
         cmd.extend(["--with-editable", str(with_editable)])
@@ -70,12 +75,12 @@ def _build_uv_command(
             if pkg:
                 cmd.extend(["--with", pkg])
 
-    # Add fastmcp run command
-    cmd.extend(["fastmcp", "run", file_spec])
+    # Add mcp run command
+    cmd.extend(["mcp", "run", file_spec])
     return cmd
 
 
-def _parse_file_path(file_spec: str) -> Tuple[Path, Optional[str]]:
+def _parse_file_path(file_spec: str) -> tuple[Path, str | None]:
     """Parse a file path that may include a server object specification.
 
     Args:
@@ -106,8 +111,8 @@ def _parse_file_path(file_spec: str) -> Tuple[Path, Optional[str]]:
     return file_path, server_object
 
 
-def _import_server(file: Path, server_object: Optional[str] = None):
-    """Import a FastMCP server from a file.
+def _import_server(file: Path, server_object: str | None = None):
+    """Import a MCP server from a file.
 
     Args:
         file: Path to the file
@@ -172,14 +177,26 @@ def _import_server(file: Path, server_object: Optional[str] = None):
 
 
 @app.command()
-def version() -> None:
-    """Show the FastMCP version."""
-    try:
-        version = importlib.metadata.version("fastmcp")
-        print(f"FastMCP version {version}")
-    except importlib.metadata.PackageNotFoundError:
-        print("FastMCP version unknown (package not installed)")
-        sys.exit(1)
+def version(ctx: Context):
+    if ctx.resilient_parsing:
+        return
+
+    info = {
+        "FastMCP version": fastmcp.__version__,
+        "MCP version": importlib.metadata.version("mcp"),
+        "Python version": platform.python_version(),
+        "Platform": platform.platform(),
+        "FastMCP root path": f"~/{Path(__file__).resolve().parents[3].relative_to(Path.home())}",
+    }
+
+    g = Table.grid(padding=(0, 1))
+    g.add_column(style="bold", justify="left")
+    g.add_column(style="cyan", justify="right")
+    for k, v in info.items():
+        g.add_row(k + ":", str(v).replace("\n", " "))
+    console.print(g)
+
+    raise Exit()
 
 
 @app.command()
@@ -189,7 +206,7 @@ def dev(
         help="Python file to run, optionally with :object suffix",
     ),
     with_editable: Annotated[
-        Optional[Path],
+        Path | None,
         typer.Option(
             "--with-editable",
             "-e",
@@ -207,7 +224,7 @@ def dev(
         ),
     ] = [],
 ) -> None:
-    """Run a FastMCP server with the MCP Inspector."""
+    """Run a MCP server with the MCP Inspector."""
     file, server_object = _parse_file_path(file_spec)
 
     logger.debug(
@@ -273,7 +290,7 @@ def run(
         help="Python file to run, optionally with :object suffix",
     ),
     transport: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(
             "--transport",
             "-t",
@@ -281,16 +298,16 @@ def run(
         ),
     ] = None,
 ) -> None:
-    """Run a FastMCP server.
+    """Run a MCP server.
 
-    The server can be specified in two ways:
-    1. Module approach: server.py - runs the module directly, expecting a server.run() call
-    2. Import approach: server.py:app - imports and runs the specified server object
+    The server can be specified in two ways:\n
+    1. Module approach: server.py - runs the module directly, expecting a server.run() call.\n
+    2. Import approach: server.py:app - imports and runs the specified server object.\n\n
 
     Note: This command runs the server directly. You are responsible for ensuring
-    all dependencies are available. For dependency management, use fastmcp install
-    or fastmcp dev instead.
-    """
+    all dependencies are available.\n
+    For dependency management, use `mcp install` or `mcp dev` instead.
+    """  # noqa: E501
     file, server_object = _parse_file_path(file_spec)
 
     logger.debug(
@@ -331,15 +348,16 @@ def install(
         help="Python file to run, optionally with :object suffix",
     ),
     server_name: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(
             "--name",
             "-n",
-            help="Custom name for the server (defaults to server's name attribute or file name)",
+            help="Custom name for the server (defaults to server's name attribute or"
+            " file name)",
         ),
     ] = None,
     with_editable: Annotated[
-        Optional[Path],
+        Path | None,
         typer.Option(
             "--with-editable",
             "-e",
@@ -360,12 +378,12 @@ def install(
         list[str],
         typer.Option(
             "--env-var",
-            "-e",
+            "-v",
             help="Environment variables in KEY=VALUE format",
         ),
     ] = [],
     env_file: Annotated[
-        Optional[Path],
+        Path | None,
         typer.Option(
             "--env-file",
             "-f",
@@ -377,7 +395,7 @@ def install(
         ),
     ] = None,
 ) -> None:
-    """Install a FastMCP server in the Claude desktop app.
+    """Install a MCP server in the Claude desktop app.
 
     Environment variables are preserved once added and only updated if new values
     are explicitly provided.
@@ -399,7 +417,8 @@ def install(
         logger.error("Claude app not found")
         sys.exit(1)
 
-    # Try to import server to get its name, but fall back to file name if dependencies missing
+    # Try to import server to get its name, but fall back to file name if dependencies
+    # missing
     name = server_name
     server = None
     if not name:
@@ -408,7 +427,8 @@ def install(
             name = server.name
         except (ImportError, ModuleNotFoundError) as e:
             logger.debug(
-                "Could not import server (likely missing dependencies), using file name",
+                "Could not import server (likely missing dependencies), using file"
+                " name",
                 extra={"error": str(e)},
             )
             name = file.stem
@@ -419,7 +439,7 @@ def install(
         with_packages = list(set(with_packages + server_dependencies))
 
     # Process environment variables if provided
-    env_dict: Optional[Dict[str, str]] = None
+    env_dict: dict[str, str] | None = None
     if env_file or env_vars:
         env_dict = {}
         # Load from .env file if specified

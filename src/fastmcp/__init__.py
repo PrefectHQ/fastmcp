@@ -1,8 +1,19 @@
-"""FastMCP - A more ergonomic interface for MCP servers."""
+"""FastMCP - An ergonomic MCP interface."""
 
 from importlib.metadata import version
-from .server import FastMCP, Context
-from .utilities.types import Image
+
+
+from fastmcp.server.server import FastMCP
+from fastmcp.server.context import Context
+from fastmcp.client import Client
+from fastmcp.utilities.types import Image
+from . import client, settings
 
 __version__ = version("fastmcp")
-__all__ = ["FastMCP", "Context", "Image"]
+__all__ = [
+    "FastMCP",
+    "Context",
+    "client",
+    "settings",
+    "Image",
+]

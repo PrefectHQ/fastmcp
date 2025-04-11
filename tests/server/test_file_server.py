@@ -1,7 +1,9 @@
 import json
-from fastmcp import FastMCP
-import pytest
 from pathlib import Path
+
+import pytest
+
+from fastmcp import FastMCP
 
 
 @pytest.fixture()
@@ -71,6 +73,7 @@ def tools(mcp: FastMCP, test_dir: Path) -> FastMCP:
     return mcp
 
 
+@pytest.mark.anyio
 async def test_list_resources(mcp: FastMCP):
     resources = await mcp.list_resources()
     assert len(resources) == 4
@@ -83,9 +86,15 @@ async def test_list_resources(mcp: FastMCP):
     ]
 
 
+@pytest.mark.anyio
 async def test_read_resource_dir(mcp: FastMCP):
-    files = await mcp.read_resource("dir://test_dir")
-    files = json.loads(files)
+    res_iter = await mcp.read_resource("dir://test_dir")
+    res_list = list(res_iter)
+    assert len(res_list) == 1
+    res = res_list[0]
+    assert res.mime_type == "text/plain"
+
+    files = json.loads(res.content)
 
     assert sorted([Path(f).name for f in files]) == [
         "config.json",
@@ -94,11 +103,16 @@ async def test_read_resource_dir(mcp: FastMCP):
     ]
 
 
+@pytest.mark.anyio
 async def test_read_resource_file(mcp: FastMCP):
-    result = await mcp.read_resource("file://test_dir/example.py")
-    assert result == "print('hello world')"
+    res_iter = await mcp.read_resource("file://test_dir/example.py")
+    res_list = list(res_iter)
+    assert len(res_list) == 1
+    res = res_list[0]
+    assert res.content == "print('hello world')"
 
 
+@pytest.mark.anyio
 async def test_delete_file(mcp: FastMCP, test_dir: Path):
     await mcp.call_tool(
         "delete_file", arguments=dict(path=str(test_dir / "example.py"))
@@ -106,9 +120,13 @@ async def test_delete_file(mcp: FastMCP, test_dir: Path):
     assert not (test_dir / "example.py").exists()
 
 
+@pytest.mark.anyio
 async def test_delete_file_and_check_resources(mcp: FastMCP, test_dir: Path):
     await mcp.call_tool(
         "delete_file", arguments=dict(path=str(test_dir / "example.py"))
     )
-    result = await mcp.read_resource("file://test_dir/example.py")
-    assert result == "File not found"
+    res_iter = await mcp.read_resource("file://test_dir/example.py")
+    res_list = list(res_iter)
+    assert len(res_list) == 1
+    res = res_list[0]
+    assert res.content == "File not found"

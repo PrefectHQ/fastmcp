@@ -4,8 +4,10 @@ FastMCP Complex inputs Example
 Demonstrates validation via pydantic with complex models.
 """
 
-from pydantic import BaseModel, Field
 from typing import Annotated
+
+from pydantic import BaseModel, Field
+
 from fastmcp.server import FastMCP
 
 mcp = FastMCP("Shrimp Tank")

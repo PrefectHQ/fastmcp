@@ -1,19 +1,62 @@
 # Python-generated files
 __pycache__/
-*.py[oc]
+*.py[cod]
+*$py.class
 build/
 dist/
 wheels/
-*.egg-info
+*.egg-info/
+*.egg
+MANIFEST
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+nosetests.xml
+coverage.xml
+*.cover
 
 # Virtual environments
 .venv
-.DS_Store
+venv/
+env/
+ENV/
 .env
 
+# System files
+.DS_Store
 
+# Version file
 src/fastmcp/_version.py
 
-# editors
+# Editors and IDEs
 .cursorrules
 .vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+.settings/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Type checking
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+.pytype/
+
+# Local development
+.python-version
+.envrc
+.direnv/
+
+# Logs and databases
+*.log
+*.sqlite
+*.db
+*.ddb

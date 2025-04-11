@@ -1,6 +1,7 @@
 import base64
+import json
 from pathlib import Path
-from typing import TYPE_CHECKING, Union
+from typing import TYPE_CHECKING
 
 import pytest
 from mcp.shared.exceptions import McpError
@@ -8,12 +9,12 @@ from mcp.shared.memory import (
     create_connected_server_and_client_session as client_session,
 )
 from mcp.types import (
+    BlobResourceContents,
     ImageContent,
     TextContent,
     TextResourceContents,
-    BlobResourceContents,
 )
-from pydantic import AnyUrl
+from pydantic import AnyUrl, Field
 
 from fastmcp import Context, FastMCP
 from fastmcp.prompts.base import EmbeddedResource, Message, UserMessage
@@ -26,8 +27,36 @@ if TYPE_CHECKING:
 
 class TestServer:
     async def test_create_server(self):
-        mcp = FastMCP()
+        mcp = FastMCP(instructions="Server instructions")
         assert mcp.name == "FastMCP"
+        assert mcp.instructions == "Server instructions"
+
+    async def test_non_ascii_description(self):
+        """Test that FastMCP handles non-ASCII characters in descriptions correctly"""
+        mcp = FastMCP()
+
+        @mcp.tool(
+            description=(
+                "🌟 This tool uses emojis and UTF-8 characters: á é í ó ú ñ 漢字 🎉"
+            )
+        )
+        def hello_world(name: str = "世界") -> str:
+            return f"¡Hola, {name}! 👋"
+
+        async with client_session(mcp._mcp_server) as client:
+            tools = await client.list_tools()
+            assert len(tools.tools) == 1
+            tool = tools.tools[0]
+            assert tool.description is not None
+            assert "🌟" in tool.description
+            assert "漢字" in tool.description
+            assert "🎉" in tool.description
+
+            result = await client.call_tool("hello_world", {})
+            assert len(result.content) == 1
+            content = result.content[0]
+            assert isinstance(content, TextContent)
+            assert "¡Hola, 世界! 👋" == content.text
 
     async def test_add_tool_decorator(self):
         mcp = FastMCP()
@@ -72,6 +101,10 @@ def tool_fn(x: int, y: int) -> int:
     return x + y
 
 
+def tool_fn_list() -> list[str | int]:
+    return ["x", 2]
+
+
 def error_tool_fn() -> None:
     raise ValueError("Test error")
 
@@ -80,7 +113,7 @@ def image_tool_fn(path: str) -> Image:
     return Image(path)
 
 
-def mixed_content_tool_fn() -> list[Union[TextContent, ImageContent]]:
+def mixed_content_tool_fn() -> list[TextContent | ImageContent]:
     return [
         TextContent(type="text", text="Hello"),
         ImageContent(type="image", data="abc", mimeType="image/png"),
@@ -153,6 +186,16 @@ class TestServerTools:
             assert isinstance(content, TextContent)
             assert content.text == "3"
 
+    async def test_tool_returns_list(self):
+        mcp = FastMCP()
+        mcp.add_tool(tool_fn_list)
+        async with client_session(mcp._mcp_server) as client:
+            result = await client.call_tool("tool_fn_list", {})
+            assert len(result.content) == 1
+            content = result.content[0]
+            assert isinstance(content, TextContent)
+            assert json.loads(content.text) == ["x", 2]
+
     async def test_tool_image_helper(self, tmp_path: Path):
         # Create a test image
         image_path = tmp_path / "test.png"
@@ -176,6 +219,7 @@ class TestServerTools:
         mcp.add_tool(mixed_content_tool_fn)
         async with client_session(mcp._mcp_server) as client:
             result = await client.call_tool("mixed_content_tool_fn", {})
+
             assert len(result.content) == 2
             content1 = result.content[0]
             content2 = result.content[1]
@@ -186,7 +230,8 @@ class TestServerTools:
             assert content2.data == "abc"
 
     async def test_tool_mixed_list_with_image(self, tmp_path: Path):
-        """Test that lists containing Image objects and other types are handled correctly"""
+        """Test that lists containing Image objects and other types are handled
+        correctly. Note that the non-MCP content will be grouped together."""
         # Create a test image
         image_path = tmp_path / "test.png"
         image_path.write_bytes(b"test image data")
@@ -203,24 +248,42 @@ class TestServerTools:
         mcp.add_tool(mixed_list_fn)
         async with client_session(mcp._mcp_server) as client:
             result = await client.call_tool("mixed_list_fn", {})
-            assert len(result.content) == 4
+            assert len(result.content) == 3
             # Check text conversion
             content1 = result.content[0]
             assert isinstance(content1, TextContent)
-            assert content1.text == "text message"
+            assert json.loads(content1.text) == ["text message", {"key": "value"}]
             # Check image conversion
             content2 = result.content[1]
             assert isinstance(content2, ImageContent)
             assert content2.mimeType == "image/png"
             assert base64.b64decode(content2.data) == b"test image data"
-            # Check dict conversion
+            # Check direct TextContent
             content3 = result.content[2]
             assert isinstance(content3, TextContent)
-            assert '"key": "value"' in content3.text
-            # Check direct TextContent
-            content4 = result.content[3]
-            assert isinstance(content4, TextContent)
-            assert content4.text == "direct content"
+            assert content3.text == "direct content"
+
+    async def test_parameter_descriptions(self):
+        mcp = FastMCP("Test Server")
+
+        @mcp.tool()
+        def greet(
+            name: str = Field(description="The name to greet"),
+            title: str = Field(description="Optional title", default=""),
+        ) -> str:
+            """A greeting tool"""
+            return f"Hello {title} {name}"
+
+        tools = await mcp.list_tools()
+        assert len(tools) == 1
+        tool = tools[0]
+
+        # Check that parameter descriptions are present in the schema
+        properties = tool.inputSchema["properties"]
+        assert "name" in properties
+        assert properties["name"]["description"] == "The name to greet"
+        assert "title" in properties
+        assert properties["title"]["description"] == "Optional title"
 
 
 class TestServerResources:
@@ -457,23 +520,41 @@ class TestContextInjection:
             assert "42" in content.text
 
     async def test_context_logging(self):
+        from unittest.mock import patch
+
+        import mcp.server.session
+
         """Test that context logging methods work."""
         mcp = FastMCP()
 
-        def logging_tool(msg: str, ctx: Context) -> str:
-            ctx.debug("Debug message")
-            ctx.info("Info message")
-            ctx.warning("Warning message")
-            ctx.error("Error message")
+        async def logging_tool(msg: str, ctx: Context) -> str:
+            await ctx.debug("Debug message")
+            await ctx.info("Info message")
+            await ctx.warning("Warning message")
+            await ctx.error("Error message")
             return f"Logged messages for {msg}"
 
         mcp.add_tool(logging_tool)
-        async with client_session(mcp._mcp_server) as client:
-            result = await client.call_tool("logging_tool", {"msg": "test"})
-            assert len(result.content) == 1
-            content = result.content[0]
-            assert isinstance(content, TextContent)
-            assert "Logged messages for test" in content.text
+
+        with patch("mcp.server.session.ServerSession.send_log_message") as mock_log:
+            async with client_session(mcp._mcp_server) as client:
+                result = await client.call_tool("logging_tool", {"msg": "test"})
+                assert len(result.content) == 1
+                content = result.content[0]
+                assert isinstance(content, TextContent)
+                assert "Logged messages for test" in content.text
+
+                assert mock_log.call_count == 4
+                mock_log.assert_any_call(
+                    level="debug", data="Debug message", logger=None
+                )
+                mock_log.assert_any_call(level="info", data="Info message", logger=None)
+                mock_log.assert_any_call(
+                    level="warning", data="Warning message", logger=None
+                )
+                mock_log.assert_any_call(
+                    level="error", data="Error message", logger=None
+                )
 
     async def test_optional_context(self):
         """Test that context is optional."""
@@ -500,8 +581,11 @@ class TestContextInjection:
 
         @mcp.tool()
         async def tool_with_resource(ctx: Context) -> str:
-            data = await ctx.read_resource("test://data")
-            return f"Read resource: {data}"
+            r_iter = await ctx.read_resource("test://data")
+            r_list = list(r_iter)
+            assert len(r_list) == 1
+            r = r_list[0]
+            return f"Read resource: {r.content} with mime type {r.mime_type}"
 
         async with client_session(mcp._mcp_server) as client:
             result = await client.call_tool("tool_with_resource", {})

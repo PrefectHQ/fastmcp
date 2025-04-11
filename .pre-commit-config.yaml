@@ -13,8 +13,18 @@ repos:
         types_or: [yaml, json5]
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.8.0
+    # Ruff version.
+    rev: v0.11.4
     hooks:
-      - id: ruff-format
+      # Run the linter.
       - id: ruff
         args: [--fix, --exit-non-zero-on-fix]
+      # Run the formatter.
+      - id: ruff-format
+
+  - repo: https://github.com/northisup/pyright-pretty
+    rev: v0.1.0
+    hooks:
+      - id: pyright-pretty
+        files: ^src/|^tests/
+        exclude: ^examples/

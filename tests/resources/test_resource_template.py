@@ -1,4 +1,5 @@
 import json
+
 import pytest
 from pydantic import BaseModel
 
@@ -45,6 +46,7 @@ class TestResourceTemplate:
         assert template.matches("test://foo") is None
         assert template.matches("other://foo/123") is None
 
+    @pytest.mark.anyio
     async def test_create_resource(self):
         """Test creating a resource from a template."""
 
@@ -68,6 +70,7 @@ class TestResourceTemplate:
         data = json.loads(content)
         assert data == {"key": "foo", "value": 123}
 
+    @pytest.mark.anyio
     async def test_template_error(self):
         """Test error handling in template resource creation."""
 
@@ -83,6 +86,7 @@ class TestResourceTemplate:
         with pytest.raises(ValueError, match="Error creating resource from template"):
             await template.create_resource("fail://test", {"x": "test"})
 
+    @pytest.mark.anyio
     async def test_async_text_resource(self):
         """Test creating a text resource from async function."""
 
@@ -104,6 +108,7 @@ class TestResourceTemplate:
         content = await resource.read()
         assert content == "Hello, world!"
 
+    @pytest.mark.anyio
     async def test_async_binary_resource(self):
         """Test creating a binary resource from async function."""
 
@@ -125,6 +130,7 @@ class TestResourceTemplate:
         content = await resource.read()
         assert content == b"test"
 
+    @pytest.mark.anyio
     async def test_basemodel_conversion(self):
         """Test handling of BaseModel types."""
 
@@ -152,6 +158,7 @@ class TestResourceTemplate:
         data = json.loads(content)
         assert data == {"key": "foo", "value": 123}
 
+    @pytest.mark.anyio
     async def test_custom_type_conversion(self):
         """Test handling of custom types."""
 

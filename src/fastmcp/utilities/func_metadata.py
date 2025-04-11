@@ -1,22 +1,19 @@
 import inspect
-from collections.abc import Callable, Sequence, Awaitable
+import json
+from collections.abc import Awaitable, Callable, Sequence
 from typing import (
     Annotated,
     Any,
-    Dict,
     ForwardRef,
 )
-from pydantic import Field
-from fastmcp.exceptions import InvalidSignature
-from pydantic._internal._typing_extra import eval_type_lenient
-import json
-from pydantic import BaseModel
-from pydantic.fields import FieldInfo
-from pydantic import ConfigDict, create_model
-from pydantic import WithJsonSchema
-from pydantic_core import PydanticUndefined
-from fastmcp.utilities.logging import get_logger
 
+from pydantic import BaseModel, ConfigDict, Field, WithJsonSchema, create_model
+from pydantic._internal._typing_extra import eval_type_backport
+from pydantic.fields import FieldInfo
+from pydantic_core import PydanticUndefined
+
+from fastmcp.exceptions import InvalidSignature
+from fastmcp.utilities.logging import get_logger
 
 logger = get_logger(__name__)
 
@@ -30,7 +27,7 @@ class ArgModelBase(BaseModel):
         That is, sub-models etc are not dumped - they are kept as pydantic models.
         """
         kwargs: dict[str, Any] = {}
-        for field_name in self.model_fields.keys():
+        for field_name in self.__class__.model_fields.keys():
             kwargs[field_name] = getattr(self, field_name)
         return kwargs
 
@@ -83,7 +80,7 @@ class FuncMetadata(BaseModel):
         dicts (JSON objects) as JSON strings, which can be pre-parsed here.
         """
         new_data = data.copy()  # Shallow copy
-        for field_name, field_info in self.arg_model.model_fields.items():
+        for field_name, _field_info in self.arg_model.model_fields.items():
             if field_name not in data.keys():
                 continue
             if isinstance(data[field_name], str):
@@ -91,7 +88,7 @@ class FuncMetadata(BaseModel):
                     pre_parsed = json.loads(data[field_name])
                 except json.JSONDecodeError:
                     continue  # Not JSON - skip
-                if isinstance(pre_parsed, (str, int, float)):
+                if isinstance(pre_parsed, str | int | float):
                     # This is likely that the raw value is e.g. `"hello"` which we
                     # Should really be parsed as '"hello"' in Python - but if we parse
                     # it as JSON it'll turn into just 'hello'. So we skip it.
@@ -105,8 +102,11 @@ class FuncMetadata(BaseModel):
     )
 
 
-def func_metadata(func: Callable, skip_names: Sequence[str] = ()) -> FuncMetadata:
-    """Given a function, return metadata including a pydantic model representing its signature.
+def func_metadata(
+    func: Callable[..., Any], skip_names: Sequence[str] = ()
+) -> FuncMetadata:
+    """Given a function, return metadata including a pydantic model representing its
+    signature.
 
     The use case for this is
     ```
@@ -115,7 +115,8 @@ def func_metadata(func: Callable, skip_names: Sequence[str] = ()) -> FuncMetadat
     return func(**validated_args.model_dump_one_level())
     ```
 
-    **critically** it also provides pre-parse helper to attempt to parse things from JSON.
+    **critically** it also provides pre-parse helper to attempt to parse things from
+    JSON.
 
     Args:
         func: The function to convert to a pydantic model
@@ -131,7 +132,7 @@ def func_metadata(func: Callable, skip_names: Sequence[str] = ()) -> FuncMetadat
     for param in params.values():
         if param.name.startswith("_"):
             raise InvalidSignature(
-                f"Parameter {param.name} of {func.__name__} may not start with an underscore"
+                f"Parameter {param.name} of {func.__name__} cannot start with '_'"
             )
         if param.name in skip_names:
             continue
@@ -175,10 +176,23 @@ def func_metadata(func: Callable, skip_names: Sequence[str] = ()) -> FuncMetadat
     return resp
 
 
-def _get_typed_annotation(annotation: Any, globalns: Dict[str, Any]) -> Any:
+def _get_typed_annotation(annotation: Any, globalns: dict[str, Any]) -> Any:
+    def try_eval_type(
+        value: Any, globalns: dict[str, Any], localns: dict[str, Any]
+    ) -> tuple[Any, bool]:
+        try:
+            return eval_type_backport(value, globalns, localns), True
+        except NameError:
+            return value, False
+
     if isinstance(annotation, str):
         annotation = ForwardRef(annotation)
-        annotation = eval_type_lenient(annotation, globalns, globalns)
+        annotation, status = try_eval_type(annotation, globalns, globalns)
+
+        # This check and raise could perhaps be skipped, and we (FastMCP) just call
+        # model_rebuild right before using it 🤷
+        if status is False:
+            raise InvalidSignature(f"Unable to evaluate type annotation {annotation}")
 
     return annotation
 

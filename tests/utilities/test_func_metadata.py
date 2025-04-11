@@ -85,6 +85,7 @@ def complex_arguments_fn(
     return "ok!"
 
 
+@pytest.mark.anyio
 async def test_complex_function_runtime_arg_validation_non_json():
     """Test that basic non-JSON arguments are validated correctly"""
     meta = func_metadata(complex_arguments_fn)
@@ -121,6 +122,7 @@ async def test_complex_function_runtime_arg_validation_non_json():
         )
 
 
+@pytest.mark.anyio
 async def test_complex_function_runtime_arg_validation_with_json():
     """Test that JSON string arguments are parsed and validated correctly"""
     meta = func_metadata(complex_arguments_fn)
@@ -140,7 +142,7 @@ async def test_complex_function_runtime_arg_validation_with_json():
             "unannotated": "test",
             "my_model_a": "{}",  # JSON string
             "my_model_a_forward_ref": "{}",  # JSON string
-            "my_model_b": '{"how_many_shrimp": 5, "ok": {"x": 1}, "y": null}',  # JSON string
+            "my_model_b": '{"how_many_shrimp": 5, "ok": {"x": 1}, "y": null}',
         },
         arguments_to_pass_directly=None,
     )
@@ -174,21 +176,6 @@ def test_str_vs_list_str():
     assert result["str_or_list"] == ["hello", "world"]
 
 
-def test_str_vs_int():
-    """
-    Test that string values are kept as strings even when they contain numbers,
-    while numbers are parsed correctly.
-    """
-
-    def func_with_str_and_int(a: str, b: int):
-        return a
-
-    meta = func_metadata(func_with_str_and_int)
-    result = meta.pre_parse_json({"a": "123", "b": 123})
-    assert result["a"] == "123"
-    assert result["b"] == 123
-
-
 def test_skip_names():
     """Test that skipped parameters are not included in the model"""
 
@@ -212,6 +199,7 @@ def test_skip_names():
     assert model.also_keep == 2.5  # type: ignore
 
 
+@pytest.mark.anyio
 async def test_lambda_function():
     """Test lambda function schema and validation"""
     fn = lambda x, y=5: x  # noqa: E731
@@ -247,8 +235,45 @@ async def test_lambda_function():
 
 
 def test_complex_function_json_schema():
+    """Test JSON schema generation for complex function arguments.
+
+    Note: Different versions of pydantic output slightly different
+    JSON Schema formats for model fields with defaults. The format changed in 2.9.0:
+
+    1. Before 2.9.0:
+       {
+         "allOf": [{"$ref": "#/$defs/Model"}],
+         "default": {}
+       }
+
+    2. Since 2.9.0:
+       {
+         "$ref": "#/$defs/Model",
+         "default": {}
+       }
+
+    Both formats are valid and functionally equivalent. This test accepts either format
+    to ensure compatibility across our supported pydantic versions.
+
+    This change in format does not affect runtime behavior since:
+    1. Both schemas validate the same way
+    2. The actual model classes and validation logic are unchanged
+    3. func_metadata uses model_validate/model_dump, not the schema directly
+    """
     meta = func_metadata(complex_arguments_fn)
-    assert meta.arg_model.model_json_schema() == {
+    actual_schema = meta.arg_model.model_json_schema()
+
+    # Create a copy of the actual schema to normalize
+    normalized_schema = actual_schema.copy()
+
+    # Normalize the my_model_a_with_default field to handle both pydantic formats
+    if "allOf" in actual_schema["properties"]["my_model_a_with_default"]:
+        normalized_schema["properties"]["my_model_a_with_default"] = {
+            "$ref": "#/$defs/SomeInputModelA",
+            "default": {},
+        }
+
+    assert normalized_schema == {
         "$defs": {
             "InnerModel": {
                 "properties": {"x": {"title": "X", "type": "integer"}},
@@ -374,3 +399,18 @@ def test_complex_function_json_schema():
         "title": "complex_arguments_fnArguments",
         "type": "object",
     }
+
+
+def test_str_vs_int():
+    """
+    Test that string values are kept as strings even when they contain numbers,
+    while numbers are parsed correctly.
+    """
+
+    def func_with_str_and_int(a: str, b: int):
+        return a
+
+    meta = func_metadata(func_with_str_and_int)
+    result = meta.pre_parse_json({"a": "123", "b": 123})
+    assert result["a"] == "123"
+    assert result["b"] == 123

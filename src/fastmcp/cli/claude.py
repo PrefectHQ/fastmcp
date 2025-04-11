@@ -1,11 +1,12 @@
 """Claude app integration utilities."""
 
 import json
+import os
 import sys
 from pathlib import Path
-from typing import Optional, Dict
+from typing import Any
 
-from ..utilities.logging import get_logger
+from fastmcp.utilities.logging import get_logger
 
 logger = get_logger(__name__)
 
@@ -16,6 +17,10 @@ def get_claude_config_path() -> Path | None:
         path = Path(Path.home(), "AppData", "Roaming", "Claude")
     elif sys.platform == "darwin":
         path = Path(Path.home(), "Library", "Application Support", "Claude")
+    elif sys.platform.startswith("linux"):
+        path = Path(
+            os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"), "Claude"
+        )
     else:
         return None
 
@@ -28,9 +33,9 @@ def update_claude_config(
     file_spec: str,
     server_name: str,
     *,
-    with_editable: Optional[Path] = None,
-    with_packages: Optional[list[str]] = None,
-    env_vars: Optional[Dict[str, str]] = None,
+    with_editable: Path | None = None,
+    with_packages: list[str] | None = None,
+    env_vars: dict[str, str] | None = None,
 ) -> bool:
     """Add or update a FastMCP server in Claude's configuration.
 
@@ -49,8 +54,8 @@ def update_claude_config(
     config_dir = get_claude_config_path()
     if not config_dir:
         raise RuntimeError(
-            "Claude Desktop config directory not found. Please ensure Claude Desktop "
-            "is installed and has been run at least once to initialize its configuration."
+            "Claude Desktop config directory not found. Please ensure Claude Desktop"
+            " is installed and has been run at least once to initialize its config."
         )
 
     config_file = config_dir / "claude_desktop_config.json"
@@ -110,10 +115,7 @@ def update_claude_config(
         # Add fastmcp run command
         args.extend(["fastmcp", "run", file_spec])
 
-        server_config = {
-            "command": "uv",
-            "args": args,
-        }
+        server_config: dict[str, Any] = {"command": "uv", "args": args}
 
         # Add environment variables if specified
         if env_vars:

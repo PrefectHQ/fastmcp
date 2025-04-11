@@ -19,6 +19,7 @@ Visit https://surgemsg.com/ and click "Get Started" to obtain these values.
 """
 
 from typing import Annotated
+
 import httpx
 from pydantic import BeforeValidator
 from pydantic_settings import BaseSettings, SettingsConfigDict

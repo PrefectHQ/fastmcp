@@ -1,4 +1,4 @@
-name: Run Pre-commits
+name: Run static analysis
 
 env:
   # enable colored output
@@ -16,21 +16,22 @@ permissions:
 
 jobs:
   static_analysis:
-    timeout-minutes: 1
+    timeout-minutes: 2
 
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Install dependencies
+        run: uv sync --dev
       - name: Run pre-commit
         uses: pre-commit/action@v3.0.1
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install ".[tests]"
-      - name: Run pyright
-        run: pyright src tests

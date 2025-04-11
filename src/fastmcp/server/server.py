@@ -1,98 +1,92 @@
 """FastMCP - A more ergonomic interface for MCP servers."""
 
-import asyncio
-import functools
 import inspect
 import json
 import re
-from itertools import chain
-from typing import Any, Callable, Dict, Literal, Sequence, TypeVar, ParamSpec
+from collections.abc import AsyncIterator, Callable, Sequence
+from contextlib import (
+    AbstractAsyncContextManager,
+    asynccontextmanager,
+)
+from typing import TYPE_CHECKING, Any, Generic, Literal
 
+import anyio
+import httpx
 import pydantic_core
-from pydantic import Field
 import uvicorn
-from mcp.server import Server as MCPServer
+from fastapi import FastAPI
+from mcp.server.lowlevel.helper_types import ReadResourceContents
+from mcp.server.lowlevel.server import LifespanResultT
+from mcp.server.lowlevel.server import Server as MCPServer
+from mcp.server.lowlevel.server import lifespan as default_lifespan
+from mcp.server.session import ServerSession
 from mcp.server.sse import SseServerTransport
 from mcp.server.stdio import stdio_server
-from mcp.shared.context import RequestContext
 from mcp.types import (
+    AnyFunction,
     EmbeddedResource,
     GetPromptResult,
     ImageContent,
     TextContent,
 )
-from mcp.types import (
-    Prompt as MCPPrompt,
-    PromptArgument as MCPPromptArgument,
-)
-from mcp.types import (
-    Resource as MCPResource,
-)
-from mcp.types import (
-    ResourceTemplate as MCPResourceTemplate,
-)
-from mcp.types import (
-    Tool as MCPTool,
-)
-from pydantic import BaseModel
+from mcp.types import Prompt as MCPPrompt
+from mcp.types import PromptArgument as MCPPromptArgument
+from mcp.types import Resource as MCPResource
+from mcp.types import ResourceTemplate as MCPResourceTemplate
+from mcp.types import Tool as MCPTool
 from pydantic.networks import AnyUrl
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from starlette.applications import Starlette
+from starlette.requests import Request
+from starlette.routing import Mount, Route
 
+import fastmcp
+import fastmcp.settings
 from fastmcp.exceptions import ResourceError
 from fastmcp.prompts import Prompt, PromptManager
-from fastmcp.prompts.base import PromptResult
 from fastmcp.resources import FunctionResource, Resource, ResourceManager
 from fastmcp.tools import ToolManager
 from fastmcp.utilities.logging import configure_logging, get_logger
 from fastmcp.utilities.types import Image
 
+if TYPE_CHECKING:
+    from fastmcp.client import Client
+    from fastmcp.server.context import Context
+    from fastmcp.server.openapi import FastMCPOpenAPI
+    from fastmcp.server.proxy import FastMCPProxy
 logger = get_logger(__name__)
 
-P = ParamSpec("P")
-R = TypeVar("R")
-R_PromptResult = TypeVar("R_PromptResult", bound=PromptResult)
+
+def lifespan_wrapper(
+    app: "FastMCP",
+    lifespan: Callable[["FastMCP"], AbstractAsyncContextManager[LifespanResultT]],
+) -> Callable[
+    [MCPServer[LifespanResultT]], AbstractAsyncContextManager[LifespanResultT]
+]:
+    @asynccontextmanager
+    async def wrap(s: MCPServer[LifespanResultT]) -> AsyncIterator[LifespanResultT]:
+        async with lifespan(app) as context:
+            yield context
+
+    return wrap
 
 
-class Settings(BaseSettings):
-    """FastMCP server settings.
+class FastMCP(Generic[LifespanResultT]):
+    def __init__(
+        self,
+        name: str | None = None,
+        instructions: str | None = None,
+        lifespan: (
+            Callable[["FastMCP"], AbstractAsyncContextManager[LifespanResultT]] | None
+        ) = None,
+        **settings: Any,
+    ):
+        self.settings = fastmcp.settings.ServerSettings(**settings)
 
-    All settings can be configured via environment variables with the prefix FASTMCP_.
-    For example, FASTMCP_DEBUG=true will set debug=True.
-    """
-
-    model_config: SettingsConfigDict = SettingsConfigDict(
-        env_prefix="FASTMCP_",
-        env_file=".env",
-        extra="ignore",
-    )
-
-    # Server settings
-    debug: bool = False
-    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
-
-    # HTTP settings
-    host: str = "0.0.0.0"
-    port: int = 8000
-
-    # resource settings
-    warn_on_duplicate_resources: bool = True
-
-    # tool settings
-    warn_on_duplicate_tools: bool = True
-
-    # prompt settings
-    warn_on_duplicate_prompts: bool = True
-
-    dependencies: list[str] = Field(
-        default_factory=list,
-        description="List of dependencies to install in the server environment",
-    )
-
-
-class FastMCP:
-    def __init__(self, name: str | None = None, **settings: Any):
-        self.settings = Settings(**settings)
-        self._mcp_server = MCPServer(name=name or "FastMCP")
+        self._mcp_server = MCPServer[LifespanResultT](
+            name=name or "FastMCP",
+            instructions=instructions,
+            lifespan=lifespan_wrapper(self, lifespan) if lifespan else default_lifespan,  # type: ignore
+        )
         self._tool_manager = ToolManager(
             warn_on_duplicate_tools=self.settings.warn_on_duplicate_tools
         )
@@ -104,6 +98,9 @@ class FastMCP:
         )
         self.dependencies = self.settings.dependencies
 
+        # Setup for mounted apps
+        self._mounted_apps: dict[str, FastMCP] = {}
+
         # Set up MCP protocol handlers
         self._setup_handlers()
 
@@ -114,20 +111,33 @@ class FastMCP:
     def name(self) -> str:
         return self._mcp_server.name
 
-    def run(self, transport: Literal["stdio", "sse"] = "stdio") -> None:
+    @property
+    def instructions(self) -> str | None:
+        return self._mcp_server.instructions
+
+    async def run_async(self, transport: Literal["stdio", "sse"] | None = None) -> None:
+        """Run the FastMCP server asynchronously.
+
+        Args:
+            transport: Transport protocol to use ("stdio" or "sse")
+        """
+        if transport is None:
+            transport = "stdio"
+        if transport not in ["stdio", "sse"]:
+            raise ValueError(f"Unknown transport: {transport}")
+
+        if transport == "stdio":
+            await self.run_stdio_async()
+        else:  # transport == "sse"
+            await self.run_sse_async()
+
+    def run(self, transport: Literal["stdio", "sse"] | None = None) -> None:
         """Run the FastMCP server. Note this is a synchronous function.
 
         Args:
             transport: Transport protocol to use ("stdio" or "sse")
         """
-        TRANSPORTS = Literal["stdio", "sse"]
-        if transport not in TRANSPORTS.__args__:  # type: ignore
-            raise ValueError(f"Unknown transport: {transport}")
-
-        if transport == "stdio":
-            asyncio.run(self.run_stdio_async())
-        else:  # transport == "sse"
-            asyncio.run(self.run_sse_async())
+        anyio.run(self.run_async, transport)
 
     def _setup_handlers(self) -> None:
         """Set up core MCP protocol handlers."""
@@ -137,8 +147,7 @@ class FastMCP:
         self._mcp_server.read_resource()(self.read_resource)
         self._mcp_server.list_prompts()(self.list_prompts)
         self._mcp_server.get_prompt()(self.get_prompt)
-        # TODO: This has not been added to MCP yet, see https://github.com/jlowin/fastmcp/issues/10
-        # self._mcp_server.list_resource_templates()(self.list_resource_templates)
+        self._mcp_server.list_resource_templates()(self.list_resource_templates)
 
     async def list_tools(self) -> list[MCPTool]:
         """List all available tools."""
@@ -152,19 +161,22 @@ class FastMCP:
             for info in tools
         ]
 
-    def get_context(self) -> "Context":
+    def get_context(self) -> "Context[ServerSession, LifespanResultT]":
         """
         Returns a Context object. Note that the context will only be valid
         during a request; outside a request, most methods will error.
         """
+
         try:
             request_context = self._mcp_server.request_context
         except LookupError:
             request_context = None
+        from fastmcp.server.context import Context
+
         return Context(request_context=request_context, fastmcp=self)
 
     async def call_tool(
-        self, name: str, arguments: dict
+        self, name: str, arguments: dict[str, Any]
     ) -> Sequence[TextContent | ImageContent | EmbeddedResource]:
         """Call a tool by name with arguments."""
         context = self.get_context()
@@ -197,21 +209,23 @@ class FastMCP:
             for template in templates
         ]
 
-    async def read_resource(self, uri: AnyUrl | str) -> str | bytes:
+    async def read_resource(self, uri: AnyUrl | str) -> list[ReadResourceContents]:
         """Read a resource by URI."""
+
         resource = await self._resource_manager.get_resource(uri)
         if not resource:
             raise ResourceError(f"Unknown resource: {uri}")
 
         try:
-            return await resource.read()
+            content = await resource.read()
+            return [ReadResourceContents(content=content, mime_type=resource.mime_type)]
         except Exception as e:
             logger.error(f"Error reading resource {uri}: {e}")
             raise ResourceError(str(e))
 
     def add_tool(
         self,
-        fn: Callable,
+        fn: AnyFunction,
         name: str | None = None,
         description: str | None = None,
     ) -> None:
@@ -229,11 +243,12 @@ class FastMCP:
 
     def tool(
         self, name: str | None = None, description: str | None = None
-    ) -> Callable[[Callable[P, R]], Callable[P, R]]:
+    ) -> Callable[[AnyFunction], AnyFunction]:
         """Decorator to register a tool.
 
-        Tools can optionally request a Context object by adding a parameter with the Context type annotation.
-        The context provides access to MCP capabilities like logging, progress reporting, and resource access.
+        Tools can optionally request a Context object by adding a parameter with the
+        Context type annotation. The context provides access to MCP capabilities like
+        logging, progress reporting, and resource access.
 
         Args:
             name: Optional name for the tool (defaults to function name)
@@ -261,7 +276,7 @@ class FastMCP:
                 "Did you forget to call it? Use @tool() instead of @tool"
             )
 
-        def decorator(fn: Callable[P, R]) -> Callable[P, R]:
+        def decorator(fn: AnyFunction) -> AnyFunction:
             self.add_tool(fn, name=name, description=description)
             return fn
 
@@ -282,7 +297,7 @@ class FastMCP:
         name: str | None = None,
         description: str | None = None,
         mime_type: str | None = None,
-    ) -> Callable[[Callable[P, R]], Callable[P, R]]:
+    ) -> Callable[[AnyFunction], AnyFunction]:
         """Decorator to register a function as a resource.
 
         The function will be called when the resource is read to generate its content.
@@ -305,9 +320,19 @@ class FastMCP:
             def get_data() -> str:
                 return "Hello, world!"
 
+            @server.resource("resource://my-resource")
+            async get_data() -> str:
+                data = await fetch_data()
+                return f"Hello, world! {data}"
+
             @server.resource("resource://{city}/weather")
             def get_weather(city: str) -> str:
                 return f"Weather for {city}"
+
+            @server.resource("resource://{city}/weather")
+            async def get_weather(city: str) -> str:
+                data = await fetch_weather(city)
+                return f"Weather for {city}: {data}"
         """
         # Check if user passed function directly instead of calling decorator
         if callable(uri):
@@ -316,11 +341,7 @@ class FastMCP:
                 "Did you forget to call it? Use @resource('uri') instead of @resource"
             )
 
-        def decorator(fn: Callable[P, R]) -> Callable[P, R]:
-            @functools.wraps(fn)
-            def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
-                return fn(*args, **kwargs)
-
+        def decorator(fn: AnyFunction) -> AnyFunction:
             # Check if this should be a template
             has_uri_params = "{" in uri and "}" in uri
             has_func_params = bool(inspect.signature(fn).parameters)
@@ -338,7 +359,7 @@ class FastMCP:
 
                 # Register as template
                 self._resource_manager.add_template(
-                    wrapper,
+                    fn=fn,
                     uri_template=uri,
                     name=name,
                     description=description,
@@ -351,10 +372,10 @@ class FastMCP:
                     name=name,
                     description=description,
                     mime_type=mime_type or "text/plain",
-                    fn=wrapper,
+                    fn=fn,
                 )
                 self.add_resource(resource)
-            return wrapper
+            return fn
 
         return decorator
 
@@ -368,7 +389,7 @@ class FastMCP:
 
     def prompt(
         self, name: str | None = None, description: str | None = None
-    ) -> Callable[[Callable[P, R_PromptResult]], Callable[P, R_PromptResult]]:
+    ) -> Callable[[AnyFunction], AnyFunction]:
         """Decorator to register a prompt.
 
         Args:
@@ -409,7 +430,7 @@ class FastMCP:
                 "Did you forget to call it? Use @prompt() instead of @prompt"
             )
 
-        def decorator(func: Callable[P, R_PromptResult]) -> Callable[P, R_PromptResult]:
+        def decorator(func: AnyFunction) -> AnyFunction:
             prompt = Prompt.from_function(func, name=name, description=description)
             self.add_prompt(prompt)
             return func
@@ -427,28 +448,7 @@ class FastMCP:
 
     async def run_sse_async(self) -> None:
         """Run the server using SSE transport."""
-        from starlette.applications import Starlette
-        from starlette.routing import Route, Mount
-
-        sse = SseServerTransport("/messages/")
-
-        async def handle_sse(request):
-            async with sse.connect_sse(
-                request.scope, request.receive, request._send
-            ) as streams:
-                await self._mcp_server.run(
-                    streams[0],
-                    streams[1],
-                    self._mcp_server.create_initialization_options(),
-                )
-
-        starlette_app = Starlette(
-            debug=self.settings.debug,
-            routes=[
-                Route("/sse", endpoint=handle_sse),
-                Mount("/messages/", app=sse.handle_post_message),
-            ],
-        )
+        starlette_app = self.sse_app()
 
         config = uvicorn.Config(
             starlette_app,
@@ -458,6 +458,30 @@ class FastMCP:
         )
         server = uvicorn.Server(config)
         await server.serve()
+
+    def sse_app(self) -> Starlette:
+        """Return an instance of the SSE server app."""
+        sse = SseServerTransport(self.settings.message_path)
+
+        async def handle_sse(request: Request) -> None:
+            async with sse.connect_sse(
+                request.scope,
+                request.receive,
+                request._send,  # type: ignore[reportPrivateUsage]
+            ) as streams:
+                await self._mcp_server.run(
+                    streams[0],
+                    streams[1],
+                    self._mcp_server.create_initialization_options(),
+                )
+
+        return Starlette(
+            debug=self.settings.debug,
+            routes=[
+                Route(self.settings.sse_path, endpoint=handle_sse),
+                Mount(self.settings.message_path, app=sse.handle_post_message),
+            ],
+        )
 
     async def list_prompts(self) -> list[MCPPrompt]:
         """List all available prompts."""
@@ -479,7 +503,7 @@ class FastMCP:
         ]
 
     async def get_prompt(
-        self, name: str, arguments: Dict[str, Any] | None = None
+        self, name: str, arguments: dict[str, Any] | None = None
     ) -> GetPromptResult:
         """Get a prompt by name with arguments."""
         try:
@@ -490,22 +514,142 @@ class FastMCP:
             logger.error(f"Error getting prompt {name}: {e}")
             raise ValueError(str(e))
 
+    def mount(self, prefix: str, app: "FastMCP") -> None:
+        """Mount another FastMCP application with a given prefix.
+
+        When an application is mounted:
+        - The tools are imported with prefixed names
+          Example: If app has a tool named "get_weather", it will be available as "weather/get_weather"
+        - The resources are imported with prefixed URIs
+          Example: If app has a resource with URI "weather://forecast", it will be available as "weather+weather://forecast"
+        - The templates are imported with prefixed URI templates
+          Example: If app has a template with URI "weather://location/{id}", it will be available as "weather+weather://location/{id}"
+        - The prompts are imported with prefixed names
+          Example: If app has a prompt named "weather_prompt", it will be available as "weather/weather_prompt"
+
+        Args:
+            prefix: The prefix to use for the mounted application
+            app: The FastMCP application to mount
+        """
+        # Mount the app in the list of mounted apps
+        self._mounted_apps[prefix] = app
+
+        # Import tools from the mounted app with / delimiter
+        tool_prefix = f"{prefix}/"
+        self._tool_manager.import_tools(app._tool_manager, tool_prefix)
+
+        # Import resources and templates from the mounted app with + delimiter
+        resource_prefix = f"{prefix}+"
+        self._resource_manager.import_resources(app._resource_manager, resource_prefix)
+        self._resource_manager.import_templates(app._resource_manager, resource_prefix)
+
+        # Import prompts with / delimiter
+        prompt_prefix = f"{prefix}/"
+        self._prompt_manager.import_prompts(app._prompt_manager, prompt_prefix)
+
+        logger.info(f"Mounted app with prefix '{prefix}'")
+        logger.debug(f"Imported tools with prefix '{tool_prefix}'")
+        logger.debug(f"Imported resources with prefix '{resource_prefix}'")
+        logger.debug(f"Imported templates with prefix '{resource_prefix}'")
+        logger.debug(f"Imported prompts with prefix '{prompt_prefix}'")
+
+    @classmethod
+    async def as_proxy(
+        cls, client: "Client | FastMCP", **settings: Any
+    ) -> "FastMCPProxy":
+        """
+        Create a FastMCP proxy server from a client.
+
+        This method creates a new FastMCP server instance that proxies requests to the provided client.
+        It discovers the client's tools, resources, prompts, and templates, and creates corresponding
+        components in the server that forward requests to the client.
+
+        Args:
+            client: The client to proxy requests to
+            **settings: Additional settings for the FastMCP server
+
+        Returns:
+            A FastMCP server that proxies requests to the client
+        """
+        from fastmcp.client import Client
+
+        from .proxy import FastMCPProxy
+
+        if isinstance(client, Client):
+            return await FastMCPProxy.from_client(client=client, **settings)
+
+        elif isinstance(client, FastMCP):
+            return await FastMCPProxy.from_server(server=client, **settings)
+
+        else:
+            raise ValueError(f"Unknown client type: {type(client)}")
+
+    @classmethod
+    def from_openapi(
+        cls, openapi_spec: dict[str, Any], client: httpx.AsyncClient, **settings: Any
+    ) -> "FastMCPOpenAPI":
+        """
+        Create a FastMCP server from an OpenAPI specification.
+        """
+        from .openapi import FastMCPOpenAPI
+
+        return FastMCPOpenAPI(openapi_spec=openapi_spec, client=client, **settings)
+
+    @classmethod
+    def from_fastapi(
+        cls, app: FastAPI, name: str | None = None, **settings: Any
+    ) -> "FastMCPOpenAPI":
+        """
+        Create a FastMCP server from a FastAPI application.
+        """
+        from .openapi import FastMCPOpenAPI
+
+        client = httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://fastapi"
+        )
+
+        name = name or app.title
+
+        return FastMCPOpenAPI(
+            openapi_spec=app.openapi(), client=client, name=name, **settings
+        )
+
 
 def _convert_to_content(
     result: Any,
-) -> Sequence[TextContent | ImageContent | EmbeddedResource]:
+    _process_as_single_item: bool = False,
+) -> list[TextContent | ImageContent | EmbeddedResource]:
     """Convert a result to a sequence of content objects."""
     if result is None:
         return []
 
-    if isinstance(result, (TextContent, ImageContent, EmbeddedResource)):
+    if isinstance(result, TextContent | ImageContent | EmbeddedResource):
         return [result]
 
     if isinstance(result, Image):
         return [result.to_image_content()]
 
-    if isinstance(result, (list, tuple)):
-        return list(chain.from_iterable(_convert_to_content(item) for item in result))
+    if isinstance(result, list | tuple) and not _process_as_single_item:
+        # if the result is a list, then it could either be a list of MCP types,
+        # or a "regular" list that the tool is returning, or a mix of both.
+        #
+        # so we extract all the MCP types / images and convert them as individual content elements,
+        # and aggregate the rest as a single content element
+
+        mcp_types = []
+        other_content = []
+
+        for item in result:
+            if isinstance(item, TextContent | ImageContent | EmbeddedResource | Image):
+                mcp_types.append(_convert_to_content(item)[0])
+            else:
+                other_content.append(item)
+        if other_content:
+            other_content = _convert_to_content(
+                other_content, _process_as_single_item=True
+            )
+
+        return other_content + mcp_types
 
     if not isinstance(result, str):
         try:
@@ -514,158 +658,3 @@ def _convert_to_content(
             result = str(result)
 
     return [TextContent(type="text", text=result)]
-
-
-class Context(BaseModel):
-    """Context object providing access to MCP capabilities.
-
-    This provides a cleaner interface to MCP's RequestContext functionality.
-    It gets injected into tool and resource functions that request it via type hints.
-
-    To use context in a tool function, add a parameter with the Context type annotation:
-
-    ```python
-    @server.tool()
-    def my_tool(x: int, ctx: Context) -> str:
-        # Log messages to the client
-        ctx.info(f"Processing {x}")
-        ctx.debug("Debug info")
-        ctx.warning("Warning message")
-        ctx.error("Error message")
-
-        # Report progress
-        ctx.report_progress(50, 100)
-
-        # Access resources
-        data = ctx.read_resource("resource://data")
-
-        # Get request info
-        request_id = ctx.request_id
-        client_id = ctx.client_id
-
-        return str(x)
-    ```
-
-    The context parameter name can be anything as long as it's annotated with Context.
-    The context is optional - tools that don't need it can omit the parameter.
-    """
-
-    _request_context: RequestContext | None
-    _fastmcp: FastMCP | None
-
-    def __init__(
-        self,
-        *,
-        request_context: RequestContext | None = None,
-        fastmcp: FastMCP | None = None,
-        **kwargs: Any,
-    ):
-        super().__init__(**kwargs)
-        self._request_context = request_context
-        self._fastmcp = fastmcp
-
-    @property
-    def fastmcp(self) -> FastMCP:
-        """Access to the FastMCP server."""
-        if self._fastmcp is None:
-            raise ValueError("Context is not available outside of a request")
-        return self._fastmcp
-
-    @property
-    def request_context(self) -> RequestContext:
-        """Access to the underlying request context."""
-        if self._request_context is None:
-            raise ValueError("Context is not available outside of a request")
-        return self._request_context
-
-    async def report_progress(
-        self, progress: float, total: float | None = None
-    ) -> None:
-        """Report progress for the current operation.
-
-        Args:
-            progress: Current progress value e.g. 24
-            total: Optional total value e.g. 100
-        """
-
-        progress_token = (
-            self.request_context.meta.progressToken
-            if self.request_context.meta
-            else None
-        )
-
-        if not progress_token:
-            return
-
-        await self.request_context.session.send_progress_notification(
-            progress_token=progress_token, progress=progress, total=total
-        )
-
-    async def read_resource(self, uri: str | AnyUrl) -> str | bytes:
-        """Read a resource by URI.
-
-        Args:
-            uri: Resource URI to read
-
-        Returns:
-            The resource content as either text or bytes
-        """
-        assert (
-            self._fastmcp is not None
-        ), "Context is not available outside of a request"
-        return await self._fastmcp.read_resource(uri)
-
-    def log(
-        self,
-        level: Literal["debug", "info", "warning", "error"],
-        message: str,
-        *,
-        logger_name: str | None = None,
-    ) -> None:
-        """Send a log message to the client.
-
-        Args:
-            level: Log level (debug, info, warning, error)
-            message: Log message
-            logger_name: Optional logger name
-            **extra: Additional structured data to include
-        """
-        self.request_context.session.send_log_message(
-            level=level, data=message, logger=logger_name
-        )
-
-    @property
-    def client_id(self) -> str | None:
-        """Get the client ID if available."""
-        return (
-            getattr(self.request_context.meta, "client_id", None)
-            if self.request_context.meta
-            else None
-        )
-
-    @property
-    def request_id(self) -> str:
-        """Get the unique ID for this request."""
-        return str(self.request_context.request_id)
-
-    @property
-    def session(self):
-        """Access to the underlying session for advanced usage."""
-        return self.request_context.session
-
-    # Convenience methods for common log levels
-    def debug(self, message: str, **extra: Any) -> None:
-        """Send a debug log message."""
-        self.log("debug", message, **extra)
-
-    def info(self, message: str, **extra: Any) -> None:
-        """Send an info log message."""
-        self.log("info", message, **extra)
-
-    def warning(self, message: str, **extra: Any) -> None:
-        """Send a warning log message."""
-        self.log("warning", message, **extra)
-
-    def error(self, message: str, **extra: Any) -> None:
-        """Send an error log message."""
-        self.log("error", message, **extra)

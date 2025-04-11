@@ -1,16 +1,18 @@
-from pydantic import FileUrl
 import pytest
+from mcp.types import EmbeddedResource, TextResourceContents
+from pydantic import FileUrl
+
 from fastmcp.prompts.base import (
-    Prompt,
-    UserMessage,
-    TextContent,
     AssistantMessage,
     Message,
+    Prompt,
+    TextContent,
+    UserMessage,
 )
-from mcp.types import EmbeddedResource, TextResourceContents
 
 
 class TestRenderPrompt:
+    @pytest.mark.anyio
     async def test_basic_fn(self):
         def fn() -> str:
             return "Hello, world!"
@@ -20,6 +22,7 @@ class TestRenderPrompt:
             UserMessage(content=TextContent(type="text", text="Hello, world!"))
         ]
 
+    @pytest.mark.anyio
     async def test_async_fn(self):
         async def fn() -> str:
             return "Hello, world!"
@@ -29,6 +32,7 @@ class TestRenderPrompt:
             UserMessage(content=TextContent(type="text", text="Hello, world!"))
         ]
 
+    @pytest.mark.anyio
     async def test_fn_with_args(self):
         async def fn(name: str, age: int = 30) -> str:
             return f"Hello, {name}! You're {age} years old."
@@ -42,6 +46,7 @@ class TestRenderPrompt:
             )
         ]
 
+    @pytest.mark.anyio
     async def test_fn_with_invalid_kwargs(self):
         async def fn(name: str, age: int = 30) -> str:
             return f"Hello, {name}! You're {age} years old."
@@ -50,6 +55,7 @@ class TestRenderPrompt:
         with pytest.raises(ValueError):
             await prompt.render(arguments=dict(age=40))
 
+    @pytest.mark.anyio
     async def test_fn_returns_message(self):
         async def fn() -> UserMessage:
             return UserMessage(content="Hello, world!")
@@ -59,6 +65,7 @@ class TestRenderPrompt:
             UserMessage(content=TextContent(type="text", text="Hello, world!"))
         ]
 
+    @pytest.mark.anyio
     async def test_fn_returns_assistant_message(self):
         async def fn() -> AssistantMessage:
             return AssistantMessage(
@@ -70,6 +77,7 @@ class TestRenderPrompt:
             AssistantMessage(content=TextContent(type="text", text="Hello, world!"))
         ]
 
+    @pytest.mark.anyio
     async def test_fn_returns_multiple_messages(self):
         expected = [
             UserMessage("Hello, world!"),
@@ -83,6 +91,7 @@ class TestRenderPrompt:
         prompt = Prompt.from_function(fn)
         assert await prompt.render() == expected
 
+    @pytest.mark.anyio
     async def test_fn_returns_list_of_strings(self):
         expected = [
             "Hello, world!",
@@ -95,6 +104,7 @@ class TestRenderPrompt:
         prompt = Prompt.from_function(fn)
         assert await prompt.render() == [UserMessage(t) for t in expected]
 
+    @pytest.mark.anyio
     async def test_fn_returns_resource_content(self):
         """Test returning a message with resource content."""
 
@@ -124,6 +134,7 @@ class TestRenderPrompt:
             )
         ]
 
+    @pytest.mark.anyio
     async def test_fn_returns_mixed_content(self):
         """Test returning messages with mixed content types."""
 
@@ -163,6 +174,7 @@ class TestRenderPrompt:
             ),
         ]
 
+    @pytest.mark.anyio
     async def test_fn_returns_dict_with_resource(self):
         """Test returning a dict with resource content."""
 

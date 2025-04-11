@@ -1,14 +1,14 @@
 from .base import Resource
-from .types import (
-    TextResource,
-    BinaryResource,
-    FunctionResource,
-    FileResource,
-    HttpResource,
-    DirectoryResource,
-)
-from .templates import ResourceTemplate
 from .resource_manager import ResourceManager
+from .templates import ResourceTemplate
+from .types import (
+    BinaryResource,
+    DirectoryResource,
+    FileResource,
+    FunctionResource,
+    HttpResource,
+    TextResource,
+)
 
 __all__ = [
     "Resource",

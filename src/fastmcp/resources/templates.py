@@ -1,8 +1,11 @@
 """Resource template functionality."""
 
+from __future__ import annotations
+
 import inspect
 import re
-from typing import Any, Callable, Dict, Optional
+from collections.abc import Callable
+from typing import Any
 
 from pydantic import BaseModel, Field, TypeAdapter, validate_call
 
@@ -20,18 +23,20 @@ class ResourceTemplate(BaseModel):
     mime_type: str = Field(
         default="text/plain", description="MIME type of the resource content"
     )
-    fn: Callable = Field(exclude=True)
-    parameters: dict = Field(description="JSON schema for function parameters")
+    fn: Callable[..., Any] = Field(exclude=True)
+    parameters: dict[str, Any] = Field(
+        description="JSON schema for function parameters"
+    )
 
     @classmethod
     def from_function(
         cls,
-        fn: Callable,
+        fn: Callable[..., Any],
         uri_template: str,
-        name: Optional[str] = None,
-        description: Optional[str] = None,
-        mime_type: Optional[str] = None,
-    ) -> "ResourceTemplate":
+        name: str | None = None,
+        description: str | None = None,
+        mime_type: str | None = None,
+    ) -> ResourceTemplate:
         """Create a template from a function."""
         func_name = name or fn.__name__
         if func_name == "<lambda>":
@@ -52,7 +57,7 @@ class ResourceTemplate(BaseModel):
             parameters=parameters,
         )
 
-    def matches(self, uri: str) -> Optional[Dict[str, Any]]:
+    def matches(self, uri: str) -> dict[str, Any] | None:
         """Check if URI matches template and extract parameters."""
         # Convert template to regex pattern
         pattern = self.uri_template.replace("{", "(?P<").replace("}", ">[^/]+)")
@@ -61,7 +66,7 @@ class ResourceTemplate(BaseModel):
             return match.groupdict()
         return None
 
-    async def create_resource(self, uri: str, params: Dict[str, Any]) -> Resource:
+    async def create_resource(self, uri: str, params: dict[str, Any]) -> Resource:
         """Create a resource from the template with the given parameters."""
         try:
             # Call function and check if result is a coroutine

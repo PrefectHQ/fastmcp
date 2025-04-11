@@ -1,10 +1,13 @@
 """Concrete resource implementations."""
 
-import asyncio
+import inspect
 import json
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable, Union
+from typing import Any
 
+import anyio
+import anyio.to_thread
 import httpx
 import pydantic.json
 import pydantic_core
@@ -48,10 +51,12 @@ class FunctionResource(Resource):
 
     fn: Callable[[], Any] = Field(exclude=True)
 
-    async def read(self) -> Union[str, bytes]:
+    async def read(self) -> str | bytes:
         """Read the resource by calling the wrapped function."""
         try:
-            result = self.fn()
+            result = (
+                await self.fn() if inspect.iscoroutinefunction(self.fn) else self.fn()
+            )
             if isinstance(result, Resource):
                 return await result.read()
             if isinstance(result, bytes):
@@ -100,12 +105,12 @@ class FileResource(Resource):
         mime_type = info.data.get("mime_type", "text/plain")
         return not mime_type.startswith("text/")
 
-    async def read(self) -> Union[str, bytes]:
+    async def read(self) -> str | bytes:
         """Read the file content."""
         try:
             if self.is_binary:
-                return await asyncio.to_thread(self.path.read_bytes)
-            return await asyncio.to_thread(self.path.read_text)
+                return await anyio.to_thread.run_sync(self.path.read_bytes)
+            return await anyio.to_thread.run_sync(self.path.read_text)
         except Exception as e:
             raise ValueError(f"Error reading file {self.path}: {e}")
 
@@ -114,11 +119,11 @@ class HttpResource(Resource):
     """A resource that reads from an HTTP endpoint."""
 
     url: str = Field(description="URL to fetch content from")
-    mime_type: str | None = Field(
+    mime_type: str = Field(
         default="application/json", description="MIME type of the resource content"
     )
 
-    async def read(self) -> Union[str, bytes]:
+    async def read(self) -> str | bytes:
         """Read the HTTP content."""
         async with httpx.AsyncClient() as client:
             response = await client.get(self.url)
@@ -136,7 +141,7 @@ class DirectoryResource(Resource):
     pattern: str | None = Field(
         default=None, description="Optional glob pattern to filter files"
     )
-    mime_type: str | None = Field(
+    mime_type: str = Field(
         default="application/json", description="MIME type of the resource content"
     )
 
@@ -173,7 +178,7 @@ class DirectoryResource(Resource):
     async def read(self) -> str:  # Always returns JSON string
         """Read the directory listing."""
         try:
-            files = await asyncio.to_thread(self.list_files)
+            files = await anyio.to_thread.run_sync(self.list_files)
             file_list = [str(f.relative_to(self.path)) for f in files if f.is_file()]
             return json.dumps({"files": file_list}, indent=2)
         except Exception as e:
