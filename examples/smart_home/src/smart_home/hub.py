@@ -3,7 +3,9 @@ from smart_home.lights.server import bridge, lights_mcp
 
 hub_mcp = FastMCP(
     "Smart Home Hub (phue2)",
-    dependencies=["fastmcp@git+https://github.com/jlowin/fastmcp.git", "phue2"],
+    dependencies=[
+        "smart_home@git+https://github.com/jlowin/fastmcp.git@n8example#subdirectory=examples/smart_home",
+    ],
 )
 
 # Mount the lights service under the 'hue' prefix

@@ -5,21 +5,18 @@ description = "Add your description here"
 readme = "README.md"
 authors = [{ name = "zzstoatzz", email = "thrast36@gmail.com" }]
 requires-python = ">=3.12"
-dependencies = ["fastmcp"]
+dependencies = [
+    "fastmcp@git+https://github.com/jlowin/fastmcp.git@2.x",
+    "phue2",
+]
 
 [project.scripts]
 smart-home = "smart_home.__main__:main"
 
 [dependency-groups]
-dev = ["ruff", "smart_home[lights]"]
-
-[project.optional-dependencies]
-lights = ["phue2"]
+dev = ["ruff"]
 
 
 [build-system]
 requires = ["uv_build"]
 build-backend = "uv_build"
-
-[tool.uv.sources]
-fastmcp = { path = "../../" }

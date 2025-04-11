@@ -44,7 +44,9 @@ except Exception as e:
 
 lights_mcp = FastMCP(
     "Hue Lights Service (phue2)",
-    dependencies=["phue2", "fastmcp@git+https://github.com/jlowin/fastmcp.git"],
+    dependencies=[
+        "smart_home@git+https://github.com/jlowin/fastmcp.git@n8example#subdirectory=examples/smart_home",
+    ],
 )
 
 # --- Resources ---
