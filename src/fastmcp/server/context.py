@@ -1,6 +1,5 @@
 from __future__ import annotations as _annotations
 
-from collections.abc import Iterable
 from typing import Any, Generic, Literal
 
 from mcp.server.lowlevel.helper_types import ReadResourceContents
@@ -9,6 +8,7 @@ from mcp.shared.context import LifespanContextT, RequestContext
 from mcp.types import (
     CreateMessageResult,
     ImageContent,
+    Root,
     SamplingMessage,
     TextContent,
 )
@@ -106,7 +106,7 @@ class Context(BaseModel, Generic[ServerSessionT, LifespanContextT]):
             progress_token=progress_token, progress=progress, total=total
         )
 
-    async def read_resource(self, uri: str | AnyUrl) -> Iterable[ReadResourceContents]:
+    async def read_resource(self, uri: str | AnyUrl) -> list[ReadResourceContents]:
         """Read a resource by URI.
 
         Args:
@@ -175,9 +175,14 @@ class Context(BaseModel, Generic[ServerSessionT, LifespanContextT]):
         """Send an error log message."""
         await self.log("error", message, **extra)
 
+    async def list_roots(self) -> list[Root]:
+        """List the roots available to the server, as indicated by the client."""
+        result = await self.request_context.session.list_roots()
+        return result.roots
+
     async def sample(
         self,
-        message: str,
+        messages: str | list[str | SamplingMessage],
         system_prompt: str | None = None,
         temperature: float | None = None,
         max_tokens: int | None = None,
@@ -193,16 +198,22 @@ class Context(BaseModel, Generic[ServerSessionT, LifespanContextT]):
         if max_tokens is None:
             max_tokens = 512
 
-        assert self._request_context is not None
-        assert self._request_context.session is not None
-
-        sampling_message = SamplingMessage(
-            content=TextContent(text=message, type="text"),
-            role="user",
-        )
+        if isinstance(messages, str):
+            sampling_messages = [
+                SamplingMessage(
+                    content=TextContent(text=messages, type="text"), role="user"
+                )
+            ]
+        elif isinstance(messages, list):
+            sampling_messages = [
+                SamplingMessage(content=TextContent(text=m, type="text"), role="user")
+                if isinstance(m, str)
+                else m
+                for m in messages
+            ]
 
         result: CreateMessageResult = await self.request_context.session.create_message(
-            messages=[sampling_message],
+            messages=sampling_messages,
             system_prompt=system_prompt,
             temperature=temperature,
             max_tokens=max_tokens,
