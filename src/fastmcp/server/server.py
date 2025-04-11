@@ -640,7 +640,7 @@ def _convert_to_content(
         other_content = []
 
         for item in result:
-            if isinstance(item, (TextContent, ImageContent, EmbeddedResource, Image)):
+            if isinstance(item, TextContent | ImageContent | EmbeddedResource | Image):
                 mcp_types.append(_convert_to_content(item)[0])
             else:
                 other_content.append(item)
