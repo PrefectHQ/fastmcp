@@ -42,10 +42,11 @@ FastMCP handles the complex protocol details and server management, letting you 
 ## Key Features:
 
 *   **Simple Server Creation:** Build MCP servers with minimal boilerplate using intuitive decorators (`@tool`, `@resource`, `@prompt`).
-*   **Powerful Clients:** Programmatically interact with *any* MCP server, regardless of how it was built.
-*   **Proxy MCP Servers:** Create proxy servers to expose existing MCP servers or clients with modifications, or **convert between transport protocols** (e.g., expose a Stdio server via SSE for web access).
+*   **Proxy MCP Servers:** Create proxy servers to expose existing MCP servers or clients with modifications, or convert between transport protocols (e.g., expose a Stdio server via SSE for web access).
 *   **Compose MCP Servers:** Compose complex applications by mounting multiple FastMCP servers together.
 *   **API Generation:** Automatically create MCP servers from existing **OpenAPI specifications** or **FastAPI applications**.
+*   **Powerful Clients:** Programmatically interact with *any* MCP server, regardless of how it was built.
+*   **LLM Sampling:** Request completions from client LLMs directly within your MCP tools.
 *   **Pythonic Interface:** Designed with familiar Python patterns like decorators and type hints.
 *   **Context Injection:** Easily access core MCP capabilities like sampling, logging, and progress reporting within your functions.
 
@@ -80,10 +81,12 @@ FastMCP v1's core approach of using the `@tool`, `@resource`, `@prompt` decorato
   - [Context](#context)
   - [Images](#images)
 - [Advanced Features](#advanced-features)
-  - [MCP Client](#mcp-client)
   - [Proxy Servers](#proxy-servers)
   - [Composing MCP Servers](#composing-mcp-servers)
   - [OpenAPI \& FastAPI Generation](#openapi--fastapi-generation)
+  - [MCP Client](#mcp-client)
+    - [LLM Sampling](#llm-sampling)
+    - [Roots Access](#roots-access)
 - [Running Your Server](#running-your-server)
   - [Development Mode (Recommended for Building \& Testing)](#development-mode-recommended-for-building--testing)
   - [Claude Desktop Integration (For Regular Use)](#claude-desktop-integration-for-regular-use)
@@ -340,38 +343,6 @@ FastMCP handles the conversion to/from the base64-encoded format required by the
 
 Building on the core concepts, FastMCP v2 introduces powerful features for more complex scenarios:
 
-### MCP Client
-
-The client allows your Python code to interact with *any* MCP server, whether it's built with FastMCP, the official SDK, or another implementation. This is essential for testing, building meta-tools, or integrating MCP servers.
-
-```python
-import asyncio
-from fastmcp import Client
-from fastmcp.client.transports import StdioTransport # Example transport
-
-async def main():
-    # Connect to a server running via standard I/O
-    # Replace with the actual command to start your target server
-    client = Client(StdioTransport(command="python", args=["path/to/target_server.py"]))
-
-    async with client:
-        # Discover tools
-        tools_result = await client.list_tools()
-        print(f"Available Tools: {[t.name for t in tools_result.tools]}")
-
-        # Call a tool
-        add_result = await client.call_tool("add", {"a": 10, "b": 5})
-        print(f"Result of add(10, 5): {add_result.content[0].text}") # Output: 15
-
-        # Read a resource
-        greeting = await client.read_resource("greeting://Client")
-        print(f"Resource Content: {greeting.contents[0].text}") # Output: Hello, Client!
-
-if __name__ == "__main__":
-    asyncio.run(main())
-```
-
-The client supports various transports (`WSTransport`, `SSETransport`, `StdioTransport`, `FastMCPTransport`) and intelligently infers the correct one based on the connection information provided (URL, `FastMCP` instance, command arguments, etc.).
 
 ### Proxy Servers
 
@@ -509,6 +480,80 @@ if __name__ == "__main__":
     mcp_server.run()
 ```
 
+### MCP Client
+
+The `Client` class lets you interact with any MCP server (not just FastMCP ones) from Python code:
+
+```python
+from fastmcp import Client
+
+async with Client("path/to/server") as client:
+    # Call a tool
+    result = await client.call_tool("weather", {"location": "San Francisco"})
+    print(result)
+    
+    # Read a resource
+    res = await client.read_resource("db://users/123/profile")
+    print(res)
+```
+
+You can connect to servers using any supported transport protocol (Stdio, SSE, FastMCP, etc.). If you don't specify a transport, the `Client` class automatically attempts to detect an appropriate one from your connection string or server object.
+
+#### LLM Sampling
+
+Sampling is an MCP feature that allows a server to request a completion from the client LLM, enabling sophisticated use cases while maintaining security and privacy on the server.
+
+```python
+import marvin  # Or any other LLM client
+from fastmcp import Client, Context, FastMCP
+from fastmcp.client.sampling import RequestContext, SamplingMessage, SamplingParams
+
+# -- Create a server that requests LLM completions from the client
+
+mcp = FastMCP("Sampling Example")
+
+@mcp.tool()
+async def generate_poem(topic: str, context: Context) -> str:
+    """Generate a short poem about the given topic."""
+    response = await context.sample(
+        f"Write a short poem about {topic}",
+        system_prompt="You are a talented poet who writes concise, evocative verses."
+    )
+    return response.text
+
+# -- Create a client that handles the sampling requests
+
+async def sampling_handler(
+    messages: list[SamplingMessage],
+    params: SamplingParams,
+    ctx: RequestContext,
+) -> str:
+    # Use your preferred LLM client to generate completions
+    return await marvin.say_async(
+        message=[m.content.text for m in messages if m.content.type == "text"],
+        instructions=params.systemPrompt,
+    )
+
+# Connect them together
+async with Client(mcp, sampling_handler=sampling_handler) as client:
+    result = await client.call_tool("generate_poem", {"topic": "autumn leaves"})
+    print(result.content[0].text)
+```
+
+#### Roots Access
+
+FastMCP exposes the MCP roots functionality, allowing clients to specify which file system roots they can access. This creates a secure boundary for tools that need to work with files. Note that the server must account for client roots explicitly.
+
+```python
+from fastmcp import Client, RootsList
+
+# Specify file roots that the client can access
+roots = ["file:///path/to/allowed/directory"]
+
+async with Client(mcp_server, roots=roots) as client:
+    # Now tools in the MCP server can access files in the specified roots
+    await client.call_tool("process_file", {"filename": "data.csv"})
+```
 ## Running Your Server
 
 Choose the method that best suits your needs:
@@ -569,6 +614,7 @@ Explore the `examples/` directory for code samples demonstrating various feature
 *   `simple_echo.py`: Basic tool, resource, and prompt.
 *   `complex_inputs.py`: Using Pydantic models for tool inputs.
 *   `mount_example.py`: Mounting multiple FastMCP servers.
+*   `sampling.py`: Using LLM completions within your MCP server.
 *   `screenshot.py`: Tool returning an Image object.
 *   `text_me.py`: Tool interacting with an external API.
 *   `memory.py`: More complex example with database interaction.
