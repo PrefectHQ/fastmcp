@@ -1,6 +1,6 @@
 import json
 import logging
-from typing import Any, Literal, Union, cast
+from typing import Any, Literal, cast
 
 # Using the recommended library: openapi-pydantic
 from openapi_pydantic import (
@@ -92,7 +92,7 @@ __all__ = [
 
 
 def _resolve_ref(
-    item: Union[Reference, Schema, Parameter, RequestBody, Any], openapi: OpenAPI
+    item: Reference | Schema | Parameter | RequestBody | Any, openapi: OpenAPI
 ) -> Any:
     """Resolves a potential Reference object to its target definition (no changes needed here)."""
     if isinstance(item, Reference):
@@ -110,7 +110,7 @@ def _resolve_ref(
                 elif isinstance(target, BaseModel):
                     # Use model_extra for fields not explicitly defined (like components types)
                     # Check class fields first, then model_extra
-                    if part in target.model_fields:  # Access class attribute here
+                    if part in target.__class__.model_fields:
                         target = getattr(target, part, None)
                     elif target.model_extra and part in target.model_extra:
                         target = target.model_extra[part]
@@ -141,7 +141,7 @@ def _resolve_ref(
 
 
 def _extract_schema_as_dict(
-    schema_obj: Union[Schema, Reference], openapi: OpenAPI
+    schema_obj: Schema | Reference, openapi: OpenAPI
 ) -> JsonSchema:
     """Resolves a schema/reference and returns it as a dictionary."""
     resolved_schema = _resolve_ref(schema_obj, openapi)
@@ -177,8 +177,8 @@ def _convert_to_parameter_location(param_in: str) -> ParameterLocation:
 
 
 def _extract_parameters(
-    operation_params: list[Union[Parameter, Reference]] | None,
-    path_item_params: list[Union[Parameter, Reference]] | None,
+    operation_params: list[Parameter | Reference] | None,
+    path_item_params: list[Parameter | Reference] | None,
     openapi: OpenAPI,
 ) -> list[ParameterInfo]:
     """Extracts and resolves parameters using corrected attribute names."""

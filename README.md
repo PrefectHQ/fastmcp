@@ -113,7 +113,7 @@ For development, install with:
 git clone https://github.com/jlowin/fastmcp.git
 cd fastmcp
 # Install with dev dependencies
-uv sync --dev
+uv sync
 ```
 
 ## Quickstart
@@ -589,7 +589,7 @@ Contributions make the open-source community vibrant! We welcome improvements an
 #### Setup
 
 1.  Clone: `git clone https://github.com/jlowin/fastmcp.git && cd fastmcp`
-2.  Install Env & Dependencies: `uv venv && uv sync --dev` (Activate the `.venv` after creation)
+2.  Install Env & Dependencies: `uv venv && uv sync` (Activate the `.venv` after creation)
 
 #### Testing
 
