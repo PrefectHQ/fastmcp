@@ -8,7 +8,6 @@ from contextlib import (
     AbstractAsyncContextManager,
     asynccontextmanager,
 )
-from itertools import chain
 from typing import TYPE_CHECKING, Any, Generic, Literal
 
 import anyio
@@ -618,7 +617,8 @@ class FastMCP(Generic[LifespanResultT]):
 
 def _convert_to_content(
     result: Any,
-) -> Sequence[TextContent | ImageContent | EmbeddedResource]:
+    _process_as_single_item: bool = False,
+) -> list[TextContent | ImageContent | EmbeddedResource]:
     """Convert a result to a sequence of content objects."""
     if result is None:
         return []
@@ -629,8 +629,27 @@ def _convert_to_content(
     if isinstance(result, Image):
         return [result.to_image_content()]
 
-    if isinstance(result, list | tuple):
-        return list(chain.from_iterable(_convert_to_content(item) for item in result))  # type: ignore[reportUnknownVariableType]
+    if isinstance(result, list | tuple) and not _process_as_single_item:
+        # if the result is a list, then it could either be a list of MCP types,
+        # or a "regular" list that the tool is returning, or a mix of both.
+        #
+        # so we extract all the MCP types / images and convert them as individual content elements,
+        # and aggregate the rest as a single content element
+
+        mcp_types = []
+        other_content = []
+
+        for item in result:
+            if isinstance(item, (TextContent, ImageContent, EmbeddedResource, Image)):
+                mcp_types.append(_convert_to_content(item)[0])
+            else:
+                other_content.append(item)
+        if other_content:
+            other_content = _convert_to_content(
+                other_content, _process_as_single_item=True
+            )
+
+        return other_content + mcp_types
 
     if not isinstance(result, str):
         try:
