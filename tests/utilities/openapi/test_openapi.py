@@ -1,6 +1,6 @@
 """Tests for the OpenAPI parsing utilities."""
 
-from typing import Any, Dict
+from typing import Any
 
 import pytest
 from fastapi import Body, FastAPI, Path, Query
@@ -12,7 +12,7 @@ from fastmcp.utilities.openapi import parse_openapi_to_http_routes
 
 
 @pytest.fixture
-def petstore_schema() -> Dict[str, Any]:
+def petstore_schema() -> dict[str, Any]:
     """Fixture that returns a simple Pet Store API schema."""
     return {
         "openapi": "3.1.0",
@@ -109,7 +109,7 @@ def parsed_petstore_routes(petstore_schema):
 
 
 @pytest.fixture
-def bookstore_schema() -> Dict[str, Any]:
+def bookstore_schema() -> dict[str, Any]:
     """Fixture that returns a Book Store API schema with different parameter types."""
     return {
         "openapi": "3.1.0",
@@ -292,7 +292,7 @@ def fastapi_app() -> FastAPI:
 
 
 @pytest.fixture
-def fastapi_openapi_schema(fastapi_app) -> Dict[str, Any]:
+def fastapi_openapi_schema(fastapi_app) -> dict[str, Any]:
     """Fixture that returns the OpenAPI schema of the FastAPI app."""
     return fastapi_app.openapi()
 

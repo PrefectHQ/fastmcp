@@ -100,7 +100,7 @@ class FastMCP(Generic[LifespanResultT]):
         self.dependencies = self.settings.dependencies
 
         # Setup for mounted apps
-        self._mounted_apps: dict[str, "FastMCP"] = {}
+        self._mounted_apps: dict[str, FastMCP] = {}
 
         # Set up MCP protocol handlers
         self._setup_handlers()

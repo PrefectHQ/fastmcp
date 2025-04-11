@@ -1,6 +1,6 @@
 """Tests for advanced features of the OpenAPI utilities."""
 
-from typing import Any, Dict
+from typing import Any
 
 import pytest
 
@@ -8,7 +8,7 @@ from fastmcp.utilities.openapi import parse_openapi_to_http_routes
 
 
 @pytest.fixture
-def complex_schema() -> Dict[str, Any]:
+def complex_schema() -> dict[str, Any]:
     """Fixture that returns a complex OpenAPI schema with nested references."""
     return {
         "openapi": "3.1.0",
@@ -167,7 +167,7 @@ def complex_route_map(parsed_complex_routes):
 
 
 @pytest.fixture
-def schema_with_invalid_reference() -> Dict[str, Any]:
+def schema_with_invalid_reference() -> dict[str, Any]:
     """Fixture that returns a schema with an invalid reference."""
     return {
         "openapi": "3.1.0",
@@ -191,7 +191,7 @@ def schema_with_invalid_reference() -> Dict[str, Any]:
 
 
 @pytest.fixture
-def schema_with_content_params() -> Dict[str, Any]:
+def schema_with_content_params() -> dict[str, Any]:
     """Fixture that returns a schema with content-based parameters (complex parameters)."""
     return {
         "openapi": "3.1.0",
@@ -236,7 +236,7 @@ def parsed_content_param_routes(schema_with_content_params):
 
 
 @pytest.fixture
-def schema_all_http_methods() -> Dict[str, Any]:
+def schema_all_http_methods() -> dict[str, Any]:
     """Fixture that returns a schema with all HTTP methods."""
     return {
         "openapi": "3.1.0",

@@ -62,7 +62,7 @@ class ToolManager:
         return await tool.run(arguments, context=context)
 
     def import_tools(
-        self, tool_manager: "ToolManager", prefix: str | None = None
+        self, tool_manager: ToolManager, prefix: str | None = None
     ) -> None:
         """
         Import all tools from another ToolManager with prefixed names.

@@ -9,7 +9,6 @@ the ToolManager's import_tools functionality. It shows how to:
 """
 
 import asyncio
-from typing import Dict, List
 
 from fastmcp import FastMCP
 
@@ -34,7 +33,7 @@ news_app = FastMCP("News App")
 
 
 @news_app.tool()
-def get_news_headlines() -> List[str]:
+def get_news_headlines() -> list[str]:
     """Get the latest news headlines."""
     return [
         "Tech company launches new product",
@@ -58,7 +57,7 @@ app = FastMCP("Main App")
 
 
 @app.tool()
-def check_app_status() -> Dict[str, str]:
+def check_app_status() -> dict[str, str]:
     """Check the status of the main application."""
     return {"status": "running", "version": "1.0.0", "uptime": "3h 24m"}
 

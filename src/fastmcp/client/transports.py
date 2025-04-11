@@ -2,14 +2,10 @@ import abc
 import contextlib
 import datetime
 import os
+from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import (
-    AsyncIterator,
-    Dict,
-    List,
-    Optional,
     TypedDict,
-    Union,
 )
 
 from mcp import ClientSession, StdioServerParameters
@@ -103,7 +99,7 @@ class WSTransport(ClientTransport):
 class SSETransport(ClientTransport):
     """Transport implementation that connects to an MCP server via Server-Sent Events."""
 
-    def __init__(self, url: str | AnyUrl, headers: Optional[Dict[str, str]] = None):
+    def __init__(self, url: str | AnyUrl, headers: dict[str, str] | None = None):
         if isinstance(url, AnyUrl):
             url = str(url)
         if not isinstance(url, str) or not url.startswith("http"):
@@ -138,9 +134,9 @@ class StdioTransport(ClientTransport):
     def __init__(
         self,
         command: str,
-        args: List[str],
-        env: Optional[Dict[str, str]] = None,
-        cwd: Optional[str] = None,
+        args: list[str],
+        env: dict[str, str] | None = None,
+        cwd: str | None = None,
     ):
         """
         Initialize a Stdio transport.
@@ -182,10 +178,10 @@ class PythonStdioTransport(StdioTransport):
 
     def __init__(
         self,
-        script_path: Union[str, Path],
-        args: Optional[List[str]] = None,
-        env: Optional[Dict[str, str]] = None,
-        cwd: Optional[str] = None,
+        script_path: str | Path,
+        args: list[str] | None = None,
+        env: dict[str, str] | None = None,
+        cwd: str | None = None,
         python_cmd: str = "python",
     ):
         """
@@ -217,10 +213,10 @@ class NodeStdioTransport(StdioTransport):
 
     def __init__(
         self,
-        script_path: Union[str, Path],
-        args: Optional[List[str]] = None,
-        env: Optional[Dict[str, str]] = None,
-        cwd: Optional[str] = None,
+        script_path: str | Path,
+        args: list[str] | None = None,
+        env: dict[str, str] | None = None,
+        cwd: str | None = None,
         node_cmd: str = "node",
     ):
         """
@@ -253,12 +249,12 @@ class UvxStdioTransport(StdioTransport):
     def __init__(
         self,
         tool_name: str,
-        tool_args: Optional[List[str]] = None,
-        project_directory: Optional[str] = None,
-        python_version: Optional[str] = None,
-        with_packages: Optional[List[str]] = None,
-        from_package: Optional[str] = None,
-        env_vars: Optional[Dict[str, str]] = None,
+        tool_args: list[str] | None = None,
+        project_directory: str | None = None,
+        python_version: str | None = None,
+        with_packages: list[str] | None = None,
+        from_package: str | None = None,
+        env_vars: dict[str, str] | None = None,
     ):
         """
         Initialize a Uvx transport.
@@ -308,9 +304,9 @@ class NpxStdioTransport(StdioTransport):
     def __init__(
         self,
         package: str,
-        args: Optional[List[str]] = None,
-        project_directory: Optional[str] = None,
-        env_vars: Optional[Dict[str, str]] = None,
+        args: list[str] | None = None,
+        project_directory: str | None = None,
+        env_vars: dict[str, str] | None = None,
         use_package_lock: bool = True,
     ):
         """
@@ -394,7 +390,7 @@ def infer_transport(
         return FastMCPTransport(mcp=transport)
 
     # the transport is a path to a script
-    elif isinstance(transport, (Path, str)) and Path(transport).exists():
+    elif isinstance(transport, Path | str) and Path(transport).exists():
         if str(transport).endswith(".py"):
             return PythonStdioTransport(script_path=transport)
         elif str(transport).endswith(".js"):
@@ -403,11 +399,11 @@ def infer_transport(
             raise ValueError(f"Unsupported script type: {transport}")
 
     # the transport is an http(s) URL
-    elif isinstance(transport, (AnyUrl, str)) and str(transport).startswith("http"):
+    elif isinstance(transport, AnyUrl | str) and str(transport).startswith("http"):
         return SSETransport(url=transport)
 
     # the transport is a websocket URL
-    elif isinstance(transport, (AnyUrl, str)) and str(transport).startswith("ws"):
+    elif isinstance(transport, AnyUrl | str) and str(transport).startswith("ws"):
         return WSTransport(url=transport)
 
     # the transport is an unknown type

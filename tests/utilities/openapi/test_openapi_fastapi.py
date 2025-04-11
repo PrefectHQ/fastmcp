@@ -1,6 +1,6 @@
 """Tests for FastAPI integration with the OpenAPI utilities."""
 
-from typing import Any, Dict
+from typing import Any
 
 import pytest
 from fastapi import FastAPI
@@ -12,7 +12,6 @@ from fastmcp.utilities.openapi import parse_openapi_to_http_routes
 def fastapi_server() -> FastAPI:
     """Fixture that returns a FastAPI app for live OpenAPI schema testing."""
     from enum import Enum
-    from typing import List
 
     from fastapi import Body, Depends, Header, HTTPException, Path, Query
     from pydantic import BaseModel, Field
@@ -145,7 +144,7 @@ def fastapi_server() -> FastAPI:
     )
     async def update_item_tags(
         item_id: int = Path(..., description="The ID of the item"),
-        tags: List[str] = Body(..., description="Updated tags"),
+        tags: list[str] = Body(..., description="Updated tags"),
     ):
         """Update just the tags of an item."""
         return {"item_id": item_id, "tags": tags}
@@ -229,7 +228,7 @@ def fastapi_server() -> FastAPI:
 
 
 @pytest.fixture
-def fastapi_openapi_schema(fastapi_server) -> Dict[str, Any]:
+def fastapi_openapi_schema(fastapi_server) -> dict[str, Any]:
     """Fixture that returns the OpenAPI schema from a live FastAPI server."""
     return fastapi_server.openapi()
 
