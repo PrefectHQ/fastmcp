@@ -3,7 +3,7 @@
 import inspect
 import json
 import re
-from collections.abc import AsyncIterator, Callable, Sequence
+from collections.abc import AsyncIterator, Callable
 from contextlib import (
     AbstractAsyncContextManager,
     asynccontextmanager,
@@ -179,7 +179,7 @@ class FastMCP(Generic[LifespanResultT]):
 
     async def call_tool(
         self, name: str, arguments: dict[str, Any]
-    ) -> Sequence[TextContent | ImageContent | EmbeddedResource]:
+    ) -> list[TextContent | ImageContent | EmbeddedResource]:
         """Call a tool by name with arguments."""
         context = self.get_context()
         result = await self._tool_manager.call_tool(name, arguments, context=context)
