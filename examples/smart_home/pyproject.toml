@@ -5,10 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 authors = [{ name = "zzstoatzz", email = "thrast36@gmail.com" }]
 requires-python = ">=3.12"
-dependencies = [
-    "fastmcp@git+https://github.com/jlowin/fastmcp.git@2.x",
-    "phue2",
-]
+dependencies = ["fastmcp@git+https://github.com/jlowin/fastmcp.git", "phue2"]
 
 [project.scripts]
 smart-home = "smart_home.__main__:main"

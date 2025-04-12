@@ -1,5 +1,7 @@
+from phue2 import Bridge
+
 from fastmcp import FastMCP
-from smart_home.lights.server import bridge, lights_mcp
+from smart_home.settings import settings
 
 hub_mcp = FastMCP(
     "Smart Home Hub (phue2)",
@@ -9,14 +11,14 @@ hub_mcp = FastMCP(
 )
 
 # Mount the lights service under the 'hue' prefix
-hub_mcp.mount("hue", lights_mcp)
+# hub_mcp.mount("hue", lights_mcp)
 
 
 # Add a status check for the hub
 @hub_mcp.tool()
 def hub_status() -> str:
     """Checks the status of the main hub and connections."""
-    if bridge:
+    if Bridge(settings.hue_bridge_ip).connect():
         # Access the bridge instance directly
         return "Hub OK. Hue Bridge Connected (via phue2)."
     else:

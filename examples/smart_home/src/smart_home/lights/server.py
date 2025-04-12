@@ -11,7 +11,6 @@ from phue2.exceptions import (
 from fastmcp import FastMCP
 from smart_home.settings import settings
 
-bridge: Bridge | None = None
 BRIDGE_IP = str(settings.hue_bridge_ip)
 
 try:
@@ -64,31 +63,6 @@ def list_lights() -> list[str]:
         return [f"Error listing lights: {e}"]
     except Exception as e:
         return [f"Unexpected error listing lights: {e}"]
-
-
-@lights_mcp.resource("hue://light/{light_name}/status")
-def get_light_status(light_name: str) -> dict[str, Any]:
-    """Gets the current status of a specific light using phue2."""
-    if not bridge:
-        return {"error": "Bridge not connected"}
-    try:
-        light_state = bridge.get_light(light_name, "state")
-        if light_state and isinstance(light_state, dict):
-            return {
-                "name": light_name,
-                "on": light_state.get("on"),
-                "brightness": light_state.get("bri"),
-                "reachable": light_state.get("reachable"),
-                "raw_state": light_state,
-            }
-        else:
-            return {"error": f"Light '{light_name}' not found or state unavailable."}
-    except KeyError:
-        return {"error": f"Light '{light_name}' not found (KeyError)."}
-    except PhueException as e:
-        return {"error": f"phue2 error getting status for '{light_name}': {e}"}
-    except Exception as e:
-        return {"error": f"Unexpected error getting status for '{light_name}': {e}"}
 
 
 # --- Tools ---
