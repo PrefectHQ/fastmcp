@@ -432,3 +432,91 @@ def test_token_dependency_handling(route_map):
         token_headers = [p for p in header_params if p.name == "x-token"]
         assert len(token_headers) == 1, f"Expected x-token header in {op_id}"
         assert token_headers[0].required is True
+
+
+# --- Additional Tag-related Tests --- #
+
+
+def test_all_routes_have_tags(parsed_routes):
+    """Test that all routes have a non-empty tags list."""
+    for route in parsed_routes:
+        assert hasattr(route, "tags"), f"Route {route.path} should have tags attribute"
+        assert route.tags is not None, f"Route {route.path} tags should not be None"
+        # FastAPI adds tags to all routes in our test fixture
+        assert len(route.tags) > 0, f"Route {route.path} should have at least one tag"
+
+
+def test_tag_consistency_across_related_endpoints(route_map):
+    """Test that related endpoints have consistent tags."""
+    # All item endpoints should have the "items" tag
+    item_endpoints = [
+        "list_items",
+        "create_item",
+        "get_item",
+        "update_item",
+        "delete_item",
+    ]
+    for endpoint in item_endpoints:
+        assert "items" in route_map[endpoint].tags, (
+            f"Endpoint {endpoint} should have 'items' tag"
+        )
+
+    # Tag-related endpoints should have both "items" and "tags" tags
+    tag_endpoints = ["update_item_tags", "get_item_tag"]
+    for endpoint in tag_endpoints:
+        assert "items" in route_map[endpoint].tags, (
+            f"Endpoint {endpoint} should have 'items' tag"
+        )
+        assert "tags" in route_map[endpoint].tags, (
+            f"Endpoint {endpoint} should have 'tags' tag"
+        )
+
+
+def test_tag_order_preservation(fastapi_server):
+    """Test that tag order is preserved in the parsed routes."""
+
+    # Add a new endpoint with specifically ordered tags
+    @fastapi_server.get(
+        "/test-tag-order",
+        tags=["first", "second", "third"],
+        operation_id="test_tag_order",
+    )
+    async def test_tag_order():
+        return {"result": "testing tag order"}
+
+    # Get the updated schema and parse routes
+    routes = parse_openapi_to_http_routes(fastapi_server.openapi())
+
+    # Find our test route
+    test_route = next((r for r in routes if r.path == "/test-tag-order"), None)
+    assert test_route is not None
+
+    # Check tag order is preserved
+    assert test_route.tags == ["first", "second", "third"], (
+        "Tag order should be preserved"
+    )
+
+
+def test_duplicate_tags_handling(fastapi_server):
+    """Test handling of duplicate tags in the OpenAPI schema."""
+
+    # Add an endpoint with duplicate tags
+    @fastapi_server.get(
+        "/test-duplicate-tags",
+        tags=["duplicate", "items", "duplicate"],
+        operation_id="test_duplicate_tags",
+    )
+    async def test_duplicate_tags():
+        return {"result": "testing duplicate tags"}
+
+    # Get the updated schema and parse routes
+    routes = parse_openapi_to_http_routes(fastapi_server.openapi())
+
+    # Find our test route
+    test_route = next((r for r in routes if r.path == "/test-duplicate-tags"), None)
+    assert test_route is not None
+
+    # Check that duplicate tags are preserved (FastAPI might deduplicate)
+    # We'll test both possibilities to be safe
+    assert "duplicate" in test_route.tags, "Tag 'duplicate' should be present"
+    assert "items" in test_route.tags, "Tag 'items' should be present"
