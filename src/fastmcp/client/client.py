@@ -1,7 +1,7 @@
 import datetime
 from contextlib import AbstractAsyncContextManager
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, cast, overload
 
 import mcp.types
 from mcp import ClientSession
@@ -22,6 +22,10 @@ from fastmcp.server import FastMCP
 from .transports import ClientTransport, SessionKwargs, infer_transport
 
 __all__ = ["Client", "RootsHandler", "RootsList"]
+
+
+class ClientError(ValueError):
+    """Base class for errors raised by the client."""
 
 
 class Client:
@@ -122,60 +126,101 @@ class Client:
         """Send a logging/setLevel request."""
         await self.session.set_logging_level(level)
 
-    async def list_resources(self) -> mcp.types.ListResourcesResult:
+    async def send_roots_list_changed(self) -> None:
+        """Send a roots/list_changed notification."""
+        await self.session.send_roots_list_changed()
+
+    async def list_resources(self) -> list[mcp.types.Resource]:
         """Send a resources/list request."""
-        return await self.session.list_resources()
+        result = await self.session.list_resources()
+        return result.resources
 
-    async def list_resource_templates(self) -> mcp.types.ListResourceTemplatesResult:
+    async def list_resource_templates(self) -> list[mcp.types.ResourceTemplate]:
         """Send a resources/listResourceTemplates request."""
-        return await self.session.list_resource_templates()
+        result = await self.session.list_resource_templates()
+        return result.resourceTemplates
 
-    async def read_resource(self, uri: AnyUrl | str) -> mcp.types.ReadResourceResult:
+    async def read_resource(
+        self, uri: AnyUrl | str
+    ) -> list[mcp.types.TextResourceContents | mcp.types.BlobResourceContents]:
         """Send a resources/read request."""
         if isinstance(uri, str):
             uri = AnyUrl(uri)  # Ensure AnyUrl
-        return await self.session.read_resource(uri)
+        result = await self.session.read_resource(uri)
+        return result.contents
 
-    async def subscribe_resource(self, uri: AnyUrl | str) -> None:
-        """Send a resources/subscribe request."""
-        if isinstance(uri, str):
-            uri = AnyUrl(uri)
-        await self.session.subscribe_resource(uri)
+    # async def subscribe_resource(self, uri: AnyUrl | str) -> None:
+    #     """Send a resources/subscribe request."""
+    #     if isinstance(uri, str):
+    #         uri = AnyUrl(uri)
+    #     await self.session.subscribe_resource(uri)
 
-    async def unsubscribe_resource(self, uri: AnyUrl | str) -> None:
-        """Send a resources/unsubscribe request."""
-        if isinstance(uri, str):
-            uri = AnyUrl(uri)
-        await self.session.unsubscribe_resource(uri)
+    # async def unsubscribe_resource(self, uri: AnyUrl | str) -> None:
+    #     """Send a resources/unsubscribe request."""
+    #     if isinstance(uri, str):
+    #         uri = AnyUrl(uri)
+    #     await self.session.unsubscribe_resource(uri)
 
-    async def list_prompts(self) -> mcp.types.ListPromptsResult:
+    async def list_prompts(self) -> list[mcp.types.Prompt]:
         """Send a prompts/list request."""
-        return await self.session.list_prompts()
+        result = await self.session.list_prompts()
+        return result.prompts
 
     async def get_prompt(
         self, name: str, arguments: dict[str, str] | None = None
     ) -> mcp.types.GetPromptResult:
         """Send a prompts/get request."""
-        return await self.session.get_prompt(name, arguments)
+        result = await self.session.get_prompt(name, arguments)
+        return result
 
     async def complete(
         self,
         ref: mcp.types.ResourceReference | mcp.types.PromptReference,
         argument: dict[str, str],
-    ) -> mcp.types.CompleteResult:
-        """Send a completion/complete request."""
-        return await self.session.complete(ref, argument)
+    ) -> mcp.types.Completion:
+        """Send a completion request."""
+        result = await self.session.complete(ref, argument)
+        return result.completion
 
-    async def list_tools(self) -> mcp.types.ListToolsResult:
+    async def list_tools(self) -> list[mcp.types.Tool]:
         """Send a tools/list request."""
-        return await self.session.list_tools()
+        result = await self.session.list_tools()
+        return result.tools
+
+    @overload
+    async def call_tool(
+        self,
+        name: str,
+        arguments: dict[str, Any] | None = None,
+        _return_raw_result: Literal[False] = False,
+    ) -> list[
+        mcp.types.TextContent | mcp.types.ImageContent | mcp.types.EmbeddedResource
+    ]: ...
+
+    @overload
+    async def call_tool(
+        self,
+        name: str,
+        arguments: dict[str, Any] | None = None,
+        _return_raw_result: Literal[True] = True,
+    ) -> mcp.types.CallToolResult: ...
 
     async def call_tool(
-        self, name: str, arguments: dict[str, Any] | None = None
-    ) -> mcp.types.CallToolResult:
+        self,
+        name: str,
+        arguments: dict[str, Any] | None = None,
+        _return_raw_result: bool = False,
+    ) -> (
+        list[
+            mcp.types.TextContent | mcp.types.ImageContent | mcp.types.EmbeddedResource
+        ]
+        | mcp.types.CallToolResult
+    ):
         """Send a tools/call request."""
-        return await self.session.call_tool(name, arguments)
-
-    async def send_roots_list_changed(self) -> None:
-        """Send a roots/list_changed notification."""
-        await self.session.send_roots_list_changed()
+        result = await self.session.call_tool(name, arguments)
+        if _return_raw_result:
+            return result
+        elif result.isError:
+            msg = cast(mcp.types.TextContent, result.content[0]).text
+            raise ClientError(msg)
+        return result.content

@@ -51,8 +51,8 @@ async def test_list_tools(fastmcp_server):
         result = await client.list_tools()
 
         # Check that our tools are available
-        assert len(result.tools) == 2
-        assert set(tool.name for tool in result.tools) == {"greet", "add"}
+        assert len(result) == 2
+        assert set(tool.name for tool in result) == {"greet", "add"}
 
 
 async def test_call_tool(fastmcp_server):
@@ -63,7 +63,7 @@ async def test_call_tool(fastmcp_server):
         result = await client.call_tool("greet", {"name": "World"})
 
         # The result content should contain our greeting
-        content_str = str(result.content[0])
+        content_str = str(result[0])
         assert "Hello, World!" in content_str
 
 
@@ -75,8 +75,8 @@ async def test_list_resources(fastmcp_server):
         result = await client.list_resources()
 
         # Check that our resource is available
-        assert len(result.resources) == 1
-        assert str(result.resources[0].uri) == "data://users"
+        assert len(result) == 1
+        assert str(result[0].uri) == "data://users"
 
 
 async def test_list_prompts(fastmcp_server):
@@ -87,8 +87,8 @@ async def test_list_prompts(fastmcp_server):
         result = await client.list_prompts()
 
         # Check that our prompt is available
-        assert len(result.prompts) == 1
-        assert result.prompts[0].name == "welcome"
+        assert len(result) == 1
+        assert result[0].name == "welcome"
 
 
 async def test_get_prompt(fastmcp_server):
@@ -115,7 +115,7 @@ async def test_read_resource(fastmcp_server):
         result = await client.read_resource(uri)
 
         # The contents should include our user list
-        contents_str = str(result.contents[0])
+        contents_str = str(result[0])
         assert "Alice" in contents_str
         assert "Bob" in contents_str
         assert "Charlie" in contents_str
@@ -145,15 +145,15 @@ async def test_resource_template(fastmcp_server):
         result = await client.list_resource_templates()
 
         # Check that our template is available
-        assert len(result.resourceTemplates) == 1
-        assert "data://user/{user_id}" in result.resourceTemplates[0].uriTemplate
+        assert len(result) == 1
+        assert "data://user/{user_id}" in result[0].uriTemplate
 
         # Now use the template with a specific user_id
         uri = cast(AnyUrl, "data://user/123")
         result = await client.read_resource(uri)
 
         # Check the content matches what we expect for the provided user_id
-        content_str = str(result.contents[0])
+        content_str = str(result[0])
         assert '"id": "123"' in content_str
         assert '"name": "User 123"' in content_str
         assert '"active": true' in content_str
