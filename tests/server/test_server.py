@@ -738,3 +738,54 @@ class TestServerPrompts:
         async with client_session(mcp._mcp_server) as client:
             with pytest.raises(McpError, match="Missing required arguments"):
                 await client.get_prompt("prompt_fn")
+
+    async def test_tool_decorator_with_tags(self):
+        """Test that the tool decorator properly sets tags."""
+        mcp = FastMCP()
+
+        @mcp.tool(tags={"example", "test-tag"})
+        def sample_tool(x: int) -> int:
+            return x * 2
+
+        # Verify the tags were set correctly
+        tools = mcp._tool_manager.list_tools()
+        assert len(tools) == 1
+        assert tools[0].tags == {"example", "test-tag"}
+
+    async def test_resource_decorator_with_tags(self):
+        """Test that the resource decorator properly sets tags."""
+        mcp = FastMCP()
+
+        @mcp.resource("resource://sample", tags={"example", "test-tag"})
+        def sample_resource() -> str:
+            return "Sample resource"
+
+        # Verify the tags were set correctly
+        resources = mcp._resource_manager.list_resources()
+        assert len(resources) == 1
+        assert resources[0].tags == {"example", "test-tag"}
+
+    async def test_template_decorator_with_tags(self):
+        """Test that the template decorator properly sets tags."""
+        mcp = FastMCP()
+
+        @mcp.resource("resource://{param}", tags={"template", "test-tag"})
+        def template_resource(param: str) -> str:
+            return f"Template resource: {param}"
+
+        templates = mcp._resource_manager.list_templates()
+        assert len(templates) == 1
+        assert templates[0].tags == {"template", "test-tag"}
+
+    async def test_prompt_decorator_with_tags(self):
+        """Test that the prompt decorator properly sets tags."""
+        mcp = FastMCP()
+
+        @mcp.prompt(tags={"example", "test-tag"})
+        def sample_prompt() -> str:
+            return "Sample prompt"
+
+        # Verify the tags were set correctly
+        prompts = mcp._prompt_manager.list_prompts()
+        assert len(prompts) == 1
+        assert prompts[0].tags == {"example", "test-tag"}
