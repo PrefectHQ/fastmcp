@@ -115,6 +115,7 @@ class OpenAPITool(Tool):
         parameters: dict[str, Any],
         fn_metadata: Any,
         is_async: bool = True,
+        tags: set[str] = set(),
     ):
         super().__init__(
             name=name,
@@ -124,6 +125,7 @@ class OpenAPITool(Tool):
             fn_metadata=fn_metadata,
             is_async=is_async,
             context_kwarg="context",  # Default context keyword argument
+            tags=tags,
         )
         self._client = client
         self._route = route
@@ -242,12 +244,14 @@ class OpenAPIResource(Resource):
         name: str,
         description: str,
         mime_type: str = "application/json",
+        tags: set[str] = set(),
     ):
         super().__init__(
             uri=AnyUrl(uri),  # Convert string to AnyUrl
             name=name,
             description=description,
             mime_type=mime_type,
+            tags=tags,
         )
         self._client = client
         self._route = route
@@ -332,6 +336,7 @@ class OpenAPIResourceTemplate(ResourceTemplate):
         name: str,
         description: str,
         parameters: dict[str, Any],
+        tags: set[str] = set(),
     ):
         super().__init__(
             uri_template=uri_template,
@@ -339,6 +344,7 @@ class OpenAPIResourceTemplate(ResourceTemplate):
             description=description,
             fn=self._create_resource_fn,
             parameters=parameters,
+            tags=tags,
         )
         self._client = client
         self._route = route
@@ -405,6 +411,7 @@ class OpenAPIResourceTemplate(ResourceTemplate):
             description=self.description
             or f"Resource for {self._route.path}",  # Provide default if None
             mime_type="application/json",  # Default, will be updated when read
+            tags=set(self._route.tags or []),
         )
 
 
@@ -525,10 +532,13 @@ class FastMCPOpenAPI(FastMCP):
             parameters=combined_schema,
             fn_metadata=func_metadata(_openapi_passthrough),
             is_async=True,
+            tags=set(route.tags or []),
         )
         # Register the tool by directly assigning to the tools dictionary
         self._tool_manager._tools[tool_name] = tool
-        logger.debug(f"Registered TOOL: {tool_name} ({route.method} {route.path})")
+        logger.debug(
+            f"Registered TOOL: {tool_name} ({route.method} {route.path}) with tags: {route.tags}"
+        )
 
     def _create_openapi_resource(self, route: openapi.HTTPRoute, operation_id: str):
         """Creates and registers an OpenAPIResource with enhanced description."""
@@ -550,11 +560,12 @@ class FastMCPOpenAPI(FastMCP):
             uri=resource_uri,
             name=resource_name,
             description=enhanced_description,
+            tags=set(route.tags or []),
         )
         # Register the resource by directly assigning to the resources dictionary
         self._resource_manager._resources[str(resource.uri)] = resource
         logger.debug(
-            f"Registered RESOURCE: {resource_uri} ({route.method} {route.path})"
+            f"Registered RESOURCE: {resource_uri} ({route.method} {route.path}) with tags: {route.tags}"
         )
 
     def _create_openapi_template(self, route: openapi.HTTPRoute, operation_id: str):
@@ -594,11 +605,12 @@ class FastMCPOpenAPI(FastMCP):
             name=template_name,
             description=enhanced_description,
             parameters=template_params_schema,
+            tags=set(route.tags or []),
         )
         # Register the template by directly assigning to the templates dictionary
         self._resource_manager._templates[uri_template_str] = template
         logger.debug(
-            f"Registered TEMPLATE: {uri_template_str} ({route.method} {route.path})"
+            f"Registered TEMPLATE: {uri_template_str} ({route.method} {route.path}) with tags: {route.tags}"
         )
 
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> Any:

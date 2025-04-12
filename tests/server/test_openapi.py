@@ -36,17 +36,17 @@ def users_db() -> dict[int, User]:
 def fastapi_app(users_db: dict[int, User]) -> FastAPI:
     app = FastAPI(title="FastAPI App")
 
-    @app.get("/users")
+    @app.get("/users", tags=["users", "list"])
     async def get_users() -> list[User]:
         """Get all users."""
         return sorted(users_db.values(), key=lambda x: x.id)
 
-    @app.get("/users/{user_id}")
+    @app.get("/users/{user_id}", tags=["users", "detail"])
     async def get_user(user_id: int) -> User | None:
         """Get a user by ID."""
         return users_db.get(user_id)
 
-    @app.post("/users")
+    @app.post("/users", tags=["users", "create"])
     async def create_user(user: UserCreate) -> User:
         """Create a new user."""
         user_id = max(users_db.keys()) + 1
@@ -54,7 +54,7 @@ def fastapi_app(users_db: dict[int, User]) -> FastAPI:
         users_db[user_id] = new_user
         return new_user
 
-    @app.patch("/users/{user_id}/name")
+    @app.patch("/users/{user_id}/name", tags=["users", "update"])
     async def update_user_name(user_id: int, name: str) -> User:
         """Update a user's name."""
         user = users_db.get(user_id)
@@ -258,3 +258,98 @@ class TestPrompts:
         """
         prompts = await fastmcp_server.list_prompts()
         assert len(prompts) == 0
+
+
+class TestTagTransfer:
+    """Tests for transferring tags from OpenAPI to MCP objects."""
+
+    async def test_tags_transferred_to_tools(self, fastmcp_server: FastMCPOpenAPI):
+        """Test that tags from OpenAPI routes are correctly transferred to Tools."""
+        # Get internal tools directly (not the public API which returns MCP.Content)
+        tools = fastmcp_server._tool_manager.list_tools()
+
+        # Find the create_user and update_user_name tools
+        create_user_tool = next(
+            (t for t in tools if t.name == "create_user_users_post"), None
+        )
+        update_user_tool = next(
+            (
+                t
+                for t in tools
+                if t.name == "update_user_name_users__user_id__name_patch"
+            ),
+            None,
+        )
+
+        assert create_user_tool is not None
+        assert update_user_tool is not None
+
+        # Check that tags from OpenAPI routes were transferred to the Tool objects
+        assert "users" in create_user_tool.tags
+        assert "create" in create_user_tool.tags
+        assert len(create_user_tool.tags) == 2
+
+        assert "users" in update_user_tool.tags
+        assert "update" in update_user_tool.tags
+        assert len(update_user_tool.tags) == 2
+
+    async def test_tags_transferred_to_resources(self, fastmcp_server: FastMCPOpenAPI):
+        """Test that tags from OpenAPI routes are correctly transferred to Resources."""
+        # Get internal resources directly
+        resources = fastmcp_server._resource_manager.list_resources()
+
+        # Find the get_users resource
+        get_users_resource = next(
+            (r for r in resources if r.name == "get_users_users_get"), None
+        )
+
+        assert get_users_resource is not None
+
+        # Check that tags from OpenAPI routes were transferred to the Resource object
+        assert "users" in get_users_resource.tags
+        assert "list" in get_users_resource.tags
+        assert len(get_users_resource.tags) == 2
+
+    async def test_tags_transferred_to_resource_templates(
+        self, fastmcp_server: FastMCPOpenAPI
+    ):
+        """Test that tags from OpenAPI routes are correctly transferred to ResourceTemplates."""
+        # Get internal resource templates directly
+        templates = fastmcp_server._resource_manager.list_templates()
+
+        # Find the get_user template
+        get_user_template = next(
+            (t for t in templates if t.name == "get_user_users__user_id__get"), None
+        )
+
+        assert get_user_template is not None
+
+        # Check that tags from OpenAPI routes were transferred to the ResourceTemplate object
+        assert "users" in get_user_template.tags
+        assert "detail" in get_user_template.tags
+        assert len(get_user_template.tags) == 2
+
+    async def test_tags_preserved_in_resources_created_from_templates(
+        self, fastmcp_server: FastMCPOpenAPI
+    ):
+        """Test that tags are preserved when creating resources from templates."""
+        # Get internal resource templates directly
+        templates = fastmcp_server._resource_manager.list_templates()
+
+        # Find the get_user template
+        get_user_template = next(
+            (t for t in templates if t.name == "get_user_users__user_id__get"), None
+        )
+
+        assert get_user_template is not None
+
+        # Manually create a resource from template
+        params = {"user_id": 1}
+        resource = await get_user_template.create_resource(
+            "resource://openapi/get_user_users__user_id__get/1", params
+        )
+
+        # Verify tags are preserved from template to resource
+        assert "users" in resource.tags
+        assert "detail" in resource.tags
+        assert len(resource.tags) == 2

@@ -78,8 +78,10 @@ class FastMCP(Generic[LifespanResultT]):
         lifespan: (
             Callable[["FastMCP"], AbstractAsyncContextManager[LifespanResultT]] | None
         ) = None,
+        tags: set[str] | None = None,
         **settings: Any,
     ):
+        self.tags: set[str] = tags or set()
         self.settings = fastmcp.settings.ServerSettings(**settings)
 
         self._mcp_server = MCPServer[LifespanResultT](
