@@ -6,12 +6,15 @@ from typing import Annotated
 from pydantic import (
     AnyUrl,
     BaseModel,
+    BeforeValidator,
     ConfigDict,
     Field,
     UrlConstraints,
     ValidationInfo,
     field_validator,
 )
+
+from fastmcp.utilities.types import _convert_set_defaults
 
 
 class Resource(BaseModel, abc.ABC):
@@ -25,6 +28,9 @@ class Resource(BaseModel, abc.ABC):
     name: str | None = Field(description="Name of the resource", default=None)
     description: str | None = Field(
         description="Description of the resource", default=None
+    )
+    tags: Annotated[set[str], BeforeValidator(_convert_set_defaults)] = Field(
+        default_factory=set, description="Tags for the resource"
     )
     mime_type: str = Field(
         default="text/plain",

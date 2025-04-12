@@ -3,11 +3,13 @@
 import inspect
 import json
 from collections.abc import Awaitable, Callable, Sequence
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 import pydantic_core
 from mcp.types import EmbeddedResource, ImageContent, TextContent
-from pydantic import BaseModel, Field, TypeAdapter, validate_call
+from pydantic import BaseModel, BeforeValidator, Field, TypeAdapter, validate_call
+
+from fastmcp.utilities.types import _convert_set_defaults
 
 CONTENT_TYPES = TextContent | ImageContent | EmbeddedResource
 
@@ -71,6 +73,9 @@ class Prompt(BaseModel):
     description: str | None = Field(
         None, description="Description of what the prompt does"
     )
+    tags: Annotated[set[str], BeforeValidator(_convert_set_defaults)] = Field(
+        default_factory=set, description="Tags for the prompt"
+    )
     arguments: list[PromptArgument] | None = Field(
         None, description="Arguments that can be passed to the prompt"
     )
@@ -82,6 +87,7 @@ class Prompt(BaseModel):
         fn: Callable[..., PromptResult | Awaitable[PromptResult]],
         name: str | None = None,
         description: str | None = None,
+        tags: set[str] | None = None,
     ) -> "Prompt":
         """Create a Prompt from a function.
 
@@ -120,6 +126,7 @@ class Prompt(BaseModel):
             description=description or fn.__doc__ or "",
             arguments=arguments,
             fn=fn,
+            tags=tags or set(),
         )
 
     async def render(self, arguments: dict[str, Any] | None = None) -> list[Message]:

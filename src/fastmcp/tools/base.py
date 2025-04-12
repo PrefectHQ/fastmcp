@@ -2,12 +2,13 @@ from __future__ import annotations as _annotations
 
 import inspect
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Annotated, Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, BeforeValidator, Field
 
 from fastmcp.exceptions import ToolError
 from fastmcp.utilities.func_metadata import FuncMetadata, func_metadata
+from fastmcp.utilities.types import _convert_set_defaults
 
 if TYPE_CHECKING:
     from mcp.server.session import ServerSessionT
@@ -31,6 +32,9 @@ class Tool(BaseModel):
     context_kwarg: str | None = Field(
         None, description="Name of the kwarg that should receive context"
     )
+    tags: Annotated[set[str], BeforeValidator(_convert_set_defaults)] = Field(
+        default_factory=set, description="Tags for the tool"
+    )
 
     @classmethod
     def from_function(
@@ -39,6 +43,7 @@ class Tool(BaseModel):
         name: str | None = None,
         description: str | None = None,
         context_kwarg: str | None = None,
+        tags: set[str] | None = None,
     ) -> Tool:
         """Create a Tool from a function."""
         from fastmcp import Context
@@ -72,6 +77,7 @@ class Tool(BaseModel):
             fn_metadata=func_arg_metadata,
             is_async=is_async,
             context_kwarg=context_kwarg,
+            tags=tags or set(),
         )
 
     async def run(

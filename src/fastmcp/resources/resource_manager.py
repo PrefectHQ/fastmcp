@@ -53,6 +53,7 @@ class ResourceManager:
         name: str | None = None,
         description: str | None = None,
         mime_type: str | None = None,
+        tags: set[str] | None = None,
     ) -> ResourceTemplate:
         """Add a template from a function."""
         template = ResourceTemplate.from_function(
@@ -61,6 +62,7 @@ class ResourceManager:
             name=name,
             description=description,
             mime_type=mime_type,
+            tags=tags,
         )
         self._templates[template.uri_template] = template
         return template

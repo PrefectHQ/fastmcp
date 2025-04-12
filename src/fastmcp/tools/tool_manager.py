@@ -37,9 +37,14 @@ class ToolManager:
         fn: Callable[..., Any],
         name: str | None = None,
         description: str | None = None,
+        tags: set[str] | None = None,
     ) -> Tool:
         """Add a tool to the server."""
-        tool = Tool.from_function(fn, name=name, description=description)
+        tool = Tool.from_function(fn, name=name, description=description, tags=tags)
+        return self._register_tool(tool)
+
+    def _register_tool(self, tool: Tool) -> Tool:
+        """Register a tool with the server."""
         existing = self._tools.get(tool.name)
         if existing:
             if self.warn_on_duplicate_tools:
@@ -86,5 +91,5 @@ class ToolManager:
             )
 
             # Store the copied tool
-            self._tools[prefixed_name] = copied_tool
+            self._register_tool(copied_tool)
             logger.debug(f"Imported tool: {name} as {prefixed_name}")

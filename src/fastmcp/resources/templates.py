@@ -5,11 +5,12 @@ from __future__ import annotations
 import inspect
 import re
 from collections.abc import Callable
-from typing import Any
+from typing import Annotated, Any
 
-from pydantic import BaseModel, Field, TypeAdapter, validate_call
+from pydantic import BaseModel, BeforeValidator, Field, TypeAdapter, validate_call
 
 from fastmcp.resources.types import FunctionResource, Resource
+from fastmcp.utilities.types import _convert_set_defaults
 
 
 class ResourceTemplate(BaseModel):
@@ -20,6 +21,9 @@ class ResourceTemplate(BaseModel):
     )
     name: str = Field(description="Name of the resource")
     description: str | None = Field(description="Description of what the resource does")
+    tags: Annotated[set[str], BeforeValidator(_convert_set_defaults)] = Field(
+        default_factory=set, description="Tags for the resource"
+    )
     mime_type: str = Field(
         default="text/plain", description="MIME type of the resource content"
     )
@@ -36,6 +40,7 @@ class ResourceTemplate(BaseModel):
         name: str | None = None,
         description: str | None = None,
         mime_type: str | None = None,
+        tags: set[str] | None = None,
     ) -> ResourceTemplate:
         """Create a template from a function."""
         func_name = name or fn.__name__
@@ -55,6 +60,7 @@ class ResourceTemplate(BaseModel):
             mime_type=mime_type or "text/plain",
             fn=fn,
             parameters=parameters,
+            tags=tags or set(),
         )
 
     def matches(self, uri: str) -> dict[str, Any] | None:
@@ -80,6 +86,7 @@ class ResourceTemplate(BaseModel):
                 description=self.description,
                 mime_type=self.mime_type,
                 fn=lambda: result,  # Capture result in closure
+                tags=self.tags,
             )
         except Exception as e:
             raise ValueError(f"Error creating resource from template: {e}")

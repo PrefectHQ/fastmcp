@@ -228,6 +228,7 @@ class FastMCP(Generic[LifespanResultT]):
         fn: AnyFunction,
         name: str | None = None,
         description: str | None = None,
+        tags: set[str] | None = None,
     ) -> None:
         """Add a tool to the server.
 
@@ -238,11 +239,15 @@ class FastMCP(Generic[LifespanResultT]):
             fn: The function to register as a tool
             name: Optional name for the tool (defaults to function name)
             description: Optional description of what the tool does
+            tags: Optional set of tags for categorizing the tool
         """
-        self._tool_manager.add_tool(fn, name=name, description=description)
+        self._tool_manager.add_tool(fn, name=name, description=description, tags=tags)
 
     def tool(
-        self, name: str | None = None, description: str | None = None
+        self,
+        name: str | None = None,
+        description: str | None = None,
+        tags: set[str] | None = None,
     ) -> Callable[[AnyFunction], AnyFunction]:
         """Decorator to register a tool.
 
@@ -253,6 +258,7 @@ class FastMCP(Generic[LifespanResultT]):
         Args:
             name: Optional name for the tool (defaults to function name)
             description: Optional description of what the tool does
+            tags: Optional set of tags for categorizing the tool
 
         Example:
             @server.tool()
@@ -277,7 +283,7 @@ class FastMCP(Generic[LifespanResultT]):
             )
 
         def decorator(fn: AnyFunction) -> AnyFunction:
-            self.add_tool(fn, name=name, description=description)
+            self.add_tool(fn, name=name, description=description, tags=tags)
             return fn
 
         return decorator
@@ -297,6 +303,7 @@ class FastMCP(Generic[LifespanResultT]):
         name: str | None = None,
         description: str | None = None,
         mime_type: str | None = None,
+        tags: set[str] | None = None,
     ) -> Callable[[AnyFunction], AnyFunction]:
         """Decorator to register a function as a resource.
 
@@ -314,6 +321,7 @@ class FastMCP(Generic[LifespanResultT]):
             name: Optional name for the resource
             description: Optional description of the resource
             mime_type: Optional MIME type for the resource
+            tags: Optional set of tags for categorizing the resource
 
         Example:
             @server.resource("resource://my-resource")
@@ -364,6 +372,7 @@ class FastMCP(Generic[LifespanResultT]):
                     name=name,
                     description=description,
                     mime_type=mime_type or "text/plain",
+                    tags=tags,
                 )
             else:
                 # Register as regular resource
@@ -373,6 +382,7 @@ class FastMCP(Generic[LifespanResultT]):
                     description=description,
                     mime_type=mime_type or "text/plain",
                     fn=fn,
+                    tags=tags or set(),  # Default to empty set if None
                 )
                 self.add_resource(resource)
             return fn
@@ -388,13 +398,17 @@ class FastMCP(Generic[LifespanResultT]):
         self._prompt_manager.add_prompt(prompt)
 
     def prompt(
-        self, name: str | None = None, description: str | None = None
+        self,
+        name: str | None = None,
+        description: str | None = None,
+        tags: set[str] | None = None,
     ) -> Callable[[AnyFunction], AnyFunction]:
         """Decorator to register a prompt.
 
         Args:
             name: Optional name for the prompt (defaults to function name)
             description: Optional description of what the prompt does
+            tags: Optional set of tags for categorizing the prompt
 
         Example:
             @server.prompt()
@@ -431,7 +445,9 @@ class FastMCP(Generic[LifespanResultT]):
             )
 
         def decorator(func: AnyFunction) -> AnyFunction:
-            prompt = Prompt.from_function(func, name=name, description=description)
+            prompt = Prompt.from_function(
+                func, name=name, description=description, tags=tags
+            )
             self.add_prompt(prompt)
             return func
 
