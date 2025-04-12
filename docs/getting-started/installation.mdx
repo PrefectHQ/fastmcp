@@ -1,0 +1,62 @@
+---
+title: Installation
+icon: arrow-down-to-line
+---
+## Install FastMCP
+
+We recommend using [uv](https://docs.astral.sh/uv/getting-started/installation/) to install and manage FastMCP.
+
+If you plan to use FastMCP in your project, you can add it as a dependency with:
+
+```bash
+uv add fastmcp
+```
+
+Alternatively, you can install it directly with `pip` or `uv pip`:
+<CodeGroup>
+    ```bash uv
+    uv pip install fastmcp
+    ```
+
+    ```bash pip
+    pip install fastmcp
+    ```
+</CodeGroup>
+
+## Verify Installation
+
+To verify that FastMCP is installed correctly, you can run the following command:
+
+```bash
+fastmcp version
+```
+
+You should see output like the following:
+
+```bash
+$ fastmcp version
+
+FastMCP version:   0.4.2.dev41+ga077727.d20250410
+MCP version:                                1.6.0
+Python version:                            3.12.2
+Platform:            macOS-15.3.1-arm64-arm-64bit
+FastMCP root path:            ~/Developer/fastmcp
+```
+
+## Installing for Development
+
+If you plan to contribute to FastMCP, you should begin by cloning the repository and using uv to install all dependencies.
+
+```bash
+git clone https://github.com/jlowin/fastmcp.git
+cd fastmcp
+uv sync
+```
+
+This will install all dependencies, including ones for development, and create a virtual environment.
+
+To run the tests, use pytest:
+
+```bash
+pytest
+```

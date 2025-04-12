@@ -1,0 +1,56 @@
+---
+title: "Welcome to FastMCP!"
+sidebarTitle: "Welcome!"
+description: The fast, Pythonic way to build MCP servers.
+
+icon: hand-wave
+---
+
+
+[Model Context Protocol](https://modelcontextprotocol.io/) (MCP) servers are a new, standardized way to provide context and tools to your LLMs, and FastMCP makes building MCP servers simple and intuitive. Create tools, expose resources, define prompts, and more with clean, Pythonic code:
+
+```python {1, 3, 5, 11}
+from fastmcp import FastMCP
+
+mcp = FastMCP("Demo 🚀")
+
+@mcp.tool()
+def add(a: int, b: int) -> int:
+    """Add two numbers"""
+    return a + b
+
+if __name__ == "__main__":
+    mcp.run()
+```
+
+
+## What is MCP?
+The Model Context Protocol (MCP) lets you build servers that expose data and functionality to LLM applications in a secure, standardized way. It is often described as "the USB-C port for AI", providing a uniform way to connect LLMs to resources they can use. It may be easier to think of it as an API, but specifically designed for LLM interactions. MCP servers can:
+
+- Expose data through **Resources** (think of these sort of like GET endpoints; they are used to load information into the LLM's context)
+- Provide functionality through **Tools** (sort of like POST endpoints; they are used to execute code or otherwise produce a side effect)
+- Define interaction patterns through **Prompts** (reusable templates for LLM interactions)
+- And more!
+
+There is a low-level Python SDK available for implementing the protocol directly, but FastMCP aims to make that easier by providing a high-level, Pythonic interface.
+
+<Tip>
+FastMCP 1.0 was so successful that it is now included as part of the official [MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk)!
+</Tip>
+
+
+
+
+## Why FastMCP?
+
+The MCP protocol is powerful but implementing it involves a lot of boilerplate - server setup, protocol handlers, content types, error management. FastMCP handles all the complex protocol details and server management, so you can focus on building great tools. It's designed to be high-level and Pythonic; in most cases, decorating a function is all you need.
+
+FastMCP aims to be:
+
+- **Fast**: High-level interface means less code and faster development
+- **Simple**: Build MCP servers with minimal boilerplate
+- **Pythonic**: Feels natural to Python developers
+- **Complete**: FastMCP aims to provide a full implementation of the core MCP specification
+
+**FastMCP v1** focused on abstracting the most common boilerplate of exposing MCP server functionality, and is now included in the official MCP Python SDK. **FastMCP v2** expands on that foundation to introduce novel functionality mainly focused on simplifying server interactions, including flexible clients, proxying and composition, and deployment.
+

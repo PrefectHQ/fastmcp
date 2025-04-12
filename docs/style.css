@@ -1,0 +1,13 @@
+/* Target inline code elements with higher specificity */
+p code,
+table code,
+li code,
+h1 code,
+h2 code,
+h3 code,
+h4 code,
+h5 code,
+h6 code {
+  color: #ea5455 !important;
+  background-color: #ea54551a !important;
+}

@@ -1,0 +1,127 @@
+---
+title: Quickstart
+icon: rocket
+---
+
+Welcome! This guide will help you quickly set up FastMCP and run your first MCP server.
+
+If you haven't already installed FastMCP, follow the [installation instructions](/docs/getting-started/installation).
+
+## Creating a FastMCP Server
+
+A FastMCP server is a collection of tools, resources, and other MCP components. To create a server, start by instantiating the `FastMCP` class. 
+
+Create a new file called `my_server.py` and add the following code:
+
+```python my_server.py
+from fastmcp import FastMCP
+
+mcp = FastMCP("My MCP Server")
+```
+
+
+That's it! You've created a FastMCP server, albeit a very boring one. Let's add a tool to make it more interesting.
+
+
+## Adding a Tool
+
+To add a tool that returns a simple greeting, write a function and decorate it with `@mcp.tool` to register it with the server:
+
+```python my_server.py {5-7}
+from fastmcp import FastMCP
+
+mcp = FastMCP("My MCP Server")
+
+@mcp.tool
+def greet(name: str) -> str:
+    return f"Hello, {name}!"
+```
+
+
+## Testing the Server
+
+
+To test the server, create a FastMCP client and point it at the server object.
+
+```python my_server.py {1, 9-16}
+from fastmcp import FastMCP, Client
+
+mcp = FastMCP("My MCP Server")
+
+@mcp.tool
+def greet(name: str) -> str:
+    return f"Hello, {name}!"
+
+client = Client(mcp)
+
+async def call_tool(name: str):
+    async with client:
+        result = await client.call_tool("greet", {"name": name})
+        print(result)
+
+asyncio.run(call_tool("Ford"))
+```
+
+There are a few things to note here:
+- Clients are asynchronous, so we need to use `asyncio.run` to run the client.
+- We must enter a client context (`async with client:`) before using the client. You can make multiple client calls within the same context.
+
+## Running the server
+
+In order to run the server with Python, we need to add a `run` statement to the `__main__` block of the server file.
+
+```python my_server.py {9-10}
+from fastmcp import FastMCP, Client
+
+mcp = FastMCP("My MCP Server")
+
+@mcp.tool
+def greet(name: str) -> str:
+    return f"Hello, {name}!"
+
+if __name__ == "__main__":
+    mcp.run()
+```
+
+This lets us run the server with `python my_server.py`, using the default `stdio` transport, which is the standard way to expose an MCP server to a client.
+
+<Tip>
+Why do we need the `if __name__ == "__main__":` block?
+
+Within the FastMCP ecosystem, this line may be unecessary. However, including it ensures that your FastMCP server runs for all users and clients in a consistent way and is therefore recommended as best practice.
+</Tip>
+
+### Interacting with the Python server
+
+Now that the server can be executed with `python my_server.py`, we can interact with it like any other MCP server. 
+
+In a new file, create a client and point it at the server file:
+
+```python my_client.py
+from fastmcp import Client
+
+client = Client("my_server.py")
+
+async def call_tool(name: str):
+    async with client:
+        result = await client.call_tool("greet", {"name": name})
+        print(result)
+
+asyncio.run(call_tool("Ford"))
+```
+
+
+
+### Using the FastMCP CLI
+
+To have FastMCP run the server for us, we can use the `fastmcp run` command. This will start the server and keep it running until it is stopped. By default, it will use the `stdio` transport, which is a simple text-based protocol for interacting with the server.
+
+```bash
+fastmcp run my_server.py:mcp
+```
+
+Note that FastMCP *does not* require the `__main__` block in the server file, and will ignore it if it is present. Instead, it looks for the server object provided in the CLI command (here, `mcp`). If no server object is provided, `fastmcp run` will automatically search for servers called "mcp", "app", or "server" in the file.
+
+<Tip>
+We pointed our client at the server file, which is recognized as a Python MCP server and executed with `python my_server.py` by default. This exceutes the `__main__` block of the server file. There are other ways to run the server, which are described in the [server configuration](/docs/getting-started/configuration) guide.
+</Tip>

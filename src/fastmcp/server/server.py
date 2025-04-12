@@ -137,6 +137,7 @@ class FastMCP(Generic[LifespanResultT]):
         Args:
             transport: Transport protocol to use ("stdio" or "sse")
         """
+        logger.info(f'Starting server "{self.name}"...')
         anyio.run(self.run_async, transport)
 
     def _setup_handlers(self) -> None:

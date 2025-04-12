@@ -133,6 +133,7 @@ def _import_server(file: Path, server_object: str | None = None):
         sys.exit(1)
 
     module = importlib.util.module_from_spec(spec)
+    breakpoint()
     spec.loader.exec_module(module)
 
     # If no object specified, try common server names
@@ -322,6 +323,8 @@ def run(
     try:
         # Import and get server object
         server = _import_server(file, server_object)
+
+        logger.info(f'Found server "{server.name}" in {file}')
 
         # Run the server
         kwargs = {}

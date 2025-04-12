@@ -1,0 +1,53 @@
+{
+    "$schema": "https://mintlify.com/docs.json",
+    "background": {
+        "color": {
+            "dark": "#222831",
+            "light": "#EEEEEE"
+        },
+        "decoration": "windows"
+    },
+    "colors": {
+        "dark": "#EA5455",
+        "light": "#EA5455",
+        "primary": "#EA5455"
+    },
+    "description": "The fast, Pythonic way to build MCP servers.",
+    "footer": {
+        "socials": {
+            "github": "https://github.com/jlowin/fastmcp"
+        }
+    },
+    "name": "FastMCP",
+    "navbar": {
+        "primary": {
+            "href": "https://github.com/jlowin/fastmcp",
+            "type": "github"
+        }
+    },
+    "navigation": {
+        "groups": [
+            {
+                "group": "Get Started",
+                "pages": [
+                    "getting-started/welcome",
+                    "getting-started/installation",
+                    "getting-started/quickstart"
+                ]
+            },
+            {
+                "group": "Servers",
+                "pages": []
+            },
+            {
+                "group": "Clients",
+                "pages": []
+            },
+            {
+                "group": "Deployment",
+                "pages": []
+            }
+        ]
+    },
+    "theme": "mint"
+}
