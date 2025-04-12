@@ -460,6 +460,63 @@ def test_petstore_required_fields_resolution(parsed_petstore_routes):
     assert json_schema.get("required") == ["id", "name"]
 
 
+def test_tags_parsing_in_petstore_routes(parsed_petstore_routes):
+    """Test that tags are correctly parsed from the OpenAPI schema."""
+    # All petstore routes should have the "pets" tag
+    for route in parsed_petstore_routes:
+        assert "pets" in route.tags, (
+            f"Route {route.method} {route.path} is missing 'pets' tag"
+        )
+
+
+def test_tag_list_structure(parsed_petstore_routes):
+    """Test that tags are stored as a list of strings."""
+    for route in parsed_petstore_routes:
+        assert isinstance(route.tags, list), "Tags should be stored as a list"
+        for tag in route.tags:
+            assert isinstance(tag, str), "Each tag should be a string"
+
+
+def test_empty_tags_handling(bookstore_schema):
+    """Test that routes with no tags are handled correctly with empty lists."""
+    # Modify a route to remove tags
+    if "tags" in bookstore_schema["paths"]["/books"]["get"]:
+        del bookstore_schema["paths"]["/books"]["get"]["tags"]
+
+    # Parse the modified schema
+    routes = parse_openapi_to_http_routes(bookstore_schema)
+
+    # Find the GET /books route
+    get_books = next(
+        (r for r in routes if r.method == "GET" and r.path == "/books"), None
+    )
+    assert get_books is not None
+
+    # Should have an empty list, not None
+    assert get_books.tags == [], "Routes without tags should have empty tag lists"
+
+
+def test_multiple_tags_preserved(bookstore_schema):
+    """Test that multiple tags are preserved during parsing."""
+    # Add multiple tags to a route
+    bookstore_schema["paths"]["/books"]["get"]["tags"] = ["books", "catalog", "api"]
+
+    # Parse the modified schema
+    routes = parse_openapi_to_http_routes(bookstore_schema)
+
+    # Find the GET /books route
+    get_books = next(
+        (r for r in routes if r.method == "GET" and r.path == "/books"), None
+    )
+    assert get_books is not None
+
+    # Should have all tags
+    assert "books" in get_books.tags
+    assert "catalog" in get_books.tags
+    assert "api" in get_books.tags
+    assert len(get_books.tags) == 3
+
+
 # --- Tests for BookStore schema --- #
 
 
