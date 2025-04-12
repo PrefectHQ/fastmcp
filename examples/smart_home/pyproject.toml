@@ -11,7 +11,7 @@ dependencies = ["fastmcp@git+https://github.com/jlowin/fastmcp.git", "phue2"]
 smart-home = "smart_home.__main__:main"
 
 [dependency-groups]
-dev = ["ruff"]
+dev = ["ruff", "ipython"]
 
 
 [build-system]

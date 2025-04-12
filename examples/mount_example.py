@@ -53,7 +53,9 @@ async def news_data():
 
 
 # Main application
-app = FastMCP("Main App")
+app = FastMCP(
+    "Main App", dependencies=["fastmcp@git+https://github.com/jlowin/fastmcp.git"]
+)
 
 
 @app.tool()
@@ -109,4 +111,4 @@ if __name__ == "__main__":
     asyncio.run(get_server_details())
 
     # Then start the server (uncomment to run the server)
-    # app.run()
+    app.run()

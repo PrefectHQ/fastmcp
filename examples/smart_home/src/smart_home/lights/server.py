@@ -1,45 +1,24 @@
-import sys
 from typing import Any
 
 from phue2 import Bridge
 from phue2.exceptions import (
     PhueException,
-    PhueRegistrationException,
-    PhueRequestTimeout,
 )
 
 from fastmcp import FastMCP
 from smart_home.settings import settings
 
-BRIDGE_IP = str(settings.hue_bridge_ip)
 
-try:
-    bridge = Bridge(BRIDGE_IP, save_config=False)
-    print(f"Attempting connection to Hue Bridge at {BRIDGE_IP} via phue2...")
-    bridge.connect()  # Explicitly connect (needed for registration check)
-    print(f"Successfully connected to Hue Bridge at {BRIDGE_IP} via phue2.")
+def _get_bridge() -> Bridge | None:
+    try:
+        return Bridge(
+            ip=str(settings.hue_bridge_ip),
+            username=settings.hue_bridge_username,
+            save_config=False,
+        )
+    except Exception:
+        return None
 
-except PhueRegistrationException:
-    print(
-        f"FATAL: phue2 not registered with Bridge {BRIDGE_IP}. Run registration first.",
-        file=sys.stderr,
-    )
-    bridge = None
-except PhueRequestTimeout:
-    print(
-        f"FATAL: Timeout connecting to Hue Bridge at {BRIDGE_IP}. Check IP and network.",
-        file=sys.stderr,
-    )
-    bridge = None
-except PhueException as e:
-    print(f"FATAL: phue2 error connecting to Bridge {BRIDGE_IP}: {e}", file=sys.stderr)
-    bridge = None
-except Exception as e:
-    print(
-        f"FATAL: Unexpected error connecting to Bridge {BRIDGE_IP}: {e}",
-        file=sys.stderr,
-    )
-    bridge = None
 
 lights_mcp = FastMCP(
     "Hue Lights Service (phue2)",
@@ -51,14 +30,14 @@ lights_mcp = FastMCP(
 # --- Resources ---
 
 
-@lights_mcp.resource("hue://lights")
-def list_lights() -> list[str]:
+@lights_mcp.tool()
+def read_all_lights() -> list[str]:
     """Lists the names of all available Hue lights using phue2."""
-    if not bridge:
+    if not (bridge := _get_bridge()):
         return ["Error: Bridge not connected"]
     try:
-        light_dict = bridge.get_light()
-        return list(light_dict.keys())
+        light_dict = bridge.get_light_objects("list")
+        return [light.name for light in light_dict]
     except PhueException as e:
         return [f"Error listing lights: {e}"]
     except Exception as e:
@@ -71,7 +50,7 @@ def list_lights() -> list[str]:
 @lights_mcp.tool()
 def toggle_light(light_name: str, state: bool) -> dict[str, Any]:
     """Turns a specific light on (true) or off (false) using phue2."""
-    if not bridge:
+    if not (bridge := _get_bridge()):
         return {"error": "Bridge not connected", "success": False}
     try:
         result = bridge.set_light(light_name, "on", state)
@@ -104,7 +83,7 @@ def toggle_light(light_name: str, state: bool) -> dict[str, Any]:
 @lights_mcp.tool()
 def set_brightness(light_name: str, brightness: int) -> dict[str, Any]:
     """Sets the brightness of a specific light (0-254) using phue2."""
-    if not bridge:
+    if not (bridge := _get_bridge()):
         return {"error": "Bridge not connected", "success": False}
     if not 0 <= brightness <= 254:
         return {

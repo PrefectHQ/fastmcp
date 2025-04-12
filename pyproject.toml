@@ -48,7 +48,7 @@ bump = true
 fallback-version = "0.0.0"
 
 
-[tool.uv.workspace]
+[tool.uv]
 # uncomment to omit `dev` default group
 # default-groups = []
 
