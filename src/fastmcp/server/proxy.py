@@ -40,11 +40,15 @@ class ProxyTool(Tool):
     async def run(
         self, arguments: dict[str, Any], context: Context | None = None
     ) -> Any:
+        # the client context manager will swallow any exceptions inside a TaskGroup
+        # so we return the raw result and raise an exception ourselves
         async with self._client:
-            result = await self._client.call_tool(self.name, arguments)
+            result = await self._client.call_tool(
+                self.name, arguments, _return_raw_result=True
+            )
         if result.isError:
             raise ValueError(cast(mcp.types.TextContent, result.content[0]).text)
-        return result.content[0]
+        return result.content
 
 
 class ProxyResource(Resource):
@@ -73,12 +77,12 @@ class ProxyResource(Resource):
 
         async with self._client:
             result = await self._client.read_resource(self.uri)
-        if isinstance(result.contents[0], TextResourceContents):
-            return result.contents[0].text
-        elif isinstance(result.contents[0], BlobResourceContents):
-            return result.contents[0].blob
+        if isinstance(result[0], TextResourceContents):
+            return result[0].text
+        elif isinstance(result[0], BlobResourceContents):
+            return result[0].blob
         else:
-            raise ValueError(f"Unsupported content type: {type(result.contents[0])}")
+            raise ValueError(f"Unsupported content type: {type(result[0])}")
 
 
 class ProxyTemplate(ResourceTemplate):
@@ -103,20 +107,20 @@ class ProxyTemplate(ResourceTemplate):
         async with self._client:
             result = await self._client.read_resource(uri)
 
-        if isinstance(result.contents[0], TextResourceContents):
-            value = result.contents[0].text
-        elif isinstance(result.contents[0], BlobResourceContents):
-            value = result.contents[0].blob
+        if isinstance(result[0], TextResourceContents):
+            value = result[0].text
+        elif isinstance(result[0], BlobResourceContents):
+            value = result[0].blob
         else:
-            raise ValueError(f"Unsupported content type: {type(result.contents[0])}")
+            raise ValueError(f"Unsupported content type: {type(result[0])}")
 
         return ProxyResource(
             client=self._client,
             uri=uri,
             name=self.name,
             description=self.description,
-            mime_type=result.contents[0].mimeType,
-            contents=result.contents,
+            mime_type=result[0].mimeType,
+            contents=result,
             _value=value,
         )
 
@@ -177,15 +181,15 @@ class FastMCPProxy(FastMCP):
 
         async with client:
             # Register proxies for client tools
-            tools_result = await client.list_tools()
-            for tool in tools_result.tools:
+            tools = await client.list_tools()
+            for tool in tools:
                 tool_proxy = await ProxyTool.from_client(client, tool)
                 server._tool_manager._tools[tool_proxy.name] = tool_proxy
                 logger.debug(f"Created proxy for tool: {tool_proxy.name}")
 
             # Register proxies for client resources
-            resources_result = await client.list_resources()
-            for resource in resources_result.resources:
+            resources = await client.list_resources()
+            for resource in resources:
                 resource_proxy = await ProxyResource.from_client(client, resource)
                 server._resource_manager._resources[str(resource_proxy.uri)] = (
                     resource_proxy
@@ -193,8 +197,8 @@ class FastMCPProxy(FastMCP):
                 logger.debug(f"Created proxy for resource: {resource_proxy.uri}")
 
             # Register proxies for client resource templates
-            templates_result = await client.list_resource_templates()
-            for template in templates_result.resourceTemplates:
+            templates = await client.list_resource_templates()
+            for template in templates:
                 template_proxy = await ProxyTemplate.from_client(client, template)
                 server._resource_manager._templates[template_proxy.uri_template] = (
                     template_proxy
@@ -204,8 +208,8 @@ class FastMCPProxy(FastMCP):
                 )
 
             # Register proxies for client prompts
-            prompts_result = await client.list_prompts()
-            for prompt in prompts_result.prompts:
+            prompts = await client.list_prompts()
+            for prompt in prompts:
                 prompt_proxy = await ProxyPrompt.from_client(client, prompt)
                 server._prompt_manager._prompts[prompt_proxy.name] = prompt_proxy
                 logger.debug(f"Created proxy for prompt: {prompt_proxy.name}")

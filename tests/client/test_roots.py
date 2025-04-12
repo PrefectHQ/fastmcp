@@ -41,8 +41,8 @@ class TestClientRoots:
     async def test_valid_roots(self, fastmcp_server: FastMCP, roots: list[str]):
         async with Client(fastmcp_server, roots=roots) as client:
             result = await client.call_tool("list_roots", {})
-            assert isinstance(result.content[0], TextContent)
-            assert json.loads(result.content[0].text) == [
+            assert isinstance(result[0], TextContent)
+            assert json.loads(result[0].text) == [
                 "file://x/y/z",
                 "file://x/y/z",
             ]
