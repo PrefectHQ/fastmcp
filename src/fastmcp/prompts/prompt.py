@@ -3,11 +3,14 @@
 import inspect
 import json
 from collections.abc import Awaitable, Callable, Sequence
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 import pydantic_core
 from mcp.types import EmbeddedResource, ImageContent, TextContent
-from pydantic import BaseModel, Field, TypeAdapter, validate_call
+from pydantic import BaseModel, BeforeValidator, Field, TypeAdapter, validate_call
+from typing_extensions import Self
+
+from fastmcp.utilities.types import _convert_set_defaults
 
 CONTENT_TYPES = TextContent | ImageContent | EmbeddedResource
 
@@ -71,10 +74,13 @@ class Prompt(BaseModel):
     description: str | None = Field(
         None, description="Description of what the prompt does"
     )
+    tags: Annotated[set[str], BeforeValidator(_convert_set_defaults)] = Field(
+        default_factory=set, description="Tags for the prompt"
+    )
     arguments: list[PromptArgument] | None = Field(
         None, description="Arguments that can be passed to the prompt"
     )
-    fn: Callable[..., PromptResult | Awaitable[PromptResult]] = Field(exclude=True)
+    fn: Callable[..., PromptResult | Awaitable[PromptResult]]
 
     @classmethod
     def from_function(
@@ -82,6 +88,7 @@ class Prompt(BaseModel):
         fn: Callable[..., PromptResult | Awaitable[PromptResult]],
         name: str | None = None,
         description: str | None = None,
+        tags: set[str] | None = None,
     ) -> "Prompt":
         """Create a Prompt from a function.
 
@@ -120,6 +127,7 @@ class Prompt(BaseModel):
             description=description or fn.__doc__ or "",
             arguments=arguments,
             fn=fn,
+            tags=tags or set(),
         )
 
     async def render(self, arguments: dict[str, Any] | None = None) -> list[Message]:
@@ -164,3 +172,15 @@ class Prompt(BaseModel):
             return messages
         except Exception as e:
             raise ValueError(f"Error rendering prompt {self.name}: {e}")
+
+    def copy(self, updates: dict[str, Any] | None = None) -> Self:
+        """Copy the prompt with optional updates."""
+        data = self.model_dump()
+        if updates:
+            data.update(updates)
+        return type(self)(**data)
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Prompt):
+            return False
+        return self.model_dump() == other.model_dump()

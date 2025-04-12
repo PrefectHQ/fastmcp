@@ -1,17 +1,21 @@
 """Base classes and interfaces for FastMCP resources."""
 
 import abc
-from typing import Annotated
+from typing import Annotated, Any
 
 from pydantic import (
     AnyUrl,
     BaseModel,
+    BeforeValidator,
     ConfigDict,
     Field,
     UrlConstraints,
     ValidationInfo,
     field_validator,
 )
+from typing_extensions import Self
+
+from fastmcp.utilities.types import _convert_set_defaults
 
 
 class Resource(BaseModel, abc.ABC):
@@ -25,6 +29,9 @@ class Resource(BaseModel, abc.ABC):
     name: str | None = Field(description="Name of the resource", default=None)
     description: str | None = Field(
         description="Description of the resource", default=None
+    )
+    tags: Annotated[set[str], BeforeValidator(_convert_set_defaults)] = Field(
+        default_factory=set, description="Tags for the resource"
     )
     mime_type: str = Field(
         default="text/plain",
@@ -46,3 +53,15 @@ class Resource(BaseModel, abc.ABC):
     async def read(self) -> str | bytes:
         """Read the resource content."""
         pass
+
+    def copy(self, updates: dict[str, Any] | None = None) -> Self:
+        """Copy the resource with optional updates."""
+        data = self.model_dump()
+        if updates:
+            data.update(updates)
+        return type(self)(**data)
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Resource):
+            return False
+        return self.model_dump() == other.model_dump()

@@ -13,7 +13,7 @@ import pydantic.json
 import pydantic_core
 from pydantic import Field, ValidationInfo
 
-from fastmcp.resources.base import Resource
+from fastmcp.resources.resource import Resource
 
 
 class TextResource(Resource):
@@ -49,7 +49,7 @@ class FunctionResource(Resource):
     - other types will be converted to JSON
     """
 
-    fn: Callable[[], Any] = Field(exclude=True)
+    fn: Callable[[], Any]
 
     async def read(self) -> str | bytes:
         """Read the resource by calling the wrapped function."""

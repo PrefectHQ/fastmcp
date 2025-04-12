@@ -10,6 +10,7 @@ from fastmcp.resources import (
     ResourceManager,
     ResourceTemplate,
 )
+from fastmcp.settings import DuplicateBehavior
 
 
 @pytest.fixture
@@ -59,7 +60,7 @@ class TestResourceManager:
 
     def test_warn_on_duplicate_resources(self, temp_file: Path, caplog):
         """Test warning on duplicate resources."""
-        manager = ResourceManager()
+        manager = ResourceManager(duplicate_behavior=DuplicateBehavior.WARN)
         resource = FileResource(
             uri=FileUrl(f"file://{temp_file}"),
             name="test",
@@ -71,7 +72,7 @@ class TestResourceManager:
 
     def test_disable_warn_on_duplicate_resources(self, temp_file: Path, caplog):
         """Test disabling warning on duplicate resources."""
-        manager = ResourceManager(warn_on_duplicate_resources=False)
+        manager = ResourceManager(duplicate_behavior=DuplicateBehavior.IGNORE)
         resource = FileResource(
             uri=FileUrl(f"file://{temp_file}"),
             name="test",
@@ -80,6 +81,43 @@ class TestResourceManager:
         manager.add_resource(resource)
         manager.add_resource(resource)
         assert "Resource already exists" not in caplog.text
+
+    def test_error_on_duplicate_resources(self, temp_file: Path):
+        """Test error on duplicate resources."""
+        manager = ResourceManager(duplicate_behavior=DuplicateBehavior.ERROR)
+        resource = FileResource(
+            uri=FileUrl(f"file://{temp_file}"),
+            name="test",
+            path=temp_file,
+        )
+        manager.add_resource(resource)
+
+        with pytest.raises(ValueError, match="Resource already exists"):
+            manager.add_resource(resource)
+
+    def test_replace_duplicate_resources(self, temp_file: Path):
+        """Test replacing duplicate resources."""
+        manager = ResourceManager(duplicate_behavior=DuplicateBehavior.REPLACE)
+
+        resource1 = FileResource(
+            uri=FileUrl(f"file://{temp_file}"),
+            name="test1",
+            path=temp_file,
+        )
+
+        resource2 = FileResource(
+            uri=FileUrl(f"file://{temp_file}"),
+            name="test2",  # Different name
+            path=temp_file,
+        )
+
+        manager.add_resource(resource1)
+        manager.add_resource(resource2)
+
+        # Should have replaced the first resource with the second
+        resources = manager.list_resources()
+        assert len(resources) == 1
+        assert resources[0].name == "test2"
 
     @pytest.mark.anyio
     async def test_get_resource(self, temp_file: Path):
@@ -139,6 +177,162 @@ class TestResourceManager:
         resources = manager.list_resources()
         assert len(resources) == 2
         assert resources == [resource1, resource2]
+
+
+class TestResourceTags:
+    """Test functionality related to resource tags."""
+
+    def test_add_resource_with_tags(self, temp_file: Path):
+        """Test adding a resource with tags."""
+        manager = ResourceManager()
+        resource = FileResource(
+            uri=FileUrl(f"file://{temp_file}"),
+            name="weather_data",
+            path=temp_file,
+            tags={"weather", "data"},
+        )
+        manager.add_resource(resource)
+
+        # Check that tags are preserved
+        resources = manager.list_resources()
+        assert len(resources) == 1
+        assert resources[0].tags == {"weather", "data"}
+
+    def test_add_function_resource_with_tags(self):
+        """Test adding a function resource with tags."""
+        manager = ResourceManager()
+
+        async def get_data():
+            return "Sample data"
+
+        resource = FunctionResource(
+            uri=AnyUrl("data://sample"),
+            name="sample_data",
+            description="Sample data resource",
+            mime_type="text/plain",
+            fn=get_data,
+            tags={"sample", "test", "data"},
+        )
+
+        manager.add_resource(resource)
+        resources = manager.list_resources()
+        assert len(resources) == 1
+        assert resources[0].tags == {"sample", "test", "data"}
+
+    def test_add_template_with_tags(self):
+        """Test adding a resource template with tags."""
+        manager = ResourceManager()
+
+        def user_data(user_id: str) -> str:
+            return f"Data for user {user_id}"
+
+        template = ResourceTemplate.from_function(
+            fn=user_data,
+            uri_template="users://{user_id}",
+            name="user_template",
+            description="Get user data by ID",
+            tags={"users", "template", "data"},
+        )
+
+        manager.add_template(template)
+        templates = manager.list_templates()
+        assert len(templates) == 1
+        assert templates[0].tags == {"users", "template", "data"}
+
+    def test_filter_resources_by_tags(self, temp_file: Path):
+        """Test filtering resources by tags."""
+        manager = ResourceManager()
+
+        # Create multiple resources with different tags
+        resource1 = FileResource(
+            uri=FileUrl(f"file://{temp_file}1"),
+            name="weather_data",
+            path=temp_file,
+            tags={"weather", "external"},
+        )
+
+        async def get_user_data():
+            return "User data"
+
+        resource2 = FunctionResource(
+            uri=AnyUrl("data://users"),
+            name="user_data",
+            fn=get_user_data,
+            tags={"users", "internal"},
+        )
+
+        async def get_system_data():
+            return "System data"
+
+        resource3 = FunctionResource(
+            uri=AnyUrl("data://system"),
+            name="system_data",
+            fn=get_system_data,
+            tags={"system", "internal"},
+        )
+
+        manager.add_resource(resource1)
+        manager.add_resource(resource2)
+        manager.add_resource(resource3)
+
+        # Filter resources by tags
+        internal_resources = [
+            r for r in manager.list_resources() if "internal" in r.tags
+        ]
+        assert len(internal_resources) == 2
+        assert {r.name for r in internal_resources} == {"user_data", "system_data"}
+
+        external_resources = [
+            r for r in manager.list_resources() if "external" in r.tags
+        ]
+        assert len(external_resources) == 1
+        assert external_resources[0].name == "weather_data"
+
+    def test_import_resources_preserves_tags(self):
+        """Test that importing resources preserves their tags."""
+        source_manager = ResourceManager()
+
+        async def get_data():
+            return "Tagged data"
+
+        resource = FunctionResource(
+            uri=AnyUrl("data://tagged"),
+            name="tagged_data",
+            fn=get_data,
+            tags={"test", "example", "data"},
+        )
+
+        source_manager.add_resource(resource)
+
+        target_manager = ResourceManager()
+        target_manager.import_resources(source_manager, "imported+")
+
+        imported_resources = target_manager.list_resources()
+        assert len(imported_resources) == 1
+        assert imported_resources[0].tags == {"test", "example", "data"}
+
+    def test_import_templates_preserves_tags(self):
+        """Test that importing templates preserves their tags."""
+        source_manager = ResourceManager()
+
+        def user_template(user_id: str) -> str:
+            return f"User {user_id}"
+
+        template = ResourceTemplate.from_function(
+            fn=user_template,
+            uri_template="users://{user_id}",
+            name="user_template",
+            tags={"users", "template", "test"},
+        )
+
+        source_manager.add_template(template)
+
+        target_manager = ResourceManager()
+        target_manager.import_templates(source_manager, "imported+")
+
+        imported_templates = target_manager.list_templates()
+        assert len(imported_templates) == 1
+        assert imported_templates[0].tags == {"users", "template", "test"}
 
 
 class TestImports:

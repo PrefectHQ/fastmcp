@@ -5,6 +5,7 @@ import pytest
 from pydantic import BaseModel
 
 from fastmcp.exceptions import ToolError
+from fastmcp.settings import DuplicateBehavior
 from fastmcp.tools import ToolManager
 
 
@@ -17,7 +18,7 @@ class TestAddTools:
             return a + b
 
         manager = ToolManager()
-        manager.add_tool(add)
+        manager.add_tool_from_fn(add)
 
         tool = manager.get_tool("add")
         assert tool is not None
@@ -36,7 +37,7 @@ class TestAddTools:
             return f"Data from {url}"
 
         manager = ToolManager()
-        manager.add_tool(fetch_data)
+        manager.add_tool_from_fn(fetch_data)
 
         tool = manager.get_tool("fetch_data")
         assert tool is not None
@@ -57,7 +58,7 @@ class TestAddTools:
             return {"id": 1, **user.model_dump()}
 
         manager = ToolManager()
-        manager.add_tool(create_user)
+        manager.add_tool_from_fn(create_user)
 
         tool = manager.get_tool("create_user")
         assert tool is not None
@@ -71,11 +72,11 @@ class TestAddTools:
     def test_add_invalid_tool(self):
         manager = ToolManager()
         with pytest.raises(AttributeError):
-            manager.add_tool(1)  # type: ignore
+            manager.add_tool_from_fn(1)  # type: ignore
 
     def test_add_lambda(self):
         manager = ToolManager()
-        tool = manager.add_tool(lambda x: x, name="my_tool")
+        tool = manager.add_tool_from_fn(lambda x: x, name="my_tool")
         assert tool.name == "my_tool"
 
     def test_add_lambda_with_no_name(self):
@@ -83,7 +84,7 @@ class TestAddTools:
         with pytest.raises(
             ValueError, match="You must provide a name for lambda functions"
         ):
-            manager.add_tool(lambda x: x)
+            manager.add_tool_from_fn(lambda x: x)
 
     def test_warn_on_duplicate_tools(self, caplog):
         """Test warning on duplicate tools."""
@@ -91,10 +92,10 @@ class TestAddTools:
         def f(x: int) -> int:
             return x
 
-        manager = ToolManager()
-        manager.add_tool(f)
+        manager = ToolManager(duplicate_behavior=DuplicateBehavior.WARN)
+        manager.add_tool_from_fn(f)
         with caplog.at_level(logging.WARNING):
-            manager.add_tool(f)
+            manager.add_tool_from_fn(f)
             assert "Tool already exists: f" in caplog.text
 
     def test_disable_warn_on_duplicate_tools(self, caplog):
@@ -103,12 +104,131 @@ class TestAddTools:
         def f(x: int) -> int:
             return x
 
-        manager = ToolManager()
-        manager.add_tool(f)
-        manager.warn_on_duplicate_tools = False
+        manager = ToolManager(duplicate_behavior=DuplicateBehavior.IGNORE)
+        manager.add_tool_from_fn(f)
         with caplog.at_level(logging.WARNING):
-            manager.add_tool(f)
+            manager.add_tool_from_fn(f)
             assert "Tool already exists: f" not in caplog.text
+
+    def test_error_on_duplicate_tools(self):
+        """Test error on duplicate tools."""
+
+        def f(x: int) -> int:
+            return x
+
+        manager = ToolManager(duplicate_behavior=DuplicateBehavior.ERROR)
+        manager.add_tool_from_fn(f)
+
+        with pytest.raises(ValueError, match="Tool already exists"):
+            manager.add_tool_from_fn(f)
+
+    def test_replace_duplicate_tools(self):
+        """Test replacing duplicate tools."""
+
+        def original_fn(x: int) -> int:
+            return x
+
+        def replacement_fn(x: int) -> int:
+            return x * 2
+
+        manager = ToolManager(duplicate_behavior=DuplicateBehavior.REPLACE)
+        manager.add_tool_from_fn(original_fn, name="test_tool")
+        replacement_tool = manager.add_tool_from_fn(replacement_fn, name="test_tool")
+
+        # Should have replaced the first tool with the second
+        stored_tool = manager.get_tool("test_tool")
+        assert stored_tool == replacement_tool
+
+
+class TestToolTags:
+    """Test functionality related to tool tags."""
+
+    def test_add_tool_with_tags(self):
+        """Test adding tags to a tool."""
+
+        def example_tool(x: int) -> int:
+            """An example tool with tags."""
+            return x * 2
+
+        manager = ToolManager()
+        tool = manager.add_tool_from_fn(example_tool, tags={"math", "utility"})
+
+        assert tool.tags == {"math", "utility"}
+        tool = manager.get_tool("example_tool")
+        assert tool is not None
+        assert tool.tags == {"math", "utility"}
+
+    def test_add_tool_with_empty_tags(self):
+        """Test adding a tool with empty tags set."""
+
+        def example_tool(x: int) -> int:
+            """An example tool with empty tags."""
+            return x * 2
+
+        manager = ToolManager()
+        tool = manager.add_tool_from_fn(example_tool, tags=set())
+
+        assert tool.tags == set()
+
+    def test_add_tool_with_none_tags(self):
+        """Test adding a tool with None tags."""
+
+        def example_tool(x: int) -> int:
+            """An example tool with None tags."""
+            return x * 2
+
+        manager = ToolManager()
+        tool = manager.add_tool_from_fn(example_tool, tags=None)
+
+        assert tool.tags == set()
+
+    def test_list_tools_with_tags(self):
+        """Test listing tools with specific tags."""
+
+        def math_tool(x: int) -> int:
+            """A math tool."""
+            return x * 2
+
+        def string_tool(x: str) -> str:
+            """A string tool."""
+            return x.upper()
+
+        def mixed_tool(x: int) -> str:
+            """A tool with multiple tags."""
+            return str(x)
+
+        manager = ToolManager()
+        manager.add_tool_from_fn(math_tool, tags={"math"})
+        manager.add_tool_from_fn(string_tool, tags={"string", "utility"})
+        manager.add_tool_from_fn(mixed_tool, tags={"math", "utility", "string"})
+
+        # Check if we can filter by tags when listing tools
+        math_tools = [tool for tool in manager.list_tools() if "math" in tool.tags]
+        assert len(math_tools) == 2
+        assert {tool.name for tool in math_tools} == {"math_tool", "mixed_tool"}
+
+        utility_tools = [
+            tool for tool in manager.list_tools() if "utility" in tool.tags
+        ]
+        assert len(utility_tools) == 2
+        assert {tool.name for tool in utility_tools} == {"string_tool", "mixed_tool"}
+
+    def test_import_tools_preserves_tags(self):
+        """Test that importing tools preserves their tags."""
+
+        def tagged_tool(x: int) -> int:
+            """A tool with tags."""
+            return x
+
+        source_manager = ToolManager()
+        source_manager.add_tool_from_fn(tagged_tool, tags={"test", "example"})
+
+        target_manager = ToolManager()
+        target_manager.import_tools(source_manager, "source/")
+
+        imported_tool = target_manager.get_tool("source/tagged_tool")
+        assert imported_tool is not None
+        assert imported_tool.tags == {"test", "example"}
 
 
 class TestCallTools:
@@ -119,7 +239,7 @@ class TestCallTools:
             return a + b
 
         manager = ToolManager()
-        manager.add_tool(add)
+        manager.add_tool_from_fn(add)
         result = await manager.call_tool("add", {"a": 1, "b": 2})
         assert result == 3
 
@@ -130,7 +250,7 @@ class TestCallTools:
             return n * 2
 
         manager = ToolManager()
-        manager.add_tool(double)
+        manager.add_tool_from_fn(double)
         result = await manager.call_tool("double", {"n": 5})
         assert result == 10
 
@@ -141,7 +261,7 @@ class TestCallTools:
             return a + b
 
         manager = ToolManager()
-        manager.add_tool(add)
+        manager.add_tool_from_fn(add)
         result = await manager.call_tool("add", {"a": 1})
         assert result == 2
 
@@ -152,7 +272,7 @@ class TestCallTools:
             return a + b
 
         manager = ToolManager()
-        manager.add_tool(add)
+        manager.add_tool_from_fn(add)
         with pytest.raises(ToolError):
             await manager.call_tool("add", {"a": 1})
 
@@ -168,7 +288,7 @@ class TestCallTools:
             return sum(vals)
 
         manager = ToolManager()
-        manager.add_tool(sum_vals)
+        manager.add_tool_from_fn(sum_vals)
         # Try both with plain list and with JSON list
         result = await manager.call_tool("sum_vals", {"vals": "[1, 2, 3]"})
         assert result == 6
@@ -181,7 +301,7 @@ class TestCallTools:
             return vals if isinstance(vals, str) else "".join(vals)
 
         manager = ToolManager()
-        manager.add_tool(concat_strs)
+        manager.add_tool_from_fn(concat_strs)
         # Try both with plain python object and with JSON list
         result = await manager.call_tool("concat_strs", {"vals": ["a", "b", "c"]})
         assert result == "abc"
@@ -207,7 +327,7 @@ class TestCallTools:
             return [x.name for x in tank.shrimp]
 
         manager = ToolManager()
-        manager.add_tool(name_shrimp)
+        manager.add_tool_from_fn(name_shrimp)
         result = await manager.call_tool(
             "name_shrimp",
             {"tank": {"x": None, "shrimp": [{"name": "rex"}, {"name": "gertrude"}]}},
@@ -229,7 +349,7 @@ class TestToolSchema:
             return a
 
         manager = ToolManager()
-        tool = manager.add_tool(something)
+        tool = manager.add_tool_from_fn(something)
         assert "ctx" not in json.dumps(tool.parameters)
         assert "Context" not in json.dumps(tool.parameters)
         assert "ctx" not in tool.fn_metadata.arg_model.model_fields
@@ -247,13 +367,13 @@ class TestContextHandling:
             return str(x)
 
         manager = ToolManager()
-        tool = manager.add_tool(tool_with_context)
+        tool = manager.add_tool_from_fn(tool_with_context)
         assert tool.context_kwarg == "ctx"
 
         def tool_without_context(x: int) -> str:
             return str(x)
 
-        tool = manager.add_tool(tool_without_context)
+        tool = manager.add_tool_from_fn(tool_without_context)
         assert tool.context_kwarg is None
 
     @pytest.mark.anyio
@@ -266,7 +386,7 @@ class TestContextHandling:
             return str(x)
 
         manager = ToolManager()
-        manager.add_tool(tool_with_context)
+        manager.add_tool_from_fn(tool_with_context)
 
         mcp = FastMCP()
         ctx = mcp.get_context()
@@ -283,7 +403,7 @@ class TestContextHandling:
             return str(x)
 
         manager = ToolManager()
-        manager.add_tool(async_tool)
+        manager.add_tool_from_fn(async_tool)
 
         mcp = FastMCP()
         ctx = mcp.get_context()
@@ -299,7 +419,7 @@ class TestContextHandling:
             return str(x)
 
         manager = ToolManager()
-        manager.add_tool(tool_with_context)
+        manager.add_tool_from_fn(tool_with_context)
         # Should not raise an error when context is not provided
         result = await manager.call_tool("tool_with_context", {"x": 42})
         assert result == "42"
@@ -313,7 +433,7 @@ class TestContextHandling:
             raise ValueError("Test error")
 
         manager = ToolManager()
-        manager.add_tool(tool_with_context)
+        manager.add_tool_from_fn(tool_with_context)
 
         mcp = FastMCP()
         ctx = mcp.get_context()
@@ -335,8 +455,10 @@ class TestImportTools:
             return "Tool 2 result"
 
         # Add tools to source manager
-        source_manager.add_tool(tool1_fn, name="get_data", description="Get some data")
-        source_manager.add_tool(
+        source_manager.add_tool_from_fn(
+            tool1_fn, name="get_data", description="Get some data"
+        )
+        source_manager.add_tool_from_fn(
             tool2_fn, name="process_data", description="Process the data"
         )
 
@@ -364,11 +486,8 @@ class TestImportTools:
 
         # Verify the tool functions were properly copied
         # We can't directly compare functions, so we'll check their __name__ attribute
-        assert target_manager._tools["source/get_data"].fn.__name__ == tool1_fn.__name__
-        assert (
-            target_manager._tools["source/process_data"].fn.__name__
-            == tool2_fn.__name__
-        )
+        assert target_manager._tools["source/get_data"].fn == tool1_fn
+        assert target_manager._tools["source/process_data"].fn == tool2_fn
 
     def test_tool_duplicate_behavior(self):
         """Test the behavior when importing tools with duplicate names."""
@@ -383,8 +502,8 @@ class TestImportTools:
         def target_fn():
             return "Target result"
 
-        source_manager.add_tool(source_fn, name="common_tool")
-        target_manager.add_tool(
+        source_manager.add_tool_from_fn(source_fn, name="common_tool")
+        target_manager.add_tool_from_fn(
             target_fn, name="source/common_tool"
         )  # Pre-create with the prefixed name
 
@@ -392,10 +511,7 @@ class TestImportTools:
         target_manager.import_tools(source_manager, "source/")
 
         # The original tool in the target manager is replaced by the imported one
-        assert (
-            target_manager._tools["source/common_tool"].fn.__name__
-            == source_fn.__name__
-        )
+        assert target_manager._tools["source/common_tool"].fn == source_fn
 
     def test_import_tools_with_multiple_prefixes(self):
         """Test importing tools from multiple managers with different prefixes."""
@@ -410,8 +526,8 @@ class TestImportTools:
         def headlines_fn():
             return "News headlines"
 
-        weather_manager.add_tool(forecast_fn, name="forecast")
-        news_manager.add_tool(headlines_fn, name="headlines")
+        weather_manager.add_tool_from_fn(forecast_fn, name="forecast")
+        news_manager.add_tool_from_fn(headlines_fn, name="headlines")
 
         # Create target manager and import from both sources
         main_manager = ToolManager()

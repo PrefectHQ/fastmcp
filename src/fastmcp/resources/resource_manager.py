@@ -5,8 +5,9 @@ from typing import Any
 
 from pydantic import AnyUrl
 
-from fastmcp.resources.base import Resource
-from fastmcp.resources.templates import ResourceTemplate
+from fastmcp.resources.resource import Resource
+from fastmcp.resources.template import ResourceTemplate
+from fastmcp.settings import DuplicateBehavior
 from fastmcp.utilities.logging import get_logger
 
 logger = get_logger(__name__)
@@ -15,10 +16,10 @@ logger = get_logger(__name__)
 class ResourceManager:
     """Manages FastMCP resources."""
 
-    def __init__(self, warn_on_duplicate_resources: bool = True):
+    def __init__(self, duplicate_behavior: DuplicateBehavior = DuplicateBehavior.WARN):
         self._resources: dict[str, Resource] = {}
         self._templates: dict[str, ResourceTemplate] = {}
-        self.warn_on_duplicate_resources = warn_on_duplicate_resources
+        self.duplicate_behavior = duplicate_behavior
 
     def add_resource(self, resource: Resource) -> Resource:
         """Add a resource to the manager.
@@ -40,28 +41,67 @@ class ResourceManager:
         )
         existing = self._resources.get(str(resource.uri))
         if existing:
-            if self.warn_on_duplicate_resources:
+            if self.duplicate_behavior == DuplicateBehavior.WARN:
                 logger.warning(f"Resource already exists: {resource.uri}")
-            return existing
+                self._resources[str(resource.uri)] = resource
+            elif self.duplicate_behavior == DuplicateBehavior.REPLACE:
+                self._resources[str(resource.uri)] = resource
+            elif self.duplicate_behavior == DuplicateBehavior.ERROR:
+                raise ValueError(f"Resource already exists: {resource.uri}")
+            elif self.duplicate_behavior == DuplicateBehavior.IGNORE:
+                pass
         self._resources[str(resource.uri)] = resource
         return resource
 
-    def add_template(
+    def add_template_from_fn(
         self,
         fn: Callable[..., Any],
         uri_template: str,
         name: str | None = None,
         description: str | None = None,
         mime_type: str | None = None,
+        tags: set[str] | None = None,
     ) -> ResourceTemplate:
-        """Add a template from a function."""
+        """Create a template from a function."""
         template = ResourceTemplate.from_function(
             fn,
             uri_template=uri_template,
             name=name,
             description=description,
             mime_type=mime_type,
+            tags=tags,
         )
+        return self.add_template(template)
+
+    def add_template(self, template: ResourceTemplate) -> ResourceTemplate:
+        """Add a template to the manager.
+
+        Args:
+            template: A ResourceTemplate instance to add
+
+        Returns:
+            The added template. If a template with the same URI already exists,
+            returns the existing template.
+        """
+        logger.debug(
+            "Adding resource",
+            extra={
+                "uri": template.uri_template,
+                "type": type(template).__name__,
+                "resource_name": template.name,
+            },
+        )
+        existing = self._templates.get(str(template.uri_template))
+        if existing:
+            if self.duplicate_behavior == DuplicateBehavior.WARN:
+                logger.warning(f"Resource already exists: {template.uri_template}")
+                self._templates[str(template.uri_template)] = template
+            elif self.duplicate_behavior == DuplicateBehavior.REPLACE:
+                self._templates[str(template.uri_template)] = template
+            elif self.duplicate_behavior == DuplicateBehavior.ERROR:
+                raise ValueError(f"Resource already exists: {template.uri_template}")
+            elif self.duplicate_behavior == DuplicateBehavior.IGNORE:
+                pass
         self._templates[template.uri_template] = template
         return template
 
@@ -114,11 +154,13 @@ class ResourceManager:
             # Create prefixed URI and copy the resource with the new URI
             prefixed_uri = f"{prefix}{uri}" if prefix else uri
 
+            new_resource = resource.copy(updates=dict(uri=prefixed_uri))
+
             # Log the import
             logger.debug(f"Importing resource with URI {uri} as {prefixed_uri}")
 
             # Store directly in resources dictionary
-            self._resources[prefixed_uri] = resource
+            self.add_resource(new_resource)
 
     def import_templates(
         self, manager: "ResourceManager", prefix: str | None = None
@@ -142,10 +184,14 @@ class ResourceManager:
                 f"{prefix}{uri_template}" if prefix else uri_template
             )
 
+            new_template = template.copy(
+                updates=dict(uri_template=prefixed_uri_template)
+            )
+
             # Log the import
             logger.debug(
                 f"Importing resource template with URI {uri_template} as {prefixed_uri_template}"
             )
 
             # Store directly in templates dictionary
-            self._templates[prefixed_uri_template] = template
+            self.add_template(new_template)

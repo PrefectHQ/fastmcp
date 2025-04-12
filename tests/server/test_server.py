@@ -17,7 +17,7 @@ from mcp.types import (
 from pydantic import AnyUrl, Field
 
 from fastmcp import Context, FastMCP
-from fastmcp.prompts.base import EmbeddedResource, Message, UserMessage
+from fastmcp.prompts.prompt import EmbeddedResource, Message, UserMessage
 from fastmcp.resources import FileResource, FunctionResource
 from fastmcp.utilities.types import Image
 
@@ -482,7 +482,7 @@ class TestContextInjection:
         def tool_with_context(x: int, ctx: Context) -> str:
             return f"Request {ctx.request_id}: {x}"
 
-        tool = mcp._tool_manager.add_tool(tool_with_context)
+        tool = mcp._tool_manager.add_tool_from_fn(tool_with_context)
         assert tool.context_kwarg == "ctx"
 
     async def test_context_injection(self):

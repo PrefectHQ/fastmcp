@@ -9,7 +9,7 @@ from fastmcp.prompts import Prompt
 from fastmcp.resources import Resource, ResourceTemplate
 from fastmcp.server.context import Context
 from fastmcp.server.server import FastMCP
-from fastmcp.tools.base import Tool
+from fastmcp.tools.tool import Tool
 from fastmcp.utilities.func_metadata import func_metadata
 from fastmcp.utilities.logging import get_logger
 
