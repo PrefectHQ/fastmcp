@@ -88,13 +88,13 @@ class FastMCP(Generic[LifespanResultT]):
             lifespan=lifespan_wrapper(self, lifespan) if lifespan else default_lifespan,  # type: ignore
         )
         self._tool_manager = ToolManager(
-            warn_on_duplicate_tools=self.settings.warn_on_duplicate_tools
+            duplicate_behavior=self.settings.on_duplicate_tools
         )
         self._resource_manager = ResourceManager(
-            warn_on_duplicate_resources=self.settings.warn_on_duplicate_resources
+            duplicate_behavior=self.settings.on_duplicate_resources
         )
         self._prompt_manager = PromptManager(
-            warn_on_duplicate_prompts=self.settings.warn_on_duplicate_prompts
+            duplicate_behavior=self.settings.on_duplicate_prompts
         )
         self.dependencies = self.settings.dependencies
 
@@ -241,7 +241,9 @@ class FastMCP(Generic[LifespanResultT]):
             description: Optional description of what the tool does
             tags: Optional set of tags for categorizing the tool
         """
-        self._tool_manager.add_tool(fn, name=name, description=description, tags=tags)
+        self._tool_manager.add_tool_from_fn(
+            fn, name=name, description=description, tags=tags
+        )
 
     def tool(
         self,
@@ -366,7 +368,7 @@ class FastMCP(Generic[LifespanResultT]):
                     )
 
                 # Register as template
-                self._resource_manager.add_template(
+                self._resource_manager.add_template_from_fn(
                     fn=fn,
                     uri_template=uri,
                     name=name,

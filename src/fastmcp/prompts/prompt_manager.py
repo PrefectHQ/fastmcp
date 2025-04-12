@@ -1,8 +1,10 @@
 """Prompt management functionality."""
 
+from collections.abc import Awaitable, Callable
 from typing import Any
 
-from fastmcp.prompts.base import Message, Prompt
+from fastmcp.prompts.prompt import Message, Prompt, PromptResult
+from fastmcp.settings import DuplicateBehavior
 from fastmcp.utilities.logging import get_logger
 
 logger = get_logger(__name__)
@@ -11,9 +13,9 @@ logger = get_logger(__name__)
 class PromptManager:
     """Manages FastMCP prompts."""
 
-    def __init__(self, warn_on_duplicate_prompts: bool = True):
+    def __init__(self, duplicate_behavior: DuplicateBehavior = DuplicateBehavior.WARN):
         self._prompts: dict[str, Prompt] = {}
-        self.warn_on_duplicate_prompts = warn_on_duplicate_prompts
+        self.duplicate_behavior = duplicate_behavior
 
     def get_prompt(self, name: str) -> Prompt | None:
         """Get prompt by name."""
@@ -23,18 +25,32 @@ class PromptManager:
         """List all registered prompts."""
         return list(self._prompts.values())
 
-    def add_prompt(
+    def add_prompt_from_fn(
         self,
-        prompt: Prompt,
+        fn: Callable[..., PromptResult | Awaitable[PromptResult]],
+        name: str | None = None,
+        description: str | None = None,
+        tags: set[str] | None = None,
     ) -> Prompt:
+        """Create a prompt from a function."""
+        prompt = Prompt.from_function(fn, name=name, description=description, tags=tags)
+        return self.add_prompt(prompt)
+
+    def add_prompt(self, prompt: Prompt) -> Prompt:
         """Add a prompt to the manager."""
 
         # Check for duplicates
         existing = self._prompts.get(prompt.name)
         if existing:
-            if self.warn_on_duplicate_prompts:
+            if self.duplicate_behavior == DuplicateBehavior.WARN:
                 logger.warning(f"Prompt already exists: {prompt.name}")
-            return existing
+                self._prompts[prompt.name] = prompt
+            elif self.duplicate_behavior == DuplicateBehavior.REPLACE:
+                self._prompts[prompt.name] = prompt
+            elif self.duplicate_behavior == DuplicateBehavior.ERROR:
+                raise ValueError(f"Prompt already exists: {prompt.name}")
+            elif self.duplicate_behavior == DuplicateBehavior.IGNORE:
+                pass
 
         self._prompts[prompt.name] = prompt
         return prompt
@@ -64,11 +80,13 @@ class PromptManager:
                    the imported prompt would be available as "weather/forecast_prompt"
         """
         for name, prompt in manager._prompts.items():
-            # Create prefixed name - we keep the original name in the Prompt object
+            # Create prefixed name
             prefixed_name = f"{prefix}{name}" if prefix else name
+
+            new_prompt = prompt.copy(updates=dict(name=prefixed_name))
 
             # Log the import
             logger.debug(f"Importing prompt with name {name} as {prefixed_name}")
 
             # Store the prompt with the prefixed name
-            self._prompts[prefixed_name] = prompt
+            self.add_prompt(new_prompt)

@@ -6,7 +6,8 @@ from typing import TYPE_CHECKING, Any
 from mcp.shared.context import LifespanContextT
 
 from fastmcp.exceptions import ToolError
-from fastmcp.tools.base import Tool
+from fastmcp.settings import DuplicateBehavior
+from fastmcp.tools.tool import Tool
 from fastmcp.utilities.logging import get_logger
 
 if TYPE_CHECKING:
@@ -20,9 +21,9 @@ logger = get_logger(__name__)
 class ToolManager:
     """Manages FastMCP tools."""
 
-    def __init__(self, warn_on_duplicate_tools: bool = True):
+    def __init__(self, duplicate_behavior: DuplicateBehavior = DuplicateBehavior.WARN):
         self._tools: dict[str, Tool] = {}
-        self.warn_on_duplicate_tools = warn_on_duplicate_tools
+        self.duplicate_behavior = duplicate_behavior
 
     def get_tool(self, name: str) -> Tool | None:
         """Get tool by name."""
@@ -32,7 +33,7 @@ class ToolManager:
         """List all registered tools."""
         return list(self._tools.values())
 
-    def add_tool(
+    def add_tool_from_fn(
         self,
         fn: Callable[..., Any],
         name: str | None = None,
@@ -41,15 +42,21 @@ class ToolManager:
     ) -> Tool:
         """Add a tool to the server."""
         tool = Tool.from_function(fn, name=name, description=description, tags=tags)
-        return self._register_tool(tool)
+        return self.add_tool(tool)
 
-    def _register_tool(self, tool: Tool) -> Tool:
+    def add_tool(self, tool: Tool) -> Tool:
         """Register a tool with the server."""
         existing = self._tools.get(tool.name)
         if existing:
-            if self.warn_on_duplicate_tools:
+            if self.duplicate_behavior == DuplicateBehavior.WARN:
                 logger.warning(f"Tool already exists: {tool.name}")
-            return existing
+                self._tools[tool.name] = tool
+            elif self.duplicate_behavior == DuplicateBehavior.REPLACE:
+                self._tools[tool.name] = tool
+            elif self.duplicate_behavior == DuplicateBehavior.ERROR:
+                raise ValueError(f"Tool already exists: {tool.name}")
+            elif self.duplicate_behavior == DuplicateBehavior.IGNORE:
+                pass
         self._tools[tool.name] = tool
         return tool
 
@@ -83,13 +90,7 @@ class ToolManager:
         for name, tool in tool_manager._tools.items():
             prefixed_name = f"{prefix}{name}" if prefix else name
 
-            # Create a shallow copy of the tool with the prefixed name
-            copied_tool = Tool.from_function(
-                tool.fn,
-                name=prefixed_name,
-                description=tool.description,
-            )
-
+            new_tool = tool.copy(updates=dict(name=prefixed_name))
             # Store the copied tool
-            self._register_tool(copied_tool)
+            self.add_tool(new_tool)
             logger.debug(f"Imported tool: {name} as {prefixed_name}")

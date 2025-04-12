@@ -2,7 +2,7 @@ import pytest
 from mcp.types import EmbeddedResource, TextResourceContents
 from pydantic import FileUrl
 
-from fastmcp.prompts.base import (
+from fastmcp.prompts.prompt import (
     AssistantMessage,
     Message,
     Prompt,

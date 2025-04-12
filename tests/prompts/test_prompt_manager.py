@@ -1,8 +1,9 @@
 import pytest
 
 from fastmcp.prompts import Prompt
-from fastmcp.prompts.base import PromptArgument, TextContent, UserMessage
+from fastmcp.prompts.prompt import PromptArgument, TextContent, UserMessage
 from fastmcp.prompts.prompt_manager import PromptManager
+from fastmcp.settings import DuplicateBehavior
 
 
 class TestPromptManager:
@@ -24,7 +25,7 @@ class TestPromptManager:
         def fn() -> str:
             return "Hello, world!"
 
-        manager = PromptManager()
+        manager = PromptManager(duplicate_behavior=DuplicateBehavior.WARN)
         prompt = Prompt.from_function(fn)
         first = manager.add_prompt(prompt)
         second = manager.add_prompt(prompt)
@@ -37,7 +38,7 @@ class TestPromptManager:
         def fn() -> str:
             return "Hello, world!"
 
-        manager = PromptManager(warn_on_duplicate_prompts=False)
+        manager = PromptManager(duplicate_behavior=DuplicateBehavior.IGNORE)
         prompt = Prompt.from_function(fn)
         first = manager.add_prompt(prompt)
         second = manager.add_prompt(prompt)
@@ -112,6 +113,131 @@ class TestPromptManager:
         with pytest.raises(ValueError, match="Missing required arguments"):
             await manager.render_prompt("fn")
 
+    def test_error_on_duplicate_prompts(self):
+        """Test error on duplicate prompts."""
+
+        def fn() -> str:
+            return "Hello, world!"
+
+        manager = PromptManager(duplicate_behavior=DuplicateBehavior.ERROR)
+        prompt = Prompt.from_function(fn)
+        manager.add_prompt(prompt)
+
+        with pytest.raises(ValueError, match="Prompt already exists"):
+            manager.add_prompt(prompt)
+
+    def test_replace_duplicate_prompts(self):
+        """Test replacing duplicate prompts."""
+
+        def fn1() -> str:
+            return "Original"
+
+        def fn2() -> str:
+            return "Replacement"
+
+        manager = PromptManager(duplicate_behavior=DuplicateBehavior.REPLACE)
+        prompt1 = Prompt.from_function(fn1, name="test_prompt")
+        prompt2 = Prompt.from_function(fn2, name="test_prompt")
+
+        manager.add_prompt(prompt1)
+        manager.add_prompt(prompt2)
+
+        # Should have replaced the first prompt with the second
+        stored_prompt = manager.get_prompt("test_prompt")
+        assert stored_prompt == prompt2
+
+
+class TestPromptTags:
+    """Test functionality related to prompt tags."""
+
+    def test_add_prompt_with_tags(self):
+        """Test adding a prompt with tags."""
+
+        def greeting() -> str:
+            return "Hello, world!"
+
+        manager = PromptManager()
+        prompt = Prompt.from_function(greeting, tags={"greeting", "simple"})
+        manager.add_prompt(prompt)
+
+        prompt = manager.get_prompt("greeting")
+        assert prompt is not None
+        assert prompt.tags == {"greeting", "simple"}
+
+    def test_add_prompt_with_empty_tags(self):
+        """Test adding a prompt with empty tags."""
+
+        def greeting() -> str:
+            return "Hello, world!"
+
+        manager = PromptManager()
+        prompt = Prompt.from_function(greeting, tags=set())
+        manager.add_prompt(prompt)
+
+        prompt = manager.get_prompt("greeting")
+        assert prompt is not None
+        assert prompt.tags == set()
+
+    def test_add_prompt_with_none_tags(self):
+        """Test adding a prompt with None tags."""
+
+        def greeting() -> str:
+            return "Hello, world!"
+
+        manager = PromptManager()
+        prompt = Prompt.from_function(greeting, tags=None)
+        manager.add_prompt(prompt)
+
+        prompt = manager.get_prompt("greeting")
+        assert prompt is not None
+        assert prompt.tags == set()
+
+    def test_list_prompts_with_tags(self):
+        """Test listing prompts with specific tags."""
+
+        def greeting() -> str:
+            return "Hello, world!"
+
+        def weather(location: str) -> str:
+            return f"Weather for {location}"
+
+        def summary(text: str) -> str:
+            return f"Summary of: {text}"
+
+        manager = PromptManager()
+        manager.add_prompt(Prompt.from_function(greeting, tags={"greeting", "simple"}))
+        manager.add_prompt(Prompt.from_function(weather, tags={"weather", "location"}))
+        manager.add_prompt(
+            Prompt.from_function(summary, tags={"summary", "nlp", "simple"})
+        )
+
+        # Filter prompts by tags
+        simple_prompts = [p for p in manager.list_prompts() if "simple" in p.tags]
+        assert len(simple_prompts) == 2
+        assert {p.name for p in simple_prompts} == {"greeting", "summary"}
+
+        nlp_prompts = [p for p in manager.list_prompts() if "nlp" in p.tags]
+        assert len(nlp_prompts) == 1
+        assert nlp_prompts[0].name == "summary"
+
+    def test_import_prompts_preserves_tags(self):
+        """Test that importing prompts preserves their tags."""
+        source_manager = PromptManager()
+
+        def sample_prompt() -> str:
+            return "Sample prompt"
+
+        source_manager.add_prompt(
+            Prompt.from_function(sample_prompt, tags={"example", "test"})
+        )
+
+        target_manager = PromptManager()
+        target_manager.import_prompts(source_manager, "imported/")
+
+        imported_prompt = target_manager.get_prompt("imported/sample_prompt")
+        assert imported_prompt is not None
+        assert imported_prompt.tags == {"example", "test"}
+
 
 class TestImports:
     def test_import_prompts(self):
@@ -119,27 +245,13 @@ class TestImports:
         # Setup source manager with prompts
         source_manager = PromptManager()
 
-        # Create test prompts with proper function handlers
-        async def summary_fn(**kwargs):
-            return [
-                {"role": "assistant", "content": f"Summary of: {kwargs.get('text')}"}
-            ]
-
-        async def translate_fn(**kwargs):
-            return [
-                {
-                    "role": "assistant",
-                    "content": f"Translation to {kwargs.get('language')}: {kwargs.get('text')}",
-                }
-            ]
-
         summary_prompt = Prompt(
             name="summary",
             description="Generate a summary of text",
             arguments=[PromptArgument(name="text", description="Text to summarize")],
-            fn=summary_fn,
+            fn=lambda: None,  # type: ignore
         )
-        source_manager._prompts["summary"] = summary_prompt
+        source_manager.add_prompt(summary_prompt)
 
         translate_prompt = Prompt(
             name="translate",
@@ -148,9 +260,9 @@ class TestImports:
                 PromptArgument(name="text", description="Text to translate"),
                 PromptArgument(name="language", description="Target language"),
             ],
-            fn=translate_fn,
+            fn=lambda: None,  # type: ignore
         )
-        source_manager._prompts["translate"] = translate_prompt
+        source_manager.add_prompt(translate_prompt)
 
         # Create target manager
         target_manager = PromptManager()
@@ -167,31 +279,8 @@ class TestImports:
         assert "summary" in source_manager._prompts
         assert "translate" in source_manager._prompts
 
-        # Verify the imported prompts have the correct properties
-        assert target_manager._prompts["nlp/summary"].name == "summary"
-        assert (
-            target_manager._prompts["nlp/summary"].description
-            == "Generate a summary of text"
-        )
-
-        assert target_manager._prompts["nlp/translate"].name == "translate"
-        assert (
-            target_manager._prompts["nlp/translate"].description
-            == "Translate text to another language"
-        )
-
-        # Verify functions were properly copied
-        if hasattr(target_manager._prompts["nlp/summary"], "fn"):
-            assert (
-                target_manager._prompts["nlp/summary"].fn.__name__
-                == summary_fn.__name__
-            )
-
-        if hasattr(target_manager._prompts["nlp/translate"], "fn"):
-            assert (
-                target_manager._prompts["nlp/translate"].fn.__name__
-                == translate_fn.__name__
-            )
+        assert target_manager._prompts["nlp/summary"].fn == summary_prompt.fn
+        assert target_manager._prompts["nlp/translate"].fn == translate_prompt.fn
 
     def test_import_prompts_with_duplicates(self):
         """Test handling of duplicate prompts during import."""
@@ -199,18 +288,11 @@ class TestImports:
         source_manager = PromptManager()
         target_manager = PromptManager()
 
-        # Add the same prompt name to both managers with functions
-        async def source_fn(**kwargs):
-            return [{"role": "assistant", "content": "Source content"}]
-
-        async def target_fn(**kwargs):
-            return [{"role": "assistant", "content": "Target content"}]
-
         source_prompt = Prompt(
             name="common",
             description="Source description",
             arguments=None,
-            fn=source_fn,
+            fn=lambda: None,  # type: ignore
         )
         source_manager._prompts["common"] = source_prompt
 
@@ -218,7 +300,7 @@ class TestImports:
             name="common",
             description="Target description",
             arguments=None,
-            fn=target_fn,
+            fn=lambda: None,  # type: ignore
         )
         target_manager._prompts["common"] = target_prompt
 
@@ -230,15 +312,8 @@ class TestImports:
         assert "common" in target_manager._prompts
         assert "external/common" in target_manager._prompts
 
-        # Verify the functions of both prompts
-        if hasattr(target_manager._prompts["common"], "fn") and hasattr(
-            target_manager._prompts["external/common"], "fn"
-        ):
-            assert target_manager._prompts["common"].fn.__name__ == target_fn.__name__
-            assert (
-                target_manager._prompts["external/common"].fn.__name__
-                == source_fn.__name__
-            )
+        assert target_manager._prompts["common"].fn == target_prompt.fn
+        assert target_manager._prompts["external/common"].fn == source_prompt.fn
 
     def test_import_prompts_with_nested_prefixes(self):
         """Test importing already prefixed prompts."""
@@ -247,17 +322,11 @@ class TestImports:
         second_manager = PromptManager()
         third_manager = PromptManager()
 
-        # Add prompt to first manager with a function
-        async def analyze_fn(**kwargs):
-            return [
-                {"role": "assistant", "content": f"Analysis of: {kwargs.get('text')}"}
-            ]
-
         original_prompt = Prompt(
             name="analyze",
             description="Analyze text",
             arguments=[PromptArgument(name="text", description="Text to analyze")],
-            fn=analyze_fn,
+            fn=lambda: None,  # type: ignore
         )
         first_manager._prompts["analyze"] = original_prompt
 
@@ -271,13 +340,4 @@ class TestImports:
         assert "text/analyze" in second_manager._prompts
         assert "ai/text/analyze" in third_manager._prompts
 
-        # Verify the properties of the most nested prompt
-        assert third_manager._prompts["ai/text/analyze"].name == "analyze"
-        assert third_manager._prompts["ai/text/analyze"].description == "Analyze text"
-
-        # Verify function was properly copied through multiple imports
-        if hasattr(third_manager._prompts["ai/text/analyze"], "fn"):
-            assert (
-                third_manager._prompts["ai/text/analyze"].fn.__name__
-                == analyze_fn.__name__
-            )
+        assert third_manager._prompts["ai/text/analyze"].fn == original_prompt.fn

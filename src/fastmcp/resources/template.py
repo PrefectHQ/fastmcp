@@ -8,6 +8,7 @@ from collections.abc import Callable
 from typing import Annotated, Any
 
 from pydantic import BaseModel, BeforeValidator, Field, TypeAdapter, validate_call
+from typing_extensions import Self
 
 from fastmcp.resources.types import FunctionResource, Resource
 from fastmcp.utilities.types import _convert_set_defaults
@@ -27,7 +28,7 @@ class ResourceTemplate(BaseModel):
     mime_type: str = Field(
         default="text/plain", description="MIME type of the resource content"
     )
-    fn: Callable[..., Any] = Field(exclude=True)
+    fn: Callable[..., Any]
     parameters: dict[str, Any] = Field(
         description="JSON schema for function parameters"
     )
@@ -90,3 +91,15 @@ class ResourceTemplate(BaseModel):
             )
         except Exception as e:
             raise ValueError(f"Error creating resource from template: {e}")
+
+    def copy(self, updates: dict[str, Any] | None = None) -> Self:
+        """Copy the resource template with optional updates."""
+        data = self.model_dump()
+        if updates:
+            data.update(updates)
+        return type(self)(**data)
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, ResourceTemplate):
+            return False
+        return self.model_dump() == other.model_dump()

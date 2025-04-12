@@ -1,6 +1,6 @@
-from .base import Resource
+from .resource import Resource
 from .resource_manager import ResourceManager
-from .templates import ResourceTemplate
+from .template import ResourceTemplate
 from .types import (
     BinaryResource,
     DirectoryResource,
