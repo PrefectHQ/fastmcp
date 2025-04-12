@@ -82,7 +82,8 @@ wheels = [
 
 [[package]]
 name = "fastmcp"
-source = { directory = "../../" }
+version = "2.0.0"
+source = { git = "https://github.com/jlowin/fastmcp.git#b6b23d6866249c29dbef7021d305ca62400162c4" }
 dependencies = [
     { name = "dotenv" },
     { name = "fastapi" },
@@ -91,32 +92,6 @@ dependencies = [
     { name = "rich" },
     { name = "typer" },
     { name = "websockets" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "dotenv", specifier = ">=0.9.9" },
-    { name = "fastapi", specifier = ">=0.115.12" },
-    { name = "mcp", specifier = ">=1.6.0,<2.0.0" },
-    { name = "openapi-pydantic", specifier = ">=0.5.1" },
-    { name = "rich", specifier = ">=13.9.4" },
-    { name = "typer", specifier = ">=0.15.2" },
-    { name = "websockets", specifier = ">=15.0.1" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "copychat", specifier = ">=0.5.2" },
-    { name = "dirty-equals", specifier = ">=0.9.0" },
-    { name = "ipython", specifier = ">=8.12.3" },
-    { name = "pdbpp", specifier = ">=0.10.3" },
-    { name = "pre-commit" },
-    { name = "pyright", specifier = ">=1.1.389" },
-    { name = "pytest", specifier = ">=8.3.3" },
-    { name = "pytest-asyncio", specifier = ">=0.23.5" },
-    { name = "pytest-flakefinder" },
-    { name = "pytest-xdist", specifier = ">=3.6.1" },
-    { name = "ruff" },
 ]
 
 [[package]]
@@ -130,15 +105,15 @@ wheels = [
 
 [[package]]
 name = "httpcore"
-version = "1.0.7"
+version = "1.0.8"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "certifi" },
     { name = "h11" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/6a/41/d7d0a89eb493922c37d343b607bc1b5da7f5be7e383740b4753ad8943e90/httpcore-1.0.7.tar.gz", hash = "sha256:8551cb62a169ec7162ac7be8d4817d561f60e08eaa485234898414bb5a8a0b4c", size = 85196 }
+sdist = { url = "https://files.pythonhosted.org/packages/9f/45/ad3e1b4d448f22c0cff4f5692f5ed0666658578e358b8d58a19846048059/httpcore-1.0.8.tar.gz", hash = "sha256:86e94505ed24ea06514883fd44d2bc02d90e77e7979c8eb71b90f41d364a1bad", size = 85385 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/87/f5/72347bc88306acb359581ac4d52f23c0ef445b57157adedb9aee0cd689d2/httpcore-1.0.7-py3-none-any.whl", hash = "sha256:a3fff8f43dc260d5bd363d9f9cf1830fa3a458b332856f34282de498ed420edd", size = 78551 },
+    { url = "https://files.pythonhosted.org/packages/18/8d/f052b1e336bb2c1fc7ed1aaed898aa570c0b61a09707b108979d9fc6e308/httpcore-1.0.8-py3-none-any.whl", hash = "sha256:5254cf149bcb5f75e9d1b2b9f729ea4a4b883d1ad7379fc632b727cec23674be", size = 78732 },
 ]
 
 [[package]]
@@ -228,14 +203,14 @@ wheels = [
 
 [[package]]
 name = "phue2"
-version = "0.0.1.dev280"
+version = "0.0.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "httpx" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/94/a7/29884f4dd1edf2e843dcfd12082a43851315860e59b6e79f4e28f53b6ad5/phue2-0.0.1.dev280.tar.gz", hash = "sha256:5fbd04f548d29fb99bd652a14d9242e772b51e855272739ec087379483ba2028", size = 70998 }
+sdist = { url = "https://files.pythonhosted.org/packages/c2/48/8dd58546dd9867e4e1d6ed912a3952e5aea5da49040fb61bd07df59b32d4/phue2-0.0.3.tar.gz", hash = "sha256:c05cb28286880b202da29b825c3124fa6c44119323930fd118a81c20f29be0f9", size = 71925 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/61/b0/373249bafd1bf7338f6a1601fb256c0ea8eb1c4e11641a0977d15ac4ff64/phue2-0.0.1.dev280-py3-none-any.whl", hash = "sha256:b2540ac0a9a1ffa1e7bcb9606cf49d1fcf8126820ac0205b8b40de15a17dce0a", size = 27518 },
+    { url = "https://files.pythonhosted.org/packages/88/58/5d4a080926d1862fac5524ac15fea38fd7b3dcdfa7315734b850e6051c63/phue2-0.0.3-py3-none-any.whl", hash = "sha256:d2717bcfe1f8572e8b6fff305aa7b051b2dc7818eb9f1bff5eb0941f80bde8b2", size = 27535 },
 ]
 
 [[package]]
@@ -379,31 +354,22 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "fastmcp" },
-]
-
-[package.optional-dependencies]
-lights = [
     { name = "phue2" },
 ]
 
 [package.dev-dependencies]
 dev = [
     { name = "ruff" },
-    { name = "smart-home", extra = ["lights"] },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "fastmcp", directory = "../../" },
-    { name = "phue2", marker = "extra == 'lights'" },
+    { name = "fastmcp", git = "https://github.com/jlowin/fastmcp.git" },
+    { name = "phue2" },
 ]
-provides-extras = ["lights"]
 
 [package.metadata.requires-dev]
-dev = [
-    { name = "ruff" },
-    { name = "smart-home", extras = ["lights"] },
-]
+dev = [{ name = "ruff" }]
 
 [[package]]
 name = "sniffio"

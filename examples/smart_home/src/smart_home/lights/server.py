@@ -14,7 +14,7 @@ from smart_home.settings import settings
 BRIDGE_IP = str(settings.hue_bridge_ip)
 
 try:
-    bridge = Bridge(BRIDGE_IP)
+    bridge = Bridge(BRIDGE_IP, save_config=False)
     print(f"Attempting connection to Hue Bridge at {BRIDGE_IP} via phue2...")
     bridge.connect()  # Explicitly connect (needed for registration check)
     print(f"Successfully connected to Hue Bridge at {BRIDGE_IP} via phue2.")

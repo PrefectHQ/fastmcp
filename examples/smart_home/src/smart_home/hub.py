@@ -18,11 +18,12 @@ hub_mcp = FastMCP(
 @hub_mcp.tool()
 def hub_status() -> str:
     """Checks the status of the main hub and connections."""
-    if Bridge(settings.hue_bridge_ip).connect():
-        # Access the bridge instance directly
+    try:
+        bridge = Bridge(str(settings.hue_bridge_ip), save_config=False)
+        bridge.connect()
         return "Hub OK. Hue Bridge Connected (via phue2)."
-    else:
-        return "Hub Warning: Hue Bridge connection failed or not attempted."
+    except Exception as e:
+        return f"Hub Warning: Hue Bridge connection failed or not attempted: {e}"
 
 
 # Add mounting points for other services later
