@@ -8,9 +8,9 @@
         "decoration": "windows"
     },
     "colors": {
-        "dark": "#EA5455",
-        "light": "#EA5455",
-        "primary": "#EA5455"
+        "dark": "#f72585",
+        "light": "#4cc9f0",
+        "primary": "#3f37c9"
     },
     "description": "The fast, Pythonic way to build MCP servers.",
     "footer": {
