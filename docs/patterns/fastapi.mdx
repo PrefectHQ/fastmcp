@@ -1,0 +1,114 @@
+---
+title: FastAPI Integration
+sidebarTitle: FastAPI
+description: Automatically create FastMCP servers directly from FastAPI applications.
+icon: square-bolt
+---
+
+If you build your APIs using the popular [FastAPI](https://fastapi.tiangolo.com/) framework, FastMCP offers a seamless way to expose your FastAPI application as an MCP server. This leverages the OpenAPI integration internally but simplifies the setup significantly.
+
+## The Goal: FastAPI App -> MCP Server
+
+FastAPI automatically generates an OpenAPI specification for your application. FastMCP uses this built-in capability to create an MCP server that mirrors your API routes.
+
+- FastAPI path operations (`@app.get`, `@app.post`, etc.) become MCP tools, resources, or templates.
+- Pydantic models used in FastAPI for request/response validation are used to generate MCP schemas.
+- Communication happens directly in memory, making it very efficient.
+
+## Creating from FastAPI App
+
+Use the `FastMCP.from_fastapi()` class method. You only need your FastAPI `app` instance.
+
+```python
+import asyncio
+from fastapi import FastAPI
+from pydantic import BaseModel
+from fastmcp import FastMCP, Client # Import FastMCP and Client
+
+# 1. Define your FastAPI application
+api_app = FastAPI(title="MyFastAPIApp")
+
+class Item(BaseModel):
+    name: str
+    price: float
+    is_offer: bool | None = None
+
+@api_app.get("/")
+def read_root():
+    return {"Hello": "World"}
+
+@api_app.get("/items/{item_id}") # -> Resource Template
+def read_item(item_id: int, q: str | None = None):
+    # This will become resource://openapi/read_item_items__item_id__get/{item_id}
+    return {"item_id": item_id, "q": q, "description": f"Details for item {item_id}"}
+
+@api_app.post("/items/") # -> Tool
+def create_item(item: Item):
+    # This will become the 'create_item_items__post' tool
+    print(f"Creating item: {item.name}")
+    return {"item_name": item.name, "status": "created"}
+
+# 2. Create the FastMCP server directly from the FastAPI app
+# This is an async class method
+async def create_mcp_server_from_fastapi():
+    mcp_server = await FastMCP.from_fastapi(
+        app=api_app,
+        name="FastAPI_MCP_Bridge" # Optional name for the MCP server
+    )
+    return mcp_server
+
+# 3. (Example) Run the MCP server and test with an in-memory client
+async def run_and_test():
+    server = await create_mcp_server_from_fastapi()
+    print(f"Created MCP server '{server.name}' from FastAPI app '{api_app.title}'")
+
+    # List discovered components
+    tools = await server.list_tools()
+    templates = await server.list_resource_templates()
+    print("Discovered Tools:", [t.name for t in tools])
+    print("Discovered Templates:", [t.uriTemplate for t in templates])
+
+    # Test using an in-memory client
+    client = Client(server) # Uses FastMCPTransport
+    async with client:
+        # Call the tool derived from POST /items/
+        create_result = await client.call_tool(
+            "create_item_items__post",
+            {"name": "MCP Special", "price": 99.99} # Pydantic model fields become args
+        )
+        print("Create Item Tool Result:", create_result[0].text) # JSON string
+
+        # Read the resource derived from GET /items/{item_id}
+        read_result = await client.read_resource(
+            "resource://openapi/read_item_items__item_id__get/42" # Match template URI
+        )
+        print("Read Item Resource Result:", read_result[0].text) # JSON string
+
+    # In a real scenario, you might run the MCP server via stdio or sse
+    # print("Running MCP server via stdio...")
+    # server.run()
+
+if __name__ == "__main__":
+    # Requires fastapi, uvicorn, httpx:
+    # uv pip install "fastapi[all]" httpx
+    try:
+        asyncio.run(run_and_test())
+    except ImportError as e:
+        print(f"Error: {e}. Please install required packages: uv pip install \"fastapi[all]\" httpx")
+
+# Example Output might include:
+# Created MCP server 'FastAPI_MCP_Bridge' from FastAPI app 'MyFastAPIApp'
+# Discovered Tools: ['read_root___get', 'create_item_items__post']
+# Discovered Templates: ['resource://openapi/read_item_items__item_id__get/{item_id}']
+# Create Item Tool Result: {"item_name": "MCP Special", "status": "created"}
+# Read Item Resource Result: {"item_id": 42, "q": null, "description": "Details for item 42"}
+```
+
+### How it Works Internally
+
+1.  **OpenAPI Generation**: `from_fastapi` asks the FastAPI `app` for its OpenAPI schema dictionary (`app.openapi()`).
+2.  **In-Memory Client**: It creates an `httpx.AsyncClient` configured with an `ASGITransport`. This special transport allows `httpx` to call the FastAPI application directly in memory without needing a running web server process.
+3.  **OpenAPI Integration**: It calls `FastMCP.from_openapi()`, passing the generated schema and the in-memory `httpx` client.
+4.  **MCP Server Creation**: The standard OpenAPI integration logic then proceeds to parse the schema and create the `Tool`, `Resource`, and `ResourceTemplate` components that wrap calls to the in-memory FastAPI app.
+
+This provides a highly efficient way to expose your FastAPI logic through the MCP protocol, leveraging FastAPI's routing, dependency injection, and validation features. 

@@ -1,0 +1,186 @@
+---
+title: Server Composition
+sidebarTitle: Composition
+description: Combine multiple FastMCP servers into a single, larger application using mounting.
+icon: puzzle-piece
+---
+
+As your MCP applications grow, you might want to organize your tools, resources, and prompts into logical modules or reuse existing server components. FastMCP supports composition through the `server.mount()` method, allowing you to combine multiple `FastMCP` instances into a single, unified server.
+
+## Why Compose Servers?
+
+-   **Modularity**: Break down large applications into smaller, focused servers (e.g., a `WeatherServer`, a `DatabaseServer`, a `CalendarServer`).
+-   **Reusability**: Create common utility servers (e.g., a `TextProcessingServer`) and mount them wherever needed.
+-   **Teamwork**: Different teams can work on separate FastMCP servers that are later combined.
+-   **Organization**: Keep related functionality grouped together logically.
+
+## Mounting Subservers
+
+The `mount()` method attaches all components (tools, resources, templates, prompts) from one `FastMCP` instance (the *subserver*) onto another (the *main server*). A `prefix` is added to avoid naming conflicts.
+
+```python
+from fastmcp import FastMCP
+from typing import dict, list
+
+# --- Define Subservers ---
+
+# Weather Service
+weather_mcp = FastMCP(name="WeatherService")
+
+@weather_mcp.tool()
+def get_forecast(city: str) -> dict:
+    """Get weather forecast."""
+    return {"city": city, "forecast": "Sunny"}
+
+@weather_mcp.resource("data://cities/supported")
+def list_supported_cities() -> list[str]:
+    """List cities with weather support."""
+    return ["London", "Paris", "Tokyo"]
+
+# Calculator Service
+calc_mcp = FastMCP(name="CalculatorService")
+
+@calc_mcp.tool()
+def add(a: int, b: int) -> int:
+    """Add two numbers."""
+    return a + b
+
+@calc_mcp.prompt()
+def explain_addition() -> str:
+    """Explain the concept of addition."""
+    return "Addition is the process of combining two or more numbers."
+
+# --- Define Main Server ---
+main_mcp = FastMCP(name="MainApp")
+
+# --- Mount Subservers ---
+# Mount weather service with prefix "weather"
+main_mcp.mount("weather", weather_mcp)
+
+# Mount calculator service with prefix "calc"
+main_mcp.mount("calc", calc_mcp)
+
+# --- Now, main_mcp contains combined components ---
+# Tools:
+# - "weather_get_forecast"
+# - "calc_add"
+# Resources:
+# - "weather+data://cities/supported" (prefixed URI)
+# Prompts:
+# - "calc_explain_addition"
+
+if __name__ == "__main__":
+    # Run the main server, which now includes components from both subservers
+    main_mcp.run()
+```
+
+### How Mounting Works
+
+When you call `main_mcp.mount(prefix, subserver)`:
+
+1.  **Tools**: All tools from `subserver` are added to `main_mcp`. Their names are automatically prefixed using the `prefix` and a default separator (`_`).
+    -   `subserver.tool(name="my_tool")` becomes `main_mcp.tool(name="{prefix}_my_tool")`.
+2.  **Resources**: All resources from `subserver` are added. Their URIs are prefixed using the `prefix` and a default separator (`+`).
+    -   `subserver.resource(uri="data://info")` becomes `main_mcp.resource(uri="{prefix}+data://info")`.
+3.  **Resource Templates**: All templates from `subserver` are added. Their URI *templates* are prefixed similarly to resources.
+    -   `subserver.resource(uri="data://{id}")` becomes `main_mcp.resource(uri="{prefix}+data://{id}")`.
+4.  **Prompts**: All prompts from `subserver` are added, with names prefixed like tools.
+    -   `subserver.prompt(name="my_prompt")` becomes `main_mcp.prompt(name="{prefix}_my_prompt")`.
+5.  **Lifespan Management**: If the `subserver` has a `lifespan` function defined, it will be automatically executed within the `main_mcp`'s lifespan context. This ensures that setup and teardown logic for the subserver runs correctly.
+
+### Customizing Separators
+
+You might prefer different separators for the prefixed names and URIs. You can customize these when calling `mount()`:
+
+```python
+main_mcp.mount(
+    prefix="api",
+    app=some_subserver,
+    tool_separator="/",       # Tool name becomes: "api/sub_tool_name"
+    resource_separator=":",   # Resource URI becomes: "api:data://sub_resource"
+    prompt_separator="."      # Prompt name becomes: "api.sub_prompt_name"
+)
+```
+
+<Warning>
+Be cautious when choosing separators. Some MCP clients (like Claude Desktop) might have restrictions on characters allowed in tool names (e.g., `/` might not be supported). The defaults (`_` for names, `+` for URIs) are generally safe.
+</Warning>
+
+## Example: Modular Application
+
+```python
+# modules/text_utils.py
+from fastmcp import FastMCP
+from typing import list
+
+text_mcp = FastMCP(name="TextUtilities")
+
+@text_mcp.tool()
+def count_words(text: str) -> int:
+    """Counts words in a text."""
+    return len(text.split())
+
+@text_mcp.resource("resource://stopwords")
+def get_stopwords() -> list[str]:
+    """Return a list of common stopwords."""
+    return ["the", "a", "is", "in"]
+
+# ------------------------------
+# modules/data_api.py
+from fastmcp import FastMCP
+import random
+from typing import dict
+
+data_mcp = FastMCP(name="DataAPI")
+
+@data_mcp.tool()
+def fetch_record(record_id: int) -> dict:
+    """Fetches a dummy data record."""
+    return {"id": record_id, "value": random.random()}
+
+@data_mcp.resource("data://schema/{table}")
+def get_table_schema(table: str) -> dict:
+    """Provides a dummy schema for a table."""
+    return {"table": table, "columns": ["id", "value"]}
+
+# ------------------------------
+# main_app.py
+from fastmcp import FastMCP
+from modules.text_utils import text_mcp  # Import server instances
+from modules.data_api import data_mcp
+
+app = FastMCP(name="MainApplication")
+
+# Mount the utility servers
+app.mount("text", text_mcp)
+app.mount("data", data_mcp)
+
+@app.tool()
+def process_and_analyze(record_id: int) -> str:
+    """Fetches a record and analyzes its string representation."""
+    # In a real application, you'd use proper methods to interact between
+    # mounted tools rather than accessing internal managers
+    
+    # Get record data
+    record = {"id": record_id, "value": random.random()}
+    
+    # Count words in the record string representation
+    word_count = len(str(record).split())
+    
+    return (
+        f"Record {record_id} has {word_count} words in its string "
+        f"representation."
+    )
+
+if __name__ == "__main__":
+    app.run()
+```
+
+Now, running `main_app.py` starts a server that exposes:
+- `text_count_words`
+- `data_fetch_record`
+- `process_and_analyze`
+- `text+resource://stopwords`
+- `data+data://schema/{table}` (template)
+
+This pattern promotes code organization and reuse within your FastMCP projects. 

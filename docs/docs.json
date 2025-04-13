@@ -10,7 +10,7 @@
     "colors": {
         "dark": "#f72585",
         "light": "#4cc9f0",
-        "primary": "#3f37c9"
+        "primary": "#2d00f7"
     },
     "description": "The fast, Pythonic way to build MCP servers.",
     "footer": {
@@ -52,6 +52,15 @@
                 "pages": [
                     "clients/overview",
                     "clients/transports"
+                ]
+            },
+            {
+                "group": "Advanced Patterns",
+                "pages": [
+                    "patterns/proxying",
+                    "patterns/composition",
+                    "patterns/openapi",
+                    "patterns/fastapi"
                 ]
             },
             {
