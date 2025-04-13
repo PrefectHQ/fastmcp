@@ -37,7 +37,13 @@
             },
             {
                 "group": "Servers",
-                "pages": []
+                "pages": [
+                    "servers/fastmcp",
+                    "servers/tools",
+                    "servers/resources",
+                    "servers/prompts",
+                    "servers/context"
+                ]
             },
             {
                 "group": "Clients",

@@ -1,0 +1,302 @@
+---
+title: The FastMCP Server
+sidebarTitle: FastMCP Server
+description: Learn about the core FastMCP server class and how to run it.
+icon: server
+---
+
+The central piece of a FastMCP application is the `FastMCP` server class. This class acts as the main container for your application's tools, resources, and prompts, and manages communication with MCP clients.
+
+## Creating a Server
+
+Instantiating a server is straightforward. You typically provide a name for your server, which helps identify it in client applications or logs.
+
+```python
+from fastmcp import FastMCP
+
+# Create a basic server instance
+mcp = FastMCP(name="MyAssistantServer")
+
+# You can also add instructions for how to interact with the server
+mcp_with_instructions = FastMCP(
+    name="HelpfulAssistant",
+    instructions="This server provides data analysis tools. Call get_average() to analyze numerical data."
+)
+```
+
+The `FastMCP` constructor accepts several arguments:
+
+*   `name`: (Optional) A human-readable name for your server. Defaults to "FastMCP".
+*   `instructions`: (Optional) Description of how to interact with this server. These instructions help clients understand the server's purpose and available functionality.
+*   `lifespan`: (Optional) An async context manager function for server startup and shutdown logic. See [Lifespan Management](/advanced/lifespan).
+*   `tags`: (Optional) A set of strings to tag the server itself.
+*   `**settings`: Keyword arguments corresponding to `ServerSettings` for configuration. See [Configuration](/advanced/configuration).
+
+## Components
+
+FastMCP servers expose several types of components to the client:
+
+### Tools
+
+Tools are functions that the client can call to perform actions or access external systems.
+
+```python
+@mcp.tool()
+def multiply(a: float, b: float) -> float:
+    """Multiplies two numbers together."""
+    return a * b
+```
+
+See [Tools](/server/tools) for detailed documentation.
+
+### Resources
+
+Resources expose data sources that the client can read.
+
+```python
+@mcp.resource("data://config")
+def get_config() -> dict:
+    """Provides the application configuration."""
+    return {"theme": "dark", "version": "1.0"}
+```
+
+See [Resources & Templates](/server/resources) for detailed documentation.
+
+### Resource Templates
+
+Resource templates are parameterized resources that allow the client to request specific data.
+
+```python
+@mcp.resource("users://{user_id}/profile")
+def get_user_profile(user_id: int) -> dict:
+    """Retrieves a user's profile by ID."""
+    # The {user_id} in the URI is extracted and passed to this function
+    return {"id": user_id, "name": f"User {user_id}", "status": "active"}
+```
+
+See [Resources & Templates](/server/resources) for detailed documentation.
+
+### Prompts
+
+Prompts are reusable message templates for guiding the LLM.
+
+```python
+@mcp.prompt()
+def analyze_data(data_points: list[float]) -> str:
+    """Creates a prompt asking for analysis of numerical data."""
+    formatted_data = ", ".join(str(point) for point in data_points)
+    return f"Please analyze these data points: {formatted_data}"
+```
+
+See [Prompts](/server/prompts) for detailed documentation.
+
+## Running the Server
+
+FastMCP servers need a transport mechanism to communicate with clients. In the MCP protocol, servers typically run as separate processes that clients connect to.
+
+### The `__main__` Block Pattern
+
+The standard way to make your server executable is to include a `run()` call inside an `if __name__ == "__main__":` block:
+
+```python
+# my_server.py
+from fastmcp import FastMCP
+
+mcp = FastMCP(name="MyServer")
+
+@mcp.tool()
+def greet(name: str) -> str:
+    """Greet a user by name."""
+    return f"Hello, {name}!"
+
+if __name__ == "__main__":
+    # This code only runs when the file is executed directly
+    mcp.run()
+```
+
+This pattern is important because:
+
+1. **Client Compatibility**: Standard MCP clients (like Claude Desktop) expect to execute your server file directly with `python my_server.py`
+2. **Process Isolation**: Each server runs in its own process, allowing clients to manage multiple servers independently
+3. **Import Safety**: The main block prevents the server from running when the file is imported by other code
+
+While this pattern is technically optional when using FastMCP's CLI, it's considered a best practice for maximum compatibility with all MCP clients.
+
+### Transport Options
+
+FastMCP supports two transport mechanisms:
+
+#### STDIO Transport (Default)
+
+The standard input/output (STDIO) transport is the default and most widely compatible option:
+
+```python
+# Run with stdio (default)
+mcp.run()  # or explicitly: mcp.run(transport="stdio")
+```
+
+With STDIO:
+- The client starts a new server process for each session
+- Communication happens through standard input/output streams
+- The server process terminates when the client disconnects
+- This is ideal for integrations with tools like Claude Desktop, where each conversation gets its own server instance
+
+#### SSE Transport (Server-Sent Events)
+
+For long-running servers that serve multiple clients, FastMCP supports SSE:
+
+```python
+# Run with SSE on default host/port (0.0.0.0:8000)
+mcp.run(transport="sse")
+```
+
+With SSE:
+- The server runs as a persistent web server
+- Multiple clients can connect simultaneously
+- The server stays running until explicitly terminated
+- This is ideal for remote access to services
+
+You can configure the host, port, and log level when running the server:
+
+```python
+# Configure with parameters
+mcp.run(transport="sse", host="127.0.0.1", port=8888)
+
+# Or run asynchronously with the same parameters
+import asyncio
+asyncio.run(mcp.run_sse_async(host="127.0.0.1", port=8888, log_level="debug"))
+```
+
+These parameters override any settings defined when creating the FastMCP instance.
+
+### Using the FastMCP CLI
+
+The FastMCP CLI provides a convenient way to run servers:
+
+```bash
+# Run a server (defaults to stdio transport)
+fastmcp run my_server.py:mcp
+
+# Explicitly specify a transport
+fastmcp run my_server.py:mcp --transport sse
+
+# Configure SSE transport
+fastmcp run my_server.py:mcp --transport sse --host 127.0.0.1 --port 8888
+```
+
+The CLI can dynamically find and run FastMCP server objects in your files, but including the `if __name__ == "__main__":` block ensures compatibility with all clients.
+
+<Tip>
+For more options, including how to set up your server's dependencies or use advanced configurations, see the [CLI Reference](/cli/overview).
+</Tip>
+
+## Mounting Subservers
+
+FastMCP allows you to compose complex applications by mounting other FastMCP servers as subservers. This is useful for:
+
+- Organizing large applications into logical components
+- Reusing existing FastMCP servers as parts of a larger system
+- Creating domain-specific servers that can be used independently or composed
+
+```python
+from fastmcp import FastMCP
+
+# Create the main server
+main_mcp = FastMCP(name="MainServer")
+
+# Create a domain-specific subserver
+weather_mcp = FastMCP(name="WeatherService")
+
+@weather_mcp.tool()
+def get_forecast(city: str) -> dict:
+    """Get the weather forecast for a city."""
+    return {"city": city, "forecast": "Sunny", "temperature": 72}
+
+# Create another domain-specific subserver
+calculator_mcp = FastMCP(name="CalculatorService")
+
+@calculator_mcp.tool()
+def add(a: float, b: float) -> float:
+    """Add two numbers."""
+    return a + b
+
+# Mount the subservers with prefixes
+main_mcp.mount("weather", weather_mcp)
+main_mcp.mount("calc", calculator_mcp)
+
+# Now main_mcp has access to both subservers' tools:
+# - "weather_get_forecast" (from weather_mcp)
+# - "calc_add" (from calculator_mcp)
+
+if __name__ == "__main__":
+    main_mcp.run()
+```
+
+### How Mounting Works
+
+When you mount a server with `main_mcp.mount(prefix, subserver)`:
+
+1. All tools from the subserver are imported with prefixed names:
+   - `tool_name` becomes `{prefix}_tool_name`
+   - Default separator is `_`, but can be customized
+
+2. All resources and resource templates are imported with prefixed URIs:
+   - `resource://data` becomes `{prefix}+resource://data`
+   - Default separator is `+`, but can be customized
+
+3. All prompts are imported with prefixed names:
+   - `prompt_name` becomes `{prefix}_prompt_name`
+   - Default separator is `_`, but can be customized
+
+4. The subserver's lifespan is managed automatically when the main server starts and stops
+
+### Customizing Separators
+
+You can customize the separators used for naming:
+
+```python
+main_mcp.mount(
+    "weather", 
+    weather_mcp,
+    tool_separator="-",       # Use "weather-get_forecast" instead of "weather_get_forecast"
+    resource_separator=".",   # Use "weather.resource://data" instead of "weather+resource://data"
+    prompt_separator=":"      # Use "weather:prompt_name" instead of "weather_prompt_name"
+)
+```
+
+<Warning>
+Some MCP clients may reject certain separators as invalid. For example, Claude Desktop does not support `/` in tool names.
+</Warning>
+
+## Server Configuration
+
+Server behavior, like transport settings (host, port for SSE) and how duplicate components are handled, can be configured via `ServerSettings`. These settings can be passed during `FastMCP` initialization, set via environment variables (prefixed with `FASTMCP_SERVER_`), or loaded from a `.env` file.
+
+```python
+from fastmcp import FastMCP
+from fastmcp.settings import DuplicateBehavior
+
+# Configure during initialization
+mcp = FastMCP(
+    name="ConfiguredServer",
+    port=8080, # Directly maps to ServerSettings
+    on_duplicate_tools=DuplicateBehavior.ERROR # Set duplicate handling
+)
+
+# Settings are accessible via mcp.settings
+print(mcp.settings.port) # Output: 8080
+print(mcp.settings.on_duplicate_tools) # Output: DuplicateBehavior.ERROR
+```
+
+### Key Configuration Options
+
+- **`host`**: Host address for SSE transport (default: "0.0.0.0")
+- **`port`**: Port number for SSE transport (default: 8000)
+- **`log_level`**: Logging level (default: "INFO")
+- **`on_duplicate_tools`**: How to handle duplicate tool registrations
+- **`on_duplicate_resources`**: How to handle duplicate resource registrations
+- **`on_duplicate_prompts`**: How to handle duplicate prompt registrations
+
+All of these can be configured directly as parameters when creating the `FastMCP` instance.
+
+See the [Configuration](/advanced/configuration) page for more details. 

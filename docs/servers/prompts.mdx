@@ -1,0 +1,229 @@
+---
+title: Prompts
+sidebarTitle: Prompts
+description: Create reusable, parameterized prompt templates for MCP clients.
+icon: message-lines
+---
+
+Prompts are reusable message templates that help LLMs generate structured, purposeful responses. FastMCP simplifies defining these templates, primarily using the `@mcp.prompt` decorator.
+
+## What Are Prompts?
+
+Prompts provide parameterized message templates for LLMs. When a client requests a prompt:
+
+1.  FastMCP finds the corresponding prompt definition.
+2.  If it has parameters, they are validated against your function signature.
+3.  Your function executes with the validated inputs.
+4.  The generated message(s) are returned to the LLM to guide its response.
+
+This allows you to define consistent, reusable templates that LLMs can use across different clients and contexts.
+
+## Defining Prompts
+
+### The `@prompt` Decorator
+
+The most common way to define a prompt is by decorating a Python function. The decorator uses the function name as the prompt's identifier.
+
+```python
+from fastmcp import FastMCP
+from fastmcp.prompts.prompt import UserMessage, AssistantMessage, Message
+
+mcp = FastMCP(name="PromptServer")
+
+# Basic prompt returning a string (converted to UserMessage)
+@mcp.prompt()
+def ask_about_topic(topic: str) -> str:
+    """Generates a user message asking for an explanation of a topic."""
+    return f"Can you please explain the concept of '{topic}'?"
+
+# Prompt returning a specific message type
+@mcp.prompt()
+def generate_code_request(language: str, task_description: str) -> UserMessage:
+    """Generates a user message requesting code generation."""
+    content = f"Write a {language} function that performs the following task: {task_description}"
+    return UserMessage(content=content)
+```
+
+**Key Concepts:**
+
+*   **Name:** By default, the prompt name is taken from the function name.
+*   **Parameters:** The function parameters define the inputs needed to generate the prompt.
+*   **Inferred Metadata:** By default:
+    *   Prompt Name: Taken from the function name (`ask_about_topic`).
+    *   Prompt Description: Taken from the function's docstring.
+
+### Return Values
+
+FastMCP intelligently handles different return types from your prompt function:
+
+-   **`str`**: Automatically converted to a single `UserMessage`.
+-   **`Message`** (e.g., `UserMessage`, `AssistantMessage`): Used directly as provided.
+-   **`dict`**: Parsed as a `Message` object if it has the correct structure.
+-   **`list[Message]`**: Used as a sequence of messages (a conversation).
+
+```python
+@mcp.prompt()
+def roleplay_scenario(character: str, situation: str) -> list[Message]:
+    """Sets up a roleplaying scenario with initial messages."""
+    return [
+        UserMessage(f"Let's roleplay. You are {character}. The situation is: {situation}"),
+        AssistantMessage("Okay, I understand. I am ready. What happens next?")
+    ]
+
+@mcp.prompt()
+def ask_for_feedback() -> dict:
+    """Generates a user message asking for feedback."""
+    return {"role": "user", "content": "What did you think of my previous response?"}
+```
+
+### Type Annotations
+
+Type annotations are important for prompts. They:
+1.  Inform FastMCP about the expected types for each parameter.
+2.  Allow validation of parameters received from clients.
+3.  Are used to generate the prompt's schema for the MCP protocol.
+
+```python
+from pydantic import Field
+from typing import Literal, Optional
+
+@mcp.prompt()
+def generate_content_request(
+    topic: str = Field(description="The main subject to cover"),
+    format: Literal["blog", "email", "social"] = "blog",
+    tone: str = "professional",
+    word_count: Optional[int] = None
+) -> str:
+    """Create a request for generating content in a specific format."""
+    prompt = f"Please write a {format} post about {topic} in a {tone} tone."
+    
+    if word_count:
+        prompt += f" It should be approximately {word_count} words long."
+        
+    return prompt
+```
+
+### Required vs. Optional Parameters
+
+Parameters in your function signature are considered **required** unless they have a default value.
+
+```python
+@mcp.prompt()
+def data_analysis_prompt(
+    data_uri: str,                        # Required - no default value
+    analysis_type: str = "summary",       # Optional - has default value
+    include_charts: bool = False          # Optional - has default value
+) -> str:
+    """Creates a request to analyze data with specific parameters."""
+    prompt = f"Please perform a '{analysis_type}' analysis on the data found at {data_uri}."
+    if include_charts:
+        prompt += " Include relevant charts and visualizations."
+    return prompt
+```
+
+In this example, the client *must* provide `data_uri`. If `analysis_type` or `include_charts` are omitted, their default values will be used.
+
+### Prompt Metadata
+
+While FastMCP infers the name and description from your function, you can override these and add tags using arguments to the `@mcp.prompt` decorator:
+
+```python
+@mcp.prompt(
+    name="analyze_data_request",          # Custom prompt name
+    description="Creates a request to analyze data with specific parameters",  # Custom description
+    tags={"analysis", "data"}             # Optional categorization tags
+)
+def data_analysis_prompt(
+    data_uri: str = Field(description="The URI of the resource containing the data."),
+    analysis_type: str = Field(default="summary", description="Type of analysis.")
+) -> str:
+    """This docstring is ignored when description is provided."""
+    return f"Please perform a '{analysis_type}' analysis on the data found at {data_uri}."
+```
+
+- **`name`**: Sets the explicit prompt name exposed via MCP.
+- **`description`**: Provides the description exposed via MCP. If set, the function's docstring is ignored for this purpose.
+- **`tags`**: A set of strings used to categorize the prompt. Clients *might* use tags to filter or group available prompts.
+
+### Asynchronous Prompts
+
+FastMCP seamlessly supports both standard (`def`) and asynchronous (`async def`) functions as prompts.
+
+```python
+# Synchronous prompt
+@mcp.prompt()
+def simple_question(question: str) -> str:
+    """Generates a simple question to ask the LLM."""
+    return f"Question: {question}"
+
+# Asynchronous prompt
+@mcp.prompt()
+async def data_based_prompt(data_id: str) -> str:
+    """Generates a prompt based on data that needs to be fetched."""
+    # In a real scenario, you might fetch data from a database or API
+    async with aiohttp.ClientSession() as session:
+        async with session.get(f"https://api.example.com/data/{data_id}") as response:
+            data = await response.json()
+            return f"Analyze this data: {data['content']}"
+```
+
+Use `async def` when your prompt function performs I/O operations like network requests, database queries, file I/O, or external service calls.
+
+### The MCP Session
+
+Prompts can access the MCP features via the `Context` object, just like tools.
+
+```python
+from fastmcp import Context
+
+@mcp.prompt()
+async def generate_report_request(report_type: str, ctx: Context) -> str:
+    """Generates a request for a report based on available data."""
+    # Log the request
+    await ctx.info(f"Generating prompt for report type: {report_type}")
+    
+    # Could potentially use ctx.read_resource to fetch data
+    # Or ctx.sample to get additional input from the LLM
+    
+    return f"Please create a {report_type} report based on the available data."
+```
+
+Using the `ctx` parameter (based on its `Context` type hint), you can access:
+
+-   **Logging:** `ctx.debug()`, `ctx.info()`, etc.
+-   **Resource Access:** `ctx.read_resource(uri)`
+-   **LLM Sampling:** `ctx.sample(...)`
+-   **Request Info:** `ctx.request_id`, `ctx.client_id`
+
+Refer to the [Using Context](/server/context) page for more details on these capabilities.
+
+## Server Behavior
+
+### Duplicate Prompts
+
+You can configure how the FastMCP server handles attempts to register multiple prompts with the same name. Use the `on_duplicate_prompts` setting during `FastMCP` initialization.
+
+```python
+from fastmcp import FastMCP
+from fastmcp.settings import DuplicateBehavior
+
+mcp = FastMCP(
+    name="PromptServer",
+    on_duplicate_prompts=DuplicateBehavior.ERROR  # Raise an error if a prompt name is duplicated
+)
+
+@mcp.prompt()
+def greeting(): return "Hello, how can I help you today?"
+
+# This registration attempt will raise a ValueError because
+# "greeting" is already registered and the behavior is ERROR.
+# @mcp.prompt()
+# def greeting(): return "Hi there! What can I do for you?"
+```
+
+The `DuplicateBehavior` enum options are:
+
+-   `WARN` (default): Logs a warning, and the new prompt replaces the old one.
+-   `ERROR`: Raises a `ValueError`, preventing the duplicate registration.
+-   `REPLACE`: Silently replaces the existing prompt with the new one.
+-   `IGNORE`: Keeps the original prompt and ignores the new registration attempt. 

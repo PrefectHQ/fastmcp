@@ -133,7 +133,6 @@ def _import_server(file: Path, server_object: str | None = None):
         sys.exit(1)
 
     module = importlib.util.module_from_spec(spec)
-    breakpoint()
     spec.loader.exec_module(module)
 
     # If no object specified, try common server names

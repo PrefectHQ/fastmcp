@@ -495,15 +495,20 @@ class FastMCP(Generic[LifespanResultT]):
                 self._mcp_server.create_initialization_options(),
             )
 
-    async def run_sse_async(self) -> None:
+    async def run_sse_async(
+        self,
+        host: str | None = None,
+        port: int | None = None,
+        log_level: str | None = None,
+    ) -> None:
         """Run the server using SSE transport."""
         starlette_app = self.sse_app()
 
         config = uvicorn.Config(
             starlette_app,
-            host=self.settings.host,
-            port=self.settings.port,
-            log_level=self.settings.log_level.lower(),
+            host=host or self.settings.host,
+            port=port or self.settings.port,
+            log_level=log_level or self.settings.log_level.lower(),
         )
         server = uvicorn.Server(config)
         await server.serve()
