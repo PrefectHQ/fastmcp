@@ -153,6 +153,7 @@ class FastMCP(Generic[LifespanResultT]):
 
     async def list_tools(self) -> list[MCPTool]:
         """List all available tools."""
+
         tools = self._tool_manager.list_tools()
         return [
             MCPTool(
@@ -534,37 +535,51 @@ class FastMCP(Generic[LifespanResultT]):
             logger.error(f"Error getting prompt {name}: {e}")
             raise ValueError(str(e))
 
-    def mount(self, prefix: str, app: "FastMCP") -> None:
+    def mount(
+        self,
+        prefix: str,
+        app: "FastMCP",
+        tool_separator: str | None = None,
+        resource_separator: str | None = None,
+        prompt_separator: str | None = None,
+    ) -> None:
         """Mount another FastMCP application with a given prefix.
 
         When an application is mounted:
-        - The tools are imported with prefixed names
-          Example: If app has a tool named "get_weather", it will be available as "weather/get_weather"
-        - The resources are imported with prefixed URIs
+        - The tools are imported with prefixed names using the tool_separator
+          Example: If app has a tool named "get_weather", it will be available as "weatherget_weather"
+        - The resources are imported with prefixed URIs using the resource_separator
           Example: If app has a resource with URI "weather://forecast", it will be available as "weather+weather://forecast"
-        - The templates are imported with prefixed URI templates
+        - The templates are imported with prefixed URI templates using the resource_separator
           Example: If app has a template with URI "weather://location/{id}", it will be available as "weather+weather://location/{id}"
-        - The prompts are imported with prefixed names
-          Example: If app has a prompt named "weather_prompt", it will be available as "weather/weather_prompt"
+        - The prompts are imported with prefixed names using the prompt_separator
+          Example: If app has a prompt named "weather_prompt", it will be available as "weather_weather_prompt"
 
         Args:
             prefix: The prefix to use for the mounted application
             app: The FastMCP application to mount
         """
+        if tool_separator is None:
+            tool_separator = "_"
+        if resource_separator is None:
+            resource_separator = "+"
+        if prompt_separator is None:
+            prompt_separator = "_"
+
         # Mount the app in the list of mounted apps
         self._mounted_apps[prefix] = app
 
-        # Import tools from the mounted app with / delimiter
-        tool_prefix = f"{prefix}/"
+        # Import tools from the mounted app
+        tool_prefix = f"{prefix}{tool_separator}"
         self._tool_manager.import_tools(app._tool_manager, tool_prefix)
 
-        # Import resources and templates from the mounted app with + delimiter
-        resource_prefix = f"{prefix}+"
+        # Import resources and templates from the mounted app
+        resource_prefix = f"{prefix}{resource_separator}"
         self._resource_manager.import_resources(app._resource_manager, resource_prefix)
         self._resource_manager.import_templates(app._resource_manager, resource_prefix)
 
-        # Import prompts with / delimiter
-        prompt_prefix = f"{prefix}/"
+        # Import prompts from the mounted app
+        prompt_prefix = f"{prefix}{prompt_separator}"
         self._prompt_manager.import_prompts(app._prompt_manager, prompt_prefix)
 
         logger.info(f"Mounted app with prefix '{prefix}'")

@@ -64,10 +64,11 @@ def check_app_status() -> dict[str, str]:
 
 # Mount sub-applications
 app.mount("weather", weather_app)
+
 app.mount("news", news_app)
 
 
-async def start_server():
+async def get_server_details():
     """Print information about mounted resources."""
     # Print available tools
     tools = app._tool_manager.list_tools()
@@ -105,7 +106,7 @@ async def start_server():
 
 if __name__ == "__main__":
     # First run our async function to display info
-    asyncio.run(start_server())
+    asyncio.run(get_server_details())
 
     # Then start the server (uncomment to run the server)
     # app.run()
