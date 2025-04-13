@@ -11,7 +11,7 @@
 
 </div>
 
-[Model Context Protocol (MCP)](https://modelcontextprotocol.io) servers are a standardized way to provide context and tools to your LLMs, and FastMCP makes building *and interacting with* them simple and intuitive. Create tools, expose resources, define prompts, and connect components with clean, Pythonic code.
+The [Model Context Protocol (MCP)](https://modelcontextprotocol.io) is a new, standardized way to provide context and tools to your LLMs, and FastMCP makes building MCP servers and clients simple and intuitive. Create tools, expose resources, define prompts, and connect components with clean, Pythonic code.
 
 ```python
 # server.py
