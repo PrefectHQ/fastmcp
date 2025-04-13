@@ -1,0 +1,241 @@
+---
+title: Client Transports
+sidebarTitle: Transports
+description: Understand the different ways FastMCP Clients can connect to servers.
+icon: link
+---
+
+The FastMCP `Client` relies on a `ClientTransport` object to handle the specifics of connecting to and communicating with an MCP server. FastMCP provides several built-in transport implementations for common connection methods.
+
+While the `Client` often infers the correct transport automatically (see [Client Overview](/clients/overview#transport-inference)), you can also instantiate transports explicitly for more control.
+
+
+## Stdio Transports
+
+These transports manage an MCP server running as a subprocess, communicating with it via standard input (stdin) and standard output (stdout). This is the standard mechanism used by clients like Claude Desktop.
+
+### Python Stdio
+
+*   **Class:** `fastmcp.client.transports.PythonStdioTransport`
+*   **Inferred From:** Paths to `.py` files.
+*   **Use Case:** Running a Python-based MCP server script (like one using FastMCP or the base `mcp` library) in a subprocess.
+
+This is the most common way to interact with local FastMCP servers during development or when integrating with tools that expect to launch a server script.
+
+```python
+from fastmcp import Client
+from fastmcp.client.transports import PythonStdioTransport
+
+server_script = "my_mcp_server.py" # Assumes this file exists and runs mcp.run()
+
+# Option 1: Inferred transport
+client_inferred = Client(server_script)
+
+# Option 2: Explicit transport (e.g., to use a specific python executable or add args)
+transport_explicit = PythonStdioTransport(
+    script_path=server_script,
+    python_cmd="/usr/bin/python3.11", # Specify python version
+    # args=["--some-server-arg"], # Pass args to the script
+    # env={"MY_VAR": "value"},   # Set environment variables
+    # cwd="/path/to/run/in"       # Set working directory
+)
+client_explicit = Client(transport_explicit)
+
+async def use_stdio_client(client):
+    async with client:
+        tools = await client.list_tools()
+        print(f"Connected via Python Stdio, found tools: {tools}")
+
+# asyncio.run(use_stdio_client(client_inferred))
+# asyncio.run(use_stdio_client(client_explicit))
+```
+
+<Warning>
+The server script (`my_mcp_server.py` in the example) *must* include logic to start the MCP server and listen on stdio, typically via `mcp.run()` or `fastmcp.server.run()`. The `Client` only launches the script; it doesn't inject the server logic.
+</Warning>
+
+### Node.js Stdio
+
+*   **Class:** `fastmcp.client.transports.NodeStdioTransport`
+*   **Inferred From:** Paths to `.js` files.
+*   **Use Case:** Running a Node.js-based MCP server script in a subprocess.
+
+Similar to the Python transport, but for JavaScript servers.
+
+```python
+from fastmcp import Client
+from fastmcp.client.transports import NodeStdioTransport
+
+node_server_script = "my_mcp_server.js" # Assumes this JS file starts an MCP server on stdio
+
+# Option 1: Inferred transport
+client_inferred = Client(node_server_script)
+
+# Option 2: Explicit transport
+transport_explicit = NodeStdioTransport(
+    script_path=node_server_script,
+    node_cmd="node" # Or specify path to Node executable
+)
+client_explicit = Client(transport_explicit)
+
+# Usage is the same as other clients
+# async with client_explicit:
+#    tools = await client_explicit.list_tools()
+```
+
+### UVX Stdio (Experimental)
+
+*   **Class:** `fastmcp.client.transports.UvxStdioTransport`
+*   **Inferred From:** Not automatically inferred. Must be instantiated explicitly.
+*   **Use Case:** Running an MCP server packaged as a Python tool using [`uvx`](https://docs.astral.sh/uv/reference/cli/#uvx) (part of the `uv` toolchain). This allows running tools without explicitly installing them into the current environment.
+
+This is useful for executing MCP servers distributed as command-line tools or packages.
+
+```python
+from fastmcp.client.transports import UvxStdioTransport
+
+# Example: Run a hypothetical 'cloud-analyzer-mcp' tool via uvx
+# Assume this tool, when run, starts an MCP server on stdio
+transport = UvxStdioTransport(
+    tool_name="cloud-analyzer-mcp",
+    # from_package="cloud-analyzer-cli", # Optionally specify package if tool name differs
+    # with_packages=["boto3", "requests"], # Add dependencies if needed
+    # tool_args=["--config", "prod.yaml"] # Pass args to the tool itself
+)
+client = Client(transport)
+
+# async with client:
+#     analysis = await client.call_tool("analyze_bucket", {"name": "my-data"})
+```
+
+### NPX Stdio (Experimental)
+
+*   **Class:** `fastmcp.client.transports.NpxStdioTransport`
+*   **Inferred From:** Not automatically inferred. Must be instantiated explicitly.
+*   **Use Case:** Running an MCP server packaged as an NPM package using `npx`.
+
+Similar to `UvxStdioTransport`, but for the Node.js ecosystem.
+
+```python
+from fastmcp.client.transports import NpxStdioTransport
+
+# Example: Run a hypothetical 'npm-mcp-server-package' via npx
+transport = NpxStdioTransport(
+    package="npm-mcp-server-package",
+    # args=["--port", "stdio"] # Args passed to the package script
+)
+client = Client(transport)
+
+# async with client:
+#     response = await client.call_tool("get_npm_data", {})
+```
+## Network Transports
+
+These transports connect to servers running over a network, typically long-running services accessible via URLs.
+
+### SSE (Server-Sent Events)
+
+*   **Class:** `fastmcp.client.transports.SSETransport`
+*   **Inferred From:** `http://` or `https://` URLs
+*   **Use Case:** Connecting to persistent MCP servers exposed over HTTP/S, often using FastMCP's `mcp.run(transport="sse")` mode.
+
+SSE is a simple, unidirectional protocol where the server pushes messages to the client over a standard HTTP connection.
+
+```python
+from fastmcp import Client
+from fastmcp.client.transports import SSETransport
+
+sse_url = "http://localhost:8000/sse"
+
+# Option 1: Inferred transport
+client_inferred = Client(sse_url)
+
+# Option 2: Explicit transport (e.g., to add custom headers)
+headers = {"Authorization": "Bearer mytoken"}
+transport_explicit = SSETransport(url=sse_url, headers=headers)
+client_explicit = Client(transport_explicit)
+
+async def use_sse_client(client):
+    async with client:
+        tools = await client.list_tools()
+        print(f"Connected via SSE, found tools: {tools}")
+
+# asyncio.run(use_sse_client(client_inferred))
+# asyncio.run(use_sse_client(client_explicit))
+```
+
+### WebSocket
+
+*   **Class:** `fastmcp.client.transports.WSTransport`
+*   **Inferred From:** `ws://` or `wss://` URLs
+*   **Use Case:** Connecting to MCP servers using the WebSocket protocol for bidirectional communication.
+
+WebSockets provide a persistent, full-duplex connection between client and server.
+
+```python
+from fastmcp import Client
+from fastmcp.client.transports import WSTransport
+
+ws_url = "ws://localhost:9000"
+
+# Option 1: Inferred transport
+client_inferred = Client(ws_url)
+
+# Option 2: Explicit transport
+transport_explicit = WSTransport(url=ws_url)
+client_explicit = Client(transport_explicit)
+
+async def use_ws_client(client):
+    async with client:
+        tools = await client.list_tools()
+        print(f"Connected via WebSocket, found tools: {tools}")
+
+# asyncio.run(use_ws_client(client_inferred))
+# asyncio.run(use_ws_client(client_explicit))
+```
+
+## In-Memory Transports
+
+### FastMCP Transport
+
+*   **Class:** `fastmcp.client.transports.FastMCPTransport`
+*   **Inferred From:** An instance of `fastmcp.server.FastMCP`.
+*   **Use Case:** Connecting directly to a `FastMCP` server instance running in the *same Python process*.
+
+This is extremely useful for:
+*   **Testing:** Writing unit or integration tests for your FastMCP server without needing subprocesses or network connections.
+*   **Embedding:** Using an MCP server as a component within a larger application.
+
+```python
+from fastmcp import FastMCP, Client
+from fastmcp.client.transports import FastMCPTransport
+
+# 1. Create your FastMCP server instance
+server = FastMCP(name="InMemoryServer")
+@server.tool()
+def ping(): return "pong"
+
+# 2. Create a client pointing directly to the server instance
+# Option A: Inferred
+client_inferred = Client(server)
+
+# Option B: Explicit
+transport_explicit = FastMCPTransport(mcp=server)
+client_explicit = Client(transport_explicit)
+
+# 3. Use the client (no subprocess or network involved)
+async def test_in_memory():
+    async with client_inferred: # Or client_explicit
+        result = await client_inferred.call_tool("ping")
+        print(f"In-memory call result: {result[0].text}") # Output: pong
+
+# asyncio.run(test_in_memory())
+```
+Communication happens through efficient in-memory queues, making it very fast.
+
+## Choosing a Transport
+
+*   **Local Development/Testing:** Use `PythonStdioTransport` (inferred from `.py` files) or `FastMCPTransport` (for same-process testing).
+*   **Connecting to Remote/Persistent Servers:** Use `SSETransport` (for `http/s`) or `WSTransport` (for `ws/s`).
+*   **Running Packaged Tools:** Use `UvxStdioTransport` (Python/uv) or `NpxStdioTransport` (Node/npm) if you need to run MCP servers without local installation.
+*   **Integrating with Claude Desktop (or similar):** These tools typically expect to run a Python script, so your server should be runnable via `python your_server.py`, making `PythonStdioTransport` the relevant mechanism on the client side. 

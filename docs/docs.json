@@ -15,7 +15,9 @@
     "description": "The fast, Pythonic way to build MCP servers.",
     "footer": {
         "socials": {
-            "github": "https://github.com/jlowin/fastmcp"
+            "bluesky": "https://bsky.app/profile/jlowin.dev",
+            "github": "https://github.com/jlowin/fastmcp",
+            "x": "https://x.com/jlowin"
         }
     },
     "name": "FastMCP",
@@ -47,7 +49,10 @@
             },
             {
                 "group": "Clients",
-                "pages": []
+                "pages": [
+                    "clients/overview",
+                    "clients/transports"
+                ]
             },
             {
                 "group": "Deployment",

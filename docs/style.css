@@ -1,13 +1,13 @@
-/* Target inline code elements with higher specificity */
-p code,
-table code,
-li code,
-h1 code,
-h2 code,
-h3 code,
-h4 code,
-h5 code,
-h6 code {
+/* Target only inline code elements, not code blocks */
+p code:not(pre code),
+table code:not(pre code),
+li code:not(pre code),
+h1 code:not(pre code),
+h2 code:not(pre code),
+h3 code:not(pre code),
+h4 code:not(pre code),
+h5 code:not(pre code),
+h6 code:not(pre code) {
   color: #f72585 !important;
   background-color: #ea54551a !important;
 }
