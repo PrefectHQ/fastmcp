@@ -156,11 +156,9 @@ class ResourceManager:
 
             new_resource = resource.copy(updates=dict(uri=prefixed_uri))
 
-            # Log the import
-            logger.debug(f"Importing resource with URI {uri} as {prefixed_uri}")
-
             # Store directly in resources dictionary
             self.add_resource(new_resource)
+            logger.debug(f'Imported resource "{uri}" as "{prefixed_uri}"')
 
     def import_templates(
         self, manager: "ResourceManager", prefix: str | None = None
@@ -188,10 +186,8 @@ class ResourceManager:
                 updates=dict(uri_template=prefixed_uri_template)
             )
 
-            # Log the import
-            logger.debug(
-                f"Importing resource template with URI {uri_template} as {prefixed_uri_template}"
-            )
-
             # Store directly in templates dictionary
             self.add_template(new_template)
+            logger.debug(
+                f'Imported template "{uri_template}" as "{prefixed_uri_template}"'
+            )

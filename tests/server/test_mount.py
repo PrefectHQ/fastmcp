@@ -16,12 +16,12 @@ async def test_mount_basic_functionality():
     main_app.mount("sub", sub_app)
 
     # Verify the tool was imported with the prefix
-    assert "sub/sub_tool" in main_app._tool_manager._tools
+    assert "sub_sub_tool" in main_app._tool_manager._tools
     assert "sub_tool" in sub_app._tool_manager._tools
 
     # Verify the original tool still exists in the sub-app
-    tool = main_app._tool_manager._tools["sub/sub_tool"]
-    assert tool.name == "sub/sub_tool"
+    tool = main_app._tool_manager._tools["sub_sub_tool"]
+    assert tool.name == "sub_sub_tool"
     assert callable(tool.fn)
 
 
@@ -46,8 +46,8 @@ async def test_mount_multiple_apps():
     main_app.mount("news", news_app)
 
     # Verify tools were imported with the correct prefixes
-    assert "weather/get_forecast" in main_app._tool_manager._tools
-    assert "news/get_headlines" in main_app._tool_manager._tools
+    assert "weather_get_forecast" in main_app._tool_manager._tools
+    assert "news_get_headlines" in main_app._tool_manager._tools
 
 
 async def test_mount_combines_tools():
@@ -68,16 +68,16 @@ async def test_mount_combines_tools():
 
     # Mount first app
     main_app.mount("api", first_app)
-    assert "api/first_tool" in main_app._tool_manager._tools
+    assert "api_first_tool" in main_app._tool_manager._tools
 
     # Mount second app to same prefix
     main_app.mount("api", second_app)
 
     # Verify second tool is there
-    assert "api/second_tool" in main_app._tool_manager._tools
+    assert "api_second_tool" in main_app._tool_manager._tools
 
     # Tools from both mounts are combined
-    assert "api/first_tool" in main_app._tool_manager._tools
+    assert "api_first_tool" in main_app._tool_manager._tools
 
 
 async def test_mount_with_resources():
@@ -131,7 +131,7 @@ async def test_mount_with_prompts():
     main_app.mount("assistant", assistant_app)
 
     # Verify the prompt was imported with the prefix
-    assert "assistant/greeting" in main_app._prompt_manager._prompts
+    assert "assistant_greeting" in main_app._prompt_manager._prompts
 
 
 async def test_mount_multiple_resource_templates():
@@ -180,5 +180,5 @@ async def test_mount_multiple_prompts():
     main_app.mount("sql", sql_app)
 
     # Verify prompts were imported with correct prefixes
-    assert "python/review_python" in main_app._prompt_manager._prompts
-    assert "sql/explain_sql" in main_app._prompt_manager._prompts
+    assert "python_review_python" in main_app._prompt_manager._prompts
+    assert "sql_explain_sql" in main_app._prompt_manager._prompts

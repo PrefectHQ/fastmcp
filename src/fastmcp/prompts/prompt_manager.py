@@ -85,8 +85,6 @@ class PromptManager:
 
             new_prompt = prompt.copy(updates=dict(name=prefixed_name))
 
-            # Log the import
-            logger.debug(f"Importing prompt with name {name} as {prefixed_name}")
-
             # Store the prompt with the prefixed name
             self.add_prompt(new_prompt)
+            logger.debug(f'Imported prompt "{name}" as "{prefixed_name}"')
