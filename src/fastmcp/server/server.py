@@ -6,6 +6,7 @@ import re
 from collections.abc import AsyncIterator, Callable
 from contextlib import (
     AbstractAsyncContextManager,
+    AsyncExitStack,
     asynccontextmanager,
 )
 from typing import TYPE_CHECKING, Any, Generic, Literal
@@ -18,7 +19,6 @@ from fastapi import FastAPI
 from mcp.server.lowlevel.helper_types import ReadResourceContents
 from mcp.server.lowlevel.server import LifespanResultT
 from mcp.server.lowlevel.server import Server as MCPServer
-from mcp.server.lowlevel.server import lifespan as default_lifespan
 from mcp.server.session import ServerSession
 from mcp.server.sse import SseServerTransport
 from mcp.server.stdio import stdio_server
@@ -56,6 +56,19 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
+@asynccontextmanager
+async def default_lifespan(server: "FastMCP") -> AsyncIterator[Any]:
+    """Default lifespan context manager that does nothing.
+
+    Args:
+        server: The server instance this lifespan is managing
+
+    Returns:
+        An empty context object
+    """
+    yield {}
+
+
 def lifespan_wrapper(
     app: "FastMCP",
     lifespan: Callable[["FastMCP"], AbstractAsyncContextManager[LifespanResultT]],
@@ -64,7 +77,18 @@ def lifespan_wrapper(
 ]:
     @asynccontextmanager
     async def wrap(s: MCPServer[LifespanResultT]) -> AsyncIterator[LifespanResultT]:
-        async with lifespan(app) as context:
+        async with AsyncExitStack() as stack:
+            # enter main app's lifespan
+            context = await stack.enter_async_context(lifespan(app))
+
+            # Enter all mounted app lifespans
+            for prefix, mounted_app in app._mounted_apps.items():
+                mounted_context = mounted_app._mcp_server.lifespan(
+                    mounted_app._mcp_server
+                )
+                await stack.enter_async_context(mounted_context)
+                logger.debug(f"Prepared lifespan for mounted app '{prefix}'")
+
             yield context
 
     return wrap
@@ -84,10 +108,16 @@ class FastMCP(Generic[LifespanResultT]):
         self.tags: set[str] = tags or set()
         self.settings = fastmcp.settings.ServerSettings(**settings)
 
+        # Setup for mounted apps - must be initialized before _mcp_server
+        self._mounted_apps: dict[str, FastMCP] = {}
+
+        if lifespan is None:
+            lifespan = default_lifespan
+
         self._mcp_server = MCPServer[LifespanResultT](
             name=name or "FastMCP",
             instructions=instructions,
-            lifespan=lifespan_wrapper(self, lifespan) if lifespan else default_lifespan,  # type: ignore
+            lifespan=lifespan_wrapper(self, lifespan),
         )
         self._tool_manager = ToolManager(
             duplicate_behavior=self.settings.on_duplicate_tools
@@ -99,9 +129,6 @@ class FastMCP(Generic[LifespanResultT]):
             duplicate_behavior=self.settings.on_duplicate_prompts
         )
         self.dependencies = self.settings.dependencies
-
-        # Setup for mounted apps
-        self._mounted_apps: dict[str, FastMCP] = {}
 
         # Set up MCP protocol handlers
         self._setup_handlers()
@@ -554,10 +581,15 @@ class FastMCP(Generic[LifespanResultT]):
           Example: If app has a template with URI "weather://location/{id}", it will be available as "weather+weather://location/{id}"
         - The prompts are imported with prefixed names using the prompt_separator
           Example: If app has a prompt named "weather_prompt", it will be available as "weather_weather_prompt"
+        - The mounted app's lifespan will be executed when the parent app's lifespan runs,
+          ensuring that any setup needed by the mounted app is performed
 
         Args:
             prefix: The prefix to use for the mounted application
             app: The FastMCP application to mount
+            tool_separator: Separator for tool names (defaults to "_")
+            resource_separator: Separator for resource URIs (defaults to "+")
+            prompt_separator: Separator for prompt names (defaults to "_")
         """
         if tool_separator is None:
             tool_separator = "_"

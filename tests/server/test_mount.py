@@ -1,3 +1,7 @@
+import contextlib
+
+import pytest
+
 from fastmcp.server.server import FastMCP
 
 
@@ -182,3 +186,47 @@ async def test_mount_multiple_prompts():
     # Verify prompts were imported with correct prefixes
     assert "python_review_python" in main_app._prompt_manager._prompts
     assert "sql_explain_sql" in main_app._prompt_manager._prompts
+
+
+@pytest.mark.anyio
+async def test_mount_lifespan():
+    """Test that the lifespan of a mounted app is properly handled."""
+    # Create apps
+
+    lifespan_checkpoints = []
+
+    @contextlib.asynccontextmanager
+    async def lifespan(app: FastMCP):
+        lifespan_checkpoints.append(f"enter {app.name}")
+        try:
+            yield
+        finally:
+            lifespan_checkpoints.append(f"exit {app.name}")
+
+    main_app = FastMCP("MainApp", lifespan=lifespan)
+    sub_app = FastMCP("SubApp", lifespan=lifespan)
+    sub_app_2 = FastMCP("SubApp2", lifespan=lifespan)
+
+    main_app.mount("sub", sub_app)
+    main_app.mount("sub2", sub_app_2)
+
+    low_level_server = main_app._mcp_server
+    async with contextlib.AsyncExitStack() as stack:
+        # Note: this imitates the way that lifespans are entered for mounted
+        # apps It is presently difficult to stop a running server
+        # programmatically without error in order to test the exit conditions,
+        # so this is the next best thing
+        await stack.enter_async_context(low_level_server.lifespan(low_level_server))
+        assert lifespan_checkpoints == [
+            "enter MainApp",
+            "enter SubApp",
+            "enter SubApp2",
+        ]
+    assert lifespan_checkpoints == [
+        "enter MainApp",
+        "enter SubApp",
+        "enter SubApp2",
+        "exit SubApp2",
+        "exit SubApp",
+        "exit MainApp",
+    ]
