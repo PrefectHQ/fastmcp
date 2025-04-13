@@ -1,0 +1,19 @@
+[project]
+name = "smart-home"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [{ name = "zzstoatzz", email = "thrast36@gmail.com" }]
+requires-python = ">=3.12"
+dependencies = ["fastmcp@git+https://github.com/jlowin/fastmcp.git", "phue2"]
+
+[project.scripts]
+smart-home = "smart_home.__main__:main"
+
+[dependency-groups]
+dev = ["ruff", "ipython"]
+
+
+[build-system]
+requires = ["uv_build"]
+build-backend = "uv_build"
