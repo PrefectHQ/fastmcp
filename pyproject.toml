@@ -47,7 +47,8 @@ style = "pep440"
 bump = true
 fallback-version = "0.0.0"
 
-[tool.uv]
+
+[tool.uv.workspace]
 # uncomment to omit `dev` default group
 # default-groups = []
 
