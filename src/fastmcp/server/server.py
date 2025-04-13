@@ -6,6 +6,7 @@ import re
 from collections.abc import AsyncIterator, Callable
 from contextlib import (
     AbstractAsyncContextManager,
+    AsyncExitStack,
     asynccontextmanager,
 )
 from typing import TYPE_CHECKING, Any, Generic, Literal
@@ -18,7 +19,6 @@ from fastapi import FastAPI
 from mcp.server.lowlevel.helper_types import ReadResourceContents
 from mcp.server.lowlevel.server import LifespanResultT
 from mcp.server.lowlevel.server import Server as MCPServer
-from mcp.server.lowlevel.server import lifespan as default_lifespan
 from mcp.server.session import ServerSession
 from mcp.server.sse import SseServerTransport
 from mcp.server.stdio import stdio_server
@@ -56,6 +56,19 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
+@asynccontextmanager
+async def default_lifespan(server: "FastMCP") -> AsyncIterator[Any]:
+    """Default lifespan context manager that does nothing.
+
+    Args:
+        server: The server instance this lifespan is managing
+
+    Returns:
+        An empty context object
+    """
+    yield {}
+
+
 def lifespan_wrapper(
     app: "FastMCP",
     lifespan: Callable[["FastMCP"], AbstractAsyncContextManager[LifespanResultT]],
@@ -64,7 +77,18 @@ def lifespan_wrapper(
 ]:
     @asynccontextmanager
     async def wrap(s: MCPServer[LifespanResultT]) -> AsyncIterator[LifespanResultT]:
-        async with lifespan(app) as context:
+        async with AsyncExitStack() as stack:
+            # enter main app's lifespan
+            context = await stack.enter_async_context(lifespan(app))
+
+            # Enter all mounted app lifespans
+            for prefix, mounted_app in app._mounted_apps.items():
+                mounted_context = mounted_app._mcp_server.lifespan(
+                    mounted_app._mcp_server
+                )
+                await stack.enter_async_context(mounted_context)
+                logger.debug(f"Prepared lifespan for mounted app '{prefix}'")
+
             yield context
 
     return wrap
@@ -84,10 +108,16 @@ class FastMCP(Generic[LifespanResultT]):
         self.tags: set[str] = tags or set()
         self.settings = fastmcp.settings.ServerSettings(**settings)
 
+        # Setup for mounted apps - must be initialized before _mcp_server
+        self._mounted_apps: dict[str, FastMCP] = {}
+
+        if lifespan is None:
+            lifespan = default_lifespan
+
         self._mcp_server = MCPServer[LifespanResultT](
             name=name or "FastMCP",
             instructions=instructions,
-            lifespan=lifespan_wrapper(self, lifespan) if lifespan else default_lifespan,  # type: ignore
+            lifespan=lifespan_wrapper(self, lifespan),
         )
         self._tool_manager = ToolManager(
             duplicate_behavior=self.settings.on_duplicate_tools
@@ -99,9 +129,6 @@ class FastMCP(Generic[LifespanResultT]):
             duplicate_behavior=self.settings.on_duplicate_prompts
         )
         self.dependencies = self.settings.dependencies
-
-        # Setup for mounted apps
-        self._mounted_apps: dict[str, FastMCP] = {}
 
         # Set up MCP protocol handlers
         self._setup_handlers()
@@ -154,6 +181,7 @@ class FastMCP(Generic[LifespanResultT]):
 
     async def list_tools(self) -> list[MCPTool]:
         """List all available tools."""
+
         tools = self._tool_manager.list_tools()
         return [
             MCPTool(
@@ -535,37 +563,56 @@ class FastMCP(Generic[LifespanResultT]):
             logger.error(f"Error getting prompt {name}: {e}")
             raise ValueError(str(e))
 
-    def mount(self, prefix: str, app: "FastMCP") -> None:
+    def mount(
+        self,
+        prefix: str,
+        app: "FastMCP",
+        tool_separator: str | None = None,
+        resource_separator: str | None = None,
+        prompt_separator: str | None = None,
+    ) -> None:
         """Mount another FastMCP application with a given prefix.
 
         When an application is mounted:
-        - The tools are imported with prefixed names
-          Example: If app has a tool named "get_weather", it will be available as "weather/get_weather"
-        - The resources are imported with prefixed URIs
+        - The tools are imported with prefixed names using the tool_separator
+          Example: If app has a tool named "get_weather", it will be available as "weatherget_weather"
+        - The resources are imported with prefixed URIs using the resource_separator
           Example: If app has a resource with URI "weather://forecast", it will be available as "weather+weather://forecast"
-        - The templates are imported with prefixed URI templates
+        - The templates are imported with prefixed URI templates using the resource_separator
           Example: If app has a template with URI "weather://location/{id}", it will be available as "weather+weather://location/{id}"
-        - The prompts are imported with prefixed names
-          Example: If app has a prompt named "weather_prompt", it will be available as "weather/weather_prompt"
+        - The prompts are imported with prefixed names using the prompt_separator
+          Example: If app has a prompt named "weather_prompt", it will be available as "weather_weather_prompt"
+        - The mounted app's lifespan will be executed when the parent app's lifespan runs,
+          ensuring that any setup needed by the mounted app is performed
 
         Args:
             prefix: The prefix to use for the mounted application
             app: The FastMCP application to mount
+            tool_separator: Separator for tool names (defaults to "_")
+            resource_separator: Separator for resource URIs (defaults to "+")
+            prompt_separator: Separator for prompt names (defaults to "_")
         """
+        if tool_separator is None:
+            tool_separator = "_"
+        if resource_separator is None:
+            resource_separator = "+"
+        if prompt_separator is None:
+            prompt_separator = "_"
+
         # Mount the app in the list of mounted apps
         self._mounted_apps[prefix] = app
 
-        # Import tools from the mounted app with / delimiter
-        tool_prefix = f"{prefix}/"
+        # Import tools from the mounted app
+        tool_prefix = f"{prefix}{tool_separator}"
         self._tool_manager.import_tools(app._tool_manager, tool_prefix)
 
-        # Import resources and templates from the mounted app with + delimiter
-        resource_prefix = f"{prefix}+"
+        # Import resources and templates from the mounted app
+        resource_prefix = f"{prefix}{resource_separator}"
         self._resource_manager.import_resources(app._resource_manager, resource_prefix)
         self._resource_manager.import_templates(app._resource_manager, resource_prefix)
 
-        # Import prompts with / delimiter
-        prompt_prefix = f"{prefix}/"
+        # Import prompts from the mounted app
+        prompt_prefix = f"{prefix}{prompt_separator}"
         self._prompt_manager.import_prompts(app._prompt_manager, prompt_prefix)
 
         logger.info(f"Mounted app with prefix '{prefix}'")

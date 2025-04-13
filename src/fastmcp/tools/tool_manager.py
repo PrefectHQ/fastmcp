@@ -93,4 +93,4 @@ class ToolManager:
             new_tool = tool.copy(updates=dict(name=prefixed_name))
             # Store the copied tool
             self.add_tool(new_tool)
-            logger.debug(f"Imported tool: {name} as {prefixed_name}")
+            logger.debug(f'Imported tool "{name}" as "{prefixed_name}"')

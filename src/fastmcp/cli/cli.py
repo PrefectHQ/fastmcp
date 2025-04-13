@@ -65,7 +65,7 @@ def _build_uv_command(
     """Build the uv run command that runs a MCP server through mcp run."""
     cmd = ["uv"]
 
-    cmd.extend(["run", "--with", "mcp"])
+    cmd.extend(["run", "--with", "fastmcp"])
 
     if with_editable:
         cmd.extend(["--with-editable", str(with_editable)])
@@ -76,7 +76,7 @@ def _build_uv_command(
                 cmd.extend(["--with", pkg])
 
     # Add mcp run command
-    cmd.extend(["mcp", "run", file_spec])
+    cmd.extend(["fastmcp", "run", file_spec])
     return cmd
 
 
