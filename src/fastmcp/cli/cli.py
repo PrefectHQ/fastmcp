@@ -323,6 +323,8 @@ def run(
         # Import and get server object
         server = _import_server(file, server_object)
 
+        logger.info(f'Found server "{server.name}" in {file}')
+
         # Run the server
         kwargs = {}
         if transport:

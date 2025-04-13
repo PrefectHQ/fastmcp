@@ -1,0 +1,335 @@
+---
+title: Tools
+sidebarTitle: Tools
+description: Expose functions as executable capabilities for your MCP client.
+icon: wrench
+---
+
+Tools are the core building blocks that allow your LLM to interact with external systems, execute code, and access data that isn't in its training data. In FastMCP, tools are Python functions exposed to LLMs through the MCP protocol.
+
+## What Are Tools?
+
+Tools in FastMCP transform regular Python functions into capabilities that LLMs can invoke during conversations. When an LLM decides to use a tool:
+
+1.  It sends a request with parameters based on the tool's schema.
+2.  FastMCP validates these parameters against your function's signature.
+3.  Your function executes with the validated inputs.
+4.  The result is returned to the LLM, which can use it in its response.
+
+This allows LLMs to perform tasks like querying databases, calling APIs, making calculations, or accessing files—extending their capabilities beyond what's in their training data.
+
+## Defining Tools
+
+### The `@tool` Decorator
+
+Creating a tool is as simple as decorating a Python function with `@mcp.tool()`:
+
+```python
+from fastmcp import FastMCP
+
+mcp = FastMCP(name="CalculatorServer")
+
+@mcp.tool()
+def add(a: int, b: int) -> int:
+    """Adds two integer numbers together."""
+    return a + b
+```
+
+When this tool is registered, FastMCP automatically:
+- Uses the function name (`add`) as the tool name.
+- Uses the function's docstring (`Adds two integer numbers...`) as the tool description.
+- Generates an input schema based on the function's parameters and type annotations.
+- Handles parameter validation and error reporting.
+
+
+The way you define your Python function dictates how the tool appears and behaves for the LLM client.
+
+### Type Annotations
+
+Type annotations are crucial. They:
+1.  Inform the LLM about the expected type for each parameter.
+2.  Allow FastMCP to validate the data received from the client.
+3.  Are used to generate the tool's input schema for the MCP protocol.
+
+FastMCP supports standard Python type annotations, including those from the `typing` module and Pydantic.
+
+```python
+from typing import Literal, Optional, Union
+from pydantic import BaseModel, Field
+
+# Example using various type hints
+@mcp.tool()
+def process_data(
+    data: list[float],                             # List of floats
+    operation: Literal["sum", "average", "max"],   # Fixed choices
+    precision: int = 2,                            # Optional int with default
+    description: str | None = None                 # Optional string (can be None)
+) -> dict:
+    """Process numerical data with the specified operation."""
+    result = 0.0
+    if operation == "sum":
+        result = sum(data)
+    elif operation == "average":
+        result = sum(data) / len(data) if data else 0.0
+    elif operation == "max":
+        result = float(max(data)) if data else 0.0
+
+    return {
+        "operation": operation,
+        "result": round(result, precision),
+        "description": description
+    }
+```
+
+**Supported Type Annotation Examples:**
+
+| Type Annotation         | Example                       | Description                         |
+| :---------------------- | :---------------------------- | :---------------------------------- |
+| Basic types             | `int`, `float`, `str`, `bool` | Simple scalar values                |
+| Container types         | `list[str]`, `dict[str, int]` | Collections of items                |
+| Optional types          | `Optional[float]`, `float\|None`| Parameters that may be null/omitted |
+| Union types             | `str \| int`, `Union[str, int]`| Parameters accepting multiple types |
+| Literal types           | `Literal["A", "B"]`           | Parameters with specific allowed values |
+| Pydantic models         | `UserData`                    | Complex structured data (see below) |
+
+<Tip>
+**Automatic JSON Parsing:** FastMCP intelligently handles arguments. If a client sends a string that looks like valid JSON (e.g., `"['a', 'b']"`) for a parameter hinted as a structured type (like `list[str]` or a Pydantic model), FastMCP will automatically attempt to parse the JSON string into the expected Python object before validation. This improves robustness when interacting with various clients.
+</Tip>
+
+### Required vs. Optional Parameters
+
+Parameters in your function signature are considered **required** unless they have a default value.
+
+```python
+@mcp.tool()
+def search_products(
+    query: str,                # Required - no default value
+    max_results: int = 10,     # Optional - has default value
+    sort_by: str = "relevance" # Optional - has default value
+) -> list[dict]:
+    """Search the product catalog."""
+    # Implementation...
+    print(f"Searching for '{query}', max {max_results}, sorted by {sort_by}")
+    return [{"id": 1, "name": "Sample Product"}]
+```
+
+In this example, the LLM *must* provide a `query`. If `max_results` or `sort_by` are omitted, their default values will be used.
+
+### Structured Inputs
+
+For tools requiring complex, nested, or well-validated inputs, use Pydantic models. Define a `BaseModel` and use it as a type hint for a parameter.
+
+```python
+from pydantic import BaseModel, Field
+from typing import Optional
+from datetime import date
+
+class ReservationRequest(BaseModel):
+    guest_name: str = Field(description="Full name of the guest making the reservation.")
+    check_in: date
+    check_out: date
+    room_type: Literal["standard", "deluxe", "suite"] = Field(default="standard", description="Type of room requested.")
+    guests: int = Field(gt=0, description="Number of guests (must be positive).")
+    special_requests: Optional[str] = Field(default=None, description="Any special requests for the stay.")
+
+@mcp.tool()
+def make_reservation(request: ReservationRequest) -> dict:
+    """Creates a new hotel reservation based on the provided details."""
+    # Pydantic automatically validates the incoming 'request' data
+    # against the ReservationRequest model before this function runs.
+    print(f"Making reservation for {request.guest_name}...")
+    # Implementation...
+    return {
+        "reservation_id": "R12345",
+        "status": "confirmed",
+        "guest": request.guest_name,
+        "dates": f"{request.check_in} to {request.check_out}"
+    }
+```
+
+Using Pydantic models provides:
+- Clear, self-documenting structure for complex inputs.
+- Built-in data validation (e.g., `gt=0`, date parsing).
+- Automatic generation of detailed JSON schemas for the LLM.
+- Easy handling of optional fields and default values.
+
+### Metadata
+
+While FastMCP infers the name and description from your function, you can override these and add tags using arguments to the `@mcp.tool` decorator:
+
+```python
+@mcp.tool(
+    name="find_products",           # Custom tool name for the LLM
+    description="Search the product catalog with optional category filtering.", # Custom description
+    tags={"catalog", "search"}      # Optional tags for organization/filtering
+)
+def search_products_implementation(query: str, category: str | None = None) -> list[dict]:
+    """Internal function description (ignored if description is provided above)."""
+    # Implementation...
+    print(f"Searching for '{query}' in category '{category}'")
+    return [{"id": 2, "name": "Another Product"}]
+```
+
+- **`name`**: Sets the explicit tool name exposed via MCP.
+- **`description`**: Provides the description exposed via MCP. If set, the function's docstring is ignored for this purpose.
+- **`tags`**: A set of strings used to categorize the tool. Clients *might* use tags to filter or group available tools.
+
+
+### Async Tools
+
+FastMCP seamlessly supports both standard (`def`) and asynchronous (`async def`) functions as tools.
+
+```python
+# Synchronous tool (suitable for CPU-bound or quick tasks)
+@mcp.tool()
+def calculate_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Calculate the distance between two coordinates."""
+    # Implementation...
+    return 42.5
+
+# Asynchronous tool (ideal for I/O-bound operations)
+@mcp.tool()
+async def fetch_weather(city: str) -> dict:
+    """Retrieve current weather conditions for a city."""
+    # Use 'async def' for operations involving network calls, file I/O, etc.
+    # This prevents blocking the server while waiting for external operations.
+    async with aiohttp.ClientSession() as session:
+        async with session.get(f"https://api.example.com/weather/{city}") as response:
+            # Check response status before returning
+            response.raise_for_status()
+            return await response.json()
+```
+
+Use `async def` when your tool needs to perform operations that might wait for external systems (network requests, database queries, file access) to keep your server responsive.
+
+### Return Values
+
+FastMCP automatically converts the value returned by your function into the appropriate MCP content format for the client:
+
+- **`str`**: Sent as `TextContent`.
+- **`dict`, `list`, Pydantic `BaseModel`**: Serialized to a JSON string and sent as `TextContent`.
+- **`bytes`**: Base64 encoded and sent as `BlobResourceContents` (often within an `EmbeddedResource`).
+- **`fastmcp.utilities.types.Image`**: A helper class to easily return image data. Sent as `ImageContent`.
+- **`None`**: Results in an empty response (no content is sent back to the client).
+
+```python
+from fastmcp.utilities.types import Image
+from PIL import Image as PILImage
+import io
+
+@mcp.tool()
+def generate_image(width: int, height: int, color: str) -> Image:
+    """Generates a solid color image."""
+    # Create image using Pillow
+    img = PILImage.new("RGB", (width, height), color=color)
+
+    # Save to a bytes buffer
+    buffer = io.BytesIO()
+    img.save(buffer, format="PNG")
+    img_bytes = buffer.getvalue()
+
+    # Return using FastMCP's Image helper
+    return Image(data=img_bytes, format="png")
+
+@mcp.tool()
+def do_nothing() -> None:
+    """This tool performs an action but returns no data."""
+    print("Performing a side effect...")
+    return None
+```
+
+### Error Handling
+
+If your tool encounters an error, simply raise a standard Python exception (`ValueError`, `TypeError`, `FileNotFoundError`, custom exceptions, etc.).
+
+```python
+@mcp.tool()
+def divide(a: float, b: float) -> float:
+    """Divide a by b."""
+    if b == 0:
+        # Raise a standard exception
+        raise ValueError("Division by zero is not allowed.")
+    if not isinstance(a, (int, float)) or not isinstance(b, (int, float)):
+        raise TypeError("Both arguments must be numbers.")
+    return a / b
+```
+
+FastMCP automatically catches exceptions raised within your tool function:
+1.  It converts the exception into an MCP error response, typically including the exception type and message.
+2.  This error response is sent back to the client/LLM.
+3.  The LLM can then inform the user or potentially try the tool again with different arguments.
+
+Using informative exceptions helps the LLM understand failures and react appropriately.
+
+### Using Context in Tools
+
+Tools can access MCP features like logging, reading resources, or reporting progress through the `Context` object. To use it, add a parameter to your tool function with the type hint `Context`.
+
+```python
+from fastmcp import FastMCP, Context
+
+mcp = FastMCP(name="ContextDemo")
+
+@mcp.tool()
+async def process_data(data_uri: str, ctx: Context) -> dict:
+    """Process data from a resource with progress reporting."""
+    await ctx.info(f"Processing data from {data_uri}")
+    
+    # Read a resource
+    resource = await ctx.read_resource(data_uri)
+    data = resource[0].content if resource else ""
+    
+    # Report progress
+    await ctx.report_progress(progress=50, total=100)
+    
+    # Example request to the client's LLM for help
+    summary = await ctx.sample(f"Summarize this in 10 words: {data[:200]}")
+    
+    await ctx.report_progress(progress=100, total=100)
+    return {
+        "length": len(data),
+        "summary": summary.text
+    }
+```
+
+The Context object provides access to:
+
+- **Logging**: `ctx.debug()`, `ctx.info()`, `ctx.warning()`, `ctx.error()`
+- **Progress Reporting**: `ctx.report_progress(progress, total)`
+- **Resource Access**: `ctx.read_resource(uri)`
+- **LLM Sampling**: `ctx.sample(...)`
+- **Request Information**: `ctx.request_id`, `ctx.client_id`
+
+For full documentation on the Context object and all its capabilities, see the [Context Object](/server/context) page.
+
+## Server Behavior
+
+### Duplicate Tools
+
+You can control how the FastMCP server behaves if you try to register multiple tools with the same name. This is configured using the `on_duplicate_tools` argument when creating the `FastMCP` instance.
+
+```python
+from fastmcp import FastMCP
+from fastmcp.settings import DuplicateBehavior
+
+mcp = FastMCP(
+    name="StrictServer",
+    # Configure behavior for duplicate tool names
+    on_duplicate_tools=DuplicateBehavior.ERROR
+)
+
+@mcp.tool()
+def my_tool(): return "Version 1"
+
+# This will now raise a ValueError because 'my_tool' already exists
+# and on_duplicate_tools is set to ERROR.
+# @mcp.tool()
+# def my_tool(): return "Version 2"
+```
+
+The `DuplicateBehavior` enum options are:
+
+-   `WARN` (default): Logs a warning and the new tool replaces the old one.
+-   `ERROR`: Raises a `ValueError`, preventing the duplicate registration.
+-   `REPLACE`: Silently replaces the existing tool with the new one.
+-   `IGNORE`: Keeps the original tool and ignores the new registration attempt.

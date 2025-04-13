@@ -1,0 +1,252 @@
+---
+title: Client Overview
+sidebarTitle: Overview
+description: Learn how to use the FastMCP Client to interact with MCP servers.
+icon: user-robot
+---
+
+The `fastmcp.Client` provides a high-level, asynchronous interface for interacting with any Model Context Protocol (MCP) server, whether it's built with FastMCP or another implementation. It simplifies communication by handling protocol details and connection management.
+
+## FastMCP Client
+
+The FastMCP Client architecture separates the protocol logic (`Client`) from the connection mechanism (`Transport`).
+
+- **`Client`**: Handles sending MCP requests (like `tools/call`, `resources/read`), receiving responses, and managing callbacks.
+- **`Transport`**: Responsible for establishing and maintaining the connection to the server (e.g., via WebSockets, SSE, Stdio, or in-memory).
+
+
+### Transports
+
+Clients must be initialized with a `transport`. You can either provide an already instantiated transport object, or provide a transport source and let FastMCP attempt to infer the correct transport to use.
+
+The following inference rules are used to determine the appropriate `ClientTransport` based on the input type:
+
+1.  **`ClientTransport` Instance**: If you provide an already instantiated transport object, it's used directly.
+2.  **`FastMCP` Instance**: Creates a `FastMCPTransport` for efficient in-memory communication (ideal for testing).
+3.  **`Path` or `str` pointing to an existing file**:
+    *   If it ends with `.py`: Creates a `PythonStdioTransport` to run the script using `python`.
+    *   If it ends with `.js`: Creates a `NodeStdioTransport` to run the script using `node`.
+4.  **`AnyUrl` or `str` pointing to a URL**:
+    *   If it starts with `http://` or `https://`: Creates an `SSETransport`.
+    *   If it starts with `ws://` or `wss://`: Creates a `WSTransport`.
+5.  **Other**: Raises a `ValueError` if the type cannot be inferred.
+
+```python
+import asyncio
+from fastmcp import Client, FastMCP
+
+# Example transports (more details in Transports page)
+server_instance = FastMCP(name="TestServer") # In-memory server
+sse_url = "http://localhost:8000/sse"       # SSE server URL
+ws_url = "ws://localhost:9000"             # WebSocket server URL
+server_script = "my_mcp_server.py"         # Path to a Python server file
+
+# Client automatically infers the transport type
+client_in_memory = Client(server_instance)
+client_sse = Client(sse_url)
+client_ws = Client(ws_url)
+client_stdio = Client(server_script)
+
+print(client_in_memory.transport)
+print(client_sse.transport)
+print(client_ws.transport)
+print(client_stdio.transport)
+
+# Expected Output (types may vary slightly based on environment):
+# <FastMCP(server='TestServer')>
+# <SSE(url='http://localhost:8000/sse')>
+# <WebSocket(url='ws://localhost:9000')>
+# <PythonStdioTransport(command='python', args=['/path/to/your/my_mcp_server.py'])>
+```
+<Tip>
+For more control over connection details (like headers for SSE, environment variables for Stdio), you can instantiate the specific `ClientTransport` class yourself and pass it to the `Client`. See the [Transports](/clients/transports) page for details.
+</Tip>
+
+## Client Usage
+
+### Connection Lifecycle
+
+The client operates asynchronously and must be used within an `async with` block. This context manager handles establishing the connection, initializing the MCP session, and cleaning up resources upon exit.
+
+```python
+import asyncio
+from fastmcp import Client
+
+client = Client("my_mcp_server.py") # Assumes my_mcp_server.py exists
+
+async def main():
+    # Connection is established here
+    async with client:
+        print(f"Client connected: {client.is_connected()}")
+
+        # Make MCP calls within the context
+        tools = await client.list_tools()
+        print(f"Available tools: {tools}")
+
+        if any(tool.name == "greet" for tool in tools):
+            result = await client.call_tool("greet", {"name": "World"})
+            print(f"Greet result: {result}")
+
+    # Connection is closed automatically here
+    print(f"Client connected: {client.is_connected()}")
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+You can make multiple calls to the server within the same `async with` block using the established session.
+
+### Client Methods
+
+The `Client` provides methods corresponding to standard MCP requests:
+
+#### Tool Operations
+
+*   **`list_tools()`**: Retrieves a list of tools available on the server.
+    ```python
+    tools = await client.list_tools()
+    # tools -> list[mcp.types.Tool]
+    ```
+*   **`call_tool(name: str, arguments: dict[str, Any] | None = None)`**: Executes a tool on the server.
+    ```python
+    result = await client.call_tool("add", {"a": 5, "b": 3})
+    # result -> list[mcp.types.TextContent | mcp.types.ImageContent | ...]
+    print(result[0].text) # Assuming TextContent, e.g., '8'
+    ```
+    *   Arguments are passed as a dictionary. FastMCP servers automatically handle JSON string parsing for complex types if needed.
+    *   Returns a list of content objects (usually `TextContent` or `ImageContent`).
+
+#### Resource Operations
+
+*   **`list_resources()`**: Retrieves a list of static resources.
+    ```python
+    resources = await client.list_resources()
+    # resources -> list[mcp.types.Resource]
+    ```
+*   **`list_resource_templates()`**: Retrieves a list of resource templates.
+    ```python
+    templates = await client.list_resource_templates()
+    # templates -> list[mcp.types.ResourceTemplate]
+    ```
+*   **`read_resource(uri: str | AnyUrl)`**: Reads the content of a resource or a resolved template.
+    ```python
+    # Read a static resource
+    readme_content = await client.read_resource("file:///path/to/README.md")
+    # readme_content -> list[mcp.types.TextResourceContents | mcp.types.BlobResourceContents]
+    print(readme_content[0].text) # Assuming text
+
+    # Read a resource generated from a template
+    weather_content = await client.read_resource("data://weather/london")
+    print(weather_content[0].text) # Assuming text JSON
+    ```
+
+#### Prompt Operations
+
+*   **`list_prompts()`**: Retrieves available prompt templates.
+*   **`get_prompt(name: str, arguments: dict[str, Any] | None = None)`**: Retrieves a rendered prompt message list.
+
+### Callbacks
+
+MCP allows servers to make requests *back* to the client for certain capabilities. The `Client` constructor accepts callback functions to handle these server requests:
+
+#### Roots
+
+*   **`roots: RootsList | RootsHandler | None`**: Provides the server with a list of root directories the client grants access to. This can be a static list or a function that dynamically determines roots.
+    ```python
+    from pathlib import Path
+    from fastmcp.client.roots import RootsHandler, RootsList
+    from mcp.shared.context import RequestContext # For type hint
+
+    # Option 1: Static list
+    static_roots: RootsList = [str(Path.home() / "Documents")]
+
+    # Option 2: Dynamic function
+    def dynamic_roots_handler(context: RequestContext) -> RootsList:
+        # Logic to determine accessible roots based on context
+        print(f"Server requested roots (Request ID: {context.request_id})")
+        return [str(Path.home() / "Downloads")]
+
+    client_with_roots = Client(
+        "my_server.py",
+        roots=dynamic_roots_handler # or roots=static_roots
+    )
+
+    # Tell the server the roots might have changed (if needed)
+    # async with client_with_roots:
+    #     await client_with_roots.send_roots_list_changed()
+    ```
+    See `fastmcp.client.roots` for helpers.
+
+#### LLM Sampling
+
+*   **`sampling_handler: SamplingHandler | None`**: Handles `sampling/createMessage` requests from the server. This callback receives messages from the server and should return an LLM completion.
+    ```python
+    from fastmcp.client.sampling import SamplingHandler, MessageResult
+    from mcp.types import SamplingMessage, SamplingParams, TextContent
+    from mcp.shared.context import RequestContext # For type hint
+
+    async def my_llm_handler(
+        messages: list[SamplingMessage],
+        params: SamplingParams,
+        context: RequestContext
+    ) -> str | MessageResult:
+        print(f"Server requested sampling (Request ID: {context.request_id})")
+        # In a real scenario, call your LLM API here
+        last_user_message = next((m for m in reversed(messages) if m.role == 'user'), None)
+        prompt = last_user_message.content.text if last_user_message and isinstance(last_user_message.content, TextContent) else "Default prompt"
+
+        # Simulate LLM response
+        response_text = f"LLM processed: {prompt[:50]}..."
+        # Return simple string (becomes TextContent) or a MessageResult object
+        return response_text
+
+    client_with_sampling = Client(
+        "my_server.py",
+        sampling_handler=my_llm_handler
+    )
+    ```
+    See `fastmcp.client.sampling` for helpers.
+
+#### Logging
+
+*   **`log_handler: LoggingFnT | None`**: Receives log messages sent from the server (`ctx.info`, `ctx.error`, etc.).
+    ```python
+    from mcp.client.session import LoggingFnT, LogLevel
+
+    def my_log_handler(level: LogLevel, message: str, logger_name: str | None):
+        print(f"[Server Log - {level.upper()}] {logger_name or 'default'}: {message}")
+
+    client_with_logging = Client(
+        "my_server.py",
+        log_handler=my_log_handler
+    )
+    ```
+
+
+### Error Handling
+
+When a `call_tool` request results in an error on the server (e.g., the tool function raised an exception), the `client.call_tool()` method will raise a `fastmcp.client.ClientError`.
+
+```python
+async def safe_call_tool():
+    async with client:
+        try:
+            # Assume 'divide' tool exists and might raise ZeroDivisionError
+            result = await client.call_tool("divide", {"a": 10, "b": 0})
+            print(f"Result: {result}")
+        except ClientError as e:
+            print(f"Tool call failed: {e}")
+        except ConnectionError as e:
+            print(f"Connection failed: {e}")
+        except Exception as e:
+            print(f"An unexpected error occurred: {e}")
+
+# Example Output if division by zero occurs:
+# Tool call failed: Division by zero is not allowed.
+```
+
+Other errors, like connection failures, will raise standard Python exceptions (e.g., `ConnectionError`, `TimeoutError`). 
+
+<Tip>
+The client transport often has its own error-handling mechanisms, so you can not always trap errors like those raised by `call_tool` outside of the `async with` block. Instead, you can call `call_tools(..., return_raw_result=True)` to get the raw result object and handle errors yourself by checking its `isError` attribute.
+</Tip>

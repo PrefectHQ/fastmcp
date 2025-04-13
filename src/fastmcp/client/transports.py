@@ -208,6 +208,28 @@ class PythonStdioTransport(StdioTransport):
         self.script_path = script_path
 
 
+class FastMCPStdioTransport(StdioTransport):
+    """Transport for running FastMCP servers using the FastMCP CLI."""
+
+    def __init__(
+        self,
+        script_path: str | Path,
+        args: list[str] | None = None,
+        env: dict[str, str] | None = None,
+        cwd: str | None = None,
+    ):
+        script_path = Path(script_path).resolve()
+        if not script_path.is_file():
+            raise FileNotFoundError(f"Script not found: {script_path}")
+        if not str(script_path).endswith(".py"):
+            raise ValueError(f"Not a Python script: {script_path}")
+
+        super().__init__(
+            command="fastmcp", args=["run", str(script_path)], env=env, cwd=cwd
+        )
+        self.script_path = script_path
+
+
 class NodeStdioTransport(StdioTransport):
     """Transport for running Node.js scripts."""
 
