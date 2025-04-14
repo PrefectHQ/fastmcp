@@ -14,7 +14,26 @@ dependencies = [
 ]
 requires-python = ">=3.10"
 readme = "README.md"
-license = { text = "Apache-2.0" }
+license = "Apache-2.0"
+
+keywords = [
+    "mcp",
+    "mcp server",
+    "mcp client",
+    "model context protocol",
+    "fastmcp",
+    "llm",
+    "agent",
+]
+classifiers = [
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Typing :: Typed",
+]
 
 [dependency-groups]
 dev = [
@@ -33,6 +52,11 @@ dev = [
 
 [project.scripts]
 fastmcp = "fastmcp.cli:app"
+
+[project.urls]
+Homepage = "https://gofastmcp.com"
+Repository = "https://github.com/jlowin/fastmcp"
+Documentation = "https://gofastmcp.com"
 
 [build-system]
 requires = ["hatchling", "uv-dynamic-versioning>=0.7.0"]
