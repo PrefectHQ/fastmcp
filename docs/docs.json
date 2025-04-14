@@ -12,7 +12,7 @@
         "light": "#4cc9f0",
         "primary": "#2d00f7"
     },
-    "description": "The fast, Pythonic way to build MCP servers.",
+    "description": "The fast, Pythonic way to build MCP servers and clients.",
     "footer": {
         "socials": {
             "bluesky": "https://bsky.app/profile/jlowin.dev",
