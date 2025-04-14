@@ -57,7 +57,7 @@ class TestRenderPrompt:
 
     @pytest.mark.anyio
     async def test_fn_returns_message(self):
-        async def fn() -> UserMessage:
+        async def fn() -> Message:
             return UserMessage(content="Hello, world!")
 
         prompt = Prompt.from_function(fn)
@@ -67,7 +67,7 @@ class TestRenderPrompt:
 
     @pytest.mark.anyio
     async def test_fn_returns_assistant_message(self):
-        async def fn() -> AssistantMessage:
+        async def fn() -> Message:
             return AssistantMessage(
                 content=TextContent(type="text", text="Hello, world!")
             )
@@ -108,7 +108,7 @@ class TestRenderPrompt:
     async def test_fn_returns_resource_content(self):
         """Test returning a message with resource content."""
 
-        async def fn() -> UserMessage:
+        async def fn() -> Message:
             return UserMessage(
                 content=EmbeddedResource(
                     type="resource",
