@@ -117,7 +117,7 @@ class TestTools:
         """
         By default, tools exclude GET methods
         """
-        tools = await fastmcp_server.list_tools()
+        tools = await fastmcp_server._mcp_list_tools()
         assert len(tools) == 2
 
         assert tools[0].model_dump() == dict(
@@ -164,7 +164,7 @@ class TestTools:
         assert len(response.json()) == 4
 
         # Check that the user was created via MCP
-        user_response = await fastmcp_server.read_resource(
+        user_response = await fastmcp_server._mcp_read_resource(
             "resource://openapi/get_user_users__user_id__get/4"
         )
         user = user_response[0].content
@@ -186,7 +186,7 @@ class TestTools:
         assert dict(id=1, name="XYZ", active=True) in response.json()
 
         # Check that the user was updated via MCP
-        user_response = await fastmcp_server.read_resource(
+        user_response = await fastmcp_server._mcp_read_resource(
             "resource://openapi/get_user_users__user_id__get/1"
         )
         user = user_response[0].content
@@ -198,7 +198,7 @@ class TestResources:
         """
         By default, resources exclude GET methods without parameters
         """
-        resources = await fastmcp_server.list_resources()
+        resources = await fastmcp_server._mcp_list_resources()
         assert len(resources) == 1
         assert resources[0].uri == AnyUrl("resource://openapi/get_users_users_get")
         assert resources[0].name == "get_users_users_get"
@@ -212,7 +212,7 @@ class TestResources:
         json_users = TypeAdapter(list[User]).dump_python(
             sorted(users_db.values(), key=lambda x: x.id)
         )
-        resource_response = await fastmcp_server.read_resource(
+        resource_response = await fastmcp_server._mcp_read_resource(
             "resource://openapi/get_users_users_get"
         )
         resource = resource_response[0].content
@@ -226,7 +226,7 @@ class TestResourceTemplates:
         """
         By default, resource templates exclude GET methods without parameters
         """
-        resource_templates = await fastmcp_server.list_resource_templates()
+        resource_templates = await fastmcp_server._mcp_list_resource_templates()
         assert len(resource_templates) == 1
         assert resource_templates[0].name == "get_user_users__user_id__get"
         assert (
@@ -241,7 +241,7 @@ class TestResourceTemplates:
         The resource template created by the OpenAPI server should be the same as the original
         """
         user_id = 2
-        resource_response = await fastmcp_server.read_resource(
+        resource_response = await fastmcp_server._mcp_read_resource(
             f"resource://openapi/get_user_users__user_id__get/{user_id}"
         )
 
@@ -256,7 +256,7 @@ class TestPrompts:
         """
         By default, there are no prompts.
         """
-        prompts = await fastmcp_server.list_prompts()
+        prompts = await fastmcp_server._mcp_list_prompts()
         assert len(prompts) == 0
 
 

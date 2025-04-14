@@ -3,6 +3,7 @@
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from fastmcp.exceptions import PromptError
 from fastmcp.prompts.prompt import Message, Prompt, PromptResult
 from fastmcp.settings import DuplicateBehavior
 from fastmcp.utilities.logging import get_logger
@@ -61,7 +62,7 @@ class PromptManager:
         """Render a prompt by name with arguments."""
         prompt = self.get_prompt(name)
         if not prompt:
-            raise ValueError(f"Unknown prompt: {name}")
+            raise PromptError(f"Unknown prompt: {name}")
 
         return await prompt.render(arguments)
 

@@ -1,11 +1,11 @@
 from typing import Any, cast
 
 import mcp.types
-from mcp.types import BlobResourceContents, PromptMessage, TextResourceContents
+from mcp.types import BlobResourceContents, TextResourceContents
 
 import fastmcp
 from fastmcp.client import Client
-from fastmcp.prompts import Prompt
+from fastmcp.prompts import Message, Prompt
 from fastmcp.resources import Resource, ResourceTemplate
 from fastmcp.server.context import Context
 from fastmcp.server.server import FastMCP
@@ -142,10 +142,10 @@ class ProxyPrompt(Prompt):
             fn=_proxy_passthrough,
         )
 
-    async def render(self, arguments: dict[str, Any]) -> list[PromptMessage]:
+    async def render(self, arguments: dict[str, Any]) -> list[Message]:
         async with self._client:
             result = await self._client.get_prompt(self.name, arguments)
-        return result.messages
+        return [Message(role=m.role, content=m.content) for m in result.messages]
 
 
 class FastMCPProxy(FastMCP):

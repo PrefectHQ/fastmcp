@@ -14,7 +14,7 @@ from mcp.types import (
 from pydantic import AnyUrl, Field
 
 from fastmcp import Client, Context, FastMCP
-from fastmcp.exceptions import ToolError
+from fastmcp.exceptions import ResourceError, ToolError
 from fastmcp.prompts.prompt import EmbeddedResource, Message, UserMessage
 from fastmcp.resources import FileResource, FunctionResource
 from fastmcp.utilities.types import Image
@@ -56,16 +56,26 @@ class TestCreateServer:
             assert isinstance(content, TextContent)
             assert "¡Hola, 世界! 👋" == content.text
 
-    async def test_add_tool_decorator(self):
+
+class TestToolDecorator:
+    async def test_no_tools_before_decorator(self):
+        mcp = FastMCP()
+
+        with pytest.raises(ToolError, match="Unknown tool: add"):
+            await mcp.call_tool("add", {"x": 1, "y": 2})
+
+    async def test_tool_decorator(self):
         mcp = FastMCP()
 
         @mcp.tool()
         def add(x: int, y: int) -> int:
             return x + y
 
-        assert len(mcp._tool_manager.list_tools()) == 1
+        result = await mcp.call_tool("add", {"x": 1, "y": 2})
+        assert isinstance(result[0], TextContent)
+        assert result[0].text == "3"
 
-    async def test_add_tool_decorator_incorrect_usage(self):
+    async def test_tool_decorator_incorrect_usage(self):
         mcp = FastMCP()
 
         with pytest.raises(TypeError, match="The @tool decorator was used incorrectly"):
@@ -74,16 +84,145 @@ class TestCreateServer:
             def add(x: int, y: int) -> int:
                 return x + y
 
-    async def test_add_resource_decorator(self):
+    async def test_tool_decorator_with_name(self):
         mcp = FastMCP()
 
-        @mcp.resource("r://{x}")
-        def get_data(x: str) -> str:
-            return f"Data: {x}"
+        @mcp.tool(name="custom-add")
+        def add(x: int, y: int) -> int:
+            return x + y
 
-        assert len(mcp._resource_manager._templates) == 1
+        result = await mcp.call_tool("custom-add", {"x": 1, "y": 2})
+        assert isinstance(result[0], TextContent)
+        assert result[0].text == "3"
 
-    async def test_add_resource_decorator_incorrect_usage(self):
+    async def test_tool_decorator_with_description(self):
+        mcp = FastMCP()
+
+        @mcp.tool(description="Add two numbers")
+        def add(x: int, y: int) -> int:
+            return x + y
+
+        tools = await mcp._mcp_list_tools()
+        assert len(tools) == 1
+        tool = tools[0]
+        assert tool.description == "Add two numbers"
+
+    async def test_tool_decorator_instance_method(self):
+        mcp = FastMCP()
+
+        class MyClass:
+            def __init__(self, x: int):
+                self.x = x
+
+            @mcp.tool()
+            def add(self, y: int) -> int:
+                return self.x + y
+
+        obj = MyClass(10)
+        mcp.add_tool(obj.add)
+        result = await mcp.call_tool("add", {"y": 2})
+        assert isinstance(result[0], TextContent)
+        assert result[0].text == "12"
+
+    async def test_tool_decorator_classmethod(self):
+        mcp = FastMCP()
+
+        class MyClass:
+            x: int = 10
+
+            @classmethod
+            def add(cls, y: int) -> int:
+                return cls.x + y
+
+        mcp.add_tool(MyClass.add)
+        result = await mcp.call_tool("add", {"y": 2})
+        assert isinstance(result[0], TextContent)
+        assert result[0].text == "12"
+
+    async def test_tool_decorator_staticmethod(self):
+        mcp = FastMCP()
+
+        class MyClass:
+            @staticmethod
+            @mcp.tool()
+            def add(x: int, y: int) -> int:
+                return x + y
+
+        result = await mcp.call_tool("add", {"x": 1, "y": 2})
+        assert isinstance(result[0], TextContent)
+        assert result[0].text == "3"
+
+    async def test_tool_decorator_async_function(self):
+        mcp = FastMCP()
+
+        @mcp.tool()
+        async def add(x: int, y: int) -> int:
+            return x + y
+
+        result = await mcp.call_tool("add", {"x": 1, "y": 2})
+        assert isinstance(result[0], TextContent)
+        assert result[0].text == "3"
+
+    async def test_tool_decorator_classmethod_async_function(self):
+        mcp = FastMCP()
+
+        class MyClass:
+            x = 10
+
+            @classmethod
+            async def add(cls, y: int) -> int:
+                return cls.x + y
+
+        mcp.add_tool(MyClass.add)
+        result = await mcp.call_tool("add", {"y": 2})
+        assert isinstance(result[0], TextContent)
+        assert result[0].text == "12"
+
+    async def test_tool_decorator_staticmethod_async_function(self):
+        mcp = FastMCP()
+
+        class MyClass:
+            @staticmethod
+            async def add(x: int, y: int) -> int:
+                return x + y
+
+        mcp.add_tool(MyClass.add)
+        result = await mcp.call_tool("add", {"x": 1, "y": 2})
+        assert isinstance(result[0], TextContent)
+        assert result[0].text == "3"
+
+    async def test_tool_decorator_with_tags(self):
+        """Test that the tool decorator properly sets tags."""
+        mcp = FastMCP()
+
+        @mcp.tool(tags={"example", "test-tag"})
+        def sample_tool(x: int) -> int:
+            return x * 2
+
+        # Verify the tags were set correctly
+        tools = mcp._tool_manager.list_tools()
+        assert len(tools) == 1
+        assert tools[0].tags == {"example", "test-tag"}
+
+
+class TestResourceDecorator:
+    async def test_no_resources_before_decorator(self):
+        mcp = FastMCP()
+
+        with pytest.raises(ResourceError, match="Unknown resource"):
+            await mcp.read_resource("resource://data")
+
+    async def test_resource_decorator(self):
+        mcp = FastMCP()
+
+        @mcp.resource("resource://data")
+        def get_data() -> str:
+            return "Hello, world!"
+
+        result = await mcp.read_resource("resource://data")
+        assert result == "Hello, world!"
+
+    async def test_resource_decorator_incorrect_usage(self):
         mcp = FastMCP()
 
         with pytest.raises(
@@ -91,8 +230,386 @@ class TestCreateServer:
         ):
 
             @mcp.resource  # Missing parentheses #type: ignore
-            def get_data(x: str) -> str:
-                return f"Data: {x}"
+            def get_data() -> str:
+                return "Hello, world!"
+
+    async def test_resource_decorator_with_name(self):
+        mcp = FastMCP()
+
+        @mcp.resource("resource://data", name="custom-data")
+        def get_data() -> str:
+            return "Hello, world!"
+
+        resources = mcp.list_resources()
+        assert len(resources) == 1
+        assert resources[0].name == "custom-data"
+
+        result = await mcp.read_resource("resource://data")
+        assert result == "Hello, world!"
+
+    async def test_resource_decorator_with_description(self):
+        mcp = FastMCP()
+
+        @mcp.resource("resource://data", description="Data resource")
+        def get_data() -> str:
+            return "Hello, world!"
+
+        resources = mcp.list_resources()
+        assert len(resources) == 1
+        assert resources[0].description == "Data resource"
+
+    async def test_resource_decorator_instance_method(self):
+        mcp = FastMCP()
+
+        class MyClass:
+            def __init__(self, prefix: str):
+                self.prefix = prefix
+
+            def get_data(self) -> str:
+                return f"{self.prefix} Hello, world!"
+
+        obj = MyClass("My prefix:")
+        mcp.add_resource_from_fn(
+            obj.get_data, uri="resource://data", name="instance-resource"
+        )
+
+        result = await mcp.read_resource("resource://data")
+        assert result == "My prefix: Hello, world!"
+
+    async def test_resource_decorator_classmethod(self):
+        mcp = FastMCP()
+
+        class MyClass:
+            prefix = "Class prefix:"
+
+            @classmethod
+            def get_data(cls) -> str:
+                return f"{cls.prefix} Hello, world!"
+
+        mcp.add_resource_from_fn(
+            MyClass.get_data, uri="resource://data", name="class-resource"
+        )
+
+        result = await mcp.read_resource("resource://data")
+        assert result == "Class prefix: Hello, world!"
+
+    async def test_resource_decorator_staticmethod(self):
+        mcp = FastMCP()
+
+        class MyClass:
+            @staticmethod
+            @mcp.resource("resource://data")
+            def get_data() -> str:
+                return "Static Hello, world!"
+
+        result = await mcp.read_resource("resource://data")
+        assert result == "Static Hello, world!"
+
+    async def test_resource_decorator_async_function(self):
+        mcp = FastMCP()
+
+        @mcp.resource("resource://data")
+        async def get_data() -> str:
+            return "Async Hello, world!"
+
+        result = await mcp.read_resource("resource://data")
+        assert result == "Async Hello, world!"
+
+    async def test_resource_decorator_with_tags(self):
+        mcp = FastMCP()
+
+        @mcp.resource("resource://data", tags={"example", "test-tag"})
+        def get_data() -> str:
+            return "Hello, world!"
+
+        resources = mcp.list_resources()
+        assert len(resources) == 1
+        assert resources[0].tags == {"example", "test-tag"}
+
+
+class TestTemplateDecorator:
+    async def test_template_decorator(self):
+        mcp = FastMCP()
+
+        @mcp.resource("resource://{name}/data")
+        def get_data(name: str) -> str:
+            return f"Data for {name}"
+
+        templates = mcp.list_resource_templates()
+        assert len(templates) == 1
+        assert templates[0].uri_template == "resource://{name}/data"
+
+        result = await mcp.read_resource("resource://test/data")
+        assert result == "Data for test"
+
+    async def test_template_decorator_incorrect_usage(self):
+        mcp = FastMCP()
+
+        with pytest.raises(
+            TypeError, match="The @resource decorator was used incorrectly"
+        ):
+
+            @mcp.resource  # Missing parentheses #type: ignore
+            def get_data(name: str) -> str:
+                return f"Data for {name}"
+
+    async def test_template_decorator_with_name(self):
+        mcp = FastMCP()
+
+        @mcp.resource("resource://{name}/data", name="custom-template")
+        def get_data(name: str) -> str:
+            return f"Data for {name}"
+
+        templates = mcp.list_resource_templates()
+        assert len(templates) == 1
+        assert templates[0].name == "custom-template"
+
+        result = await mcp.read_resource("resource://test/data")
+        assert result == "Data for test"
+
+    async def test_template_decorator_with_description(self):
+        mcp = FastMCP()
+
+        @mcp.resource("resource://{name}/data", description="Template description")
+        def get_data(name: str) -> str:
+            return f"Data for {name}"
+
+        templates = mcp.list_resource_templates()
+        assert len(templates) == 1
+        assert templates[0].description == "Template description"
+
+    async def test_template_decorator_instance_method(self):
+        mcp = FastMCP()
+
+        class MyClass:
+            def __init__(self, prefix: str):
+                self.prefix = prefix
+
+            def get_data(self, name: str) -> str:
+                return f"{self.prefix} Data for {name}"
+
+        obj = MyClass("My prefix:")
+
+        mcp.add_resource_from_fn(
+            obj.get_data, uri="resource://{name}/data", name="instance-template"
+        )
+
+        result = await mcp.read_resource("resource://test/data")
+        assert result == "My prefix: Data for test"
+
+    async def test_template_decorator_classmethod(self):
+        mcp = FastMCP()
+
+        class MyClass:
+            prefix = "Class prefix:"
+
+            @classmethod
+            def get_data(cls, name: str) -> str:
+                return f"{cls.prefix} Data for {name}"
+
+        mcp.add_resource_from_fn(
+            MyClass.get_data, uri="resource://{name}/data", name="class-template"
+        )
+
+        result = await mcp.read_resource("resource://test/data")
+        assert result == "Class prefix: Data for test"
+
+    async def test_template_decorator_staticmethod(self):
+        mcp = FastMCP()
+
+        class MyClass:
+            @staticmethod
+            @mcp.resource("resource://{name}/data")
+            def get_data(name: str) -> str:
+                return f"Static Data for {name}"
+
+        result = await mcp.read_resource("resource://test/data")
+        assert result == "Static Data for test"
+
+    async def test_template_decorator_async_function(self):
+        mcp = FastMCP()
+
+        @mcp.resource("resource://{name}/data")
+        async def get_data(name: str) -> str:
+            return f"Async Data for {name}"
+
+        result = await mcp.read_resource("resource://test/data")
+        assert result == "Async Data for test"
+
+    async def test_template_decorator_with_tags(self):
+        mcp = FastMCP()
+
+        @mcp.resource("resource://{name}/data", tags={"template", "test-tag"})
+        def get_data(name: str) -> str:
+            return f"Data for {name}"
+
+        templates = mcp.list_resource_templates()
+        assert len(templates) == 1
+        assert templates[0].tags == {"template", "test-tag"}
+
+
+class TestPromptDecorator:
+    async def test_prompt_decorator(self):
+        mcp = FastMCP()
+
+        @mcp.prompt()
+        def test_prompt() -> str:
+            return "Hello, world!"
+
+        prompts = mcp.list_prompts()
+        assert len(prompts) == 1
+        assert prompts[0].name == "test_prompt"
+
+        result = await mcp.get_prompt("test_prompt")
+        assert len(result) == 1
+        message = result[0]
+        assert isinstance(message.content, TextContent)
+        assert message.content.text == "Hello, world!"
+
+    async def test_prompt_decorator_incorrect_usage(self):
+        mcp = FastMCP()
+
+        with pytest.raises(
+            TypeError, match="The @prompt decorator was used incorrectly"
+        ):
+
+            @mcp.prompt  # Missing parentheses #type: ignore
+            def test_prompt() -> str:
+                return "Hello, world!"
+
+    async def test_prompt_decorator_with_name(self):
+        mcp = FastMCP()
+
+        @mcp.prompt(name="custom-prompt")
+        def test_prompt() -> str:
+            return "Hello, world!"
+
+        prompts = mcp.list_prompts()
+        assert len(prompts) == 1
+        assert prompts[0].name == "custom-prompt"
+
+        result = await mcp.get_prompt("custom-prompt")
+        assert len(result) == 1
+        message = result[0]
+        assert isinstance(message.content, TextContent)
+        assert message.content.text == "Hello, world!"
+
+    async def test_prompt_decorator_with_description(self):
+        mcp = FastMCP()
+
+        @mcp.prompt(description="Test prompt description")
+        def test_prompt() -> str:
+            return "Hello, world!"
+
+        prompts = mcp.list_prompts()
+        assert len(prompts) == 1
+        assert prompts[0].description == "Test prompt description"
+
+    async def test_prompt_decorator_with_parameters(self):
+        mcp = FastMCP()
+
+        @mcp.prompt()
+        def test_prompt(name: str, greeting: str = "Hello") -> str:
+            return f"{greeting}, {name}!"
+
+        prompts = mcp.list_prompts()
+        assert len(prompts) == 1
+        assert prompts[0].arguments is not None
+        assert len(prompts[0].arguments) == 2
+        assert prompts[0].arguments[0].name == "name"
+        assert prompts[0].arguments[0].required is True
+        assert prompts[0].arguments[1].name == "greeting"
+        assert prompts[0].arguments[1].required is False
+
+        result = await mcp.get_prompt("test_prompt", {"name": "World"})
+        assert len(result) == 1
+        message = result[0]
+        assert isinstance(message.content, TextContent)
+        assert message.content.text == "Hello, World!"
+
+        result = await mcp.get_prompt(
+            "test_prompt", {"name": "World", "greeting": "Hi"}
+        )
+        assert len(result) == 1
+        message = result[0]
+        assert isinstance(message.content, TextContent)
+        assert message.content.text == "Hi, World!"
+
+    async def test_prompt_decorator_instance_method(self):
+        mcp = FastMCP()
+
+        class MyClass:
+            def __init__(self, prefix: str):
+                self.prefix = prefix
+
+            def test_prompt(self) -> str:
+                return f"{self.prefix} Hello, world!"
+
+        obj = MyClass("My prefix:")
+        mcp.add_prompt(obj.test_prompt, name="test_prompt")
+
+        result = await mcp.get_prompt("test_prompt")
+        assert len(result) == 1
+        message = result[0]
+        assert isinstance(message.content, TextContent)
+        assert message.content.text == "My prefix: Hello, world!"
+
+    async def test_prompt_decorator_classmethod(self):
+        mcp = FastMCP()
+
+        class MyClass:
+            prefix = "Class prefix:"
+
+            @classmethod
+            def test_prompt(cls) -> str:
+                return f"{cls.prefix} Hello, world!"
+
+        mcp.add_prompt(MyClass.test_prompt, name="test_prompt")
+
+        result = await mcp.get_prompt("test_prompt")
+        assert len(result) == 1
+        message = result[0]
+        assert isinstance(message.content, TextContent)
+        assert message.content.text == "Class prefix: Hello, world!"
+
+    async def test_prompt_decorator_staticmethod(self):
+        mcp = FastMCP()
+
+        class MyClass:
+            @staticmethod
+            @mcp.prompt()
+            def test_prompt() -> str:
+                return "Static Hello, world!"
+
+        result = await mcp.get_prompt("test_prompt")
+        assert len(result) == 1
+        message = result[0]
+        assert isinstance(message.content, TextContent)
+        assert message.content.text == "Static Hello, world!"
+
+    async def test_prompt_decorator_async_function(self):
+        mcp = FastMCP()
+
+        @mcp.prompt()
+        async def test_prompt() -> str:
+            return "Async Hello, world!"
+
+        result = await mcp.get_prompt("test_prompt")
+        assert len(result) == 1
+        message = result[0]
+        assert isinstance(message.content, TextContent)
+        assert message.content.text == "Async Hello, world!"
+
+    async def test_prompt_decorator_with_tags(self):
+        mcp = FastMCP()
+
+        @mcp.prompt(tags={"example", "test-tag"})
+        def test_prompt() -> str:
+            return "Hello, world!"
+
+        prompts = mcp.list_prompts()
+        assert len(prompts) == 1
+        assert prompts[0].tags == {"example", "test-tag"}
 
 
 @pytest.fixture
@@ -136,10 +653,10 @@ def tool_server():
 
 class TestServerTools:
     async def test_add_tool_exists(self, tool_server: FastMCP):
-        assert "add" in [t.name for t in await tool_server.list_tools()]
+        assert "add" in [t.name for t in await tool_server._mcp_list_tools()]
 
     async def test_list_tools(self, tool_server: FastMCP):
-        assert len(await tool_server.list_tools()) == 6
+        assert len(await tool_server._mcp_list_tools()) == 6
 
     async def test_call_tool(self, tool_server: FastMCP):
         result = await tool_server.call_tool("add", {"x": 1, "y": 2})
@@ -236,7 +753,7 @@ class TestServerTools:
             """A greeting tool"""
             return f"Hello {title} {name}"
 
-        tools = await mcp.list_tools()
+        tools = await mcp._mcp_list_tools()
         assert len(tools) == 1
         tool = tools[0]
 
@@ -328,7 +845,7 @@ class TestServerResourceTemplates:
         parameters don't match"""
         mcp = FastMCP()
 
-        with pytest.raises(ValueError, match="Mismatch between URI parameters"):
+        with pytest.raises(ValueError, match="mismatch between URI parameters"):
 
             @mcp.resource("resource://data")
             def get_data_fn(param: str) -> str:
@@ -338,7 +855,7 @@ class TestServerResourceTemplates:
         """Test that a resource with URI parameters is automatically a template"""
         mcp = FastMCP()
 
-        with pytest.raises(ValueError, match="Mismatch between URI parameters"):
+        with pytest.raises(ValueError, match="mismatch between URI parameters"):
 
             @mcp.resource("resource://{param}")
             def get_data() -> str:
@@ -422,7 +939,7 @@ class TestServerResourceTemplates:
 
         # Should be registered as a template
         assert len(mcp._resource_manager._templates) == 1
-        assert len(await mcp.list_resources()) == 0
+        assert len(await mcp._mcp_list_resources()) == 0
 
         # When accessed, should create a concrete resource
         resource = await mcp._resource_manager.get_resource("resource://test/data")
