@@ -8,7 +8,19 @@ env:
 on:
   push:
     branches: ["main"]
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "uv.lock"
+      - "pyproject.toml"
+      - ".github/workflows/**"
   pull_request:
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "uv.lock"
+      - "pyproject.toml"
+      - ".github/workflows/**"
   workflow_dispatch:
 
 permissions:
