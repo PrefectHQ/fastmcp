@@ -1,5 +1,6 @@
 """Resource manager functionality."""
 
+import copy
 import inspect
 import re
 from collections.abc import Callable
@@ -238,7 +239,8 @@ class ResourceManager:
             # Create prefixed URI and copy the resource with the new URI
             prefixed_uri = f"{prefix}{uri}" if prefix else uri
 
-            new_resource = resource.copy(updates=dict(uri=prefixed_uri))
+            new_resource = copy.copy(resource)
+            new_resource.uri = AnyUrl(prefixed_uri)
 
             # Store directly in resources dictionary
             self.add_resource(new_resource)
@@ -266,9 +268,8 @@ class ResourceManager:
                 f"{prefix}{uri_template}" if prefix else uri_template
             )
 
-            new_template = template.copy(
-                updates=dict(uri_template=prefixed_uri_template)
-            )
+            new_template = copy.copy(template)
+            new_template.uri_template = prefixed_uri_template
 
             # Store directly in templates dictionary
             self.add_template(new_template)
