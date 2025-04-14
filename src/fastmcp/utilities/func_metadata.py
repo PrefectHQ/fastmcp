@@ -125,7 +125,10 @@ def func_metadata(
     Returns:
         A pydantic model representing the function's signature.
     """
-    sig = _get_typed_signature(func)
+    if isinstance(func, classmethod):
+        sig = _get_typed_signature(func.__func__)
+    else:
+        sig = _get_typed_signature(func)
     params = sig.parameters
     dynamic_pydantic_model_params: dict[str, Any] = {}
     globalns = getattr(func, "__globals__", {})

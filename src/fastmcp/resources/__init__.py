@@ -1,5 +1,4 @@
 from .resource import Resource
-from .resource_manager import ResourceManager
 from .template import ResourceTemplate
 from .types import (
     BinaryResource,
@@ -9,6 +8,7 @@ from .types import (
     HttpResource,
     TextResource,
 )
+from .resource_manager import ResourceManager
 
 __all__ = [
     "Resource",

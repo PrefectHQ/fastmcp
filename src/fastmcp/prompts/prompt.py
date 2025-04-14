@@ -27,27 +27,17 @@ class Message(BaseModel):
         super().__init__(content=content, **kwargs)
 
 
-class UserMessage(Message):
+def UserMessage(content: str | CONTENT_TYPES, **kwargs: Any) -> Message:
     """A message from the user."""
-
-    role: Literal["user", "assistant"] = "user"
-
-    def __init__(self, content: str | CONTENT_TYPES, **kwargs: Any):
-        super().__init__(content=content, **kwargs)
+    return Message(content=content, role="user", **kwargs)
 
 
-class AssistantMessage(Message):
+def AssistantMessage(content: str | CONTENT_TYPES, **kwargs: Any) -> Message:
     """A message from the assistant."""
-
-    role: Literal["user", "assistant"] = "assistant"
-
-    def __init__(self, content: str | CONTENT_TYPES, **kwargs: Any):
-        super().__init__(content=content, **kwargs)
+    return Message(content=content, role="assistant", **kwargs)
 
 
-message_validator = TypeAdapter[UserMessage | AssistantMessage](
-    UserMessage | AssistantMessage
-)
+message_validator = TypeAdapter[Message](Message)
 
 SyncPromptResult = (
     str | Message | dict[str, Any] | Sequence[str | Message | dict[str, Any]]
@@ -160,7 +150,7 @@ class Prompt(BaseModel):
                         messages.append(message_validator.validate_python(msg))
                     elif isinstance(msg, str):
                         content = TextContent(type="text", text=msg)
-                        messages.append(UserMessage(content=content))
+                        messages.append(Message(role="user", content=content))
                     else:
                         content = json.dumps(pydantic_core.to_jsonable_python(msg))
                         messages.append(Message(role="user", content=content))

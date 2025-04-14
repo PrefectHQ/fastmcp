@@ -1,11 +1,14 @@
 """Resource manager functionality."""
 
+import inspect
+import re
 from collections.abc import Callable
 from typing import Any
 
 from pydantic import AnyUrl
 
-from fastmcp.resources.resource import Resource
+from fastmcp.exceptions import ResourceError
+from fastmcp.resources import FunctionResource, Resource
 from fastmcp.resources.template import ResourceTemplate
 from fastmcp.settings import DuplicateBehavior
 from fastmcp.utilities.logging import get_logger
@@ -21,15 +24,85 @@ class ResourceManager:
         self._templates: dict[str, ResourceTemplate] = {}
         self.duplicate_behavior = duplicate_behavior
 
+    def add_resource_or_template_from_fn(
+        self,
+        fn: Callable[..., Any],
+        uri: str,
+        name: str | None = None,
+        description: str | None = None,
+        mime_type: str | None = None,
+        tags: set[str] | None = None,
+    ) -> Resource | ResourceTemplate:
+        """Add a resource or template to the manager from a function.
+
+        Args:
+            fn: The function to register as a resource or template
+            uri: The URI for the resource or template
+            name: Optional name for the resource or template
+            description: Optional description of the resource or template
+            mime_type: Optional MIME type for the resource or template
+            tags: Optional set of tags for categorizing the resource or template
+
+        Returns:
+            The added resource or template. If a resource or template with the same URI already exists,
+            returns the existing resource or template.
+        """
+        # Check if this should be a template
+        has_uri_params = "{" in uri and "}" in uri
+        has_func_params = bool(inspect.signature(fn).parameters)
+
+        if has_uri_params and has_func_params:
+            return self.add_template_from_fn(
+                fn, uri, name, description, mime_type, tags
+            )
+        elif not has_uri_params and not has_func_params:
+            return self.add_resource_from_fn(
+                fn, uri, name, description, mime_type, tags
+            )
+        else:
+            raise ValueError(
+                "Invalid resource or template definition due to a "
+                "mismatch between URI parameters and function parameters."
+            )
+
+    def add_resource_from_fn(
+        self,
+        fn: Callable[..., Any],
+        uri: str,
+        name: str | None = None,
+        description: str | None = None,
+        mime_type: str | None = None,
+        tags: set[str] | None = None,
+    ) -> Resource:
+        """Add a resource to the manager from a function.
+
+        Args:
+            fn: The function to register as a resource
+            uri: The URI for the resource
+            name: Optional name for the resource
+            description: Optional description of the resource
+            mime_type: Optional MIME type for the resource
+            tags: Optional set of tags for categorizing the resource
+
+        Returns:
+            The added resource. If a resource with the same URI already exists,
+            returns the existing resource.
+        """
+        resource = FunctionResource(
+            uri=AnyUrl(uri),
+            name=name,
+            description=description,
+            mime_type=mime_type or "text/plain",
+            fn=fn,
+            tags=tags or set(),
+        )
+        return self.add_resource(resource)
+
     def add_resource(self, resource: Resource) -> Resource:
         """Add a resource to the manager.
 
         Args:
             resource: A Resource instance to add
-
-        Returns:
-            The added resource. If a resource with the same URI already exists,
-            returns the existing resource.
         """
         logger.debug(
             "Adding resource",
@@ -63,6 +136,17 @@ class ResourceManager:
         tags: set[str] | None = None,
     ) -> ResourceTemplate:
         """Create a template from a function."""
+
+        # Validate that URI params match function params
+        uri_params = set(re.findall(r"{(\w+)}", uri_template))
+        func_params = set(inspect.signature(fn).parameters.keys())
+
+        if uri_params != func_params:
+            raise ValueError(
+                f"Mismatch between URI parameters {uri_params} "
+                f"and function parameters {func_params}"
+            )
+
         template = ResourceTemplate.from_function(
             fn,
             uri_template=uri_template,
@@ -122,7 +206,7 @@ class ResourceManager:
                 except Exception as e:
                     raise ValueError(f"Error creating resource from template: {e}")
 
-        raise ValueError(f"Unknown resource: {uri}")
+        raise ResourceError(f"Unknown resource: {uri}")
 
     def list_resources(self) -> list[Resource]:
         """List all registered resources."""

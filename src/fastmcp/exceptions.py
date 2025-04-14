@@ -17,5 +17,9 @@ class ToolError(FastMCPError):
     """Error in tool operations."""
 
 
+class PromptError(FastMCPError):
+    """Error in prompt operations."""
+
+
 class InvalidSignature(Exception):
     """Invalid signature for use with FastMCP."""

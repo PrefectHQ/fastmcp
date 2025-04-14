@@ -1,9 +1,7 @@
 """FastMCP - A more ergonomic interface for MCP servers."""
 
-import inspect
 import json
-import re
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import (
     AbstractAsyncContextManager,
     AsyncExitStack,
@@ -43,8 +41,12 @@ import fastmcp
 import fastmcp.settings
 from fastmcp.exceptions import ResourceError
 from fastmcp.prompts import Prompt, PromptManager
-from fastmcp.resources import FunctionResource, Resource, ResourceManager
+from fastmcp.prompts.prompt import Message, PromptResult
+from fastmcp.resources import Resource, ResourceManager
+from fastmcp.resources.template import ResourceTemplate
 from fastmcp.tools import ToolManager
+from fastmcp.tools.tool import Tool
+from fastmcp.utilities.decorators import DecoratedFunction
 from fastmcp.utilities.logging import configure_logging, get_logger
 from fastmcp.utilities.types import Image
 
@@ -171,18 +173,27 @@ class FastMCP(Generic[LifespanResultT]):
 
     def _setup_handlers(self) -> None:
         """Set up core MCP protocol handlers."""
-        self._mcp_server.list_tools()(self.list_tools)
+        self._mcp_server.list_tools()(self._mcp_list_tools)
         self._mcp_server.call_tool()(self.call_tool)
-        self._mcp_server.list_resources()(self.list_resources)
-        self._mcp_server.read_resource()(self.read_resource)
-        self._mcp_server.list_prompts()(self.list_prompts)
-        self._mcp_server.get_prompt()(self.get_prompt)
-        self._mcp_server.list_resource_templates()(self.list_resource_templates)
+        self._mcp_server.list_resources()(self._mcp_list_resources)
+        self._mcp_server.read_resource()(self._mcp_read_resource)
+        self._mcp_server.list_prompts()(self._mcp_list_prompts)
+        self._mcp_server.get_prompt()(self._mcp_get_prompt)
+        self._mcp_server.list_resource_templates()(self._mcp_list_resource_templates)
 
-    async def list_tools(self) -> list[MCPTool]:
-        """List all available tools."""
+    def list_tools(self) -> list[Tool]:
+        return self._tool_manager.list_tools()
 
-        tools = self._tool_manager.list_tools()
+    async def _mcp_list_tools(self) -> list[MCPTool]:
+        """
+        List all available tools, in the format expected by the low-level MCP
+        server.
+
+        See `list_tools` for a more ergonomic way to list tools.
+        """
+
+        tools = self.list_tools()
+
         return [
             MCPTool(
                 name=info.name,
@@ -215,10 +226,18 @@ class FastMCP(Generic[LifespanResultT]):
         converted_result = _convert_to_content(result)
         return converted_result
 
-    async def list_resources(self) -> list[MCPResource]:
-        """List all available resources."""
+    def list_resources(self) -> list[Resource]:
+        return self._resource_manager.list_resources()
 
-        resources = self._resource_manager.list_resources()
+    async def _mcp_list_resources(self) -> list[MCPResource]:
+        """
+        List all available resources, in the format expected by the low-level MCP
+        server.
+
+        See `list_resources` for a more ergonomic way to list resources.
+        """
+
+        resources = self.list_resources()
         return [
             MCPResource(
                 uri=resource.uri,
@@ -229,8 +248,18 @@ class FastMCP(Generic[LifespanResultT]):
             for resource in resources
         ]
 
-    async def list_resource_templates(self) -> list[MCPResourceTemplate]:
-        templates = self._resource_manager.list_templates()
+    def list_resource_templates(self) -> list[ResourceTemplate]:
+        return self._resource_manager.list_templates()
+
+    async def _mcp_list_resource_templates(self) -> list[MCPResourceTemplate]:
+        """
+        List all available resource templates, in the format expected by the low-level
+        MCP server.
+
+        See `list_resource_templates` for a more ergonomic way to list resource
+        templates.
+        """
+        templates = self.list_resource_templates()
         return [
             MCPResourceTemplate(
                 uriTemplate=template.uri_template,
@@ -240,15 +269,27 @@ class FastMCP(Generic[LifespanResultT]):
             for template in templates
         ]
 
-    async def read_resource(self, uri: AnyUrl | str) -> list[ReadResourceContents]:
+    async def read_resource(self, uri: AnyUrl | str) -> str | bytes:
         """Read a resource by URI."""
+        resource = await self._resource_manager.get_resource(uri)
+        if not resource:
+            raise ResourceError(f"Unknown resource: {uri}")
+        return await resource.read()
+
+    async def _mcp_read_resource(self, uri: AnyUrl | str) -> list[ReadResourceContents]:
+        """
+        Read a resource by URI, in the format expected by the low-level MCP
+        server.
+
+        See `read_resource` for a more ergonomic way to read resources.
+        """
 
         resource = await self._resource_manager.get_resource(uri)
         if not resource:
             raise ResourceError(f"Unknown resource: {uri}")
 
         try:
-            content = await resource.read()
+            content = await self.read_resource(uri)
             return [ReadResourceContents(content=content, mime_type=resource.mime_type)]
         except Exception as e:
             logger.error(f"Error reading resource {uri}: {e}")
@@ -308,6 +349,7 @@ class FastMCP(Generic[LifespanResultT]):
                 await context.report_progress(50, 100)
                 return str(x)
         """
+
         # Check if user passed function directly instead of calling decorator
         if callable(name):
             raise TypeError(
@@ -317,7 +359,7 @@ class FastMCP(Generic[LifespanResultT]):
 
         def decorator(fn: AnyFunction) -> AnyFunction:
             self.add_tool(fn, name=name, description=description, tags=tags)
-            return fn
+            return DecoratedFunction(fn)
 
         return decorator
 
@@ -327,7 +369,39 @@ class FastMCP(Generic[LifespanResultT]):
         Args:
             resource: A Resource instance to add
         """
+
         self._resource_manager.add_resource(resource)
+
+    def add_resource_from_fn(
+        self,
+        fn: AnyFunction,
+        uri: str,
+        name: str | None = None,
+        description: str | None = None,
+        mime_type: str | None = None,
+        tags: set[str] | None = None,
+    ) -> None:
+        """Add a resource or template to the server from a function.
+
+        If the URI contains parameters (e.g. "resource://{param}") or the function
+        has parameters, it will be registered as a template resource.
+
+        Args:
+            fn: The function to register as a resource
+            uri: The URI for the resource
+            name: Optional name for the resource
+            description: Optional description of the resource
+            mime_type: Optional MIME type for the resource
+            tags: Optional set of tags for categorizing the resource
+        """
+        self._resource_manager.add_resource_or_template_from_fn(
+            fn=fn,
+            uri=uri,
+            name=name,
+            description=description,
+            mime_type=mime_type,
+            tags=tags,
+        )
 
     def resource(
         self,
@@ -383,52 +457,36 @@ class FastMCP(Generic[LifespanResultT]):
             )
 
         def decorator(fn: AnyFunction) -> AnyFunction:
-            # Check if this should be a template
-            has_uri_params = "{" in uri and "}" in uri
-            has_func_params = bool(inspect.signature(fn).parameters)
-
-            if has_uri_params or has_func_params:
-                # Validate that URI params match function params
-                uri_params = set(re.findall(r"{(\w+)}", uri))
-                func_params = set(inspect.signature(fn).parameters.keys())
-
-                if uri_params != func_params:
-                    raise ValueError(
-                        f"Mismatch between URI parameters {uri_params} "
-                        f"and function parameters {func_params}"
-                    )
-
-                # Register as template
-                self._resource_manager.add_template_from_fn(
-                    fn=fn,
-                    uri_template=uri,
-                    name=name,
-                    description=description,
-                    mime_type=mime_type or "text/plain",
-                    tags=tags,
-                )
-            else:
-                # Register as regular resource
-                resource = FunctionResource(
-                    uri=AnyUrl(uri),
-                    name=name,
-                    description=description,
-                    mime_type=mime_type or "text/plain",
-                    fn=fn,
-                    tags=tags or set(),  # Default to empty set if None
-                )
-                self.add_resource(resource)
-            return fn
+            self._resource_manager.add_resource_or_template_from_fn(
+                fn=fn,
+                uri=uri,
+                name=name,
+                description=description,
+                mime_type=mime_type,
+                tags=tags,
+            )
+            return DecoratedFunction(fn)
 
         return decorator
 
-    def add_prompt(self, prompt: Prompt) -> None:
+    def add_prompt(
+        self,
+        fn: Callable[..., PromptResult | Awaitable[PromptResult]],
+        name: str | None = None,
+        description: str | None = None,
+        tags: set[str] | None = None,
+    ) -> None:
         """Add a prompt to the server.
 
         Args:
             prompt: A Prompt instance to add
         """
-        self._prompt_manager.add_prompt(prompt)
+        self._prompt_manager.add_prompt_from_fn(
+            fn=fn,
+            name=name,
+            description=description,
+            tags=tags,
+        )
 
     def prompt(
         self,
@@ -478,11 +536,8 @@ class FastMCP(Generic[LifespanResultT]):
             )
 
         def decorator(func: AnyFunction) -> AnyFunction:
-            prompt = Prompt.from_function(
-                func, name=name, description=description, tags=tags
-            )
-            self.add_prompt(prompt)
-            return func
+            self.add_prompt(func, name=name, description=description, tags=tags)
+            return DecoratedFunction(func)
 
         return decorator
 
@@ -537,9 +592,20 @@ class FastMCP(Generic[LifespanResultT]):
             ],
         )
 
-    async def list_prompts(self) -> list[MCPPrompt]:
-        """List all available prompts."""
-        prompts = self._prompt_manager.list_prompts()
+    def list_prompts(self) -> list[Prompt]:
+        """
+        List all available prompts.
+        """
+        return self._prompt_manager.list_prompts()
+
+    async def _mcp_list_prompts(self) -> list[MCPPrompt]:
+        """
+        List all available prompts, in the format expected by the low-level MCP
+        server.
+
+        See `list_prompts` for a more ergonomic way to list prompts.
+        """
+        prompts = self.list_prompts()
         return [
             MCPPrompt(
                 name=prompt.name,
@@ -558,10 +624,21 @@ class FastMCP(Generic[LifespanResultT]):
 
     async def get_prompt(
         self, name: str, arguments: dict[str, Any] | None = None
-    ) -> GetPromptResult:
+    ) -> list[Message]:
         """Get a prompt by name with arguments."""
+        return await self._prompt_manager.render_prompt(name, arguments)
+
+    async def _mcp_get_prompt(
+        self, name: str, arguments: dict[str, Any] | None = None
+    ) -> GetPromptResult:
+        """
+        Get a prompt by name with arguments, in the format expected by the low-level
+        MCP server.
+
+        See `get_prompt` for a more ergonomic way to get prompts.
+        """
         try:
-            messages = await self._prompt_manager.render_prompt(name, arguments)
+            messages = await self.get_prompt(name, arguments)
 
             return GetPromptResult(messages=pydantic_core.to_jsonable_python(messages))
         except Exception as e:

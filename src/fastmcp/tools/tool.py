@@ -58,7 +58,10 @@ class Tool(BaseModel):
         is_async = inspect.iscoroutinefunction(fn)
 
         if context_kwarg is None:
-            sig = inspect.signature(fn)
+            if isinstance(fn, classmethod):
+                sig = inspect.signature(fn.__func__)
+            else:
+                sig = inspect.signature(fn)
             for param_name, param in sig.parameters.items():
                 if param.annotation is Context:
                     context_kwarg = param_name

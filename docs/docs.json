@@ -55,10 +55,11 @@
                 ]
             },
             {
-                "group": "Advanced Patterns",
+                "group": "Patterns",
                 "pages": [
                     "patterns/proxying",
                     "patterns/composition",
+                    "patterns/decorating-methods",
                     "patterns/openapi",
                     "patterns/fastapi"
                 ]

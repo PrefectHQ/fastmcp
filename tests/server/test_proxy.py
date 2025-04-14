@@ -7,6 +7,7 @@ from dirty_equals import Contains
 from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.client.transports import FastMCPTransport
+from fastmcp.exceptions import ResourceError
 from fastmcp.server.proxy import FastMCPProxy
 
 USERS = [
@@ -80,11 +81,14 @@ async def test_create_proxy(fastmcp_server):
 
 class TestTools:
     async def test_list_tools(self, proxy_server):
-        tools = await proxy_server.list_tools()
+        tools = proxy_server.list_tools()
         assert [t.name for t in tools] == Contains("greet", "add", "error_tool")
 
     async def test_list_tools_same_as_original(self, fastmcp_server, proxy_server):
-        assert await proxy_server.list_tools() == await fastmcp_server.list_tools()
+        assert (
+            await proxy_server._mcp_list_tools()
+            == await fastmcp_server._mcp_list_tools()
+        )
 
     async def test_call_tool_result_same_as_original(
         self, fastmcp_server: FastMCP, proxy_server: FastMCPProxy
@@ -106,19 +110,20 @@ class TestTools:
 
 class TestResources:
     async def test_list_resources(self, proxy_server):
-        resources = await proxy_server.list_resources()
+        resources = proxy_server.list_resources()
         assert [r.name for r in resources] == Contains(
             "data://users", "resource://wave"
         )
 
     async def test_list_resources_same_as_original(self, fastmcp_server, proxy_server):
         assert (
-            await proxy_server.list_resources() == await fastmcp_server.list_resources()
+            await proxy_server._mcp_list_resources()
+            == await fastmcp_server._mcp_list_resources()
         )
 
     async def test_read_resource(self, proxy_server: FastMCPProxy):
         result = await proxy_server.read_resource("resource://wave")
-        assert result[0].content == "👋"  # type: ignore
+        assert result == "👋"
 
     async def test_read_resource_same_as_original(self, fastmcp_server, proxy_server):
         result = await fastmcp_server.read_resource("resource://wave")
@@ -127,31 +132,31 @@ class TestResources:
 
     async def test_read_json_resource(self, proxy_server: FastMCPProxy):
         result = await proxy_server.read_resource("data://users")
-        assert json.loads(result[0].content) == USERS  # type: ignore
+        assert json.loads(result) == USERS
 
     async def test_read_resource_returns_none_if_not_found(self, proxy_server):
         with pytest.raises(
-            ValueError, match="Unknown resource: resource://nonexistent"
+            ResourceError, match="Unknown resource: resource://nonexistent"
         ):
             await proxy_server.read_resource("resource://nonexistent")
 
 
 class TestResourceTemplates:
     async def test_list_resource_templates(self, proxy_server):
-        templates = await proxy_server.list_resource_templates()
+        templates = proxy_server.list_resource_templates()
         assert [t.name for t in templates] == Contains("get_user")
 
     async def test_list_resource_templates_same_as_original(
         self, fastmcp_server, proxy_server
     ):
-        result = await fastmcp_server.list_resource_templates()
-        proxy_result = await proxy_server.list_resource_templates()
+        result = await fastmcp_server._mcp_list_resource_templates()
+        proxy_result = await proxy_server._mcp_list_resource_templates()
         assert proxy_result == result
 
     @pytest.mark.parametrize("id", [1, 2, 3])
     async def test_read_resource_template(self, proxy_server: FastMCPProxy, id: int):
         result = await proxy_server.read_resource(f"data://user/{id}")
-        assert json.loads(result[0].content) == USERS[id - 1]  # type: ignore
+        assert json.loads(result) == USERS[id - 1]
 
     async def test_read_resource_template_same_as_original(
         self, fastmcp_server, proxy_server
@@ -163,11 +168,14 @@ class TestResourceTemplates:
 
 class TestPrompts:
     async def test_list_prompts(self, proxy_server):
-        prompts = await proxy_server.list_prompts()
+        prompts = proxy_server.list_prompts()
         assert [p.name for p in prompts] == Contains("welcome")
 
     async def test_list_prompts_same_as_original(self, fastmcp_server, proxy_server):
-        assert await proxy_server.list_prompts() == await fastmcp_server.list_prompts()
+        assert (
+            await proxy_server._mcp_list_prompts()
+            == await fastmcp_server._mcp_list_prompts()
+        )
 
     async def test_render_prompt_same_as_original(
         self, fastmcp_server: FastMCP, proxy_server
@@ -178,4 +186,4 @@ class TestPrompts:
 
     async def test_render_prompt_calls_prompt(self, proxy_server):
         result = await proxy_server.get_prompt("welcome", {"name": "Alice"})
-        assert result.messages[0].content.text == "Welcome to FastMCP, Alice!"
+        assert result[0].content.text == "Welcome to FastMCP, Alice!"
