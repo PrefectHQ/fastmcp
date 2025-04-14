@@ -5,11 +5,11 @@ description: Properly use instance methods, class methods, and static methods wi
 icon: at
 ---
 
-FastMCP's decorator system is designed to work with functions, but you may see unexpected behavior if you try to decorate an instance or class method. This guide explains the correct approach for using methods with all FastMCP decorators (`@mcp.tool()`, `@mcp.resource()`, and `@mcp.prompt()`).
+FastMCP's decorator system is designed to work with functions, but you may see unexpected behavior if you try to decorate an instance or class method. This guide explains the correct approach for using methods with all FastMCP decorators (`@tool()`, `@resource()`, and `@prompt()`).
 
 ## Why Are Methods Hard?
 
-When you apply a FastMCP decorator like `@mcp.tool()`, `@mcp.resource()`, or `@mcp.prompt()` to a method, the decorator captures the function at decoration time. For instance methods and class methods, this poses a challenge because:
+When you apply a FastMCP decorator like `@tool()`, `@resource()`, or `@prompt()` to a method, the decorator captures the function at decoration time. For instance methods and class methods, this poses a challenge because:
 
 1. For instance methods: The decorator gets the unbound method before any instance exists
 2. For class methods: The decorator gets the function before it's bound to the class
@@ -56,7 +56,10 @@ class MyClass:
 # Create an instance first, then add the bound methods
 obj = MyClass()
 mcp.add_tool(obj.add)
-mcp.add_resource(obj.get_resource, uri="resource://{param}")  # For resources
+mcp.add_resource_fn(obj.get_resource, uri="resource://{param}")  # For resources or templates
+
+# Note: FastMCP provides add_resource() for adding Resource objects directly and
+# add_resource_fn() for adding functions that generate resources or templates
 
 # Now you can call it without 'self' showing up as a parameter
 await mcp.call_tool('add', {'x': 1, 'y': 2})  # Returns 3
@@ -167,7 +170,7 @@ class ComponentProvider:
     def __init__(self, mcp_instance):
         # Register methods
         mcp_instance.add_tool(self.tool_method)
-        mcp_instance.add_resource(self.resource_method, uri="resource://data")
+        mcp_instance.add_resource_fn(self.resource_method, uri="resource://data")
     
     def tool_method(self, x):
         return x * 2
@@ -191,8 +194,8 @@ The class automatically registers its methods during initialization, ensuring th
 While FastMCP's decorator pattern works seamlessly with regular functions and static methods, for instance methods and class methods, you should add them after creating the instance or class. This ensures that the methods are properly bound before being registered.
 
 These patterns apply to all FastMCP decorators and registration methods:
-- `@mcp.tool()` and `mcp.add_tool()`
-- `@mcp.resource()` and `mcp.add_resource()`
-- `@mcp.prompt()` and `mcp.add_prompt()`
+- `@tool()` and `add_tool()`
+- `@resource()` and `add_resource_fn()`
+- `@prompt()` and `add_prompt()`
 
 Understanding these patterns allows you to effectively organize your components into classes while maintaining proper method binding, giving you the benefits of object-oriented design without sacrificing the simplicity of FastMCP's decorator system.

@@ -372,7 +372,7 @@ class FastMCP(Generic[LifespanResultT]):
 
         self._resource_manager.add_resource(resource)
 
-    def add_resource_from_fn(
+    def add_resource_fn(
         self,
         fn: AnyFunction,
         uri: str,
