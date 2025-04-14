@@ -20,15 +20,23 @@ def get_logger(name: str) -> logging.Logger:
 
 
 def configure_logging(
-    level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO",
+    level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] | int = "INFO",
 ) -> None:
     """Configure logging for FastMCP.
 
     Args:
         level: the log level to use
     """
-    logging.basicConfig(
-        level=level,
-        format="%(message)s",
-        handlers=[RichHandler(console=Console(stderr=True), rich_tracebacks=True)],
-    )
+    # Only configure the FastMCP logger namespace
+    handler = RichHandler(console=Console(stderr=True), rich_tracebacks=True)
+    formatter = logging.Formatter("%(message)s")
+    handler.setFormatter(formatter)
+
+    fastmcp_logger = logging.getLogger("FastMCP")
+    fastmcp_logger.setLevel(level)
+
+    # Remove any existing handlers to avoid duplicates on reconfiguration
+    for hdlr in fastmcp_logger.handlers[:]:
+        fastmcp_logger.removeHandler(hdlr)
+
+    fastmcp_logger.addHandler(handler)
