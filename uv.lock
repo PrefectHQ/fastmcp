@@ -254,7 +254,7 @@ wheels = [
 
 [[package]]
 name = "fastmcp"
-version = "2.1.1.dev3+4f58d82"
+version = "2.1.2.dev2+c0de75e"
 source = { editable = "." }
 dependencies = [
     { name = "dotenv" },

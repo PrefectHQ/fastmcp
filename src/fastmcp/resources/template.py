@@ -8,7 +8,6 @@ from collections.abc import Callable
 from typing import Annotated, Any
 
 from pydantic import BaseModel, BeforeValidator, Field, TypeAdapter, validate_call
-from typing_extensions import Self
 
 from fastmcp.resources.types import FunctionResource, Resource
 from fastmcp.utilities.types import _convert_set_defaults
@@ -91,13 +90,6 @@ class ResourceTemplate(BaseModel):
             )
         except Exception as e:
             raise ValueError(f"Error creating resource from template: {e}")
-
-    def copy(self, updates: dict[str, Any] | None = None) -> Self:
-        """Copy the resource template with optional updates."""
-        data = self.model_dump()
-        if updates:
-            data.update(updates)
-        return type(self)(**data)
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, ResourceTemplate):

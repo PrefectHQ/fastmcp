@@ -5,7 +5,6 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Annotated, Any
 
 from pydantic import BaseModel, BeforeValidator, Field
-from typing_extensions import Self
 
 from fastmcp.exceptions import ToolError
 from fastmcp.utilities.func_metadata import FuncMetadata, func_metadata
@@ -101,13 +100,6 @@ class Tool(BaseModel):
             )
         except Exception as e:
             raise ToolError(f"Error executing tool {self.name}: {e}") from e
-
-    def copy(self, updates: dict[str, Any] | None = None) -> Self:
-        """Copy the tool with optional updates."""
-        data = self.model_dump()
-        if updates:
-            data.update(updates)
-        return type(self)(**data)
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Tool):

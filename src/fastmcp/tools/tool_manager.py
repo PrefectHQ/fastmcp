@@ -1,5 +1,6 @@
 from __future__ import annotations as _annotations
 
+import copy
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
@@ -90,7 +91,9 @@ class ToolManager:
         for name, tool in tool_manager._tools.items():
             prefixed_name = f"{prefix}{name}" if prefix else name
 
-            new_tool = tool.copy(updates=dict(name=prefixed_name))
+            new_tool = copy.copy(tool)
+            new_tool.name = prefixed_name
+
             # Store the copied tool
             self.add_tool(new_tool)
             logger.debug(f'Imported tool "{name}" as "{prefixed_name}"')

@@ -73,7 +73,7 @@ def api_client(fastapi_app: FastAPI) -> AsyncClient:
 
 
 @pytest.fixture
-async def fastmcp_server(
+async def fastmcp_openapi_server(
     fastapi_app: FastAPI, api_client: httpx.AsyncClient
 ) -> FastMCPOpenAPI:
     openapi_spec = fastapi_app.openapi()
@@ -113,11 +113,11 @@ async def test_create_fastapi_server_classmethod(fastapi_app: FastAPI):
 
 
 class TestTools:
-    async def test_list_tools(self, fastmcp_server: FastMCPOpenAPI):
+    async def test_list_tools(self, fastmcp_openapi_server: FastMCPOpenAPI):
         """
         By default, tools exclude GET methods
         """
-        tools = await fastmcp_server._mcp_list_tools()
+        tools = await fastmcp_openapi_server._mcp_list_tools()
         assert len(tools) == 2
 
         assert tools[0].model_dump() == dict(
@@ -148,12 +148,12 @@ class TestTools:
         )
 
     async def test_call_create_user_tool(
-        self, fastmcp_server: FastMCPOpenAPI, api_client
+        self, fastmcp_openapi_server: FastMCPOpenAPI, api_client
     ):
         """
         The tool created by the OpenAPI server should be the same as the original
         """
-        tool_response = await fastmcp_server.call_tool(
+        tool_response = await fastmcp_openapi_server.call_tool(
             "create_user_users_post", {"name": "David", "active": False}
         )
         assert tool_response == User(id=4, name="David", active=False)
@@ -164,19 +164,19 @@ class TestTools:
         assert len(response.json()) == 4
 
         # Check that the user was created via MCP
-        user_response = await fastmcp_server._mcp_read_resource(
+        user_response = await fastmcp_openapi_server._mcp_read_resource(
             "resource://openapi/get_user_users__user_id__get/4"
         )
         user = user_response[0].content
         assert user == tool_response.model_dump()
 
     async def test_call_update_user_name_tool(
-        self, fastmcp_server: FastMCPOpenAPI, api_client
+        self, fastmcp_openapi_server: FastMCPOpenAPI, api_client
     ):
         """
         The tool created by the OpenAPI server should be the same as the original
         """
-        tool_response = await fastmcp_server.call_tool(
+        tool_response = await fastmcp_openapi_server.call_tool(
             "update_user_name_users__user_id__name_patch", {"user_id": 1, "name": "XYZ"}
         )
         assert tool_response == dict(id=1, name="XYZ", active=True)
@@ -186,7 +186,7 @@ class TestTools:
         assert dict(id=1, name="XYZ", active=True) in response.json()
 
         # Check that the user was updated via MCP
-        user_response = await fastmcp_server._mcp_read_resource(
+        user_response = await fastmcp_openapi_server._mcp_read_resource(
             "resource://openapi/get_user_users__user_id__get/1"
         )
         user = user_response[0].content
@@ -194,17 +194,20 @@ class TestTools:
 
 
 class TestResources:
-    async def test_list_resources(self, fastmcp_server: FastMCPOpenAPI):
+    async def test_list_resources(self, fastmcp_openapi_server: FastMCPOpenAPI):
         """
         By default, resources exclude GET methods without parameters
         """
-        resources = await fastmcp_server._mcp_list_resources()
+        resources = await fastmcp_openapi_server._mcp_list_resources()
         assert len(resources) == 1
         assert resources[0].uri == AnyUrl("resource://openapi/get_users_users_get")
         assert resources[0].name == "get_users_users_get"
 
     async def test_get_resource(
-        self, fastmcp_server: FastMCPOpenAPI, api_client, users_db: dict[int, User]
+        self,
+        fastmcp_openapi_server: FastMCPOpenAPI,
+        api_client,
+        users_db: dict[int, User],
     ):
         """
         The resource created by the OpenAPI server should be the same as the original
@@ -212,7 +215,7 @@ class TestResources:
         json_users = TypeAdapter(list[User]).dump_python(
             sorted(users_db.values(), key=lambda x: x.id)
         )
-        resource_response = await fastmcp_server._mcp_read_resource(
+        resource_response = await fastmcp_openapi_server._mcp_read_resource(
             "resource://openapi/get_users_users_get"
         )
         resource = resource_response[0].content
@@ -222,11 +225,13 @@ class TestResources:
 
 
 class TestResourceTemplates:
-    async def test_list_resource_templates(self, fastmcp_server: FastMCPOpenAPI):
+    async def test_list_resource_templates(
+        self, fastmcp_openapi_server: FastMCPOpenAPI
+    ):
         """
         By default, resource templates exclude GET methods without parameters
         """
-        resource_templates = await fastmcp_server._mcp_list_resource_templates()
+        resource_templates = await fastmcp_openapi_server._mcp_list_resource_templates()
         assert len(resource_templates) == 1
         assert resource_templates[0].name == "get_user_users__user_id__get"
         assert (
@@ -235,13 +240,16 @@ class TestResourceTemplates:
         )
 
     async def test_get_resource_template(
-        self, fastmcp_server: FastMCPOpenAPI, api_client, users_db: dict[int, User]
+        self,
+        fastmcp_openapi_server: FastMCPOpenAPI,
+        api_client,
+        users_db: dict[int, User],
     ):
         """
         The resource template created by the OpenAPI server should be the same as the original
         """
         user_id = 2
-        resource_response = await fastmcp_server._mcp_read_resource(
+        resource_response = await fastmcp_openapi_server._mcp_read_resource(
             f"resource://openapi/get_user_users__user_id__get/{user_id}"
         )
 
@@ -252,21 +260,23 @@ class TestResourceTemplates:
 
 
 class TestPrompts:
-    async def test_list_prompts(self, fastmcp_server: FastMCPOpenAPI):
+    async def test_list_prompts(self, fastmcp_openapi_server: FastMCPOpenAPI):
         """
         By default, there are no prompts.
         """
-        prompts = await fastmcp_server._mcp_list_prompts()
+        prompts = await fastmcp_openapi_server._mcp_list_prompts()
         assert len(prompts) == 0
 
 
 class TestTagTransfer:
-    """Tests for transferring tags from OpenAPI to MCP objects."""
+    """Tests for transferring tags from OpenAPI routes to MCP objects."""
 
-    async def test_tags_transferred_to_tools(self, fastmcp_server: FastMCPOpenAPI):
+    async def test_tags_transferred_to_tools(
+        self, fastmcp_openapi_server: FastMCPOpenAPI
+    ):
         """Test that tags from OpenAPI routes are correctly transferred to Tools."""
         # Get internal tools directly (not the public API which returns MCP.Content)
-        tools = fastmcp_server._tool_manager.list_tools()
+        tools = fastmcp_openapi_server._tool_manager.list_tools()
 
         # Find the create_user and update_user_name tools
         create_user_tool = next(
@@ -293,10 +303,12 @@ class TestTagTransfer:
         assert "update" in update_user_tool.tags
         assert len(update_user_tool.tags) == 2
 
-    async def test_tags_transferred_to_resources(self, fastmcp_server: FastMCPOpenAPI):
+    async def test_tags_transferred_to_resources(
+        self, fastmcp_openapi_server: FastMCPOpenAPI
+    ):
         """Test that tags from OpenAPI routes are correctly transferred to Resources."""
         # Get internal resources directly
-        resources = fastmcp_server._resource_manager.list_resources()
+        resources = fastmcp_openapi_server._resource_manager.list_resources()
 
         # Find the get_users resource
         get_users_resource = next(
@@ -311,11 +323,11 @@ class TestTagTransfer:
         assert len(get_users_resource.tags) == 2
 
     async def test_tags_transferred_to_resource_templates(
-        self, fastmcp_server: FastMCPOpenAPI
+        self, fastmcp_openapi_server: FastMCPOpenAPI
     ):
         """Test that tags from OpenAPI routes are correctly transferred to ResourceTemplates."""
         # Get internal resource templates directly
-        templates = fastmcp_server._resource_manager.list_templates()
+        templates = fastmcp_openapi_server._resource_manager.list_templates()
 
         # Find the get_user template
         get_user_template = next(
@@ -330,11 +342,11 @@ class TestTagTransfer:
         assert len(get_user_template.tags) == 2
 
     async def test_tags_preserved_in_resources_created_from_templates(
-        self, fastmcp_server: FastMCPOpenAPI
+        self, fastmcp_openapi_server: FastMCPOpenAPI
     ):
         """Test that tags are preserved when creating resources from templates."""
         # Get internal resource templates directly
-        templates = fastmcp_server._resource_manager.list_templates()
+        templates = fastmcp_openapi_server._resource_manager.list_templates()
 
         # Find the get_user template
         get_user_template = next(
@@ -353,3 +365,355 @@ class TestTagTransfer:
         assert "users" in resource.tags
         assert "detail" in resource.tags
         assert len(resource.tags) == 2
+
+
+class TestOpenAPI30Compatibility:
+    """Tests for compatibility with OpenAPI 3.0 specifications."""
+
+    @pytest.fixture
+    def openapi_30_spec(self) -> dict:
+        """Fixture that returns a simple OpenAPI 3.0 specification."""
+        return {
+            "openapi": "3.0.0",
+            "info": {"title": "Product API (3.0)", "version": "1.0.0"},
+            "paths": {
+                "/products": {
+                    "get": {
+                        "operationId": "listProducts",
+                        "summary": "List all products",
+                        "responses": {"200": {"description": "A list of products"}},
+                    },
+                    "post": {
+                        "operationId": "createProduct",
+                        "summary": "Create a new product",
+                        "requestBody": {
+                            "required": True,
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {
+                                            "name": {"type": "string"},
+                                            "price": {"type": "number"},
+                                        },
+                                        "required": ["name", "price"],
+                                    }
+                                }
+                            },
+                        },
+                        "responses": {"201": {"description": "Product created"}},
+                    },
+                },
+                "/products/{product_id}": {
+                    "get": {
+                        "operationId": "getProduct",
+                        "summary": "Get product by ID",
+                        "parameters": [
+                            {
+                                "name": "product_id",
+                                "in": "path",
+                                "required": True,
+                                "schema": {"type": "string"},
+                            }
+                        ],
+                        "responses": {"200": {"description": "A product"}},
+                    }
+                },
+            },
+        }
+
+    @pytest.fixture
+    async def mock_30_client(self) -> httpx.AsyncClient:
+        """Mock client that returns predefined responses for the 3.0 API."""
+
+        async def _responder(request):
+            if request.url.path == "/products" and request.method == "GET":
+                return httpx.Response(
+                    200,
+                    json=[
+                        {"id": "p1", "name": "Product 1", "price": 19.99},
+                        {"id": "p2", "name": "Product 2", "price": 29.99},
+                    ],
+                )
+            elif request.url.path == "/products" and request.method == "POST":
+                import json
+
+                data = json.loads(request.content)
+                return httpx.Response(
+                    201, json={"id": "p3", "name": data["name"], "price": data["price"]}
+                )
+            elif request.url.path.startswith("/products/") and request.method == "GET":
+                product_id = request.url.path.split("/")[-1]
+                products = {
+                    "p1": {"id": "p1", "name": "Product 1", "price": 19.99},
+                    "p2": {"id": "p2", "name": "Product 2", "price": 29.99},
+                }
+                if product_id in products:
+                    return httpx.Response(200, json=products[product_id])
+                return httpx.Response(404, json={"error": "Product not found"})
+            return httpx.Response(404)
+
+        transport = httpx.MockTransport(_responder)
+        return httpx.AsyncClient(transport=transport, base_url="http://test")
+
+    @pytest.fixture
+    async def openapi_30_server(
+        self, openapi_30_spec, mock_30_client
+    ) -> FastMCPOpenAPI:
+        """Create a FastMCPOpenAPI server from the OpenAPI 3.0 spec."""
+        return FastMCPOpenAPI(
+            openapi_spec=openapi_30_spec, client=mock_30_client, name="Product API 3.0"
+        )
+
+    async def test_server_creation(self, openapi_30_server):
+        """Test that a server can be created from an OpenAPI 3.0 spec."""
+        assert isinstance(openapi_30_server, FastMCP)
+        assert openapi_30_server.name == "Product API 3.0"
+
+    async def test_resource_discovery(self, openapi_30_server):
+        """Test that resources are correctly discovered from an OpenAPI 3.0 spec."""
+        resources = await openapi_30_server._mcp_list_resources()
+        assert len(resources) == 1
+        assert resources[0].uri == AnyUrl("resource://openapi/listProducts")
+
+    async def test_resource_template_discovery(self, openapi_30_server):
+        """Test that resource templates are correctly discovered from an OpenAPI 3.0 spec."""
+        templates = await openapi_30_server._mcp_list_resource_templates()
+        assert len(templates) == 1
+        assert templates[0].name == "getProduct"
+        assert templates[0].uriTemplate == r"resource://openapi/getProduct/{product_id}"
+
+    async def test_tool_discovery(self, openapi_30_server):
+        """Test that tools are correctly discovered from an OpenAPI 3.0 spec."""
+        tools = await openapi_30_server._mcp_list_tools()
+        assert len(tools) == 1
+        assert tools[0].name == "createProduct"
+        assert "name" in tools[0].inputSchema["properties"]
+        assert "price" in tools[0].inputSchema["properties"]
+
+    async def test_resource_access(self, openapi_30_server):
+        """Test reading a resource from an OpenAPI 3.0 server."""
+        resource_response = await openapi_30_server._mcp_read_resource(
+            "resource://openapi/listProducts"
+        )
+        content = resource_response[0].content
+        assert len(content) == 2
+        assert content[0]["name"] == "Product 1"
+        assert content[1]["name"] == "Product 2"
+
+    async def test_resource_template_access(self, openapi_30_server):
+        """Test reading a resource from template from an OpenAPI 3.0 server."""
+        resource_response = await openapi_30_server._mcp_read_resource(
+            "resource://openapi/getProduct/p1"
+        )
+        content = resource_response[0].content
+        assert content["id"] == "p1"
+        assert content["name"] == "Product 1"
+        assert content["price"] == 19.99
+
+    async def test_tool_execution(self, openapi_30_server):
+        """Test executing a tool from an OpenAPI 3.0 server."""
+        tool_response = await openapi_30_server.call_tool(
+            "createProduct", {"name": "New Product", "price": 39.99}
+        )
+        assert tool_response["id"] == "p3"
+        assert tool_response["name"] == "New Product"
+        assert tool_response["price"] == 39.99
+
+
+class TestOpenAPI31Compatibility:
+    """Tests for compatibility with OpenAPI 3.1 specifications."""
+
+    @pytest.fixture
+    def openapi_31_spec(self) -> dict:
+        """Fixture that returns a simple OpenAPI 3.1 specification."""
+        return {
+            "openapi": "3.1.0",
+            "info": {"title": "Order API (3.1)", "version": "1.0.0"},
+            "paths": {
+                "/orders": {
+                    "get": {
+                        "operationId": "listOrders",
+                        "summary": "List all orders",
+                        "responses": {"200": {"description": "A list of orders"}},
+                    },
+                    "post": {
+                        "operationId": "createOrder",
+                        "summary": "Place a new order",
+                        "requestBody": {
+                            "required": True,
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {
+                                            "customer": {"type": "string"},
+                                            "items": {
+                                                "type": "array",
+                                                "items": {"type": "string"},
+                                            },
+                                        },
+                                        "required": ["customer", "items"],
+                                    }
+                                }
+                            },
+                        },
+                        "responses": {"201": {"description": "Order created"}},
+                    },
+                },
+                "/orders/{order_id}": {
+                    "get": {
+                        "operationId": "getOrder",
+                        "summary": "Get order by ID",
+                        "parameters": [
+                            {
+                                "name": "order_id",
+                                "in": "path",
+                                "required": True,
+                                "schema": {"type": "string"},
+                            }
+                        ],
+                        "responses": {"200": {"description": "An order"}},
+                    }
+                },
+            },
+        }
+
+    @pytest.fixture
+    async def mock_31_client(self) -> httpx.AsyncClient:
+        """Mock client that returns predefined responses for the 3.1 API."""
+
+        async def _responder(request):
+            if request.url.path == "/orders" and request.method == "GET":
+                return httpx.Response(
+                    200,
+                    json=[
+                        {"id": "o1", "customer": "Alice", "items": ["item1", "item2"]},
+                        {"id": "o2", "customer": "Bob", "items": ["item3"]},
+                    ],
+                )
+            elif request.url.path == "/orders" and request.method == "POST":
+                import json
+
+                data = json.loads(request.content)
+                return httpx.Response(
+                    201,
+                    json={
+                        "id": "o3",
+                        "customer": data["customer"],
+                        "items": data["items"],
+                    },
+                )
+            elif request.url.path.startswith("/orders/") and request.method == "GET":
+                order_id = request.url.path.split("/")[-1]
+                orders = {
+                    "o1": {
+                        "id": "o1",
+                        "customer": "Alice",
+                        "items": ["item1", "item2"],
+                    },
+                    "o2": {"id": "o2", "customer": "Bob", "items": ["item3"]},
+                }
+                if order_id in orders:
+                    return httpx.Response(200, json=orders[order_id])
+                return httpx.Response(404, json={"error": "Order not found"})
+            return httpx.Response(404)
+
+        transport = httpx.MockTransport(_responder)
+        return httpx.AsyncClient(transport=transport, base_url="http://test")
+
+    @pytest.fixture
+    async def openapi_31_server(
+        self, openapi_31_spec, mock_31_client
+    ) -> FastMCPOpenAPI:
+        """Create a FastMCPOpenAPI server from the OpenAPI 3.1 spec."""
+        return FastMCPOpenAPI(
+            openapi_spec=openapi_31_spec, client=mock_31_client, name="Order API 3.1"
+        )
+
+    async def test_server_creation(self, openapi_31_server):
+        """Test that a server can be created from an OpenAPI 3.1 spec."""
+        assert isinstance(openapi_31_server, FastMCP)
+        assert openapi_31_server.name == "Order API 3.1"
+
+    async def test_resource_discovery(self, openapi_31_server):
+        """Test that resources are correctly discovered from an OpenAPI 3.1 spec."""
+        resources = await openapi_31_server._mcp_list_resources()
+        assert len(resources) == 1
+        assert resources[0].uri == AnyUrl("resource://openapi/listOrders")
+
+    async def test_resource_template_discovery(self, openapi_31_server):
+        """Test that resource templates are correctly discovered from an OpenAPI 3.1 spec."""
+        templates = await openapi_31_server._mcp_list_resource_templates()
+        assert len(templates) == 1
+        assert templates[0].name == "getOrder"
+        assert templates[0].uriTemplate == r"resource://openapi/getOrder/{order_id}"
+
+    async def test_tool_discovery(self, openapi_31_server):
+        """Test that tools are correctly discovered from an OpenAPI 3.1 spec."""
+        tools = await openapi_31_server._mcp_list_tools()
+        assert len(tools) == 1
+        assert tools[0].name == "createOrder"
+        assert "customer" in tools[0].inputSchema["properties"]
+        assert "items" in tools[0].inputSchema["properties"]
+
+    async def test_resource_access(self, openapi_31_server):
+        """Test reading a resource from an OpenAPI 3.1 server."""
+        resource_response = await openapi_31_server._mcp_read_resource(
+            "resource://openapi/listOrders"
+        )
+        content = resource_response[0].content
+        assert len(content) == 2
+        assert content[0]["customer"] == "Alice"
+        assert content[1]["customer"] == "Bob"
+
+    async def test_resource_template_access(self, openapi_31_server):
+        """Test reading a resource from template from an OpenAPI 3.1 server."""
+        resource_response = await openapi_31_server._mcp_read_resource(
+            "resource://openapi/getOrder/o1"
+        )
+        content = resource_response[0].content
+        assert content["id"] == "o1"
+        assert content["customer"] == "Alice"
+        assert content["items"] == ["item1", "item2"]
+
+    async def test_tool_execution(self, openapi_31_server):
+        """Test executing a tool from an OpenAPI 3.1 server."""
+        tool_response = await openapi_31_server.call_tool(
+            "createOrder", {"customer": "Charlie", "items": ["item4", "item5"]}
+        )
+        assert tool_response["id"] == "o3"
+        assert tool_response["customer"] == "Charlie"
+        assert tool_response["items"] == ["item4", "item5"]
+
+
+class TestMountFastMCP:
+    """Tests for mounting FastMCP servers."""
+
+    async def test_mount_fastmcp(self, fastmcp_openapi_server: FastMCPOpenAPI):
+        """Test mounting an OpenAPI server."""
+        mcp = FastMCP("MainApp")
+
+        mcp.mount("fastapi", fastmcp_openapi_server)
+
+        resources = await mcp._mcp_list_resources()
+        assert len(resources) == 1
+        assert resources[0].uri == AnyUrl(
+            "fastapi+resource://openapi/get_users_users_get"
+        )
+
+        templates = await mcp._mcp_list_resource_templates()
+        assert len(templates) == 1
+        assert templates[0].name == "get_user_users__user_id__get"
+        assert (
+            templates[0].uriTemplate
+            == r"fastapi+resource://openapi/get_user_users__user_id__get/{user_id}"
+        )
+
+        tools = await mcp._mcp_list_tools()
+        assert len(tools) == 2
+        assert tools[0].name == "fastapi_create_user_users_post"
+        assert tools[1].name == "fastapi_update_user_name_users__user_id__name_patch"
+
+        prompts = await mcp._mcp_list_prompts()
+        assert len(prompts) == 0

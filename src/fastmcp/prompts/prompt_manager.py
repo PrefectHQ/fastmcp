@@ -1,5 +1,6 @@
 """Prompt management functionality."""
 
+import copy
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -84,7 +85,8 @@ class PromptManager:
             # Create prefixed name
             prefixed_name = f"{prefix}{name}" if prefix else name
 
-            new_prompt = prompt.copy(updates=dict(name=prefixed_name))
+            new_prompt = copy.copy(prompt)
+            new_prompt.name = prefixed_name
 
             # Store the prompt with the prefixed name
             self.add_prompt(new_prompt)
