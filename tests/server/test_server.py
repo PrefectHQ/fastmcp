@@ -269,7 +269,7 @@ class TestResourceDecorator:
                 return f"{self.prefix} Hello, world!"
 
         obj = MyClass("My prefix:")
-        mcp.add_resource_from_fn(
+        mcp.add_resource_fn(
             obj.get_data, uri="resource://data", name="instance-resource"
         )
 
@@ -286,7 +286,7 @@ class TestResourceDecorator:
             def get_data(cls) -> str:
                 return f"{cls.prefix} Hello, world!"
 
-        mcp.add_resource_from_fn(
+        mcp.add_resource_fn(
             MyClass.get_data, uri="resource://data", name="class-resource"
         )
 
@@ -390,7 +390,7 @@ class TestTemplateDecorator:
 
         obj = MyClass("My prefix:")
 
-        mcp.add_resource_from_fn(
+        mcp.add_resource_fn(
             obj.get_data, uri="resource://{name}/data", name="instance-template"
         )
 
@@ -407,7 +407,7 @@ class TestTemplateDecorator:
             def get_data(cls, name: str) -> str:
                 return f"{cls.prefix} Data for {name}"
 
-        mcp.add_resource_from_fn(
+        mcp.add_resource_fn(
             MyClass.get_data, uri="resource://{name}/data", name="class-template"
         )
 
