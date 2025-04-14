@@ -28,9 +28,9 @@ The `FastMCP` constructor accepts several arguments:
 
 *   `name`: (Optional) A human-readable name for your server. Defaults to "FastMCP".
 *   `instructions`: (Optional) Description of how to interact with this server. These instructions help clients understand the server's purpose and available functionality.
-*   `lifespan`: (Optional) An async context manager function for server startup and shutdown logic. See [Lifespan Management](/advanced/lifespan).
+*   `lifespan`: (Optional) An async context manager function for server startup and shutdown logic.
 *   `tags`: (Optional) A set of strings to tag the server itself.
-*   `**settings`: Keyword arguments corresponding to `ServerSettings` for configuration. See [Configuration](/advanced/configuration).
+*   `**settings`: Keyword arguments corresponding to additional `ServerSettings` configuration
 
 ## Components
 
@@ -47,7 +47,7 @@ def multiply(a: float, b: float) -> float:
     return a * b
 ```
 
-See [Tools](/server/tools) for detailed documentation.
+See [Tools](/servers/tools) for detailed documentation.
 
 ### Resources
 
@@ -60,7 +60,7 @@ def get_config() -> dict:
     return {"theme": "dark", "version": "1.0"}
 ```
 
-See [Resources & Templates](/server/resources) for detailed documentation.
+See [Resources & Templates](/servers/resources) for detailed documentation.
 
 ### Resource Templates
 
@@ -74,7 +74,7 @@ def get_user_profile(user_id: int) -> dict:
     return {"id": user_id, "name": f"User {user_id}", "status": "active"}
 ```
 
-See [Resources & Templates](/server/resources) for detailed documentation.
+See [Resources & Templates](/servers/resources) for detailed documentation.
 
 ### Prompts
 
@@ -88,7 +88,7 @@ def analyze_data(data_points: list[float]) -> str:
     return f"Please analyze these data points: {formatted_data}"
 ```
 
-See [Prompts](/server/prompts) for detailed documentation.
+See [Prompts](/servers/prompts) for detailed documentation.
 
 ## Running the Server
 
@@ -186,9 +186,6 @@ fastmcp run my_server.py:mcp --transport sse --host 127.0.0.1 --port 8888
 
 The CLI can dynamically find and run FastMCP server objects in your files, but including the `if __name__ == "__main__":` block ensures compatibility with all clients.
 
-<Tip>
-For more options, including how to set up your server's dependencies or use advanced configurations, see the [CLI Reference](/cli/overview).
-</Tip>
 
 ## Mounting Subservers
 
@@ -299,4 +296,3 @@ print(mcp.settings.on_duplicate_tools) # Output: DuplicateBehavior.ERROR
 
 All of these can be configured directly as parameters when creating the `FastMCP` instance.
 
-See the [Configuration](/advanced/configuration) page for more details. 
