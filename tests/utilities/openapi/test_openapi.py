@@ -311,6 +311,172 @@ def fastapi_route_map(parsed_fastapi_routes):
     }
 
 
+@pytest.fixture
+def openapi_30_schema() -> dict[str, Any]:
+    """Fixture that returns a simple OpenAPI 3.0.0 schema."""
+    return {
+        "openapi": "3.0.0",
+        "info": {"title": "Simple API (OpenAPI 3.0)", "version": "1.0.0"},
+        "paths": {
+            "/items": {
+                "get": {
+                    "summary": "List all items",
+                    "operationId": "listItems",
+                    "parameters": [
+                        {
+                            "name": "limit",
+                            "in": "query",
+                            "description": "How many items to return",
+                            "required": False,
+                            "schema": {"type": "integer"},
+                        }
+                    ],
+                    "responses": {"200": {"description": "A list of items"}},
+                }
+            }
+        },
+    }
+
+
+@pytest.fixture
+def openapi_31_schema() -> dict[str, Any]:
+    """Fixture that returns a simple OpenAPI 3.1.0 schema."""
+    return {
+        "openapi": "3.1.0",
+        "info": {"title": "Simple API (OpenAPI 3.1)", "version": "1.0.0"},
+        "paths": {
+            "/items": {
+                "get": {
+                    "summary": "List all items",
+                    "operationId": "listItems",
+                    "parameters": [
+                        {
+                            "name": "limit",
+                            "in": "query",
+                            "description": "How many items to return",
+                            "required": False,
+                            "schema": {"type": "integer"},
+                        }
+                    ],
+                    "responses": {"200": {"description": "A list of items"}},
+                }
+            }
+        },
+    }
+
+
+@pytest.fixture
+def openapi_30_with_references() -> dict[str, Any]:
+    """OpenAPI 3.0 schema with references to test resolution."""
+    return {
+        "openapi": "3.0.0",
+        "info": {"title": "API with References (3.0)", "version": "1.0.0"},
+        "paths": {
+            "/products": {
+                "post": {
+                    "summary": "Create product",
+                    "operationId": "createProduct",
+                    "requestBody": {
+                        "content": {
+                            "application/json": {
+                                "schema": {"$ref": "#/components/schemas/Product"}
+                            }
+                        },
+                        "required": True,
+                    },
+                    "responses": {
+                        "201": {
+                            "description": "Product created",
+                            "content": {
+                                "application/json": {
+                                    "schema": {"$ref": "#/components/schemas/Product"}
+                                }
+                            },
+                        }
+                    },
+                }
+            }
+        },
+        "components": {
+            "schemas": {
+                "Product": {
+                    "type": "object",
+                    "required": ["name", "price"],
+                    "properties": {
+                        "id": {"type": "string", "format": "uuid"},
+                        "name": {"type": "string"},
+                        "price": {"type": "number"},
+                        "category": {"$ref": "#/components/schemas/Category"},
+                    },
+                },
+                "Category": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "integer"},
+                        "name": {"type": "string"},
+                    },
+                },
+            }
+        },
+    }
+
+
+@pytest.fixture
+def openapi_31_with_references() -> dict[str, Any]:
+    """OpenAPI 3.1 schema with references to test resolution."""
+    return {
+        "openapi": "3.1.0",
+        "info": {"title": "API with References (3.1)", "version": "1.0.0"},
+        "paths": {
+            "/products": {
+                "post": {
+                    "summary": "Create product",
+                    "operationId": "createProduct",
+                    "requestBody": {
+                        "content": {
+                            "application/json": {
+                                "schema": {"$ref": "#/components/schemas/Product"}
+                            }
+                        },
+                        "required": True,
+                    },
+                    "responses": {
+                        "201": {
+                            "description": "Product created",
+                            "content": {
+                                "application/json": {
+                                    "schema": {"$ref": "#/components/schemas/Product"}
+                                }
+                            },
+                        }
+                    },
+                }
+            }
+        },
+        "components": {
+            "schemas": {
+                "Product": {
+                    "type": "object",
+                    "required": ["name", "price"],
+                    "properties": {
+                        "id": {"type": "string", "format": "uuid"},
+                        "name": {"type": "string"},
+                        "price": {"type": "number"},
+                        "category": {"$ref": "#/components/schemas/Category"},
+                    },
+                },
+                "Category": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "integer"},
+                        "name": {"type": "string"},
+                    },
+                },
+            }
+        },
+    }
+
+
 # --- Tests for PetStore schema --- #
 
 
@@ -764,3 +930,166 @@ def test_fastapi_post_query_parameter_names(fastapi_route_map):
     param_names = [p.name for p in query_params]
     assert "file_name" in param_names
     assert "content_type" in param_names
+
+
+def test_openapi_30_compatibility(openapi_30_schema):
+    """Test that OpenAPI 3.0 schemas can be parsed correctly."""
+    # This will raise an exception if the parser doesn't support 3.0.0
+    routes = parse_openapi_to_http_routes(openapi_30_schema)
+
+    # Verify the route was parsed correctly
+    assert len(routes) == 1
+    route = routes[0]
+    assert route.method == "GET"
+    assert route.path == "/items"
+    assert route.operation_id == "listItems"
+    assert len(route.parameters) == 1
+    assert route.parameters[0].name == "limit"
+
+
+def test_openapi_31_compatibility(openapi_31_schema):
+    """Test that OpenAPI 3.1 schemas can be parsed correctly."""
+    routes = parse_openapi_to_http_routes(openapi_31_schema)
+
+    # Verify the route was parsed correctly
+    assert len(routes) == 1
+    route = routes[0]
+    assert route.method == "GET"
+    assert route.path == "/items"
+    assert route.operation_id == "listItems"
+    assert len(route.parameters) == 1
+    assert route.parameters[0].name == "limit"
+
+
+def test_version_detection_logic():
+    """Test that the version detection logic correctly identifies 3.0 vs 3.1 schemas."""
+    # Test 3.0 variations
+    for version in ["3.0.0", "3.0.1", "3.0.3"]:
+        schema = {
+            "openapi": version,
+            "info": {"title": "Test", "version": "1.0.0"},
+            "paths": {},
+        }
+        try:
+            parse_openapi_to_http_routes(schema)
+            # Expect no error
+        except Exception as e:
+            pytest.fail(f"Failed to parse OpenAPI {version} schema: {e}")
+
+    # Test 3.1 variations
+    for version in ["3.1.0", "3.1.1"]:
+        schema = {
+            "openapi": version,
+            "info": {"title": "Test", "version": "1.0.0"},
+            "paths": {},
+        }
+        try:
+            parse_openapi_to_http_routes(schema)
+            # Expect no error
+        except Exception as e:
+            pytest.fail(f"Failed to parse OpenAPI {version} schema: {e}")
+
+
+def test_openapi_30_reference_resolution(openapi_30_with_references):
+    """Test that references are correctly resolved in OpenAPI 3.0 schemas."""
+    routes = parse_openapi_to_http_routes(openapi_30_with_references)
+
+    assert len(routes) == 1
+    route = routes[0]
+    assert route.method == "POST"
+    assert route.path == "/products"
+
+    # Check request body
+    assert route.request_body is not None
+    assert route.request_body.required is True
+    assert "application/json" in route.request_body.content_schema
+
+    # Check schema structure
+    json_schema = route.request_body.content_schema["application/json"]
+    assert json_schema["type"] == "object"
+    assert "properties" in json_schema
+    assert set(json_schema["required"]) == {"name", "price"}
+
+    # Check primary fields are properly resolved
+    props = json_schema["properties"]
+    assert "id" in props
+    assert "name" in props
+    assert "price" in props
+    assert "category" in props
+
+    # The category might be a reference or resolved object
+    category = props["category"]
+    # Either it's directly resolved with properties
+    # or it still has a $ref field
+    assert "properties" in category or "$ref" in category
+
+
+def test_openapi_31_reference_resolution(openapi_31_with_references):
+    """Test that references are correctly resolved in OpenAPI 3.1 schemas."""
+    routes = parse_openapi_to_http_routes(openapi_31_with_references)
+
+    assert len(routes) == 1
+    route = routes[0]
+    assert route.method == "POST"
+    assert route.path == "/products"
+
+    # Check request body
+    assert route.request_body is not None
+    assert route.request_body.required is True
+    assert "application/json" in route.request_body.content_schema
+
+    # Check schema structure
+    json_schema = route.request_body.content_schema["application/json"]
+    assert json_schema["type"] == "object"
+    assert "properties" in json_schema
+    assert set(json_schema["required"]) == {"name", "price"}
+
+    # Check primary fields are properly resolved
+    props = json_schema["properties"]
+    assert "id" in props
+    assert "name" in props
+    assert "price" in props
+    assert "category" in props
+
+    # The category might be a reference or resolved object
+    category = props["category"]
+    # Either it's directly resolved with properties
+    # or it still has a $ref field
+    assert "properties" in category or "$ref" in category
+
+
+def test_consistent_output_across_versions(
+    openapi_30_with_references, openapi_31_with_references
+):
+    """Test that both parsers produce equivalent output for equivalent schemas."""
+    routes_30 = parse_openapi_to_http_routes(openapi_30_with_references)
+    routes_31 = parse_openapi_to_http_routes(openapi_31_with_references)
+
+    # Convert to dict for easier comparison
+    route_30_dict = routes_30[0].model_dump(exclude_none=True)
+    route_31_dict = routes_31[0].model_dump(exclude_none=True)
+
+    # They should be identical except for version-specific differences
+    # Compare path
+    assert route_30_dict["path"] == route_31_dict["path"]
+    # Compare method
+    assert route_30_dict["method"] == route_31_dict["method"]
+    # Compare operation_id
+    assert route_30_dict["operation_id"] == route_31_dict["operation_id"]
+    # Compare parameters
+    assert len(route_30_dict["parameters"]) == len(route_31_dict["parameters"])
+    # Compare request body
+    assert (
+        route_30_dict["request_body"]["required"]
+        == route_31_dict["request_body"]["required"]
+    )
+    # Compare response structure
+    assert "201" in route_30_dict["responses"] and "201" in route_31_dict["responses"]
+    # The schemas should contain the same essential fields
+    schema_30 = route_30_dict["request_body"]["content_schema"]["application/json"][
+        "properties"
+    ]
+    schema_31 = route_31_dict["request_body"]["content_schema"]["application/json"][
+        "properties"
+    ]
+    assert set(schema_30.keys()) == set(schema_31.keys())
