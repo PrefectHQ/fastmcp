@@ -204,6 +204,30 @@ class TestToolDecorator:
         assert len(tools) == 1
         assert tools[0].tags == {"example", "test-tag"}
 
+    async def test_add_tool_with_custom_name(self):
+        """Test adding a tool with a custom name using server.add_tool()."""
+        mcp = FastMCP()
+
+        def multiply(a: int, b: int) -> int:
+            """Multiply two numbers."""
+            return a * b
+
+        # Add the tool with a custom name
+        mcp.add_tool(multiply, name="custom_multiply")
+
+        # Check that the tool is registered with the custom name
+        tools = mcp.list_tools()
+        tool_names = [t.name for t in tools]
+        assert "custom_multiply" in tool_names
+
+        # Call the tool by its custom name
+        result = await mcp.call_tool("custom_multiply", {"a": 5, "b": 3})
+        assert isinstance(result[0], TextContent)
+        assert result[0].text == "15"
+
+        # Original name should not be registered
+        assert "multiply" not in tool_names
+
 
 class TestResourceDecorator:
     async def test_no_resources_before_decorator(self):

@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from fastmcp.exceptions import ToolError
 from fastmcp.settings import DuplicateBehavior
 from fastmcp.tools import ToolManager
+from fastmcp.tools.tool import Tool
 
 
 class TestAddTools:
@@ -28,7 +29,6 @@ class TestAddTools:
         assert tool.parameters["properties"]["a"]["type"] == "integer"
         assert tool.parameters["properties"]["b"]["type"] == "integer"
 
-    @pytest.mark.anyio
     async def test_async_function(self):
         """Test registering and running an async function."""
 
@@ -137,7 +137,14 @@ class TestAddTools:
 
         # Should have replaced the first tool with the second
         stored_tool = manager.get_tool("test_tool")
+        assert stored_tool is not None
         assert stored_tool == replacement_tool
+
+        # The name should still be the same
+        assert stored_tool.name == "test_tool"
+
+        # But the function is different
+        assert stored_tool.fn.__name__ == "replacement_fn"
 
 
 class TestToolTags:
@@ -232,7 +239,6 @@ class TestToolTags:
 
 
 class TestCallTools:
-    @pytest.mark.anyio
     async def test_call_tool(self):
         def add(a: int, b: int) -> int:
             """Add two numbers."""
@@ -243,7 +249,6 @@ class TestCallTools:
         result = await manager.call_tool("add", {"a": 1, "b": 2})
         assert result == 3
 
-    @pytest.mark.anyio
     async def test_call_async_tool(self):
         async def double(n: int) -> int:
             """Double a number."""
@@ -254,7 +259,6 @@ class TestCallTools:
         result = await manager.call_tool("double", {"n": 5})
         assert result == 10
 
-    @pytest.mark.anyio
     async def test_call_tool_with_default_args(self):
         def add(a: int, b: int = 1) -> int:
             """Add two numbers."""
@@ -265,7 +269,6 @@ class TestCallTools:
         result = await manager.call_tool("add", {"a": 1})
         assert result == 2
 
-    @pytest.mark.anyio
     async def test_call_tool_with_missing_args(self):
         def add(a: int, b: int) -> int:
             """Add two numbers."""
@@ -276,13 +279,11 @@ class TestCallTools:
         with pytest.raises(ToolError):
             await manager.call_tool("add", {"a": 1})
 
-    @pytest.mark.anyio
     async def test_call_unknown_tool(self):
         manager = ToolManager()
         with pytest.raises(ToolError):
             await manager.call_tool("unknown", {"a": 1})
 
-    @pytest.mark.anyio
     async def test_call_tool_with_list_int_input(self):
         def sum_vals(vals: list[int]) -> int:
             return sum(vals)
@@ -295,7 +296,6 @@ class TestCallTools:
         result = await manager.call_tool("sum_vals", {"vals": [1, 2, 3]})
         assert result == 6
 
-    @pytest.mark.anyio
     async def test_call_tool_with_list_str_or_str_input(self):
         def concat_strs(vals: list[str] | str) -> str:
             return vals if isinstance(vals, str) else "".join(vals)
@@ -312,7 +312,6 @@ class TestCallTools:
         result = await manager.call_tool("concat_strs", {"vals": '"a"'})
         assert result == '"a"'
 
-    @pytest.mark.anyio
     async def test_call_tool_with_complex_model(self):
         from fastmcp import Context
 
@@ -341,7 +340,6 @@ class TestCallTools:
 
 
 class TestToolSchema:
-    @pytest.mark.anyio
     async def test_context_arg_excluded_from_schema(self):
         from fastmcp import Context
 
@@ -376,7 +374,6 @@ class TestContextHandling:
         tool = manager.add_tool_from_fn(tool_without_context)
         assert tool.context_kwarg is None
 
-    @pytest.mark.anyio
     async def test_context_injection(self):
         """Test that context is properly injected during tool execution."""
         from fastmcp import Context, FastMCP
@@ -393,7 +390,6 @@ class TestContextHandling:
         result = await manager.call_tool("tool_with_context", {"x": 42}, context=ctx)
         assert result == "42"
 
-    @pytest.mark.anyio
     async def test_context_injection_async(self):
         """Test that context is properly injected in async tools."""
         from fastmcp import Context, FastMCP
@@ -410,7 +406,6 @@ class TestContextHandling:
         result = await manager.call_tool("async_tool", {"x": 42}, context=ctx)
         assert result == "42"
 
-    @pytest.mark.anyio
     async def test_context_optional(self):
         """Test that context is optional when calling tools."""
         from fastmcp import Context
@@ -424,7 +419,6 @@ class TestContextHandling:
         result = await manager.call_tool("tool_with_context", {"x": 42})
         assert result == "42"
 
-    @pytest.mark.anyio
     async def test_context_error_handling(self):
         """Test error handling when context injection fails."""
         from fastmcp import Context, FastMCP
@@ -545,3 +539,147 @@ class TestImportTools:
         assert (
             main_manager._tools["news/headlines"].fn.__name__ == headlines_fn.__name__
         )
+
+
+class TestCustomToolNames:
+    """Test adding tools with custom names that differ from their function names."""
+
+    def test_add_tool_with_custom_name(self):
+        """Test adding a tool with a custom name parameter using add_tool_from_fn."""
+
+        def original_fn(x: int) -> int:
+            return x * 2
+
+        manager = ToolManager()
+        tool = manager.add_tool_from_fn(original_fn, name="custom_name")
+
+        # The tool is stored under the custom name and its .name is also set to custom_name
+        assert manager.get_tool("custom_name") is not None
+        assert tool.name == "custom_name"
+        assert tool.fn.__name__ == "original_fn"
+        # The tool should not be accessible via its original function name
+        assert manager.get_tool("original_fn") is None
+
+    def test_add_tool_object_with_custom_storage_name(self):
+        """Test adding a Tool object with a custom storage name using add_tool()."""
+
+        def fn(x: int) -> int:
+            return x + 1
+
+        # Create a tool with a specific name
+        tool = Tool.from_function(fn, name="my_tool")
+        manager = ToolManager()
+        # Store it under a different name
+        manager.add_tool(tool, name="proxy_tool")
+        # The tool is accessible under the storage name
+        stored = manager.get_tool("proxy_tool")
+        assert stored is not None
+        # But the tool's .name is unchanged
+        assert stored.name == "my_tool"
+        # The tool is not accessible under its original name
+        assert manager.get_tool("my_tool") is None
+
+    async def test_call_tool_with_custom_name(self):
+        """Test calling a tool added with a custom name."""
+
+        def multiply(a: int, b: int) -> int:
+            """Multiply two numbers."""
+            return a * b
+
+        manager = ToolManager()
+        manager.add_tool_from_fn(multiply, name="custom_multiply")
+
+        # Tool should be callable by its custom name
+        result = await manager.call_tool("custom_multiply", {"a": 5, "b": 3})
+        assert result == 15
+
+        # Original name should not be registered
+        with pytest.raises(ToolError):
+            await manager.call_tool("multiply", {"a": 5, "b": 3})
+
+    def test_tool_to_mcp_tool_with_custom_name(self):
+        """Test that to_mcp_tool uses the storage name, not the internal name."""
+
+        def some_function(x: int) -> int:
+            return x
+
+        manager = ToolManager()
+        manager.add_tool_from_fn(some_function, name="api_function")
+
+        # When listing tools for MCP, the custom name should be used
+        mcp_tools = manager.list_mcp_tools()
+        assert len(mcp_tools) == 1
+        assert mcp_tools[0].name == "api_function"
+
+    def test_import_tools_with_custom_names(self):
+        """Test importing tools with custom names."""
+
+        def source_fn(x: int) -> int:
+            return x * 2
+
+        # Create a source manager with a tool using custom name
+        source_manager = ToolManager()
+        source_manager.add_tool_from_fn(source_fn, name="custom_source")
+
+        # Import the tools to a target manager with a prefix
+        target_manager = ToolManager()
+        target_manager.import_tools(source_manager, "prefix/")
+
+        # The tool should be imported with the prefixed custom name
+        assert target_manager.get_tool("prefix/custom_source") is not None
+        assert target_manager.get_tool("prefix/source_fn") is None
+
+    def test_replace_tool_keeps_original_name(self):
+        """Test that replacing a tool with DuplicateBehavior.REPLACE keeps the original name."""
+
+        def original_fn(x: int) -> int:
+            return x
+
+        def replacement_fn(x: int) -> int:
+            return x * 2
+
+        # Create a manager with REPLACE behavior
+        manager = ToolManager(duplicate_behavior=DuplicateBehavior.REPLACE)
+
+        # Add the original tool
+        original_tool = manager.add_tool_from_fn(original_fn, name="test_tool")
+        assert original_tool.name == "test_tool"
+
+        # Replace with a new function but keep the same registered name
+        replacement_tool = manager.add_tool_from_fn(replacement_fn, name="test_tool")
+
+        # The tool object should have been replaced
+        stored_tool = manager.get_tool("test_tool")
+        assert stored_tool is not None
+        assert stored_tool == replacement_tool
+
+        # The name should still be the same
+        assert stored_tool.name == "test_tool"
+
+        # But the function is different
+        assert stored_tool.fn.__name__ == "replacement_fn"
+
+    def test_mcp_tool_name_for_add_tool(self):
+        """Test MCPTool name for add_tool (storage name != tool.name)."""
+
+        def fn(x: int) -> int:
+            return x + 1
+
+        tool = Tool.from_function(fn, name="my_tool")
+        manager = ToolManager()
+        manager.add_tool(tool, name="proxy_tool")
+        mcp_tools = manager.list_mcp_tools()
+        assert len(mcp_tools) == 1
+        assert mcp_tools[0].name == "proxy_tool"
+
+    def test_mcp_tool_name_for_add_tool_from_fn(self):
+        """Test MCPTool name for add_tool_from_fn (storage name == tool.name)."""
+
+        def fn(x: int) -> int:
+            return x + 1
+
+        manager = ToolManager()
+        manager.add_tool_from_fn(fn, name="custom_fn")
+        mcp_tools = manager.list_mcp_tools()
+        assert len(mcp_tools) == 1
+        assert mcp_tools[0].name == "custom_fn"

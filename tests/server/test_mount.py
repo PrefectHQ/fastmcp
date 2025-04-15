@@ -1,6 +1,7 @@
 import contextlib
 
 import pytest
+from mcp.types import TextContent
 
 from fastmcp.server.server import FastMCP
 
@@ -24,8 +25,9 @@ async def test_mount_basic_functionality():
     assert "sub_tool" in sub_app._tool_manager._tools
 
     # Verify the original tool still exists in the sub-app
-    tool = main_app._tool_manager._tools["sub_sub_tool"]
-    assert tool.name == "sub_sub_tool"
+    tool = main_app._tool_manager.get_tool("sub_sub_tool")
+    assert tool is not None
+    assert tool.name == "sub_tool"
     assert callable(tool.fn)
 
 
@@ -230,3 +232,117 @@ async def test_mount_lifespan():
         "exit SubApp",
         "exit MainApp",
     ]
+
+
+async def test_tool_custom_name_preserved_when_mounted():
+    """Test that a tool's custom name is preserved when mounted."""
+    main_app = FastMCP("MainApp")
+    api_app = FastMCP("APIApp")
+
+    def fetch_data(query: str) -> str:
+        return f"Data for query: {query}"
+
+    api_app.add_tool(fetch_data, name="get_data")
+    main_app.mount("api", api_app)
+
+    # Check that the tool is accessible by its prefixed name
+    tool = main_app._tool_manager.get_tool("api_get_data")
+    assert tool is not None
+
+    # Check that the function name is preserved
+    assert tool.fn.__name__ == "fetch_data"
+
+
+async def test_call_mounted_custom_named_tool():
+    """Test calling a mounted tool with a custom name."""
+    main_app = FastMCP("MainApp")
+    api_app = FastMCP("APIApp")
+
+    def fetch_data(query: str) -> str:
+        return f"Data for query: {query}"
+
+    api_app.add_tool(fetch_data, name="get_data")
+    main_app.mount("api", api_app)
+
+    context = main_app.get_context()
+    result = await main_app._tool_manager.call_tool(
+        "api_get_data", {"query": "test"}, context=context
+    )
+    assert result == "Data for query: test"
+
+
+async def test_first_level_mounting_with_custom_name():
+    """Test that a tool with a custom name is correctly mounted at the first level."""
+    service_app = FastMCP("ServiceApp")
+    provider_app = FastMCP("ProviderApp")
+
+    def calculate_value(input: int) -> int:
+        return input * 2
+
+    provider_app.add_tool(calculate_value, name="compute")
+    service_app.mount("provider", provider_app)
+
+    # Tool is accessible in the service app with the first prefix
+    tool = service_app._tool_manager.get_tool("provider_compute")
+    assert tool is not None
+    assert tool.fn.__name__ == "calculate_value"
+
+
+async def test_nested_mounting_preserves_prefixes():
+    """Test that mounting a previously mounted app preserves prefixes."""
+    main_app = FastMCP("MainApp")
+    service_app = FastMCP("ServiceApp")
+    provider_app = FastMCP("ProviderApp")
+
+    def calculate_value(input: int) -> int:
+        return input * 2
+
+    provider_app.add_tool(calculate_value, name="compute")
+    service_app.mount("provider", provider_app)
+    main_app.mount("service", service_app)
+
+    # Tool is accessible in the main app with both prefixes
+    tool = main_app._tool_manager.get_tool("service_provider_compute")
+    assert tool is not None
+
+
+async def test_call_nested_mounted_tool():
+    """Test calling a tool through multiple levels of mounting."""
+    main_app = FastMCP("MainApp")
+    service_app = FastMCP("ServiceApp")
+    provider_app = FastMCP("ProviderApp")
+
+    def calculate_value(input: int) -> int:
+        return input * 2
+
+    provider_app.add_tool(calculate_value, name="compute")
+    service_app.mount("provider", provider_app)
+    main_app.mount("service", service_app)
+
+    result = await main_app._tool_manager.call_tool(
+        "service_provider_compute", {"input": 21}
+    )
+    assert result == 42
+
+
+async def test_mount_with_proxy_tools():
+    """
+    Test mounting with tools that have custom names (proxy tools).
+
+    This tests that the tool's name doesn't change even though the registered
+    name does, which is important because we need to forward that name to the
+    proxy server correctly.
+    """
+    # Create apps
+    main_app = FastMCP("MainApp")
+    api_app = FastMCP("APIApp")
+
+    @api_app.tool()
+    def get_data(query: str) -> str:
+        return f"Data for query: {query}"
+
+    main_app.mount("api", await FastMCP.as_proxy(api_app))
+
+    result = await main_app.call_tool("api_get_data", {"query": "test"})
+    assert isinstance(result[0], TextContent)
+    assert result[0].text == "Data for query: test"
