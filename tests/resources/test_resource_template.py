@@ -1,4 +1,5 @@
 import json
+from urllib.parse import quote
 
 import pytest
 from pydantic import BaseModel
@@ -312,6 +313,18 @@ class TestMatchUriTemplate:
             ("test://foo/123", {"x": "foo", "y": "123"}),
             ("test://bar/456", {"x": "bar", "y": "456"}),
             ("test://foo/bar", {"x": "foo", "y": "bar"}),
+            ("test://foo/bar/baz", None),
+            ("test://foo/email@domain.com", {"x": "foo", "y": "email@domain.com"}),
+            ("test://two words/foo", {"x": "two words", "y": "foo"}),
+            ("test://two.words/foo+bar", {"x": "two.words", "y": "foo+bar"}),
+            (
+                f"test://escaped{quote('/', safe='')}word/bar",
+                {"x": "escaped/word", "y": "bar"},
+            ),
+            (
+                f"test://escaped{quote('{', safe='')}x{quote('}', safe='')}word/bar",
+                {"x": "escaped{x}word", "y": "bar"},
+            ),
             ("prefix+test://foo/123", None),
             ("test://foo", None),
             ("other://foo/123", None),

@@ -6,6 +6,7 @@ import inspect
 import re
 from collections.abc import Callable
 from typing import Annotated, Any
+from urllib.parse import unquote
 
 from mcp.types import ResourceTemplate as MCPResourceTemplate
 from pydantic import (
@@ -38,7 +39,9 @@ def build_regex(template: str) -> re.Pattern:
 def match_uri_template(uri: str, uri_template: str) -> dict[str, str] | None:
     regex = build_regex(uri_template)
     match = regex.match(uri)
-    return match.groupdict() if match else None
+    if match:
+        return {k: unquote(v) for k, v in match.groupdict().items()}
+    return None
 
 
 class MyModel(BaseModel):
