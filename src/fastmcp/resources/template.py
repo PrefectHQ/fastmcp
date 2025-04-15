@@ -7,12 +7,14 @@ import re
 from collections.abc import Callable
 from typing import Annotated, Any
 
+from mcp.types import ResourceTemplate as MCPResourceTemplate
 from pydantic import (
     AnyUrl,
     BaseModel,
     BeforeValidator,
     Field,
     TypeAdapter,
+    field_validator,
     validate_call,
 )
 
@@ -61,6 +63,14 @@ class ResourceTemplate(BaseModel):
     parameters: dict[str, Any] = Field(
         description="JSON schema for function parameters"
     )
+
+    @field_validator("mime_type", mode="before")
+    @classmethod
+    def set_default_mime_type(cls, mime_type: str | None) -> str:
+        """Set default MIME type if not provided."""
+        if mime_type:
+            return mime_type
+        return "text/plain"
 
     @classmethod
     def from_function(
@@ -144,3 +154,13 @@ class ResourceTemplate(BaseModel):
         if not isinstance(other, ResourceTemplate):
             return False
         return self.model_dump() == other.model_dump()
+
+    def to_mcp_template(self, **overrides: Any) -> MCPResourceTemplate:
+        """Convert the resource template to an MCPResourceTemplate."""
+        kwargs = {
+            "uriTemplate": self.uri_template,
+            "name": self.name,
+            "description": self.description,
+            "mimeType": self.mime_type,
+        }
+        return MCPResourceTemplate(**kwargs | overrides)
