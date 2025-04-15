@@ -188,10 +188,6 @@ class FastMCP(Generic[LifespanResultT]):
         """Get all registered tools, indexed by registered key."""
         return self._tool_manager.get_tools()
 
-    def list_tools(self) -> list[Tool]:
-        """List all registered tools."""
-        return self._tool_manager.list_tools()
-
     async def _mcp_list_tools(self) -> list[MCPTool]:
         """
         List all available tools, in the format expected by the low-level MCP
@@ -199,7 +195,7 @@ class FastMCP(Generic[LifespanResultT]):
 
         See `list_tools` for a more ergonomic way to list tools.
         """
-        return self._tool_manager.list_mcp_tools()
+        return [tool.to_mcp_tool(name=key) for key, tool in self.get_tools().items()]
 
     def get_context(self) -> "Context[ServerSession, LifespanResultT]":
         """

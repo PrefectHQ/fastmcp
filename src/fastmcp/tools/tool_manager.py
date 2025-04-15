@@ -7,7 +7,7 @@ from mcp.shared.context import LifespanContextT
 
 from fastmcp.exceptions import ToolError
 from fastmcp.settings import DuplicateBehavior
-from fastmcp.tools.tool import MCPTool, Tool
+from fastmcp.tools.tool import Tool
 from fastmcp.utilities.logging import get_logger
 
 if TYPE_CHECKING:
@@ -47,10 +47,6 @@ class ToolManager:
     def list_tools(self) -> list[Tool]:
         """List all registered tools."""
         return list(self.get_tools().values())
-
-    def list_mcp_tools(self) -> list[MCPTool]:
-        """List all registered tools in the format expected by the low-level MCP server."""
-        return [tool.to_mcp_tool(name=key) for key, tool in self._tools.items()]
 
     def add_tool_from_fn(
         self,

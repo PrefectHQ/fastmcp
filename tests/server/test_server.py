@@ -57,6 +57,34 @@ class TestCreateServer:
             assert "¡Hola, 世界! 👋" == content.text
 
 
+class TestTools:
+    async def test_mcp_tool_name(self):
+        """Test MCPTool name for add_tool (key != tool.name)."""
+
+        mcp = FastMCP()
+
+        @mcp.tool()
+        def fn(x: int) -> int:
+            return x + 1
+
+        mcp_tools = await mcp._mcp_list_tools()
+        assert len(mcp_tools) == 1
+        assert mcp_tools[0].name == "fn"
+
+    async def test_mcp_tool_custom_name(self):
+        """Test MCPTool name for add_tool (key != tool.name)."""
+
+        mcp = FastMCP()
+
+        @mcp.tool(name="custom_name")
+        def fn(x: int) -> int:
+            return x + 1
+
+        mcp_tools = await mcp._mcp_list_tools()
+        assert len(mcp_tools) == 1
+        assert mcp_tools[0].name == "custom_name"
+
+
 class TestToolDecorator:
     async def test_no_tools_before_decorator(self):
         mcp = FastMCP()
@@ -216,9 +244,8 @@ class TestToolDecorator:
         mcp.add_tool(multiply, name="custom_multiply")
 
         # Check that the tool is registered with the custom name
-        tools = mcp.list_tools()
-        tool_names = [t.name for t in tools]
-        assert "custom_multiply" in tool_names
+        tools = mcp.get_tools()
+        assert "custom_multiply" in tools
 
         # Call the tool by its custom name
         result = await mcp.call_tool("custom_multiply", {"a": 5, "b": 3})
@@ -226,7 +253,7 @@ class TestToolDecorator:
         assert result[0].text == "15"
 
         # Original name should not be registered
-        assert "multiply" not in tool_names
+        assert "multiply" not in tools
 
 
 class TestResourceDecorator:

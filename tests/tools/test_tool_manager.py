@@ -612,35 +612,6 @@ class TestCustomToolNames:
         with pytest.raises(ToolError):
             await manager.call_tool("multiply", {"a": 5, "b": 3})
 
-    def test_tool_to_mcp_tool(self):
-        """Test that to_mcp_tool uses the key, not the internal name."""
-
-        def some_function(x: int) -> int:
-            return x
-
-        manager = ToolManager()
-        tool = Tool.from_function(some_function, name="api_function")
-        manager.add_tool(tool)
-
-        mcp_tools = manager.list_mcp_tools()
-        assert len(mcp_tools) == 1
-        assert mcp_tools[0].name == "api_function"
-
-    def test_tool_to_mcp_tool_with_custom_key(self):
-        """Test that to_mcp_tool uses the key, not the internal name."""
-
-        def some_function(x: int) -> int:
-            return x
-
-        manager = ToolManager()
-        tool = Tool.from_function(some_function, name="api_function")
-        manager.add_tool(tool, key="custom-key")
-
-        # When listing tools for MCP, the key should be used
-        mcp_tools = manager.list_mcp_tools()
-        assert len(mcp_tools) == 1
-        assert mcp_tools[0].name == "custom-key"
-
     def test_import_tools_with_custom_names(self):
         """Test importing tools with custom names."""
 
@@ -688,28 +659,3 @@ class TestCustomToolNames:
 
         # But the function is different
         assert stored_tool.fn.__name__ == "replacement_fn"
-
-    def test_mcp_tool_name_for_add_tool(self):
-        """Test MCPTool name for add_tool (key != tool.name)."""
-
-        def fn(x: int) -> int:
-            return x + 1
-
-        tool = Tool.from_function(fn, name="my_tool")
-        manager = ToolManager()
-        manager.add_tool(tool, key="proxy_tool")
-        mcp_tools = manager.list_mcp_tools()
-        assert len(mcp_tools) == 1
-        assert mcp_tools[0].name == "proxy_tool"
-
-    def test_mcp_tool_name_for_add_tool_from_fn(self):
-        """Test MCPTool name for add_tool_from_fn (key == tool.name)."""
-
-        def fn(x: int) -> int:
-            return x + 1
-
-        manager = ToolManager()
-        manager.add_tool_from_fn(fn, name="custom_fn")
-        mcp_tools = manager.list_mcp_tools()
-        assert len(mcp_tools) == 1
-        assert mcp_tools[0].name == "custom_fn"

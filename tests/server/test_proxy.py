@@ -80,9 +80,11 @@ async def test_create_proxy(fastmcp_server):
 
 
 class TestTools:
-    async def test_list_tools(self, proxy_server):
-        tools = proxy_server.list_tools()
-        assert [t.name for t in tools] == Contains("greet", "add", "error_tool")
+    async def test_get_tools(self, proxy_server):
+        tools = proxy_server.get_tools()
+        assert "greet" in tools
+        assert "add" in tools
+        assert "error_tool" in tools
 
     async def test_list_tools_same_as_original(self, fastmcp_server, proxy_server):
         assert (
