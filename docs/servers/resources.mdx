@@ -149,7 +149,15 @@ notice_resource = TextResource(
 )
 mcp.add_resource(notice_resource)
 
-# 3. Exposing a directory listing
+# 3. Using a custom key different from the URI
+special_resource = TextResource(
+    uri="resource://common-notice",
+    name="Special Notice",
+    text="This is a special notice with a custom storage key.",
+)
+mcp.add_resource(special_resource, key="resource://custom-key")
+
+# 4. Exposing a directory listing
 data_dir_path = Path("./app_data").resolve()
 if data_dir_path.is_dir():
     data_listing_resource = DirectoryResource(
@@ -172,6 +180,22 @@ if data_dir_path.is_dir():
 -   (`FunctionResource`: Internal class used by `@mcp.resource`).
 
 Use these when the content is static or sourced directly from a file/URL, bypassing the need for a dedicated Python function.
+
+#### Custom Resource Keys
+
+When adding resources directly with `mcp.add_resource()`, you can optionally provide a custom storage key:
+
+```python
+# Creating a resource with standard URI as the key
+resource = TextResource(uri="resource://data")
+mcp.add_resource(resource)  # Will be stored and accessed using "resource://data"
+
+# Creating a resource with a custom key
+special_resource = TextResource(uri="resource://special-data")
+mcp.add_resource(special_resource, key="internal://data-v2")  # Will be stored and accessed using "internal://data-v2"
+```
+
+Note that this parameter is only available when using `add_resource()` directly and not through the `@resource` decorator, as URIs are provided explicitly when using the decorator.
 
 ## Defining Resource Templates
 
@@ -288,6 +312,26 @@ In this stacked decorator pattern:
 7.  **Response:** The function's return value is formatted (e.g., dict to JSON) and sent back as the resource content.
 
 Templates provide a powerful way to expose parameterized data access points following REST-like principles.
+
+### Custom Template Keys
+
+Similar to resources, you can provide custom keys when directly adding templates:
+
+```python
+from fastmcp.resources import ResourceTemplate
+
+# Create a template with a function
+template = ResourceTemplate.from_function(
+    my_function,
+    uri_template="data://{id}/details",
+    name="Data Details"
+)
+
+# Register with a custom key
+mcp._resource_manager.add_template(template, key="custom://{id}/view")
+```
+
+This allows accessing the same template implementation through different URI patterns.
 
 ## Server Behavior
 
