@@ -183,40 +183,90 @@ from fastmcp import FastMCP
 mcp = FastMCP(name="DataServer")
 
 # Template URI includes {city} placeholder
-@mcp.resource("data://weather/{city}")
-# Function accepts 'city' parameter matching the placeholder
-def get_weather_for_city(city: str) -> dict:
+@mcp.resource("weather://{city}/current")
+def get_weather(city: str) -> dict:
     """Provides weather information for a specific city."""
-    print(f"Server: Generating weather for city: {city}...")
-    # In reality, call a weather API using the 'city' parameter
-    temp = 20 + len(city) % 5 # Dummy logic
-    condition = "Sunny" if len(city) % 2 == 0 else "Cloudy"
-    return {"city": city.capitalize(), "temperature": temp, "unit": "celsius", "condition": condition}
+    # In a real implementation, this would call a weather API
+    # Here we're using simplified logic for example purposes
+    return {
+        "city": city.capitalize(),
+        "temperature": 22,
+        "condition": "Sunny",
+        "unit": "celsius"
+    }
 
-# Template with an integer parameter
-@mcp.resource("users://{user_id}/profile")
-async def get_user_profile(user_id: int) -> dict:
-    """Retrieves a user's profile information by ID."""
-    print(f"Server: Generating profile for user ID: {user_id}...")
-    # In reality, fetch from database using user_id
-    # FastMCP uses Pydantic to auto-convert the string URI part to int
-    if user_id == 1:
-        return {"id": user_id, "name": "Alice", "email": "alice@example.com", "status": "active"}
-    elif user_id == 2:
-        return {"id": user_id, "name": "Bob", "email": "bob@example.com", "status": "inactive"}
-    else:
-        # Example of returning an error structure
-        return {"error": f"User with ID {user_id} not found"}
+# Template with multiple parameters
+@mcp.resource("repos://{owner}/{repo}/info")
+def get_repo_info(owner: str, repo: str) -> dict:
+    """Retrieves information about a GitHub repository."""
+    # In a real implementation, this would call the GitHub API
+    return {
+        "owner": owner,
+        "name": repo,
+        "full_name": f"{owner}/{repo}",
+        "stars": 120,
+        "forks": 48
+    }
 ```
+
+With these templates defined, clients can request:
+- `weather://london/current` → Returns weather for London
+- `repos://fastmcp/docs/info` → Returns info about the fastmcp/docs repository
+
+### Parameters and Default Values
+
+When creating resource templates, FastMCP enforces two rules for the relationship between URI template parameters and function parameters:
+
+1. **Required Function Parameters:** All function parameters without default values (required parameters) must appear in the URI template.
+2. **URI Parameters:** All URI template parameters must exist as function parameters.
+
+However, function parameters with default values don't need to be included in the URI template. When a client requests a resource, FastMCP will:
+
+- Extract parameter values from the URI for parameters included in the template
+- Use default values for any function parameters not in the URI template
+
+This allows for flexible API designs where some parameters are embedded in the URI path while others use their default values.
+
+#### Multiple URI Templates for the Same Function
+
+A powerful pattern is registering a single function with multiple URI templates, allowing different ways to access the same data:
+
+```python
+from fastmcp import FastMCP
+
+mcp = FastMCP(name="DataServer")
+
+# Define a user lookup function that can be accessed by different identifiers
+@mcp.resource("users://email/{email}")
+@mcp.resource("users://name/{name}")
+def lookup_user(name: str | None = None, email: str | None = None) -> dict:
+    """Look up a user by either name or email."""
+    if email:
+        return find_user_by_email(email) # pseudocode
+    elif name:
+        return find_user_by_name(name) # pseudocode
+    else:
+        return {"error": "No lookup parameters provided"}
+```
+
+Now an LLM or client can retrieve user information in two different ways:
+- `users://email/alice@example.com` → Looks up user by email
+- `users://name/Bob` → Looks up user by name
+
+In this pattern:
+- The `name` parameter is only provided in the URI when using the `users://name/{name}` template
+- The `email` parameter is only provided in the URI when using the `users://email/{email}` template
+- Each parameter has a default value of `None` for when it's not in the URI
 
 **How Templates Work:**
 
 1.  **Definition:** When FastMCP sees `{...}` placeholders in the `@resource` URI and matching function parameters, it registers a `ResourceTemplate`.
 2.  **Discovery:** Clients list templates via `resources/listResourceTemplates`.
-3.  **Request & Matching:** A client requests a specific URI, e.g., `data://weather/london`. FastMCP matches this to the `data://weather/{city}` template.
+3.  **Request & Matching:** A client requests a specific URI, e.g., `weather://london/current`. FastMCP matches this to the `weather://{city}/current` template.
 4.  **Parameter Extraction:** It extracts the parameter value: `city="london"`.
-5.  **Type Conversion & Function Call:** It converts the extracted string `"london"` to the type hinted in the function (`str` in this case) and calls `get_weather_for_city(city="london")`. For `users://1/profile`, it converts `"1"` to `int` before calling `get_user_profile(user_id=1)`.
-6.  **Response:** The function's return value is formatted (e.g., dict to JSON) and sent back as the content of the requested resource URI (`data://weather/london`).
+5.  **Type Conversion & Function Call:** It converts extracted values to the types hinted in the function and calls `get_weather(city="london")`.
+6.  **Default Values:** For any function parameters with default values not included in the URI template, FastMCP uses the default values.
+7.  **Response:** The function's return value is formatted (e.g., dict to JSON) and sent back as the resource content.
 
 Templates provide a powerful way to expose parameterized data access points following REST-like principles.
 

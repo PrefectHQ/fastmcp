@@ -46,6 +46,99 @@ class TestResourceTemplate:
         assert template.matches("test://foo") is None
         assert template.matches("other://foo/123") is None
 
+    def test_template_uri_validation(self):
+        """Test validation rule: URI template must have at least one parameter."""
+
+        def my_func() -> dict:
+            return {"data": "value"}
+
+        with pytest.raises(
+            ValueError, match="URI template must contain at least one parameter"
+        ):
+            ResourceTemplate.from_function(
+                fn=my_func,
+                uri_template="test://no-params",
+                name="test",
+            )
+
+    def test_template_uri_params_subset_of_function_params(self):
+        """Test validation rule: URI parameters must be a subset of function parameters."""
+
+        def my_func(key: str, value: int) -> dict:
+            return {"key": key, "value": value}
+
+        # This should work - URI params are a subset of function params
+        template = ResourceTemplate.from_function(
+            fn=my_func,
+            uri_template="test://{key}/{value}",
+            name="test",
+        )
+        assert template.uri_template == "test://{key}/{value}"
+
+        # This should fail - 'unknown' is not a function parameter
+        with pytest.raises(
+            ValueError,
+            match="URI parameters .* must be a subset of the required function arguments",
+        ):
+            ResourceTemplate.from_function(
+                fn=my_func,
+                uri_template="test://{key}/{unknown}",
+                name="test",
+            )
+
+    def test_required_params_subset_of_uri_params(self):
+        """Test validation rule: Required function parameters must be in URI parameters."""
+
+        # Function with required parameters
+        def func_with_required(
+            required_param: str, optional_param: str = "default"
+        ) -> dict:
+            return {"required": required_param, "optional": optional_param}
+
+        # This should work - required param is in URI
+        template = ResourceTemplate.from_function(
+            fn=func_with_required,
+            uri_template="test://{required_param}",
+            name="test",
+        )
+        assert template.uri_template == "test://{required_param}"
+
+        # This should fail - required param is not in URI
+        with pytest.raises(
+            ValueError,
+            match="URI parameters .* must be a subset of the required function arguments",
+        ):
+            ResourceTemplate.from_function(
+                fn=func_with_required,
+                uri_template="test://{optional_param}",
+                name="test",
+            )
+
+    def test_multiple_required_params(self):
+        """Test validation with multiple required parameters."""
+
+        def multi_required(param1: str, param2: int, optional: str = "default") -> dict:
+            return {"p1": param1, "p2": param2, "opt": optional}
+
+        # This works - all required params in URI
+        template = ResourceTemplate.from_function(
+            fn=multi_required,
+            uri_template="test://{param1}/{param2}",
+            name="test",
+        )
+        assert template.uri_template == "test://{param1}/{param2}"
+
+        # This fails - missing one required param
+        with pytest.raises(
+            ValueError,
+            match="URI parameters .* must be a subset of the required function arguments",
+        ):
+            ResourceTemplate.from_function(
+                fn=multi_required,
+                uri_template="test://{param1}",
+                name="test",
+            )
+
     @pytest.mark.anyio
     async def test_create_resource(self):
         """Test creating a resource from a template."""

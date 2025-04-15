@@ -840,22 +840,28 @@ class TestServerResources:
 
 
 class TestServerResourceTemplates:
-    async def test_resource_with_params(self):
+    async def test_resource_with_params_not_in_uri(self):
         """Test that a resource with function parameters raises an error if the URI
         parameters don't match"""
         mcp = FastMCP()
 
-        with pytest.raises(ValueError, match="mismatch between URI parameters"):
+        with pytest.raises(
+            ValueError,
+            match="URI template must contain at least one parameter",
+        ):
 
             @mcp.resource("resource://data")
             def get_data_fn(param: str) -> str:
                 return f"Data: {param}"
 
-    async def test_resource_with_uri_params(self):
+    async def test_resource_with_uri_params_without_args(self):
         """Test that a resource with URI parameters is automatically a template"""
         mcp = FastMCP()
 
-        with pytest.raises(ValueError, match="mismatch between URI parameters"):
+        with pytest.raises(
+            ValueError,
+            match="URI parameters .* must be a subset of the function arguments",
+        ):
 
             @mcp.resource("resource://{param}")
             def get_data() -> str:
@@ -886,7 +892,10 @@ class TestServerResourceTemplates:
         """Test that mismatched parameters raise an error"""
         mcp = FastMCP()
 
-        with pytest.raises(ValueError, match="Mismatch between URI parameters"):
+        with pytest.raises(
+            ValueError,
+            match="URI parameters .* must be a subset of the required function arguments",
+        ):
 
             @mcp.resource("resource://{name}/data")
             def get_data(user: str) -> str:
@@ -911,7 +920,10 @@ class TestServerResourceTemplates:
         """Test that mismatched parameters raise an error"""
         mcp = FastMCP()
 
-        with pytest.raises(ValueError, match="Mismatch between URI parameters"):
+        with pytest.raises(
+            ValueError,
+            match="URI parameters .* must be a subset of the required function arguments",
+        ):
 
             @mcp.resource("resource://{org}/{repo}/data")
             def get_data_mismatched(org: str, repo_2: str) -> str:
@@ -928,6 +940,32 @@ class TestServerResourceTemplates:
             result = await client.read_resource(AnyUrl("resource://static"))
             assert isinstance(result[0], TextResourceContents)
             assert result[0].text == "Static data"
+
+    async def test_template_with_default_params(self):
+        """Test that a template with default function parameters works when those parameters
+        are not in the URI template"""
+        mcp = FastMCP()
+
+        @mcp.resource("math://add/{x}")
+        def add(x: int, y: int = 10) -> int:
+            return x + y
+
+        # Verify it's registered as a template
+        templates = mcp.list_resource_templates()
+        assert len(templates) == 1
+        assert templates[0].uri_template == "math://add/{x}"
+
+        # Call the template and verify it uses the default value
+        async with Client(mcp) as client:
+            result = await client.read_resource(AnyUrl("math://add/5"))
+            assert isinstance(result[0], TextResourceContents)
+            assert result[0].text == "15"  # 5 + default 10
+
+        # Can also call with explicit params
+        resource = await mcp._resource_manager.get_resource("math://add/7")
+        assert isinstance(resource, FunctionResource)
+        result = await resource.read()
+        assert result == "17"  # 7 + default 10
 
     async def test_template_to_resource_conversion(self):
         """Test that templates are properly converted to resources when accessed"""
@@ -946,6 +984,54 @@ class TestServerResourceTemplates:
         assert isinstance(resource, FunctionResource)
         result = await resource.read()
         assert result == "Data for test"
+
+    async def test_stacked_resource_template_decorators(self):
+        """Test that multiple resource decorators can be stacked on the same function."""
+        mcp = FastMCP()
+
+        # Define a function with multiple stacked resource decorators
+        @mcp.resource("users://email/{email}")
+        @mcp.resource("users://name/{name}")
+        def lookup_user(name: str | None = None, email: str | None = None) -> dict:
+            """Look up a user by either name or email."""
+            # In a real implementation, this would query a database
+            if email:
+                return {
+                    "found_by": "email",
+                    "name": f"User for {email}",
+                    "email": email,
+                }
+            else:
+                return {
+                    "found_by": "name",
+                    "name": name,
+                    "email": f"{name.lower()}@example.com" if name else None,
+                }
+
+        # Verify both templates are registered
+        templates = mcp.list_resource_templates()
+        assert len(templates) == 2
+        template_uris = {t.uri_template for t in templates}
+        assert "users://email/{email}" in template_uris
+        assert "users://name/{name}" in template_uris
+
+        # Test lookup by email
+        async with Client(mcp) as client:
+            email_result = await client.read_resource(
+                AnyUrl("users://email/user@example.com")
+            )
+            assert isinstance(email_result[0], TextResourceContents)
+            email_data = json.loads(email_result[0].text)
+            assert email_data["found_by"] == "email"
+            assert email_data["email"] == "user@example.com"
+
+            # Test lookup by name
+            name_result = await client.read_resource(AnyUrl("users://name/John"))
+            assert isinstance(name_result[0], TextResourceContents)
+            name_data = json.loads(name_result[0].text)
+            assert name_data["found_by"] == "name"
+            assert name_data["name"] == "John"
+            assert name_data["email"] == "john@example.com"
 
 
 class TestContextInjection:

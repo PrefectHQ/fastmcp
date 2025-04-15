@@ -363,7 +363,7 @@ class FastMCP(Generic[LifespanResultT]):
 
         def decorator(fn: AnyFunction) -> AnyFunction:
             self.add_tool(fn, name=name, description=description, tags=tags)
-            return DecoratedFunction(fn)
+            return fn
 
         return decorator
 
@@ -469,7 +469,7 @@ class FastMCP(Generic[LifespanResultT]):
                 mime_type=mime_type,
                 tags=tags,
             )
-            return DecoratedFunction(fn)
+            return fn
 
         return decorator
 

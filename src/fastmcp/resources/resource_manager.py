@@ -2,7 +2,6 @@
 
 import copy
 import inspect
-import re
 from collections.abc import Callable
 from typing import Any
 
@@ -52,7 +51,7 @@ class ResourceManager:
         has_uri_params = "{" in uri and "}" in uri
         has_func_params = bool(inspect.signature(fn).parameters)
 
-        if has_uri_params and has_func_params:
+        if has_uri_params or has_func_params:
             return self.add_template_from_fn(
                 fn, uri, name, description, mime_type, tags
             )
@@ -137,16 +136,6 @@ class ResourceManager:
         tags: set[str] | None = None,
     ) -> ResourceTemplate:
         """Create a template from a function."""
-
-        # Validate that URI params match function params
-        uri_params = set(re.findall(r"{(\w+)}", uri_template))
-        func_params = set(inspect.signature(fn).parameters.keys())
-
-        if uri_params != func_params:
-            raise ValueError(
-                f"Mismatch between URI parameters {uri_params} "
-                f"and function parameters {func_params}"
-            )
 
         template = ResourceTemplate.from_function(
             fn,
