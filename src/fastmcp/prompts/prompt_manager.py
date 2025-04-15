@@ -15,8 +15,19 @@ logger = get_logger(__name__)
 class PromptManager:
     """Manages FastMCP prompts."""
 
-    def __init__(self, duplicate_behavior: DuplicateBehavior = DuplicateBehavior.WARN):
+    def __init__(self, duplicate_behavior: DuplicateBehavior | None = None):
         self._prompts: dict[str, Prompt] = {}
+
+        # Default to "warn" if None is provided
+        if duplicate_behavior is None:
+            duplicate_behavior = "warn"
+
+        if duplicate_behavior not in DuplicateBehavior.__args__:
+            raise ValueError(
+                f"Invalid duplicate_behavior: {duplicate_behavior}. "
+                f"Must be one of: {', '.join(DuplicateBehavior.__args__)}"
+            )
+
         self.duplicate_behavior = duplicate_behavior
 
     def get_prompt(self, name: str) -> Prompt | None:
@@ -44,17 +55,17 @@ class PromptManager:
         # Check for duplicates
         existing = self._prompts.get(prompt.name)
         if existing:
-            if self.duplicate_behavior == DuplicateBehavior.WARN:
+            if self.duplicate_behavior == "warn":
                 logger.warning(f"Prompt already exists: {prompt.name}")
                 self._prompts[prompt.name] = prompt
-            elif self.duplicate_behavior == DuplicateBehavior.REPLACE:
+            elif self.duplicate_behavior == "replace":
                 self._prompts[prompt.name] = prompt
-            elif self.duplicate_behavior == DuplicateBehavior.ERROR:
+            elif self.duplicate_behavior == "error":
                 raise ValueError(f"Prompt already exists: {prompt.name}")
-            elif self.duplicate_behavior == DuplicateBehavior.IGNORE:
-                pass
-
-        self._prompts[prompt.name] = prompt
+            elif self.duplicate_behavior == "ignore":
+                return existing
+        else:
+            self._prompts[prompt.name] = prompt
         return prompt
 
     async def render_prompt(

@@ -315,7 +315,7 @@ from fastmcp.settings import DuplicateBehavior
 mcp = FastMCP(
     name="StrictServer",
     # Configure behavior for duplicate tool names
-    on_duplicate_tools=DuplicateBehavior.ERROR
+    on_duplicate_tools="error"
 )
 
 @mcp.tool()

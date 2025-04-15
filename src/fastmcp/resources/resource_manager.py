@@ -19,9 +19,20 @@ logger = get_logger(__name__)
 class ResourceManager:
     """Manages FastMCP resources."""
 
-    def __init__(self, duplicate_behavior: DuplicateBehavior = DuplicateBehavior.WARN):
+    def __init__(self, duplicate_behavior: DuplicateBehavior | None = None):
         self._resources: dict[str, Resource] = {}
         self._templates: dict[str, ResourceTemplate] = {}
+
+        # Default to "warn" if None is provided
+        if duplicate_behavior is None:
+            duplicate_behavior = "warn"
+
+        if duplicate_behavior not in DuplicateBehavior.__args__:
+            raise ValueError(
+                f"Invalid duplicate_behavior: {duplicate_behavior}. "
+                f"Must be one of: {', '.join(DuplicateBehavior.__args__)}"
+            )
+
         self.duplicate_behavior = duplicate_behavior
 
     def add_resource_or_template_from_fn(
@@ -114,16 +125,17 @@ class ResourceManager:
         )
         existing = self._resources.get(str(resource.uri))
         if existing:
-            if self.duplicate_behavior == DuplicateBehavior.WARN:
+            if self.duplicate_behavior == "warn":
                 logger.warning(f"Resource already exists: {resource.uri}")
                 self._resources[str(resource.uri)] = resource
-            elif self.duplicate_behavior == DuplicateBehavior.REPLACE:
+            elif self.duplicate_behavior == "replace":
                 self._resources[str(resource.uri)] = resource
-            elif self.duplicate_behavior == DuplicateBehavior.ERROR:
+            elif self.duplicate_behavior == "error":
                 raise ValueError(f"Resource already exists: {resource.uri}")
-            elif self.duplicate_behavior == DuplicateBehavior.IGNORE:
-                pass
-        self._resources[str(resource.uri)] = resource
+            elif self.duplicate_behavior == "ignore":
+                return existing
+        else:
+            self._resources[str(resource.uri)] = resource
         return resource
 
     def add_template_from_fn(
@@ -167,16 +179,17 @@ class ResourceManager:
         )
         existing = self._templates.get(str(template.uri_template))
         if existing:
-            if self.duplicate_behavior == DuplicateBehavior.WARN:
+            if self.duplicate_behavior == "warn":
                 logger.warning(f"Resource already exists: {template.uri_template}")
                 self._templates[str(template.uri_template)] = template
-            elif self.duplicate_behavior == DuplicateBehavior.REPLACE:
+            elif self.duplicate_behavior == "replace":
                 self._templates[str(template.uri_template)] = template
-            elif self.duplicate_behavior == DuplicateBehavior.ERROR:
+            elif self.duplicate_behavior == "error":
                 raise ValueError(f"Resource already exists: {template.uri_template}")
-            elif self.duplicate_behavior == DuplicateBehavior.IGNORE:
-                pass
-        self._templates[template.uri_template] = template
+            elif self.duplicate_behavior == "ignore":
+                return existing
+        else:
+            self._templates[template.uri_template] = template
         return template
 
     async def get_resource(self, uri: AnyUrl | str) -> Resource | None:

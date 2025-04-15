@@ -21,8 +21,19 @@ logger = get_logger(__name__)
 class ToolManager:
     """Manages FastMCP tools."""
 
-    def __init__(self, duplicate_behavior: DuplicateBehavior = DuplicateBehavior.WARN):
+    def __init__(self, duplicate_behavior: DuplicateBehavior | None = None):
         self._tools: dict[str, Tool] = {}
+
+        # Default to "warn" if None is provided
+        if duplicate_behavior is None:
+            duplicate_behavior = "warn"
+
+        if duplicate_behavior not in DuplicateBehavior.__args__:
+            raise ValueError(
+                f"Invalid duplicate_behavior: {duplicate_behavior}. "
+                f"Must be one of: {', '.join(DuplicateBehavior.__args__)}"
+            )
+
         self.duplicate_behavior = duplicate_behavior
 
     def get_tool(self, name: str) -> Tool | None:
@@ -57,16 +68,17 @@ class ToolManager:
         name = name or tool.name
         existing = self._tools.get(name)
         if existing:
-            if self.duplicate_behavior == DuplicateBehavior.WARN:
+            if self.duplicate_behavior == "warn":
                 logger.warning(f"Tool already exists: {name}")
                 self._tools[name] = tool
-            elif self.duplicate_behavior == DuplicateBehavior.REPLACE:
+            elif self.duplicate_behavior == "replace":
                 self._tools[name] = tool
-            elif self.duplicate_behavior == DuplicateBehavior.ERROR:
+            elif self.duplicate_behavior == "error":
                 raise ValueError(f"Tool already exists: {name}")
-            elif self.duplicate_behavior == DuplicateBehavior.IGNORE:
-                pass
-        self._tools[name] = tool
+            elif self.duplicate_behavior == "ignore":
+                return existing
+        else:
+            self._tools[name] = tool
         return tool
 
     async def call_tool(

@@ -4,7 +4,6 @@ from fastmcp.exceptions import PromptError
 from fastmcp.prompts import Prompt
 from fastmcp.prompts.prompt import PromptArgument, TextContent, UserMessage
 from fastmcp.prompts.prompt_manager import PromptManager
-from fastmcp.settings import DuplicateBehavior
 
 
 class TestPromptManager:
@@ -26,7 +25,7 @@ class TestPromptManager:
         def fn() -> str:
             return "Hello, world!"
 
-        manager = PromptManager(duplicate_behavior=DuplicateBehavior.WARN)
+        manager = PromptManager(duplicate_behavior="warn")
         prompt = Prompt.from_function(fn)
         first = manager.add_prompt(prompt)
         second = manager.add_prompt(prompt)
@@ -39,12 +38,86 @@ class TestPromptManager:
         def fn() -> str:
             return "Hello, world!"
 
-        manager = PromptManager(duplicate_behavior=DuplicateBehavior.IGNORE)
+        manager = PromptManager(duplicate_behavior="ignore")
         prompt = Prompt.from_function(fn)
         first = manager.add_prompt(prompt)
         second = manager.add_prompt(prompt)
         assert first == second
         assert "Prompt already exists" not in caplog.text
+
+    def test_warn_on_duplicate_prompts(self, caplog):
+        """Test warning on duplicate prompts."""
+        manager = PromptManager(duplicate_behavior="warn")
+
+        def test_fn() -> str:
+            return "Test prompt"
+
+        prompt = Prompt.from_function(test_fn, name="test_prompt")
+
+        manager.add_prompt(prompt)
+        manager.add_prompt(prompt)
+
+        assert "Prompt already exists: test_prompt" in caplog.text
+        # Should have the prompt
+        assert manager.get_prompt("test_prompt") is not None
+
+    def test_error_on_duplicate_prompts(self):
+        """Test error on duplicate prompts."""
+        manager = PromptManager(duplicate_behavior="error")
+
+        def test_fn() -> str:
+            return "Test prompt"
+
+        prompt = Prompt.from_function(test_fn, name="test_prompt")
+
+        manager.add_prompt(prompt)
+
+        with pytest.raises(ValueError, match="Prompt already exists: test_prompt"):
+            manager.add_prompt(prompt)
+
+    def test_replace_duplicate_prompts(self):
+        """Test replacing duplicate prompts."""
+        manager = PromptManager(duplicate_behavior="replace")
+
+        def original_fn() -> str:
+            return "Original prompt"
+
+        def replacement_fn() -> str:
+            return "Replacement prompt"
+
+        prompt1 = Prompt.from_function(original_fn, name="test_prompt")
+        prompt2 = Prompt.from_function(replacement_fn, name="test_prompt")
+
+        manager.add_prompt(prompt1)
+        manager.add_prompt(prompt2)
+
+        # Should have replaced with the new prompt
+        prompt = manager.get_prompt("test_prompt")
+        assert prompt is not None
+        assert prompt.fn.__name__ == "replacement_fn"
+
+    def test_ignore_duplicate_prompts(self):
+        """Test ignoring duplicate prompts."""
+        manager = PromptManager(duplicate_behavior="ignore")
+
+        def original_fn() -> str:
+            return "Original prompt"
+
+        def replacement_fn() -> str:
+            return "Replacement prompt"
+
+        prompt1 = Prompt.from_function(original_fn, name="test_prompt")
+        prompt2 = Prompt.from_function(replacement_fn, name="test_prompt")
+
+        manager.add_prompt(prompt1)
+        result = manager.add_prompt(prompt2)
+
+        # Should keep the original
+        prompt = manager.get_prompt("test_prompt")
+        assert prompt is not None
+        assert prompt.fn.__name__ == "original_fn"
+        # Result should be the original prompt
+        assert result.fn.__name__ == "original_fn"
 
     def test_list_prompts(self):
         """Test listing all prompts."""
@@ -113,39 +186,6 @@ class TestPromptManager:
         manager.add_prompt(prompt)
         with pytest.raises(ValueError, match="Missing required arguments"):
             await manager.render_prompt("fn")
-
-    def test_error_on_duplicate_prompts(self):
-        """Test error on duplicate prompts."""
-
-        def fn() -> str:
-            return "Hello, world!"
-
-        manager = PromptManager(duplicate_behavior=DuplicateBehavior.ERROR)
-        prompt = Prompt.from_function(fn)
-        manager.add_prompt(prompt)
-
-        with pytest.raises(ValueError, match="Prompt already exists"):
-            manager.add_prompt(prompt)
-
-    def test_replace_duplicate_prompts(self):
-        """Test replacing duplicate prompts."""
-
-        def fn1() -> str:
-            return "Original"
-
-        def fn2() -> str:
-            return "Replacement"
-
-        manager = PromptManager(duplicate_behavior=DuplicateBehavior.REPLACE)
-        prompt1 = Prompt.from_function(fn1, name="test_prompt")
-        prompt2 = Prompt.from_function(fn2, name="test_prompt")
-
-        manager.add_prompt(prompt1)
-        manager.add_prompt(prompt2)
-
-        # Should have replaced the first prompt with the second
-        stored_prompt = manager.get_prompt("test_prompt")
-        assert stored_prompt == prompt2
 
 
 class TestPromptTags:

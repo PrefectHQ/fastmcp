@@ -250,7 +250,7 @@ from fastmcp.settings import DuplicateBehavior
 
 mcp = FastMCP(
     name="ResourceServer",
-    on_duplicate_resources=DuplicateBehavior.ERROR # Raise error on duplicates
+    on_duplicate_resources="error" # Raise error on duplicates
 )
 
 @mcp.resource("data://config")

@@ -314,12 +314,12 @@ from fastmcp.settings import DuplicateBehavior
 mcp = FastMCP(
     name="ConfiguredServer",
     port=8080, # Directly maps to ServerSettings
-    on_duplicate_tools=DuplicateBehavior.ERROR # Set duplicate handling
+    on_duplicate_tools="error" # Set duplicate handling
 )
 
 # Settings are accessible via mcp.settings
 print(mcp.settings.port) # Output: 8080
-print(mcp.settings.on_duplicate_tools) # Output: DuplicateBehavior.ERROR
+print(mcp.settings.on_duplicate_tools) # Output: "error"
 ```
 
 ### Key Configuration Options

@@ -209,7 +209,7 @@ from fastmcp.settings import DuplicateBehavior
 
 mcp = FastMCP(
     name="PromptServer",
-    on_duplicate_prompts=DuplicateBehavior.ERROR  # Raise an error if a prompt name is duplicated
+    on_duplicate_prompts="error"  # Raise an error if a prompt name is duplicated
 )
 
 @mcp.prompt()
