@@ -195,17 +195,7 @@ class FastMCP(Generic[LifespanResultT]):
 
         See `list_tools` for a more ergonomic way to list tools.
         """
-
-        tools = self.list_tools()
-
-        return [
-            MCPTool(
-                name=info.name,
-                description=info.description,
-                inputSchema=info.parameters,
-            )
-            for info in tools
-        ]
+        return self._tool_manager.list_mcp_tools()
 
     def get_context(self) -> "Context[ServerSession, LifespanResultT]":
         """

@@ -24,8 +24,9 @@ async def test_mount_basic_functionality():
     assert "sub_tool" in sub_app._tool_manager._tools
 
     # Verify the original tool still exists in the sub-app
-    tool = main_app._tool_manager._tools["sub_sub_tool"]
-    assert tool.name == "sub_sub_tool"
+    tool = main_app._tool_manager.get_tool("sub_sub_tool")
+    assert tool is not None
+    assert tool.name == "sub_tool"
     assert callable(tool.fn)
 
 
@@ -230,3 +231,78 @@ async def test_mount_lifespan():
         "exit SubApp",
         "exit MainApp",
     ]
+
+
+async def test_mount_with_proxy_tools():
+    """Test mounting with tools that have custom names (proxy tools)."""
+    # Create apps
+    main_app = FastMCP("MainApp")
+    api_app = FastMCP("APIApp")
+
+    # Create a tool function
+    def fetch_data(query: str) -> str:
+        return f"Data for query: {query}"
+
+    # Add the tool to the API app with a custom name
+    api_app.add_tool(fetch_data, name="get_data")
+
+    # Verify the tool is registered with the custom name in the source app
+    assert api_app._tool_manager.get_tool("get_data") is not None
+
+    # Mount the API app to the main app
+    main_app.mount("api", api_app)
+
+    # Verify the tool was imported with the prefixed custom name
+    tool = main_app._tool_manager.get_tool("api_get_data")
+    assert tool is not None
+
+    # The internal function name should be preserved
+    assert tool.fn.__name__ == "fetch_data"
+
+    # The tool should be callable through the mounted name
+    context = main_app.get_context()
+    result = await main_app._tool_manager.call_tool(
+        "api_get_data", {"query": "test"}, context=context
+    )
+    assert result == "Data for query: test"
+
+
+async def test_mount_nested_prefixed_tools():
+    """Test mounting tools with multiple layers of prefixes."""
+    # Create apps
+    main_app = FastMCP("MainApp")
+    service_app = FastMCP("ServiceApp")
+    provider_app = FastMCP("ProviderApp")
+
+    # Create a tool function
+    def calculate_value(input: int) -> int:
+        return input * 2
+
+    # Add the tool to the provider app with a custom name
+    provider_app.add_tool(calculate_value, name="compute")
+
+    # The provider has a tool registered with a custom name
+    assert provider_app._tool_manager.get_tool("compute") is not None
+
+    # First mount: Mount the provider app to the service app
+    service_app.mount("provider", provider_app)
+
+    # Verify the tool is accessible in the service app with the first prefix
+    assert service_app._tool_manager.get_tool("provider_compute") is not None
+
+    # Second mount: Mount the service app to the main app
+    main_app.mount("service", service_app)
+
+    # Verify the tool is accessible in the main app with both prefixes
+    nested_tool = main_app._tool_manager.get_tool("service_provider_compute")
+    assert nested_tool is not None
+
+    # The internal function name should still be preserved after multiple mounts
+    assert nested_tool.fn.__name__ == "calculate_value"
+
+    # The tool should be callable through the fully-qualified name
+    context = main_app.get_context()
+    result = await main_app._tool_manager.call_tool(
+        "service_provider_compute", {"input": 21}, context=context
+    )
+    assert result == 42

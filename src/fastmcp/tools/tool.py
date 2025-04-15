@@ -4,6 +4,7 @@ import inspect
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Annotated, Any
 
+from mcp.types import Tool as MCPTool
 from pydantic import BaseModel, BeforeValidator, Field
 
 from fastmcp.exceptions import ToolError
@@ -100,6 +101,14 @@ class Tool(BaseModel):
             )
         except Exception as e:
             raise ToolError(f"Error executing tool {self.name}: {e}") from e
+
+    def to_mcp_tool(self, **overrides: Any) -> MCPTool:
+        kwargs = {
+            "name": self.name,
+            "description": self.description,
+            "inputSchema": self.parameters,
+        }
+        return MCPTool(**kwargs | overrides)
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Tool):
