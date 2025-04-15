@@ -297,6 +297,29 @@ def run(
             help="Transport protocol to use (stdio or sse)",
         ),
     ] = None,
+    host: Annotated[
+        str | None,
+        typer.Option(
+            "--host",
+            help="Host to bind to when using sse transport (default: 0.0.0.0)",
+        ),
+    ] = None,
+    port: Annotated[
+        int | None,
+        typer.Option(
+            "--port",
+            "-p",
+            help="Port to bind to when using sse transport (default: 8000)",
+        ),
+    ] = None,
+    log_level: Annotated[
+        str | None,
+        typer.Option(
+            "--log-level",
+            "-l",
+            help="Log level for sse transport (DEBUG, INFO, WARNING, ERROR, CRITICAL)",
+        ),
+    ] = None,
 ) -> None:
     """Run a MCP server.
 
@@ -316,6 +339,9 @@ def run(
             "file": str(file),
             "server_object": server_object,
             "transport": transport,
+            "host": host,
+            "port": port,
+            "log_level": log_level,
         },
     )
 
@@ -329,6 +355,12 @@ def run(
         kwargs = {}
         if transport:
             kwargs["transport"] = transport
+        if host:
+            kwargs["host"] = host
+        if port:
+            kwargs["port"] = port
+        if log_level:
+            kwargs["log_level"] = log_level
 
         server.run(**kwargs)
 

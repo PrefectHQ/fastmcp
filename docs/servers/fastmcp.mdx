@@ -111,7 +111,12 @@ def greet(name: str) -> str:
 
 if __name__ == "__main__":
     # This code only runs when the file is executed directly
+    
+    # Basic run with default settings (stdio transport)
     mcp.run()
+    
+    # Or with specific transport and parameters
+    # mcp.run(transport="sse", host="127.0.0.1", port=9000)
 ```
 
 This pattern is important because:
@@ -156,18 +161,47 @@ With SSE:
 - The server stays running until explicitly terminated
 - This is ideal for remote access to services
 
-You can configure the host, port, and log level when running the server:
+You can configure transport parameters directly when running the server:
 
 ```python
-# Configure with parameters
-mcp.run(transport="sse", host="127.0.0.1", port=8888)
+# Configure with specific parameters
+mcp.run(
+    transport="sse", 
+    host="127.0.0.1",  # Override default host
+    port=8888,         # Override default port
+    log_level="debug"  # Set logging level
+)
 
-# Or run asynchronously with the same parameters
+# You can also run asynchronously with the same parameters
 import asyncio
-asyncio.run(mcp.run_sse_async(host="127.0.0.1", port=8888, log_level="debug"))
+asyncio.run(
+    mcp.run_sse_async(
+        host="127.0.0.1", 
+        port=8888, 
+        log_level="debug"
+    )
+)
 ```
 
-These parameters override any settings defined when creating the FastMCP instance.
+Transport parameters passed to `run()` or `run_sse_async()` override any settings defined when creating the FastMCP instance. The most common parameters for SSE transport are:
+
+- `host`: Host to bind to (default: "0.0.0.0")
+- `port`: Port to bind to (default: 8000)
+- `log_level`: Logging level (default: "INFO")
+
+#### Advanced Transport Configuration
+
+Under the hood, FastMCP's `run()` method accepts arbitrary keyword arguments (`**transport_kwargs`) that are passed to the transport-specific run methods:
+
+```python
+# For SSE transport, kwargs are passed to run_sse_async()
+mcp.run(transport="sse", **transport_kwargs)
+
+# For stdio transport, kwargs are passed to run_stdio_async()
+mcp.run(transport="stdio", **transport_kwargs)
+```
+
+This means that any future transport-specific options will be automatically available through the same interface without requiring changes to your code.
 
 ### Using the FastMCP CLI
 
@@ -180,8 +214,11 @@ fastmcp run my_server.py:mcp
 # Explicitly specify a transport
 fastmcp run my_server.py:mcp --transport sse
 
-# Configure SSE transport
+# Configure SSE transport with host and port
 fastmcp run my_server.py:mcp --transport sse --host 127.0.0.1 --port 8888
+
+# With log level
+fastmcp run my_server.py:mcp --transport sse --log-level DEBUG
 ```
 
 The CLI can dynamically find and run FastMCP server objects in your files, but including the `if __name__ == "__main__":` block ensures compatibility with all clients.
