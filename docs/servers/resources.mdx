@@ -225,17 +225,27 @@ However, function parameters with default values don't need to be included in th
 - Extract parameter values from the URI for parameters included in the template
 - Use default values for any function parameters not in the URI template
 
-This allows for flexible API designs where some parameters are embedded in the URI path while others use their default values.
-
-#### Multiple URI Templates for the Same Function
-
-A powerful pattern is registering a single function with multiple URI templates, allowing different ways to access the same data:
+This allows for flexible API designs. For example, a simple search template with optional parameters:
 
 ```python
-from fastmcp import FastMCP
+@mcp.resource("search://{query}")
+def search_resources(query: str, max_results: int = 10, include_archived: bool = False) -> dict:
+    """Search for resources matching the query string."""
+    # Only 'query' is required in the URI, the other parameters use their defaults
+    results = perform_search(query, limit=max_results, archived=include_archived)
+    return {
+        "query": query,
+        "max_results": max_results,
+        "include_archived": include_archived,
+        "results": results
+    }
+```
 
-mcp = FastMCP(name="DataServer")
+With this template, clients can request `search://python` and the function will be called with `query="python", max_results=10, include_archived=False`. MCP Developers can still call the underlying `search_resources` function directly with more specific parameters.
 
+An even more powerful pattern is registering a single function with multiple URI templates, allowing different ways to access the same data:
+
+```python
 # Define a user lookup function that can be accessed by different identifiers
 @mcp.resource("users://email/{email}")
 @mcp.resource("users://name/{name}")
@@ -250,13 +260,14 @@ def lookup_user(name: str | None = None, email: str | None = None) -> dict:
 ```
 
 Now an LLM or client can retrieve user information in two different ways:
-- `users://email/alice@example.com` → Looks up user by email
-- `users://name/Bob` → Looks up user by name
+- `users://email/alice@example.com` → Looks up user by email (with name=None)
+- `users://name/Bob` → Looks up user by name (with email=None)
 
-In this pattern:
-- The `name` parameter is only provided in the URI when using the `users://name/{name}` template
-- The `email` parameter is only provided in the URI when using the `users://email/{email}` template
-- Each parameter has a default value of `None` for when it's not in the URI
+In this stacked decorator pattern:
+- The `name` parameter is only provided when using the `users://name/{name}` template
+- The `email` parameter is only provided when using the `users://email/{email}` template
+- Each parameter defaults to `None` when not included in the URI
+- The function logic handles whichever parameter is provided
 
 **How Templates Work:**
 
