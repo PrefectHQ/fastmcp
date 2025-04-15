@@ -585,7 +585,7 @@ class TestCustomToolNames:
         tool = Tool.from_function(fn, name="my_tool")
         manager = ToolManager()
         # Store it under a different name
-        manager.add_tool(tool, name="proxy_tool")
+        manager.add_tool(tool, key="proxy_tool")
         # The tool is accessible under the storage name
         stored = manager.get_tool("proxy_tool")
         assert stored is not None
@@ -682,7 +682,7 @@ class TestCustomToolNames:
 
         tool = Tool.from_function(fn, name="my_tool")
         manager = ToolManager()
-        manager.add_tool(tool, name="proxy_tool")
+        manager.add_tool(tool, key="proxy_tool")
         mcp_tools = manager.list_mcp_tools()
         assert len(mcp_tools) == 1
         assert mcp_tools[0].name == "proxy_tool"

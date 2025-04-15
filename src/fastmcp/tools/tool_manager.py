@@ -41,7 +41,7 @@ class ToolManager:
         return self._tools.get(name)
 
     def get_tools(self) -> dict[str, Tool]:
-        """Get all registered tools, keyed by registered name."""
+        """Get all registered tools, indexed by registered key."""
         return self._tools
 
     def list_tools(self) -> list[Tool]:
@@ -50,7 +50,7 @@ class ToolManager:
 
     def list_mcp_tools(self) -> list[MCPTool]:
         """List all registered tools in the format expected by the low-level MCP server."""
-        return [tool.to_mcp_tool(name=name) for name, tool in self._tools.items()]
+        return [tool.to_mcp_tool(name=key) for key, tool in self._tools.items()]
 
     def add_tool_from_fn(
         self,
@@ -63,34 +63,34 @@ class ToolManager:
         tool = Tool.from_function(fn, name=name, description=description, tags=tags)
         return self.add_tool(tool)
 
-    def add_tool(self, tool: Tool, name: str | None = None) -> Tool:
+    def add_tool(self, tool: Tool, key: str | None = None) -> Tool:
         """Register a tool with the server."""
-        name = name or tool.name
-        existing = self._tools.get(name)
+        key = key or tool.name
+        existing = self._tools.get(key)
         if existing:
             if self.duplicate_behavior == "warn":
-                logger.warning(f"Tool already exists: {name}")
-                self._tools[name] = tool
+                logger.warning(f"Tool already exists: {key}")
+                self._tools[key] = tool
             elif self.duplicate_behavior == "replace":
-                self._tools[name] = tool
+                self._tools[key] = tool
             elif self.duplicate_behavior == "error":
-                raise ValueError(f"Tool already exists: {name}")
+                raise ValueError(f"Tool already exists: {key}")
             elif self.duplicate_behavior == "ignore":
                 return existing
         else:
-            self._tools[name] = tool
+            self._tools[key] = tool
         return tool
 
     async def call_tool(
         self,
-        name: str,
+        key: str,
         arguments: dict[str, Any],
         context: Context[ServerSessionT, LifespanContextT] | None = None,
     ) -> Any:
         """Call a tool by name with arguments."""
-        tool = self.get_tool(name)
+        tool = self.get_tool(key)
         if not tool:
-            raise ToolError(f"Unknown tool: {name}")
+            raise ToolError(f"Unknown tool: {key}")
 
         return await tool.run(arguments, context=context)
 
@@ -110,5 +110,5 @@ class ToolManager:
         """
         for name, tool in tool_manager._tools.items():
             prefixed_name = f"{prefix}{name}" if prefix else name
-            self.add_tool(tool, name=prefixed_name)
+            self.add_tool(tool, key=prefixed_name)
             logger.debug(f'Imported tool "{tool.name}" as "{prefixed_name}"')

@@ -186,7 +186,7 @@ class FastMCP(Generic[LifespanResultT]):
         self._mcp_server.list_resource_templates()(self._mcp_list_resource_templates)
 
     def get_tools(self) -> dict[str, Tool]:
-        """Get all registered tools, keyed by registered name."""
+        """Get all registered tools, indexed by registered key."""
         return self._tool_manager.get_tools()
 
     def list_tools(self) -> list[Tool]:
