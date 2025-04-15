@@ -146,7 +146,9 @@ class FastMCP(Generic[LifespanResultT]):
     def instructions(self) -> str | None:
         return self._mcp_server.instructions
 
-    async def run_async(self, transport: Literal["stdio", "sse"] | None = None) -> None:
+    async def run_async(
+        self, transport: Literal["stdio", "sse"] | None = None, **transport_kwargs: Any
+    ) -> None:
         """Run the FastMCP server asynchronously.
 
         Args:
@@ -158,18 +160,20 @@ class FastMCP(Generic[LifespanResultT]):
             raise ValueError(f"Unknown transport: {transport}")
 
         if transport == "stdio":
-            await self.run_stdio_async()
+            await self.run_stdio_async(**transport_kwargs)
         else:  # transport == "sse"
-            await self.run_sse_async()
+            await self.run_sse_async(**transport_kwargs)
 
-    def run(self, transport: Literal["stdio", "sse"] | None = None) -> None:
+    def run(
+        self, transport: Literal["stdio", "sse"] | None = None, **transport_kwargs: Any
+    ) -> None:
         """Run the FastMCP server. Note this is a synchronous function.
 
         Args:
             transport: Transport protocol to use ("stdio" or "sse")
         """
         logger.info(f'Starting server "{self.name}"...')
-        anyio.run(self.run_async, transport)
+        anyio.run(self.run_async, transport, **transport_kwargs)
 
     def _setup_handlers(self) -> None:
         """Set up core MCP protocol handlers."""
