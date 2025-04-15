@@ -4,6 +4,7 @@ import pytest
 from pydantic import BaseModel
 
 from fastmcp.resources import FunctionResource, ResourceTemplate
+from fastmcp.resources.template import match_uri_template
 
 
 class TestResourceTemplate:
@@ -43,6 +44,27 @@ class TestResourceTemplate:
         assert params == {"key": "foo", "value": "123"}
 
         # No match
+        assert template.matches("test://foo") is None
+        assert template.matches("other://foo/123") is None
+
+    def test_template_matches_with_prefix(self):
+        """Test matching URIs against a template with a prefix."""
+
+        def my_func(key: str, value: int) -> dict:
+            return {"key": key, "value": value}
+
+        template = ResourceTemplate.from_function(
+            fn=my_func,
+            uri_template="app+test://{key}/{value}",
+            name="test",
+        )
+
+        # Valid match
+        params = template.matches("app+test://foo/123")
+        assert params == {"key": "foo", "value": "123"}
+
+        # No match
+        assert template.matches("test://foo/123") is None
         assert template.matches("test://foo") is None
         assert template.matches("other://foo/123") is None
 
@@ -279,3 +301,63 @@ class TestResourceTemplate:
         assert isinstance(resource, FunctionResource)
         content = await resource.read()
         assert content == "hello"
+
+
+class TestMatchUriTemplate:
+    """Test match_uri_template function."""
+
+    @pytest.mark.parametrize(
+        "uri, expected_params",
+        [
+            ("test://foo/123", {"x": "foo", "y": "123"}),
+            ("test://bar/456", {"x": "bar", "y": "456"}),
+            ("test://foo/bar", {"x": "foo", "y": "bar"}),
+            ("prefix+test://foo/123", None),
+            ("test://foo", None),
+            ("other://foo/123", None),
+            ("t.est://foo/bar", None),
+        ],
+    )
+    def test_match_uri_template_simple_params(
+        self, uri: str, expected_params: dict[str, str] | None
+    ):
+        """Test matching URIs against a template with simple parameters."""
+        uri_template = "test://{x}/{y}"
+        result = match_uri_template(uri=uri, uri_template=uri_template)
+        assert result == expected_params
+
+    @pytest.mark.parametrize(
+        "uri, expected_params",
+        [
+            ("test://a/b/foo/c/d/123", {"x": "foo", "y": "123"}),
+            ("test://a/b/bar/c/d/456", {"x": "bar", "y": "456"}),
+            ("prefix+test://a/b/foo/c/d/123", None),
+            ("test://a/b/foo", None),
+            ("other://a/b/foo/c/d/123", None),
+        ],
+    )
+    def test_match_uri_template_params_and_literal_segments(
+        self, uri: str, expected_params: dict[str, str] | None
+    ):
+        """Test matching URIs against a template with parameters and literal segments."""
+        uri_template = "test://a/b/{x}/c/d/{y}"
+        result = match_uri_template(uri=uri, uri_template=uri_template)
+        assert result == expected_params
+
+    @pytest.mark.parametrize(
+        "uri, expected_params",
+        [
+            ("prefix+test://foo/test/123", {"x": "foo", "y": "123"}),
+            ("prefix+test://bar/test/456", {"x": "bar", "y": "456"}),
+            ("test://foo/test/123", None),
+            ("other.prefix+test://foo/test/123", None),
+            ("other+prefix+test://foo/test/123", None),
+        ],
+    )
+    def test_match_prefixed_uri_template(
+        self, uri: str, expected_params: dict[str, str] | None
+    ):
+        """Test matching URIs against a template with a prefix."""
+        uri_template = "prefix+test://{x}/test/{y}"
+        result = match_uri_template(uri=uri, uri_template=uri_template)
+        assert result == expected_params

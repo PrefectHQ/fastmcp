@@ -203,8 +203,12 @@ class ResourceManager:
         self._templates[storage_key] = template
         return template
 
-    async def get_resource(self, uri: AnyUrl | str) -> Resource | None:
-        """Get resource by URI, checking concrete resources first, then templates."""
+    async def get_resource(self, uri: AnyUrl | str) -> Resource:
+        """Get resource by URI, checking concrete resources first, then templates.
+
+        Raises:
+            ResourceError: If no resource or template matching the URI is found.
+        """
         uri_str = str(uri)
         logger.debug("Getting resource", extra={"uri": uri_str})
 
@@ -221,7 +225,7 @@ class ResourceManager:
                 except Exception as e:
                     raise ValueError(f"Error creating resource from template: {e}")
 
-        raise ResourceError(f"Unknown resource: {uri}")
+        raise ResourceError(f"Unknown resource: {uri_str}")
 
     def get_resources(self) -> dict[str, Resource]:
         """Get all registered resources, keyed by URI."""

@@ -22,22 +22,23 @@ from fastmcp.resources.types import FunctionResource, Resource
 from fastmcp.utilities.types import _convert_set_defaults
 
 
-def match_uri_template(uri: str, uri_template: str) -> dict[str, Any] | None:
-    """Match a URI against a template and extract parameters.
+def build_regex(template: str) -> re.Pattern:
+    # Escape all non-brace characters, then restore {var} placeholders
+    parts = re.split(r"(\{[^}]+\})", template)
+    pattern = ""
+    for part in parts:
+        if part.startswith("{") and part.endswith("}"):
+            name = part[1:-1]
+            pattern += f"(?P<{name}>[^/]+)"
+        else:
+            pattern += re.escape(part)
+    return re.compile(f"^{pattern}$")
 
-    Args:
-        uri: The URI to match against the template
-        uri_template: The URI template to match against
 
-    Returns:
-        A dictionary of extracted parameters if there's a match, or None if no match
-    """
-    # Convert template to regex pattern
-    pattern = uri_template.replace("{", "(?P<").replace("}", ">[^/]+)")
-    match = re.match(f"^{pattern}$", uri)
-    if match:
-        return match.groupdict()
-    return None
+def match_uri_template(uri: str, uri_template: str) -> dict[str, str] | None:
+    regex = build_regex(uri_template)
+    match = regex.match(uri)
+    return match.groupdict() if match else None
 
 
 class MyModel(BaseModel):
