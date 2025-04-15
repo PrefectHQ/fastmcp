@@ -29,9 +29,13 @@ class ToolManager:
         """Get tool by name."""
         return self._tools.get(name)
 
+    def get_tools(self) -> dict[str, Tool]:
+        """Get all registered tools, keyed by registered name."""
+        return self._tools
+
     def list_tools(self) -> list[Tool]:
         """List all registered tools."""
-        return list(self._tools.values())
+        return list(self.get_tools().values())
 
     def list_mcp_tools(self) -> list[MCPTool]:
         """List all registered tools in the format expected by the low-level MCP server."""
