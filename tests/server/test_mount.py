@@ -1,6 +1,7 @@
 import contextlib
+import json
+from urllib.parse import quote
 
-import pytest
 from mcp.types import TextContent
 
 from fastmcp.server.server import FastMCP
@@ -190,7 +191,6 @@ async def test_mount_multiple_prompts():
     assert "sql_explain_sql" in main_app._prompt_manager._prompts
 
 
-@pytest.mark.anyio
 async def test_mount_lifespan():
     """Test that the lifespan of a mounted app is properly handled."""
     # Create apps
@@ -346,3 +346,83 @@ async def test_mount_with_proxy_tools():
     result = await main_app.call_tool("api_get_data", {"query": "test"})
     assert isinstance(result[0], TextContent)
     assert result[0].text == "Data for query: test"
+
+
+async def test_mount_with_proxy_prompts():
+    """
+    Test mounting with prompts that have custom keys.
+
+    This tests that the prompt's name doesn't change even though the registered
+    key does, which is important for correct rendering.
+    """
+    # Create apps
+    main_app = FastMCP("MainApp")
+    api_app = FastMCP("APIApp")
+
+    @api_app.prompt()
+    def greeting(name: str) -> str:
+        return f"Hello, {name} from API!"
+
+    main_app.mount("api", await FastMCP.as_proxy(api_app))
+
+    result = await main_app.get_prompt("api_greeting", {"name": "World"})
+    assert len(result) > 0
+    assert isinstance(result[0].content, TextContent)
+    assert result[0].content.text == "Hello, World from API!"
+
+
+async def test_mount_with_proxy_resources():
+    """
+    Test mounting with resources that have custom keys.
+
+    This tests that the resource's name doesn't change even though the registered
+    key does, which is important for correct access.
+    """
+    # Create apps
+    main_app = FastMCP("MainApp")
+    api_app = FastMCP("APIApp")
+
+    # Create a resource in the API app
+    @api_app.resource(uri="config://settings")
+    def get_config():
+        return {
+            "api_key": "12345",
+            "base_url": "https://api.example.com",
+        }
+
+    main_app.mount("api", await FastMCP.as_proxy(api_app))
+
+    # Access the resource through the main app with the prefixed key
+    resource = await main_app.read_resource("api+config://settings")
+    assert resource is not None
+    resource = json.loads(resource)
+    assert resource["api_key"] == "12345"
+    assert resource["base_url"] == "https://api.example.com"
+
+
+async def test_mount_with_proxy_resource_templates():
+    """
+    Test mounting with resource templates that have custom keys.
+
+    This tests that the template's name doesn't change even though the registered
+    key does, which is important for correct instantiation.
+    """
+    # Create apps
+    main_app = FastMCP("MainApp")
+    api_app = FastMCP("APIApp")
+
+    # Create a resource template in the API app
+    @api_app.resource(uri="user://{name}/{email}")
+    def create_user(name: str, email: str):
+        return {"name": name, "email": email}
+
+    main_app.mount("api", await FastMCP.as_proxy(api_app))
+
+    # Instantiate the template through the main app with the prefixed key
+    quoted_name = quote("John Doe", safe="")
+    quoted_email = quote("john@example.com", safe="")
+    user = await main_app.read_resource(f"api+user://{quoted_name}/{quoted_email}")
+    assert user is not None
+    user = json.loads(user)
+    assert user["name"] == "John Doe"
+    assert user["email"] == "john@example.com"

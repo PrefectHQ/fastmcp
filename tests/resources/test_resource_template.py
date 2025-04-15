@@ -1,4 +1,5 @@
 import json
+from urllib.parse import quote
 
 import pytest
 from pydantic import BaseModel
@@ -312,6 +313,18 @@ class TestMatchUriTemplate:
             ("test://foo/123", {"x": "foo", "y": "123"}),
             ("test://bar/456", {"x": "bar", "y": "456"}),
             ("test://foo/bar", {"x": "foo", "y": "bar"}),
+            ("test://foo/bar/baz", None),
+            ("test://foo/email@domain.com", {"x": "foo", "y": "email@domain.com"}),
+            ("test://two words/foo", {"x": "two words", "y": "foo"}),
+            ("test://two.words/foo+bar", {"x": "two.words", "y": "foo+bar"}),
+            (
+                f"test://escaped{quote('/', safe='')}word/bar",
+                {"x": "escaped/word", "y": "bar"},
+            ),
+            (
+                f"test://escaped{quote('{', safe='')}x{quote('}', safe='')}word/bar",
+                {"x": "escaped{x}word", "y": "bar"},
+            ),
             ("prefix+test://foo/123", None),
             ("test://foo", None),
             ("other://foo/123", None),
@@ -361,3 +374,11 @@ class TestMatchUriTemplate:
         uri_template = "prefix+test://{x}/test/{y}"
         result = match_uri_template(uri=uri, uri_template=uri_template)
         assert result == expected_params
+
+    def test_quoted_params(self):
+        uri_template = "user://{name}/{email}"
+        quoted_name = quote("John Doe", safe="")
+        quoted_email = quote("john@example.com", safe="")
+        uri = f"user://{quoted_name}/{quoted_email}"
+        result = match_uri_template(uri=uri, uri_template=uri_template)
+        assert result == {"name": "John Doe", "email": "john@example.com"}

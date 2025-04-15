@@ -28,7 +28,6 @@ from mcp.types import (
     TextContent,
 )
 from mcp.types import Prompt as MCPPrompt
-from mcp.types import PromptArgument as MCPPromptArgument
 from mcp.types import Resource as MCPResource
 from mcp.types import ResourceTemplate as MCPResourceTemplate
 from mcp.types import Tool as MCPTool
@@ -217,11 +216,11 @@ class FastMCP(Generic[LifespanResultT]):
         return Context(request_context=request_context, fastmcp=self)
 
     async def call_tool(
-        self, name: str, arguments: dict[str, Any]
+        self, key: str, arguments: dict[str, Any]
     ) -> list[TextContent | ImageContent | EmbeddedResource]:
         """Call a tool by name with arguments."""
         context = self.get_context()
-        result = await self._tool_manager.call_tool(name, arguments, context=context)
+        result = await self._tool_manager.call_tool(key, arguments, context=context)
         converted_result = _convert_to_content(result)
         return converted_result
 
@@ -592,22 +591,7 @@ class FastMCP(Generic[LifespanResultT]):
 
         See `list_prompts` for a more ergonomic way to list prompts.
         """
-        prompts = self.list_prompts()
-        return [
-            MCPPrompt(
-                name=prompt.name,
-                description=prompt.description,
-                arguments=[
-                    MCPPromptArgument(
-                        name=arg.name,
-                        description=arg.description,
-                        required=arg.required,
-                    )
-                    for arg in (prompt.arguments or [])
-                ],
-            )
-            for prompt in prompts
-        ]
+        return self._prompt_manager.list_mcp_prompts()
 
     async def get_prompt(
         self, name: str, arguments: dict[str, Any] | None = None
