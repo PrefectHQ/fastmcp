@@ -13,6 +13,11 @@ from fastmcp.resources.types import FunctionResource, Resource
 from fastmcp.utilities.types import _convert_set_defaults
 
 
+class MyModel(BaseModel):
+    key: str
+    value: int
+
+
 class ResourceTemplate(BaseModel):
     """A template for dynamically creating resources."""
 
@@ -46,6 +51,30 @@ class ResourceTemplate(BaseModel):
         func_name = name or fn.__name__
         if func_name == "<lambda>":
             raise ValueError("You must provide a name for lambda functions")
+
+        # Validate that URI params match function params
+        uri_params = set(re.findall(r"{(\w+)}", uri_template))
+        if not uri_params:
+            raise ValueError("URI template must contain at least one parameter")
+
+        func_params = set(inspect.signature(fn).parameters.keys())
+
+        # get the parameters that are required
+        required_params = {
+            p
+            for p in func_params
+            if inspect.signature(fn).parameters[p].default is inspect.Parameter.empty
+        }
+
+        if not required_params.issubset(uri_params):
+            raise ValueError(
+                f"URI parameters {uri_params} must be a subset of the required function arguments: {required_params}"
+            )
+
+        if not uri_params.issubset(func_params):
+            raise ValueError(
+                f"URI parameters {uri_params} must be a subset of the function arguments: {func_params}"
+            )
 
         # Get schema from TypeAdapter - will fail if function isn't properly typed
         parameters = TypeAdapter(fn).json_schema()
