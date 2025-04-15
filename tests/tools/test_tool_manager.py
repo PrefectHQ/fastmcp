@@ -575,8 +575,8 @@ class TestCustomToolNames:
         # The tool should not be accessible via its original function name
         assert manager.get_tool("original_fn") is None
 
-    def test_add_tool_object_with_custom_storage_name(self):
-        """Test adding a Tool object with a custom storage name using add_tool()."""
+    def test_add_tool_object_with_custom_key(self):
+        """Test adding a Tool object with a custom key using add_tool()."""
 
         def fn(x: int) -> int:
             return x + 1
@@ -585,8 +585,8 @@ class TestCustomToolNames:
         tool = Tool.from_function(fn, name="my_tool")
         manager = ToolManager()
         # Store it under a different name
-        manager.add_tool(tool, name="proxy_tool")
-        # The tool is accessible under the storage name
+        manager.add_tool(tool, key="proxy_tool")
+        # The tool is accessible under the key
         stored = manager.get_tool("proxy_tool")
         assert stored is not None
         # But the tool's .name is unchanged
@@ -612,19 +612,34 @@ class TestCustomToolNames:
         with pytest.raises(ToolError):
             await manager.call_tool("multiply", {"a": 5, "b": 3})
 
-    def test_tool_to_mcp_tool_with_custom_name(self):
-        """Test that to_mcp_tool uses the storage name, not the internal name."""
+    def test_tool_to_mcp_tool(self):
+        """Test that to_mcp_tool uses the key, not the internal name."""
 
         def some_function(x: int) -> int:
             return x
 
         manager = ToolManager()
-        manager.add_tool_from_fn(some_function, name="api_function")
+        tool = Tool.from_function(some_function, name="api_function")
+        manager.add_tool(tool)
 
-        # When listing tools for MCP, the custom name should be used
         mcp_tools = manager.list_mcp_tools()
         assert len(mcp_tools) == 1
         assert mcp_tools[0].name == "api_function"
+
+    def test_tool_to_mcp_tool_with_custom_key(self):
+        """Test that to_mcp_tool uses the key, not the internal name."""
+
+        def some_function(x: int) -> int:
+            return x
+
+        manager = ToolManager()
+        tool = Tool.from_function(some_function, name="api_function")
+        manager.add_tool(tool, key="custom-key")
+
+        # When listing tools for MCP, the key should be used
+        mcp_tools = manager.list_mcp_tools()
+        assert len(mcp_tools) == 1
+        assert mcp_tools[0].name == "custom-key"
 
     def test_import_tools_with_custom_names(self):
         """Test importing tools with custom names."""
@@ -675,20 +690,20 @@ class TestCustomToolNames:
         assert stored_tool.fn.__name__ == "replacement_fn"
 
     def test_mcp_tool_name_for_add_tool(self):
-        """Test MCPTool name for add_tool (storage name != tool.name)."""
+        """Test MCPTool name for add_tool (key != tool.name)."""
 
         def fn(x: int) -> int:
             return x + 1
 
         tool = Tool.from_function(fn, name="my_tool")
         manager = ToolManager()
-        manager.add_tool(tool, name="proxy_tool")
+        manager.add_tool(tool, key="proxy_tool")
         mcp_tools = manager.list_mcp_tools()
         assert len(mcp_tools) == 1
         assert mcp_tools[0].name == "proxy_tool"
 
     def test_mcp_tool_name_for_add_tool_from_fn(self):
-        """Test MCPTool name for add_tool_from_fn (storage name == tool.name)."""
+        """Test MCPTool name for add_tool_from_fn (key == tool.name)."""
 
         def fn(x: int) -> int:
             return x + 1
