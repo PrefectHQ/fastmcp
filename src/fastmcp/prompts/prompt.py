@@ -7,6 +7,8 @@ from typing import Annotated, Any, Literal
 
 import pydantic_core
 from mcp.types import EmbeddedResource, ImageContent, TextContent
+from mcp.types import Prompt as MCPPrompt
+from mcp.types import PromptArgument as MCPPromptArgument
 from pydantic import BaseModel, BeforeValidator, Field, TypeAdapter, validate_call
 
 from fastmcp.utilities.types import _convert_set_defaults
@@ -166,3 +168,20 @@ class Prompt(BaseModel):
         if not isinstance(other, Prompt):
             return False
         return self.model_dump() == other.model_dump()
+
+    def to_mcp_prompt(self, **overrides: Any) -> MCPPrompt:
+        """Convert the prompt to an MCP prompt."""
+        arguments = [
+            MCPPromptArgument(
+                name=arg.name,
+                description=arg.description,
+                required=arg.required,
+            )
+            for arg in self.arguments or []
+        ]
+        kwargs = {
+            "name": self.name,
+            "description": self.description,
+            "arguments": arguments,
+        }
+        return MCPPrompt(**kwargs | overrides)

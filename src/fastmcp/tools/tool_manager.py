@@ -36,9 +36,9 @@ class ToolManager:
 
         self.duplicate_behavior = duplicate_behavior
 
-    def get_tool(self, name: str) -> Tool | None:
-        """Get tool by name."""
-        return self._tools.get(name)
+    def get_tool(self, key: str) -> Tool | None:
+        """Get tool by key."""
+        return self._tools.get(key)
 
     def get_tools(self) -> dict[str, Tool]:
         """Get all registered tools, indexed by registered key."""
@@ -109,6 +109,6 @@ class ToolManager:
                    the imported tool would be available as "weather/forecast"
         """
         for name, tool in tool_manager._tools.items():
-            prefixed_name = f"{prefix}{name}" if prefix else name
-            self.add_tool(tool, key=prefixed_name)
-            logger.debug(f'Imported tool "{tool.name}" as "{prefixed_name}"')
+            key = f"{prefix}{name}" if prefix else name
+            self.add_tool(tool, key=key)
+            logger.debug(f'Imported tool "{tool.name}" as "{key}"')
