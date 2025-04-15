@@ -228,6 +228,10 @@ However, function parameters with default values don't need to be included in th
 This allows for flexible API designs. For example, a simple search template with optional parameters:
 
 ```python
+from fastmcp import FastMCP
+
+mcp = FastMCP(name="DataServer")
+
 @mcp.resource("search://{query}")
 def search_resources(query: str, max_results: int = 10, include_archived: bool = False) -> dict:
     """Search for resources matching the query string."""
@@ -246,6 +250,10 @@ With this template, clients can request `search://python` and the function will 
 An even more powerful pattern is registering a single function with multiple URI templates, allowing different ways to access the same data:
 
 ```python
+from fastmcp import FastMCP
+
+mcp = FastMCP(name="DataServer")
+
 # Define a user lookup function that can be accessed by different identifiers
 @mcp.resource("users://email/{email}")
 @mcp.resource("users://name/{name}")
