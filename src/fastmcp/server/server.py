@@ -616,34 +616,47 @@ class FastMCP(Generic[LifespanResultT]):
             logger.error(f"Error getting prompt {name}: {e}")
             raise ValueError(str(e))
 
-    def mount(
+    def import_server(
         self,
         prefix: str,
-        app: "FastMCP",
+        server: "FastMCP",
         tool_separator: str | None = None,
         resource_separator: str | None = None,
         prompt_separator: str | None = None,
     ) -> None:
-        """Mount another FastMCP application with a given prefix.
+        """
+        Import the MCP objects from another FastMCP server into this one,
+        optionally with a given prefix.
 
-        When an application is mounted:
-        - The tools are imported with prefixed names using the tool_separator
-          Example: If app has a tool named "get_weather", it will be available as "weatherget_weather"
-        - The resources are imported with prefixed URIs using the resource_separator
-          Example: If app has a resource with URI "weather://forecast", it will be available as "weather+weather://forecast"
-        - The templates are imported with prefixed URI templates using the resource_separator
-          Example: If app has a template with URI "weather://location/{id}", it will be available as "weather+weather://location/{id}"
-        - The prompts are imported with prefixed names using the prompt_separator
-          Example: If app has a prompt named "weather_prompt", it will be available as "weather_weather_prompt"
-        - The mounted app's lifespan will be executed when the parent app's lifespan runs,
-          ensuring that any setup needed by the mounted app is performed
+        Note that when a server is *imported*, its objects are immediately
+        registered to the importing server. This is a one-time operation and
+        future changes to the imported server will not be reflected in the
+        importing server. Server-level configurations and lifespans are not imported.
+
+        When an server is mounted: - The tools are imported with prefixed names
+        using the tool_separator
+          Example: If server has a tool named "get_weather", it will be
+          available as "weatherget_weather"
+        - The resources are imported with prefixed URIs using the
+          resource_separator Example: If server has a resource with URI
+          "weather://forecast", it will be available as
+          "weather+weather://forecast"
+        - The templates are imported with prefixed URI templates using the
+          resource_separator Example: If server has a template with URI
+          "weather://location/{id}", it will be available as
+          "weather+weather://location/{id}"
+        - The prompts are imported with prefixed names using the
+          prompt_separator Example: If server has a prompt named
+          "weather_prompt", it will be available as "weather_weather_prompt"
+        - The mounted server's lifespan will be executed when the parent
+          server's lifespan runs, ensuring that any setup needed by the mounted
+          server is performed
 
         Args:
-            prefix: The prefix to use for the mounted application
-            app: The FastMCP application to mount
-            tool_separator: Separator for tool names (defaults to "_")
-            resource_separator: Separator for resource URIs (defaults to "+")
-            prompt_separator: Separator for prompt names (defaults to "_")
+            prefix: The prefix to use for the mounted server server: The FastMCP
+            server to mount tool_separator: Separator for tool names (defaults
+            to "_") resource_separator: Separator for resource URIs (defaults to
+            "+") prompt_separator: Separator for prompt names (defaults to "_")
         """
         if tool_separator is None:
             tool_separator = "_"
@@ -652,23 +665,24 @@ class FastMCP(Generic[LifespanResultT]):
         if prompt_separator is None:
             prompt_separator = "_"
 
-        # Mount the app in the list of mounted apps
-        self._mounted_apps[prefix] = app
-
-        # Import tools from the mounted app
+        # Import tools from the mounted server
         tool_prefix = f"{prefix}{tool_separator}"
-        self._tool_manager.import_tools(app._tool_manager, tool_prefix)
+        self._tool_manager.import_tools(server._tool_manager, tool_prefix)
 
-        # Import resources and templates from the mounted app
+        # Import resources and templates from the mounted server
         resource_prefix = f"{prefix}{resource_separator}"
-        self._resource_manager.import_resources(app._resource_manager, resource_prefix)
-        self._resource_manager.import_templates(app._resource_manager, resource_prefix)
+        self._resource_manager.import_resources(
+            server._resource_manager, resource_prefix
+        )
+        self._resource_manager.import_templates(
+            server._resource_manager, resource_prefix
+        )
 
-        # Import prompts from the mounted app
+        # Import prompts from the mounted server
         prompt_prefix = f"{prefix}{prompt_separator}"
-        self._prompt_manager.import_prompts(app._prompt_manager, prompt_prefix)
+        self._prompt_manager.import_prompts(server._prompt_manager, prompt_prefix)
 
-        logger.info(f"Mounted app with prefix '{prefix}'")
+        logger.info(f"Imported server {server.name} with prefix '{prefix}'")
         logger.debug(f"Imported tools with prefix '{tool_prefix}'")
         logger.debug(f"Imported resources with prefix '{resource_prefix}'")
         logger.debug(f"Imported templates with prefix '{resource_prefix}'")

@@ -87,7 +87,7 @@ def mounted_resources_server():
         return {"id": id, "source": "subapp"}
 
     # Mount the sub-app to the main server with a prefix
-    main_server.mount("sub", sub_app)
+    main_server.import_server("sub", sub_app)
 
     # Add a resource to the main server
     @main_server.resource(uri="main://data", description="Main resource")

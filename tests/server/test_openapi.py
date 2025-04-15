@@ -694,7 +694,7 @@ class TestMountFastMCP:
         """Test mounting an OpenAPI server."""
         mcp = FastMCP("MainApp")
 
-        mcp.mount("fastapi", fastmcp_openapi_server)
+        mcp.import_server("fastapi", fastmcp_openapi_server)
 
         # Check that resources are available with prefixed URIs
         resources = await mcp._mcp_list_resources()

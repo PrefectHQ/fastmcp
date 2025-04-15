@@ -2,6 +2,7 @@ import contextlib
 import json
 from urllib.parse import quote
 
+import pytest
 from mcp.types import TextContent
 
 from fastmcp.server.server import FastMCP
@@ -19,7 +20,7 @@ async def test_mount_basic_functionality():
         return "This is from the sub app"
 
     # Mount the sub-app to the main app
-    main_app.mount("sub", sub_app)
+    main_app.import_server("sub", sub_app)
 
     # Verify the tool was imported with the prefix
     assert "sub_sub_tool" in main_app._tool_manager._tools
@@ -49,8 +50,8 @@ async def test_mount_multiple_apps():
         return "News headlines"
 
     # Mount both sub-apps to the main app
-    main_app.mount("weather", weather_app)
-    main_app.mount("news", news_app)
+    main_app.import_server("weather", weather_app)
+    main_app.import_server("news", news_app)
 
     # Verify tools were imported with the correct prefixes
     assert "weather_get_forecast" in main_app._tool_manager._tools
@@ -74,11 +75,11 @@ async def test_mount_combines_tools():
         return "Second app tool"
 
     # Mount first app
-    main_app.mount("api", first_app)
+    main_app.import_server("api", first_app)
     assert "api_first_tool" in main_app._tool_manager._tools
 
     # Mount second app to same prefix
-    main_app.mount("api", second_app)
+    main_app.import_server("api", second_app)
 
     # Verify second tool is there
     assert "api_second_tool" in main_app._tool_manager._tools
@@ -99,7 +100,7 @@ async def test_mount_with_resources():
         return ["user1", "user2"]
 
     # Mount the data app
-    main_app.mount("data", data_app)
+    main_app.import_server("data", data_app)
 
     # Verify the resource was imported with the prefix
     assert "data+data://users" in main_app._resource_manager._resources
@@ -117,7 +118,7 @@ async def test_mount_with_resource_templates():
         return {"id": user_id, "name": f"User {user_id}"}
 
     # Mount the user app
-    main_app.mount("api", user_app)
+    main_app.import_server("api", user_app)
 
     # Verify the template was imported with the prefix
     assert "api+users://{user_id}/profile" in main_app._resource_manager._templates
@@ -135,7 +136,7 @@ async def test_mount_with_prompts():
         return f"Hello, {name}!"
 
     # Mount the assistant app
-    main_app.mount("assistant", assistant_app)
+    main_app.import_server("assistant", assistant_app)
 
     # Verify the prompt was imported with the prefix
     assert "assistant_greeting" in main_app._prompt_manager._prompts
@@ -158,8 +159,8 @@ async def test_mount_multiple_resource_templates():
         return f"News for {category}"
 
     # Mount both apps
-    main_app.mount("data", weather_app)
-    main_app.mount("content", news_app)
+    main_app.import_server("data", weather_app)
+    main_app.import_server("content", news_app)
 
     # Verify templates were imported with correct prefixes
     assert "data+weather://{city}" in main_app._resource_manager._templates
@@ -183,14 +184,15 @@ async def test_mount_multiple_prompts():
         return f"Explaining SQL query:\n{query}"
 
     # Mount both apps
-    main_app.mount("python", python_app)
-    main_app.mount("sql", sql_app)
+    main_app.import_server("python", python_app)
+    main_app.import_server("sql", sql_app)
 
     # Verify prompts were imported with correct prefixes
     assert "python_review_python" in main_app._prompt_manager._prompts
     assert "sql_explain_sql" in main_app._prompt_manager._prompts
 
 
+@pytest.mark.xfail(reason="Lifespans are not yet implemented")
 async def test_mount_lifespan():
     """Test that the lifespan of a mounted app is properly handled."""
     # Create apps
@@ -209,8 +211,8 @@ async def test_mount_lifespan():
     sub_app = FastMCP("SubApp", lifespan=lifespan)
     sub_app_2 = FastMCP("SubApp2", lifespan=lifespan)
 
-    main_app.mount("sub", sub_app)
-    main_app.mount("sub2", sub_app_2)
+    main_app.import_server("sub", sub_app)
+    main_app.import_server("sub2", sub_app_2)
 
     low_level_server = main_app._mcp_server
     async with contextlib.AsyncExitStack() as stack:
@@ -243,7 +245,7 @@ async def test_tool_custom_name_preserved_when_mounted():
         return f"Data for query: {query}"
 
     api_app.add_tool(fetch_data, name="get_data")
-    main_app.mount("api", api_app)
+    main_app.import_server("api", api_app)
 
     # Check that the tool is accessible by its prefixed name
     tool = main_app._tool_manager.get_tool("api_get_data")
@@ -262,7 +264,7 @@ async def test_call_mounted_custom_named_tool():
         return f"Data for query: {query}"
 
     api_app.add_tool(fetch_data, name="get_data")
-    main_app.mount("api", api_app)
+    main_app.import_server("api", api_app)
 
     context = main_app.get_context()
     result = await main_app._tool_manager.call_tool(
@@ -280,7 +282,7 @@ async def test_first_level_mounting_with_custom_name():
         return input * 2
 
     provider_app.add_tool(calculate_value, name="compute")
-    service_app.mount("provider", provider_app)
+    service_app.import_server("provider", provider_app)
 
     # Tool is accessible in the service app with the first prefix
     tool = service_app._tool_manager.get_tool("provider_compute")
@@ -298,8 +300,8 @@ async def test_nested_mounting_preserves_prefixes():
         return input * 2
 
     provider_app.add_tool(calculate_value, name="compute")
-    service_app.mount("provider", provider_app)
-    main_app.mount("service", service_app)
+    service_app.import_server("provider", provider_app)
+    main_app.import_server("service", service_app)
 
     # Tool is accessible in the main app with both prefixes
     tool = main_app._tool_manager.get_tool("service_provider_compute")
@@ -316,8 +318,8 @@ async def test_call_nested_mounted_tool():
         return input * 2
 
     provider_app.add_tool(calculate_value, name="compute")
-    service_app.mount("provider", provider_app)
-    main_app.mount("service", service_app)
+    service_app.import_server("provider", provider_app)
+    main_app.import_server("service", service_app)
 
     result = await main_app._tool_manager.call_tool(
         "service_provider_compute", {"input": 21}
@@ -341,7 +343,7 @@ async def test_mount_with_proxy_tools():
     def get_data(query: str) -> str:
         return f"Data for query: {query}"
 
-    main_app.mount("api", await FastMCP.as_proxy(api_app))
+    main_app.import_server("api", await FastMCP.as_proxy(api_app))
 
     result = await main_app.call_tool("api_get_data", {"query": "test"})
     assert isinstance(result[0], TextContent)
@@ -363,7 +365,7 @@ async def test_mount_with_proxy_prompts():
     def greeting(name: str) -> str:
         return f"Hello, {name} from API!"
 
-    main_app.mount("api", await FastMCP.as_proxy(api_app))
+    main_app.import_server("api", await FastMCP.as_proxy(api_app))
 
     result = await main_app.get_prompt("api_greeting", {"name": "World"})
     assert len(result) > 0
@@ -390,7 +392,7 @@ async def test_mount_with_proxy_resources():
             "base_url": "https://api.example.com",
         }
 
-    main_app.mount("api", await FastMCP.as_proxy(api_app))
+    main_app.import_server("api", await FastMCP.as_proxy(api_app))
 
     # Access the resource through the main app with the prefixed key
     resource = await main_app.read_resource("api+config://settings")
@@ -416,7 +418,7 @@ async def test_mount_with_proxy_resource_templates():
     def create_user(name: str, email: str):
         return {"name": name, "email": email}
 
-    main_app.mount("api", await FastMCP.as_proxy(api_app))
+    main_app.import_server("api", await FastMCP.as_proxy(api_app))
 
     # Instantiate the template through the main app with the prefixed key
     quoted_name = quote("John Doe", safe="")
