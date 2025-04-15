@@ -1,4 +1,5 @@
 from typing import Any, cast
+from urllib.parse import quote
 
 import mcp.types
 from mcp.types import BlobResourceContents, TextResourceContents
@@ -104,8 +105,14 @@ class ProxyTemplate(ResourceTemplate):
         )
 
     async def create_resource(self, uri: str, params: dict[str, Any]) -> ProxyResource:
+        # dont use the provided uri, because it may not be the same as the
+        # uri_template on the remote server.
+        # quote params to ensure they are valid for the uri_template
+        parameterized_uri = self.uri_template.format(
+            **{k: quote(v, safe="") for k, v in params.items()}
+        )
         async with self._client:
-            result = await self._client.read_resource(uri)
+            result = await self._client.read_resource(parameterized_uri)
 
         if isinstance(result[0], TextResourceContents):
             value = result[0].text
@@ -116,7 +123,7 @@ class ProxyTemplate(ResourceTemplate):
 
         return ProxyResource(
             client=self._client,
-            uri=uri,
+            uri=parameterized_uri,
             name=self.name,
             description=self.description,
             mime_type=result[0].mimeType,

@@ -374,3 +374,11 @@ class TestMatchUriTemplate:
         uri_template = "prefix+test://{x}/test/{y}"
         result = match_uri_template(uri=uri, uri_template=uri_template)
         assert result == expected_params
+
+    def test_quoted_params(self):
+        uri_template = "user://{name}/{email}"
+        quoted_name = quote("John Doe", safe="")
+        quoted_email = quote("john@example.com", safe="")
+        uri = f"user://{quoted_name}/{quoted_email}"
+        result = match_uri_template(uri=uri, uri_template=uri_template)
+        assert result == {"name": "John Doe", "email": "john@example.com"}
