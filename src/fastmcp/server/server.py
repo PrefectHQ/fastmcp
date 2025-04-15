@@ -362,14 +362,14 @@ class FastMCP(Generic[LifespanResultT]):
 
         return decorator
 
-    def add_resource(self, resource: Resource) -> None:
+    def add_resource(self, resource: Resource, key: str | None = None) -> None:
         """Add a resource to the server.
 
         Args:
             resource: A Resource instance to add
         """
 
-        self._resource_manager.add_resource(resource)
+        self._resource_manager.add_resource(resource, key=key)
 
     def add_resource_fn(
         self,

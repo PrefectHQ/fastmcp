@@ -1,6 +1,5 @@
 """Resource manager functionality."""
 
-import copy
 import inspect
 from collections.abc import Callable
 from typing import Any
@@ -109,34 +108,35 @@ class ResourceManager:
         )
         return self.add_resource(resource)
 
-    def add_resource(self, resource: Resource) -> Resource:
+    def add_resource(self, resource: Resource, key: str | None = None) -> Resource:
         """Add a resource to the manager.
 
         Args:
             resource: A Resource instance to add
+            key: Optional URI to use as the storage key (if different from resource.uri)
         """
-        uri_str = str(resource.uri)
+        storage_key = key or str(resource.uri)
         logger.debug(
             "Adding resource",
             extra={
-                "uri": uri_str,
+                "uri": resource.uri,
+                "storage_key": storage_key,
                 "type": type(resource).__name__,
                 "resource_name": resource.name,
             },
         )
-        existing = self._resources.get(uri_str)
+        existing = self._resources.get(storage_key)
         if existing:
             if self.duplicate_behavior == "warn":
-                logger.warning(f"Resource already exists: {uri_str}")
-                self._resources[uri_str] = resource
+                logger.warning(f"Resource already exists: {storage_key}")
+                self._resources[storage_key] = resource
             elif self.duplicate_behavior == "replace":
-                self._resources[uri_str] = resource
+                self._resources[storage_key] = resource
             elif self.duplicate_behavior == "error":
-                raise ValueError(f"Resource already exists: {uri_str}")
+                raise ValueError(f"Resource already exists: {storage_key}")
             elif self.duplicate_behavior == "ignore":
                 return existing
-        else:
-            self._resources[uri_str] = resource
+        self._resources[storage_key] = resource
         return resource
 
     def add_template_from_fn(
@@ -160,38 +160,42 @@ class ResourceManager:
         )
         return self.add_template(template)
 
-    def add_template(self, template: ResourceTemplate) -> ResourceTemplate:
+    def add_template(
+        self, template: ResourceTemplate, key: str | None = None
+    ) -> ResourceTemplate:
         """Add a template to the manager.
 
         Args:
             template: A ResourceTemplate instance to add
+            key: Optional URI template to use as the storage key (if different from template.uri_template)
 
         Returns:
             The added template. If a template with the same URI already exists,
             returns the existing template.
         """
         uri_template_str = str(template.uri_template)
+        storage_key = key or uri_template_str
         logger.debug(
-            "Adding resource",
+            "Adding template",
             extra={
-                "uri": uri_template_str,
+                "uri_template": uri_template_str,
+                "storage_key": storage_key,
                 "type": type(template).__name__,
-                "resource_name": template.name,
+                "template_name": template.name,
             },
         )
-        existing = self._templates.get(uri_template_str)
+        existing = self._templates.get(storage_key)
         if existing:
             if self.duplicate_behavior == "warn":
-                logger.warning(f"Resource already exists: {uri_template_str}")
-                self._templates[uri_template_str] = template
+                logger.warning(f"Template already exists: {storage_key}")
+                self._templates[storage_key] = template
             elif self.duplicate_behavior == "replace":
-                self._templates[uri_template_str] = template
+                self._templates[storage_key] = template
             elif self.duplicate_behavior == "error":
-                raise ValueError(f"Resource already exists: {uri_template_str}")
+                raise ValueError(f"Template already exists: {storage_key}")
             elif self.duplicate_behavior == "ignore":
                 return existing
-        else:
-            self._templates[uri_template_str] = template
+        self._templates[storage_key] = template
         return template
 
     async def get_resource(self, uri: AnyUrl | str) -> Resource | None:
@@ -213,10 +217,18 @@ class ResourceManager:
 
         raise ResourceError(f"Unknown resource: {uri}")
 
+    def get_resources(self) -> dict[str, Resource]:
+        """Get all registered resources, keyed by URI."""
+        return self._resources
+
     def list_resources(self) -> list[Resource]:
         """List all registered resources."""
         logger.debug("Listing resources", extra={"count": len(self._resources)})
         return list(self._resources.values())
+
+    def get_templates(self) -> dict[str, ResourceTemplate]:
+        """Get all registered templates, keyed by URI template."""
+        return self._templates
 
     def list_templates(self) -> list[ResourceTemplate]:
         """List all registered templates."""
@@ -240,14 +252,9 @@ class ResourceManager:
                    If None, the original URI is used.
         """
         for uri, resource in manager._resources.items():
-            # Create prefixed URI and copy the resource with the new URI
+            # Create prefixed URI and import the resource with the new URI as the storage key
             prefixed_uri = f"{prefix}{uri}" if prefix else uri
-
-            new_resource = copy.copy(resource)
-            new_resource.uri = AnyUrl(prefixed_uri)
-
-            # Store directly in resources dictionary
-            self.add_resource(new_resource)
+            self.add_resource(resource, key=prefixed_uri)
             logger.debug(f'Imported resource "{uri}" as "{prefixed_uri}"')
 
     def import_templates(
@@ -267,16 +274,11 @@ class ResourceManager:
                    If None, the original URI template is used.
         """
         for uri_template, template in manager._templates.items():
-            # Create prefixed URI template and copy the template with the new URI template
+            # Create prefixed URI template and import the template with the new URI as the storage key
             prefixed_uri_template = (
                 f"{prefix}{uri_template}" if prefix else uri_template
             )
-
-            new_template = copy.copy(template)
-            new_template.uri_template = prefixed_uri_template
-
-            # Store directly in templates dictionary
-            self.add_template(new_template)
+            self.add_template(template, key=prefixed_uri_template)
             logger.debug(
                 f'Imported template "{uri_template}" as "{prefixed_uri_template}"'
             )

@@ -168,7 +168,7 @@ class TestResourceManager:
         manager.add_template(template)
         manager.add_template(template)
 
-        assert "Resource already exists" in caplog.text
+        assert "Template already exists" in caplog.text
         # Should have the template
         assert len(manager.list_templates()) == 1
 
@@ -187,7 +187,7 @@ class TestResourceManager:
 
         manager.add_template(template)
 
-        with pytest.raises(ValueError, match="Resource already exists"):
+        with pytest.raises(ValueError, match="Template already exists"):
             manager.add_template(template)
 
     def test_replace_duplicate_templates(self):
