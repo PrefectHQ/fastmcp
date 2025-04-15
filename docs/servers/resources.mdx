@@ -297,7 +297,6 @@ You can configure how the FastMCP server handles attempts to register multiple r
 
 ```python
 from fastmcp import FastMCP
-from fastmcp.settings import DuplicateBehavior
 
 mcp = FastMCP(
     name="ResourceServer",
@@ -308,14 +307,14 @@ mcp = FastMCP(
 def get_config_v1(): return {"version": 1}
 
 # This registration attempt will raise a ValueError because
-# "data://config" is already registered and the behavior is ERROR.
+# "data://config" is already registered and the behavior is "error".
 # @mcp.resource("data://config")
 # def get_config_v2(): return {"version": 2}
 ```
 
-The `DuplicateBehavior` enum options are:
+The duplicate behavior options are:
 
--   `WARN` (default): Logs a warning, and the new resource/template replaces the old one.
--   `ERROR`: Raises a `ValueError`, preventing the duplicate registration.
--   `REPLACE`: Silently replaces the existing resource/template with the new one.
--   `IGNORE`: Keeps the original resource/template and ignores the new registration attempt.
+-   `"warn"` (default): Logs a warning, and the new resource/template replaces the old one.
+-   `"error"`: Raises a `ValueError`, preventing the duplicate registration.
+-   `"replace"`: Silently replaces the existing resource/template with the new one.
+-   `"ignore"`: Keeps the original resource/template and ignores the new registration attempt.
