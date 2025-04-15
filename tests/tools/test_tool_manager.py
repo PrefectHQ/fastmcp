@@ -5,7 +5,6 @@ import pytest
 from pydantic import BaseModel
 
 from fastmcp.exceptions import ToolError
-from fastmcp.settings import DuplicateBehavior
 from fastmcp.tools import ToolManager
 from fastmcp.tools.tool import Tool
 
@@ -88,15 +87,17 @@ class TestAddTools:
 
     def test_warn_on_duplicate_tools(self, caplog):
         """Test warning on duplicate tools."""
+        manager = ToolManager(duplicate_behavior="warn")
 
-        def f(x: int) -> int:
+        def test_fn(x: int) -> int:
             return x
 
-        manager = ToolManager(duplicate_behavior=DuplicateBehavior.WARN)
-        manager.add_tool_from_fn(f)
-        with caplog.at_level(logging.WARNING):
-            manager.add_tool_from_fn(f)
-            assert "Tool already exists: f" in caplog.text
+        manager.add_tool_from_fn(test_fn, name="test_tool")
+        manager.add_tool_from_fn(test_fn, name="test_tool")
+
+        assert "Tool already exists: test_tool" in caplog.text
+        # Should have the tool
+        assert manager.get_tool("test_tool") is not None
 
     def test_disable_warn_on_duplicate_tools(self, caplog):
         """Test disabling warning on duplicate tools."""
@@ -104,7 +105,7 @@ class TestAddTools:
         def f(x: int) -> int:
             return x
 
-        manager = ToolManager(duplicate_behavior=DuplicateBehavior.IGNORE)
+        manager = ToolManager(duplicate_behavior="ignore")
         manager.add_tool_from_fn(f)
         with caplog.at_level(logging.WARNING):
             manager.add_tool_from_fn(f)
@@ -112,18 +113,19 @@ class TestAddTools:
 
     def test_error_on_duplicate_tools(self):
         """Test error on duplicate tools."""
+        manager = ToolManager(duplicate_behavior="error")
 
-        def f(x: int) -> int:
+        def test_fn(x: int) -> int:
             return x
 
-        manager = ToolManager(duplicate_behavior=DuplicateBehavior.ERROR)
-        manager.add_tool_from_fn(f)
+        manager.add_tool_from_fn(test_fn, name="test_tool")
 
-        with pytest.raises(ValueError, match="Tool already exists"):
-            manager.add_tool_from_fn(f)
+        with pytest.raises(ValueError, match="Tool already exists: test_tool"):
+            manager.add_tool_from_fn(test_fn, name="test_tool")
 
     def test_replace_duplicate_tools(self):
         """Test replacing duplicate tools."""
+        manager = ToolManager(duplicate_behavior="replace")
 
         def original_fn(x: int) -> int:
             return x
@@ -131,20 +133,33 @@ class TestAddTools:
         def replacement_fn(x: int) -> int:
             return x * 2
 
-        manager = ToolManager(duplicate_behavior=DuplicateBehavior.REPLACE)
         manager.add_tool_from_fn(original_fn, name="test_tool")
-        replacement_tool = manager.add_tool_from_fn(replacement_fn, name="test_tool")
+        manager.add_tool_from_fn(replacement_fn, name="test_tool")
 
-        # Should have replaced the first tool with the second
-        stored_tool = manager.get_tool("test_tool")
-        assert stored_tool is not None
-        assert stored_tool == replacement_tool
+        # Should have replaced with the new function
+        tool = manager.get_tool("test_tool")
+        assert tool is not None
+        assert tool.fn.__name__ == "replacement_fn"
 
-        # The name should still be the same
-        assert stored_tool.name == "test_tool"
+    def test_ignore_duplicate_tools(self):
+        """Test ignoring duplicate tools."""
+        manager = ToolManager(duplicate_behavior="ignore")
 
-        # But the function is different
-        assert stored_tool.fn.__name__ == "replacement_fn"
+        def original_fn(x: int) -> int:
+            return x
+
+        def replacement_fn(x: int) -> int:
+            return x * 2
+
+        manager.add_tool_from_fn(original_fn, name="test_tool")
+        result = manager.add_tool_from_fn(replacement_fn, name="test_tool")
+
+        # Should keep the original
+        tool = manager.get_tool("test_tool")
+        assert tool is not None
+        assert tool.fn.__name__ == "original_fn"
+        # Result should be the original tool
+        assert result.fn.__name__ == "original_fn"
 
 
 class TestToolTags:
@@ -630,7 +645,7 @@ class TestCustomToolNames:
         assert target_manager.get_tool("prefix/source_fn") is None
 
     def test_replace_tool_keeps_original_name(self):
-        """Test that replacing a tool with DuplicateBehavior.REPLACE keeps the original name."""
+        """Test that replacing a tool with "replace" keeps the original name."""
 
         def original_fn(x: int) -> int:
             return x
@@ -639,7 +654,7 @@ class TestCustomToolNames:
             return x * 2
 
         # Create a manager with REPLACE behavior
-        manager = ToolManager(duplicate_behavior=DuplicateBehavior.REPLACE)
+        manager = ToolManager(duplicate_behavior="replace")
 
         # Add the original tool
         original_tool = manager.add_tool_from_fn(original_fn, name="test_tool")

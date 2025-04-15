@@ -11,7 +11,6 @@ from fastmcp.resources import (
     ResourceManager,
     ResourceTemplate,
 )
-from fastmcp.settings import DuplicateBehavior
 
 
 @pytest.fixture
@@ -61,19 +60,24 @@ class TestResourceManager:
 
     def test_warn_on_duplicate_resources(self, temp_file: Path, caplog):
         """Test warning on duplicate resources."""
-        manager = ResourceManager(duplicate_behavior=DuplicateBehavior.WARN)
+        manager = ResourceManager(duplicate_behavior="warn")
+
         resource = FileResource(
             uri=FileUrl(f"file://{temp_file}"),
-            name="test",
+            name="test_resource",
             path=temp_file,
         )
+
         manager.add_resource(resource)
         manager.add_resource(resource)
+
         assert "Resource already exists" in caplog.text
+        # Should have the resource
+        assert len(manager.list_resources()) == 1
 
     def test_disable_warn_on_duplicate_resources(self, temp_file: Path, caplog):
         """Test disabling warning on duplicate resources."""
-        manager = ResourceManager(duplicate_behavior=DuplicateBehavior.IGNORE)
+        manager = ResourceManager(duplicate_behavior="ignore")
         resource = FileResource(
             uri=FileUrl(f"file://{temp_file}"),
             name="test",
@@ -85,12 +89,14 @@ class TestResourceManager:
 
     def test_error_on_duplicate_resources(self, temp_file: Path):
         """Test error on duplicate resources."""
-        manager = ResourceManager(duplicate_behavior=DuplicateBehavior.ERROR)
+        manager = ResourceManager(duplicate_behavior="error")
+
         resource = FileResource(
             uri=FileUrl(f"file://{temp_file}"),
-            name="test",
+            name="test_resource",
             path=temp_file,
         )
+
         manager.add_resource(resource)
 
         with pytest.raises(ValueError, match="Resource already exists"):
@@ -98,27 +104,153 @@ class TestResourceManager:
 
     def test_replace_duplicate_resources(self, temp_file: Path):
         """Test replacing duplicate resources."""
-        manager = ResourceManager(duplicate_behavior=DuplicateBehavior.REPLACE)
+        manager = ResourceManager(duplicate_behavior="replace")
 
         resource1 = FileResource(
             uri=FileUrl(f"file://{temp_file}"),
-            name="test1",
+            name="original",
             path=temp_file,
         )
 
         resource2 = FileResource(
             uri=FileUrl(f"file://{temp_file}"),
-            name="test2",  # Different name
+            name="replacement",
             path=temp_file,
         )
 
         manager.add_resource(resource1)
         manager.add_resource(resource2)
 
-        # Should have replaced the first resource with the second
+        # Should have replaced with the new resource
         resources = manager.list_resources()
         assert len(resources) == 1
-        assert resources[0].name == "test2"
+        assert resources[0].name == "replacement"
+
+    def test_ignore_duplicate_resources(self, temp_file: Path):
+        """Test ignoring duplicate resources."""
+        manager = ResourceManager(duplicate_behavior="ignore")
+
+        resource1 = FileResource(
+            uri=FileUrl(f"file://{temp_file}"),
+            name="original",
+            path=temp_file,
+        )
+
+        resource2 = FileResource(
+            uri=FileUrl(f"file://{temp_file}"),
+            name="replacement",
+            path=temp_file,
+        )
+
+        manager.add_resource(resource1)
+        result = manager.add_resource(resource2)
+
+        # Should keep the original
+        resources = manager.list_resources()
+        assert len(resources) == 1
+        assert resources[0].name == "original"
+        # Result should be the original resource
+        assert result.name == "original"
+
+    def test_warn_on_duplicate_templates(self, caplog):
+        """Test warning on duplicate templates."""
+        manager = ResourceManager(duplicate_behavior="warn")
+
+        def template_fn(id: str) -> str:
+            return f"Template {id}"
+
+        template = ResourceTemplate.from_function(
+            fn=template_fn,
+            uri_template="test://{id}",
+            name="test_template",
+        )
+
+        manager.add_template(template)
+        manager.add_template(template)
+
+        assert "Resource already exists" in caplog.text
+        # Should have the template
+        assert len(manager.list_templates()) == 1
+
+    def test_error_on_duplicate_templates(self):
+        """Test error on duplicate templates."""
+        manager = ResourceManager(duplicate_behavior="error")
+
+        def template_fn(id: str) -> str:
+            return f"Template {id}"
+
+        template = ResourceTemplate.from_function(
+            fn=template_fn,
+            uri_template="test://{id}",
+            name="test_template",
+        )
+
+        manager.add_template(template)
+
+        with pytest.raises(ValueError, match="Resource already exists"):
+            manager.add_template(template)
+
+    def test_replace_duplicate_templates(self):
+        """Test replacing duplicate templates."""
+        manager = ResourceManager(duplicate_behavior="replace")
+
+        def original_fn(id: str) -> str:
+            return f"Original {id}"
+
+        def replacement_fn(id: str) -> str:
+            return f"Replacement {id}"
+
+        template1 = ResourceTemplate.from_function(
+            fn=original_fn,
+            uri_template="test://{id}",
+            name="original",
+        )
+
+        template2 = ResourceTemplate.from_function(
+            fn=replacement_fn,
+            uri_template="test://{id}",
+            name="replacement",
+        )
+
+        manager.add_template(template1)
+        manager.add_template(template2)
+
+        # Should have replaced with the new template
+        templates = manager.list_templates()
+        assert len(templates) == 1
+        assert templates[0].name == "replacement"
+
+    def test_ignore_duplicate_templates(self):
+        """Test ignoring duplicate templates."""
+        manager = ResourceManager(duplicate_behavior="ignore")
+
+        def original_fn(id: str) -> str:
+            return f"Original {id}"
+
+        def replacement_fn(id: str) -> str:
+            return f"Replacement {id}"
+
+        template1 = ResourceTemplate.from_function(
+            fn=original_fn,
+            uri_template="test://{id}",
+            name="original",
+        )
+
+        template2 = ResourceTemplate.from_function(
+            fn=replacement_fn,
+            uri_template="test://{id}",
+            name="replacement",
+        )
+
+        manager.add_template(template1)
+        result = manager.add_template(template2)
+
+        # Should keep the original
+        templates = manager.list_templates()
+        assert len(templates) == 1
+        assert templates[0].name == "original"
+        # Result should be the original template
+        assert result.name == "original"
 
     @pytest.mark.anyio
     async def test_get_resource(self, temp_file: Path):

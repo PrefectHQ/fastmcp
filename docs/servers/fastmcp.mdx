@@ -308,18 +308,17 @@ Server behavior, like transport settings (host, port for SSE) and how duplicate 
 
 ```python
 from fastmcp import FastMCP
-from fastmcp.settings import DuplicateBehavior
 
 # Configure during initialization
 mcp = FastMCP(
     name="ConfiguredServer",
     port=8080, # Directly maps to ServerSettings
-    on_duplicate_tools=DuplicateBehavior.ERROR # Set duplicate handling
+    on_duplicate_tools="error" # Set duplicate handling
 )
 
 # Settings are accessible via mcp.settings
 print(mcp.settings.port) # Output: 8080
-print(mcp.settings.on_duplicate_tools) # Output: DuplicateBehavior.ERROR
+print(mcp.settings.on_duplicate_tools) # Output: "error"
 ```
 
 ### Key Configuration Options
@@ -332,4 +331,3 @@ print(mcp.settings.on_duplicate_tools) # Output: DuplicateBehavior.ERROR
 - **`on_duplicate_prompts`**: How to handle duplicate prompt registrations
 
 All of these can be configured directly as parameters when creating the `FastMCP` instance.
-

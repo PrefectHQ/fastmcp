@@ -205,25 +205,24 @@ You can configure how the FastMCP server handles attempts to register multiple p
 
 ```python
 from fastmcp import FastMCP
-from fastmcp.settings import DuplicateBehavior
 
 mcp = FastMCP(
     name="PromptServer",
-    on_duplicate_prompts=DuplicateBehavior.ERROR  # Raise an error if a prompt name is duplicated
+    on_duplicate_prompts="error"  # Raise an error if a prompt name is duplicated
 )
 
 @mcp.prompt()
 def greeting(): return "Hello, how can I help you today?"
 
 # This registration attempt will raise a ValueError because
-# "greeting" is already registered and the behavior is ERROR.
+# "greeting" is already registered and the behavior is "error".
 # @mcp.prompt()
 # def greeting(): return "Hi there! What can I do for you?"
 ```
 
-The `DuplicateBehavior` enum options are:
+The duplicate behavior options are:
 
--   `WARN` (default): Logs a warning, and the new prompt replaces the old one.
--   `ERROR`: Raises a `ValueError`, preventing the duplicate registration.
--   `REPLACE`: Silently replaces the existing prompt with the new one.
--   `IGNORE`: Keeps the original prompt and ignores the new registration attempt. 
+-   `"warn"` (default): Logs a warning, and the new prompt replaces the old one.
+-   `"error"`: Raises a `ValueError`, preventing the duplicate registration.
+-   `"replace"`: Silently replaces the existing prompt with the new one.
+-   `"ignore"`: Keeps the original prompt and ignores the new registration attempt. 

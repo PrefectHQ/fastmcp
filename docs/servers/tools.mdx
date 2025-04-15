@@ -310,26 +310,25 @@ You can control how the FastMCP server behaves if you try to register multiple t
 
 ```python
 from fastmcp import FastMCP
-from fastmcp.settings import DuplicateBehavior
 
 mcp = FastMCP(
     name="StrictServer",
     # Configure behavior for duplicate tool names
-    on_duplicate_tools=DuplicateBehavior.ERROR
+    on_duplicate_tools="error"
 )
 
 @mcp.tool()
 def my_tool(): return "Version 1"
 
 # This will now raise a ValueError because 'my_tool' already exists
-# and on_duplicate_tools is set to ERROR.
+# and on_duplicate_tools is set to "error".
 # @mcp.tool()
 # def my_tool(): return "Version 2"
 ```
 
-The `DuplicateBehavior` enum options are:
+The duplicate behavior options are:
 
--   `WARN` (default): Logs a warning and the new tool replaces the old one.
--   `ERROR`: Raises a `ValueError`, preventing the duplicate registration.
--   `REPLACE`: Silently replaces the existing tool with the new one.
--   `IGNORE`: Keeps the original tool and ignores the new registration attempt.
+-   `"warn"` (default): Logs a warning and the new tool replaces the old one.
+-   `"error"`: Raises a `ValueError`, preventing the duplicate registration.
+-   `"replace"`: Silently replaces the existing tool with the new one.
+-   `"ignore"`: Keeps the original tool and ignores the new registration attempt.

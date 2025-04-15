@@ -1,6 +1,5 @@
 from __future__ import annotations as _annotations
 
-from enum import Enum
 from typing import TYPE_CHECKING, Literal
 
 from pydantic import Field
@@ -11,12 +10,7 @@ if TYPE_CHECKING:
 
 LOG_LEVEL = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 
-
-class DuplicateBehavior(Enum):
-    WARN = "warn"
-    ERROR = "error"
-    REPLACE = "replace"
-    IGNORE = "ignore"
+DuplicateBehavior = Literal["warn", "error", "replace", "ignore"]
 
 
 class Settings(BaseSettings):
@@ -55,13 +49,13 @@ class ServerSettings(BaseSettings):
     debug: bool = False
 
     # resource settings
-    on_duplicate_resources: DuplicateBehavior = DuplicateBehavior.WARN
+    on_duplicate_resources: DuplicateBehavior = "warn"
 
     # tool settings
-    on_duplicate_tools: DuplicateBehavior = DuplicateBehavior.WARN
+    on_duplicate_tools: DuplicateBehavior = "warn"
 
     # prompt settings
-    on_duplicate_prompts: DuplicateBehavior = DuplicateBehavior.WARN
+    on_duplicate_prompts: DuplicateBehavior = "warn"
 
     dependencies: list[str] = Field(
         default_factory=list,
