@@ -696,13 +696,17 @@ class TestCustomResourceKeys:
     def test_add_resource_with_custom_key(self, temp_file: Path):
         """Test adding a resource with a custom key different from its URI."""
         manager = ResourceManager()
-        original_uri = f"file://{temp_file}"
+        original_uri = "data://test/resource"
         custom_key = "custom://resource/key"
 
-        resource = FileResource(
-            uri=FileUrl(original_uri),
+        # Create a function resource instead of file resource to avoid path issues
+        async def get_data():
+            return "Test data"
+
+        resource = FunctionResource(
+            uri=AnyUrl(original_uri),
             name="test_resource",
-            path=temp_file,
+            fn=get_data,
         )
 
         manager.add_resource(resource, key=custom_key)
@@ -743,13 +747,17 @@ class TestCustomResourceKeys:
     async def test_get_resource_with_custom_key(self, temp_file: Path):
         """Test that get_resource works with resources added with custom keys."""
         manager = ResourceManager()
-        original_uri = f"file://{temp_file}"
+        original_uri = "data://test/resource"
         custom_key = "custom://resource/path"
 
-        resource = FileResource(
-            uri=FileUrl(original_uri),
+        # Create a function resource instead of file resource to avoid path issues
+        async def get_data():
+            return "Test data"
+
+        resource = FunctionResource(
+            uri=AnyUrl(original_uri),
             name="test_resource",
-            path=temp_file,
+            fn=get_data,
         )
 
         manager.add_resource(resource, key=custom_key)
