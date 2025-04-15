@@ -225,7 +225,12 @@ class FastMCP(Generic[LifespanResultT]):
         converted_result = _convert_to_content(result)
         return converted_result
 
+    def get_resources(self) -> dict[str, Resource]:
+        """Get all registered resources, indexed by registered key."""
+        return self._resource_manager.get_resources()
+
     def list_resources(self) -> list[Resource]:
+        """List all registered resources."""
         return self._resource_manager.list_resources()
 
     async def _mcp_list_resources(self) -> list[MCPResource]:
@@ -236,16 +241,7 @@ class FastMCP(Generic[LifespanResultT]):
         See `list_resources` for a more ergonomic way to list resources.
         """
 
-        resources = self.list_resources()
-        return [
-            MCPResource(
-                uri=resource.uri,
-                name=resource.name or "",
-                description=resource.description,
-                mimeType=resource.mime_type,
-            )
-            for resource in resources
-        ]
+        return self._resource_manager.list_mcp_resources()
 
     def list_resource_templates(self) -> list[ResourceTemplate]:
         return self._resource_manager.list_templates()
@@ -258,15 +254,7 @@ class FastMCP(Generic[LifespanResultT]):
         See `list_resource_templates` for a more ergonomic way to list resource
         templates.
         """
-        templates = self.list_resource_templates()
-        return [
-            MCPResourceTemplate(
-                uriTemplate=template.uri_template,
-                name=template.name,
-                description=template.description,
-            )
-            for template in templates
-        ]
+        return self._resource_manager.list_mcp_resource_templates()
 
     async def read_resource(self, uri: AnyUrl | str) -> str | bytes:
         """Read a resource by URI."""

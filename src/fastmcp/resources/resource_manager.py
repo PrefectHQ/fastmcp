@@ -7,8 +7,13 @@ from typing import Any
 from pydantic import AnyUrl
 
 from fastmcp.exceptions import ResourceError
-from fastmcp.resources import FunctionResource, Resource
-from fastmcp.resources.template import ResourceTemplate, match_uri_template
+from fastmcp.resources import FunctionResource
+from fastmcp.resources.resource import MCPResource, Resource
+from fastmcp.resources.template import (
+    MCPResourceTemplate,
+    ResourceTemplate,
+    match_uri_template,
+)
 from fastmcp.settings import DuplicateBehavior
 from fastmcp.utilities.logging import get_logger
 
@@ -198,8 +203,12 @@ class ResourceManager:
         self._templates[storage_key] = template
         return template
 
-    async def get_resource(self, uri: AnyUrl | str) -> Resource | None:
-        """Get resource by URI, checking concrete resources first, then templates."""
+    async def get_resource(self, uri: AnyUrl | str) -> Resource:
+        """Get resource by URI, checking concrete resources first, then templates.
+
+        Raises:
+            ResourceError: If no resource or template matching the URI is found.
+        """
         uri_str = str(uri)
         logger.debug("Getting resource", extra={"uri": uri_str})
 
@@ -216,7 +225,7 @@ class ResourceManager:
                 except Exception as e:
                     raise ValueError(f"Error creating resource from template: {e}")
 
-        raise ResourceError(f"Unknown resource: {uri}")
+        raise ResourceError(f"Unknown resource: {uri_str}")
 
     def get_resources(self) -> dict[str, Resource]:
         """Get all registered resources, keyed by URI."""
@@ -226,6 +235,21 @@ class ResourceManager:
         """List all registered resources."""
         logger.debug("Listing resources", extra={"count": len(self._resources)})
         return list(self._resources.values())
+
+    def list_mcp_resources(self) -> list[MCPResource]:
+        """List all registered resources in the format expected by the low-level MCP server."""
+
+        return [
+            resource.to_mcp_resource(uri=key)
+            for key, resource in self._resources.items()
+        ]
+
+    def list_mcp_resource_templates(self) -> list[MCPResourceTemplate]:
+        """List all registered resource templates in the format expected by the low-level MCP server."""
+        return [
+            template.to_mcp_template(uriTemplate=key)
+            for key, template in self._templates.items()
+        ]
 
     def get_templates(self) -> dict[str, ResourceTemplate]:
         """Get all registered templates, keyed by URI template."""

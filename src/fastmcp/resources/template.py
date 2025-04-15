@@ -7,12 +7,14 @@ import re
 from collections.abc import Callable
 from typing import Annotated, Any
 
+from mcp.types import ResourceTemplate as MCPResourceTemplate
 from pydantic import (
     AnyUrl,
     BaseModel,
     BeforeValidator,
     Field,
     TypeAdapter,
+    field_validator,
     validate_call,
 )
 
@@ -20,22 +22,23 @@ from fastmcp.resources.types import FunctionResource, Resource
 from fastmcp.utilities.types import _convert_set_defaults
 
 
-def match_uri_template(uri: str, uri_template: str) -> dict[str, Any] | None:
-    """Match a URI against a template and extract parameters.
+def build_regex(template: str) -> re.Pattern:
+    # Escape all non-brace characters, then restore {var} placeholders
+    parts = re.split(r"(\{[^}]+\})", template)
+    pattern = ""
+    for part in parts:
+        if part.startswith("{") and part.endswith("}"):
+            name = part[1:-1]
+            pattern += f"(?P<{name}>[^/]+)"
+        else:
+            pattern += re.escape(part)
+    return re.compile(f"^{pattern}$")
 
-    Args:
-        uri: The URI to match against the template
-        uri_template: The URI template to match against
 
-    Returns:
-        A dictionary of extracted parameters if there's a match, or None if no match
-    """
-    # Convert template to regex pattern
-    pattern = uri_template.replace("{", "(?P<").replace("}", ">[^/]+)")
-    match = re.match(f"^{pattern}$", uri)
-    if match:
-        return match.groupdict()
-    return None
+def match_uri_template(uri: str, uri_template: str) -> dict[str, str] | None:
+    regex = build_regex(uri_template)
+    match = regex.match(uri)
+    return match.groupdict() if match else None
 
 
 class MyModel(BaseModel):
@@ -61,6 +64,14 @@ class ResourceTemplate(BaseModel):
     parameters: dict[str, Any] = Field(
         description="JSON schema for function parameters"
     )
+
+    @field_validator("mime_type", mode="before")
+    @classmethod
+    def set_default_mime_type(cls, mime_type: str | None) -> str:
+        """Set default MIME type if not provided."""
+        if mime_type:
+            return mime_type
+        return "text/plain"
 
     @classmethod
     def from_function(
@@ -144,3 +155,13 @@ class ResourceTemplate(BaseModel):
         if not isinstance(other, ResourceTemplate):
             return False
         return self.model_dump() == other.model_dump()
+
+    def to_mcp_template(self, **overrides: Any) -> MCPResourceTemplate:
+        """Convert the resource template to an MCPResourceTemplate."""
+        kwargs = {
+            "uriTemplate": self.uri_template,
+            "name": self.name,
+            "description": self.description,
+            "mimeType": self.mime_type,
+        }
+        return MCPResourceTemplate(**kwargs | overrides)

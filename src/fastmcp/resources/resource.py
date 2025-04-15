@@ -1,8 +1,9 @@
 """Base classes and interfaces for FastMCP resources."""
 
 import abc
-from typing import Annotated
+from typing import Annotated, Any
 
+from mcp.types import Resource as MCPResource
 from pydantic import (
     AnyUrl,
     BaseModel,
@@ -38,6 +39,14 @@ class Resource(BaseModel, abc.ABC):
         pattern=r"^[a-zA-Z0-9]+/[a-zA-Z0-9\-+.]+$",
     )
 
+    @field_validator("mime_type", mode="before")
+    @classmethod
+    def set_default_mime_type(cls, mime_type: str | None) -> str:
+        """Set default MIME type if not provided."""
+        if mime_type:
+            return mime_type
+        return "text/plain"
+
     @field_validator("name", mode="before")
     @classmethod
     def set_default_name(cls, name: str | None, info: ValidationInfo) -> str:
@@ -57,3 +66,13 @@ class Resource(BaseModel, abc.ABC):
         if not isinstance(other, Resource):
             return False
         return self.model_dump() == other.model_dump()
+
+    def to_mcp_resource(self, **overrides: Any) -> MCPResource:
+        """Convert the resource to an MCPResource."""
+        kwargs = {
+            "uri": self.uri,
+            "name": self.name,
+            "description": self.description,
+            "mimeType": self.mime_type,
+        }
+        return MCPResource(**kwargs | overrides)
