@@ -115,27 +115,28 @@ class ResourceManager:
         Args:
             resource: A Resource instance to add
         """
+        uri_str = str(resource.uri)
         logger.debug(
             "Adding resource",
             extra={
-                "uri": resource.uri,
+                "uri": uri_str,
                 "type": type(resource).__name__,
                 "resource_name": resource.name,
             },
         )
-        existing = self._resources.get(str(resource.uri))
+        existing = self._resources.get(uri_str)
         if existing:
             if self.duplicate_behavior == "warn":
-                logger.warning(f"Resource already exists: {resource.uri}")
-                self._resources[str(resource.uri)] = resource
+                logger.warning(f"Resource already exists: {uri_str}")
+                self._resources[uri_str] = resource
             elif self.duplicate_behavior == "replace":
-                self._resources[str(resource.uri)] = resource
+                self._resources[uri_str] = resource
             elif self.duplicate_behavior == "error":
-                raise ValueError(f"Resource already exists: {resource.uri}")
+                raise ValueError(f"Resource already exists: {uri_str}")
             elif self.duplicate_behavior == "ignore":
                 return existing
         else:
-            self._resources[str(resource.uri)] = resource
+            self._resources[uri_str] = resource
         return resource
 
     def add_template_from_fn(
@@ -169,27 +170,28 @@ class ResourceManager:
             The added template. If a template with the same URI already exists,
             returns the existing template.
         """
+        uri_template_str = str(template.uri_template)
         logger.debug(
             "Adding resource",
             extra={
-                "uri": template.uri_template,
+                "uri": uri_template_str,
                 "type": type(template).__name__,
                 "resource_name": template.name,
             },
         )
-        existing = self._templates.get(str(template.uri_template))
+        existing = self._templates.get(uri_template_str)
         if existing:
             if self.duplicate_behavior == "warn":
-                logger.warning(f"Resource already exists: {template.uri_template}")
-                self._templates[str(template.uri_template)] = template
+                logger.warning(f"Resource already exists: {uri_template_str}")
+                self._templates[uri_template_str] = template
             elif self.duplicate_behavior == "replace":
-                self._templates[str(template.uri_template)] = template
+                self._templates[uri_template_str] = template
             elif self.duplicate_behavior == "error":
-                raise ValueError(f"Resource already exists: {template.uri_template}")
+                raise ValueError(f"Resource already exists: {uri_template_str}")
             elif self.duplicate_behavior == "ignore":
                 return existing
         else:
-            self._templates[template.uri_template] = template
+            self._templates[uri_template_str] = template
         return template
 
     async def get_resource(self, uri: AnyUrl | str) -> Resource | None:
