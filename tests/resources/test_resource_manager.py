@@ -688,3 +688,164 @@ class TestImports:
         # Verify both resource types were imported with prefixes
         assert "test+data://resource" in target_manager._resources
         assert "test+data://template/{id}" in target_manager._templates
+
+
+class TestCustomResourceKeys:
+    """Test adding resources and templates with custom keys."""
+
+    def test_add_resource_with_custom_key(self, temp_file: Path):
+        """Test adding a resource with a custom key different from its URI."""
+        manager = ResourceManager()
+        original_uri = f"file://{temp_file}"
+        custom_key = "custom://resource/key"
+
+        resource = FileResource(
+            uri=FileUrl(original_uri),
+            name="test_resource",
+            path=temp_file,
+        )
+
+        manager.add_resource(resource, key=custom_key)
+
+        # Resource should be accessible via custom key
+        assert custom_key in manager._resources
+        # But not via its original URI
+        assert original_uri not in manager._resources
+        # The resource's internal URI remains unchanged
+        assert str(manager._resources[custom_key].uri) == original_uri
+
+    def test_add_template_with_custom_key(self):
+        """Test adding a template with a custom key different from its URI template."""
+        manager = ResourceManager()
+
+        def template_fn(id: str) -> str:
+            return f"Template {id}"
+
+        original_uri_template = "test://{id}"
+        custom_key = "custom://{id}/template"
+
+        template = ResourceTemplate.from_function(
+            fn=template_fn,
+            uri_template=original_uri_template,
+            name="test_template",
+        )
+
+        manager.add_template(template, key=custom_key)
+
+        # Template should be accessible via custom key
+        assert custom_key in manager._templates
+        # But not via its original URI template
+        assert original_uri_template not in manager._templates
+        # The template's internal URI template remains unchanged
+        assert str(manager._templates[custom_key].uri_template) == original_uri_template
+
+    @pytest.mark.anyio
+    async def test_get_resource_with_custom_key(self, temp_file: Path):
+        """Test that get_resource works with resources added with custom keys."""
+        manager = ResourceManager()
+        original_uri = f"file://{temp_file}"
+        custom_key = "custom://resource/path"
+
+        resource = FileResource(
+            uri=FileUrl(original_uri),
+            name="test_resource",
+            path=temp_file,
+        )
+
+        manager.add_resource(resource, key=custom_key)
+
+        # Should be retrievable by the custom key
+        retrieved = await manager.get_resource(custom_key)
+        assert retrieved is not None
+        assert str(retrieved.uri) == original_uri
+
+        # Should NOT be retrievable by the original URI
+        with pytest.raises(ResourceError, match="Unknown resource"):
+            await manager.get_resource(original_uri)
+
+    @pytest.mark.anyio
+    async def test_get_resource_from_template_with_custom_key(self):
+        """Test that templates with custom keys can create resources."""
+        manager = ResourceManager()
+
+        def greet(name: str) -> str:
+            return f"Hello, {name}!"
+
+        original_template = "greet://{name}"
+        custom_key = "custom://greet/{name}"
+
+        template = ResourceTemplate.from_function(
+            fn=greet,
+            uri_template=original_template,
+            name="custom_greeter",
+        )
+
+        manager.add_template(template, key=custom_key)
+
+        # Using a URI that matches the custom key pattern
+        resource = await manager.get_resource("custom://greet/world")
+        assert isinstance(resource, FunctionResource)
+        content = await resource.read()
+        assert content == "Hello, world!"
+
+        # Shouldn't work with the original template pattern
+        with pytest.raises(ResourceError, match="Unknown resource"):
+            await manager.get_resource("greet://world")
+
+    def test_import_resources_with_custom_keys(self):
+        """Test that import_resources properly uses custom keys."""
+        source_manager = ResourceManager()
+        target_manager = ResourceManager()
+
+        # Add a resource to source manager
+        async def resource_fn():
+            return "Resource data"
+
+        original_uri = "data://original"
+        resource = FunctionResource(
+            uri=AnyUrl(original_uri),
+            name="original_resource",
+            fn=resource_fn,
+        )
+        source_manager.add_resource(resource)
+
+        # Import with prefix which creates a new key
+        prefix = "imported+"
+        target_manager.import_resources(source_manager, prefix)
+
+        # Resource should be in target manager with prefixed URI as key
+        prefixed_uri = f"{prefix}{original_uri}"
+        assert prefixed_uri in target_manager._resources
+
+        # The resource's internal URI should remain unchanged
+        stored_resource = target_manager._resources[prefixed_uri]
+        assert str(stored_resource.uri) == original_uri
+
+    def test_import_templates_with_custom_keys(self):
+        """Test that import_templates properly uses custom keys."""
+        source_manager = ResourceManager()
+        target_manager = ResourceManager()
+
+        # Add a template to source manager
+        async def template_fn(id: str):
+            return f"Template {id}"
+
+        original_template = "template://{id}"
+        template = ResourceTemplate.from_function(
+            fn=template_fn,
+            uri_template=original_template,
+            name="original_template",
+        )
+        source_manager.add_template(template)
+
+        # Import with prefix which creates a new key
+        prefix = "imported+"
+        target_manager.import_templates(source_manager, prefix)
+
+        # Template should be in target manager with prefixed URI template as key
+        prefixed_template = f"{prefix}{original_template}"
+        assert prefixed_template in target_manager._templates
+
+        # The template's internal URI template should remain unchanged
+        stored_template = target_manager._templates[prefixed_template]
+        assert str(stored_template.uri_template) == original_template

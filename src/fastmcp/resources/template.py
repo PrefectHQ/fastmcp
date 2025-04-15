@@ -7,10 +7,35 @@ import re
 from collections.abc import Callable
 from typing import Annotated, Any
 
-from pydantic import BaseModel, BeforeValidator, Field, TypeAdapter, validate_call
+from pydantic import (
+    AnyUrl,
+    BaseModel,
+    BeforeValidator,
+    Field,
+    TypeAdapter,
+    validate_call,
+)
 
 from fastmcp.resources.types import FunctionResource, Resource
 from fastmcp.utilities.types import _convert_set_defaults
+
+
+def match_uri_template(uri: str, uri_template: str) -> dict[str, Any] | None:
+    """Match a URI against a template and extract parameters.
+
+    Args:
+        uri: The URI to match against the template
+        uri_template: The URI template to match against
+
+    Returns:
+        A dictionary of extracted parameters if there's a match, or None if no match
+    """
+    # Convert template to regex pattern
+    pattern = uri_template.replace("{", "(?P<").replace("}", ">[^/]+)")
+    match = re.match(f"^{pattern}$", uri)
+    if match:
+        return match.groupdict()
+    return None
 
 
 class MyModel(BaseModel):
@@ -94,12 +119,7 @@ class ResourceTemplate(BaseModel):
 
     def matches(self, uri: str) -> dict[str, Any] | None:
         """Check if URI matches template and extract parameters."""
-        # Convert template to regex pattern
-        pattern = self.uri_template.replace("{", "(?P<").replace("}", ">[^/]+)")
-        match = re.match(f"^{pattern}$", uri)
-        if match:
-            return match.groupdict()
-        return None
+        return match_uri_template(uri, self.uri_template)
 
     async def create_resource(self, uri: str, params: dict[str, Any]) -> Resource:
         """Create a resource from the template with the given parameters."""
@@ -110,7 +130,7 @@ class ResourceTemplate(BaseModel):
                 result = await result
 
             return FunctionResource(
-                uri=uri,  # type: ignore
+                uri=AnyUrl(uri),  # Explicitly convert to AnyUrl
                 name=self.name,
                 description=self.description,
                 mime_type=self.mime_type,

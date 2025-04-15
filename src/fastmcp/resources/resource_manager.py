@@ -8,7 +8,7 @@ from pydantic import AnyUrl
 
 from fastmcp.exceptions import ResourceError
 from fastmcp.resources import FunctionResource, Resource
-from fastmcp.resources.template import ResourceTemplate
+from fastmcp.resources.template import ResourceTemplate, match_uri_template
 from fastmcp.settings import DuplicateBehavior
 from fastmcp.utilities.logging import get_logger
 
@@ -207,9 +207,10 @@ class ResourceManager:
         if resource := self._resources.get(uri_str):
             return resource
 
-        # Then check templates
-        for template in self._templates.values():
-            if params := template.matches(uri_str):
+        # Then check templates - use the utility function to match against storage keys
+        for storage_key, template in self._templates.items():
+            # Try to match against the storage key (which might be a custom key)
+            if params := match_uri_template(uri_str, storage_key):
                 try:
                     return await template.create_resource(uri_str, params)
                 except Exception as e:
