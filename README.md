@@ -93,7 +93,7 @@ FastMCP provides a high-level, Pythonic interface for building and interacting w
 
 ## Why FastMCP?
 
-The MCP protocol is powerful but implementing it involves a lot of boilerplate - server setup, protocol handlers, content types, error management. FastMCP handles all the complex protocol details and server management, so you can focus on building great tools. It’s designed to be high-level and Pythonic; in most cases, decorating a function is all you need.
+The MCP protocol is powerful but implementing it involves a lot of boilerplate - server setup, protocol handlers, content types, error management. FastMCP handles all the complex protocol details and server management, so you can focus on building great tools. It's designed to be high-level and Pythonic; in most cases, decorating a function is all you need.
 
 FastMCP aims to be:
 
@@ -552,13 +552,13 @@ proxy_client = Client(
 )
 
 # Create a proxy server that connects to the client and exposes its capabilities
-proxy = FastMCP.as_proxy(proxy_client, name="Stdio-to-SSE Proxy")
+proxy = FastMCP.from_client(proxy_client, name="Stdio-to-SSE Proxy")
 
 if __name__ == "__main__":
     proxy.run(transport='sse')
 ```
 
-`FastMCP.as_proxy` is an `async` classmethod. It connects to the target, discovers its capabilities, and dynamically builds the proxy server instance.
+`FastMCP.from_client` is a class method that connects to the target, discovers its capabilities, and dynamically builds the proxy server instance.
 
 
 
