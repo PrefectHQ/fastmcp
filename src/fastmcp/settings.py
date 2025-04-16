@@ -42,7 +42,7 @@ class ServerSettings(BaseSettings):
     log_level: LOG_LEVEL = Field(default_factory=lambda: Settings().log_level)
 
     # HTTP settings
-    host: str = "0.0.0.0"
+    host: str = "127.0.0.1"
     port: int = 8000
     sse_path: str = "/sse"
     message_path: str = "/messages/"
