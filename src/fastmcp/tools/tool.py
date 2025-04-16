@@ -1,15 +1,18 @@
-from __future__ import annotations as _annotations
+from __future__ import annotations
 
 import inspect
+import json
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Annotated, Any
 
+import pydantic_core
+from mcp.types import EmbeddedResource, ImageContent, TextContent
 from mcp.types import Tool as MCPTool
 from pydantic import BaseModel, BeforeValidator, Field
 
 from fastmcp.exceptions import ToolError
 from fastmcp.utilities.func_metadata import FuncMetadata, func_metadata
-from fastmcp.utilities.types import _convert_set_defaults
+from fastmcp.utilities.types import Image, _convert_set_defaults
 
 if TYPE_CHECKING:
     from mcp.server.session import ServerSessionT
@@ -58,7 +61,7 @@ class Tool(BaseModel):
         is_async = inspect.iscoroutinefunction(fn)
 
         if context_kwarg is None:
-            if isinstance(fn, classmethod):
+            if inspect.ismethod(fn) and hasattr(fn, "__func__"):
                 sig = inspect.signature(fn.__func__)
             else:
                 sig = inspect.signature(fn)
@@ -67,14 +70,16 @@ class Tool(BaseModel):
                     context_kwarg = param_name
                     break
 
+        # Use callable typing to ensure fn is treated as a callable despite being a classmethod
+        fn_callable: Callable[..., Any] = fn
         func_arg_metadata = func_metadata(
-            fn,
+            fn_callable,
             skip_names=[context_kwarg] if context_kwarg is not None else [],
         )
         parameters = func_arg_metadata.arg_model.model_json_schema()
 
         return cls(
-            fn=fn,
+            fn=fn_callable,
             name=func_name,
             description=func_doc,
             parameters=parameters,
@@ -88,10 +93,10 @@ class Tool(BaseModel):
         self,
         arguments: dict[str, Any],
         context: Context[ServerSessionT, LifespanContextT] | None = None,
-    ) -> Any:
+    ) -> list[TextContent | ImageContent | EmbeddedResource]:
         """Run the tool with arguments."""
         try:
-            return await self.fn_metadata.call_fn_with_arg_validation(
+            result = await self.fn_metadata.call_fn_with_arg_validation(
                 self.fn,
                 self.is_async,
                 arguments,
@@ -99,6 +104,7 @@ class Tool(BaseModel):
                 if self.context_kwarg is not None
                 else None,
             )
+            return _convert_to_content(result)
         except Exception as e:
             raise ToolError(f"Error executing tool {self.name}: {e}") from e
 
@@ -114,3 +120,48 @@ class Tool(BaseModel):
         if not isinstance(other, Tool):
             return False
         return self.model_dump() == other.model_dump()
+
+
+def _convert_to_content(
+    result: Any,
+    _process_as_single_item: bool = False,
+) -> list[TextContent | ImageContent | EmbeddedResource]:
+    """Convert a result to a sequence of content objects."""
+    if result is None:
+        return []
+
+    if isinstance(result, TextContent | ImageContent | EmbeddedResource):
+        return [result]
+
+    if isinstance(result, Image):
+        return [result.to_image_content()]
+
+    if isinstance(result, list | tuple) and not _process_as_single_item:
+        # if the result is a list, then it could either be a list of MCP types,
+        # or a "regular" list that the tool is returning, or a mix of both.
+        #
+        # so we extract all the MCP types / images and convert them as individual content elements,
+        # and aggregate the rest as a single content element
+
+        mcp_types = []
+        other_content = []
+
+        for item in result:
+            if isinstance(item, TextContent | ImageContent | EmbeddedResource | Image):
+                mcp_types.append(_convert_to_content(item)[0])
+            else:
+                other_content.append(item)
+        if other_content:
+            other_content = _convert_to_content(
+                other_content, _process_as_single_item=True
+            )
+
+        return other_content + mcp_types
+
+    if not isinstance(result, str):
+        try:
+            result = json.dumps(pydantic_core.to_jsonable_python(result))
+        except Exception:
+            result = str(result)
+
+    return [TextContent(type="text", text=result)]

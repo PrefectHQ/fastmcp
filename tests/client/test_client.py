@@ -67,36 +67,6 @@ def tagged_resources_server():
     return server
 
 
-@pytest.fixture
-def mounted_resources_server():
-    """Fixture that creates a FastMCP server with mounted resources."""
-    # Create the main server
-    main_server = FastMCP("MainServer")
-
-    # Create sub-app with its own resources
-    sub_app = FastMCP("SubAppServer")
-
-    # Add a resource to the sub-app
-    @sub_app.resource(uri="subapp://data", description="SubApp resource")
-    async def get_subapp_data():
-        return {"source": "subapp"}
-
-    # Add a template to the sub-app
-    @sub_app.resource(uri="subapp://{id}", description="SubApp template")
-    async def get_subapp_item(id: str):
-        return {"id": id, "source": "subapp"}
-
-    # Mount the sub-app to the main server with a prefix
-    main_server.import_server("sub", sub_app)
-
-    # Add a resource to the main server
-    @main_server.resource(uri="main://data", description="Main resource")
-    async def get_main_data():
-        return {"source": "main"}
-
-    return main_server
-
-
 async def test_list_tools(fastmcp_server):
     """Test listing tools with InMemoryClient."""
     client = Client(transport=FastMCPTransport(fastmcp_server))
@@ -296,61 +266,3 @@ async def test_tagged_template_functionality(tagged_resources_server):
         content_str = str(result[0])
         assert '"id": "123"' in content_str
         assert '"type": "template_data"' in content_str
-
-
-async def test_mounted_resources(mounted_resources_server):
-    """Test that resources from mounted apps are correctly prefixed."""
-    client = Client(transport=FastMCPTransport(mounted_resources_server))
-
-    async with client:
-        resources = await client.list_resources()
-
-        # Should have two resources (one from main, one from sub)
-        assert len(resources) == 2
-
-        # Find resources by URI
-        main_resource = next(
-            (r for r in resources if str(r.uri) == "main://data"), None
-        )
-        sub_resource = next(
-            (r for r in resources if str(r.uri) == "sub+subapp://data"), None
-        )
-
-        # Both resources should exist
-        assert main_resource is not None
-        assert sub_resource is not None
-
-        # Check descriptions
-        assert main_resource.description == "Main resource"
-        assert sub_resource.description == "SubApp resource"
-
-
-async def test_mounted_templates(mounted_resources_server):
-    """Test that templates from mounted apps are correctly prefixed."""
-    client = Client(transport=FastMCPTransport(mounted_resources_server))
-
-    async with client:
-        templates = await client.list_resource_templates()
-
-        # Should have one template (from sub)
-        assert len(templates) == 1
-
-        # Check the template
-        template = templates[0]
-        assert "sub+subapp://{id}" in template.uriTemplate
-        assert template.description == "SubApp template"
-
-
-async def test_mounted_template_functionality(mounted_resources_server):
-    """Test that templates from mounted apps function correctly."""
-    client = Client(transport=FastMCPTransport(mounted_resources_server))
-
-    async with client:
-        # Use the prefixed template
-        uri = cast(AnyUrl, "sub+subapp://123")
-        result = await client.read_resource(uri)
-        content_str = str(result[0])
-
-        # Check the content
-        assert '"id": "123"' in content_str
-        assert '"source": "subapp"' in content_str

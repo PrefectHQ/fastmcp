@@ -1,3 +1,4 @@
+import json
 import re
 
 import httpx
@@ -5,10 +6,12 @@ import pytest
 from dirty_equals import IsStr
 from fastapi import FastAPI, HTTPException
 from httpx import ASGITransport, AsyncClient
+from mcp.types import TextContent
 from pydantic import BaseModel, TypeAdapter
 from pydantic.networks import AnyUrl
 
 from fastmcp import FastMCP
+from fastmcp.client import Client
 from fastmcp.server.openapi import FastMCPOpenAPI
 
 
@@ -153,13 +156,19 @@ class TestTools:
         """
         The tool created by the OpenAPI server should be the same as the original
         """
-        tool_response = await fastmcp_openapi_server.call_tool(
+        tool_response = await fastmcp_openapi_server._mcp_call_tool(
             "create_user_users_post", {"name": "David", "active": False}
         )
-        assert tool_response == User(id=4, name="David", active=False)
+
+        # Convert TextContent to dict for comparison
+        assert isinstance(tool_response, list) and len(tool_response) == 1
+        assert isinstance(tool_response[0], TextContent)
+
+        response_data = json.loads(tool_response[0].text)
+        expected_user = User(id=4, name="David", active=False).model_dump()
+        assert response_data == expected_user
 
         # Check that the user was created via API
-
         response = await api_client.get("/users")
         assert len(response.json()) == 4
 
@@ -168,7 +177,7 @@ class TestTools:
             "resource://openapi/get_user_users__user_id__get/4"
         )
         user = user_response[0].content
-        assert user == tool_response.model_dump()
+        assert user == expected_user
 
     async def test_call_update_user_name_tool(
         self, fastmcp_openapi_server: FastMCPOpenAPI, api_client
@@ -176,21 +185,28 @@ class TestTools:
         """
         The tool created by the OpenAPI server should be the same as the original
         """
-        tool_response = await fastmcp_openapi_server.call_tool(
+        tool_response = await fastmcp_openapi_server._mcp_call_tool(
             "update_user_name_users__user_id__name_patch", {"user_id": 1, "name": "XYZ"}
         )
-        assert tool_response == dict(id=1, name="XYZ", active=True)
+
+        # Convert TextContent to dict for comparison
+        assert isinstance(tool_response, list) and len(tool_response) == 1
+        assert isinstance(tool_response[0], TextContent)
+
+        response_data = json.loads(tool_response[0].text)
+        expected_data = dict(id=1, name="XYZ", active=True)
+        assert response_data == expected_data
 
         # Check that the user was updated via API
         response = await api_client.get("/users")
-        assert dict(id=1, name="XYZ", active=True) in response.json()
+        assert expected_data in response.json()
 
         # Check that the user was updated via MCP
         user_response = await fastmcp_openapi_server._mcp_read_resource(
             "resource://openapi/get_user_users__user_id__get/1"
         )
         user = user_response[0].content
-        assert user == tool_response
+        assert user == expected_data
 
 
 class TestResources:
@@ -308,7 +324,9 @@ class TestTagTransfer:
     ):
         """Test that tags from OpenAPI routes are correctly transferred to Resources."""
         # Get internal resources directly
-        resources = fastmcp_openapi_server._resource_manager.list_resources()
+        resources = list(
+            fastmcp_openapi_server._resource_manager.get_resources().values()
+        )
 
         # Find the get_users resource
         get_users_resource = next(
@@ -327,7 +345,9 @@ class TestTagTransfer:
     ):
         """Test that tags from OpenAPI routes are correctly transferred to ResourceTemplates."""
         # Get internal resource templates directly
-        templates = fastmcp_openapi_server._resource_manager.list_templates()
+        templates = list(
+            fastmcp_openapi_server._resource_manager.get_templates().values()
+        )
 
         # Find the get_user template
         get_user_template = next(
@@ -346,7 +366,9 @@ class TestTagTransfer:
     ):
         """Test that tags are preserved when creating resources from templates."""
         # Get internal resource templates directly
-        templates = fastmcp_openapi_server._resource_manager.list_templates()
+        templates = list(
+            fastmcp_openapi_server._resource_manager.get_templates().values()
+        )
 
         # Find the get_user template
         get_user_template = next(
@@ -513,12 +535,17 @@ class TestOpenAPI30Compatibility:
 
     async def test_tool_execution(self, openapi_30_server):
         """Test executing a tool from an OpenAPI 3.0 server."""
-        tool_response = await openapi_30_server.call_tool(
-            "createProduct", {"name": "New Product", "price": 39.99}
-        )
-        assert tool_response["id"] == "p3"
-        assert tool_response["name"] == "New Product"
-        assert tool_response["price"] == 39.99
+        async with Client(openapi_30_server) as client:
+            result = await client.call_tool(
+                "createProduct", {"name": "New Product", "price": 39.99}
+            )
+            # Result should be a text content
+            assert len(result) == 1
+            assert isinstance(result[0], TextContent)
+            product = json.loads(result[0].text)
+            assert product["id"] == "p3"
+            assert product["name"] == "New Product"
+            assert product["price"] == 39.99
 
 
 class TestOpenAPI31Compatibility:
@@ -679,12 +706,17 @@ class TestOpenAPI31Compatibility:
 
     async def test_tool_execution(self, openapi_31_server):
         """Test executing a tool from an OpenAPI 3.1 server."""
-        tool_response = await openapi_31_server.call_tool(
-            "createOrder", {"customer": "Charlie", "items": ["item4", "item5"]}
-        )
-        assert tool_response["id"] == "o3"
-        assert tool_response["customer"] == "Charlie"
-        assert tool_response["items"] == ["item4", "item5"]
+        async with Client(openapi_31_server) as client:
+            result = await client.call_tool(
+                "createOrder", {"customer": "Charlie", "items": ["item4", "item5"]}
+            )
+            # Result should be a text content
+            assert len(result) == 1
+            assert isinstance(result[0], TextContent)
+            order = json.loads(result[0].text)
+            assert order["id"] == "o3"
+            assert order["customer"] == "Charlie"
+            assert order["items"] == ["item4", "item5"]
 
 
 class TestMountFastMCP:
@@ -694,7 +726,7 @@ class TestMountFastMCP:
         """Test mounting an OpenAPI server."""
         mcp = FastMCP("MainApp")
 
-        mcp.import_server("fastapi", fastmcp_openapi_server)
+        await mcp.import_server("fastapi", fastmcp_openapi_server)
 
         # Check that resources are available with prefixed URIs
         resources = await mcp._mcp_list_resources()

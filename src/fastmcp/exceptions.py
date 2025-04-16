@@ -23,3 +23,11 @@ class PromptError(FastMCPError):
 
 class InvalidSignature(Exception):
     """Invalid signature for use with FastMCP."""
+
+
+class ClientError(Exception):
+    """Error in client operations."""
+
+
+class NotFoundError(Exception):
+    """Object not found."""

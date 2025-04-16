@@ -2,10 +2,19 @@ from typing import Any, cast
 from urllib.parse import quote
 
 import mcp.types
-from mcp.types import BlobResourceContents, TextResourceContents
+from mcp.server.lowlevel.helper_types import ReadResourceContents
+from mcp.types import (
+    BlobResourceContents,
+    EmbeddedResource,
+    GetPromptResult,
+    ImageContent,
+    TextContent,
+    TextResourceContents,
+)
+from pydantic.networks import AnyUrl
 
-import fastmcp
 from fastmcp.client import Client
+from fastmcp.exceptions import NotFoundError
 from fastmcp.prompts import Message, Prompt
 from fastmcp.resources import Resource, ResourceTemplate
 from fastmcp.server.context import Context
@@ -152,79 +161,89 @@ class ProxyPrompt(Prompt):
     async def render(self, arguments: dict[str, Any]) -> list[Message]:
         async with self._client:
             result = await self._client.get_prompt(self.name, arguments)
-        return [Message(role=m.role, content=m.content) for m in result.messages]
+        return [Message(role=m.role, content=m.content) for m in result]
 
 
 class FastMCPProxy(FastMCP):
-    def __init__(self, _async_constructor: bool, **kwargs):
-        if not _async_constructor:
-            raise ValueError(
-                "FastMCPProxy() was initialied unexpectedly. Please use a constructor like `FastMCPProxy.from_client()` instead."
-            )
+    def __init__(self, client: "Client", **kwargs):
         super().__init__(**kwargs)
+        self.client = client
 
-    @classmethod
-    async def from_client(
-        cls,
-        client: "Client",
-        name: str | None = None,
-        **settings: fastmcp.settings.ServerSettings,
-    ) -> "FastMCPProxy":
-        """Create a FastMCP proxy server from a client.
+    async def get_tools(self) -> dict[str, Tool]:
+        tools = await super().get_tools()
 
-        This method creates a new FastMCP server instance that proxies requests to the provided client.
-        It discovers the client's tools, resources, prompts, and templates, and creates corresponding
-        components in the server that forward requests to the client.
+        async with self.client:
+            for tool in await self.client.list_tools():
+                tool_proxy = await ProxyTool.from_client(self.client, tool)
+                tools[tool_proxy.name] = tool_proxy
 
-        Args:
-            client: The client to proxy requests to
-            name: Optional name for the new FastMCP server (defaults to client name if available)
-            **settings: Additional settings for the FastMCP server
+        return tools
 
-        Returns:
-            A FastMCP server that proxies requests to the client
-        """
-        server = cls(name=name, **settings, _async_constructor=True)
+    async def get_resources(self) -> dict[str, Resource]:
+        resources = await super().get_resources()
 
-        async with client:
-            # Register proxies for client tools
-            tools = await client.list_tools()
-            for tool in tools:
-                tool_proxy = await ProxyTool.from_client(client, tool)
-                server._tool_manager._tools[tool_proxy.name] = tool_proxy
-                logger.debug(f"Created proxy for tool: {tool_proxy.name}")
+        async with self.client:
+            for resource in await self.client.list_resources():
+                resource_proxy = await ProxyResource.from_client(self.client, resource)
+                resources[str(resource_proxy.uri)] = resource_proxy
 
-            # Register proxies for client resources
-            resources = await client.list_resources()
-            for resource in resources:
-                resource_proxy = await ProxyResource.from_client(client, resource)
-                server._resource_manager._resources[str(resource_proxy.uri)] = (
-                    resource_proxy
-                )
-                logger.debug(f"Created proxy for resource: {resource_proxy.uri}")
+        return resources
 
-            # Register proxies for client resource templates
-            templates = await client.list_resource_templates()
-            for template in templates:
-                template_proxy = await ProxyTemplate.from_client(client, template)
-                server._resource_manager._templates[template_proxy.uri_template] = (
-                    template_proxy
-                )
-                logger.debug(
-                    f"Created proxy for template: {template_proxy.uri_template}"
-                )
+    async def get_resource_templates(self) -> dict[str, ResourceTemplate]:
+        templates = await super().get_resource_templates()
 
-            # Register proxies for client prompts
-            prompts = await client.list_prompts()
-            for prompt in prompts:
-                prompt_proxy = await ProxyPrompt.from_client(client, prompt)
-                server._prompt_manager._prompts[prompt_proxy.name] = prompt_proxy
-                logger.debug(f"Created proxy for prompt: {prompt_proxy.name}")
+        async with self.client:
+            for template in await self.client.list_resource_templates():
+                template_proxy = await ProxyTemplate.from_client(self.client, template)
+                templates[template_proxy.uri_template] = template_proxy
 
-            logger.info(f"Created server '{server.name}' proxying to client: {client}")
-            return server
+        return templates
 
-    @classmethod
-    async def from_server(cls, server: FastMCP, **settings: Any) -> "FastMCPProxy":
-        client = Client(transport=fastmcp.client.transports.FastMCPTransport(server))
-        return await cls.from_client(client, **settings)
+    async def get_prompts(self) -> dict[str, Prompt]:
+        prompts = await super().get_prompts()
+
+        async with self.client:
+            for prompt in await self.client.list_prompts():
+                prompt_proxy = await ProxyPrompt.from_client(self.client, prompt)
+                prompts[prompt_proxy.name] = prompt_proxy
+        return prompts
+
+    async def _mcp_call_tool(
+        self, key: str, arguments: dict[str, Any]
+    ) -> list[TextContent | ImageContent | EmbeddedResource]:
+        try:
+            result = await super()._mcp_call_tool(key, arguments)
+            return result
+        except NotFoundError:
+            async with self.client:
+                result = await self.client.call_tool(key, arguments)
+            return result
+
+    async def _mcp_read_resource(self, uri: AnyUrl | str) -> list[ReadResourceContents]:
+        try:
+            result = await super()._mcp_read_resource(uri)
+            return result
+        except NotFoundError:
+            async with self.client:
+                resource = await self.client.read_resource(uri)
+                if isinstance(resource[0], TextResourceContents):
+                    content = resource[0].text
+                elif isinstance(resource[0], BlobResourceContents):
+                    content = resource[0].blob
+                else:
+                    raise ValueError(f"Unsupported content type: {type(resource[0])}")
+
+            return [
+                ReadResourceContents(content=content, mime_type=resource[0].mimeType)
+            ]
+
+    async def _mcp_get_prompt(
+        self, name: str, arguments: dict[str, Any] | None = None
+    ) -> GetPromptResult:
+        try:
+            result = await super()._mcp_get_prompt(name, arguments)
+            return result
+        except NotFoundError:
+            async with self.client:
+                result = await self.client.get_prompt(name, arguments)
+            return GetPromptResult(messages=result)

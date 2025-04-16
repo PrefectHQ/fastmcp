@@ -90,7 +90,6 @@ class TestResourceValidation:
         )
         assert resource.mime_type == "application/json"
 
-    @pytest.mark.anyio
     async def test_resource_read_abstract(self):
         """Test that Resource.read() is abstract."""
 

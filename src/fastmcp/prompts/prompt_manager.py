@@ -3,8 +3,8 @@
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from fastmcp.exceptions import PromptError
-from fastmcp.prompts.prompt import MCPPrompt, Message, Prompt, PromptResult
+from fastmcp.exceptions import NotFoundError
+from fastmcp.prompts.prompt import Message, Prompt, PromptResult
 from fastmcp.settings import DuplicateBehavior
 from fastmcp.utilities.logging import get_logger
 
@@ -36,16 +36,6 @@ class PromptManager:
     def get_prompts(self) -> dict[str, Prompt]:
         """Get all registered prompts, indexed by registered key."""
         return self._prompts
-
-    def list_prompts(self) -> list[Prompt]:
-        """List all registered prompts."""
-        return list(self.get_prompts().values())
-
-    def list_mcp_prompts(self) -> list[MCPPrompt]:
-        """List all registered prompts in the format expected by the low-level MCP server."""
-        return [
-            prompt.to_mcp_prompt(name=key) for key, prompt in self.get_prompts().items()
-        ]
 
     def add_prompt_from_fn(
         self,
@@ -84,28 +74,6 @@ class PromptManager:
         """Render a prompt by name with arguments."""
         prompt = self.get_prompt(name)
         if not prompt:
-            raise PromptError(f"Unknown prompt: {name}")
+            raise NotFoundError(f"Unknown prompt: {name}")
 
         return await prompt.render(arguments)
-
-    def import_prompts(
-        self, manager: "PromptManager", prefix: str | None = None
-    ) -> None:
-        """
-        Import all prompts from another PromptManager with prefixed names.
-
-        Args:
-            manager: Another PromptManager instance to import prompts from
-            prefix: Prefix to add to prompt names. The resulting prompt key will
-                   be in the format "{prefix}{original_name}" if prefix is provided,
-                   otherwise the original name is used.
-                   For example, with prefix "weather/" and prompt "forecast_prompt",
-                   the imported prompt would be available as "weather/forecast_prompt"
-        """
-        for name, prompt in manager._prompts.items():
-            # Create prefixed key
-            key = f"{prefix}{name}" if prefix else name
-
-            # Store the prompt with the prefixed key
-            self.add_prompt(prompt, key=key)
-            logger.debug(f'Imported prompt "{prompt.name}" as "{key}"')
