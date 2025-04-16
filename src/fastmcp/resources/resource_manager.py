@@ -202,6 +202,16 @@ class ResourceManager:
         self._templates[storage_key] = template
         return template
 
+    def has_resource(self, uri: AnyUrl | str) -> bool:
+        """Check if a resource exists."""
+        uri_str = str(uri)
+        if uri_str in self._resources:
+            return True
+        for template_key in self._templates.keys():
+            if match_uri_template(uri_str, template_key):
+                return True
+        return False
+
     async def get_resource(self, uri: AnyUrl | str) -> Resource:
         """Get resource by URI, checking concrete resources first, then templates.
 

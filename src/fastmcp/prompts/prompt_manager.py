@@ -77,3 +77,7 @@ class PromptManager:
             raise NotFoundError(f"Unknown prompt: {name}")
 
         return await prompt.render(arguments)
+
+    def has_prompt(self, key: str) -> bool:
+        """Check if a prompt exists."""
+        return key in self._prompts

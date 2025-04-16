@@ -37,9 +37,15 @@ class ToolManager:
 
         self.duplicate_behavior = duplicate_behavior
 
-    def get_tool(self, key: str) -> Tool | None:
+    def has_tool(self, key: str) -> bool:
+        """Check if a tool exists."""
+        return key in self._tools
+
+    def get_tool(self, key: str) -> Tool:
         """Get tool by key."""
-        return self._tools.get(key)
+        if key in self._tools:
+            return self._tools[key]
+        raise NotFoundError(f"Unknown tool: {key}")
 
     def get_tools(self) -> dict[str, Tool]:
         """Get all registered tools, indexed by registered key."""

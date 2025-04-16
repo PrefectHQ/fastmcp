@@ -523,7 +523,8 @@ class TestCustomToolNames:
         assert tool.name == "custom_name"
         assert tool.fn.__name__ == "original_fn"
         # The tool should not be accessible via its original function name
-        assert manager.get_tool("original_fn") is None
+        with pytest.raises(NotFoundError, match="Unknown tool: original_fn"):
+            manager.get_tool("original_fn")
 
     def test_add_tool_object_with_custom_key(self):
         """Test adding a Tool object with a custom key using add_tool()."""
@@ -542,7 +543,8 @@ class TestCustomToolNames:
         # But the tool's .name is unchanged
         assert stored.name == "my_tool"
         # The tool is not accessible under its original name
-        assert manager.get_tool("my_tool") is None
+        with pytest.raises(NotFoundError, match="Unknown tool: my_tool"):
+            manager.get_tool("my_tool")
 
     async def test_call_tool_with_custom_name(self):
         """Test calling a tool added with a custom name."""

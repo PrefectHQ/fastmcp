@@ -63,7 +63,7 @@ class ServerSettings(BaseSettings):
     )
 
     # cache settings (for checking mounted servers)
-    cache_expiration_seconds: float = 5
+    cache_expiration_seconds: float = 0
 
 
 class ClientSettings(BaseSettings):

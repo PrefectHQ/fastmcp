@@ -221,12 +221,10 @@ async def test_call_imported_custom_named_tool():
     api_app.add_tool(fetch_data, name="get_data")
     await main_app.import_server("api", api_app)
 
-    context = main_app.get_context()
-    result = await main_app._tool_manager.call_tool(
-        "api_get_data", {"query": "test"}, context=context
-    )
-    assert isinstance(result[0], TextContent)
-    assert result[0].text == "Data for query: test"
+    async with Client(main_app) as client:
+        result = await client.call_tool("api_get_data", {"query": "test"})
+        assert isinstance(result[0], TextContent)
+        assert result[0].text == "Data for query: test"
 
 
 async def test_first_level_importing_with_custom_name():
@@ -382,6 +380,7 @@ async def test_import_with_proxy_resource_templates():
     await main_app.import_server("api", proxy_app)
 
     # Instantiate the template through the main app with the prefixed key
+
     quoted_name = quote("John Doe", safe="")
     quoted_email = quote("john@example.com", safe="")
     async with Client(main_app) as client:
