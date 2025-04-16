@@ -50,14 +50,14 @@
             {
                 "group": "Clients",
                 "pages": [
-                    "clients/overview",
+                    "clients/client",
                     "clients/transports"
                 ]
             },
             {
                 "group": "Patterns",
                 "pages": [
-                    "patterns/proxying",
+                    "patterns/proxy",
                     "patterns/composition",
                     "patterns/decorating-methods",
                     "patterns/openapi",

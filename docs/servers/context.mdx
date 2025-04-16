@@ -4,6 +4,7 @@ sidebarTitle: Context
 description: Access MCP capabilities like logging, progress, and resources within your tools.
 icon: rectangle-code
 ---
+import { VersionBadge } from '/snippets/version-badge.mdx'
 
 When defining FastMCP [tools](/servers/tools), your functions might need to interact with the underlying MCP session or access server capabilities. FastMCP provides the `Context` object for this purpose.
 
@@ -173,6 +174,8 @@ async def summarize_document(document_uri: str, ctx: Context) -> str:
 The returned content is typically accessed via `content_list[0].content` and can be text or binary data depending on the resource.
 
 ### LLM Sampling
+
+<VersionBadge version="2.0.0" />
 
 Request the client's LLM to generate text based on provided messages. This is useful when your tool needs to leverage the LLM's capabilities to process data or generate responses.
 

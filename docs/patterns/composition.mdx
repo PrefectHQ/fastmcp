@@ -4,6 +4,9 @@ sidebarTitle: Composition
 description: Combine multiple FastMCP servers into a single, larger application using mounting and importing.
 icon: puzzle-piece
 ---
+import { VersionBadge } from '/snippets/version-badge.mdx'
+
+<VersionBadge version="2.2.0" />
 
 As your MCP applications grow, you might want to organize your tools, resources, and prompts into logical modules or reuse existing server components. FastMCP supports composition through two methods:
 
@@ -17,13 +20,31 @@ As your MCP applications grow, you might want to organize your tools, resources,
 -   **Teamwork**: Different teams can work on separate FastMCP servers that are later combined.
 -   **Organization**: Keep related functionality grouped together logically.
 
-## Importing Subservers (Static Composition)
+### Importing vs Mounting
+
+The choice of importing or mounting depends on your use case and requirements. In general, importing is best for simpler cases because it copies the imported server's components into the main server, treating them as native integrations. Mounting is best for more complex cases where you need to delegate requests to the subserver at runtime.
+
+
+| Feature | Importing | Mounting |
+|---------|----------------|---------|
+| **Method** | `FastMCP.import_server()` | `FastMCP.mount()` |
+| **Composition Type** | One-time copy (static) | Live link (dynamic) |
+| **Updates** | Changes to subserver NOT reflected | Changes to subserver immediately reflected |
+| **Lifespan** | Not managed | Automatically managed |
+| **Synchronicity** | Async (must be awaited) | Sync |
+| **Best For** | Bundling finalized components | Modular runtime composition |
+
+### Proxy Servers
+
+FastMCP supports [MCP proxying](/patterns/proxy), which allows you to mirror a local or remote server in a local FastMCP instance. Proxies are fully compatible with both importing and mounting.
+
+
+## Importing (Static Composition)
 
 The `import_server()` method copies all components (tools, resources, templates, prompts) from one `FastMCP` instance (the *subserver*) into another (the *main server*). A `prefix` is added to avoid naming conflicts.
 
 ```python
 from fastmcp import FastMCP
-from typing import dict, list
 import asyncio
 
 # --- Define Subservers ---
@@ -114,7 +135,7 @@ await main_mcp.import_server(
 Be cautious when choosing separators. Some MCP clients (like Claude Desktop) might have restrictions on characters allowed in tool names (e.g., `/` might not be supported). The defaults (`_` for names, `+` for URIs) are generally safe.
 </Warning>
 
-## Mounting Subservers (Live Linking)
+## Mounting (Live Linking)
 
 The `mount()` method creates a **live link** between the `main_mcp` server and the `subserver`. Instead of copying components, requests for components matching the `prefix` are **delegated** to the `subserver` at runtime.
 
@@ -186,61 +207,19 @@ main_mcp.mount(
 )
 ```
 
-## Comparing Import and Mount
-
-| Feature | `import_server` | `mount` |
-|---------|----------------|---------|
-| **Synchronicity** | Async (must be awaited) | Sync |
-| **Composition Type** | One-time copy (static) | Live link (dynamic) |
-| **Updates** | Changes to subserver NOT reflected | Changes to subserver immediately reflected |
-| **Lifespan** | Not managed | Automatically managed |
-| **Best For** | Bundling finalized components | Modular runtime composition |
 
 ## Example: Modular Application
 
 Here's how a modular application might use `import_server`:
 
-```python
-# modules/text_utils.py
-from fastmcp import FastMCP
-from typing import list
-
-text_mcp = FastMCP(name="TextUtilities")
-
-@text_mcp.tool()
-def count_words(text: str) -> int:
-    """Counts words in a text."""
-    return len(text.split())
-
-@text_mcp.resource("resource://stopwords")
-def get_stopwords() -> list[str]:
-    """Return a list of common stopwords."""
-    return ["the", "a", "is", "in"]
-
-# ------------------------------
-# modules/data_api.py
-from fastmcp import FastMCP
-import random
-from typing import dict
-
-data_mcp = FastMCP(name="DataAPI")
-
-@data_mcp.tool()
-def fetch_record(record_id: int) -> dict:
-    """Fetches a dummy data record."""
-    return {"id": record_id, "value": random.random()}
-
-@data_mcp.resource("data://schema/{table}")
-def get_table_schema(table: str) -> dict:
-    """Provides a dummy schema for a table."""
-    return {"table": table, "columns": ["id", "value"]}
-
-# ------------------------------
-# main_app.py
+<CodeGroup>
+```python main.py
 from fastmcp import FastMCP
 import asyncio
-from modules.text_utils import text_mcp  # Import server instances
-from modules.data_api import data_mcp
+
+# Import the servers (see other files)
+from modules.text_server import text_mcp
+from modules.data_server import data_mcp
 
 app = FastMCP(name="MainApplication")
 
@@ -273,8 +252,42 @@ if __name__ == "__main__":
     # Run the server
     app.run()
 ```
+```python modules/text_server.py
+from fastmcp import FastMCP
 
-Now, running `main_app.py` starts a server that exposes:
+text_mcp = FastMCP(name="TextUtilities")
+
+@text_mcp.tool()
+def count_words(text: str) -> int:
+    """Counts words in a text."""
+    return len(text.split())
+
+@text_mcp.resource("resource://stopwords")
+def get_stopwords() -> list[str]:
+    """Return a list of common stopwords."""
+    return ["the", "a", "is", "in"]
+```
+
+```python modules/data_server.py
+from fastmcp import FastMCP
+import random
+from typing import dict
+
+data_mcp = FastMCP(name="DataAPI")
+
+@data_mcp.tool()
+def fetch_record(record_id: int) -> dict:
+    """Fetches a dummy data record."""
+    return {"id": record_id, "value": random.random()}
+
+@data_mcp.resource("data://schema/{table}")
+def get_table_schema(table: str) -> dict:
+    """Provides a dummy schema for a table."""
+    return {"table": table, "columns": ["id", "value"]}
+```
+
+</CodeGroup>
+Now, running `main.py` starts a server that exposes:
 - `text_count_words`
 - `data_fetch_record`
 - `process_and_analyze`

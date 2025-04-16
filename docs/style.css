@@ -1,4 +1,4 @@
-/* Target only inline code elements, not code blocks */
+/* Code highlighting -- target only inline code elements, not code blocks */
 p code:not(pre code),
 table code:not(pre code),
 li code:not(pre code),
@@ -9,5 +9,45 @@ h4 code:not(pre code),
 h5 code:not(pre code),
 h6 code:not(pre code) {
   color: #f72585 !important;
-  background-color: #ea54551a !important;
+  background-color: rgba(247, 37, 133, 0.09);
+}
+
+/* Version badge -- display a badge with the current version of the documentation */
+.version-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
+  padding: 0.32em 1em;
+  font-size: 0.92em;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: #7417e5;
+  background: #f3e8ff;
+  border: 1.5px solid #c084fc;
+  border-radius: 6px;
+  box-shadow: none;
+  vertical-align: middle;
+  position: relative;
+  transition: box-shadow 0.2s, transform 0.15s;
+}
+
+.version-badge:hover {
+  box-shadow: 0 2px 8px 0 rgba(160, 132, 252, 0.1);
+  transform: translateY(-1px) scale(1.03);
+}
+
+.dark .version-badge {
+  color: #fff;
+  background: #312e81;
+  border: 1.5px solid #a78bfa;
+}
+
+.badge-emoji {
+  font-size: 1.15em;
+  line-height: 1;
+  text-shadow: 0 1px 2px #fff, 0 0px 2px #c084fc;
+}
+
+.dark .badge-emoji {
+  text-shadow: 0 1px 2px #312e81, 0 0px 2px #a78bfa;
 }
