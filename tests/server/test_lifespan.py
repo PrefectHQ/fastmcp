@@ -4,7 +4,6 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 import anyio
-import pytest
 from mcp.types import (
     ClientCapabilities,
     Implementation,
@@ -18,7 +17,6 @@ from pydantic import TypeAdapter
 from fastmcp import Context, FastMCP
 
 
-@pytest.mark.anyio
 async def test_fastmcp_server_lifespan():
     """Test that lifespan works in FastMCP server."""
 

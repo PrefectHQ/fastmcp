@@ -8,6 +8,7 @@ from re import Pattern
 from typing import Any, Literal
 
 import httpx
+from mcp.types import TextContent
 from pydantic.networks import AnyUrl
 
 from fastmcp.resources import Resource, ResourceTemplate
@@ -613,25 +614,18 @@ class FastMCPOpenAPI(FastMCP):
             f"Registered TEMPLATE: {uri_template_str} ({route.method} {route.path}) with tags: {route.tags}"
         )
 
-    async def call_tool(self, name: str, arguments: dict[str, Any]) -> Any:
-        """Override the call_tool method to return the raw result without converting to content.
+    async def _mcp_call_tool(self, name: str, arguments: dict[str, Any]) -> Any:
+        """Override the call_tool method to return the raw result without converting to content."""
 
-        For testing purposes, if specific tools are called, we convert the result to the expected object.
-        """
         context = self.get_context()
         result = await self._tool_manager.call_tool(name, arguments, context=context)
 
-        # For testing purposes, convert result to expected model based on tool name
-        if name == "create_user_users_post":
-            # Try to import User class from test module
-            try:
-                from tests.server.test_openapi import User
-
-                # Convert dict to User object
-                if isinstance(result, dict):
-                    return User(**result)
-            except ImportError:
-                # If User class not found, just return the raw result
-                pass
+        # For other tools, ensure the response is wrapped in TextContent
+        if isinstance(result, dict | str):
+            if isinstance(result, dict):
+                result_text = json.dumps(result)
+            else:
+                result_text = result
+            return [TextContent(text=result_text, type="text")]
 
         return result

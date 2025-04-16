@@ -223,17 +223,22 @@ fastmcp run my_server.py:mcp --transport sse --log-level DEBUG
 
 The CLI can dynamically find and run FastMCP server objects in your files, but including the `if __name__ == "__main__":` block ensures compatibility with all clients.
 
+## Composing Servers
 
-## Mounting Subservers
+FastMCP provides two methods for composing multiple servers together:
 
-FastMCP allows you to compose complex applications by mounting other FastMCP servers as subservers. This is useful for:
+1. `import_server()`: One-time static import of components (async)
+2. `mount()`: Live link delegating to subservers (sync)
 
-- Organizing large applications into logical components
-- Reusing existing FastMCP servers as parts of a larger system
-- Creating domain-specific servers that can be used independently or composed
+This allows you to organize large applications into logical components, reuse existing FastMCP servers, and create domain-specific servers that can be used independently or composed.
+
+### Importing Subservers (Static Composition)
+
+The `import_server()` method performs a one-time copy of all components from a subserver into the main server with prefixed names:
 
 ```python
 from fastmcp import FastMCP
+import asyncio
 
 # Create the main server
 main_mcp = FastMCP(name="MainServer")
@@ -254,53 +259,124 @@ def add(a: float, b: float) -> float:
     """Add two numbers."""
     return a + b
 
-# Mount the subservers with prefixes
-main_mcp.mount("weather", weather_mcp)
-main_mcp.mount("calc", calculator_mcp)
+# Import the subservers with prefixes
+async def setup():
+    await main_mcp.import_server("weather", weather_mcp)
+    await main_mcp.import_server("calc", calculator_mcp)
 
 # Now main_mcp has access to both subservers' tools:
 # - "weather_get_forecast" (from weather_mcp)
 # - "calc_add" (from calculator_mcp)
 
 if __name__ == "__main__":
+    # Run async setup
+    asyncio.run(setup())
+    # Then run the server
     main_mcp.run()
 ```
 
-### How Mounting Works
+#### How Import Works
 
-When you mount a server with `main_mcp.mount(prefix, subserver)`:
+When you import a server with `await main_mcp.import_server(prefix, subserver)`:
 
-1. All tools from the subserver are imported with prefixed names:
+1. All tools from the subserver are copied with prefixed names:
    - `tool_name` becomes `{prefix}_tool_name`
    - Default separator is `_`, but can be customized
 
-2. All resources and resource templates are imported with prefixed URIs:
+2. All resources and resource templates are copied with prefixed URIs:
    - `resource://data` becomes `{prefix}+resource://data`
    - Default separator is `+`, but can be customized
 
-3. All prompts are imported with prefixed names:
+3. All prompts are copied with prefixed names:
    - `prompt_name` becomes `{prefix}_prompt_name`
    - Default separator is `_`, but can be customized
 
-4. The subserver's lifespan is managed automatically when the main server starts and stops
+4. This is a **one-time copy** - changes to the subserver after importing won't be reflected in the main server
+
+5. The subserver's lifespan is **not** managed by the main server
+
+### Mounting Subservers (Live Linking)
+
+The `mount()` method creates a live link between servers, delegating requests to the appropriate subserver:
+
+```python
+from fastmcp import FastMCP
+
+# Create the main server
+main_mcp = FastMCP(name="MainServer")
+
+# Create a domain-specific subserver
+weather_mcp = FastMCP(name="WeatherService")
+
+@weather_mcp.tool()
+def get_forecast(city: str) -> dict:
+    """Get the weather forecast for a city."""
+    return {"city": city, "forecast": "Sunny", "temperature": 72}
+
+# Mount the subserver (sync operation)
+main_mcp.mount("weather", weather_mcp)
+
+# Later, add another tool to the subserver
+@weather_mcp.tool()
+def get_temperature(city: str) -> float:
+    """Get the current temperature for a city."""
+    return 72.5  # Example value
+
+# The new tool is automatically available through the main server
+# as "weather_get_temperature"
+
+if __name__ == "__main__":
+    main_mcp.run()
+```
+
+#### How Mounting Works
+
+When you mount a server with `main_mcp.mount(prefix, subserver)`:
+
+1. A live link is created between the main server and the subserver
+2. Requests for components matching the prefix are delegated to the subserver
+3. Changes to the subserver are **immediately reflected** when accessing through the main server
+4. The subserver's lifespan **is automatically managed** by the main server
 
 ### Customizing Separators
 
-You can customize the separators used for naming:
+For both `import_server()` and `mount()`, you can customize the separators used for naming:
 
 ```python
-main_mcp.mount(
+# For import_server (async)
+await main_mcp.import_server(
     "weather", 
     weather_mcp,
     tool_separator="-",       # Use "weather-get_forecast" instead of "weather_get_forecast"
     resource_separator=".",   # Use "weather.resource://data" instead of "weather+resource://data"
     prompt_separator=":"      # Use "weather:prompt_name" instead of "weather_prompt_name"
 )
+
+# For mount (sync)
+main_mcp.mount(
+    "weather", 
+    weather_mcp,
+    tool_separator="-",
+    resource_separator=".",
+    prompt_separator=":"
+)
 ```
 
 <Warning>
 Some MCP clients may reject certain separators as invalid. For example, Claude Desktop does not support `/` in tool names.
 </Warning>
+
+### Comparison
+
+| Feature | `import_server()` | `mount()` |
+|---------|------------------|-----------|
+| **Synchronicity** | Async (must be awaited) | Sync |
+| **Composition Type** | One-time copy (static) | Live link (dynamic) |
+| **Updates** | Changes to subserver NOT reflected | Changes immediately reflected |
+| **Lifespan** | Not managed | Automatically managed |
+| **Best For** | Bundling finalized components | Modular runtime composition |
+
+For more detailed examples, see the [Server Composition](/patterns/composition) guide.
 
 ## Server Configuration
 

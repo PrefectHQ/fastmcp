@@ -85,7 +85,6 @@ def complex_arguments_fn(
     return "ok!"
 
 
-@pytest.mark.anyio
 async def test_complex_function_runtime_arg_validation_non_json():
     """Test that basic non-JSON arguments are validated correctly"""
     meta = func_metadata(complex_arguments_fn)
@@ -122,7 +121,6 @@ async def test_complex_function_runtime_arg_validation_non_json():
         )
 
 
-@pytest.mark.anyio
 async def test_complex_function_runtime_arg_validation_with_json():
     """Test that JSON string arguments are parsed and validated correctly"""
     meta = func_metadata(complex_arguments_fn)
@@ -199,7 +197,6 @@ def test_skip_names():
     assert model.also_keep == 2.5  # type: ignore
 
 
-@pytest.mark.anyio
 async def test_lambda_function():
     """Test lambda function schema and validation"""
     fn = lambda x, y=5: x  # noqa: E731

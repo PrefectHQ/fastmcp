@@ -254,10 +254,11 @@ wheels = [
 
 [[package]]
 name = "fastmcp"
-version = "2.1.2.dev9+55f3666"
+version = "2.1.3.dev31+8d922d9"
 source = { editable = "." }
 dependencies = [
     { name = "dotenv" },
+    { name = "exceptiongroup" },
     { name = "fastapi" },
     { name = "mcp" },
     { name = "openapi-pydantic" },
@@ -284,6 +285,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "dotenv", specifier = ">=0.9.9" },
+    { name = "exceptiongroup", specifier = ">=1.2.2" },
     { name = "fastapi", specifier = ">=0.115.12" },
     { name = "mcp", specifier = ">=1.6.0,<2.0.0" },
     { name = "openapi-pydantic", specifier = ">=0.5.1" },

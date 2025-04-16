@@ -6,11 +6,10 @@ from typing import Any
 
 from pydantic import AnyUrl
 
-from fastmcp.exceptions import ResourceError
+from fastmcp.exceptions import NotFoundError
 from fastmcp.resources import FunctionResource
-from fastmcp.resources.resource import MCPResource, Resource
+from fastmcp.resources.resource import Resource
 from fastmcp.resources.template import (
-    MCPResourceTemplate,
     ResourceTemplate,
     match_uri_template,
 )
@@ -203,11 +202,21 @@ class ResourceManager:
         self._templates[storage_key] = template
         return template
 
+    def has_resource(self, uri: AnyUrl | str) -> bool:
+        """Check if a resource exists."""
+        uri_str = str(uri)
+        if uri_str in self._resources:
+            return True
+        for template_key in self._templates.keys():
+            if match_uri_template(uri_str, template_key):
+                return True
+        return False
+
     async def get_resource(self, uri: AnyUrl | str) -> Resource:
         """Get resource by URI, checking concrete resources first, then templates.
 
         Raises:
-            ResourceError: If no resource or template matching the URI is found.
+            NotFoundError: If no resource or template matching the URI is found.
         """
         uri_str = str(uri)
         logger.debug("Getting resource", extra={"uri": uri_str})
@@ -225,85 +234,12 @@ class ResourceManager:
                 except Exception as e:
                     raise ValueError(f"Error creating resource from template: {e}")
 
-        raise ResourceError(f"Unknown resource: {uri_str}")
+        raise NotFoundError(f"Unknown resource: {uri_str}")
 
     def get_resources(self) -> dict[str, Resource]:
         """Get all registered resources, keyed by URI."""
         return self._resources
 
-    def list_resources(self) -> list[Resource]:
-        """List all registered resources."""
-        logger.debug("Listing resources", extra={"count": len(self._resources)})
-        return list(self._resources.values())
-
-    def list_mcp_resources(self) -> list[MCPResource]:
-        """List all registered resources in the format expected by the low-level MCP server."""
-
-        return [
-            resource.to_mcp_resource(uri=key)
-            for key, resource in self._resources.items()
-        ]
-
-    def list_mcp_resource_templates(self) -> list[MCPResourceTemplate]:
-        """List all registered resource templates in the format expected by the low-level MCP server."""
-        return [
-            template.to_mcp_template(uriTemplate=key)
-            for key, template in self._templates.items()
-        ]
-
     def get_templates(self) -> dict[str, ResourceTemplate]:
         """Get all registered templates, keyed by URI template."""
         return self._templates
-
-    def list_templates(self) -> list[ResourceTemplate]:
-        """List all registered templates."""
-        logger.debug("Listing templates", extra={"count": len(self._templates)})
-        return list(self._templates.values())
-
-    def import_resources(
-        self, manager: "ResourceManager", prefix: str | None = None
-    ) -> None:
-        """Import resources from another resource manager.
-
-        Resources are imported with a prefixed URI if a prefix is provided. For example,
-        if a resource has URI "data://users" and you import it with prefix "app+", the
-        imported resource will have URI "app+data://users". If no prefix is provided,
-        the original URI is used.
-
-        Args:
-            manager: The ResourceManager to import from
-            prefix: A prefix to apply to the resource URIs, including the delimiter.
-                   For example, "app+" would result in URIs like "app+data://users".
-                   If None, the original URI is used.
-        """
-        for uri, resource in manager._resources.items():
-            # Create prefixed URI and import the resource with the new URI as the storage key
-            prefixed_uri = f"{prefix}{uri}" if prefix else uri
-            self.add_resource(resource, key=prefixed_uri)
-            logger.debug(f'Imported resource "{uri}" as "{prefixed_uri}"')
-
-    def import_templates(
-        self, manager: "ResourceManager", prefix: str | None = None
-    ) -> None:
-        """Import resource templates from another resource manager.
-
-        Templates are imported with a prefixed URI template if a prefix is provided.
-        For example, if a template has URI template "data://users/{id}" and you import
-        it with prefix "app+", the imported template will have URI template
-        "app+data://users/{id}". If no prefix is provided, the original URI template is used.
-
-        Args:
-            manager: The ResourceManager to import templates from
-            prefix: A prefix to apply to the template URIs, including the delimiter.
-                   For example, "app+" would result in URI templates like "app+data://users/{id}".
-                   If None, the original URI template is used.
-        """
-        for uri_template, template in manager._templates.items():
-            # Create prefixed URI template and import the template with the new URI as the storage key
-            prefixed_uri_template = (
-                f"{prefix}{uri_template}" if prefix else uri_template
-            )
-            self.add_template(template, key=prefixed_uri_template)
-            logger.debug(
-                f'Imported template "{uri_template}" as "{prefixed_uri_template}"'
-            )

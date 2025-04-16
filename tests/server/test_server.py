@@ -4,7 +4,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
-from mcp.shared.exceptions import McpError
 from mcp.types import (
     BlobResourceContents,
     ImageContent,
@@ -14,7 +13,7 @@ from mcp.types import (
 from pydantic import AnyUrl, Field
 
 from fastmcp import Client, Context, FastMCP
-from fastmcp.exceptions import ResourceError, ToolError
+from fastmcp.exceptions import ClientError, NotFoundError, ToolError
 from fastmcp.prompts.prompt import EmbeddedResource, Message, UserMessage
 from fastmcp.resources import FileResource, FunctionResource
 from fastmcp.utilities.types import Image
@@ -57,12 +56,40 @@ class TestCreateServer:
             assert "¡Hola, 世界! 👋" == content.text
 
 
+class TestTools:
+    async def test_mcp_tool_name(self):
+        """Test MCPTool name for add_tool (key != tool.name)."""
+
+        mcp = FastMCP()
+
+        @mcp.tool()
+        def fn(x: int) -> int:
+            return x + 1
+
+        mcp_tools = await mcp._mcp_list_tools()
+        assert len(mcp_tools) == 1
+        assert mcp_tools[0].name == "fn"
+
+    async def test_mcp_tool_custom_name(self):
+        """Test MCPTool name for add_tool (key != tool.name)."""
+
+        mcp = FastMCP()
+
+        @mcp.tool(name="custom_name")
+        def fn(x: int) -> int:
+            return x + 1
+
+        mcp_tools = await mcp._mcp_list_tools()
+        assert len(mcp_tools) == 1
+        assert mcp_tools[0].name == "custom_name"
+
+
 class TestToolDecorator:
     async def test_no_tools_before_decorator(self):
         mcp = FastMCP()
 
-        with pytest.raises(ToolError, match="Unknown tool: add"):
-            await mcp.call_tool("add", {"x": 1, "y": 2})
+        with pytest.raises(NotFoundError, match="Unknown tool: add"):
+            await mcp._mcp_call_tool("add", {"x": 1, "y": 2})
 
     async def test_tool_decorator(self):
         mcp = FastMCP()
@@ -71,7 +98,7 @@ class TestToolDecorator:
         def add(x: int, y: int) -> int:
             return x + y
 
-        result = await mcp.call_tool("add", {"x": 1, "y": 2})
+        result = await mcp._mcp_call_tool("add", {"x": 1, "y": 2})
         assert isinstance(result[0], TextContent)
         assert result[0].text == "3"
 
@@ -91,7 +118,7 @@ class TestToolDecorator:
         def add(x: int, y: int) -> int:
             return x + y
 
-        result = await mcp.call_tool("custom-add", {"x": 1, "y": 2})
+        result = await mcp._mcp_call_tool("custom-add", {"x": 1, "y": 2})
         assert isinstance(result[0], TextContent)
         assert result[0].text == "3"
 
@@ -120,7 +147,7 @@ class TestToolDecorator:
 
         obj = MyClass(10)
         mcp.add_tool(obj.add)
-        result = await mcp.call_tool("add", {"y": 2})
+        result = await mcp._mcp_call_tool("add", {"y": 2})
         assert isinstance(result[0], TextContent)
         assert result[0].text == "12"
 
@@ -135,7 +162,7 @@ class TestToolDecorator:
                 return cls.x + y
 
         mcp.add_tool(MyClass.add)
-        result = await mcp.call_tool("add", {"y": 2})
+        result = await mcp._mcp_call_tool("add", {"y": 2})
         assert isinstance(result[0], TextContent)
         assert result[0].text == "12"
 
@@ -148,7 +175,7 @@ class TestToolDecorator:
             def add(x: int, y: int) -> int:
                 return x + y
 
-        result = await mcp.call_tool("add", {"x": 1, "y": 2})
+        result = await mcp._mcp_call_tool("add", {"x": 1, "y": 2})
         assert isinstance(result[0], TextContent)
         assert result[0].text == "3"
 
@@ -159,7 +186,7 @@ class TestToolDecorator:
         async def add(x: int, y: int) -> int:
             return x + y
 
-        result = await mcp.call_tool("add", {"x": 1, "y": 2})
+        result = await mcp._mcp_call_tool("add", {"x": 1, "y": 2})
         assert isinstance(result[0], TextContent)
         assert result[0].text == "3"
 
@@ -174,7 +201,7 @@ class TestToolDecorator:
                 return cls.x + y
 
         mcp.add_tool(MyClass.add)
-        result = await mcp.call_tool("add", {"y": 2})
+        result = await mcp._mcp_call_tool("add", {"y": 2})
         assert isinstance(result[0], TextContent)
         assert result[0].text == "12"
 
@@ -187,7 +214,7 @@ class TestToolDecorator:
                 return x + y
 
         mcp.add_tool(MyClass.add)
-        result = await mcp.call_tool("add", {"x": 1, "y": 2})
+        result = await mcp._mcp_call_tool("add", {"x": 1, "y": 2})
         assert isinstance(result[0], TextContent)
         assert result[0].text == "3"
 
@@ -212,29 +239,28 @@ class TestToolDecorator:
             """Multiply two numbers."""
             return a * b
 
-        # Add the tool with a custom name
         mcp.add_tool(multiply, name="custom_multiply")
 
         # Check that the tool is registered with the custom name
-        tools = mcp.list_tools()
-        tool_names = [t.name for t in tools]
-        assert "custom_multiply" in tool_names
+        tools = await mcp.get_tools()
+        assert "custom_multiply" in tools
 
         # Call the tool by its custom name
-        result = await mcp.call_tool("custom_multiply", {"a": 5, "b": 3})
+        result = await mcp._mcp_call_tool("custom_multiply", {"a": 5, "b": 3})
         assert isinstance(result[0], TextContent)
         assert result[0].text == "15"
 
         # Original name should not be registered
-        assert "multiply" not in tool_names
+        assert "multiply" not in tools
 
 
 class TestResourceDecorator:
     async def test_no_resources_before_decorator(self):
         mcp = FastMCP()
 
-        with pytest.raises(ResourceError, match="Unknown resource"):
-            await mcp.read_resource("resource://data")
+        with pytest.raises(ClientError, match="Unknown resource"):
+            async with Client(mcp) as client:
+                await client.read_resource("resource://data")
 
     async def test_resource_decorator(self):
         mcp = FastMCP()
@@ -243,8 +269,10 @@ class TestResourceDecorator:
         def get_data() -> str:
             return "Hello, world!"
 
-        result = await mcp.read_resource("resource://data")
-        assert result == "Hello, world!"
+        async with Client(mcp) as client:
+            result = await client.read_resource("resource://data")
+            assert isinstance(result[0], TextResourceContents)
+            assert result[0].text == "Hello, world!"
 
     async def test_resource_decorator_incorrect_usage(self):
         mcp = FastMCP()
@@ -264,12 +292,15 @@ class TestResourceDecorator:
         def get_data() -> str:
             return "Hello, world!"
 
-        resources = mcp.list_resources()
+        resources_dict = await mcp.get_resources()
+        resources = list(resources_dict.values())
         assert len(resources) == 1
         assert resources[0].name == "custom-data"
 
-        result = await mcp.read_resource("resource://data")
-        assert result == "Hello, world!"
+        async with Client(mcp) as client:
+            result = await client.read_resource("resource://data")
+            assert isinstance(result[0], TextResourceContents)
+            assert result[0].text == "Hello, world!"
 
     async def test_resource_decorator_with_description(self):
         mcp = FastMCP()
@@ -278,9 +309,23 @@ class TestResourceDecorator:
         def get_data() -> str:
             return "Hello, world!"
 
-        resources = mcp.list_resources()
+        resources_dict = await mcp.get_resources()
+        resources = list(resources_dict.values())
         assert len(resources) == 1
         assert resources[0].description == "Data resource"
+
+    async def test_resource_decorator_with_tags(self):
+        """Test that the resource decorator properly sets tags."""
+        mcp = FastMCP()
+
+        @mcp.resource("resource://data", tags={"example", "test-tag"})
+        def get_data() -> str:
+            return "Hello, world!"
+
+        resources_dict = await mcp.get_resources()
+        resources = list(resources_dict.values())
+        assert len(resources) == 1
+        assert resources[0].tags == {"example", "test-tag"}
 
     async def test_resource_decorator_instance_method(self):
         mcp = FastMCP()
@@ -297,8 +342,10 @@ class TestResourceDecorator:
             obj.get_data, uri="resource://data", name="instance-resource"
         )
 
-        result = await mcp.read_resource("resource://data")
-        assert result == "My prefix: Hello, world!"
+        async with Client(mcp) as client:
+            result = await client.read_resource("resource://data")
+            assert isinstance(result[0], TextResourceContents)
+            assert result[0].text == "My prefix: Hello, world!"
 
     async def test_resource_decorator_classmethod(self):
         mcp = FastMCP()
@@ -314,8 +361,10 @@ class TestResourceDecorator:
             MyClass.get_data, uri="resource://data", name="class-resource"
         )
 
-        result = await mcp.read_resource("resource://data")
-        assert result == "Class prefix: Hello, world!"
+        async with Client(mcp) as client:
+            result = await client.read_resource("resource://data")
+            assert isinstance(result[0], TextResourceContents)
+            assert result[0].text == "Class prefix: Hello, world!"
 
     async def test_resource_decorator_staticmethod(self):
         mcp = FastMCP()
@@ -326,8 +375,10 @@ class TestResourceDecorator:
             def get_data() -> str:
                 return "Static Hello, world!"
 
-        result = await mcp.read_resource("resource://data")
-        assert result == "Static Hello, world!"
+        async with Client(mcp) as client:
+            result = await client.read_resource("resource://data")
+            assert isinstance(result[0], TextResourceContents)
+            assert result[0].text == "Static Hello, world!"
 
     async def test_resource_decorator_async_function(self):
         mcp = FastMCP()
@@ -336,19 +387,10 @@ class TestResourceDecorator:
         async def get_data() -> str:
             return "Async Hello, world!"
 
-        result = await mcp.read_resource("resource://data")
-        assert result == "Async Hello, world!"
-
-    async def test_resource_decorator_with_tags(self):
-        mcp = FastMCP()
-
-        @mcp.resource("resource://data", tags={"example", "test-tag"})
-        def get_data() -> str:
-            return "Hello, world!"
-
-        resources = mcp.list_resources()
-        assert len(resources) == 1
-        assert resources[0].tags == {"example", "test-tag"}
+        async with Client(mcp) as client:
+            result = await client.read_resource("resource://data")
+            assert isinstance(result[0], TextResourceContents)
+            assert result[0].text == "Async Hello, world!"
 
 
 class TestTemplateDecorator:
@@ -359,12 +401,16 @@ class TestTemplateDecorator:
         def get_data(name: str) -> str:
             return f"Data for {name}"
 
-        templates = mcp.list_resource_templates()
+        templates_dict = await mcp.get_resource_templates()
+        templates = list(templates_dict.values())
         assert len(templates) == 1
+        assert templates[0].name == "get_data"
         assert templates[0].uri_template == "resource://{name}/data"
 
-        result = await mcp.read_resource("resource://test/data")
-        assert result == "Data for test"
+        async with Client(mcp) as client:
+            result = await client.read_resource("resource://test/data")
+            assert isinstance(result[0], TextResourceContents)
+            assert result[0].text == "Data for test"
 
     async def test_template_decorator_incorrect_usage(self):
         mcp = FastMCP()
@@ -384,12 +430,15 @@ class TestTemplateDecorator:
         def get_data(name: str) -> str:
             return f"Data for {name}"
 
-        templates = mcp.list_resource_templates()
+        templates_dict = await mcp.get_resource_templates()
+        templates = list(templates_dict.values())
         assert len(templates) == 1
         assert templates[0].name == "custom-template"
 
-        result = await mcp.read_resource("resource://test/data")
-        assert result == "Data for test"
+        async with Client(mcp) as client:
+            result = await client.read_resource("resource://test/data")
+        assert isinstance(result[0], TextResourceContents)
+        assert result[0].text == "Data for test"
 
     async def test_template_decorator_with_description(self):
         mcp = FastMCP()
@@ -398,7 +447,8 @@ class TestTemplateDecorator:
         def get_data(name: str) -> str:
             return f"Data for {name}"
 
-        templates = mcp.list_resource_templates()
+        templates_dict = await mcp.get_resource_templates()
+        templates = list(templates_dict.values())
         assert len(templates) == 1
         assert templates[0].description == "Template description"
 
@@ -413,13 +463,14 @@ class TestTemplateDecorator:
                 return f"{self.prefix} Data for {name}"
 
         obj = MyClass("My prefix:")
-
         mcp.add_resource_fn(
             obj.get_data, uri="resource://{name}/data", name="instance-template"
         )
 
-        result = await mcp.read_resource("resource://test/data")
-        assert result == "My prefix: Data for test"
+        async with Client(mcp) as client:
+            result = await client.read_resource("resource://test/data")
+            assert isinstance(result[0], TextResourceContents)
+            assert result[0].text == "My prefix: Data for test"
 
     async def test_template_decorator_classmethod(self):
         mcp = FastMCP()
@@ -432,11 +483,15 @@ class TestTemplateDecorator:
                 return f"{cls.prefix} Data for {name}"
 
         mcp.add_resource_fn(
-            MyClass.get_data, uri="resource://{name}/data", name="class-template"
+            MyClass.get_data,
+            uri="resource://{name}/data",
+            name="class-template",
         )
 
-        result = await mcp.read_resource("resource://test/data")
-        assert result == "Class prefix: Data for test"
+        async with Client(mcp) as client:
+            result = await client.read_resource("resource://test/data")
+            assert isinstance(result[0], TextResourceContents)
+            assert result[0].text == "Class prefix: Data for test"
 
     async def test_template_decorator_staticmethod(self):
         mcp = FastMCP()
@@ -447,8 +502,10 @@ class TestTemplateDecorator:
             def get_data(name: str) -> str:
                 return f"Static Data for {name}"
 
-        result = await mcp.read_resource("resource://test/data")
-        assert result == "Static Data for test"
+        async with Client(mcp) as client:
+            result = await client.read_resource("resource://test/data")
+            assert isinstance(result[0], TextResourceContents)
+            assert result[0].text == "Static Data for test"
 
     async def test_template_decorator_async_function(self):
         mcp = FastMCP()
@@ -457,19 +514,22 @@ class TestTemplateDecorator:
         async def get_data(name: str) -> str:
             return f"Async Data for {name}"
 
-        result = await mcp.read_resource("resource://test/data")
-        assert result == "Async Data for test"
+        async with Client(mcp) as client:
+            result = await client.read_resource("resource://test/data")
+            assert isinstance(result[0], TextResourceContents)
+            assert result[0].text == "Async Data for test"
 
     async def test_template_decorator_with_tags(self):
+        """Test that the template decorator properly sets tags."""
         mcp = FastMCP()
 
-        @mcp.resource("resource://{name}/data", tags={"template", "test-tag"})
-        def get_data(name: str) -> str:
-            return f"Data for {name}"
+        @mcp.resource("resource://{param}", tags={"template", "test-tag"})
+        def template_resource(param: str) -> str:
+            return f"Template resource: {param}"
 
-        templates = mcp.list_resource_templates()
-        assert len(templates) == 1
-        assert templates[0].tags == {"template", "test-tag"}
+        templates_dict = await mcp.get_resource_templates()
+        template = templates_dict["resource://{param}"]
+        assert template.tags == {"template", "test-tag"}
 
 
 class TestPromptDecorator:
@@ -477,18 +537,17 @@ class TestPromptDecorator:
         mcp = FastMCP()
 
         @mcp.prompt()
-        def test_prompt() -> str:
+        def fn() -> str:
             return "Hello, world!"
 
-        prompts = mcp.list_prompts()
-        assert len(prompts) == 1
-        assert prompts[0].name == "test_prompt"
-
-        result = await mcp.get_prompt("test_prompt")
-        assert len(result) == 1
-        message = result[0]
-        assert isinstance(message.content, TextContent)
-        assert message.content.text == "Hello, world!"
+        prompts_dict = await mcp.get_prompts()
+        assert len(prompts_dict) == 1
+        prompt = prompts_dict["fn"]
+        assert prompt.name == "fn"
+        # Don't compare functions directly since validate_call wraps them
+        content = await prompt.render()
+        assert isinstance(content[0].content, TextContent)
+        assert content[0].content.text == "Hello, world!"
 
     async def test_prompt_decorator_incorrect_usage(self):
         mcp = FastMCP()
@@ -498,36 +557,38 @@ class TestPromptDecorator:
         ):
 
             @mcp.prompt  # Missing parentheses #type: ignore
-            def test_prompt() -> str:
+            def fn() -> str:
                 return "Hello, world!"
 
     async def test_prompt_decorator_with_name(self):
         mcp = FastMCP()
 
-        @mcp.prompt(name="custom-prompt")
-        def test_prompt() -> str:
+        @mcp.prompt(name="custom_name")
+        def fn() -> str:
             return "Hello, world!"
 
-        prompts = mcp.list_prompts()
-        assert len(prompts) == 1
-        assert prompts[0].name == "custom-prompt"
-
-        result = await mcp.get_prompt("custom-prompt")
-        assert len(result) == 1
-        message = result[0]
-        assert isinstance(message.content, TextContent)
-        assert message.content.text == "Hello, world!"
+        prompts_dict = await mcp.get_prompts()
+        assert len(prompts_dict) == 1
+        prompt = prompts_dict["custom_name"]
+        assert prompt.name == "custom_name"
+        content = await prompt.render()
+        assert isinstance(content[0].content, TextContent)
+        assert content[0].content.text == "Hello, world!"
 
     async def test_prompt_decorator_with_description(self):
         mcp = FastMCP()
 
-        @mcp.prompt(description="Test prompt description")
-        def test_prompt() -> str:
+        @mcp.prompt(description="A custom description")
+        def fn() -> str:
             return "Hello, world!"
 
-        prompts = mcp.list_prompts()
-        assert len(prompts) == 1
-        assert prompts[0].description == "Test prompt description"
+        prompts_dict = await mcp.get_prompts()
+        assert len(prompts_dict) == 1
+        prompt = prompts_dict["fn"]
+        assert prompt.description == "A custom description"
+        content = await prompt.render()
+        assert isinstance(content[0].content, TextContent)
+        assert content[0].content.text == "Hello, world!"
 
     async def test_prompt_decorator_with_parameters(self):
         mcp = FastMCP()
@@ -536,28 +597,30 @@ class TestPromptDecorator:
         def test_prompt(name: str, greeting: str = "Hello") -> str:
             return f"{greeting}, {name}!"
 
-        prompts = mcp.list_prompts()
-        assert len(prompts) == 1
-        assert prompts[0].arguments is not None
-        assert len(prompts[0].arguments) == 2
-        assert prompts[0].arguments[0].name == "name"
-        assert prompts[0].arguments[0].required is True
-        assert prompts[0].arguments[1].name == "greeting"
-        assert prompts[0].arguments[1].required is False
+        prompts_dict = await mcp.get_prompts()
+        assert len(prompts_dict) == 1
+        prompt = prompts_dict["test_prompt"]
+        assert prompt.arguments is not None
+        assert len(prompt.arguments) == 2
+        assert prompt.arguments[0].name == "name"
+        assert prompt.arguments[0].required is True
+        assert prompt.arguments[1].name == "greeting"
+        assert prompt.arguments[1].required is False
 
-        result = await mcp.get_prompt("test_prompt", {"name": "World"})
-        assert len(result) == 1
-        message = result[0]
-        assert isinstance(message.content, TextContent)
-        assert message.content.text == "Hello, World!"
+        async with Client(mcp) as client:
+            result = await client.get_prompt("test_prompt", {"name": "World"})
+            assert len(result) == 1
+            message = result[0]
+            assert isinstance(message.content, TextContent)
+            assert message.content.text == "Hello, World!"
 
-        result = await mcp.get_prompt(
-            "test_prompt", {"name": "World", "greeting": "Hi"}
-        )
-        assert len(result) == 1
-        message = result[0]
-        assert isinstance(message.content, TextContent)
-        assert message.content.text == "Hi, World!"
+            result = await client.get_prompt(
+                "test_prompt", {"name": "World", "greeting": "Hi"}
+            )
+            assert len(result) == 1
+            message = result[0]
+            assert isinstance(message.content, TextContent)
+            assert message.content.text == "Hi, World!"
 
     async def test_prompt_decorator_instance_method(self):
         mcp = FastMCP()
@@ -572,11 +635,12 @@ class TestPromptDecorator:
         obj = MyClass("My prefix:")
         mcp.add_prompt(obj.test_prompt, name="test_prompt")
 
-        result = await mcp.get_prompt("test_prompt")
-        assert len(result) == 1
-        message = result[0]
-        assert isinstance(message.content, TextContent)
-        assert message.content.text == "My prefix: Hello, world!"
+        async with Client(mcp) as client:
+            result = await client.get_prompt("test_prompt")
+            assert len(result) == 1
+            message = result[0]
+            assert isinstance(message.content, TextContent)
+            assert message.content.text == "My prefix: Hello, world!"
 
     async def test_prompt_decorator_classmethod(self):
         mcp = FastMCP()
@@ -590,11 +654,12 @@ class TestPromptDecorator:
 
         mcp.add_prompt(MyClass.test_prompt, name="test_prompt")
 
-        result = await mcp.get_prompt("test_prompt")
-        assert len(result) == 1
-        message = result[0]
-        assert isinstance(message.content, TextContent)
-        assert message.content.text == "Class prefix: Hello, world!"
+        async with Client(mcp) as client:
+            result = await client.get_prompt("test_prompt")
+            assert len(result) == 1
+            message = result[0]
+            assert isinstance(message.content, TextContent)
+            assert message.content.text == "Class prefix: Hello, world!"
 
     async def test_prompt_decorator_staticmethod(self):
         mcp = FastMCP()
@@ -605,11 +670,12 @@ class TestPromptDecorator:
             def test_prompt() -> str:
                 return "Static Hello, world!"
 
-        result = await mcp.get_prompt("test_prompt")
-        assert len(result) == 1
-        message = result[0]
-        assert isinstance(message.content, TextContent)
-        assert message.content.text == "Static Hello, world!"
+        async with Client(mcp) as client:
+            result = await client.get_prompt("test_prompt")
+            assert len(result) == 1
+            message = result[0]
+            assert isinstance(message.content, TextContent)
+            assert message.content.text == "Static Hello, world!"
 
     async def test_prompt_decorator_async_function(self):
         mcp = FastMCP()
@@ -618,22 +684,25 @@ class TestPromptDecorator:
         async def test_prompt() -> str:
             return "Async Hello, world!"
 
-        result = await mcp.get_prompt("test_prompt")
-        assert len(result) == 1
-        message = result[0]
-        assert isinstance(message.content, TextContent)
-        assert message.content.text == "Async Hello, world!"
+        async with Client(mcp) as client:
+            result = await client.get_prompt("test_prompt")
+            assert len(result) == 1
+            message = result[0]
+            assert isinstance(message.content, TextContent)
+            assert message.content.text == "Async Hello, world!"
 
     async def test_prompt_decorator_with_tags(self):
+        """Test that the prompt decorator properly sets tags."""
         mcp = FastMCP()
 
         @mcp.prompt(tags={"example", "test-tag"})
-        def test_prompt() -> str:
+        def sample_prompt() -> str:
             return "Hello, world!"
 
-        prompts = mcp.list_prompts()
-        assert len(prompts) == 1
-        assert prompts[0].tags == {"example", "test-tag"}
+        prompts_dict = await mcp.get_prompts()
+        assert len(prompts_dict) == 1
+        prompt = prompts_dict["sample_prompt"]
+        assert prompt.tags == {"example", "test-tag"}
 
 
 @pytest.fixture
@@ -683,7 +752,7 @@ class TestServerTools:
         assert len(await tool_server._mcp_list_tools()) == 6
 
     async def test_call_tool(self, tool_server: FastMCP):
-        result = await tool_server.call_tool("add", {"x": 1, "y": 2})
+        result = await tool_server._mcp_call_tool("add", {"x": 1, "y": 2})
         assert isinstance(result[0], TextContent)
         assert result[0].text == "3"
 
@@ -695,7 +764,7 @@ class TestServerTools:
 
     async def test_call_tool_error(self, tool_server: FastMCP):
         with pytest.raises(ToolError):
-            await tool_server.call_tool("error_tool", {})
+            await tool_server._mcp_call_tool("error_tool", {})
 
     async def test_call_tool_error_as_client(self, tool_server: FastMCP):
         async with Client(tool_server) as client:
@@ -710,7 +779,7 @@ class TestServerTools:
         assert "Test error" in result.content[0].text
 
     async def test_tool_returns_list(self, tool_server: FastMCP):
-        result = await tool_server.call_tool("list_tool", {})
+        result = await tool_server._mcp_call_tool("list_tool", {})
         assert isinstance(result[0], TextContent)
         assert result[0].text == '["x", 2]'
 
@@ -719,7 +788,9 @@ class TestServerTools:
         image_path = tmp_path / "test.png"
         image_path.write_bytes(b"fake png data")
 
-        result = await tool_server.call_tool("image_tool", {"path": str(image_path)})
+        result = await tool_server._mcp_call_tool(
+            "image_tool", {"path": str(image_path)}
+        )
         content = result[0]
         assert isinstance(content, ImageContent)
         assert content.type == "image"
@@ -729,7 +800,7 @@ class TestServerTools:
         assert decoded == b"fake png data"
 
     async def test_tool_mixed_content(self, tool_server: FastMCP):
-        result = await tool_server.call_tool("mixed_content_tool", {})
+        result = await tool_server._mcp_call_tool("mixed_content_tool", {})
         assert len(result) == 2
         content1 = result[0]
         content2 = result[1]
@@ -748,7 +819,7 @@ class TestServerTools:
         image_path = tmp_path / "test.png"
         image_path.write_bytes(b"test image data")
 
-        result = await tool_server.call_tool(
+        result = await tool_server._mcp_call_tool(
             "mixed_list_fn", {"image_path": str(image_path)}
         )
         assert len(result) == 3
@@ -966,8 +1037,7 @@ class TestServerResourceTemplates:
             assert result[0].text == "Static data"
 
     async def test_template_with_default_params(self):
-        """Test that a template with default function parameters works when those parameters
-        are not in the URI template"""
+        """Test that a template can have default parameters."""
         mcp = FastMCP()
 
         @mcp.resource("math://add/{x}")
@@ -975,7 +1045,8 @@ class TestServerResourceTemplates:
             return x + y
 
         # Verify it's registered as a template
-        templates = mcp.list_resource_templates()
+        templates_dict = await mcp.get_resource_templates()
+        templates = list(templates_dict.values())
         assert len(templates) == 1
         assert templates[0].uri_template == "math://add/{x}"
 
@@ -992,16 +1063,18 @@ class TestServerResourceTemplates:
         assert result == "17"  # 7 + default 10
 
     async def test_template_to_resource_conversion(self):
-        """Test that templates are properly converted to resources when accessed"""
+        """Test that a template can be converted to a resource."""
         mcp = FastMCP()
 
         @mcp.resource("resource://{name}/data")
         def get_data(name: str) -> str:
             return f"Data for {name}"
 
-        # Should be registered as a template
-        assert len(mcp._resource_manager._templates) == 1
-        assert len(await mcp._mcp_list_resources()) == 0
+        # Verify it's registered as a template
+        templates_dict = await mcp.get_resource_templates()
+        templates = list(templates_dict.values())
+        assert len(templates) == 1
+        assert templates[0].uri_template == "resource://{name}/data"
 
         # When accessed, should create a concrete resource
         resource = await mcp._resource_manager.get_resource("resource://test/data")
@@ -1010,30 +1083,32 @@ class TestServerResourceTemplates:
         assert result == "Data for test"
 
     async def test_stacked_resource_template_decorators(self):
-        """Test that multiple resource decorators can be stacked on the same function."""
+        """Test that resource template decorators can be stacked."""
         mcp = FastMCP()
 
-        # Define a function with multiple stacked resource decorators
         @mcp.resource("users://email/{email}")
         @mcp.resource("users://name/{name}")
         def lookup_user(name: str | None = None, email: str | None = None) -> dict:
-            """Look up a user by either name or email."""
-            # In a real implementation, this would query a database
-            if email:
+            if name:
                 return {
-                    "found_by": "email",
-                    "name": f"User for {email}",
+                    "id": "123",
+                    "name": name,
+                    "email": "dummy@example.com",
+                    "lookup": "name",
+                }
+            elif email:
+                return {
+                    "id": "123",
+                    "name": "Test User",
                     "email": email,
+                    "lookup": "email",
                 }
             else:
-                return {
-                    "found_by": "name",
-                    "name": name,
-                    "email": f"{name.lower()}@example.com" if name else None,
-                }
+                raise ValueError("Either name or email must be provided")
 
         # Verify both templates are registered
-        templates = mcp.list_resource_templates()
+        templates_dict = await mcp.get_resource_templates()
+        templates = list(templates_dict.values())
         assert len(templates) == 2
         template_uris = {t.uri_template for t in templates}
         assert "users://email/{email}" in template_uris
@@ -1046,16 +1121,27 @@ class TestServerResourceTemplates:
             )
             assert isinstance(email_result[0], TextResourceContents)
             email_data = json.loads(email_result[0].text)
-            assert email_data["found_by"] == "email"
+            assert email_data["lookup"] == "email"
             assert email_data["email"] == "user@example.com"
 
             # Test lookup by name
             name_result = await client.read_resource(AnyUrl("users://name/John"))
             assert isinstance(name_result[0], TextResourceContents)
             name_data = json.loads(name_result[0].text)
-            assert name_data["found_by"] == "name"
+            assert name_data["lookup"] == "name"
             assert name_data["name"] == "John"
-            assert name_data["email"] == "john@example.com"
+            assert name_data["email"] == "dummy@example.com"
+
+    async def test_template_decorator_with_tags(self):
+        mcp = FastMCP()
+
+        @mcp.resource("resource://{param}", tags={"template", "test-tag"})
+        def template_resource(param: str) -> str:
+            return f"Template resource: {param}"
+
+        templates_dict = await mcp.get_resource_templates()
+        template = templates_dict["resource://{param}"]
+        assert template.tags == {"template", "test-tag"}
 
 
 class TestContextInjection:
@@ -1192,11 +1278,12 @@ class TestServerPrompts:
         def fn() -> str:
             return "Hello, world!"
 
-        prompts = mcp._prompt_manager.list_prompts()
-        assert len(prompts) == 1
-        assert prompts[0].name == "fn"
+        prompts_dict = await mcp.get_prompts()
+        assert len(prompts_dict) == 1
+        prompt = prompts_dict["fn"]
+        assert prompt.name == "fn"
         # Don't compare functions directly since validate_call wraps them
-        content = await prompts[0].render()
+        content = await prompt.render()
         assert isinstance(content[0].content, TextContent)
         assert content[0].content.text == "Hello, world!"
 
@@ -1208,10 +1295,11 @@ class TestServerPrompts:
         def fn() -> str:
             return "Hello, world!"
 
-        prompts = mcp._prompt_manager.list_prompts()
-        assert len(prompts) == 1
-        assert prompts[0].name == "custom_name"
-        content = await prompts[0].render()
+        prompts_dict = await mcp.get_prompts()
+        assert len(prompts_dict) == 1
+        prompt = prompts_dict["custom_name"]
+        assert prompt.name == "custom_name"
+        content = await prompt.render()
         assert isinstance(content[0].content, TextContent)
         assert content[0].content.text == "Hello, world!"
 
@@ -1223,10 +1311,11 @@ class TestServerPrompts:
         def fn() -> str:
             return "Hello, world!"
 
-        prompts = mcp._prompt_manager.list_prompts()
-        assert len(prompts) == 1
-        assert prompts[0].description == "A custom description"
-        content = await prompts[0].render()
+        prompts_dict = await mcp.get_prompts()
+        assert len(prompts_dict) == 1
+        prompt = prompts_dict["fn"]
+        assert prompt.description == "A custom description"
+        content = await prompt.render()
         assert isinstance(content[0].content, TextContent)
         assert content[0].content.text == "Hello, world!"
 
@@ -1245,20 +1334,22 @@ class TestServerPrompts:
 
         @mcp.prompt()
         def fn(name: str, optional: str = "default") -> str:
-            return f"Hello, {name}!"
+            return f"Hello, {name}! {optional}"
+
+        prompts_dict = await mcp.get_prompts()
+        assert len(prompts_dict) == 1
 
         async with Client(mcp) as client:
-            result = await client.list_prompts()
-            assert result is not None
-            assert len(result) == 1
-            prompt = result[0]
-            assert prompt.name == "fn"
-            assert prompt.arguments is not None
-            assert len(prompt.arguments) == 2
-            assert prompt.arguments[0].name == "name"
-            assert prompt.arguments[0].required is True
-            assert prompt.arguments[1].name == "optional"
-            assert prompt.arguments[1].required is False
+            prompts = await client.list_prompts()
+            assert len(prompts) == 1
+            assert prompts[0].name == "fn"
+            assert prompts[0].description is None
+            assert prompts[0].arguments is not None
+            assert len(prompts[0].arguments) == 2
+            assert prompts[0].arguments[0].name == "name"
+            assert prompts[0].arguments[0].required is True
+            assert prompts[0].arguments[1].name == "optional"
+            assert prompts[0].arguments[1].required is False
 
     async def test_get_prompt(self):
         """Test getting a prompt through MCP protocol."""
@@ -1270,8 +1361,8 @@ class TestServerPrompts:
 
         async with Client(mcp) as client:
             result = await client.get_prompt("fn", {"name": "World"})
-            assert len(result.messages) == 1
-            message = result.messages[0]
+            assert len(result) == 1
+            message = result[0]
             assert message.role == "user"
             content = message.content
             assert isinstance(content, TextContent)
@@ -1296,8 +1387,8 @@ class TestServerPrompts:
 
         async with Client(mcp) as client:
             result = await client.get_prompt("fn")
-            assert result.messages[0].role == "user"
-            content = result.messages[0].content
+            assert result[0].role == "user"
+            content = result[0].content
             assert isinstance(content, EmbeddedResource)
             resource = content.resource
             assert isinstance(resource, TextResourceContents)
@@ -1307,8 +1398,8 @@ class TestServerPrompts:
     async def test_get_unknown_prompt(self):
         """Test error when getting unknown prompt."""
         mcp = FastMCP()
-        async with Client(mcp) as client:
-            with pytest.raises(McpError, match="Unknown prompt"):
+        with pytest.raises(ClientError, match="Unknown prompt"):
+            async with Client(mcp) as client:
                 await client.get_prompt("unknown")
 
     async def test_get_prompt_missing_args(self):
@@ -1319,8 +1410,8 @@ class TestServerPrompts:
         def prompt_fn(name: str) -> str:
             return f"Hello, {name}!"
 
-        async with Client(mcp) as client:
-            with pytest.raises(McpError, match="Missing required arguments"):
+        with pytest.raises(ClientError, match="Missing required arguments"):
+            async with Client(mcp) as client:
                 await client.get_prompt("prompt_fn")
 
     async def test_tool_decorator_with_tags(self):
@@ -1337,15 +1428,15 @@ class TestServerPrompts:
         assert tools[0].tags == {"example", "test-tag"}
 
     async def test_resource_decorator_with_tags(self):
-        """Test that the resource decorator properly sets tags."""
+        """Test that the resource decorator supports tags."""
         mcp = FastMCP()
 
-        @mcp.resource("resource://sample", tags={"example", "test-tag"})
-        def sample_resource() -> str:
-            return "Sample resource"
+        @mcp.resource("resource://data", tags={"example", "test-tag"})
+        def get_data() -> str:
+            return "Hello, world!"
 
-        # Verify the tags were set correctly
-        resources = mcp._resource_manager.list_resources()
+        resources_dict = await mcp.get_resources()
+        resources = list(resources_dict.values())
         assert len(resources) == 1
         assert resources[0].tags == {"example", "test-tag"}
 
@@ -1357,9 +1448,9 @@ class TestServerPrompts:
         def template_resource(param: str) -> str:
             return f"Template resource: {param}"
 
-        templates = mcp._resource_manager.list_templates()
-        assert len(templates) == 1
-        assert templates[0].tags == {"template", "test-tag"}
+        templates_dict = await mcp.get_resource_templates()
+        template = templates_dict["resource://{param}"]
+        assert template.tags == {"template", "test-tag"}
 
     async def test_prompt_decorator_with_tags(self):
         """Test that the prompt decorator properly sets tags."""
@@ -1367,9 +1458,9 @@ class TestServerPrompts:
 
         @mcp.prompt(tags={"example", "test-tag"})
         def sample_prompt() -> str:
-            return "Sample prompt"
+            return "Hello, world!"
 
-        # Verify the tags were set correctly
-        prompts = mcp._prompt_manager.list_prompts()
-        assert len(prompts) == 1
-        assert prompts[0].tags == {"example", "test-tag"}
+        prompts_dict = await mcp.get_prompts()
+        assert len(prompts_dict) == 1
+        prompt = prompts_dict["sample_prompt"]
+        assert prompt.tags == {"example", "test-tag"}

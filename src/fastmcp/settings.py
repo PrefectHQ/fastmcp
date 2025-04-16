@@ -62,6 +62,9 @@ class ServerSettings(BaseSettings):
         description="List of dependencies to install in the server environment",
     )
 
+    # cache settings (for checking mounted servers)
+    cache_expiration_seconds: float = 0
+
 
 class ClientSettings(BaseSettings):
     """FastMCP client settings."""
