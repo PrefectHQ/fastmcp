@@ -2,6 +2,7 @@ import abc
 import contextlib
 import datetime
 import os
+import shutil
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import (
@@ -341,6 +342,10 @@ class NpxStdioTransport(StdioTransport):
             env_vars: Additional environment variables
             use_package_lock: Whether to use package-lock.json (--prefer-offline)
         """
+        # verify npx is installed
+        if shutil.which("npx") is None:
+            raise ValueError("Command 'npx' not found")
+
         # Basic validation
         if project_directory and not Path(project_directory).exists():
             raise NotADirectoryError(
