@@ -5,13 +5,13 @@ description = "The fast, Pythonic way to build MCP servers."
 authors = [{ name = "Jeremiah Lowin" }]
 dependencies = [
     "dotenv>=0.9.9",
+    "exceptiongroup>=1.2.2",
+    "httpx>=0.28.1",
     "mcp>=1.6.0,<2.0.0",
+    "openapi-pydantic>=0.5.1",
     "rich>=13.9.4",
     "typer>=0.15.2",
     "websockets>=15.0.1",
-    "fastapi>=0.115.12",
-    "openapi-pydantic>=0.5.1",
-    "exceptiongroup>=1.2.2",
 ]
 requires-python = ">=3.10"
 readme = "README.md"
@@ -38,6 +38,11 @@ classifiers = [
 
 [dependency-groups]
 dev = [
+    "copychat>=0.5.2",
+    "dirty-equals>=0.9.0",
+    "fastapi>=0.115.12",
+    "ipython>=8.12.3",
+    "pdbpp>=0.10.3",
     "pre-commit",
     "pyright>=1.1.389",
     "pytest>=8.3.3",
@@ -45,10 +50,6 @@ dev = [
     "pytest-flakefinder",
     "pytest-xdist>=3.6.1",
     "ruff",
-    "copychat>=0.5.2",
-    "ipython>=8.12.3",
-    "pdbpp>=0.10.3",
-    "dirty-equals>=0.9.0",
 ]
 
 [project.scripts]

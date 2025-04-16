@@ -1,174 +1,153 @@
 ---
 title: OpenAPI Integration
 sidebarTitle: OpenAPI
-description: Automatically create FastMCP servers from existing OpenAPI specifications.
+description: Generate MCP servers from OpenAPI specs
 icon: code-branch
 ---
 
-If you have existing REST APIs documented with the OpenAPI Specification (OAS), FastMCP can automatically generate MCP tools, resources, and resource templates directly from that specification. This provides a quick way to make your existing HTTP APIs accessible to MCP clients and LLMs.
+FastMCP can automatically generate an MCP server from an OpenAPI specification. Users only need to provide an OpenAPI specification (3.0 or 3.1) and an API client.
 
-FastMCP supports both OpenAPI 3.0 and 3.1 specifications for maximum compatibility with existing API definitions.
+```python
+import httpx
+from fastmcp import FastMCP
 
-## The Goal: API -> MCP Server
+# Create a client for your API
+api_client = httpx.AsyncClient(base_url="https://api.example.com")
 
-The core idea is to map OpenAPI paths and operations (like `GET /users/{id}` or `POST /orders`) to their corresponding MCP components:
+# Load your OpenAPI spec
+spec = {...} 
 
--   `GET` requests often map to MCP **Resources** (for fetching single items) or **Resource Templates** (if the path has parameters).
--   `POST`, `PUT`, `PATCH`, `DELETE` requests typically map to MCP **Tools** (for actions that create or modify data).
+# Create an MCP server from your OpenAPI spec
+mcp = FastMCP.from_openapi(openapi_spec=spec, client=api_client)
 
-FastMCP automates this mapping process.
+if __name__ == "__main__":
+    mcp.run()
+```
 
-## Creating from OpenAPI Spec
+## Route Mapping
 
-Use the `FastMCP.from_openapi()` class method. You need:
+By default, OpenAPI routes are mapped to MCP components based on these rules:
 
-1.  The OpenAPI specification as a Python dictionary.
-2.  An `httpx.AsyncClient` configured to make requests to the actual API backend.
+| OpenAPI Route | Example |MCP Component | Notes |
+|- | - | - | - |
+| `GET` without path params | `GET /stats` | Resource | Simple resources for fetching data |
+| `GET` with path params | `GET /users/{id}` | Resource Template | Path parameters become template parameters |
+| `POST`, `PUT`, `PATCH`, `DELETE`, etc. | `POST /users` | Tool | Operations that modify data |
 
-<CodeGroup>
 
-```python server.py
+Internally, FastMCP uses a priority-ordered set of `RouteMap` objects to determine the component type. Route maps indicate that a specific HTTP method (or methods) and path pattern should be treated as a specific component type. This is the default set of route maps:
+
+```python
+# Simplified version of the actual mapping rules
+DEFAULT_ROUTE_MAPPINGS = [
+    # GET with path parameters -> ResourceTemplate
+    RouteMap(methods=["GET"], pattern=r".*\{.*\}.*", 
+             route_type=RouteType.RESOURCE_TEMPLATE),
+    
+    # GET without path parameters -> Resource
+    RouteMap(methods=["GET"], pattern=r".*", 
+             route_type=RouteType.RESOURCE),
+    
+    # All other methods -> Tool
+    RouteMap(methods=["POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
+             pattern=r".*", route_type=RouteType.TOOL),
+]
+```
+
+### Custom Route Maps
+
+Users can add custom route maps to override the default mapping behavior. User-supplied route maps are always applied first, before the default route maps.
+
+```python
+from fastmcp.server.openapi import RouteMap, RouteType
+
+# Custom mapping rules
+custom_maps = [
+    # Force all analytics endpoints to be Tools
+    RouteMap(methods=["GET"], 
+             pattern=r"^/analytics/.*", 
+             route_type=RouteType.TOOL)
+]
+
+# Apply custom mappings
+mcp = await FastMCP.from_openapi(
+    openapi_spec=spec,
+    client=api_client,
+    route_maps=custom_maps
+)
+```
+
+## How It Works
+
+1. FastMCP parses your OpenAPI spec to extract routes and schemas
+2. It applies mapping rules to categorize each route
+3. When an MCP client calls a tool or accesses a resource:
+   - FastMCP constructs an HTTP request based on the OpenAPI definition
+   - It sends the request through the provided httpx client
+   - It translates the HTTP response to the appropriate MCP format
+
+## Complete Example
+
+```python
 import asyncio
 import httpx
 from fastmcp import FastMCP
 
-# load the OpenAPI specification from the openapi_spec.py file
-petstore_spec = PETSTORE_SPEC
-
-# Client to communicate with the actual Pet Store API backend
-# The base_url should match the server URL in the OpenAPI spec
-http_client = httpx.AsyncClient(base_url="http://petstore.example.com/api")
-
-# Create the FastMCP server from the spec
-# This is an async class method
-async def create_openapi_server():
-    mcp_server = await FastMCP.from_openapi(
-        openapi_spec=petstore_spec,
-        client=http_client,
-        name="PetStoreMCP" # Optional name for the MCP server
-    )
-    return mcp_server
-
-async def run_server():
-    server = await create_openapi_server()
-    print(f"Starting OpenAPI-based server '{server.name}'...")
-
-    # List discovered components
-    tools = await server.list_tools()
-    resources = await server.list_resources()
-    templates = await server.list_resource_templates()
-    print("Discovered Tools:", [t.name for t in tools])
-    print("Discovered Resources:", [r.uri for r in resources]) # Should be empty if no parameterless GETs
-    print("Discovered Templates:", [t.uriTemplate for t in templates])
-
-    # Run the server (e.g., via stdio)
-    # server.run()
-
-if __name__ == "__main__":
-    # Example: Create the server and print discovered components
-    # Requires httpx: uv pip install httpx
-    asyncio.run(run_server())
-
-# Expected Output might include:
-# Discovered Tools: ['listPets', 'createPet']
-# Discovered Resources: []
-# Discovered Templates: ['resource://openapi/showPetById/{petId}']
-```
-
-```python openapi_spec.py
-# Example OpenAPI Specification (simplified Pet Store)
-PETSTORE_SPEC = {
-    "openapi": "3.1.0",
-    "info": {"title": "Simple Pet Store", "version": "1.0.0"},
-    "servers": [{"url": "http://petstore.example.com/api"}], # Base URL for API calls
+# Sample OpenAPI spec for a Pet Store API
+petstore_spec = {
+    "openapi": "3.0.0",
     "paths": {
         "/pets": {
             "get": {
-                "summary": "List all pets",
                 "operationId": "listPets",
-                "tags": ["pets"],
-                "parameters": [{ # Query parameter -> Tool argument
-                    "name": "limit", "in": "query", "schema": {"type": "integer"}
-                }],
-                "responses": {"200": {"description": "A list of pets."}},
+                "summary": "List all pets"
             },
-            "post": { # POST -> Tool
-                "summary": "Create a pet",
+            "post": {
                 "operationId": "createPet",
-                "tags": ["pets"],
-                "requestBody": { # Request body -> Tool arguments
-                    "required": True,
-                    "content": {"application/json": {"schema": {"$ref": "#/components/schemas/PetInput"}}}
-                },
-                "responses": {"201": {"description": "Pet created."}},
-            },
+                "summary": "Create a new pet"
+            }
         },
-        "/pets/{petId}": { # Path parameter -> Resource Template
-            "get": { # GET with path param -> Resource Template / FunctionResource
-                "summary": "Info for a specific pet",
-                "operationId": "showPetById",
-                "tags": ["pets"],
-                "parameters": [{ # Path parameter -> Template function argument
-                    "name": "petId", "in": "path", "required": True, "schema": {"type": "string"}
-                }],
-                "responses": {"200": {"description": "Information about the pet."}},
-            },
-        },
-    },
-    "components": {
-        "schemas": {
-            "PetInput": {"type": "object", "properties": {"name": {"type": "string"}, "tag": {"type": "string"}}},
+        "/pets/{petId}": {
+            "get": {
+                "operationId": "getPet",
+                "summary": "Get a pet by ID",
+                "parameters": [
+                    {
+                        "name": "petId",
+                        "in": "path",
+                        "required": True,
+                        "schema": {"type": "string"}
+                    }
+                ]
+            }
         }
     }
 }
-``` 
 
-</CodeGroup>
-
-### How it Works Internally
-
-1.  **Parsing**: `from_openapi` parses the spec using utilities that leverage `openapi-pydantic`. It extracts paths, operations, parameters, request bodies, and responses.
-2.  **Mapping**: It applies mapping rules (see below) to decide whether each OpenAPI operation (`GET /pets`, `POST /pets`, `GET /pets/{petId}`) becomes an MCP `Tool`, `Resource`, or `ResourceTemplate`.
-3.  **Component Creation**: It creates specialized internal components (`OpenAPITool`, `OpenAPIResource`, `OpenAPIResourceTemplate`).
-4.  **HTTP Execution**: When an MCP client calls a tool or reads a resource from this server:
-    *   The corresponding OpenAPI component constructs an HTTP request based on the OpenAPI definition and the arguments provided by the MCP client.
-    *   It uses the provided `httpx.AsyncClient` to send the request to the backend API.
-    *   It processes the HTTP response and returns it to the MCP client in the appropriate MCP format.
-5.  **Schema Generation**: The schemas for MCP tools are derived by combining OpenAPI parameters (path, query, header) and request body schemas. Resource template function arguments are derived from path parameters.
-6.  **Descriptions**: Tool/Resource descriptions are enhanced with information from OpenAPI responses to give the LLM more context about potential outcomes.
-
-### Default Mapping Rules
-
-FastMCP uses the following default rules to map OpenAPI operations:
-
--   `GET` operation with path parameters (e.g., `/users/{id}`) -> **`ResourceTemplate`**
--   `GET` operation without path parameters (e.g., `/users`) -> **`Resource`**
--   `POST`, `PUT`, `PATCH`, `DELETE`, `OPTIONS`, `HEAD` -> **`Tool`**
-
-### Customize Route Mapping
-
-You can customize the mapping rules by providing a list of `RouteMap` objects directly to `FastMCP.from_openapi()` using the `route_maps` parameter:
-
-```python
-from fastmcp.server.openapi import RouteMap, RouteType
-from fastmcp import FastMCP
-
-# Custom mapping: Treat GET /admin/stats as a Tool, not a Resource
-custom_maps = [
-    RouteMap(methods=["GET"], pattern=r"^/admin/stats$", route_type=RouteType.TOOL)
-]
-
-async def create_server_with_custom_mapping():
-    mcp_server = await FastMCP.from_openapi(
+async def main():
+    # Client for the Pet Store API
+    client = httpx.AsyncClient(base_url="https://petstore.example.com/api")
+    
+    # Create the MCP server
+    mcp = await FastMCP.from_openapi(
         openapi_spec=petstore_spec,
-        client=http_client,
-        name="PetStoreMCP",
-        route_maps=custom_maps  # Pass custom mapping rules
+        client=client,
+        name="PetStore"
     )
-    return mcp_server
+    
+    # List what components were created
+    tools = await mcp.list_tools()
+    resources = await mcp.list_resources()
+    templates = await mcp.list_resource_templates()
+    
+    print(f"Tools: {len(tools)}")          # Should include createPet
+    print(f"Resources: {len(resources)}")  # Should include listPets
+    print(f"Templates: {len(templates)}")  # Should include getPet
+    
+    # Start the MCP server
+    mcp.run()
+
+if __name__ == "__main__":
+    asyncio.run(main())
 ```
-
-Each `RouteMap` maps one or more HTTP methods and a regular expression pattern for the route path to an MCP `RouteType`. Route maps are processed in order, and the first match wins.
-
-All parameters passed to `FastMCP.from_openapi()` will be forwarded to the underlying `FastMCPOpenAPI` constructor, so you can customize any aspect of the OpenAPI integration directly through this method call.
 
