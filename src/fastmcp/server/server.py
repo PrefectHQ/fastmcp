@@ -13,7 +13,6 @@ import anyio
 import httpx
 import pydantic_core
 import uvicorn
-from fastapi import FastAPI
 from mcp.server.lowlevel.helper_types import ReadResourceContents
 from mcp.server.lowlevel.server import LifespanResultT
 from mcp.server.lowlevel.server import Server as MCPServer
@@ -846,11 +845,12 @@ class FastMCP(Generic[LifespanResultT]):
 
     @classmethod
     def from_fastapi(
-        cls, app: FastAPI, name: str | None = None, **settings: Any
+        cls, app: "Any", name: str | None = None, **settings: Any
     ) -> "FastMCPOpenAPI":
         """
         Create a FastMCP server from a FastAPI application.
         """
+
         from .openapi import FastMCPOpenAPI
 
         client = httpx.AsyncClient(
