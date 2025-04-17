@@ -5,6 +5,10 @@ description: Learn how to use the FastMCP Client to interact with MCP servers.
 icon: user-robot
 ---
 
+import { VersionBadge } from '/snippets/version-badge.mdx'
+
+<VersionBadge version="2.0.0" />
+
 The `fastmcp.Client` provides a high-level, asynchronous interface for interacting with any Model Context Protocol (MCP) server, whether it's built with FastMCP or another implementation. It simplifies communication by handling protocol details and connection management.
 
 ## FastMCP Client
@@ -248,5 +252,5 @@ async def safe_call_tool():
 Other errors, like connection failures, will raise standard Python exceptions (e.g., `ConnectionError`, `TimeoutError`). 
 
 <Tip>
-The client transport often has its own error-handling mechanisms, so you can not always trap errors like those raised by `call_tool` outside of the `async with` block. Instead, you can call `call_tools(..., return_raw_result=True)` to get the raw result object and handle errors yourself by checking its `isError` attribute.
+The client transport often has its own error-handling mechanisms, so you can not always trap errors like those raised by `call_tool` outside of the `async with` block. Instead, you can call `call_tool(..., _return_raw_result=True)` to get the raw `mcp.types.CallToolResult` object and handle errors yourself by checking its `isError` attribute.
 </Tip>

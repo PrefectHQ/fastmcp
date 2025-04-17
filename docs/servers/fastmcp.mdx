@@ -223,84 +223,40 @@ fastmcp run my_server.py:mcp --transport sse --log-level DEBUG
 
 The CLI can dynamically find and run FastMCP server objects in your files, but including the `if __name__ == "__main__":` block ensures compatibility with all clients.
 
+## Composing Servers
 
-## Mounting Subservers
+FastMCP supports composing multiple servers together using `import_server` (static copy) and `mount` (live link). This allows you to organize large applications into modular components or reuse existing servers.
 
-FastMCP allows you to compose complex applications by mounting other FastMCP servers as subservers. This is useful for:
-
-- Organizing large applications into logical components
-- Reusing existing FastMCP servers as parts of a larger system
-- Creating domain-specific servers that can be used independently or composed
+See the [Server Composition](/patterns/composition) guide for full details, best practices, and examples.
 
 ```python
+# Example: Importing a subserver
 from fastmcp import FastMCP
+import asyncio
 
-# Create the main server
-main_mcp = FastMCP(name="MainServer")
+main = FastMCP(name="Main")
+sub = FastMCP(name="Sub")
 
-# Create a domain-specific subserver
-weather_mcp = FastMCP(name="WeatherService")
+@sub.tool()
+def hello(): 
+    return "hi"
 
-@weather_mcp.tool()
-def get_forecast(city: str) -> dict:
-    """Get the weather forecast for a city."""
-    return {"city": city, "forecast": "Sunny", "temperature": 72}
-
-# Create another domain-specific subserver
-calculator_mcp = FastMCP(name="CalculatorService")
-
-@calculator_mcp.tool()
-def add(a: float, b: float) -> float:
-    """Add two numbers."""
-    return a + b
-
-# Mount the subservers with prefixes
-main_mcp.mount("weather", weather_mcp)
-main_mcp.mount("calc", calculator_mcp)
-
-# Now main_mcp has access to both subservers' tools:
-# - "weather_get_forecast" (from weather_mcp)
-# - "calc_add" (from calculator_mcp)
-
-if __name__ == "__main__":
-    main_mcp.run()
+main.mount("sub", sub)
 ```
 
-### How Mounting Works
+## Proxying Servers
 
-When you mount a server with `main_mcp.mount(prefix, subserver)`:
+FastMCP can act as a proxy for any MCP server (local or remote) using `FastMCP.from_client`, letting you bridge transports or add a frontend to existing servers. For example, you can expose a remote SSE server locally via stdio, or vice versa.
 
-1. All tools from the subserver are imported with prefixed names:
-   - `tool_name` becomes `{prefix}_tool_name`
-   - Default separator is `_`, but can be customized
-
-2. All resources and resource templates are imported with prefixed URIs:
-   - `resource://data` becomes `{prefix}+resource://data`
-   - Default separator is `+`, but can be customized
-
-3. All prompts are imported with prefixed names:
-   - `prompt_name` becomes `{prefix}_prompt_name`
-   - Default separator is `_`, but can be customized
-
-4. The subserver's lifespan is managed automatically when the main server starts and stops
-
-### Customizing Separators
-
-You can customize the separators used for naming:
+See the [Proxying Servers](/patterns/proxy) guide for details and advanced usage.
 
 ```python
-main_mcp.mount(
-    "weather", 
-    weather_mcp,
-    tool_separator="-",       # Use "weather-get_forecast" instead of "weather_get_forecast"
-    resource_separator=".",   # Use "weather.resource://data" instead of "weather+resource://data"
-    prompt_separator=":"      # Use "weather:prompt_name" instead of "weather_prompt_name"
-)
-```
+from fastmcp import FastMCP, Client
 
-<Warning>
-Some MCP clients may reject certain separators as invalid. For example, Claude Desktop does not support `/` in tool names.
-</Warning>
+backend = Client("http://example.com/mcp/sse")
+proxy = FastMCP.from_client(backend, name="ProxyServer")
+# Now use the proxy like any FastMCP server
+```
 
 ## Server Configuration
 

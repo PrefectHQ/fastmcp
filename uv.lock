@@ -254,11 +254,12 @@ wheels = [
 
 [[package]]
 name = "fastmcp"
-version = "2.1.2.dev9+55f3666"
+version = "2.1.3.dev42+be2ccc6"
 source = { editable = "." }
 dependencies = [
     { name = "dotenv" },
-    { name = "fastapi" },
+    { name = "exceptiongroup" },
+    { name = "httpx" },
     { name = "mcp" },
     { name = "openapi-pydantic" },
     { name = "rich" },
@@ -270,6 +271,7 @@ dependencies = [
 dev = [
     { name = "copychat" },
     { name = "dirty-equals" },
+    { name = "fastapi" },
     { name = "ipython" },
     { name = "pdbpp" },
     { name = "pre-commit" },
@@ -284,7 +286,8 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "dotenv", specifier = ">=0.9.9" },
-    { name = "fastapi", specifier = ">=0.115.12" },
+    { name = "exceptiongroup", specifier = ">=1.2.2" },
+    { name = "httpx", specifier = ">=0.28.1" },
     { name = "mcp", specifier = ">=1.6.0,<2.0.0" },
     { name = "openapi-pydantic", specifier = ">=0.5.1" },
     { name = "rich", specifier = ">=13.9.4" },
@@ -296,6 +299,7 @@ requires-dist = [
 dev = [
     { name = "copychat", specifier = ">=0.5.2" },
     { name = "dirty-equals", specifier = ">=0.9.0" },
+    { name = "fastapi", specifier = ">=0.115.12" },
     { name = "ipython", specifier = ">=8.12.3" },
     { name = "pdbpp", specifier = ">=0.10.3" },
     { name = "pre-commit" },

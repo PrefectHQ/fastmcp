@@ -17,15 +17,12 @@ from fastmcp.client.roots import (
     create_roots_callback,
 )
 from fastmcp.client.sampling import SamplingHandler, create_sampling_callback
+from fastmcp.exceptions import ClientError
 from fastmcp.server import FastMCP
 
 from .transports import ClientTransport, SessionKwargs, infer_transport
 
 __all__ = ["Client", "RootsHandler", "RootsList"]
-
-
-class ClientError(ValueError):
-    """Base class for errors raised by the client."""
 
 
 class Client:
@@ -48,7 +45,7 @@ class Client:
     ):
         self.transport = infer_transport(transport)
         self._session: ClientSession | None = None
-        self._session_cm: AbstractAsyncContextManager[ClientSession] | None = None
+        self._session_cms: list[AbstractAsyncContextManager[ClientSession]] = []
 
         self._session_kwargs: SessionKwargs = {
             "sampling_callback": None,
@@ -89,24 +86,28 @@ class Client:
 
     async def __aenter__(self):
         if self.is_connected():
-            raise RuntimeError("Client is already connected in an async context.")
+            # We're already connected, no need to add None to the session_cms list
+            return self
+
         try:
-            self._session_cm = self.transport.connect_session(**self._session_kwargs)
-            self._session = await self._session_cm.__aenter__()
+            session_cm = self.transport.connect_session(**self._session_kwargs)
+            self._session_cms.append(session_cm)
+            self._session = await self._session_cms[-1].__aenter__()
             return self
         except Exception as e:
             # Ensure cleanup if __aenter__ fails partially
             self._session = None
-            self._session_cm = None
+            if self._session_cms:
+                self._session_cms.pop()
             raise ConnectionError(
                 f"Failed to connect using {self.transport}: {e}"
             ) from e
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        if self._session_cm:
-            await self._session_cm.__aexit__(exc_type, exc_val, exc_tb)
-        self._session = None
-        self._session_cm = None
+        if self._session_cms:
+            await self._session_cms[-1].__aexit__(exc_type, exc_val, exc_tb)
+            self._session = None
+            self._session_cms.pop()
 
     # --- MCP Client Methods ---
     async def ping(self) -> None:
@@ -168,10 +169,10 @@ class Client:
 
     async def get_prompt(
         self, name: str, arguments: dict[str, str] | None = None
-    ) -> mcp.types.GetPromptResult:
+    ) -> list[mcp.types.PromptMessage]:
         """Send a prompts/get request."""
         result = await self.session.get_prompt(name, arguments)
-        return result
+        return result.messages
 
     async def complete(
         self,

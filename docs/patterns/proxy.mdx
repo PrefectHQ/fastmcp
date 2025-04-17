@@ -4,8 +4,11 @@ sidebarTitle: Proxying
 description: Use FastMCP to act as an intermediary or change transport for other MCP servers.
 icon: arrows-retweet
 ---
+import { VersionBadge } from '/snippets/version-badge.mdx'
 
-FastMCP provides a powerful proxying capability that allows one FastMCP server instance to act as a frontend for another MCP server (which could be remote, running on a different transport, or even another FastMCP instance). This is achieved using the `FastMCP.as_proxy()` class method.
+<VersionBadge version="2.0.0" />
+
+FastMCP provides a powerful proxying capability that allows one FastMCP server instance to act as a frontend for another MCP server (which could be remote, running on a different transport, or even another FastMCP instance). This is achieved using the `FastMCP.from_client()` class method.
 
 ## What is Proxying?
 
@@ -32,7 +35,7 @@ sequenceDiagram
 
 ## Creating a Proxy
 
-The easiest way to create a proxy is using the `FastMCP.as_proxy()` class method. This creates a standard FastMCP server that forwards requests to another MCP server.
+The easiest way to create a proxy is using the `FastMCP.from_client()` class method. This creates a standard FastMCP server that forwards requests to another MCP server.
 
 ```python
 from fastmcp import FastMCP, Client
@@ -41,8 +44,8 @@ from fastmcp import FastMCP, Client
 # This could be any MCP server - remote, local, or using any transport
 backend_client = Client("backend_server.py")  # Could be "http://remote.server/sse", etc.
 
-# Create the proxy server with as_proxy()
-proxy_server = await FastMCP.as_proxy(
+# Create the proxy server with from_client()
+proxy_server = FastMCP.from_client(
     backend_client,
     name="MyProxyServer"  # Optional settings for the proxy
 )
@@ -51,12 +54,16 @@ proxy_server = await FastMCP.as_proxy(
 # with any transport (SSE, stdio, etc.) just like any other FastMCP server
 ```
 
-**How `as_proxy` Works:**
+**How `from_client` Works:**
 
 1.  It connects to the backend server using the provided client.
 2.  It discovers all the tools, resources, resource templates, and prompts available on the backend server.
 3.  It creates corresponding "proxy" components that forward requests to the backend.
 4.  It returns a standard `FastMCP` server instance that can be used like any other.
+
+<Note>
+Currently, proxying focuses primarily on exposing the major MCP objects (tools, resources, templates, and prompts). Some advanced MCP features like notifications and sampling are not fully supported in proxies in the current version. Support for these additional features may be added in future releases.
+</Note>
 
 ### Bridging Transports
 
@@ -69,7 +76,7 @@ from fastmcp import FastMCP, Client
 client = Client("http://example.com/mcp/sse")
 
 # Create a proxy server - it's just a regular FastMCP server
-proxy = await FastMCP.as_proxy(client, name="SSE to Stdio Proxy")
+proxy = FastMCP.from_client(client, name="SSE to Stdio Proxy")
 
 # The proxy can now be used with any transport
 # No special handling needed - it works like any FastMCP server
@@ -90,7 +97,7 @@ def tool_a() -> str:
     return "A"
 
 # Create a proxy of the original server
-proxy = await FastMCP.as_proxy(
+proxy = FastMCP.from_client(
     original_server,
     name="Proxy Server"
 )
@@ -101,9 +108,6 @@ proxy = await FastMCP.as_proxy(
 
 ## `FastMCPProxy` Class
 
-Internally, `FastMCP.as_proxy()` uses the `FastMCPProxy` class. You generally don't need to interact with this class directly, but it's available if needed. It has two primary async constructors:
-
-*   `FastMCPProxy.from_client(client: Client, **settings)`: Creates a proxy from a client instance.
-*   `FastMCPProxy.from_server(server: FastMCP, **settings)`: Creates a proxy from another FastMCP server instance.
+Internally, `FastMCP.from_client()` uses the `FastMCPProxy` class. You generally don't need to interact with this class directly, but it's available if needed.
 
 Using the class directly might be necessary for advanced scenarios, like subclassing `FastMCPProxy` to add custom logic before or after forwarding requests. 

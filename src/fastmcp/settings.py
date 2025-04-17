@@ -42,7 +42,7 @@ class ServerSettings(BaseSettings):
     log_level: LOG_LEVEL = Field(default_factory=lambda: Settings().log_level)
 
     # HTTP settings
-    host: str = "0.0.0.0"
+    host: str = "127.0.0.1"
     port: int = 8000
     sse_path: str = "/sse"
     message_path: str = "/messages/"
@@ -61,6 +61,9 @@ class ServerSettings(BaseSettings):
         default_factory=list,
         description="List of dependencies to install in the server environment",
     )
+
+    # cache settings (for checking mounted servers)
+    cache_expiration_seconds: float = 0
 
 
 class ClientSettings(BaseSettings):

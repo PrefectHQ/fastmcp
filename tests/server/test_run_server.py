@@ -93,6 +93,6 @@
 
 
 # class TestRunServerSSE:
-#     @pytest.mark.anyio
+#
 #     async def test_run_server_sse(self, fastmcp_server: FastMCP):
 #         pass

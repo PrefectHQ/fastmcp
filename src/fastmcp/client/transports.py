@@ -2,13 +2,15 @@ import abc
 import contextlib
 import datetime
 import os
+import shutil
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import (
     TypedDict,
 )
 
-from mcp import ClientSession, StdioServerParameters
+from exceptiongroup import BaseExceptionGroup, catch
+from mcp import ClientSession, McpError, StdioServerParameters
 from mcp.client.session import (
     ListRootsFnT,
     LoggingFnT,
@@ -22,6 +24,7 @@ from mcp.shared.memory import create_connected_server_and_client_session
 from pydantic import AnyUrl
 from typing_extensions import Unpack
 
+from fastmcp.exceptions import ClientError
 from fastmcp.server import FastMCP as FastMCPServer
 
 
@@ -341,6 +344,10 @@ class NpxStdioTransport(StdioTransport):
             env_vars: Additional environment variables
             use_package_lock: Whether to use package-lock.json (--prefer-offline)
         """
+        # verify npx is installed
+        if shutil.which("npx") is None:
+            raise ValueError("Command 'npx' not found")
+
         # Basic validation
         if project_directory and not Path(project_directory).exists():
             raise NotADirectoryError(
@@ -382,12 +389,26 @@ class FastMCPTransport(ClientTransport):
     async def connect_session(
         self, **session_kwargs: Unpack[SessionKwargs]
     ) -> AsyncIterator[ClientSession]:
-        # create_connected_server_and_client_session manages the session lifecycle itself
-        async with create_connected_server_and_client_session(
-            server=self._fastmcp._mcp_server,
-            **session_kwargs,
-        ) as session:
-            yield session
+        def exception_handler(excgroup: BaseExceptionGroup):
+            for exc in excgroup.exceptions:
+                if isinstance(exc, BaseExceptionGroup):
+                    exception_handler(exc)
+                raise exc
+
+        def mcperror_handler(excgroup: BaseExceptionGroup):
+            for exc in excgroup.exceptions:
+                if isinstance(exc, BaseExceptionGroup):
+                    mcperror_handler(exc)
+                raise ClientError(exc)
+
+        # backport of 3.11's except* syntax
+        with catch({McpError: mcperror_handler, Exception: exception_handler}):
+            # create_connected_server_and_client_session manages the session lifecycle itself
+            async with create_connected_server_and_client_session(
+                server=self._fastmcp._mcp_server,
+                **session_kwargs,
+            ) as session:
+                yield session
 
     def __repr__(self) -> str:
         return f"<FastMCP(server='{self._fastmcp.name}')>"

@@ -4,10 +4,11 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from mcp.shared.context import LifespanContextT
+from mcp.types import EmbeddedResource, ImageContent, TextContent
 
-from fastmcp.exceptions import ToolError
+from fastmcp.exceptions import NotFoundError
 from fastmcp.settings import DuplicateBehavior
-from fastmcp.tools.tool import MCPTool, Tool
+from fastmcp.tools.tool import Tool
 from fastmcp.utilities.logging import get_logger
 
 if TYPE_CHECKING:
@@ -36,9 +37,15 @@ class ToolManager:
 
         self.duplicate_behavior = duplicate_behavior
 
-    def get_tool(self, key: str) -> Tool | None:
+    def has_tool(self, key: str) -> bool:
+        """Check if a tool exists."""
+        return key in self._tools
+
+    def get_tool(self, key: str) -> Tool:
         """Get tool by key."""
-        return self._tools.get(key)
+        if key in self._tools:
+            return self._tools[key]
+        raise NotFoundError(f"Unknown tool: {key}")
 
     def get_tools(self) -> dict[str, Tool]:
         """Get all registered tools, indexed by registered key."""
@@ -47,10 +54,6 @@ class ToolManager:
     def list_tools(self) -> list[Tool]:
         """List all registered tools."""
         return list(self.get_tools().values())
-
-    def list_mcp_tools(self) -> list[MCPTool]:
-        """List all registered tools in the format expected by the low-level MCP server."""
-        return [tool.to_mcp_tool(name=key) for key, tool in self._tools.items()]
 
     def add_tool_from_fn(
         self,
@@ -86,29 +89,10 @@ class ToolManager:
         key: str,
         arguments: dict[str, Any],
         context: Context[ServerSessionT, LifespanContextT] | None = None,
-    ) -> Any:
+    ) -> list[TextContent | ImageContent | EmbeddedResource]:
         """Call a tool by name with arguments."""
         tool = self.get_tool(key)
         if not tool:
-            raise ToolError(f"Unknown tool: {key}")
+            raise NotFoundError(f"Unknown tool: {key}")
 
         return await tool.run(arguments, context=context)
-
-    def import_tools(
-        self, tool_manager: ToolManager, prefix: str | None = None
-    ) -> None:
-        """
-        Import all tools from another ToolManager with prefixed names.
-
-        Args:
-            tool_manager: Another ToolManager instance to import tools from
-            prefix: Prefix to add to tool names, including the delimiter.
-                   The resulting tool name will be in the format "{prefix}{original_name}"
-                   if prefix is provided, otherwise the original name is used.
-                   For example, with prefix "weather/" and tool "forecast",
-                   the imported tool would be available as "weather/forecast"
-        """
-        for name, tool in tool_manager._tools.items():
-            key = f"{prefix}{name}" if prefix else name
-            self.add_tool(tool, key=key)
-            logger.debug(f'Imported tool "{tool.name}" as "{key}"')

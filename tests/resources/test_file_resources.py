@@ -53,7 +53,6 @@ class TestFileResource:
         assert isinstance(resource.path, Path)
         assert resource.path.is_absolute()
 
-    @pytest.mark.anyio
     async def test_read_text_file(self, temp_file: Path):
         """Test reading a text file."""
         resource = FileResource(
@@ -65,7 +64,6 @@ class TestFileResource:
         assert content == "test content"
         assert resource.mime_type == "text/plain"
 
-    @pytest.mark.anyio
     async def test_read_binary_file(self, temp_file: Path):
         """Test reading a file as binary."""
         resource = FileResource(
@@ -87,7 +85,6 @@ class TestFileResource:
                 path=Path("test.txt"),
             )
 
-    @pytest.mark.anyio
     async def test_missing_file_error(self, temp_file: Path):
         """Test error when file doesn't exist."""
         # Create path to non-existent file
@@ -103,7 +100,6 @@ class TestFileResource:
     @pytest.mark.skipif(
         os.name == "nt", reason="File permissions behave differently on Windows"
     )
-    @pytest.mark.anyio
     async def test_permission_error(self, temp_file: Path):
         """Test reading a file without permissions."""
         temp_file.chmod(0o000)  # Remove all permissions

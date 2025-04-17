@@ -115,7 +115,7 @@ class Prompt(BaseModel):
 
         return cls(
             name=func_name,
-            description=description or fn.__doc__ or "",
+            description=description or fn.__doc__,
             arguments=arguments,
             fn=fn,
             tags=tags or set(),
