@@ -1,17 +1,17 @@
-"""Sample code for FastMCP."""
+"""Sample code for FastMCP using MCPMixin."""
 
-from src.fastmcp import FastMCP
-from src.fastmcp.utilities.registerable import (
-    McpRegisterable,
+from contrib.mcp_mixin.mcp_mixin import (
+    MCPMixin,
     mcp_prompt,
     mcp_resource,
     mcp_tool,
 )
+from fastmcp import FastMCP
 
 mcp = FastMCP()
 
 
-class Sample(McpRegisterable):
+class Sample(MCPMixin):
     def __init__(self, name):
         self.name = name
 
@@ -39,7 +39,11 @@ second_sample.register_all(mcp_server=mcp, prefix="second")
 
 
 def main():
-    mcp.run("sse")
+    print("MCP Server running with registered components...")
+    print("Tools:", list(mcp.get_tools().keys()))
+    print("Resources:", list(mcp.get_resources().keys()))
+    print("Prompts:", [p.name for p in mcp.list_prompts()])
+    mcp.run()
 
 
 if __name__ == "__main__":
