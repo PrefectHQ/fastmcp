@@ -66,6 +66,7 @@ FastMCP handles the complex protocol details and server management, letting you 
   - [Proxy Servers](#proxy-servers)
   - [Composing MCP Servers](#composing-mcp-servers)
   - [OpenAPI \& FastAPI Generation](#openapi--fastapi-generation)
+  - [Handling `stderr`](#handling-stderr)
 - [Running Your Server](#running-your-server)
   - [Development Mode (Recommended for Building \& Testing)](#development-mode-recommended-for-building--testing)
   - [Claude Desktop Integration (For Regular Use)](#claude-desktop-integration-for-regular-use)
@@ -666,6 +667,12 @@ mcp_server = FastMCP.from_openapi(openapi_spec, client=http_client)
 if __name__ == "__main__":
     mcp_server.run()
 ```
+
+### Handling `stderr`
+The MCP spec allows for the server to write anything it wants to `stderr`, and it
+doesn't specify the format in any way. FastMCP will forward the server's `stderr`
+to the client's `stderr`.
+
 ## Running Your Server
 
 Choose the method that best suits your needs:
