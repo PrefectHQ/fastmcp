@@ -27,4 +27,4 @@ repos:
     hooks:
       - id: pyright-pretty
         files: ^src/|^tests/
-        exclude: ^examples/
+        exclude: ^examples/|^src/contrib/|^tests/contrib/
