@@ -32,7 +32,7 @@ from fastmcp import FastMCP
 
 mcp = FastMCP("My MCP Server")
 
-@mcp.tool
+@mcp.tool()
 def greet(name: str) -> str:
     return f"Hello, {name}!"
 ```
@@ -48,7 +48,7 @@ from fastmcp import FastMCP, Client
 
 mcp = FastMCP("My MCP Server")
 
-@mcp.tool
+@mcp.tool()
 def greet(name: str) -> str:
     return f"Hello, {name}!"
 
@@ -75,7 +75,7 @@ from fastmcp import FastMCP, Client
 
 mcp = FastMCP("My MCP Server")
 
-@mcp.tool
+@mcp.tool()
 def greet(name: str) -> str:
     return f"Hello, {name}!"
 
