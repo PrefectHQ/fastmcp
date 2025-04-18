@@ -51,7 +51,9 @@ class TestMCPMixin:
         ],
         ids=["No prefix", "Default separator", "Custom separator"],
     )
-    def test_tool_registration(self, prefix, separator, expected_key, unexpected_key):
+    async def test_tool_registration(
+        self, prefix, separator, expected_key, unexpected_key
+    ):
         """Test tool registration with prefix and separator variations."""
         mcp = FastMCP()
 
@@ -63,7 +65,7 @@ class TestMCPMixin:
         instance = MyToolMixin()
         instance.register_tools(mcp, prefix=prefix, separator=separator)
 
-        registered_tools = mcp.get_tools()
+        registered_tools = await mcp.get_tools()
         assert expected_key in registered_tools
         assert unexpected_key not in registered_tools
 
@@ -94,7 +96,7 @@ class TestMCPMixin:
         ],
         ids=["No prefix", "Default separator", "Custom separator"],
     )
-    def test_resource_registration(
+    async def test_resource_registration(
         self, prefix, separator, expected_uri_key, expected_name, unexpected_uri_key
     ):
         """Test resource registration with prefix and separator variations."""
@@ -108,7 +110,7 @@ class TestMCPMixin:
         instance = MyResourceMixin()
         instance.register_resources(mcp, prefix=prefix, separator=separator)
 
-        registered_resources = mcp.get_resources()
+        registered_resources = await mcp.get_resources()
         assert expected_uri_key in registered_resources
         assert registered_resources[expected_uri_key].name == expected_name
         assert unexpected_uri_key not in registered_resources
@@ -137,7 +139,7 @@ class TestMCPMixin:
         ],
         ids=["No prefix", "Default separator", "Custom separator"],
     )
-    def test_prompt_registration(
+    async def test_prompt_registration(
         self, prefix, separator, expected_name, unexpected_name
     ):
         """Test prompt registration with prefix and separator variations."""
@@ -151,11 +153,11 @@ class TestMCPMixin:
         instance = MyPromptMixin()
         instance.register_prompts(mcp, prefix=prefix, separator=separator)
 
-        registered_prompt_names = {p.name for p in mcp.list_prompts()}
-        assert expected_name in registered_prompt_names
-        assert unexpected_name not in registered_prompt_names
+        prompts = await mcp.get_prompts()
+        assert expected_name in prompts
+        assert unexpected_name not in prompts
 
-    def test_register_all_no_prefix(self):
+    async def test_register_all_no_prefix(self):
         """Test register_all method registers all types without a prefix."""
         mcp = FastMCP()
 
@@ -175,11 +177,15 @@ class TestMCPMixin:
         instance = MyFullMixin()
         instance.register_all(mcp)
 
-        assert "tool_all" in mcp.get_tools()
-        assert "res://all" in mcp.get_resources()
-        assert "prompt_all" in {p.name for p in mcp.list_prompts()}
+        tools = await mcp.get_tools()
+        resources = await mcp.get_resources()
+        prompts = await mcp.get_prompts()
 
-    def test_register_all_with_prefix_default_separators(self):
+        assert "tool_all" in tools
+        assert "res://all" in resources
+        assert "prompt_all" in prompts
+
+    async def test_register_all_with_prefix_default_separators(self):
         """Test register_all method registers all types with a prefix and default separators."""
         mcp = FastMCP()
 
@@ -199,13 +205,15 @@ class TestMCPMixin:
         instance = MyFullMixinPrefixed()
         instance.register_all(mcp, prefix="all")
 
-        assert f"all{_DEFAULT_SEPARATOR_TOOL}tool_all_p" in mcp.get_tools()
-        assert f"all{_DEFAULT_SEPARATOR_RESOURCE}res://all_p" in mcp.get_resources()
-        assert f"all{_DEFAULT_SEPARATOR_PROMPT}prompt_all_p" in {
-            p.name for p in mcp.list_prompts()
-        }
+        tools = await mcp.get_tools()
+        resources = await mcp.get_resources()
+        prompts = await mcp.get_prompts()
 
-    def test_register_all_with_prefix_custom_separators(self):
+        assert f"all{_DEFAULT_SEPARATOR_TOOL}tool_all_p" in tools
+        assert f"all{_DEFAULT_SEPARATOR_RESOURCE}res://all_p" in resources
+        assert f"all{_DEFAULT_SEPARATOR_PROMPT}prompt_all_p" in prompts
+
+    async def test_register_all_with_prefix_custom_separators(self):
         """Test register_all method registers all types with a prefix and custom separators."""
         mcp = FastMCP()
 
@@ -231,13 +239,15 @@ class TestMCPMixin:
             prompt_separator=".",
         )
 
-        assert "cust-tool_cust" in mcp.get_tools()
-        assert "cust::res://cust" in mcp.get_resources()
-        assert "cust.prompt_cust" in {p.name for p in mcp.list_prompts()}
+        tools = await mcp.get_tools()
+        resources = await mcp.get_resources()
+        prompts = await mcp.get_prompts()
+
+        assert "cust-tool_cust" in tools
+        assert "cust::res://cust" in resources
+        assert "cust.prompt_cust" in prompts
 
         # Check default separators weren't used
-        assert f"cust{_DEFAULT_SEPARATOR_TOOL}tool_cust" not in mcp.get_tools()
-        assert f"cust{_DEFAULT_SEPARATOR_RESOURCE}res://cust" not in mcp.get_resources()
-        assert f"cust{_DEFAULT_SEPARATOR_PROMPT}prompt_cust" not in {
-            p.name for p in mcp.list_prompts()
-        }
+        assert f"cust{_DEFAULT_SEPARATOR_TOOL}tool_cust" not in tools
+        assert f"cust{_DEFAULT_SEPARATOR_RESOURCE}res://cust" not in resources
+        assert f"cust{_DEFAULT_SEPARATOR_PROMPT}prompt_cust" not in prompts

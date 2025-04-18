@@ -1,5 +1,7 @@
 """Sample code for FastMCP using MCPMixin."""
 
+import asyncio
+
 from contrib.mcp_mixin.mcp_mixin import (
     MCPMixin,
     mcp_prompt,
@@ -38,13 +40,13 @@ first_sample.register_all(mcp_server=mcp, prefix="first")
 second_sample.register_all(mcp_server=mcp, prefix="second")
 
 
-def main():
+async def list_components():
     print("MCP Server running with registered components...")
-    print("Tools:", list(mcp.get_tools().keys()))
-    print("Resources:", list(mcp.get_resources().keys()))
-    print("Prompts:", [p.name for p in mcp.list_prompts()])
-    mcp.run()
+    print("Tools:", list(await mcp.get_tools()))
+    print("Resources:", list(await mcp.get_resources()))
+    print("Prompts:", list(await mcp.get_prompts()))
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(list_components())
+    mcp.run()
