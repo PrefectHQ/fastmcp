@@ -1,4 +1,5 @@
 version = 1
+revision = 1
 requires-python = ">=3.10"
 
 [[package]]
@@ -127,7 +128,7 @@ name = "click"
 version = "8.1.8"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "colorama", marker = "platform_system == 'Windows'" },
+    { name = "colorama", marker = "sys_platform == 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/b9/2e/0090cbf739cee7d23781ad4b89a9894a41538e4fcf4c31dcdd705b78eb8b/click-8.1.8.tar.gz", hash = "sha256:ed53c9d8990d83c2a27deae68e4ee337473f6330c040a31d4225c9574d16096a", size = 226593 }
 wheels = [
@@ -188,17 +189,6 @@ wheels = [
 ]
 
 [[package]]
-name = "dotenv"
-version = "0.9.9"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "python-dotenv" },
-]
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/b2/b7/545d2c10c1fc15e48653c91efde329a790f2eecfbbf2bd16003b5db2bab0/dotenv-0.9.9-py2.py3-none-any.whl", hash = "sha256:29cf74a087b31dafdb5a446b6d7e11cbce8ed2741540e2339c69fbef92c94ce9", size = 1892 },
-]
-
-[[package]]
 name = "exceptiongroup"
 version = "1.2.2"
 source = { registry = "https://pypi.org/simple" }
@@ -230,7 +220,7 @@ name = "fancycompleter"
 version = "0.9.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "pyreadline", marker = "platform_system == 'Windows'" },
+    { name = "pyreadline", marker = "sys_platform == 'win32'" },
     { name = "pyrepl" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/a9/95/649d135442d8ecf8af5c7e235550c628056423c96c4bc6787348bdae9248/fancycompleter-0.9.1.tar.gz", hash = "sha256:09e0feb8ae242abdfd7ef2ba55069a46f011814a80fe5476be48f51b00247272", size = 10866 }
@@ -254,14 +244,13 @@ wheels = [
 
 [[package]]
 name = "fastmcp"
-version = "2.1.3.dev42+be2ccc6"
 source = { editable = "." }
 dependencies = [
-    { name = "dotenv" },
     { name = "exceptiongroup" },
     { name = "httpx" },
     { name = "mcp" },
     { name = "openapi-pydantic" },
+    { name = "python-dotenv" },
     { name = "rich" },
     { name = "typer" },
     { name = "websockets" },
@@ -285,11 +274,11 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "dotenv", specifier = ">=0.9.9" },
     { name = "exceptiongroup", specifier = ">=1.2.2" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "mcp", specifier = ">=1.6.0,<2.0.0" },
     { name = "openapi-pydantic", specifier = ">=0.5.1" },
+    { name = "python-dotenv", specifier = ">=1.1.0" },
     { name = "rich", specifier = ">=13.9.4" },
     { name = "typer", specifier = ">=0.15.2" },
     { name = "websockets", specifier = ">=15.0.1" },

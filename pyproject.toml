@@ -4,7 +4,7 @@ dynamic = ["version"]
 description = "The fast, Pythonic way to build MCP servers."
 authors = [{ name = "Jeremiah Lowin" }]
 dependencies = [
-    "dotenv>=0.9.9",
+    "python-dotenv>=1.1.0",
     "exceptiongroup>=1.2.2",
     "httpx>=0.28.1",
     "mcp>=1.6.0,<2.0.0",
