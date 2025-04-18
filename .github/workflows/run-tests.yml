@@ -60,4 +60,3 @@ jobs:
 
       - name: Run tests
         run: uv run pytest -vv
-        if: ${{ !(github.event.pull_request.head.repo.fork) }}
