@@ -135,7 +135,7 @@ class TestMCPMixin:
                 f"pref{_DEFAULT_SEPARATOR_PROMPT}sample_prompt",
             ),
         ],
-        ids = ["No prefix", "Default separator", "Custom separator"]
+        ids=["No prefix", "Default separator", "Custom separator"],
     )
     def test_prompt_registration(
         self, prefix, separator, expected_name, unexpected_name
