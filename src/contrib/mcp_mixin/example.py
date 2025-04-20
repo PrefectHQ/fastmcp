@@ -2,7 +2,7 @@
 
 import asyncio
 
-from contrib.mcp_mixin.mcp_mixin import (
+from contrib.mcp_mixin import (
     MCPMixin,
     mcp_prompt,
     mcp_resource,

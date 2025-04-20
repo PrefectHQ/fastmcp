@@ -10,7 +10,7 @@ Inherit from `MCPMixin` and use the decorators on the methods you want to regist
 
 ```python
 from fastmcp import FastMCP
-from contrib.mcp_mixin.mcp_mixin import MCPMixin, mcp_tool, mcp_resource
+from contrib.mcp_mixin import MCPMixin, mcp_tool, mcp_resource
 
 class MyComponent(MCPMixin):
     @mcp_tool(name="my_tool", description="Does something cool.")
