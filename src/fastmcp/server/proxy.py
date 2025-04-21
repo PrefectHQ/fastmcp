@@ -176,7 +176,7 @@ class FastMCPProxy(FastMCP):
 
         async with self.client:
             try:
-                client_tools =await self.client.list_tools()
+                client_tools = await self.client.list_tools()
             except McpError as e:
                 if e.error.code == METHOD_NOT_FOUND:
                     client_tools = []
