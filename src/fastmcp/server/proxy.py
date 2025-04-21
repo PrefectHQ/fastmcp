@@ -180,6 +180,8 @@ class FastMCPProxy(FastMCP):
             except McpError as e:
                 if e.error.code == METHOD_NOT_FOUND:
                     client_tools = []
+                else:
+                    raise e
             for tool in client_tools:
                 tool_proxy = await ProxyTool.from_client(self.client, tool)
                 tools[tool_proxy.name] = tool_proxy
@@ -195,6 +197,8 @@ class FastMCPProxy(FastMCP):
             except McpError as e:
                 if e.error.code == METHOD_NOT_FOUND:
                     client_resources = []
+                else:
+                    raise e
             for resource in client_resources:
                 resource_proxy = await ProxyResource.from_client(self.client, resource)
                 resources[str(resource_proxy.uri)] = resource_proxy
@@ -210,6 +214,8 @@ class FastMCPProxy(FastMCP):
             except McpError as e:
                 if e.error.code == METHOD_NOT_FOUND:
                     client_templates = []
+                else:
+                    raise e
             for template in client_templates:
                 template_proxy = await ProxyTemplate.from_client(self.client, template)
                 templates[template_proxy.uri_template] = template_proxy
@@ -225,6 +231,8 @@ class FastMCPProxy(FastMCP):
             except McpError as e:
                 if e.error.code == METHOD_NOT_FOUND:
                     client_prompts = []
+                else:
+                    raise e
             for prompt in client_prompts:
                 prompt_proxy = await ProxyPrompt.from_client(self.client, prompt)
                 prompts[prompt_proxy.name] = prompt_proxy
