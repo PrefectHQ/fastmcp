@@ -44,8 +44,8 @@ class Client:
         read_timeout_seconds: datetime.timedelta | None = None,
     ):
         self.transport = infer_transport(transport)
-        self._session: ClientSession | None = None
-        self._session_cms: list[AbstractAsyncContextManager[ClientSession]] = []
+        # stack to record nested context manager, None is pushed if reuse existing session
+        self._session_cms: list[(AbstractAsyncContextManager[ClientSession], ClientSession)] = []
 
         self._session_kwargs: SessionKwargs = {
             "sampling_callback": None,
@@ -64,11 +64,11 @@ class Client:
     @property
     def session(self) -> ClientSession:
         """Get the current active session. Raises RuntimeError if not connected."""
-        if self._session is None:
+        if not self._session_cms:
             raise RuntimeError(
                 "Client is not connected. Use 'async with client:' context manager first."
             )
-        return self._session
+        self._session_cms[-1][1]
 
     def set_roots(self, roots: RootsList | RootsHandler) -> None:
         """Set the roots for the client. This does not automatically call `send_roots_list_changed`."""
@@ -82,32 +82,24 @@ class Client:
 
     def is_connected(self) -> bool:
         """Check if the client is currently connected."""
-        return self._session is not None
+        return len(self._session_cms) > 0
 
     async def __aenter__(self):
-        if self.is_connected():
-            # We're already connected, no need to add None to the session_cms list
-            return self
-
-        try:
+        if self._session_cms:
+            # share the current session, push a None as cms to avoid close it in aexit
+            _, session = self._session_cms[-1]
+            self._session_cms.append((None, session))
+        else:
+            # create new session
             session_cm = self.transport.connect_session(**self._session_kwargs)
-            self._session_cms.append(session_cm)
-            self._session = await self._session_cms[-1].__aenter__()
-            return self
-        except Exception as e:
-            # Ensure cleanup if __aenter__ fails partially
-            self._session = None
-            if self._session_cms:
-                self._session_cms.pop()
-            raise ConnectionError(
-                f"Failed to connect using {self.transport}: {e}"
-            ) from e
+            session = await session_cm.__aenter__()
+            self._session_cms.append((session_cm, session))
+        return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        if self._session_cms:
-            await self._session_cms[-1].__aexit__(exc_type, exc_val, exc_tb)
-            self._session = None
-            self._session_cms.pop()
+        cm, _ = self._session_cms.pop()
+        if cm is not None:
+            await cm.__aexit__(exc_type, exc_val, exc_tb)
 
     # --- MCP Client Methods ---
     async def ping(self) -> None:
