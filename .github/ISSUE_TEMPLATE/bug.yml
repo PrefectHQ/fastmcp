@@ -1,0 +1,63 @@
+name: 🐛 Bug Report
+description: Report a bug or unexpected behavior in FastMCP
+labels: [bug, pending]
+
+body:
+  - type: markdown
+    attributes:
+      value: Thank you for contributing to FastMCP! 🙏
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: |
+        Please explain what you're experiencing and what you would expect to happen instead.
+
+        Provide as much detail as possible to help us understand and solve your problem quickly.
+    validations:
+      required: true
+
+  - type: textarea
+    id: example
+    attributes:
+      label: Example Code
+      description: >
+        If applicable, please provide a self-contained,
+        [minimal, reproducible example](https://stackoverflow.com/help/minimal-reproducible-example)
+        demonstrating the bug.
+
+      placeholder: |
+        from fastmcp import FastMCP
+
+        ...
+      render: Python
+
+  - type: textarea
+    id: version
+    attributes:
+      label: Version Information
+      description: |
+        Please provide information about your FastMCP version, MCP version, Python version, and OS.
+
+        To get this information, run the following command in your terminal and paste the output below:
+
+        ```bash
+        fastmcp version
+        ```
+
+        If there is other information that would be helpful, please include it as well.
+      render: Text
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional_context
+    attributes:
+      label: Additional Context
+      description: |
+        Add any other context about the problem here. This could include:
+        - The full error message and traceback (if applicable)
+        - Information about your environment (e.g., virtual environment, installed packages)
+        - Steps to reproduce the issue
+        - Any recent changes in your code or setup that might be relevant
