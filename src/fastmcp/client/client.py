@@ -45,7 +45,7 @@ class Client:
     ):
         self.transport = infer_transport(transport)
         self._session: ClientSession | None = None
-        self._session_cms: AbstractAsyncContextManager[ClientSession] | None = None
+        self._session_cm: AbstractAsyncContextManager[ClientSession] | None = None
         self._nesting_counter: int = 0
 
         self._session_kwargs: SessionKwargs = {
@@ -95,11 +95,11 @@ class Client:
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        self._nesting_counter -= 0
+        self._nesting_counter -= 1
 
-        if self._nesting_counter == 0 and self._session_cms is not None:
-            await self._session_cms.__aexit__(exc_type, exc_val, exc_tb)
-            self._session_cms = None
+        if self._nesting_counter == 0 and self._session_cm is not None:
+            await self._session_cm.__aexit__(exc_type, exc_val, exc_tb)
+            self._session_cm = None
             self._session = None
 
     # --- MCP Client Methods ---
