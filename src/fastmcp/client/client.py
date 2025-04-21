@@ -65,7 +65,7 @@ class Client:
     @property
     def session(self) -> ClientSession:
         """Get the current active session. Raises RuntimeError if not connected."""
-        if not self._session:
+        if self._session is None:
             raise RuntimeError(
                 "Client is not connected. Use 'async with client:' context manager first."
             )
