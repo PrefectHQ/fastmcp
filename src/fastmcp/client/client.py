@@ -45,7 +45,9 @@ class Client:
     ):
         self.transport = infer_transport(transport)
         # stack to record nested context manager, None is pushed if reuse existing session
-        self._session_cms: list[(AbstractAsyncContextManager[ClientSession], ClientSession)] = []
+        self._session_cms: list[
+            (AbstractAsyncContextManager[ClientSession], ClientSession)
+        ] = []
 
         self._session_kwargs: SessionKwargs = {
             "sampling_callback": None,
