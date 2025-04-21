@@ -194,6 +194,9 @@ async def test_client_nested_context_manager(fastmcp_server):
         async with client:
             assert client.is_connected()
 
+        async with client:
+            assert client.is_connected()
+
     # After connection
     assert not client.is_connected()
 
