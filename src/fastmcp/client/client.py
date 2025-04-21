@@ -1,7 +1,7 @@
 import datetime
 from contextlib import AbstractAsyncContextManager
 from pathlib import Path
-from typing import Any, Literal, cast, overload, Tuple
+from typing import Any, Literal, cast, overload
 
 import mcp.types
 from mcp import ClientSession
@@ -46,7 +46,7 @@ class Client:
         self.transport = infer_transport(transport)
         # stack to record nested context manager, None is pushed if reuse existing session
         self._session_cms: list[
-            Tuple[AbstractAsyncContextManager[ClientSession] | None, ClientSession]
+            tuple[AbstractAsyncContextManager[ClientSession] | None, ClientSession]
         ] = []
 
         self._session_kwargs: SessionKwargs = {
