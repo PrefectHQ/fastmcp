@@ -1,7 +1,7 @@
 import datetime
 from contextlib import AbstractAsyncContextManager
 from pathlib import Path
-from typing import Any, Literal, cast, overload
+from typing import Any, Literal, cast, overload, Tuple
 
 import mcp.types
 from mcp import ClientSession
@@ -46,7 +46,7 @@ class Client:
         self.transport = infer_transport(transport)
         # stack to record nested context manager, None is pushed if reuse existing session
         self._session_cms: list[
-            (AbstractAsyncContextManager[ClientSession], ClientSession)
+            Tuple[AbstractAsyncContextManager[ClientSession] | None, ClientSession]
         ] = []
 
         self._session_kwargs: SessionKwargs = {
@@ -70,7 +70,8 @@ class Client:
             raise RuntimeError(
                 "Client is not connected. Use 'async with client:' context manager first."
             )
-        self._session_cms[-1][1]
+        _, session = self._session_cms[-1]
+        return session
 
     def set_roots(self, roots: RootsList | RootsHandler) -> None:
         """Set the roots for the client. This does not automatically call `send_roots_list_changed`."""
@@ -88,7 +89,7 @@ class Client:
 
     async def __aenter__(self):
         if self._session_cms:
-            # share the current session, push a None as cms to avoid close it in aexit
+            # share the current session, push a None as context manager to avoid close it in aexit
             _, session = self._session_cms[-1]
             self._session_cms.append((None, session))
         else:
