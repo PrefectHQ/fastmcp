@@ -3,16 +3,16 @@ from urllib.parse import quote
 
 import mcp.types
 from mcp.server.lowlevel.helper_types import ReadResourceContents
+from mcp.shared.exceptions import McpError
 from mcp.types import (
+    METHOD_NOT_FOUND,
     BlobResourceContents,
     EmbeddedResource,
     GetPromptResult,
     ImageContent,
     TextContent,
     TextResourceContents,
-    METHOD_NOT_FOUND,
 )
-from mcp.shared.exceptions import McpError
 from pydantic.networks import AnyUrl
 
 from fastmcp.client import Client
