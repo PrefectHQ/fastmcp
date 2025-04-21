@@ -10,7 +10,9 @@ from mcp.types import (
     ImageContent,
     TextContent,
     TextResourceContents,
+    METHOD_NOT_FOUND,
 )
+from mcp.shared.exceptions import McpError
 from pydantic.networks import AnyUrl
 
 from fastmcp.client import Client
@@ -173,7 +175,12 @@ class FastMCPProxy(FastMCP):
         tools = await super().get_tools()
 
         async with self.client:
-            for tool in await self.client.list_tools():
+            try:
+                client_tools =await self.client.list_tools()
+            except McpError as e:
+                if e.error.code == METHOD_NOT_FOUND:
+                    client_tools = []
+            for tool in client_tools:
                 tool_proxy = await ProxyTool.from_client(self.client, tool)
                 tools[tool_proxy.name] = tool_proxy
 
@@ -183,7 +190,12 @@ class FastMCPProxy(FastMCP):
         resources = await super().get_resources()
 
         async with self.client:
-            for resource in await self.client.list_resources():
+            try:
+                client_resources = await self.client.list_resources()
+            except McpError as e:
+                if e.error.code == METHOD_NOT_FOUND:
+                    client_resources = []
+            for resource in client_resources:
                 resource_proxy = await ProxyResource.from_client(self.client, resource)
                 resources[str(resource_proxy.uri)] = resource_proxy
 
@@ -193,7 +205,12 @@ class FastMCPProxy(FastMCP):
         templates = await super().get_resource_templates()
 
         async with self.client:
-            for template in await self.client.list_resource_templates():
+            try:
+                client_templates = await self.client.list_resource_templates()
+            except McpError as e:
+                if e.error.code == METHOD_NOT_FOUND:
+                    client_templates = []
+            for template in client_templates:
                 template_proxy = await ProxyTemplate.from_client(self.client, template)
                 templates[template_proxy.uri_template] = template_proxy
 
@@ -203,7 +220,12 @@ class FastMCPProxy(FastMCP):
         prompts = await super().get_prompts()
 
         async with self.client:
-            for prompt in await self.client.list_prompts():
+            try:
+                client_prompts = await self.client.list_prompts()
+            except McpError as e:
+                if e.error.code == METHOD_NOT_FOUND:
+                    client_prompts = []
+            for prompt in client_prompts:
                 prompt_proxy = await ProxyPrompt.from_client(self.client, prompt)
                 prompts[prompt_proxy.name] = prompt_proxy
         return prompts
