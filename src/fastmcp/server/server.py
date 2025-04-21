@@ -7,6 +7,7 @@ from contextlib import (
     AsyncExitStack,
     asynccontextmanager,
 )
+from functools import partial
 from typing import TYPE_CHECKING, Any, Generic, Literal
 
 import anyio
@@ -259,7 +260,8 @@ class FastMCP(Generic[LifespanResultT]):
             transport: Transport protocol to use ("stdio" or "sse")
         """
         logger.info(f'Starting server "{self.name}"...')
-        anyio.run(self.run_async, transport, **transport_kwargs)
+
+        anyio.run(partial(self.run_async, transport, **transport_kwargs))
 
     def _setup_handlers(self) -> None:
         """Set up core MCP protocol handlers."""
