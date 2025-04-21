@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: FastMCP Documentation
+    url: https://gofastmcp.com
+    about: Please review the documentation before opening an issue.
+  - name: MCP Python SDK
+    url: https://github.com/modelcontextprotocol/python-sdk/issues
+    about: Issues related to the low-level MCP Python SDK, including the FastMCP 1.0 module that is included in the `mcp` package, should be filed on the official MCP repository.
