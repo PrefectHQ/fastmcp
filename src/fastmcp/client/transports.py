@@ -3,6 +3,7 @@ import contextlib
 import datetime
 import os
 import shutil
+import sys
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import (
@@ -185,7 +186,7 @@ class PythonStdioTransport(StdioTransport):
         args: list[str] | None = None,
         env: dict[str, str] | None = None,
         cwd: str | None = None,
-        python_cmd: str = "python",
+        python_cmd: str = sys.executable,
     ):
         """
         Initialize a Python transport.

@@ -2,13 +2,13 @@
 
 import asyncio
 
-from contrib.mcp_mixin import (
+from fastmcp import FastMCP
+from fastmcp.contrib.mcp_mixin import (
     MCPMixin,
     mcp_prompt,
     mcp_resource,
     mcp_tool,
 )
-from fastmcp import FastMCP
 
 mcp = FastMCP()
 

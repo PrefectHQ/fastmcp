@@ -160,6 +160,36 @@ async def test_client_connection(fastmcp_server):
     assert not client.is_connected()
 
 
+async def test_client_nested_context_manager(fastmcp_server):
+    """Test that the client connects and disconnects once in nested context manager."""
+
+    client = Client(fastmcp_server)
+
+    # Before connection
+    assert not client.is_connected()
+    assert client._session is None
+
+    # During connection
+    async with client:
+        assert client.is_connected()
+        assert client._session is not None
+        session = client._session
+
+        # Re-use the same session
+        async with client:
+            assert client.is_connected()
+            assert client._session is session
+
+        # Re-use the same session
+        async with client:
+            assert client.is_connected()
+            assert client._session is session
+
+    # After connection
+    assert not client.is_connected()
+    assert client._session is None
+
+
 async def test_resource_template(fastmcp_server):
     """Test using a resource template with InMemoryClient."""
     client = Client(transport=FastMCPTransport(fastmcp_server))
