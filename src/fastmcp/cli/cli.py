@@ -180,17 +180,13 @@ def _import_server(file: Path, server_object: str | None = None):
 def version(ctx: Context):
     if ctx.resilient_parsing:
         return
-    try:
-        fastmcp_path = f"~/{Path(__file__).resolve().parents[3].relative_to(Path.home())}"
-    except ValueError:
-        fastmcp_path = str(Path(__file__).resolve().parents[3])
 
     info = {
         "FastMCP version": fastmcp.__version__,
         "MCP version": importlib.metadata.version("mcp"),
         "Python version": platform.python_version(),
         "Platform": platform.platform(),
-        "FastMCP root path": fastmcp_path,
+        "FastMCP root path": Path(fastmcp.__file__).resolve().parents[1],
     }
 
     g = Table.grid(padding=(0, 1))
