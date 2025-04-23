@@ -3,12 +3,12 @@ from typing import Any
 import pytest
 from mcp.types import EmbeddedResource, ImageContent, TextContent
 
-from contrib.bulk_tool_caller.bulk_tool_caller import (
+from fastmcp import FastMCP
+from fastmcp.contrib.bulk_tool_caller.bulk_tool_caller import (
     BulkToolCaller,
     CallToolRequest,
     CallToolRequestResult,
 )
-from fastmcp import FastMCP
 
 ContentType = TextContent | ImageContent | EmbeddedResource
 
