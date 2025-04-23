@@ -61,7 +61,8 @@
                     "patterns/composition",
                     "patterns/decorating-methods",
                     "patterns/openapi",
-                    "patterns/fastapi"
+                    "patterns/fastapi",
+                    "patterns/contrib"
                 ]
             },
             {
