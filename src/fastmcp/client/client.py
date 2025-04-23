@@ -45,7 +45,8 @@ class Client:
     ):
         self.transport = infer_transport(transport)
         self._session: ClientSession | None = None
-        self._session_cms: list[AbstractAsyncContextManager[ClientSession]] = []
+        self._session_cm: AbstractAsyncContextManager[ClientSession] | None = None
+        self._nesting_counter: int = 0
 
         self._session_kwargs: SessionKwargs = {
             "sampling_callback": None,
@@ -85,29 +86,21 @@ class Client:
         return self._session is not None
 
     async def __aenter__(self):
-        if self.is_connected():
-            # We're already connected, no need to add None to the session_cms list
-            return self
+        if self._nesting_counter == 0:
+            # create new session
+            self._session_cm = self.transport.connect_session(**self._session_kwargs)
+            self._session = await self._session_cm.__aenter__()
 
-        try:
-            session_cm = self.transport.connect_session(**self._session_kwargs)
-            self._session_cms.append(session_cm)
-            self._session = await self._session_cms[-1].__aenter__()
-            return self
-        except Exception as e:
-            # Ensure cleanup if __aenter__ fails partially
-            self._session = None
-            if self._session_cms:
-                self._session_cms.pop()
-            raise ConnectionError(
-                f"Failed to connect using {self.transport}: {e}"
-            ) from e
+        self._nesting_counter += 1
+        return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        if self._session_cms:
-            await self._session_cms[-1].__aexit__(exc_type, exc_val, exc_tb)
+        self._nesting_counter -= 1
+
+        if self._nesting_counter == 0 and self._session_cm is not None:
+            await self._session_cm.__aexit__(exc_type, exc_val, exc_tb)
+            self._session_cm = None
             self._session = None
-            self._session_cms.pop()
 
     # --- MCP Client Methods ---
     async def ping(self) -> None:
