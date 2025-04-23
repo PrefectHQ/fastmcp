@@ -1,7 +1,7 @@
 """Sample code for FastMCP using MCPMixin."""
 
-from contrib.bulk_tool_caller import BulkToolCaller
 from fastmcp import FastMCP
+from fastmcp.contrib.bulk_tool_caller import BulkToolCaller
 
 mcp = FastMCP()
 

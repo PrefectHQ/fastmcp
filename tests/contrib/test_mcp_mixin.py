@@ -2,18 +2,18 @@
 
 import pytest
 
-from contrib.mcp_mixin import (
+from fastmcp import FastMCP
+from fastmcp.contrib.mcp_mixin import (
     MCPMixin,
     mcp_prompt,
     mcp_resource,
     mcp_tool,
 )
-from contrib.mcp_mixin.mcp_mixin import (
+from fastmcp.contrib.mcp_mixin.mcp_mixin import (
     _DEFAULT_SEPARATOR_PROMPT,
     _DEFAULT_SEPARATOR_RESOURCE,
     _DEFAULT_SEPARATOR_TOOL,
 )
-from fastmcp import FastMCP
 
 
 class TestMCPMixin:
