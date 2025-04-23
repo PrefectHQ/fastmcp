@@ -226,6 +226,15 @@ MCP allows servers to make requests *back* to the client for certain capabilitie
     )
     ```
 
+### Utility Methods
+
+*   **`ping()`**: Sends a ping request to the server to verify connectivity.
+    ```python
+    async def check_connection():
+        async with client:
+            await client.ping()
+            print("Server is reachable")
+    ```
 
 ### Error Handling
 
