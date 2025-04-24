@@ -2,8 +2,10 @@ import json
 import logging
 
 import pytest
+from mcp.types import ImageContent, TextContent
 from pydantic import BaseModel
 
+from fastmcp import Context, FastMCP, Image
 from fastmcp.exceptions import NotFoundError, ToolError
 from fastmcp.tools import ToolManager
 from fastmcp.tools.tool import Tool
@@ -67,6 +69,18 @@ class TestAddTools:
         assert "name" in tool.parameters["$defs"]["UserInput"]["properties"]
         assert "age" in tool.parameters["$defs"]["UserInput"]["properties"]
         assert "flag" in tool.parameters["properties"]
+
+    async def test_tool_with_image_return(self):
+        def image_tool(data: bytes) -> Image:
+            return Image(data=data)
+
+        manager = ToolManager()
+        manager.add_tool_from_fn(image_tool)
+
+        tool = manager.get_tool("image_tool")
+        result = await tool.run({"data": "test.png"})
+        assert tool.parameters["properties"]["data"]["type"] == "string"
+        assert isinstance(result[0], ImageContent)
 
     def test_add_invalid_tool(self):
         manager = ToolManager()
@@ -263,7 +277,6 @@ class TestCallTools:
         result = await manager.call_tool("double", {"n": 5})
         assert isinstance(result, list)
         assert len(result) == 1
-        from mcp.types import TextContent
 
         assert isinstance(result[0], TextContent)
         assert result[0].text == "10"
@@ -279,7 +292,6 @@ class TestCallTools:
         result = await manager.call_tool("add", {"a": 1})
         assert isinstance(result, list)
         assert len(result) == 1
-        from mcp.types import TextContent
 
         assert isinstance(result[0], TextContent)
         assert result[0].text == "2"
@@ -307,7 +319,6 @@ class TestCallTools:
         manager = ToolManager()
         manager.add_tool_from_fn(sum_vals)
         # Try both with plain list and with JSON list
-        from mcp.types import TextContent
 
         result = await manager.call_tool("sum_vals", {"vals": "[1, 2, 3]"})
         assert isinstance(result, list)
@@ -329,7 +340,6 @@ class TestCallTools:
 
         manager = ToolManager()
         manager.add_tool_from_fn(concat_strs)
-        from mcp.types import TextContent
 
         # Try both with plain python object and with JSON list
         result = await manager.call_tool("concat_strs", {"vals": ["a", "b", "c"]})
@@ -357,10 +367,6 @@ class TestCallTools:
         assert result[0].text == '"a"'
 
     async def test_call_tool_with_complex_model(self):
-        from mcp.types import TextContent
-
-        from fastmcp import Context
-
         class MyShrimpTank(BaseModel):
             class Shrimp(BaseModel):
                 name: str
@@ -397,8 +403,6 @@ class TestCallTools:
 
 class TestToolSchema:
     async def test_context_arg_excluded_from_schema(self):
-        from fastmcp import Context
-
         def something(a: int, ctx: Context) -> int:
             return a
 
@@ -415,7 +419,6 @@ class TestContextHandling:
     def test_context_parameter_detection(self):
         """Test that context parameters are properly detected in
         Tool.from_function()."""
-        from fastmcp import Context
 
         def tool_with_context(x: int, ctx: Context) -> str:
             return str(x)
@@ -432,9 +435,6 @@ class TestContextHandling:
 
     async def test_context_injection(self):
         """Test that context is properly injected during tool execution."""
-        from mcp.types import TextContent
-
-        from fastmcp import Context, FastMCP
 
         def tool_with_context(x: int, ctx: Context) -> str:
             assert isinstance(ctx, Context)
@@ -453,9 +453,6 @@ class TestContextHandling:
 
     async def test_context_injection_async(self):
         """Test that context is properly injected in async tools."""
-        from mcp.types import TextContent
-
-        from fastmcp import Context, FastMCP
 
         async def async_tool(x: int, ctx: Context) -> str:
             assert isinstance(ctx, Context)
@@ -476,8 +473,6 @@ class TestContextHandling:
         """Test that context is optional when calling tools."""
         from mcp.types import TextContent
 
-        from fastmcp import Context
-
         def tool_with_context(x: int, ctx: Context | None = None) -> str:
             return str(x)
 
@@ -492,7 +487,6 @@ class TestContextHandling:
 
     async def test_context_error_handling(self):
         """Test error handling when context injection fails."""
-        from fastmcp import Context, FastMCP
 
         def tool_with_context(x: int, ctx: Context) -> str:
             raise ValueError("Test error")

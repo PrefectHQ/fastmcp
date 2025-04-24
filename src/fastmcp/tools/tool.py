@@ -76,7 +76,12 @@ class Tool(BaseModel):
             fn_callable,
             skip_names=[context_kwarg] if context_kwarg is not None else [],
         )
-        parameters = func_arg_metadata.arg_model.model_json_schema()
+        try:
+            parameters = func_arg_metadata.arg_model.model_json_schema()
+        except Exception as e:
+            raise TypeError(
+                f'Unable to parse parameters for function "{fn.__name__}": {e}'
+            ) from e
 
         return cls(
             fn=fn_callable,

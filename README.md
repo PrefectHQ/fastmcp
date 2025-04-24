@@ -332,32 +332,32 @@ The `Context` object provides:
 
 ### Images
 
-Easily handle image input and output using the `fastmcp.Image` helper class.
+Easily handle image outputs using the `fastmcp.Image` helper class.
+
+<Tip>
+The below code requires the `pillow` library to be installed.
+</Tip>
 
 ```python
-from fastmcp import FastMCP, Image
-from PIL import Image as PILImage
-import io
+from mcp.server.fastmcp import FastMCP, Image
+from io import BytesIO
+try:
+    from PIL import Image as PILImage
+except ImportError:
+    raise ImportError("Please install the `pillow` library to run this example.")
 
-mcp = FastMCP("Image Demo")
+mcp = FastMCP("My App")
 
 @mcp.tool()
-def create_thumbnail(image_data: Image) -> Image:
-    """Creates a 100x100 thumbnail from the provided image."""
-    img = PILImage.open(io.BytesIO(image_data.data)) # Assumes image_data received as Image with bytes
-    img.thumbnail((100, 100))
-    buffer = io.BytesIO()
+def create_thumbnail(image_path: str) -> Image:
+    """Create a thumbnail from an image"""
+    img = PILImage.open(image_path)
+    img.thumbnail((100, 100))    
+    buffer = BytesIO()
     img.save(buffer, format="PNG")
-    # Return a new Image object with the thumbnail data
     return Image(data=buffer.getvalue(), format="png")
-
-@mcp.tool()
-def load_image_from_disk(path: str) -> Image:
-    """Loads an image from the specified path."""
-    # Handles reading file and detecting format based on extension
-    return Image(path=path)
 ```
-FastMCP handles the conversion to/from the base64-encoded format required by the MCP protocol.
+Return the `Image` helper class from your tool to send an image to the client. The `Image` helper class handles the conversion to/from the base64-encoded format required by the MCP protocol. It works with either a path to an image file, or a bytes object.
 
 
 ### MCP Clients
