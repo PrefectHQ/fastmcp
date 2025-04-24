@@ -14,18 +14,20 @@ FastMCP provides a powerful proxying capability that allows one FastMCP server i
 
 Proxying means setting up a FastMCP server that doesn't implement its own tools or resources directly. Instead, when it receives a request (like `tools/call` or `resources/read`), it forwards that request to a *backend* MCP server, receives the response, and then relays that response back to the original client.
 
+
 ```mermaid
 sequenceDiagram
-    participant Client
-    participant ProxyServer as FastMCP Proxy Server
-    participant BackendServer as Backend MCP Server
+    participant ClientApp as Your Client (e.g., Claude Desktop)
+    participant FastMCPProxy as FastMCP Proxy Server
+    participant BackendServer as Backend MCP Server (e.g., remote SSE)
 
-    Client->>ProxyServer: Request (e.g., stdio)
-    ProxyServer->>BackendServer: Request (e.g., sse)
-    BackendServer-->>ProxyServer: Response (e.g., sse)
-    ProxyServer-->>Client: Response (e.g., stdio)
+    ClientApp->>FastMCPProxy: MCP Request (e.g. stdio)
+    Note over FastMCPProxy, BackendServer: Proxy forwards the request
+    FastMCPProxy->>BackendServer: MCP Request (e.g. sse)
+    BackendServer-->>FastMCPProxy: MCP Response (e.g. sse)
+    Note over ClientApp, FastMCPProxy: Proxy relays the response
+    FastMCPProxy-->>ClientApp: MCP Response (e.g. stdio)
 ```
-
 ### Use Cases
 
 -   **Transport Bridging**: Expose a server running on one transport (e.g., a remote SSE server) via a different transport (e.g., local Stdio for Claude Desktop).
