@@ -340,6 +340,7 @@ The below code requires the `pillow` library to be installed.
 
 ```python
 from mcp.server.fastmcp import FastMCP, Image
+from io import BytesIO
 try:
     from PIL import Image as PILImage
 except ImportError:
@@ -347,13 +348,14 @@ except ImportError:
 
 mcp = FastMCP("My App")
 
-
 @mcp.tool()
 def create_thumbnail(image_path: str) -> Image:
     """Create a thumbnail from an image"""
     img = PILImage.open(image_path)
-    img.thumbnail((100, 100))
-    return Image(data=img.tobytes(), format="png")
+    img.thumbnail((100, 100))    
+    buffer = BytesIO()
+    img.save(buffer, format="PNG")
+    return Image(data=buffer.getvalue(), format="png")
 ```
 Return the `Image` helper class from your tool to send an image to the client. The `Image` helper class handles the conversion to/from the base64-encoded format required by the MCP protocol. It works with either a path to an image file, or a bytes object.
 
