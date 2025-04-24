@@ -436,3 +436,10 @@ class TestMatchUriTemplate:
         uri_template = "test://a/{x*}/{y}"
         result = match_uri_template(uri=uri, uri_template=uri_template)
         assert result == {"x": "x/y", "y": "b"}
+
+    def test_match_consecutive_params(self):
+        """Test that consecutive parameters without a / are not matched."""
+        uri = "test://a/x/y"
+        uri_template = "test://a/{x}{y}"
+        result = match_uri_template(uri=uri, uri_template=uri_template)
+        assert result is None
