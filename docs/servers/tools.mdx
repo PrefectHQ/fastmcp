@@ -209,13 +209,18 @@ FastMCP automatically converts the value returned by your function into the appr
 - **`str`**: Sent as `TextContent`.
 - **`dict`, `list`, Pydantic `BaseModel`**: Serialized to a JSON string and sent as `TextContent`.
 - **`bytes`**: Base64 encoded and sent as `BlobResourceContents` (often within an `EmbeddedResource`).
-- **`fastmcp.utilities.types.Image`**: A helper class to easily return image data. Sent as `ImageContent`.
+- **`fastmcp.Image`**: A helper class for easily returning image data. Sent as `ImageContent`.
 - **`None`**: Results in an empty response (no content is sent back to the client).
 
 ```python
-from fastmcp.utilities.types import Image
-from PIL import Image as PILImage
+from fastmcp import FastMCP, Image
 import io
+try:
+    from PIL import Image as PILImage
+except ImportError:
+    raise ImportError("Please install the `pillow` library to run this example.")
+
+mcp = FastMCP("Image Demo")
 
 @mcp.tool()
 def generate_image(width: int, height: int, color: str) -> Image:
