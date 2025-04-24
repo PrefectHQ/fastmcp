@@ -24,13 +24,16 @@ from fastmcp.utilities.types import _convert_set_defaults
 
 
 def build_regex(template: str) -> re.Pattern:
-    # Escape all non-brace characters, then restore {var} placeholders
     parts = re.split(r"(\{[^}]+\})", template)
     pattern = ""
     for part in parts:
         if part.startswith("{") and part.endswith("}"):
             name = part[1:-1]
-            pattern += f"(?P<{name}>[^/]+)"
+            if name.endswith("*"):
+                name = name[:-1]
+                pattern += f"(?P<{name}>.+)"
+            else:
+                pattern += f"(?P<{name}>[^/]+)"
         else:
             pattern += re.escape(part)
     return re.compile(f"^{pattern}$")
