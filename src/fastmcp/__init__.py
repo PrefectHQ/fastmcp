@@ -14,6 +14,7 @@ __all__ = [
     "FastMCP",
     "Context",
     "client",
+    "Client",
     "settings",
     "Image",
 ]

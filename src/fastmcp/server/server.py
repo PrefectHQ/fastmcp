@@ -182,7 +182,11 @@ class FastMCP(Generic[LifespanResultT]):
         name: str | None = None,
         instructions: str | None = None,
         lifespan: (
-            Callable[["FastMCP"], AbstractAsyncContextManager[LifespanResultT]] | None
+            Callable[
+                ["FastMCP[LifespanResultT]"],
+                AbstractAsyncContextManager[LifespanResultT],
+            ]
+            | None
         ) = None,
         tags: set[str] | None = None,
         **settings: Any,
@@ -738,7 +742,7 @@ class FastMCP(Generic[LifespanResultT]):
     def mount(
         self,
         prefix: str,
-        server: "FastMCP",
+        server: "FastMCP[LifespanResultT]",
         tool_separator: str | None = None,
         resource_separator: str | None = None,
         prompt_separator: str | None = None,
@@ -763,7 +767,7 @@ class FastMCP(Generic[LifespanResultT]):
     async def import_server(
         self,
         prefix: str,
-        server: "FastMCP",
+        server: "FastMCP[LifespanResultT]",
         tool_separator: str | None = None,
         resource_separator: str | None = None,
         prompt_separator: str | None = None,
