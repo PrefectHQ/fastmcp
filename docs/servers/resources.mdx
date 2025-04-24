@@ -5,6 +5,8 @@ description: Expose data sources and dynamic content generators to your MCP clie
 icon: database
 ---
 
+import { VersionBadge } from "/snippets/version-badge.mdx"
+
 Resources represent data or files that an MCP client can read, and resource templates extend this concept by allowing clients to request dynamically generated resources based on parameters passed in the URI.
 
 FastMCP simplifies defining both static and dynamic resources, primarily using the `@mcp.resource` decorator.
@@ -183,6 +185,8 @@ Use these when the content is static or sourced directly from a file/URL, bypass
 
 #### Custom Resource Keys
 
+<VersionBadge version="2.2.0" />
+
 When adding resources directly with `mcp.add_resource()`, you can optionally provide a custom storage key:
 
 ```python
@@ -200,6 +204,10 @@ Note that this parameter is only available when using `add_resource()` directly 
 ## Defining Resource Templates
 
 Resource Templates allow clients to request resources whose content depends on parameters embedded in the URI. Define a template using the **same `@mcp.resource` decorator**, but include `{parameter_name}` placeholders in the URI string and add corresponding arguments to your function signature.
+
+Resource templates generate a new resource for each unique set of parameters, which means that resources can be dynamically created on-demand. For example, if the resource template `"user://profile/{name}"` is registered, MCP clients could request `"user://profile/ford"` or `"user://profile/marvin"` to retrieve either of those two user profiles as resources, without having to register each resource individually.
+
+Here is a complete example that shows how to define two resource templates:
 
 ```python
 from fastmcp import FastMCP
@@ -233,11 +241,61 @@ def get_repo_info(owner: str, repo: str) -> dict:
     }
 ```
 
-With these templates defined, clients can request:
+With these two templates defined, clients can request a variety of resources:
 - `weather://london/current` → Returns weather for London
-- `repos://fastmcp/docs/info` → Returns info about the fastmcp/docs repository
+- `weather://paris/current` → Returns weather for Paris
+- `repos://jlowin/fastmcp/info` → Returns info about the jlowin/fastmcp repository
+- `repos://prefecthq/prefect/info` → Returns info about the prefecthq/prefect repository
 
-### Parameters and Default Values
+### Wildcard Parameters
+
+<VersionBadge version="2.2.3" />
+
+Resource templates support wildcard parameters that can match multiple path segments. While standard parameters (`{param}`) only match a single path segment and don't cross "/" boundaries, wildcard parameters (`{param*}`) can capture multiple segments including slashes. Wildcards capture all subsequent path segments *up until* the defined part of the URI template (whether literal or another parameter). This allows you to have multiple wildcard parameters in a single URI template.
+
+```python
+from fastmcp import FastMCP
+
+mcp = FastMCP(name="DataServer")
+
+# Standard parameter only matches one segment
+@mcp.resource("files://{filename}")
+def get_file(filename: str) -> str:
+    """Retrieves a file by name."""
+    # Will only match files://<single-segment>
+    return f"File content for: {filename}"
+
+# Wildcard parameter can match multiple segments
+@mcp.resource("path://{filepath*}")
+def get_path_content(filepath: str) -> str:
+    """Retrieves content at a specific path."""
+    # Can match path://docs/server/resources.mdx
+    return f"Content at path: {filepath}"
+
+# Mixing standard and wildcard parameters
+@mcp.resource("repo://{owner}/{path*}/template.py")
+def get_template_file(owner: str, path: str) -> dict:
+    """Retrieves a file from a specific repository and path, but 
+    only if the resource ends with `template.py`"""
+    # Can match repo://jlowin/fastmcp/src/resources/template.py
+    return {
+        "owner": owner,
+        "path": path + "/template.py",
+        "content": f"File at {path}/template.py in {owner}'s repository"
+    }
+```
+
+Wildcard parameters are useful when:
+
+- Working with file paths or hierarchical data
+- Creating APIs that need to capture variable-length path segments
+- Building URL-like patterns similar to REST APIs
+
+Note that like regular parameters, each wildcard parameter must still be a named parameter in your function signature, and all required function parameters must appear in the URI template.
+
+### Default Values
+
+<VersionBadge version="2.2.0" />
 
 When creating resource templates, FastMCP enforces two rules for the relationship between URI template parameters and function parameters:
 
@@ -314,6 +372,8 @@ In this stacked decorator pattern:
 Templates provide a powerful way to expose parameterized data access points following REST-like principles.
 
 ### Custom Template Keys
+
+<VersionBadge version="2.2.0" />
 
 Similar to resources, you can provide custom keys when directly adding templates:
 

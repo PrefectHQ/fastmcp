@@ -304,6 +304,23 @@ class TestMatchUriTemplate:
     @pytest.mark.parametrize(
         "uri, expected_params",
         [
+            ("test://a/b", None),
+            ("test://a/b/c", None),
+            ("test://a/x/b", {"x": "x"}),
+            ("test://a/x/y/b", None),
+        ],
+    )
+    def test_match_uri_template_single_param(
+        self, uri: str, expected_params: dict[str, str]
+    ):
+        """Test that match_uri_template uses the slash delimiter."""
+        uri_template = "test://a/{x}/b"
+        result = match_uri_template(uri=uri, uri_template=uri_template)
+        assert result == expected_params
+
+    @pytest.mark.parametrize(
+        "uri, expected_params",
+        [
             ("test://foo/123", {"x": "foo", "y": "123"}),
             ("test://bar/456", {"x": "bar", "y": "456"}),
             ("test://foo/bar", {"x": "foo", "y": "bar"}),
@@ -361,7 +378,7 @@ class TestMatchUriTemplate:
             ("other+prefix+test://foo/test/123", None),
         ],
     )
-    def test_match_prefixed_uri_template(
+    def test_match_uri_template_with_prefix(
         self, uri: str, expected_params: dict[str, str] | None
     ):
         """Test matching URIs against a template with a prefix."""
@@ -369,10 +386,60 @@ class TestMatchUriTemplate:
         result = match_uri_template(uri=uri, uri_template=uri_template)
         assert result == expected_params
 
-    def test_quoted_params(self):
+    def test_match_uri_template_quoted_params(self):
         uri_template = "user://{name}/{email}"
         quoted_name = quote("John Doe", safe="")
         quoted_email = quote("john@example.com", safe="")
         uri = f"user://{quoted_name}/{quoted_email}"
         result = match_uri_template(uri=uri, uri_template=uri_template)
         assert result == {"name": "John Doe", "email": "john@example.com"}
+
+    @pytest.mark.parametrize(
+        "uri, expected_params",
+        [
+            ("test://a/b", None),
+            ("test://a/b/c", None),
+            ("test://a/x/b", {"x": "x"}),
+            ("test://a/x/y/b", {"x": "x/y"}),
+            ("bad-prefix://a/x/y/b", None),
+            ("test://a/x/y/z", None),
+        ],
+    )
+    def test_match_uri_template_wildcard_param(
+        self, uri: str, expected_params: dict[str, str]
+    ):
+        """Test that match_uri_template uses the slash delimiter."""
+        uri_template = "test://a/{x*}/b"
+        result = match_uri_template(uri=uri, uri_template=uri_template)
+        assert result == expected_params
+
+    @pytest.mark.parametrize(
+        "uri, expected_params",
+        [
+            ("test://a/x/y/b/c/d", {"x": "x/y", "y": "c/d"}),
+            ("bad-prefix://a/x/y/b/c/d", None),
+            ("test://a/x/y/c/d", None),
+            ("test://a/x/b/y", {"x": "x", "y": "y"}),
+        ],
+    )
+    def test_match_uri_template_multiple_wildcard_params(
+        self, uri: str, expected_params: dict[str, str]
+    ):
+        """Test that match_uri_template uses the slash delimiter."""
+        uri_template = "test://a/{x*}/b/{y*}"
+        result = match_uri_template(uri=uri, uri_template=uri_template)
+        assert result == expected_params
+
+    def test_match_uri_template_wildcard_and_literal_param(self):
+        """Test that match_uri_template uses the slash delimiter."""
+        uri = "test://a/x/y/b"
+        uri_template = "test://a/{x*}/{y}"
+        result = match_uri_template(uri=uri, uri_template=uri_template)
+        assert result == {"x": "x/y", "y": "b"}
+
+    def test_match_consecutive_params(self):
+        """Test that consecutive parameters without a / are not matched."""
+        uri = "test://a/x/y"
+        uri_template = "test://a/{x}{y}"
+        result = match_uri_template(uri=uri, uri_template=uri_template)
+        assert result is None
