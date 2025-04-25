@@ -443,3 +443,20 @@ class TestMatchUriTemplate:
         uri_template = "test://a/{x}{y}"
         result = match_uri_template(uri=uri, uri_template=uri_template)
         assert result is None
+
+    @pytest.mark.parametrize(
+        "uri, expected_params",
+        [
+            ("file://abc/xyz.py", {"path": "xyz"}),
+            ("file://abc/x/y/z.py", {"path": "x/y/z"}),
+            ("file://abc/x/y/z/.py", {"path": "x/y/z/"}),
+            ("file://abc/x/y/z.md", None),
+            ("file://x/y/z.txt", None),
+        ],
+    )
+    def test_match_uri_template_with_non_slash_suffix(
+        self, uri: str, expected_params: dict[str, str]
+    ):
+        uri_template = "file://abc/{path*}.py"
+        result = match_uri_template(uri=uri, uri_template=uri_template)
+        assert result == expected_params
