@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import (
     TypedDict,
 )
-
+from typing import Any
 from exceptiongroup import BaseExceptionGroup, catch
 from mcp import ClientSession, McpError, StdioServerParameters
 from mcp.client.session import (
@@ -449,30 +449,37 @@ def infer_transport(
     # the transport is a websocket URL
     elif isinstance(transport, AnyUrl | str) and str(transport).startswith("ws"):
         return WSTransport(url=transport)
+    
+    ## if the transport is a config dict
     elif isinstance(transport, dict):
+        if "mcpServers" not in transport:
+            raise ValueError("Invalid transport dictionary: missing 'mcpServers' key")
+        else:
+            server = transport["mcpServers"]
+            server_name = list(server.keys())[0]
         # Stdio transport
-        if "command" in transport and "args" in transport:
-            return StdioTransport(
-                command=transport["command"],
-                args=transport["args"],
-                env=transport.get("env", None),
-                cwd=transport.get("cwd", None),
-            )
+            if "command" in server[server_name] and "args" in server[server_name]:
+                return StdioTransport(
+                    command=server[server_name]["command"],
+                    args=server[server_name]["args"],
+                    env=server[server_name].get("env", None),
+                    cwd=server[server_name].get("cwd", None),
+                )
 
-        # HTTP transport
-        elif "url" in transport:
-            return SSETransport(
-                url=transport["url"],
-                headers=transport.get("headers", None),
-            )
+            # HTTP transport
+            elif "url" in server:
+                return SSETransport(
+                    url=server["url"],
+                    headers=server.get("headers", None),
+                )
 
-        # WebSocket transport
-        elif "ws_url" in transport:
-            return WSTransport(
-                url=transport["ws_url"],
-            )
+            # WebSocket transport
+            elif "ws_url" in server:
+                return WSTransport(
+                    url=server["ws_url"],
+                )
 
-        raise ValueError("Cannot determine transport type from dictionary")
+            raise ValueError("Cannot determine transport type from dictionary")
         
     # the transport is an unknown type
     else:
