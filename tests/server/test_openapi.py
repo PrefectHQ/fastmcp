@@ -6,6 +6,7 @@ import httpx
 import pytest
 from dirty_equals import IsStr
 from fastapi import FastAPI, HTTPException, Response
+from fastapi.responses import PlainTextResponse
 from httpx import ASGITransport, AsyncClient
 from mcp.types import BlobResourceContents, TextContent, TextResourceContents
 from pydantic import BaseModel, TypeAdapter
@@ -67,7 +68,7 @@ def fastapi_app(users_db: dict[int, User]) -> FastAPI:
         user.name = name
         return user
 
-    @app.get("/ping")
+    @app.get("/ping", response_class=PlainTextResponse)
     async def ping() -> str:
         """Ping the server."""
         return "pong"

@@ -301,7 +301,8 @@ class OpenAPIResource(Resource):
             content_type = response.headers.get("content-type", "").lower()
 
             if "application/json" in content_type:
-                return str(response.json())
+                result = response.json()
+                return json.dumps(result)
             elif any(ct in content_type for ct in ["text/", "application/xml"]):
                 return response.text
             else:
@@ -343,55 +344,12 @@ class OpenAPIResourceTemplate(ResourceTemplate):
             uri_template=uri_template,
             name=name,
             description=description,
-            fn=self._create_resource_fn,
+            fn=lambda **kwargs: None,
             parameters=parameters,
             tags=tags,
         )
         self._client = client
         self._route = route
-
-    async def _create_resource_fn(self, **kwargs):
-        """Create a resource with parameters."""
-        # Prepare the path with parameters
-        path = self._route.path
-        for param_name, param_value in kwargs.items():
-            path = path.replace(f"{{{param_name}}}", str(param_value))
-
-        try:
-            response = await self._client.request(
-                method=self._route.method,
-                url=path,
-                timeout=30.0,  # Default timeout
-            )
-
-            # Raise for 4xx/5xx responses
-            response.raise_for_status()
-
-            # Determine content type and return appropriate format
-            content_type = response.headers.get("content-type", "").lower()
-
-            if "application/json" in content_type:
-                return str(response.json())
-            elif any(ct in content_type for ct in ["text/", "application/xml"]):
-                return response.text
-            else:
-                return response.content
-
-        except httpx.HTTPStatusError as e:
-            error_message = (
-                f"HTTP error {e.response.status_code}: {e.response.reason_phrase}"
-            )
-            try:
-                error_data = e.response.json()
-                error_message += f" - {error_data}"
-            except (json.JSONDecodeError, ValueError):
-                if e.response.text:
-                    error_message += f" - {e.response.text}"
-
-            raise ValueError(error_message)
-
-        except httpx.RequestError as e:
-            raise ValueError(f"Request error: {str(e)}")
 
     async def create_resource(self, uri: str, params: dict[str, Any]) -> Resource:
         """Create a resource with the given parameters."""
@@ -406,9 +364,8 @@ class OpenAPIResourceTemplate(ResourceTemplate):
             route=self._route,
             uri=uri,
             name=f"{self.name}-{'-'.join(uri_parts)}",
-            description=self.description
-            or f"Resource for {self._route.path}",  # Provide default if None
-            mime_type="application/json",  # Default, will be updated when read
+            description=self.description or f"Resource for {self._route.path}",
+            mime_type="application/json",
             tags=set(self._route.tags or []),
         )
 
