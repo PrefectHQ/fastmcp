@@ -416,7 +416,7 @@ class FastMCPTransport(ClientTransport):
 
 
 def infer_transport(
-    transport: ClientTransport | FastMCPServer | AnyUrl | Path | str,
+    transport: ClientTransport | FastMCPServer | AnyUrl | Path | dict[str, Any] | str,
 ) -> ClientTransport:
     """
     Infer the appropriate transport type from the given transport argument.
@@ -449,7 +449,31 @@ def infer_transport(
     # the transport is a websocket URL
     elif isinstance(transport, AnyUrl | str) and str(transport).startswith("ws"):
         return WSTransport(url=transport)
+    elif isinstance(transport, dict):
+        # Stdio transport
+        if "command" in transport and "args" in transport:
+            return StdioTransport(
+                command=transport["command"],
+                args=transport["args"],
+                env=transport.get("env", None),
+                cwd=transport.get("cwd", None),
+            )
 
+        # HTTP transport
+        elif "url" in transport:
+            return SSETransport(
+                url=transport["url"],
+                headers=transport.get("headers", None),
+            )
+
+        # WebSocket transport
+        elif "ws_url" in transport:
+            return WSTransport(
+                url=transport["ws_url"],
+            )
+
+        raise ValueError("Cannot determine transport type from dictionary")
+        
     # the transport is an unknown type
     else:
         raise ValueError(f"Could not infer a valid transport from: {transport}")

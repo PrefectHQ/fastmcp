@@ -35,7 +35,7 @@ class Client:
 
     def __init__(
         self,
-        transport: ClientTransport | FastMCP | AnyUrl | Path | str,
+        transport: ClientTransport | FastMCP | AnyUrl | Path | dict[str, Any] | str,
         # Common args
         roots: RootsList | RootsHandler | None = None,
         sampling_handler: SamplingHandler | None = None,
