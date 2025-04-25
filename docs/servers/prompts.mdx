@@ -5,6 +5,8 @@ description: Create reusable, parameterized prompt templates for MCP clients.
 icon: message-lines
 ---
 
+import { VersionBadge } from "/snippets/version-badge.mdx"
+
 Prompts are reusable message templates that help LLMs generate structured, purposeful responses. FastMCP simplifies defining these templates, primarily using the `@mcp.prompt` decorator.
 
 ## What Are Prompts?
@@ -200,6 +202,8 @@ Refer to the [Context documentation](/servers/context) for more details on these
 ## Server Behavior
 
 ### Duplicate Prompts
+
+<VersionBadge version="2.1.0" />
 
 You can configure how the FastMCP server handles attempts to register multiple prompts with the same name. Use the `on_duplicate_prompts` setting during `FastMCP` initialization.
 
