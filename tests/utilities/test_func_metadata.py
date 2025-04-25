@@ -187,6 +187,18 @@ def test_keep_str_as_str():
     assert result["string"] == "{'nice to meet you': 'hello', 'goodbye': 5}"
 
 
+def test_missing_annotation():
+    """Test that missing annotations don't cause errors"""
+
+    def fn(x, y):
+        return x + y
+
+    meta = func_metadata(fn)
+    result = meta.pre_parse_json({"x": "1", "y": "2"})
+    assert result["x"] == "1"
+    assert result["y"] == "2"
+
+
 def test_keep_str_union_as_str():
     """Test that string arguments are kept as strings"""
 
