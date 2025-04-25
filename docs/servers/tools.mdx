@@ -44,44 +44,31 @@ When this tool is registered, FastMCP automatically:
 
 The way you define your Python function dictates how the tool appears and behaves for the LLM client.
 
-### Type Annotations
+### Parameters
 
-Type annotations are crucial. They:
-1.  Inform the LLM about the expected type for each parameter.
-2.  Allow FastMCP to validate the data received from the client.
-3.  Are used to generate the tool's input schema for the MCP protocol.
+#### Annotations
 
-FastMCP supports standard Python type annotations, including those from the `typing` module and Pydantic.
+Type annotations for parameters are essential for proper tool functionality. They:
+1. Inform the LLM about the expected data types for each parameter
+2. Enable FastMCP to validate input data from clients
+3. Generate accurate JSON schemas for the MCP protocol
+
+Use standard Python type annotations for parameters:
 
 ```python
-from typing import Literal, Optional, Union
-from pydantic import BaseModel, Field
-
-# Example using various type hints
 @mcp.tool()
-def process_data(
-    data: list[float],                             # List of floats
-    operation: Literal["sum", "average", "max"],   # Fixed choices
-    precision: int = 2,                            # Optional int with default
-    description: str | None = None                 # Optional string (can be None)
+def analyze_text(
+    text: str,
+    max_tokens: int = 100,
+    language: str | None = None
 ) -> dict:
-    """Process numerical data with the specified operation."""
-    result = 0.0
-    if operation == "sum":
-        result = sum(data)
-    elif operation == "average":
-        result = sum(data) / len(data) if data else 0.0
-    elif operation == "max":
-        result = float(max(data)) if data else 0.0
-
-    return {
-        "operation": operation,
-        "result": round(result, precision),
-        "description": description
-    }
+    """Analyze the provided text."""
+    # Implementation...
 ```
 
-**Supported Type Annotation Examples:**
+#### Supported Types
+
+FastMCP supports a wide range of type annotations:
 
 | Type Annotation         | Example                       | Description                         |
 | :---------------------- | :---------------------------- | :---------------------------------- |
@@ -90,30 +77,70 @@ def process_data(
 | Optional types          | `Optional[float]`, `float\|None`| Parameters that may be null/omitted |
 | Union types             | `str \| int`, `Union[str, int]`| Parameters accepting multiple types |
 | Literal types           | `Literal["A", "B"]`           | Parameters with specific allowed values |
-| Pydantic models         | `UserData`                    | Complex structured data (see below) |
+| Pydantic models         | `UserData`                    | Complex structured data (see Structured Inputs) |
 
 <Tip>
 **Automatic JSON Parsing:** FastMCP intelligently handles arguments. If a client sends a string that looks like valid JSON (e.g., `"['a', 'b']"`) for a parameter hinted as a structured type (like `list[str]` or a Pydantic model), FastMCP will automatically attempt to parse the JSON string into the expected Python object before validation. This improves robustness when interacting with various clients.
 </Tip>
 
-### Required vs. Optional Parameters
+#### Parameter Metadata
 
-Parameters in your function signature are considered **required** unless they have a default value.
+You can provide additional metadata about parameters using Pydantic's `Field` class with `Annotated`. This approach is preferred as it's more modern and keeps type hints separate from validation rules:
+
+```python
+from typing import Annotated
+from pydantic import Field
+
+@mcp.tool()
+def process_image(
+    image_url: Annotated[str, Field(description="URL of the image to process")],
+    resize: Annotated[bool, Field(description="Whether to resize the image")] = False,
+    width: Annotated[int, Field(description="Target width in pixels", ge=1, le=2000)] = 800,
+    format: Annotated[
+        Literal["jpeg", "png", "webp"], 
+        Field(description="Output image format")
+    ] = "jpeg"
+) -> dict:
+    """Process an image with optional resizing."""
+    # Implementation...
+```
+
+You can also use the Field as a default value, though the Annotated approach is preferred:
+
+```python
+@mcp.tool()
+def search_database(
+    query: str = Field(description="Search query string"),
+    limit: int = Field(10, description="Maximum number of results", ge=1, le=100)
+) -> list:
+    """Search the database with the provided query."""
+    # Implementation...
+```
+
+Field provides several validation and documentation features:
+- `description`: Human-readable explanation of the parameter (shown to LLMs)
+- `ge`/`gt`/`le`/`lt`: Greater/less than (or equal) constraints
+- `min_length`/`max_length`: String or collection length constraints
+- `pattern`: Regex pattern for string validation
+- `default`: Default value if parameter is omitted
+
+#### Optional Arguments
+
+FastMCP follows Python's standard function parameter conventions. Parameters without default values are required, while those with default values are optional.
 
 ```python
 @mcp.tool()
 def search_products(
-    query: str,                # Required - no default value
-    max_results: int = 10,     # Optional - has default value
-    sort_by: str = "relevance" # Optional - has default value
+    query: str,                   # Required - no default value
+    max_results: int = 10,        # Optional - has default value
+    sort_by: str = "relevance",   # Optional - has default value
+    category: str | None = None   # Optional - can be None
 ) -> list[dict]:
     """Search the product catalog."""
     # Implementation...
-    print(f"Searching for '{query}', max {max_results}, sorted by {sort_by}")
-    return [{"id": 1, "name": "Sample Product"}]
 ```
 
-In this example, the LLM *must* provide a `query`. If `max_results` or `sort_by` are omitted, their default values will be used.
+In this example, the LLM must provide a `query` parameter, while `max_results`, `sort_by`, and `category` will use their default values if not explicitly provided.
 
 ### Structured Inputs
 
