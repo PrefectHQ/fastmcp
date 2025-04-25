@@ -109,16 +109,19 @@ Field provides several validation and documentation features:
 
 #### Supported Types
 
-FastMCP supports a wide range of type annotations:
+FastMCP supports a wide range of type annotations, including all Pydantic types:
 
 | Type Annotation         | Example                       | Description                         |
 | :---------------------- | :---------------------------- | :---------------------------------- |
 | Basic types             | `int`, `float`, `str`, `bool` | Simple scalar values - see [Built-in Types](#built-in-types) |
-| Binary data             | `bytes`                       | Binary content - see [Binary Data Handling](#binary-data-handling) |
+| Binary data             | `bytes`                       | Binary content - see [Binary Data](#binary-data) |
+| Date and Time           | `datetime`, `date`, `timedelta` | Date and time objects - see [Date and Time Types](#date-and-time-types) |
 | Collection types        | `list[str]`, `dict[str, int]`, `set[int]` | Collections of items - see [Collection Types](#collection-types) |
 | Optional types          | `float \| None`, `Optional[float]`| Parameters that may be null/omitted - see [Union and Optional Types](#union-and-optional-types) |
 | Union types             | `str \| int`, `Union[str, int]`| Parameters accepting multiple types - see [Union and Optional Types](#union-and-optional-types) |
 | Constrained types       | `Literal["A", "B"]`, `Enum`   | Parameters with specific allowed values - see [Constrained Types](#constrained-types) |
+| Paths                   | `Path`                        | File system paths - see [Paths](#paths) |
+| UUIDs                   | `UUID`                        | Universally unique identifiers - see [UUIDs](#uuids) |
 | Pydantic models         | `UserData`                    | Complex structured data - see [Pydantic Models](#pydantic-models) |
 
 For additional type annotations not listed here, see the [Parameter Types](#parameter-types) section below for more detailed information and examples.
@@ -334,10 +337,9 @@ The duplicate behavior options are:
 
 FastMCP supports a wide variety of parameter types to give you flexibility when designing your tools.
 
-
+FastMCP generally supports all types that Pydantic supports as fields, including all Pydantic custom types. This means you can use any type that can be validated and parsed by Pydantic in your tool parameters.
 
 FastMCP supports **type coercion** when possible. This means that if a client sends data that doesn't match the expected type, FastMCP will attempt to convert it to the appropriate type. For example, if a client sends a string for a parameter annotated as `int`, FastMCP will attempt to convert it to an integer. If the conversion is not possible, FastMCP will return a validation error.
-
 
 ### Built-in Types
 
@@ -356,6 +358,32 @@ def process_values(
 ```
 
 These types provide clear expectations to the LLM about what values are acceptable and allow FastMCP to validate inputs properly. Even if a client provides a string like "42", it will be coerced to an integer for parameters annotated as `int`.
+
+### Date and Time Types
+
+FastMCP supports various date and time types from the `datetime` module:
+
+```python
+from datetime import datetime, date, timedelta
+
+@mcp.tool()
+def process_date_time(
+    event_date: date,             # ISO format date string or date object
+    event_time: datetime,         # ISO format datetime string or datetime object
+    duration: timedelta = timedelta(hours=1)  # Integer seconds or timedelta
+) -> str:
+    """Process date and time information."""
+    # Types are automatically converted from strings
+    assert isinstance(event_date, date)  
+    assert isinstance(event_time, datetime)
+    assert isinstance(duration, timedelta)
+    
+    return f"Event on {event_date} at {event_time} for {duration}"
+```
+
+- `datetime` - Accepts ISO format strings (e.g., "2023-04-15T14:30:00")
+- `date` - Accepts ISO format date strings (e.g., "2023-04-15")
+- `timedelta` - Accepts integer seconds or timedelta objects
 
 ### Collection Types
 
@@ -501,6 +529,40 @@ def process_image_data(
 ```
 
 This approach is recommended when you expect to receive base64-encoded binary data from clients.
+
+### Paths
+
+The `Path` type from the `pathlib` module can be used for file system paths:
+
+```python
+from pathlib import Path
+
+@mcp.tool()
+def process_file(path: Path) -> str:
+    """Process a file at the given path."""
+    assert isinstance(path, Path)  # Path is properly converted
+    return f"Processing file at {path}"
+```
+
+When a client sends a string path, FastMCP automatically converts it to a `Path` object.
+
+### UUIDs
+
+The `UUID` type from the `uuid` module can be used for unique identifiers:
+
+```python
+import uuid
+
+@mcp.tool()
+def process_item(
+    item_id: uuid.UUID  # String UUID or UUID object
+) -> str:
+    """Process an item with the given UUID."""
+    assert isinstance(item_id, uuid.UUID)  # Properly converted to UUID
+    return f"Processing item {item_id}"
+```
+
+When a client sends a string UUID (e.g., "123e4567-e89b-12d3-a456-426614174000"), FastMCP automatically converts it to a `UUID` object.
 
 ### Pydantic Models
 

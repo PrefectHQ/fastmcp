@@ -1,5 +1,7 @@
 import base64
+import datetime
 import json
+import uuid
 from enum import Enum
 from pathlib import Path
 from typing import Annotated, Literal
@@ -159,6 +161,8 @@ class TestTools:
             assert isinstance(content3, TextContent)
             assert content3.text == "direct content"
 
+
+class TestToolParameters:
     async def test_parameter_descriptions_with_field_annotations(self):
         mcp = FastMCP("Test Server")
 
@@ -460,6 +464,145 @@ class TestTools:
 
             with pytest.raises(ClientError, match="2 validation errors for analyze"):
                 await client.call_tool("analyze", {"x": "not a number"})
+
+    async def test_path_type(self):
+        mcp = FastMCP()
+
+        @mcp.tool()
+        def send_path(path: Path) -> str:
+            assert isinstance(path, Path)
+            return str(path)
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("send_path", {"path": "/tmp/test.txt"})
+            assert isinstance(result[0], TextContent)
+            assert result[0].text == "/tmp/test.txt"
+
+    async def test_path_type_error(self):
+        mcp = FastMCP()
+
+        @mcp.tool()
+        def send_path(path: Path) -> str:
+            return str(path)
+
+        async with Client(mcp) as client:
+            with pytest.raises(ClientError, match="Input is not a valid path"):
+                await client.call_tool("send_path", {"path": 1})
+
+    async def test_uuid_type(self):
+        mcp = FastMCP()
+
+        @mcp.tool()
+        def send_uuid(x: uuid.UUID) -> str:
+            assert isinstance(x, uuid.UUID)
+            return str(x)
+
+        test_uuid = uuid.uuid4()
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("send_uuid", {"x": test_uuid})
+            assert isinstance(result[0], TextContent)
+            assert result[0].text == str(test_uuid)
+
+    async def test_uuid_type_error(self):
+        mcp = FastMCP()
+
+        @mcp.tool()
+        def send_uuid(x: uuid.UUID) -> str:
+            return str(x)
+
+        async with Client(mcp) as client:
+            with pytest.raises(ClientError, match="Input should be a valid UUID"):
+                await client.call_tool("send_uuid", {"x": "not a uuid"})
+
+    async def test_datetime_type(self):
+        mcp = FastMCP()
+
+        @mcp.tool()
+        def send_datetime(x: datetime.datetime) -> str:
+            return x.isoformat()
+
+        async with Client(mcp) as client:
+            result = await client.call_tool(
+                "send_datetime", {"x": datetime.datetime.now()}
+            )
+            assert isinstance(result[0], TextContent)
+            assert result[0].text == datetime.datetime.now().isoformat()
+
+    async def test_datetime_type_parse_string(self):
+        mcp = FastMCP()
+
+        @mcp.tool()
+        def send_datetime(x: datetime.datetime) -> str:
+            return x.isoformat()
+
+        async with Client(mcp) as client:
+            result = await client.call_tool(
+                "send_datetime", {"x": "2021-01-01T00:00:00"}
+            )
+            assert isinstance(result[0], TextContent)
+            assert result[0].text == "2021-01-01T00:00:00"
+
+    async def test_datetime_type_error(self):
+        mcp = FastMCP()
+
+        @mcp.tool()
+        def send_datetime(x: datetime.datetime) -> str:
+            return x.isoformat()
+
+        async with Client(mcp) as client:
+            with pytest.raises(ClientError, match="Input should be a valid datetime"):
+                await client.call_tool("send_datetime", {"x": "not a datetime"})
+
+    async def test_date_type(self):
+        mcp = FastMCP()
+
+        @mcp.tool()
+        def send_date(x: datetime.date) -> str:
+            return x.isoformat()
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("send_date", {"x": datetime.date.today()})
+            assert isinstance(result[0], TextContent)
+            assert result[0].text == datetime.date.today().isoformat()
+
+    async def test_date_type_parse_string(self):
+        mcp = FastMCP()
+
+        @mcp.tool()
+        def send_date(x: datetime.date) -> str:
+            return x.isoformat()
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("send_date", {"x": "2021-01-01"})
+            assert isinstance(result[0], TextContent)
+            assert result[0].text == "2021-01-01"
+
+    async def test_timedelta_type(self):
+        mcp = FastMCP()
+
+        @mcp.tool()
+        def send_timedelta(x: datetime.timedelta) -> str:
+            return str(x)
+
+        async with Client(mcp) as client:
+            result = await client.call_tool(
+                "send_timedelta", {"x": datetime.timedelta(days=1)}
+            )
+            assert isinstance(result[0], TextContent)
+            assert result[0].text == "1 day, 0:00:00"
+
+    async def test_timedelta_type_parse_int(self):
+        mcp = FastMCP()
+
+        @mcp.tool()
+        def send_timedelta(x: datetime.timedelta) -> str:
+            return str(x)
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("send_timedelta", {"x": 1000})
+            assert isinstance(result[0], TextContent)
+            assert result[0].text == "0:16:40"
 
 
 class TestResources:
