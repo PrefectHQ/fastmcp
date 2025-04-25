@@ -95,7 +95,7 @@ class ResourceTemplate(BaseModel):
             raise ValueError("You must provide a name for lambda functions")
 
         # Validate that URI params match function params
-        uri_params = set(re.findall(r"{(\w+)}", uri_template))
+        uri_params = set(re.findall(r"{(\w+)(?:\*)?}", uri_template))
         if not uri_params:
             raise ValueError("URI template must contain at least one parameter")
 
