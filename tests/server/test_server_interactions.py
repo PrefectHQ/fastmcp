@@ -195,6 +195,20 @@ class TestTools:
             assert result[0].mimeType == "image/png"
             assert result[0].data == base64.b64encode(b"fake png data").decode()
 
+    async def test_tool_with_invalid_input(self):
+        mcp = FastMCP()
+
+        @mcp.tool()
+        def my_tool(x: int) -> int:
+            return x + 1
+
+        async with Client(mcp) as client:
+            with pytest.raises(
+                ClientError,
+                match="Input should be a valid integer, unable to parse string as an integer",
+            ):
+                await client.call_tool("my_tool", {"x": "not an int"})
+
 
 class TestResources:
     async def test_text_resource(self):
