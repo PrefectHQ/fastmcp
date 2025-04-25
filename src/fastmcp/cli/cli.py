@@ -223,6 +223,27 @@ def dev(
             help="Additional packages to install",
         ),
     ] = [],
+    inspector_version: Annotated[
+        str | None,
+        typer.Option(
+            "--inspector-version",
+            help="Version of the MCP Inspector to use",
+        ),
+    ] = None,
+    ui_port: Annotated[
+        int | None,
+        typer.Option(
+            "--ui-port",
+            help="Port for the MCP Inspector UI",
+        ),
+    ] = None,
+    server_port: Annotated[
+        int | None,
+        typer.Option(
+            "--server-port",
+            help="Port for the MCP Inspector Proxy server",
+        ),
+    ] = None,
 ) -> None:
     """Run a MCP server with the MCP Inspector."""
     file, server_object = _parse_file_path(file_spec)
@@ -234,6 +255,8 @@ def dev(
             "server_object": server_object,
             "with_editable": str(with_editable) if with_editable else None,
             "with_packages": with_packages,
+            "ui_port": ui_port,
+            "server_port": server_port,
         },
     )
 
@@ -243,7 +266,11 @@ def dev(
         if hasattr(server, "dependencies"):
             with_packages = list(set(with_packages + server.dependencies))
 
-        uv_cmd = _build_uv_command(file_spec, with_editable, with_packages)
+        env_vars = {}
+        if ui_port:
+            env_vars["CLIENT_PORT"] = str(ui_port)
+        if server_port:
+            env_vars["SERVER_PORT"] = str(server_port)
 
         # Get the correct npx command
         npx_cmd = _get_npx_command()
@@ -254,13 +281,19 @@ def dev(
             )
             sys.exit(1)
 
+        inspector_cmd = "@modelcontextprotocol/inspector"
+        if inspector_version:
+            inspector_cmd += f"@{inspector_version}"
+
+        uv_cmd = _build_uv_command(file_spec, with_editable, with_packages)
+
         # Run the MCP Inspector command with shell=True on Windows
         shell = sys.platform == "win32"
         process = subprocess.run(
-            [npx_cmd, "@modelcontextprotocol/inspector"] + uv_cmd,
+            [npx_cmd, inspector_cmd] + uv_cmd,
             check=True,
             shell=shell,
-            env=dict(os.environ.items()),  # Convert to list of tuples for env update
+            env=dict(os.environ.items()) | env_vars,
         )
         sys.exit(process.returncode)
     except subprocess.CalledProcessError as e:
