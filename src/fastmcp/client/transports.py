@@ -456,6 +456,8 @@ def infer_transport(
             raise ValueError("Invalid transport dictionary: missing 'mcpServers' key")
         else:
             server = transport["mcpServers"]
+            if len(list(server.keys())) > 1:
+                raise ValueError("Invalid transport dictionary: multiple servers found - only one expected")
             server_name = list(server.keys())[0]
         # Stdio transport
             if "command" in server[server_name] and "args" in server[server_name]:
