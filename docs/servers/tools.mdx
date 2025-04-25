@@ -118,8 +118,10 @@ FastMCP supports a wide range of type annotations:
 | Collection types        | `list[str]`, `dict[str, int]`, `set[int]` | Collections of items - see [Collection Types](#collection-types) |
 | Optional types          | `float \| None`, `Optional[float]`| Parameters that may be null/omitted - see [Union and Optional Types](#union-and-optional-types) |
 | Union types             | `str \| int`, `Union[str, int]`| Parameters accepting multiple types - see [Union and Optional Types](#union-and-optional-types) |
-| Literal types           | `Literal["A", "B"]`           | Parameters with specific allowed values - see [Literal Types](#literal-types) |
+| Constrained types       | `Literal["A", "B"]`, `Enum`   | Parameters with specific allowed values - see [Constrained Types](#constrained-types) |
 | Pydantic models         | `UserData`                    | Complex structured data - see [Pydantic Models](#pydantic-models) |
+
+For additional type annotations not listed here, see the [Parameter Types](#parameter-types) section below for more detailed information and examples.
 
 #### Optional Arguments
 
@@ -197,6 +199,8 @@ FastMCP automatically converts the value returned by your function into the appr
 - **`bytes`**: Base64 encoded and sent as `BlobResourceContents` (often within an `EmbeddedResource`).
 - **`fastmcp.Image`**: A helper class for easily returning image data. Sent as `ImageContent`.
 - **`None`**: Results in an empty response (no content is sent back to the client).
+
+FastMCP will attempt to serialize other types to a string if possible.
 
 ```python
 from fastmcp import FastMCP, Image
@@ -328,7 +332,12 @@ The duplicate behavior options are:
 
 ## Parameter Types
 
-FastMCP supports a wide variety of parameter types to give you flexibility when designing your tools. When clients send parameters, FastMCP will attempt to coerce values into the appropriate type when possible (for example, parsing JSON strings into structured types).
+FastMCP supports a wide variety of parameter types to give you flexibility when designing your tools.
+
+
+
+FastMCP supports **type coercion** when possible. This means that if a client sends data that doesn't match the expected type, FastMCP will attempt to convert it to the appropriate type. For example, if a client sends a string for a parameter annotated as `int`, FastMCP will attempt to convert it to an integer. If the conversion is not possible, FastMCP will return a validation error.
+
 
 ### Built-in Types
 
@@ -350,21 +359,28 @@ These types provide clear expectations to the LLM about what values are acceptab
 
 ### Collection Types
 
-For structured data collections, FastMCP supports standard Python collection types:
+FastMCP supports all standard Python collection types:
 
 ```python
 @mcp.tool()
 def analyze_data(
     values: list[float],           # List of numbers
-    labels: list[str],             # List of strings
     properties: dict[str, str],    # Dictionary with string keys and values
+    unique_ids: set[int],          # Set of unique integers
+    coordinates: tuple[float, float],  # Tuple with fixed structure
     mixed_data: dict[str, list[int]] # Nested collections
 ):
     """Analyze collections of data."""
     # Implementation...
 ```
 
-Collection types can be nested and combined to represent complex data structures. If a client sends a JSON string like `"[1.5, 2.5, 3.5]"` for a `list[float]` parameter, FastMCP will automatically parse and convert it.
+All collection types can be used as parameter annotations:
+- `list[T]` - Ordered sequence of items
+- `dict[K, V]` - Key-value mapping
+- `set[T]` - Unordered collection of unique items
+- `tuple[T1, T2, ...]` - Fixed-length sequence with potentially different types
+
+Collection types can be nested and combined to represent complex data structures. JSON strings that match the expected structure will be automatically parsed and converted to the appropriate Python collection type.
 
 ### Union and Optional Types
 
@@ -383,9 +399,13 @@ def flexible_search(
 
 Modern Python syntax (`str | int`) is preferred over older `Union[str, int]` forms. Similarly, `str | None` is preferred over `Optional[str]`.
 
-### Literal Types
+### Constrained Types
 
-When a parameter must be one of a predefined set of values:
+When a parameter must be one of a predefined set of values, you can use either Literal types or Enums:
+
+#### Literals
+
+Literals constrain parameters to a specific set of values:
 
 ```python
 from typing import Literal
@@ -396,17 +416,49 @@ def sort_data(
     order: Literal["ascending", "descending"] = "ascending",
     algorithm: Literal["quicksort", "mergesort", "heapsort"] = "quicksort"
 ):
-    """Sort data using specified order and algorithm."""
+    """Sort data using specific options."""
     # Implementation...
 ```
 
-Literal types help LLMs understand exactly which values are acceptable and provide validation for incoming parameters.
+Literal types:
+- Specify exact allowable values directly in the type annotation
+- Help LLMs understand exactly which values are acceptable
+- Provide input validation (errors for invalid values)
+- Create clear schemas for clients
 
-### Binary Data Handling
+#### Enums
+
+For more structured sets of constrained values, use Python's Enum class:
+
+```python
+from enum import Enum
+
+class Color(Enum):
+    RED = "red"
+    GREEN = "green"
+    BLUE = "blue"
+
+@mcp.tool()
+def process_image(
+    image_path: str, 
+    color_filter: Color = Color.RED
+):
+    """Process an image with a color filter."""
+    # Implementation...
+    # color_filter will be a Color enum member
+```
+
+When using Enum types:
+- Clients should provide the enum's value (e.g., "red"), not the enum member name (e.g., "RED")
+- FastMCP automatically coerces the string value into the appropriate Enum object
+- Your function receives the actual Enum member (e.g., `Color.RED`)
+- Validation errors are raised for values not in the enum
+
+### Binary Data
 
 There are two approaches to handling binary data in tool parameters:
 
-#### Using bytes type
+#### Bytes
 
 ```python
 @mcp.tool()
@@ -427,7 +479,7 @@ When you annotate a parameter as `bytes`, FastMCP will:
 
 FastMCP does not automatically decode base64-encoded strings for bytes parameters. If you need to accept base64-encoded data, you should handle the decoding manually as shown below.
 
-#### Using base64-encoded strings
+#### Base64-encoded strings
 
 ```python
 from typing import Annotated
@@ -482,3 +534,66 @@ Clients can provide data for Pydantic model parameters as either:
 - A JSON object (string)
 - A dictionary with the appropriate structure
 - Nested parameters in the appropriate format
+
+### Pydantic Fields
+
+FastMCP supports robust parameter validation through Pydantic's `Field` class. This is especially useful to ensure that input values meet specific requirements beyond just their type.
+
+Note that fields can be used *outside* Pydantic models to provide metadata and validation constraints. The preferred approach is using `Annotated` with `Field`:
+
+```python
+from typing import Annotated
+from pydantic import Field
+
+@mcp.tool()
+def analyze_metrics(
+    # Numbers with range constraints
+    count: Annotated[int, Field(ge=0, le=100)],         # 0 <= count <= 100
+    ratio: Annotated[float, Field(gt=0, lt=1.0)],       # 0 < ratio < 1.0
+    
+    # String with pattern and length constraints
+    user_id: Annotated[str, Field(
+        pattern=r"^[A-Z]{2}\d{4}$",                     # Must match regex pattern
+        description="User ID in format XX0000"
+    )],
+    
+    # String with length constraints
+    comment: Annotated[str, Field(min_length=3, max_length=500)] = "",
+    
+    # Numeric constraints
+    factor: Annotated[int, Field(multiple_of=5)] = 10,  # Must be multiple of 5
+):
+    """Analyze metrics with validated parameters."""
+    # Implementation...
+```
+
+You can also use `Field` as a default value, though the `Annotated` approach is preferred:
+
+```python
+@mcp.tool()
+def validate_data(
+    # Value constraints
+    age: int = Field(ge=0, lt=120),                     # 0 <= age < 120
+    
+    # String constraints
+    email: str = Field(pattern=r"^[\w\.-]+@[\w\.-]+\.\w+$"),  # Email pattern
+    
+    # Collection constraints
+    tags: list[str] = Field(min_length=1, max_length=10)  # 1-10 tags
+):
+    """Process data with field validations."""
+    # Implementation...
+```
+
+Common validation options include:
+
+| Validation | Type | Description |
+| :--------- | :--- | :---------- |
+| `ge`, `gt` | Number | Greater than (or equal) constraint |
+| `le`, `lt` | Number | Less than (or equal) constraint |
+| `multiple_of` | Number | Value must be a multiple of this number |
+| `min_length`, `max_length` | String, List, etc. | Length constraints |
+| `pattern` | String | Regular expression pattern constraint |
+| `description` | Any | Human-readable description (appears in schema) |
+
+When a client sends invalid data, FastMCP will return a validation error explaining why the parameter failed validation.

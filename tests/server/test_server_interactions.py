@@ -1,6 +1,8 @@
 import base64
 import json
+from enum import Enum
 from pathlib import Path
+from typing import Annotated, Literal
 
 import pytest
 from mcp.types import (
@@ -157,7 +159,32 @@ class TestTools:
             assert isinstance(content3, TextContent)
             assert content3.text == "direct content"
 
-    async def test_parameter_descriptions(self):
+    async def test_parameter_descriptions_with_field_annotations(self):
+        mcp = FastMCP("Test Server")
+
+        @mcp.tool()
+        def greet(
+            name: Annotated[str, Field(description="The name to greet")],
+            title: Annotated[str, Field(description="Optional title", default="")],
+        ) -> str:
+            """A greeting tool"""
+            return f"Hello {title} {name}"
+
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+            assert len(tools) == 1
+            tool = tools[0]
+
+            # Check that parameter descriptions are present in the schema
+            properties = tool.inputSchema["properties"]
+            assert "name" in properties
+            assert properties["name"]["description"] == "The name to greet"
+            assert "title" in properties
+            assert properties["title"]["description"] == "Optional title"
+            assert properties["title"]["default"] == ""
+            assert tool.inputSchema["required"] == ["name"]
+
+    async def test_parameter_descriptions_with_field_defaults(self):
         mcp = FastMCP("Test Server")
 
         @mcp.tool()
@@ -179,6 +206,8 @@ class TestTools:
             assert properties["name"]["description"] == "The name to greet"
             assert "title" in properties
             assert properties["title"]["description"] == "Optional title"
+            assert properties["title"]["default"] == ""
+            assert tool.inputSchema["required"] == ["name"]
 
     async def test_tool_with_bytes_input(self):
         mcp = FastMCP()
@@ -208,6 +237,229 @@ class TestTools:
                 match="Input should be a valid integer, unable to parse string as an integer",
             ):
                 await client.call_tool("my_tool", {"x": "not an int"})
+
+    async def test_tool_int_coercion(self):
+        """Test string-to-int type coercion."""
+        mcp = FastMCP()
+
+        @mcp.tool()
+        def add_one(x: int) -> int:
+            return x + 1
+
+        async with Client(mcp) as client:
+            # String with integer value should be coerced to int
+            result = await client.call_tool("add_one", {"x": "42"})
+            assert isinstance(result[0], TextContent)
+            assert result[0].text == "43"
+
+    async def test_tool_bool_coercion(self):
+        """Test string-to-bool type coercion."""
+        mcp = FastMCP()
+
+        @mcp.tool()
+        def toggle(flag: bool) -> bool:
+            return not flag
+
+        async with Client(mcp) as client:
+            # String with boolean value should be coerced to bool
+            result = await client.call_tool("toggle", {"flag": "true"})
+            assert isinstance(result[0], TextContent)
+            assert result[0].text == "false"
+
+            result = await client.call_tool("toggle", {"flag": "false"})
+            assert isinstance(result[0], TextContent)
+            assert result[0].text == "true"
+
+    async def test_tool_list_coercion(self):
+        """Test JSON string to collection type coercion."""
+        mcp = FastMCP()
+
+        @mcp.tool()
+        def process_list(items: list[int]) -> int:
+            return sum(items)
+
+        async with Client(mcp) as client:
+            # JSON array string should be coerced to list
+            result = await client.call_tool(
+                "process_list", {"items": "[1, 2, 3, 4, 5]"}
+            )
+            assert isinstance(result[0], TextContent)
+            assert result[0].text == "15"
+
+    async def test_tool_list_coercion_error(self):
+        """Test that a list coercion error is raised if the input is not a valid list."""
+        mcp = FastMCP()
+
+        @mcp.tool()
+        def process_list(items: list[int]) -> int:
+            return sum(items)
+
+        async with Client(mcp) as client:
+            with pytest.raises(
+                ClientError,
+                match="Input should be a valid list",
+            ):
+                await client.call_tool("process_list", {"items": "['a', 'b', 3]"})
+
+    async def test_tool_dict_coercion(self):
+        """Test JSON string to dict type coercion."""
+        mcp = FastMCP()
+
+        @mcp.tool()
+        def process_dict(data: dict[str, int]) -> int:
+            return sum(data.values())
+
+        async with Client(mcp) as client:
+            # JSON object string should be coerced to dict
+            result = await client.call_tool(
+                "process_dict", {"data": '{"a": 1, "b": "2", "c": 3}'}
+            )
+            assert isinstance(result[0], TextContent)
+            assert result[0].text == "6"
+
+    async def test_tool_set_coercion(self):
+        """Test JSON string to set type coercion."""
+        mcp = FastMCP()
+
+        @mcp.tool()
+        def process_set(items: set[int]) -> int:
+            assert isinstance(items, set)
+            return sum(items)
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("process_set", {"items": "[1, 2, 3, 4, 5]"})
+            assert isinstance(result[0], TextContent)
+            assert result[0].text == "15"
+
+    async def test_tool_tuple_coercion(self):
+        """Test JSON string to tuple type coercion."""
+        mcp = FastMCP()
+
+        @mcp.tool()
+        def process_tuple(items: tuple[int, str]) -> int:
+            assert isinstance(items, tuple)
+            return items[0] + len(items[1])
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("process_tuple", {"items": '["1", "two"]'})
+            assert isinstance(result[0], TextContent)
+            assert result[0].text == "4"
+
+    async def test_annotated_field_validation(self):
+        mcp = FastMCP()
+
+        @mcp.tool()
+        def analyze(x: Annotated[int, Field(ge=1)]) -> None:
+            pass
+
+        async with Client(mcp) as client:
+            with pytest.raises(
+                ClientError,
+                match="Input should be greater than or equal to 1",
+            ):
+                await client.call_tool("analyze", {"x": 0})
+
+    async def test_default_field_validation(self):
+        mcp = FastMCP()
+
+        @mcp.tool()
+        def analyze(x: int = Field(ge=1)) -> None:
+            pass
+
+        async with Client(mcp) as client:
+            with pytest.raises(
+                ClientError,
+                match="Input should be greater than or equal to 1",
+            ):
+                await client.call_tool("analyze", {"x": 0})
+
+    async def test_default_field_is_still_required_if_no_default_specified(self):
+        mcp = FastMCP()
+
+        @mcp.tool()
+        def analyze(x: int = Field()) -> None:
+            pass
+
+        async with Client(mcp) as client:
+            with pytest.raises(ClientError, match="Field required"):
+                await client.call_tool("analyze", {})
+
+    async def test_literal_type_validation_error(self):
+        mcp = FastMCP()
+
+        @mcp.tool()
+        def analyze(x: Literal["a", "b"]) -> None:
+            pass
+
+        async with Client(mcp) as client:
+            with pytest.raises(ClientError, match="Input should be 'a' or 'b'"):
+                await client.call_tool("analyze", {"x": "c"})
+
+    async def test_literal_type_validation_success(self):
+        mcp = FastMCP()
+
+        @mcp.tool()
+        def analyze(x: Literal["a", "b"]) -> str:
+            return x
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("analyze", {"x": "a"})
+            assert isinstance(result[0], TextContent)
+            assert result[0].text == "a"
+
+    async def test_enum_type_validation_error(self):
+        mcp = FastMCP()
+
+        class MyEnum(Enum):
+            RED = "red"
+            GREEN = "green"
+            BLUE = "blue"
+
+        @mcp.tool()
+        def analyze(x: MyEnum) -> str:
+            return x.value
+
+        async with Client(mcp) as client:
+            with pytest.raises(
+                ClientError, match="Input should be 'red', 'green' or 'blue'"
+            ):
+                await client.call_tool("analyze", {"x": "some-color"})
+
+    async def test_enum_type_validation_success(self):
+        mcp = FastMCP()
+
+        class MyEnum(Enum):
+            RED = "red"
+            GREEN = "green"
+            BLUE = "blue"
+
+        @mcp.tool()
+        def analyze(x: MyEnum) -> str:
+            return x.value
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("analyze", {"x": "red"})
+            assert isinstance(result[0], TextContent)
+            assert result[0].text == "red"
+
+    async def test_union_type_validation(self):
+        mcp = FastMCP()
+
+        @mcp.tool()
+        def analyze(x: int | float) -> str:
+            return str(x)
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("analyze", {"x": 1})
+            assert isinstance(result[0], TextContent)
+            assert result[0].text == "1"
+
+            result = await client.call_tool("analyze", {"x": 1.0})
+            assert isinstance(result[0], TextContent)
+            assert result[0].text == "1.0"
+
+            with pytest.raises(ClientError, match="2 validation errors for analyze"):
+                await client.call_tool("analyze", {"x": "not a number"})
 
 
 class TestResources:

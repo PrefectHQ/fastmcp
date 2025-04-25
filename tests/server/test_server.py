@@ -1,8 +1,11 @@
+from typing import Annotated
+
 import pytest
 from mcp.types import (
     TextContent,
     TextResourceContents,
 )
+from pydantic import Field
 
 from fastmcp import Client, FastMCP
 from fastmcp.exceptions import ClientError, NotFoundError
@@ -238,6 +241,36 @@ class TestToolDecorator:
 
         # Original name should not be registered
         assert "multiply" not in tools
+
+    async def test_tool_with_annotated_arguments(self):
+        """Test that tools with annotated arguments work correctly."""
+        mcp = FastMCP()
+
+        @mcp.tool()
+        def add(
+            x: Annotated[int, Field(description="x is an int")],
+            y: Annotated[str, Field(description="y is not an int")],
+        ) -> None:
+            pass
+
+        tool = (await mcp.get_tools())["add"]
+        assert tool.parameters["properties"]["x"]["description"] == "x is an int"
+        assert tool.parameters["properties"]["y"]["description"] == "y is not an int"
+
+    async def test_tool_with_field_defaults(self):
+        """Test that tools with annotated arguments work correctly."""
+        mcp = FastMCP()
+
+        @mcp.tool()
+        def add(
+            x: int = Field(description="x is an int"),
+            y: str = Field(description="y is not an int"),
+        ) -> None:
+            pass
+
+        tool = (await mcp.get_tools())["add"]
+        assert tool.parameters["properties"]["x"]["description"] == "x is an int"
+        assert tool.parameters["properties"]["y"]["description"] == "y is not an int"
 
 
 class TestResourceDecorator:
