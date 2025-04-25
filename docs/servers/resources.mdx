@@ -251,12 +251,17 @@ With these two templates defined, clients can request a variety of resources:
 
 <VersionBadge version="2.2.3" />
 
+<Warning>
+Please note: the Model Context Protocol URI standard follows RFC 6570, which does not include support for wildcard parameters. FastMCP extends the template syntax to support wildcards (`{param*}`), and because template matching happens entirely in the FastMCP server, it is not expected that these wildcards will cause compatibility issues with other MCP implementations. However, this can not be guaranteed.
+</Warning>
+
 Resource templates support wildcard parameters that can match multiple path segments. While standard parameters (`{param}`) only match a single path segment and don't cross "/" boundaries, wildcard parameters (`{param*}`) can capture multiple segments including slashes. Wildcards capture all subsequent path segments *up until* the defined part of the URI template (whether literal or another parameter). This allows you to have multiple wildcard parameters in a single URI template.
 
-```python
+```python {15, 23}
 from fastmcp import FastMCP
 
 mcp = FastMCP(name="DataServer")
+
 
 # Standard parameter only matches one segment
 @mcp.resource("files://{filename}")
@@ -265,12 +270,14 @@ def get_file(filename: str) -> str:
     # Will only match files://<single-segment>
     return f"File content for: {filename}"
 
+
 # Wildcard parameter can match multiple segments
 @mcp.resource("path://{filepath*}")
 def get_path_content(filepath: str) -> str:
     """Retrieves content at a specific path."""
     # Can match path://docs/server/resources.mdx
     return f"Content at path: {filepath}"
+
 
 # Mixing standard and wildcard parameters
 @mcp.resource("repo://{owner}/{path*}/template.py")

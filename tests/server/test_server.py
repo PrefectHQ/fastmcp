@@ -531,6 +531,18 @@ class TestTemplateDecorator:
         template = templates_dict["resource://{param}"]
         assert template.tags == {"template", "test-tag"}
 
+    async def test_template_decorator_wildcard_param(self):
+        mcp = FastMCP()
+
+        @mcp.resource("resource://{param*}")
+        def template_resource(param: str) -> str:
+            return f"Template resource: {param}"
+
+        templates_dict = await mcp.get_resource_templates()
+        template = templates_dict["resource://{param*}"]
+        assert template.uri_template == "resource://{param*}"
+        assert template.name == "template_resource"
+
 
 class TestPromptDecorator:
     async def test_prompt_decorator(self):
@@ -1142,6 +1154,67 @@ class TestServerResourceTemplates:
         templates_dict = await mcp.get_resource_templates()
         template = templates_dict["resource://{param}"]
         assert template.tags == {"template", "test-tag"}
+
+    async def test_template_decorator_wildcard_param(self):
+        mcp = FastMCP()
+
+        @mcp.resource("resource://{param*}")
+        def template_resource(param: str) -> str:
+            return f"Template resource: {param}"
+
+        async with Client(mcp) as client:
+            result = await client.read_resource(AnyUrl("resource://test/data"))
+            assert isinstance(result[0], TextResourceContents)
+            assert result[0].text == "Template resource: test/data"
+
+    async def test_templates_match_in_order_of_definition(self):
+        """
+        If a wildcard template is defined first, it will take priority over another
+        matching template.
+
+        """
+        mcp = FastMCP()
+
+        @mcp.resource("resource://{param*}")
+        def template_resource(param: str) -> str:
+            return f"Template resource 1: {param}"
+
+        @mcp.resource("resource://{x}/{y}")
+        def template_resource_with_params(x: str, y: str) -> str:
+            return f"Template resource 2: {x}/{y}"
+
+        async with Client(mcp) as client:
+            result = await client.read_resource(AnyUrl("resource://a/b/c"))
+            assert isinstance(result[0], TextResourceContents)
+            assert result[0].text == "Template resource 1: a/b/c"
+
+            result = await client.read_resource(AnyUrl("resource://a/b"))
+            assert isinstance(result[0], TextResourceContents)
+            assert result[0].text == "Template resource 1: a/b"
+
+    async def test_templates_shadow_each_other_reorder(self):
+        """
+        If a wildcard template is defined second, it will *not* take priority over
+        another matching template.
+        """
+        mcp = FastMCP()
+
+        @mcp.resource("resource://{x}/{y}")
+        def template_resource_with_params(x: str, y: str) -> str:
+            return f"Template resource 1: {x}/{y}"
+
+        @mcp.resource("resource://{param*}")
+        def template_resource(param: str) -> str:
+            return f"Template resource 2: {param}"
+
+        async with Client(mcp) as client:
+            result = await client.read_resource(AnyUrl("resource://a/b/c"))
+            assert isinstance(result[0], TextResourceContents)
+            assert result[0].text == "Template resource 2: a/b/c"
+
+            result = await client.read_resource(AnyUrl("resource://a/b"))
+            assert isinstance(result[0], TextResourceContents)
+            assert result[0].text == "Template resource 1: a/b"
 
 
 class TestContextInjection:

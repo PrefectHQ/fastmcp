@@ -297,6 +297,66 @@ class TestResourceTemplate:
         content = await resource.read()
         assert content == "hello"
 
+    async def test_wildcard_param_can_create_resource(self):
+        """Test that wildcard parameters are valid."""
+
+        def identity(path: str) -> str:
+            return path
+
+        template = ResourceTemplate.from_function(
+            fn=identity,
+            uri_template="test://{path*}.py",
+            name="test",
+        )
+
+        assert await template.create_resource(
+            "test://path/to/test.py",
+            {"path": "path/to/test.py"},
+        )
+
+    async def test_wildcard_param_matches(self):
+        def identify(path: str) -> str:
+            return path
+
+        template = ResourceTemplate.from_function(
+            fn=identify,
+            uri_template="test://src/{path*}.py",
+            name="test",
+        )
+        # Valid match
+        params = template.matches("test://src/path/to/test.py")
+        assert params == {"path": "path/to/test"}
+
+    async def test_multiple_wildcard_params(self):
+        """Test that multiple wildcard parameters are valid."""
+
+        def identity(path: str, path2: str) -> str:
+            return f"{path}/{path2}"
+
+        template = ResourceTemplate.from_function(
+            fn=identity,
+            uri_template="test://{path*}/xyz/{path2*}",
+            name="test",
+        )
+
+        params = template.matches("test://path/to/xyz/abc")
+        assert params == {"path": "path/to", "path2": "abc"}
+
+    async def test_wildcard_param_with_regular_param(self):
+        """Test that a wildcard parameter can be used with a regular parameter."""
+
+        def identity(prefix: str, path: str) -> str:
+            return f"{prefix}/{path}"
+
+        template = ResourceTemplate.from_function(
+            fn=identity,
+            uri_template="test://{prefix}/{path*}",
+            name="test",
+        )
+
+        params = template.matches("test://src/path/to/test.py")
+        assert params == {"prefix": "src", "path": "path/to/test.py"}
+
 
 class TestMatchUriTemplate:
     """Test match_uri_template function."""
