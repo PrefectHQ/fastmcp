@@ -1,6 +1,6 @@
 ---
 title: Resources & Templates
-sidebarTitle: Resources & Templates
+sidebarTitle: Resources
 description: Expose data sources and dynamic content generators to your MCP client.
 icon: database
 ---
@@ -21,7 +21,7 @@ Resources provide read-only access to data for the LLM or client application. Wh
 
 This allows LLMs to access files, database content, configuration, or dynamically generated information relevant to the conversation.
 
-## Defining Resources
+## Resources
 
 ### The `@resource` Decorator
 
@@ -201,7 +201,7 @@ mcp.add_resource(special_resource, key="internal://data-v2")  # Will be stored a
 
 Note that this parameter is only available when using `add_resource()` directly and not through the `@resource` decorator, as URIs are provided explicitly when using the decorator.
 
-## Defining Resource Templates
+## Resource Templates
 
 Resource Templates allow clients to request resources whose content depends on parameters embedded in the URI. Define a template using the **same `@mcp.resource` decorator**, but include `{parameter_name}` placeholders in the URI string and add corresponding arguments to your function signature.
 

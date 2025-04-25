@@ -180,6 +180,21 @@ class TestTools:
             assert "title" in properties
             assert properties["title"]["description"] == "Optional title"
 
+    async def test_tool_with_bytes_input(self):
+        mcp = FastMCP()
+
+        @mcp.tool()
+        def process_image(image: bytes) -> Image:
+            return Image(data=image)
+
+        async with Client(mcp) as client:
+            result = await client.call_tool(
+                "process_image", {"image": b"fake png data"}
+            )
+            assert isinstance(result[0], ImageContent)
+            assert result[0].mimeType == "image/png"
+            assert result[0].data == base64.b64encode(b"fake png data").decode()
+
 
 class TestResources:
     async def test_text_resource(self):
