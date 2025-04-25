@@ -257,7 +257,7 @@ class OpenAPIResource(Resource):
         self._client = client
         self._route = route
 
-    async def read(self) -> str:
+    async def read(self) -> str | bytes:
         """Fetch the resource data by making an HTTP request."""
         try:
             # Extract path parameters from the URI if present
@@ -297,15 +297,15 @@ class OpenAPIResource(Resource):
             # Raise for 4xx/5xx responses
             response.raise_for_status()
 
-            # Return response content based on mime type
-            if self.mime_type == "application/json":
-                try:
-                    return response.json()
-                except (json.JSONDecodeError, ValueError):
-                    # Fallback to returning the text
-                    return response.text
-            else:
+            # Determine content type and return appropriate format
+            content_type = response.headers.get("content-type", "").lower()
+
+            if "application/json" in content_type:
+                return str(response.json())
+            elif any(ct in content_type for ct in ["text/", "application/xml"]):
                 return response.text
+            else:
+                return response.content
 
         except httpx.HTTPStatusError as e:
             # Handle HTTP errors (4xx, 5xx)
@@ -367,18 +367,15 @@ class OpenAPIResourceTemplate(ResourceTemplate):
             # Raise for 4xx/5xx responses
             response.raise_for_status()
 
-            # Determine the mime type from the response
-            content_type = response.headers.get("content-type", "application/json")
-            mime_type = content_type.split(";")[0].strip()
+            # Determine content type and return appropriate format
+            content_type = response.headers.get("content-type", "").lower()
 
-            # Return the appropriate data
-            if mime_type == "application/json":
-                try:
-                    return response.json()
-                except (json.JSONDecodeError, ValueError):
-                    return response.text
-            else:
+            if "application/json" in content_type:
+                return str(response.json())
+            elif any(ct in content_type for ct in ["text/", "application/xml"]):
                 return response.text
+            else:
+                return response.content
 
         except httpx.HTTPStatusError as e:
             error_message = (

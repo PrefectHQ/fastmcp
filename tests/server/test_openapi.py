@@ -1,12 +1,13 @@
+import base64
 import json
 import re
 
 import httpx
 import pytest
 from dirty_equals import IsStr
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response
 from httpx import ASGITransport, AsyncClient
-from mcp.types import TextContent
+from mcp.types import BlobResourceContents, TextContent, TextResourceContents
 from pydantic import BaseModel, TypeAdapter
 from pydantic.networks import AnyUrl
 
@@ -66,6 +67,17 @@ def fastapi_app(users_db: dict[int, User]) -> FastAPI:
         user.name = name
         return user
 
+    @app.get("/ping")
+    async def ping() -> str:
+        """Ping the server."""
+        return "pong"
+
+    @app.get("/ping-bytes")
+    async def ping_bytes() -> Response:
+        """Ping the server and get a bytes response."""
+
+        return Response(content=b"pong")
+
     return app
 
 
@@ -120,7 +132,8 @@ class TestTools:
         """
         By default, tools exclude GET methods
         """
-        tools = await fastmcp_openapi_server._mcp_list_tools()
+        async with Client(fastmcp_openapi_server) as client:
+            tools = await client.list_tools()
         assert len(tools) == 2
 
         assert tools[0].model_dump() == dict(
@@ -156,9 +169,10 @@ class TestTools:
         """
         The tool created by the OpenAPI server should be the same as the original
         """
-        tool_response = await fastmcp_openapi_server._mcp_call_tool(
-            "create_user_users_post", {"name": "David", "active": False}
-        )
+        async with Client(fastmcp_openapi_server) as client:
+            tool_response = await client.call_tool(
+                "create_user_users_post", {"name": "David", "active": False}
+            )
 
         # Convert TextContent to dict for comparison
         assert isinstance(tool_response, list) and len(tool_response) == 1
@@ -173,10 +187,13 @@ class TestTools:
         assert len(response.json()) == 4
 
         # Check that the user was created via MCP
-        user_response = await fastmcp_openapi_server._mcp_read_resource(
-            "resource://openapi/get_user_users__user_id__get/4"
-        )
-        user = user_response[0].content
+        async with Client(fastmcp_openapi_server) as client:
+            user_response = await client.read_resource(
+                "resource://openapi/get_user_users__user_id__get/4"
+            )
+            assert isinstance(user_response[0], TextResourceContents)
+            response_text = user_response[0].text
+            user = json.loads(response_text)
         assert user == expected_user
 
     async def test_call_update_user_name_tool(
@@ -185,9 +202,11 @@ class TestTools:
         """
         The tool created by the OpenAPI server should be the same as the original
         """
-        tool_response = await fastmcp_openapi_server._mcp_call_tool(
-            "update_user_name_users__user_id__name_patch", {"user_id": 1, "name": "XYZ"}
-        )
+        async with Client(fastmcp_openapi_server) as client:
+            tool_response = await client.call_tool(
+                "update_user_name_users__user_id__name_patch",
+                {"user_id": 1, "name": "XYZ"},
+            )
 
         # Convert TextContent to dict for comparison
         assert isinstance(tool_response, list) and len(tool_response) == 1
@@ -202,10 +221,13 @@ class TestTools:
         assert expected_data in response.json()
 
         # Check that the user was updated via MCP
-        user_response = await fastmcp_openapi_server._mcp_read_resource(
-            "resource://openapi/get_user_users__user_id__get/1"
-        )
-        user = user_response[0].content
+        async with Client(fastmcp_openapi_server) as client:
+            user_response = await client.read_resource(
+                "resource://openapi/get_user_users__user_id__get/1"
+            )
+            assert isinstance(user_response[0], TextResourceContents)
+            response_text = user_response[0].text
+            user = json.loads(response_text)
         assert user == expected_data
 
 
@@ -214,8 +236,9 @@ class TestResources:
         """
         By default, resources exclude GET methods without parameters
         """
-        resources = await fastmcp_openapi_server._mcp_list_resources()
-        assert len(resources) == 1
+        async with Client(fastmcp_openapi_server) as client:
+            resources = await client.list_resources()
+        assert len(resources) == 3
         assert resources[0].uri == AnyUrl("resource://openapi/get_users_users_get")
         assert resources[0].name == "get_users_users_get"
 
@@ -228,16 +251,46 @@ class TestResources:
         """
         The resource created by the OpenAPI server should be the same as the original
         """
+
         json_users = TypeAdapter(list[User]).dump_python(
             sorted(users_db.values(), key=lambda x: x.id)
         )
-        resource_response = await fastmcp_openapi_server._mcp_read_resource(
-            "resource://openapi/get_users_users_get"
-        )
-        resource = resource_response[0].content
+        async with Client(fastmcp_openapi_server) as client:
+            resource_response = await client.read_resource(
+                "resource://openapi/get_users_users_get"
+            )
+            assert isinstance(resource_response[0], TextResourceContents)
+            response_text = resource_response[0].text
+            resource = json.loads(response_text)
         assert resource == json_users
         response = await api_client.get("/users")
         assert response.json() == json_users
+
+    async def test_get_bytes_resource(
+        self,
+        fastmcp_openapi_server: FastMCPOpenAPI,
+        api_client,
+    ):
+        """Test reading a resource that returns bytes."""
+        async with Client(fastmcp_openapi_server) as client:
+            resource_response = await client.read_resource(
+                "resource://openapi/ping_bytes_ping_bytes_get"
+            )
+            assert isinstance(resource_response[0], BlobResourceContents)
+            assert base64.b64decode(resource_response[0].blob) == b"pong"
+
+    async def test_get_str_resource(
+        self,
+        fastmcp_openapi_server: FastMCPOpenAPI,
+        api_client,
+    ):
+        """Test reading a resource that returns a string."""
+        async with Client(fastmcp_openapi_server) as client:
+            resource_response = await client.read_resource(
+                "resource://openapi/ping_ping_get"
+            )
+            assert isinstance(resource_response[0], TextResourceContents)
+            assert resource_response[0].text == "pong"
 
 
 class TestResourceTemplates:
@@ -247,7 +300,8 @@ class TestResourceTemplates:
         """
         By default, resource templates exclude GET methods without parameters
         """
-        resource_templates = await fastmcp_openapi_server._mcp_list_resource_templates()
+        async with Client(fastmcp_openapi_server) as client:
+            resource_templates = await client.list_resource_templates()
         assert len(resource_templates) == 1
         assert resource_templates[0].name == "get_user_users__user_id__get"
         assert (
@@ -265,11 +319,14 @@ class TestResourceTemplates:
         The resource template created by the OpenAPI server should be the same as the original
         """
         user_id = 2
-        resource_response = await fastmcp_openapi_server._mcp_read_resource(
-            f"resource://openapi/get_user_users__user_id__get/{user_id}"
-        )
+        async with Client(fastmcp_openapi_server) as client:
+            resource_response = await client.read_resource(
+                f"resource://openapi/get_user_users__user_id__get/{user_id}"
+            )
+            assert isinstance(resource_response[0], TextResourceContents)
+            response_text = resource_response[0].text
+            resource = json.loads(response_text)
 
-        resource = resource_response[0].content
         assert resource == users_db[user_id].model_dump()
         response = await api_client.get(f"/users/{user_id}")
         assert resource == response.json()
@@ -280,7 +337,8 @@ class TestPrompts:
         """
         By default, there are no prompts.
         """
-        prompts = await fastmcp_openapi_server._mcp_list_prompts()
+        async with Client(fastmcp_openapi_server) as client:
+            prompts = await client.list_prompts()
         assert len(prompts) == 0
 
 
@@ -494,20 +552,23 @@ class TestOpenAPI30Compatibility:
 
     async def test_resource_discovery(self, openapi_30_server):
         """Test that resources are correctly discovered from an OpenAPI 3.0 spec."""
-        resources = await openapi_30_server._mcp_list_resources()
+        async with Client(openapi_30_server) as client:
+            resources = await client.list_resources()
         assert len(resources) == 1
         assert resources[0].uri == AnyUrl("resource://openapi/listProducts")
 
     async def test_resource_template_discovery(self, openapi_30_server):
         """Test that resource templates are correctly discovered from an OpenAPI 3.0 spec."""
-        templates = await openapi_30_server._mcp_list_resource_templates()
+        async with Client(openapi_30_server) as client:
+            templates = await client.list_resource_templates()
         assert len(templates) == 1
         assert templates[0].name == "getProduct"
         assert templates[0].uriTemplate == r"resource://openapi/getProduct/{product_id}"
 
     async def test_tool_discovery(self, openapi_30_server):
         """Test that tools are correctly discovered from an OpenAPI 3.0 spec."""
-        tools = await openapi_30_server._mcp_list_tools()
+        async with Client(openapi_30_server) as client:
+            tools = await client.list_tools()
         assert len(tools) == 1
         assert tools[0].name == "createProduct"
         assert "name" in tools[0].inputSchema["properties"]
@@ -515,20 +576,26 @@ class TestOpenAPI30Compatibility:
 
     async def test_resource_access(self, openapi_30_server):
         """Test reading a resource from an OpenAPI 3.0 server."""
-        resource_response = await openapi_30_server._mcp_read_resource(
-            "resource://openapi/listProducts"
-        )
-        content = resource_response[0].content
+        async with Client(openapi_30_server) as client:
+            resource_response = await client.read_resource(
+                "resource://openapi/listProducts"
+            )
+            assert isinstance(resource_response[0], TextResourceContents)
+            response_text = resource_response[0].text
+            content = json.loads(response_text)
         assert len(content) == 2
         assert content[0]["name"] == "Product 1"
         assert content[1]["name"] == "Product 2"
 
     async def test_resource_template_access(self, openapi_30_server):
         """Test reading a resource from template from an OpenAPI 3.0 server."""
-        resource_response = await openapi_30_server._mcp_read_resource(
-            "resource://openapi/getProduct/p1"
-        )
-        content = resource_response[0].content
+        async with Client(openapi_30_server) as client:
+            resource_response = await client.read_resource(
+                "resource://openapi/getProduct/p1"
+            )
+            assert isinstance(resource_response[0], TextResourceContents)
+            response_text = resource_response[0].text
+            content = json.loads(response_text)
         assert content["id"] == "p1"
         assert content["name"] == "Product 1"
         assert content["price"] == 19.99
@@ -665,20 +732,23 @@ class TestOpenAPI31Compatibility:
 
     async def test_resource_discovery(self, openapi_31_server):
         """Test that resources are correctly discovered from an OpenAPI 3.1 spec."""
-        resources = await openapi_31_server._mcp_list_resources()
+        async with Client(openapi_31_server) as client:
+            resources = await client.list_resources()
         assert len(resources) == 1
         assert resources[0].uri == AnyUrl("resource://openapi/listOrders")
 
     async def test_resource_template_discovery(self, openapi_31_server):
         """Test that resource templates are correctly discovered from an OpenAPI 3.1 spec."""
-        templates = await openapi_31_server._mcp_list_resource_templates()
+        async with Client(openapi_31_server) as client:
+            templates = await client.list_resource_templates()
         assert len(templates) == 1
         assert templates[0].name == "getOrder"
         assert templates[0].uriTemplate == r"resource://openapi/getOrder/{order_id}"
 
     async def test_tool_discovery(self, openapi_31_server):
         """Test that tools are correctly discovered from an OpenAPI 3.1 spec."""
-        tools = await openapi_31_server._mcp_list_tools()
+        async with Client(openapi_31_server) as client:
+            tools = await client.list_tools()
         assert len(tools) == 1
         assert tools[0].name == "createOrder"
         assert "customer" in tools[0].inputSchema["properties"]
@@ -686,20 +756,26 @@ class TestOpenAPI31Compatibility:
 
     async def test_resource_access(self, openapi_31_server):
         """Test reading a resource from an OpenAPI 3.1 server."""
-        resource_response = await openapi_31_server._mcp_read_resource(
-            "resource://openapi/listOrders"
-        )
-        content = resource_response[0].content
+        async with Client(openapi_31_server) as client:
+            resource_response = await client.read_resource(
+                "resource://openapi/listOrders"
+            )
+            assert isinstance(resource_response[0], TextResourceContents)
+            response_text = resource_response[0].text
+            content = json.loads(response_text)
         assert len(content) == 2
         assert content[0]["customer"] == "Alice"
         assert content[1]["customer"] == "Bob"
 
     async def test_resource_template_access(self, openapi_31_server):
         """Test reading a resource from template from an OpenAPI 3.1 server."""
-        resource_response = await openapi_31_server._mcp_read_resource(
-            "resource://openapi/getOrder/o1"
-        )
-        content = resource_response[0].content
+        async with Client(openapi_31_server) as client:
+            resource_response = await client.read_resource(
+                "resource://openapi/getOrder/o1"
+            )
+            assert isinstance(resource_response[0], TextResourceContents)
+            response_text = resource_response[0].text
+            content = json.loads(response_text)
         assert content["id"] == "o1"
         assert content["customer"] == "Alice"
         assert content["items"] == ["item1", "item2"]
@@ -729,8 +805,9 @@ class TestMountFastMCP:
         await mcp.import_server("fastapi", fastmcp_openapi_server)
 
         # Check that resources are available with prefixed URIs
-        resources = await mcp._mcp_list_resources()
-        assert len(resources) == 1
+        async with Client(mcp) as client:
+            resources = await client.list_resources()
+        assert len(resources) == 3
         # We're checking the key used by mcp to store the resource
         # The prefixed URI is used as the key, but the resource's original uri is preserved
         prefixed_uri = "fastapi+resource://openapi/get_users_users_get"
@@ -738,7 +815,8 @@ class TestMountFastMCP:
         assert resource is not None
 
         # Check that templates are available with prefixed URIs
-        templates = await mcp._mcp_list_resource_templates()
+        async with Client(mcp) as client:
+            templates = await client.list_resource_templates()
         assert len(templates) == 1
         assert templates[0].name == "get_user_users__user_id__get"
         prefixed_template_uri = (
@@ -748,10 +826,12 @@ class TestMountFastMCP:
         assert template is not None
 
         # Check that tools are available with prefixed names
-        tools = await mcp._mcp_list_tools()
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
         assert len(tools) == 2
         assert tools[0].name == "fastapi_create_user_users_post"
         assert tools[1].name == "fastapi_update_user_name_users__user_id__name_patch"
 
-        prompts = await mcp._mcp_list_prompts()
+        async with Client(mcp) as client:
+            prompts = await client.list_prompts()
         assert len(prompts) == 0
