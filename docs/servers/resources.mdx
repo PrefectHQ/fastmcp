@@ -251,9 +251,10 @@ With these two templates defined, clients can request a variety of resources:
 
 <VersionBadge version="2.2.4" />
 
-<Warning>
-Please note: the Model Context Protocol URI standard follows RFC 6570, which does not include support for wildcard parameters. FastMCP extends the template syntax to support wildcards (`{param*}`), and because template matching happens entirely in the FastMCP server, it is not expected that these wildcards will cause compatibility issues with other MCP implementations. However, this can not be guaranteed.
-</Warning>
+<Tip>
+Please note: FastMCP's support for wildcard parameters is an **extension** of the Model Context Protocol standard, which otherwise follows RFC 6570. Since all template processing happens in the FastMCP server, this should not cause any compatibility issues with other MCP implementations.
+</Tip>
+
 
 Resource templates support wildcard parameters that can match multiple path segments. While standard parameters (`{param}`) only match a single path segment and don't cross "/" boundaries, wildcard parameters (`{param*}`) can capture multiple segments including slashes. Wildcards capture all subsequent path segments *up until* the defined part of the URI template (whether literal or another parameter). This allows you to have multiple wildcard parameters in a single URI template.
 
