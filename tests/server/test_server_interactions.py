@@ -522,12 +522,12 @@ class TestToolParameters:
         def send_datetime(x: datetime.datetime) -> str:
             return x.isoformat()
 
+        dt = datetime.datetime(2025, 4, 25, 1, 2, 3)
+
         async with Client(mcp) as client:
-            result = await client.call_tool(
-                "send_datetime", {"x": datetime.datetime.now()}
-            )
+            result = await client.call_tool("send_datetime", {"x": dt})
             assert isinstance(result[0], TextContent)
-            assert result[0].text == datetime.datetime.now().isoformat()
+            assert result[0].text == dt.isoformat()
 
     async def test_datetime_type_parse_string(self):
         mcp = FastMCP()
