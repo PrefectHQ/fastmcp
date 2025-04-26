@@ -101,13 +101,16 @@ class Tool(BaseModel):
     ) -> list[TextContent | ImageContent | EmbeddedResource]:
         """Run the tool with arguments."""
         try:
-            result = await self.fn_metadata.call_fn_with_arg_validation(
-                self.fn,
-                self.is_async,
-                arguments,
+            pass_args = (
                 {self.context_kwarg: context}
                 if self.context_kwarg is not None
-                else None,
+                else None
+            )
+            result = await self.fn_metadata.call_fn_with_arg_validation(
+                fn=self.fn,
+                fn_is_async=self.is_async,
+                arguments_to_validate=arguments,
+                arguments_to_pass_directly=pass_args,
             )
             return _convert_to_content(result)
         except Exception as e:
