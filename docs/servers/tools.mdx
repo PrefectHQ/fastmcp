@@ -18,7 +18,7 @@ Tools in FastMCP transform regular Python functions into capabilities that LLMs 
 
 This allows LLMs to perform tasks like querying databases, calling APIs, making calculations, or accessing files—extending their capabilities beyond what's in their training data.
 
-## Defining Tools
+## Tools
 
 ### The `@tool` Decorator
 
@@ -44,114 +44,105 @@ When this tool is registered, FastMCP automatically:
 
 The way you define your Python function dictates how the tool appears and behaves for the LLM client.
 
-### Type Annotations
+### Parameters
 
-Type annotations are crucial. They:
-1.  Inform the LLM about the expected type for each parameter.
-2.  Allow FastMCP to validate the data received from the client.
-3.  Are used to generate the tool's input schema for the MCP protocol.
+#### Annotations
 
-FastMCP supports standard Python type annotations, including those from the `typing` module and Pydantic.
+Type annotations for parameters are essential for proper tool functionality. They:
+1. Inform the LLM about the expected data types for each parameter
+2. Enable FastMCP to validate input data from clients
+3. Generate accurate JSON schemas for the MCP protocol
+
+Use standard Python type annotations for parameters:
 
 ```python
-from typing import Literal, Optional, Union
-from pydantic import BaseModel, Field
-
-# Example using various type hints
 @mcp.tool()
-def process_data(
-    data: list[float],                             # List of floats
-    operation: Literal["sum", "average", "max"],   # Fixed choices
-    precision: int = 2,                            # Optional int with default
-    description: str | None = None                 # Optional string (can be None)
+def analyze_text(
+    text: str,
+    max_tokens: int = 100,
+    language: str | None = None
 ) -> dict:
-    """Process numerical data with the specified operation."""
-    result = 0.0
-    if operation == "sum":
-        result = sum(data)
-    elif operation == "average":
-        result = sum(data) / len(data) if data else 0.0
-    elif operation == "max":
-        result = float(max(data)) if data else 0.0
-
-    return {
-        "operation": operation,
-        "result": round(result, precision),
-        "description": description
-    }
+    """Analyze the provided text."""
+    # Implementation...
 ```
 
-**Supported Type Annotation Examples:**
+#### Parameter Metadata
+
+You can provide additional metadata about parameters using Pydantic's `Field` class with `Annotated`. This approach is preferred as it's more modern and keeps type hints separate from validation rules:
+
+```python
+from typing import Annotated
+from pydantic import Field
+
+@mcp.tool()
+def process_image(
+    image_url: Annotated[str, Field(description="URL of the image to process")],
+    resize: Annotated[bool, Field(description="Whether to resize the image")] = False,
+    width: Annotated[int, Field(description="Target width in pixels", ge=1, le=2000)] = 800,
+    format: Annotated[
+        Literal["jpeg", "png", "webp"], 
+        Field(description="Output image format")
+    ] = "jpeg"
+) -> dict:
+    """Process an image with optional resizing."""
+    # Implementation...
+```
+
+You can also use the Field as a default value, though the Annotated approach is preferred:
+
+```python
+@mcp.tool()
+def search_database(
+    query: str = Field(description="Search query string"),
+    limit: int = Field(10, description="Maximum number of results", ge=1, le=100)
+) -> list:
+    """Search the database with the provided query."""
+    # Implementation...
+```
+
+Field provides several validation and documentation features:
+- `description`: Human-readable explanation of the parameter (shown to LLMs)
+- `ge`/`gt`/`le`/`lt`: Greater/less than (or equal) constraints
+- `min_length`/`max_length`: String or collection length constraints
+- `pattern`: Regex pattern for string validation
+- `default`: Default value if parameter is omitted
+
+#### Supported Types
+
+FastMCP supports a wide range of type annotations, including all Pydantic types:
 
 | Type Annotation         | Example                       | Description                         |
 | :---------------------- | :---------------------------- | :---------------------------------- |
-| Basic types             | `int`, `float`, `str`, `bool` | Simple scalar values                |
-| Container types         | `list[str]`, `dict[str, int]` | Collections of items                |
-| Optional types          | `Optional[float]`, `float\|None`| Parameters that may be null/omitted |
-| Union types             | `str \| int`, `Union[str, int]`| Parameters accepting multiple types |
-| Literal types           | `Literal["A", "B"]`           | Parameters with specific allowed values |
-| Pydantic models         | `UserData`                    | Complex structured data (see below) |
+| Basic types             | `int`, `float`, `str`, `bool` | Simple scalar values - see [Built-in Types](#built-in-types) |
+| Binary data             | `bytes`                       | Binary content - see [Binary Data](#binary-data) |
+| Date and Time           | `datetime`, `date`, `timedelta` | Date and time objects - see [Date and Time Types](#date-and-time-types) |
+| Collection types        | `list[str]`, `dict[str, int]`, `set[int]` | Collections of items - see [Collection Types](#collection-types) |
+| Optional types          | `float \| None`, `Optional[float]`| Parameters that may be null/omitted - see [Union and Optional Types](#union-and-optional-types) |
+| Union types             | `str \| int`, `Union[str, int]`| Parameters accepting multiple types - see [Union and Optional Types](#union-and-optional-types) |
+| Constrained types       | `Literal["A", "B"]`, `Enum`   | Parameters with specific allowed values - see [Constrained Types](#constrained-types) |
+| Paths                   | `Path`                        | File system paths - see [Paths](#paths) |
+| UUIDs                   | `UUID`                        | Universally unique identifiers - see [UUIDs](#uuids) |
+| Pydantic models         | `UserData`                    | Complex structured data - see [Pydantic Models](#pydantic-models) |
 
-<Tip>
-**Automatic JSON Parsing:** FastMCP intelligently handles arguments. If a client sends a string that looks like valid JSON (e.g., `"['a', 'b']"`) for a parameter hinted as a structured type (like `list[str]` or a Pydantic model), FastMCP will automatically attempt to parse the JSON string into the expected Python object before validation. This improves robustness when interacting with various clients.
-</Tip>
+For additional type annotations not listed here, see the [Parameter Types](#parameter-types) section below for more detailed information and examples.
 
-### Required vs. Optional Parameters
+#### Optional Arguments
 
-Parameters in your function signature are considered **required** unless they have a default value.
+FastMCP follows Python's standard function parameter conventions. Parameters without default values are required, while those with default values are optional.
 
 ```python
 @mcp.tool()
 def search_products(
-    query: str,                # Required - no default value
-    max_results: int = 10,     # Optional - has default value
-    sort_by: str = "relevance" # Optional - has default value
+    query: str,                   # Required - no default value
+    max_results: int = 10,        # Optional - has default value
+    sort_by: str = "relevance",   # Optional - has default value
+    category: str | None = None   # Optional - can be None
 ) -> list[dict]:
     """Search the product catalog."""
     # Implementation...
-    print(f"Searching for '{query}', max {max_results}, sorted by {sort_by}")
-    return [{"id": 1, "name": "Sample Product"}]
 ```
 
-In this example, the LLM *must* provide a `query`. If `max_results` or `sort_by` are omitted, their default values will be used.
-
-### Structured Inputs
-
-For tools requiring complex, nested, or well-validated inputs, use Pydantic models. Define a `BaseModel` and use it as a type hint for a parameter.
-
-```python
-from pydantic import BaseModel, Field
-from typing import Optional
-from datetime import date
-
-class ReservationRequest(BaseModel):
-    guest_name: str = Field(description="Full name of the guest making the reservation.")
-    check_in: date
-    check_out: date
-    room_type: Literal["standard", "deluxe", "suite"] = Field(default="standard", description="Type of room requested.")
-    guests: int = Field(gt=0, description="Number of guests (must be positive).")
-    special_requests: Optional[str] = Field(default=None, description="Any special requests for the stay.")
-
-@mcp.tool()
-def make_reservation(request: ReservationRequest) -> dict:
-    """Creates a new hotel reservation based on the provided details."""
-    # Pydantic automatically validates the incoming 'request' data
-    # against the ReservationRequest model before this function runs.
-    print(f"Making reservation for {request.guest_name}...")
-    # Implementation...
-    return {
-        "reservation_id": "R12345",
-        "status": "confirmed",
-        "guest": request.guest_name,
-        "dates": f"{request.check_in} to {request.check_out}"
-    }
-```
-
-Using Pydantic models provides:
-- Clear, self-documenting structure for complex inputs.
-- Built-in data validation (e.g., `gt=0`, date parsing).
-- Automatic generation of detailed JSON schemas for the LLM.
-- Easy handling of optional fields and default values.
+In this example, the LLM must provide a `query` parameter, while `max_results`, `sort_by`, and `category` will use their default values if not explicitly provided.
 
 ### Metadata
 
@@ -209,13 +200,24 @@ FastMCP automatically converts the value returned by your function into the appr
 - **`str`**: Sent as `TextContent`.
 - **`dict`, `list`, Pydantic `BaseModel`**: Serialized to a JSON string and sent as `TextContent`.
 - **`bytes`**: Base64 encoded and sent as `BlobResourceContents` (often within an `EmbeddedResource`).
-- **`fastmcp.utilities.types.Image`**: A helper class to easily return image data. Sent as `ImageContent`.
+- **`fastmcp.Image`**: A helper class for easily returning image data. Sent as `ImageContent`.
 - **`None`**: Results in an empty response (no content is sent back to the client).
 
+FastMCP will attempt to serialize other types to a string if possible.
+
+<Tip>
+At this time, FastMCP responds only to your tool's return *value*, not its return *annotation*.
+</Tip>
+
 ```python
-from fastmcp.utilities.types import Image
-from PIL import Image as PILImage
+from fastmcp import FastMCP, Image
 import io
+try:
+    from PIL import Image as PILImage
+except ImportError:
+    raise ImportError("Please install the `pillow` library to run this example.")
+
+mcp = FastMCP("Image Demo")
 
 @mcp.tool()
 def generate_image(width: int, height: int, color: str) -> Image:
@@ -261,7 +263,8 @@ FastMCP automatically catches exceptions raised within your tool function:
 
 Using informative exceptions helps the LLM understand failures and react appropriately.
 
-### Using Context in Tools
+## MCP Context
+
 
 Tools can access MCP features like logging, reading resources, or reporting progress through the `Context` object. To use it, add a parameter to your tool function with the type hint `Context`.
 
@@ -302,9 +305,338 @@ The Context object provides access to:
 
 For full documentation on the Context object and all its capabilities, see the [Context documentation](/servers/context).
 
+## Parameter Types
+
+FastMCP supports a wide variety of parameter types to give you flexibility when designing your tools.
+
+FastMCP generally supports all types that Pydantic supports as fields, including all Pydantic custom types. This means you can use any type that can be validated and parsed by Pydantic in your tool parameters.
+
+FastMCP supports **type coercion** when possible. This means that if a client sends data that doesn't match the expected type, FastMCP will attempt to convert it to the appropriate type. For example, if a client sends a string for a parameter annotated as `int`, FastMCP will attempt to convert it to an integer. If the conversion is not possible, FastMCP will return a validation error.
+
+### Built-in Types
+
+The most common parameter types are Python's built-in scalar types:
+
+```python
+@mcp.tool()
+def process_values(
+    name: str,             # Text data
+    count: int,            # Integer numbers
+    amount: float,         # Floating point numbers
+    enabled: bool          # Boolean values (True/False)
+):
+    """Process various value types."""
+    # Implementation...
+```
+
+These types provide clear expectations to the LLM about what values are acceptable and allow FastMCP to validate inputs properly. Even if a client provides a string like "42", it will be coerced to an integer for parameters annotated as `int`.
+
+### Date and Time Types
+
+FastMCP supports various date and time types from the `datetime` module:
+
+```python
+from datetime import datetime, date, timedelta
+
+@mcp.tool()
+def process_date_time(
+    event_date: date,             # ISO format date string or date object
+    event_time: datetime,         # ISO format datetime string or datetime object
+    duration: timedelta = timedelta(hours=1)  # Integer seconds or timedelta
+) -> str:
+    """Process date and time information."""
+    # Types are automatically converted from strings
+    assert isinstance(event_date, date)  
+    assert isinstance(event_time, datetime)
+    assert isinstance(duration, timedelta)
+    
+    return f"Event on {event_date} at {event_time} for {duration}"
+```
+
+- `datetime` - Accepts ISO format strings (e.g., "2023-04-15T14:30:00")
+- `date` - Accepts ISO format date strings (e.g., "2023-04-15")
+- `timedelta` - Accepts integer seconds or timedelta objects
+
+### Collection Types
+
+FastMCP supports all standard Python collection types:
+
+```python
+@mcp.tool()
+def analyze_data(
+    values: list[float],           # List of numbers
+    properties: dict[str, str],    # Dictionary with string keys and values
+    unique_ids: set[int],          # Set of unique integers
+    coordinates: tuple[float, float],  # Tuple with fixed structure
+    mixed_data: dict[str, list[int]] # Nested collections
+):
+    """Analyze collections of data."""
+    # Implementation...
+```
+
+All collection types can be used as parameter annotations:
+- `list[T]` - Ordered sequence of items
+- `dict[K, V]` - Key-value mapping
+- `set[T]` - Unordered collection of unique items
+- `tuple[T1, T2, ...]` - Fixed-length sequence with potentially different types
+
+Collection types can be nested and combined to represent complex data structures. JSON strings that match the expected structure will be automatically parsed and converted to the appropriate Python collection type.
+
+### Union and Optional Types
+
+For parameters that can accept multiple types or may be omitted:
+
+```python
+@mcp.tool()
+def flexible_search(
+    query: str | int,              # Can be either string or integer
+    filters: dict[str, str] | None = None,  # Optional dictionary
+    sort_field: str | None = None  # Optional string
+):
+    """Search with flexible parameter types."""
+    # Implementation...
+```
+
+Modern Python syntax (`str | int`) is preferred over older `Union[str, int]` forms. Similarly, `str | None` is preferred over `Optional[str]`.
+
+### Constrained Types
+
+When a parameter must be one of a predefined set of values, you can use either Literal types or Enums:
+
+#### Literals
+
+Literals constrain parameters to a specific set of values:
+
+```python
+from typing import Literal
+
+@mcp.tool()
+def sort_data(
+    data: list[float],
+    order: Literal["ascending", "descending"] = "ascending",
+    algorithm: Literal["quicksort", "mergesort", "heapsort"] = "quicksort"
+):
+    """Sort data using specific options."""
+    # Implementation...
+```
+
+Literal types:
+- Specify exact allowable values directly in the type annotation
+- Help LLMs understand exactly which values are acceptable
+- Provide input validation (errors for invalid values)
+- Create clear schemas for clients
+
+#### Enums
+
+For more structured sets of constrained values, use Python's Enum class:
+
+```python
+from enum import Enum
+
+class Color(Enum):
+    RED = "red"
+    GREEN = "green"
+    BLUE = "blue"
+
+@mcp.tool()
+def process_image(
+    image_path: str, 
+    color_filter: Color = Color.RED
+):
+    """Process an image with a color filter."""
+    # Implementation...
+    # color_filter will be a Color enum member
+```
+
+When using Enum types:
+- Clients should provide the enum's value (e.g., "red"), not the enum member name (e.g., "RED")
+- FastMCP automatically coerces the string value into the appropriate Enum object
+- Your function receives the actual Enum member (e.g., `Color.RED`)
+- Validation errors are raised for values not in the enum
+
+### Binary Data
+
+There are two approaches to handling binary data in tool parameters:
+
+#### Bytes
+
+```python
+@mcp.tool()
+def process_binary(data: bytes):
+    """Process binary data directly.
+    
+    The client can send a binary string, which will be 
+    converted directly to bytes.
+    """
+    # Implementation using binary data
+    data_length = len(data)
+    # ...
+```
+
+When you annotate a parameter as `bytes`, FastMCP will:
+- Convert raw strings directly to bytes
+- Validate that the input can be properly represented as bytes
+
+FastMCP does not automatically decode base64-encoded strings for bytes parameters. If you need to accept base64-encoded data, you should handle the decoding manually as shown below.
+
+#### Base64-encoded strings
+
+```python
+from typing import Annotated
+from pydantic import Field
+
+@mcp.tool()
+def process_image_data(
+    image_data: Annotated[str, Field(description="Base64-encoded image data")]
+):
+    """Process an image from base64-encoded string.
+    
+    The client is expected to provide base64-encoded data as a string.
+    You'll need to decode it manually.
+    """
+    # Manual base64 decoding
+    import base64
+    binary_data = base64.b64decode(image_data)
+    # Process binary_data...
+```
+
+This approach is recommended when you expect to receive base64-encoded binary data from clients.
+
+### Paths
+
+The `Path` type from the `pathlib` module can be used for file system paths:
+
+```python
+from pathlib import Path
+
+@mcp.tool()
+def process_file(path: Path) -> str:
+    """Process a file at the given path."""
+    assert isinstance(path, Path)  # Path is properly converted
+    return f"Processing file at {path}"
+```
+
+When a client sends a string path, FastMCP automatically converts it to a `Path` object.
+
+### UUIDs
+
+The `UUID` type from the `uuid` module can be used for unique identifiers:
+
+```python
+import uuid
+
+@mcp.tool()
+def process_item(
+    item_id: uuid.UUID  # String UUID or UUID object
+) -> str:
+    """Process an item with the given UUID."""
+    assert isinstance(item_id, uuid.UUID)  # Properly converted to UUID
+    return f"Processing item {item_id}"
+```
+
+When a client sends a string UUID (e.g., "123e4567-e89b-12d3-a456-426614174000"), FastMCP automatically converts it to a `UUID` object.
+
+### Pydantic Models
+
+For complex, structured data with nested fields and validation, use Pydantic models:
+
+```python
+from pydantic import BaseModel, Field
+from typing import Optional
+
+class User(BaseModel):
+    username: str
+    email: str = Field(description="User's email address")
+    age: int | None = None
+    is_active: bool = True
+
+@mcp.tool()
+def create_user(user: User):
+    """Create a new user in the system."""
+    # The input is automatically validated against the User model
+    # Even if provided as a JSON string or dict
+    # Implementation...
+```
+
+Using Pydantic models provides:
+- Clear, self-documenting structure for complex inputs
+- Built-in data validation
+- Automatic generation of detailed JSON schemas for the LLM
+- Automatic conversion from dict/JSON input
+
+Clients can provide data for Pydantic model parameters as either:
+- A JSON object (string)
+- A dictionary with the appropriate structure
+- Nested parameters in the appropriate format
+
+### Pydantic Fields
+
+FastMCP supports robust parameter validation through Pydantic's `Field` class. This is especially useful to ensure that input values meet specific requirements beyond just their type.
+
+Note that fields can be used *outside* Pydantic models to provide metadata and validation constraints. The preferred approach is using `Annotated` with `Field`:
+
+```python
+from typing import Annotated
+from pydantic import Field
+
+@mcp.tool()
+def analyze_metrics(
+    # Numbers with range constraints
+    count: Annotated[int, Field(ge=0, le=100)],         # 0 <= count <= 100
+    ratio: Annotated[float, Field(gt=0, lt=1.0)],       # 0 < ratio < 1.0
+    
+    # String with pattern and length constraints
+    user_id: Annotated[str, Field(
+        pattern=r"^[A-Z]{2}\d{4}$",                     # Must match regex pattern
+        description="User ID in format XX0000"
+    )],
+    
+    # String with length constraints
+    comment: Annotated[str, Field(min_length=3, max_length=500)] = "",
+    
+    # Numeric constraints
+    factor: Annotated[int, Field(multiple_of=5)] = 10,  # Must be multiple of 5
+):
+    """Analyze metrics with validated parameters."""
+    # Implementation...
+```
+
+You can also use `Field` as a default value, though the `Annotated` approach is preferred:
+
+```python
+@mcp.tool()
+def validate_data(
+    # Value constraints
+    age: int = Field(ge=0, lt=120),                     # 0 <= age < 120
+    
+    # String constraints
+    email: str = Field(pattern=r"^[\w\.-]+@[\w\.-]+\.\w+$"),  # Email pattern
+    
+    # Collection constraints
+    tags: list[str] = Field(min_length=1, max_length=10)  # 1-10 tags
+):
+    """Process data with field validations."""
+    # Implementation...
+```
+
+Common validation options include:
+
+| Validation | Type | Description |
+| :--------- | :--- | :---------- |
+| `ge`, `gt` | Number | Greater than (or equal) constraint |
+| `le`, `lt` | Number | Less than (or equal) constraint |
+| `multiple_of` | Number | Value must be a multiple of this number |
+| `min_length`, `max_length` | String, List, etc. | Length constraints |
+| `pattern` | String | Regular expression pattern constraint |
+| `description` | Any | Human-readable description (appears in schema) |
+
+When a client sends invalid data, FastMCP will return a validation error explaining why the parameter failed validation.
+
 ## Server Behavior
 
 ### Duplicate Tools
+
+<VersionBadge version="2.1.0" />
 
 You can control how the FastMCP server behaves if you try to register multiple tools with the same name. This is configured using the `on_duplicate_tools` argument when creating the `FastMCP` instance.
 

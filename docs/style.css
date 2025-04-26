@@ -14,21 +14,28 @@ h6 code:not(pre code) {
 
 /* Version badge -- display a badge with the current version of the documentation */
 .version-badge {
-  display: inline-flex;
+  display: inline-block;
   align-items: center;
   gap: 0.3em;
-  padding: 0.32em 1em;
-  font-size: 0.92em;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-  color: #7417e5;
-  background: #f3e8ff;
-  border: 1.5px solid #c084fc;
+  padding: 0.2em 0.8em;
+  font-size: 1.1em;
+  font-weight: 400;
+
+  font-family: "Inter", sans-serif;
+  letter-spacing: 0.025em;
+  color: #ff5400;
+  background: #ffeee6;
+  border: 1px solid rgb(255, 84, 0, 0.5);
   border-radius: 6px;
   box-shadow: none;
   vertical-align: middle;
   position: relative;
   transition: box-shadow 0.2s, transform 0.15s;
+}
+
+.version-badge-container {
+  margin: 0;
+  padding: 0;
 }
 
 .version-badge:hover {
@@ -40,14 +47,4 @@ h6 code:not(pre code) {
   color: #fff;
   background: #312e81;
   border: 1.5px solid #a78bfa;
-}
-
-.badge-emoji {
-  font-size: 1.15em;
-  line-height: 1;
-  text-shadow: 0 1px 2px #fff, 0 0px 2px #c084fc;
-}
-
-.dark .badge-emoji {
-  text-shadow: 0 1px 2px #312e81, 0 0px 2px #a78bfa;
 }

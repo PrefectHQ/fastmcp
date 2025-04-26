@@ -5,7 +5,7 @@ from __future__ import annotations
 import inspect
 import re
 from collections.abc import Callable
-from typing import Annotated, Any
+from typing import TYPE_CHECKING, Annotated, Any
 from urllib.parse import unquote
 
 from mcp.types import ResourceTemplate as MCPResourceTemplate
@@ -22,15 +22,24 @@ from pydantic import (
 from fastmcp.resources.types import FunctionResource, Resource
 from fastmcp.utilities.types import _convert_set_defaults
 
+if TYPE_CHECKING:
+    from mcp.server.session import ServerSessionT
+    from mcp.shared.context import LifespanContextT
+
+    from fastmcp.server import Context
+
 
 def build_regex(template: str) -> re.Pattern:
-    # Escape all non-brace characters, then restore {var} placeholders
     parts = re.split(r"(\{[^}]+\})", template)
     pattern = ""
     for part in parts:
         if part.startswith("{") and part.endswith("}"):
             name = part[1:-1]
-            pattern += f"(?P<{name}>[^/]+)"
+            if name.endswith("*"):
+                name = name[:-1]
+                pattern += f"(?P<{name}>.+)"
+            else:
+                pattern += f"(?P<{name}>[^/]+)"
         else:
             pattern += re.escape(part)
     return re.compile(f"^{pattern}$")
@@ -67,6 +76,9 @@ class ResourceTemplate(BaseModel):
     parameters: dict[str, Any] = Field(
         description="JSON schema for function parameters"
     )
+    context_kwarg: str | None = Field(
+        None, description="Name of the kwarg that should receive context"
+    )
 
     @field_validator("mime_type", mode="before")
     @classmethod
@@ -85,18 +97,34 @@ class ResourceTemplate(BaseModel):
         description: str | None = None,
         mime_type: str | None = None,
         tags: set[str] | None = None,
+        context_kwarg: str | None = None,
     ) -> ResourceTemplate:
         """Create a template from a function."""
+        from fastmcp import Context
+
         func_name = name or fn.__name__
         if func_name == "<lambda>":
             raise ValueError("You must provide a name for lambda functions")
 
+        # Auto-detect context parameter if not provided
+        if context_kwarg is None:
+            if inspect.ismethod(fn) and hasattr(fn, "__func__"):
+                sig = inspect.signature(fn.__func__)
+            else:
+                sig = inspect.signature(fn)
+            for param_name, param in sig.parameters.items():
+                if param.annotation is Context:
+                    context_kwarg = param_name
+                    break
+
         # Validate that URI params match function params
-        uri_params = set(re.findall(r"{(\w+)}", uri_template))
+        uri_params = set(re.findall(r"{(\w+)(?:\*)?}", uri_template))
         if not uri_params:
             raise ValueError("URI template must contain at least one parameter")
 
         func_params = set(inspect.signature(fn).parameters.keys())
+        if context_kwarg:
+            func_params.discard(context_kwarg)
 
         # get the parameters that are required
         required_params = {
@@ -104,6 +132,8 @@ class ResourceTemplate(BaseModel):
             for p in func_params
             if inspect.signature(fn).parameters[p].default is inspect.Parameter.empty
         }
+        if context_kwarg and context_kwarg in required_params:
+            required_params.discard(context_kwarg)
 
         if not required_params.issubset(uri_params):
             raise ValueError(
@@ -129,17 +159,28 @@ class ResourceTemplate(BaseModel):
             fn=fn,
             parameters=parameters,
             tags=tags or set(),
+            context_kwarg=context_kwarg,
         )
 
     def matches(self, uri: str) -> dict[str, Any] | None:
         """Check if URI matches template and extract parameters."""
         return match_uri_template(uri, self.uri_template)
 
-    async def create_resource(self, uri: str, params: dict[str, Any]) -> Resource:
+    async def create_resource(
+        self,
+        uri: str,
+        params: dict[str, Any],
+        context: Context[ServerSessionT, LifespanContextT] | None = None,
+    ) -> Resource:
         """Create a resource from the template with the given parameters."""
         try:
+            # Add context to parameters if needed
+            kwargs = params.copy()
+            if self.context_kwarg is not None and context is not None:
+                kwargs[self.context_kwarg] = context
+
             # Call function and check if result is a coroutine
-            result = self.fn(**params)
+            result = self.fn(**kwargs)
             if inspect.iscoroutine(result):
                 result = await result
 
@@ -148,8 +189,9 @@ class ResourceTemplate(BaseModel):
                 name=self.name,
                 description=self.description,
                 mime_type=self.mime_type,
-                fn=lambda: result,  # Capture result in closure
+                fn=lambda **kwargs: result,  # Capture result in closure
                 tags=self.tags,
+                context_kwarg=self.context_kwarg,
             )
         except Exception as e:
             raise ValueError(f"Error creating resource from template: {e}")

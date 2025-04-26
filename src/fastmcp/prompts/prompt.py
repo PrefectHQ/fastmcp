@@ -1,9 +1,11 @@
 """Base classes for FastMCP prompts."""
 
+from __future__ import annotations as _annotations
+
 import inspect
 import json
 from collections.abc import Awaitable, Callable, Sequence
-from typing import Annotated, Any, Literal
+from typing import TYPE_CHECKING, Annotated, Any, Literal
 
 import pydantic_core
 from mcp.types import EmbeddedResource, ImageContent, TextContent
@@ -12,6 +14,12 @@ from mcp.types import PromptArgument as MCPPromptArgument
 from pydantic import BaseModel, BeforeValidator, Field, TypeAdapter, validate_call
 
 from fastmcp.utilities.types import _convert_set_defaults
+
+if TYPE_CHECKING:
+    from mcp.server.session import ServerSessionT
+    from mcp.shared.context import LifespanContextT
+
+    from fastmcp.server import Context
 
 CONTENT_TYPES = TextContent | ImageContent | EmbeddedResource
 
@@ -72,6 +80,9 @@ class Prompt(BaseModel):
         None, description="Arguments that can be passed to the prompt"
     )
     fn: Callable[..., PromptResult | Awaitable[PromptResult]]
+    context_kwarg: str | None = Field(
+        None, description="Name of the kwarg that should receive context"
+    )
 
     @classmethod
     def from_function(
@@ -80,7 +91,8 @@ class Prompt(BaseModel):
         name: str | None = None,
         description: str | None = None,
         tags: set[str] | None = None,
-    ) -> "Prompt":
+        context_kwarg: str | None = None,
+    ) -> Prompt:
         """Create a Prompt from a function.
 
         The function can return:
@@ -89,10 +101,23 @@ class Prompt(BaseModel):
         - A dict (converted to a message)
         - A sequence of any of the above
         """
+        from fastmcp import Context
+
         func_name = name or fn.__name__
 
         if func_name == "<lambda>":
             raise ValueError("You must provide a name for lambda functions")
+
+        # Auto-detect context parameter if not provided
+        if context_kwarg is None:
+            if inspect.ismethod(fn) and hasattr(fn, "__func__"):
+                sig = inspect.signature(fn.__func__)
+            else:
+                sig = inspect.signature(fn)
+            for param_name, param in sig.parameters.items():
+                if param.annotation is Context:
+                    context_kwarg = param_name
+                    break
 
         # Get schema from TypeAdapter - will fail if function isn't properly typed
         parameters = TypeAdapter(fn).json_schema()
@@ -101,6 +126,10 @@ class Prompt(BaseModel):
         arguments: list[PromptArgument] = []
         if "properties" in parameters:
             for param_name, param in parameters["properties"].items():
+                # Skip context parameter
+                if param_name == context_kwarg:
+                    continue
+
                 required = param_name in parameters.get("required", [])
                 arguments.append(
                     PromptArgument(
@@ -119,9 +148,14 @@ class Prompt(BaseModel):
             arguments=arguments,
             fn=fn,
             tags=tags or set(),
+            context_kwarg=context_kwarg,
         )
 
-    async def render(self, arguments: dict[str, Any] | None = None) -> list[Message]:
+    async def render(
+        self,
+        arguments: dict[str, Any] | None = None,
+        context: Context[ServerSessionT, LifespanContextT] | None = None,
+    ) -> list[Message]:
         """Render the prompt with arguments."""
         # Validate required arguments
         if self.arguments:
@@ -132,8 +166,13 @@ class Prompt(BaseModel):
                 raise ValueError(f"Missing required arguments: {missing}")
 
         try:
+            # Prepare arguments with context
+            kwargs = arguments.copy() if arguments else {}
+            if self.context_kwarg is not None and context is not None:
+                kwargs[self.context_kwarg] = context
+
             # Call function and check if result is a coroutine
-            result = self.fn(**(arguments or {}))
+            result = self.fn(**kwargs)
             if inspect.iscoroutine(result):
                 result = await result
 

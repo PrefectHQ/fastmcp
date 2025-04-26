@@ -5,6 +5,8 @@ description: Learn about the core FastMCP server class and how to run it.
 icon: server
 ---
 
+import { VersionBadge } from "/snippets/version-badge.mdx"
+
 The central piece of a FastMCP application is the `FastMCP` server class. This class acts as the main container for your application's tools, resources, and prompts, and manages communication with MCP clients.
 
 ## Creating a Server
@@ -225,6 +227,8 @@ The CLI can dynamically find and run FastMCP server objects in your files, but i
 
 ## Composing Servers
 
+<VersionBadge version="2.2.0" />
+
 FastMCP supports composing multiple servers together using `import_server` (static copy) and `mount` (live link). This allows you to organize large applications into modular components or reuse existing servers.
 
 See the [Server Composition](/patterns/composition) guide for full details, best practices, and examples.
@@ -245,6 +249,8 @@ main.mount("sub", sub)
 ```
 
 ## Proxying Servers
+
+<VersionBadge version="2.0.0" />
 
 FastMCP can act as a proxy for any MCP server (local or remote) using `FastMCP.from_client`, letting you bridge transports or add a frontend to existing servers. For example, you can expose a remote SSE server locally via stdio, or vice versa.
 
