@@ -1,0 +1,38 @@
+---
+title: Testing MCP Servers
+sidebarTitle: Testing
+description: Learn how to test your FastMCP servers effectively 
+icon: vial
+---
+
+
+Testing your MCP servers thoroughly is essential for ensuring they work correctly when deployed. FastMCP makes this easy through a variety of testing patterns.
+
+## In-Memory Testing
+
+The most efficient way to test an MCP server is to pass your FastMCP server instance directly to a Client. This enables in-memory testing without having to start a separate server process, which is particularly useful because managing an MCP server programmatically can be challenging.
+
+Here is an example of using a `Client` to test a server with pytest:
+
+```python
+import pytest
+from fastmcp import FastMCP, Client
+
+@pytest.fixture
+def mcp_server():
+    server = FastMCP("TestServer")
+    
+    @server.tool()
+    def greet(name: str) -> str:
+        return f"Hello, {name}!"
+        
+    return server
+
+async def test_tool_functionality(mcp_server):
+    # Pass the server directly to the Client constructor
+    async with Client(mcp_server) as client:
+        result = await client.call_tool("greet", {"name": "World"})
+        assert "Hello, World!" in str(result[0])
+```
+
+This pattern creates a direct connection between the client and server, allowing you to test your server's functionality efficiently.
