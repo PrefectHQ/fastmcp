@@ -6,10 +6,8 @@ import shutil
 import sys
 from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import (
-    TypedDict,
-)
-from typing import Any
+from typing import Any, TypedDict
+
 from exceptiongroup import BaseExceptionGroup, catch
 from mcp import ClientSession, McpError, StdioServerParameters
 from mcp.client.session import (
@@ -449,7 +447,7 @@ def infer_transport(
     # the transport is a websocket URL
     elif isinstance(transport, AnyUrl | str) and str(transport).startswith("ws"):
         return WSTransport(url=transport)
-    
+
     ## if the transport is a config dict
     elif isinstance(transport, dict):
         if "mcpServers" not in transport:
@@ -457,9 +455,11 @@ def infer_transport(
         else:
             server = transport["mcpServers"]
             if len(list(server.keys())) > 1:
-                raise ValueError("Invalid transport dictionary: multiple servers found - only one expected")
+                raise ValueError(
+                    "Invalid transport dictionary: multiple servers found - only one expected"
+                )
             server_name = list(server.keys())[0]
-        # Stdio transport
+            # Stdio transport
             if "command" in server[server_name] and "args" in server[server_name]:
                 return StdioTransport(
                     command=server[server_name]["command"],
@@ -482,7 +482,7 @@ def infer_transport(
                 )
 
             raise ValueError("Cannot determine transport type from dictionary")
-        
+
     # the transport is an unknown type
     else:
         raise ValueError(f"Could not infer a valid transport from: {transport}")
