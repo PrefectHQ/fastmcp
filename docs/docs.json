@@ -62,7 +62,8 @@
                     "patterns/decorating-methods",
                     "patterns/openapi",
                     "patterns/fastapi",
-                    "patterns/contrib"
+                    "patterns/contrib",
+                    "patterns/testing"
                 ]
             },
             {
