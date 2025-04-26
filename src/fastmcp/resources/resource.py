@@ -1,7 +1,9 @@
 """Base classes and interfaces for FastMCP resources."""
 
+from __future__ import annotations
+
 import abc
-from typing import Annotated, Any
+from typing import TYPE_CHECKING, Annotated, Any
 
 from mcp.types import Resource as MCPResource
 from pydantic import (
@@ -16,6 +18,12 @@ from pydantic import (
 )
 
 from fastmcp.utilities.types import _convert_set_defaults
+
+if TYPE_CHECKING:
+    from mcp.server.session import ServerSessionT
+    from mcp.shared.context import LifespanContextT
+
+    from fastmcp.server import Context
 
 
 class Resource(BaseModel, abc.ABC):
@@ -58,7 +66,9 @@ class Resource(BaseModel, abc.ABC):
         raise ValueError("Either name or uri must be provided")
 
     @abc.abstractmethod
-    async def read(self) -> str | bytes:
+    async def read(
+        self, context: Context[ServerSessionT, LifespanContextT] | None = None
+    ) -> str | bytes:
         """Read the resource content."""
         pass
 

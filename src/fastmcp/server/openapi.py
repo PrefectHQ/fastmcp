@@ -1,11 +1,13 @@
 """FastMCP server implementation for OpenAPI integration."""
 
+from __future__ import annotations
+
 import enum
 import json
 import re
 from dataclasses import dataclass
 from re import Pattern
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import httpx
 from mcp.types import TextContent
@@ -21,6 +23,12 @@ from fastmcp.utilities.openapi import (
     _combine_schemas,
     format_description_with_responses,
 )
+
+if TYPE_CHECKING:
+    from mcp.server.session import ServerSessionT
+    from mcp.shared.context import LifespanContextT
+
+    from fastmcp.server import Context
 
 logger = get_logger(__name__)
 
@@ -347,11 +355,17 @@ class OpenAPIResourceTemplate(ResourceTemplate):
             fn=lambda **kwargs: None,
             parameters=parameters,
             tags=tags,
+            context_kwarg=None,
         )
         self._client = client
         self._route = route
 
-    async def create_resource(self, uri: str, params: dict[str, Any]) -> Resource:
+    async def create_resource(
+        self,
+        uri: str,
+        params: dict[str, Any],
+        context: Context[ServerSessionT, LifespanContextT] | None = None,
+    ) -> Resource:
         """Create a resource with the given parameters."""
         # Generate a URI for this resource instance
         uri_parts = []

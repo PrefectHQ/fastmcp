@@ -212,8 +212,12 @@ class ResourceManager:
                 return True
         return False
 
-    async def get_resource(self, uri: AnyUrl | str) -> Resource:
+    async def get_resource(self, uri: AnyUrl | str, context=None) -> Resource:
         """Get resource by URI, checking concrete resources first, then templates.
+
+        Args:
+            uri: The URI of the resource to get
+            context: Optional context object to pass to template resources
 
         Raises:
             NotFoundError: If no resource or template matching the URI is found.
@@ -230,7 +234,9 @@ class ResourceManager:
             # Try to match against the storage key (which might be a custom key)
             if params := match_uri_template(uri_str, storage_key):
                 try:
-                    return await template.create_resource(uri_str, params)
+                    return await template.create_resource(
+                        uri_str, params, context=context
+                    )
                 except Exception as e:
                     raise ValueError(f"Error creating resource from template: {e}")
 

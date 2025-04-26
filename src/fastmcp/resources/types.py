@@ -1,10 +1,12 @@
 """Concrete resource implementations."""
 
+from __future__ import annotations
+
 import inspect
 import json
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import anyio
 import anyio.to_thread
@@ -15,13 +17,21 @@ from pydantic import Field, ValidationInfo
 
 from fastmcp.resources.resource import Resource
 
+if TYPE_CHECKING:
+    from mcp.server.session import ServerSessionT
+    from mcp.shared.context import LifespanContextT
+
+    from fastmcp.server import Context
+
 
 class TextResource(Resource):
     """A resource that reads from a string."""
 
     text: str = Field(description="Text content of the resource")
 
-    async def read(self) -> str:
+    async def read(
+        self, context: Context[ServerSessionT, LifespanContextT] | None = None
+    ) -> str:
         """Read the text content."""
         return self.text
 
@@ -31,7 +41,9 @@ class BinaryResource(Resource):
 
     data: bytes = Field(description="Binary content of the resource")
 
-    async def read(self) -> bytes:
+    async def read(
+        self, context: Context[ServerSessionT, LifespanContextT] | None = None
+    ) -> bytes:
         """Read the binary content."""
         return self.data
 
@@ -50,13 +62,23 @@ class FunctionResource(Resource):
     """
 
     fn: Callable[[], Any]
+    context_kwarg: str | None = Field(
+        default=None, description="Name of the kwarg that should receive context"
+    )
 
-    async def read(self) -> str | bytes:
+    async def read(
+        self, context: Context[ServerSessionT, LifespanContextT] | None = None
+    ) -> str | bytes:
         """Read the resource by calling the wrapped function."""
         try:
-            result = (
-                await self.fn() if inspect.iscoroutinefunction(self.fn) else self.fn()
-            )
+            kwargs = {}
+            if self.context_kwarg is not None:
+                kwargs[self.context_kwarg] = context
+
+            result = self.fn(**kwargs)
+            if inspect.iscoroutinefunction(self.fn):
+                result = await result
+
             if isinstance(result, Resource):
                 return await result.read()
             if isinstance(result, bytes):
