@@ -265,7 +265,9 @@ class OpenAPIResource(Resource):
         self._client = client
         self._route = route
 
-    async def read(self) -> str | bytes:
+    async def read(
+        self, context: Context[ServerSessionT, LifespanContextT] | None = None
+    ) -> str | bytes:
         """Fetch the resource data by making an HTTP request."""
         try:
             # Extract path parameters from the URI if present

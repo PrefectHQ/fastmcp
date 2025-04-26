@@ -401,7 +401,7 @@ class FastMCP(Generic[LifespanResultT]):
             context = self.get_context()
             resource = await self._resource_manager.get_resource(uri, context=context)
             try:
-                content = await resource.read()
+                content = await resource.read(context=context)
                 return [
                     ReadResourceContents(content=content, mime_type=resource.mime_type)
                 ]
@@ -427,7 +427,7 @@ class FastMCP(Generic[LifespanResultT]):
         if self._prompt_manager.has_prompt(name):
             context = self.get_context()
             messages = await self._prompt_manager.render_prompt(
-                name, arguments, context=context
+                name, arguments=arguments or {}, context=context
             )
             return GetPromptResult(messages=pydantic_core.to_jsonable_python(messages))
         else:

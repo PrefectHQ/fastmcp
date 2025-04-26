@@ -61,9 +61,16 @@ class ResourceManager:
             The added resource or template. If a resource or template with the same URI already exists,
             returns the existing resource or template.
         """
+        from fastmcp.server.context import Context
+
         # Check if this should be a template
         has_uri_params = "{" in uri and "}" in uri
-        has_func_params = bool(inspect.signature(fn).parameters)
+        # check if the function has any parameters (other than injected context)
+        has_func_params = any(
+            p
+            for p in inspect.signature(fn).parameters.values()
+            if p.annotation is not Context
+        )
 
         if has_uri_params or has_func_params:
             return self.add_template_from_fn(
@@ -102,12 +109,12 @@ class ResourceManager:
             The added resource. If a resource with the same URI already exists,
             returns the existing resource.
         """
-        resource = FunctionResource(
+        resource = FunctionResource.from_function(
+            fn=fn,
             uri=AnyUrl(uri),
             name=name,
             description=description,
             mime_type=mime_type or "text/plain",
-            fn=fn,
             tags=tags or set(),
         )
         return self.add_resource(resource)
@@ -235,7 +242,9 @@ class ResourceManager:
             if params := match_uri_template(uri_str, storage_key):
                 try:
                     return await template.create_resource(
-                        uri_str, params, context=context
+                        uri_str,
+                        params=params,
+                        context=context,
                     )
                 except Exception as e:
                     raise ValueError(f"Error creating resource from template: {e}")

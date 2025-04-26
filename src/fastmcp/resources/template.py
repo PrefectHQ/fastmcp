@@ -189,7 +189,7 @@ class ResourceTemplate(BaseModel):
                 name=self.name,
                 description=self.description,
                 mime_type=self.mime_type,
-                fn=lambda: result,  # Capture result in closure
+                fn=lambda **kwargs: result,  # Capture result in closure
                 tags=self.tags,
                 context_kwarg=self.context_kwarg,
             )
