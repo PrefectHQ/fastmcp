@@ -398,9 +398,10 @@ class FastMCP(Generic[LifespanResultT]):
         server.
         """
         if self._resource_manager.has_resource(uri):
-            resource = await self._resource_manager.get_resource(uri)
+            context = self.get_context()
+            resource = await self._resource_manager.get_resource(uri, context=context)
             try:
-                content = await resource.read()
+                content = await resource.read(context=context)
                 return [
                     ReadResourceContents(content=content, mime_type=resource.mime_type)
                 ]
@@ -424,7 +425,10 @@ class FastMCP(Generic[LifespanResultT]):
 
         """
         if self._prompt_manager.has_prompt(name):
-            messages = await self._prompt_manager.render_prompt(name, arguments)
+            context = self.get_context()
+            messages = await self._prompt_manager.render_prompt(
+                name, arguments=arguments or {}, context=context
+            )
             return GetPromptResult(messages=pydantic_core.to_jsonable_python(messages))
         else:
             for server in self._mounted_servers.values():
@@ -562,6 +566,10 @@ class FastMCP(Generic[LifespanResultT]):
         - bytes for binary content
         - other types will be converted to JSON
 
+        Resources can optionally request a Context object by adding a parameter with the
+        Context type annotation. The context provides access to MCP capabilities like
+        logging, progress reporting, and session information.
+
         If the URI contains parameters (e.g. "resource://{param}") or the function
         has parameters, it will be registered as a template resource.
 
@@ -584,6 +592,11 @@ class FastMCP(Generic[LifespanResultT]):
 
             @server.resource("resource://{city}/weather")
             def get_weather(city: str) -> str:
+                return f"Weather for {city}"
+
+            @server.resource("resource://{city}/weather")
+            def get_weather_with_context(city: str, ctx: Context) -> str:
+                ctx.info(f"Fetching weather for {city}")
                 return f"Weather for {city}"
 
             @server.resource("resource://{city}/weather")
@@ -639,6 +652,10 @@ class FastMCP(Generic[LifespanResultT]):
     ) -> Callable[[AnyFunction], AnyFunction]:
         """Decorator to register a prompt.
 
+        Prompts can optionally request a Context object by adding a parameter with the
+        Context type annotation. The context provides access to MCP capabilities like
+        logging, progress reporting, and session information.
+
         Args:
             name: Optional name for the prompt (defaults to function name)
             description: Optional description of what the prompt does
@@ -647,6 +664,17 @@ class FastMCP(Generic[LifespanResultT]):
         Example:
             @server.prompt()
             def analyze_table(table_name: str) -> list[Message]:
+                schema = read_table_schema(table_name)
+                return [
+                    {
+                        "role": "user",
+                        "content": f"Analyze this schema:\n{schema}"
+                    }
+                ]
+
+            @server.prompt()
+            def analyze_with_context(table_name: str, ctx: Context) -> list[Message]:
+                ctx.info(f"Analyzing table {table_name}")
                 schema = read_table_schema(table_name)
                 return [
                     {

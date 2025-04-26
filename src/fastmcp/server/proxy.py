@@ -1,4 +1,6 @@
-from typing import Any, cast
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import quote
 
 import mcp.types
@@ -25,6 +27,12 @@ from fastmcp.tools.tool import Tool
 from fastmcp.utilities.func_metadata import func_metadata
 from fastmcp.utilities.logging import get_logger
 
+if TYPE_CHECKING:
+    from mcp.server.session import ServerSessionT
+    from mcp.shared.context import LifespanContextT
+
+    from fastmcp.server import Context
+
 logger = get_logger(__name__)
 
 
@@ -33,12 +41,12 @@ def _proxy_passthrough():
 
 
 class ProxyTool(Tool):
-    def __init__(self, client: "Client", **kwargs):
+    def __init__(self, client: Client, **kwargs):
         super().__init__(**kwargs)
         self._client = client
 
     @classmethod
-    async def from_client(cls, client: "Client", tool: mcp.types.Tool) -> "ProxyTool":
+    async def from_client(cls, client: Client, tool: mcp.types.Tool) -> ProxyTool:
         return cls(
             client=client,
             name=tool.name,
@@ -50,7 +58,9 @@ class ProxyTool(Tool):
         )
 
     async def run(
-        self, arguments: dict[str, Any], context: Context | None = None
+        self,
+        arguments: dict[str, Any],
+        context: Context[ServerSessionT, LifespanContextT] | None = None,
     ) -> Any:
         # the client context manager will swallow any exceptions inside a TaskGroup
         # so we return the raw result and raise an exception ourselves
@@ -64,17 +74,15 @@ class ProxyTool(Tool):
 
 
 class ProxyResource(Resource):
-    def __init__(
-        self, client: "Client", *, _value: str | bytes | None = None, **kwargs
-    ):
+    def __init__(self, client: Client, *, _value: str | bytes | None = None, **kwargs):
         super().__init__(**kwargs)
         self._client = client
         self._value = _value
 
     @classmethod
     async def from_client(
-        cls, client: "Client", resource: mcp.types.Resource
-    ) -> "ProxyResource":
+        cls, client: Client, resource: mcp.types.Resource
+    ) -> ProxyResource:
         return cls(
             client=client,
             uri=resource.uri,
@@ -83,7 +91,9 @@ class ProxyResource(Resource):
             mime_type=resource.mimeType,
         )
 
-    async def read(self) -> str | bytes:
+    async def read(
+        self, context: Context[ServerSessionT, LifespanContextT] | None = None
+    ) -> str | bytes:
         if self._value is not None:
             return self._value
 
@@ -98,14 +108,14 @@ class ProxyResource(Resource):
 
 
 class ProxyTemplate(ResourceTemplate):
-    def __init__(self, client: "Client", **kwargs):
+    def __init__(self, client: Client, **kwargs):
         super().__init__(**kwargs)
         self._client = client
 
     @classmethod
     async def from_client(
-        cls, client: "Client", template: mcp.types.ResourceTemplate
-    ) -> "ProxyTemplate":
+        cls, client: Client, template: mcp.types.ResourceTemplate
+    ) -> ProxyTemplate:
         return cls(
             client=client,
             uri_template=template.uriTemplate,
@@ -115,7 +125,12 @@ class ProxyTemplate(ResourceTemplate):
             parameters={},
         )
 
-    async def create_resource(self, uri: str, params: dict[str, Any]) -> ProxyResource:
+    async def create_resource(
+        self,
+        uri: str,
+        params: dict[str, Any],
+        context: Context[ServerSessionT, LifespanContextT] | None = None,
+    ) -> ProxyResource:
         # dont use the provided uri, because it may not be the same as the
         # uri_template on the remote server.
         # quote params to ensure they are valid for the uri_template
@@ -144,14 +159,12 @@ class ProxyTemplate(ResourceTemplate):
 
 
 class ProxyPrompt(Prompt):
-    def __init__(self, client: "Client", **kwargs):
+    def __init__(self, client: Client, **kwargs):
         super().__init__(**kwargs)
         self._client = client
 
     @classmethod
-    async def from_client(
-        cls, client: "Client", prompt: mcp.types.Prompt
-    ) -> "ProxyPrompt":
+    async def from_client(cls, client: Client, prompt: mcp.types.Prompt) -> ProxyPrompt:
         return cls(
             client=client,
             name=prompt.name,
@@ -160,14 +173,18 @@ class ProxyPrompt(Prompt):
             fn=_proxy_passthrough,
         )
 
-    async def render(self, arguments: dict[str, Any]) -> list[Message]:
+    async def render(
+        self,
+        arguments: dict[str, Any],
+        context: Context[ServerSessionT, LifespanContextT] | None = None,
+    ) -> list[Message]:
         async with self._client:
             result = await self._client.get_prompt(self.name, arguments)
         return [Message(role=m.role, content=m.content) for m in result]
 
 
 class FastMCPProxy(FastMCP):
-    def __init__(self, client: "Client", **kwargs):
+    def __init__(self, client: Client, **kwargs):
         super().__init__(**kwargs)
         self.client = client
 
