@@ -11,15 +11,28 @@ from smart_home.lights.hue_utils import _get_bridge, handle_phue_error
 class HueAttributes(TypedDict, total=False):
     """TypedDict for optional light attributes."""
 
-    on: NotRequired[bool]
-    bri: NotRequired[Annotated[int, Field(ge=0, le=254)]]
-    hue: NotRequired[Annotated[int, Field(ge=0, le=65535)]]
-    sat: NotRequired[Annotated[int, Field(ge=0, le=254)]]
-    xy: NotRequired[list[float]]
-    ct: NotRequired[Annotated[int, Field(ge=153, le=500)]]
+    on: NotRequired[Annotated[bool, Field(description="on/off state")]]
+    bri: NotRequired[Annotated[int, Field(ge=0, le=254, description="brightness")]]
+    hue: NotRequired[
+        Annotated[
+            int,
+            Field(
+                ge=0,
+                le=254,
+                description="saturation",
+            ),
+        ]
+    ]
+    xy: NotRequired[Annotated[list[float], Field(description="xy color coordinates")]]
+    ct: NotRequired[
+        Annotated[
+            int,
+            Field(ge=153, le=500, description="color temperature"),
+        ]
+    ]
     alert: NotRequired[Literal["none", "select", "lselect"]]
     effect: NotRequired[Literal["none", "colorloop"]]
-    transitiontime: NotRequired[int]  # deciseconds
+    transitiontime: NotRequired[Annotated[int, Field(description="deciseconds")]]
 
 
 lights_mcp = FastMCP(
@@ -161,7 +174,7 @@ def activate_scene(group_name: str, scene_name: str) -> dict[str, Any]:
         scenes_data = bridge.get_scene()
         scene_found = False
         scene_in_correct_group = False
-        for sid, sinfo in scenes_data.items():
+        for sinfo in scenes_data.values():
             if sinfo.get("name") == scene_name:
                 scene_found = True
                 # Check if this scene is associated with the target group ID
@@ -217,7 +230,7 @@ def set_light_attributes(light_name: str, attributes: HueAttributes) -> dict[str
         }
 
     try:
-        result = bridge.set_light(light_name, attributes)
+        result = bridge.set_light(light_name, dict(attributes))
         return {
             "light": light_name,
             "set_attributes": attributes,
@@ -243,7 +256,7 @@ def set_group_attributes(group_name: str, attributes: HueAttributes) -> dict[str
         }
 
     try:
-        result = bridge.set_group(group_name, attributes)
+        result = bridge.set_group(group_name, dict(attributes))
         return {
             "group": group_name,
             "set_attributes": attributes,
@@ -269,7 +282,7 @@ def list_lights_by_group() -> dict[str, list[str]] | list[str]:
         lights_data = bridge.get_light_objects("id")  # dict {light_id: {details}}
 
         lights_by_group: dict[str, list[str]] = {}
-        for group_id, group_details in groups_data.items():
+        for group_details in groups_data.values():
             group_name = group_details.get("name")
             light_ids = group_details.get("lights", [])
             if group_name and light_ids:
@@ -282,11 +295,10 @@ def list_lights_by_group() -> dict[str, list[str]] | list[str]:
                         if light_name:
                             light_names.append(light_name)
                 if light_names:
-                    light_names.sort()  # Keep light list sorted
+                    light_names.sort()
                     lights_by_group[group_name] = light_names
 
         return lights_by_group
 
     except (PhueException, Exception) as e:
-        # Return error as list
         return [f"Error listing lights by group: {e}"]

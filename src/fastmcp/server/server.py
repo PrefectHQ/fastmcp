@@ -1,5 +1,7 @@
 """FastMCP - A more ergonomic interface for MCP servers."""
 
+from __future__ import annotations
+
 import datetime
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import (
@@ -63,7 +65,7 @@ class MountedServer:
     def __init__(
         self,
         prefix: str,
-        server: "FastMCP",
+        server: FastMCP,
         tool_separator: str | None = None,
         resource_separator: str | None = None,
         prompt_separator: str | None = None,
@@ -149,7 +151,7 @@ class TimedCache:
 
 
 @asynccontextmanager
-async def default_lifespan(server: "FastMCP") -> AsyncIterator[Any]:
+async def default_lifespan(server: FastMCP) -> AsyncIterator[Any]:
     """Default lifespan context manager that does nothing.
 
     Args:
@@ -162,8 +164,8 @@ async def default_lifespan(server: "FastMCP") -> AsyncIterator[Any]:
 
 
 def _lifespan_wrapper(
-    app: "FastMCP",
-    lifespan: Callable[["FastMCP"], AbstractAsyncContextManager[LifespanResultT]],
+    app: FastMCP,
+    lifespan: Callable[[FastMCP], AbstractAsyncContextManager[LifespanResultT]],
 ) -> Callable[
     [MCPServer[LifespanResultT]], AbstractAsyncContextManager[LifespanResultT]
 ]:
@@ -182,7 +184,11 @@ class FastMCP(Generic[LifespanResultT]):
         name: str | None = None,
         instructions: str | None = None,
         lifespan: (
-            Callable[["FastMCP"], AbstractAsyncContextManager[LifespanResultT]] | None
+            Callable[
+                [FastMCP[LifespanResultT]],
+                AbstractAsyncContextManager[LifespanResultT],
+            ]
+            | None
         ) = None,
         tags: set[str] | None = None,
         **settings: Any,
@@ -273,7 +279,7 @@ class FastMCP(Generic[LifespanResultT]):
         self._mcp_server.get_prompt()(self._mcp_get_prompt)
         self._mcp_server.list_resource_templates()(self._mcp_list_resource_templates)
 
-    def get_context(self) -> "Context[ServerSession, LifespanResultT]":
+    def get_context(self) -> Context[ServerSession, LifespanResultT]:
         """
         Returns a Context object. Note that the context will only be valid
         during a request; outside a request, most methods will error.
@@ -766,7 +772,7 @@ class FastMCP(Generic[LifespanResultT]):
     def mount(
         self,
         prefix: str,
-        server: "FastMCP",
+        server: FastMCP[LifespanResultT],
         tool_separator: str | None = None,
         resource_separator: str | None = None,
         prompt_separator: str | None = None,
@@ -791,7 +797,7 @@ class FastMCP(Generic[LifespanResultT]):
     async def import_server(
         self,
         prefix: str,
-        server: "FastMCP",
+        server: FastMCP[LifespanResultT],
         tool_separator: str | None = None,
         resource_separator: str | None = None,
         prompt_separator: str | None = None,
@@ -865,7 +871,7 @@ class FastMCP(Generic[LifespanResultT]):
     @classmethod
     def from_openapi(
         cls, openapi_spec: dict[str, Any], client: httpx.AsyncClient, **settings: Any
-    ) -> "FastMCPOpenAPI":
+    ) -> FastMCPOpenAPI:
         """
         Create a FastMCP server from an OpenAPI specification.
         """
@@ -875,8 +881,8 @@ class FastMCP(Generic[LifespanResultT]):
 
     @classmethod
     def from_fastapi(
-        cls, app: "Any", name: str | None = None, **settings: Any
-    ) -> "FastMCPOpenAPI":
+        cls, app: Any, name: str | None = None, **settings: Any
+    ) -> FastMCPOpenAPI:
         """
         Create a FastMCP server from a FastAPI application.
         """
@@ -894,7 +900,7 @@ class FastMCP(Generic[LifespanResultT]):
         )
 
     @classmethod
-    def from_client(cls, client: "Client", **settings: Any) -> "FastMCPProxy":
+    def from_client(cls, client: Client, **settings: Any) -> FastMCPProxy:
         """
         Create a FastMCP proxy server from a FastMCP client.
         """
