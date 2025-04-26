@@ -547,10 +547,13 @@ class TestToolParameters:
             assert isinstance(path, Path)
             return str(path)
 
+        # Use a platform-independent path
+        test_path = Path("tmp") / "test.txt"
+
         async with Client(mcp) as client:
-            result = await client.call_tool("send_path", {"path": "/tmp/test.txt"})
+            result = await client.call_tool("send_path", {"path": str(test_path)})
             assert isinstance(result[0], TextContent)
-            assert result[0].text == "/tmp/test.txt"
+            assert result[0].text == str(test_path)
 
     async def test_path_type_error(self):
         mcp = FastMCP()
