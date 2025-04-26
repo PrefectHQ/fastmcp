@@ -1,16 +1,16 @@
 ---
 title: MCP Context
 sidebarTitle: Context
-description: Access MCP capabilities like logging, progress, and resources within your tools.
+description: Access MCP capabilities like logging, progress, and resources within your MCP objects.
 icon: rectangle-code
 ---
 import { VersionBadge } from '/snippets/version-badge.mdx'
 
-When defining FastMCP [tools](/servers/tools), your functions might need to interact with the underlying MCP session or access server capabilities. FastMCP provides the `Context` object for this purpose.
+When defining FastMCP [tools](/servers/tools), [resources](/servers/resources), resource templates, or [prompts](/servers/prompts), your functions might need to interact with the underlying MCP session or access server capabilities. FastMCP provides the `Context` object for this purpose.
 
 ## What Is Context?
 
-The `Context` object provides a clean interface to access MCP features within your tool functions, including:
+The `Context` object provides a clean interface to access MCP features within your functions, including:
 
 - **Logging**: Send debug, info, warning, and error messages back to the client
 - **Progress Reporting**: Update the client on the progress of long-running operations
@@ -21,7 +21,7 @@ The `Context` object provides a clean interface to access MCP features within yo
 
 ## Accessing the Context
 
-To use the context object within your tool function, simply add a parameter to your function signature and type-hint it as `Context`. FastMCP will automatically inject the context instance when your tool is called.
+To use the context object within any of your functions, simply add a parameter to your function signature and type-hint it as `Context`. FastMCP will automatically inject the context instance when your function is called.
 
 ```python
 from fastmcp import FastMCP, Context
@@ -65,15 +65,15 @@ async def process_file(file_uri: str, ctx: Context) -> str:
 
 - The parameter name (e.g., `ctx`, `context`) doesn't matter, only the type hint `Context` is important.
 - The context parameter can be placed anywhere in your function's signature.
-- The context is optional - tools that don't need it can omit the parameter.
-- Context is only available within tool functions during a request; attempting to use context methods outside a request will raise errors.
-- Context methods are async, so your tool function usually needs to be async as well.
+- The context is optional - functions that don't need it can omit the parameter.
+- Context is only available during a request; attempting to use context methods outside a request will raise errors.
+- Context methods are async, so your function usually needs to be async as well.
 
 ## Context Capabilities
 
 ### Logging
 
-Send log messages back to the MCP client. This is useful for debugging and providing visibility into tool execution during a request.
+Send log messages back to the MCP client. This is useful for debugging and providing visibility into function execution during a request.
 
 ```python
 @mcp.tool()
@@ -97,14 +97,14 @@ async def analyze_data(data: list[float], ctx: Context) -> dict:
 **Available Logging Methods:**
 
 - **`ctx.debug(message: str)`**: Low-level details useful for debugging
-- **`ctx.info(message: str)`**: General information about tool execution
+- **`ctx.info(message: str)`**: General information about execution
 - **`ctx.warning(message: str)`**: Potential issues that didn't prevent execution
 - **`ctx.error(message: str)`**: Errors that occurred during execution
 - **`ctx.log(level: Literal["debug", "info", "warning", "error"], message: str, logger_name: str | None = None)`**: Generic log method supporting custom logger names
 
 ### Progress Reporting
 
-For long-running tools, notify the client about the progress of the operation. This allows clients to display progress indicators and provide a better user experience.
+For long-running operations, notify the client about the progress. This allows clients to display progress indicators and provide a better user experience.
 
 ```python
 @mcp.tool()
@@ -137,7 +137,7 @@ Progress reporting requires the client to have sent a `progressToken` in the ini
 
 ### Resource Access
 
-Read data from resources registered with your FastMCP server. This allows tools to access files, configuration, or dynamically generated content.
+Read data from resources registered with your FastMCP server. This allows functions to access files, configuration, or dynamically generated content.
 
 ```python
 @mcp.tool()
@@ -177,7 +177,7 @@ The returned content is typically accessed via `content_list[0].content` and can
 
 <VersionBadge version="2.0.0" />
 
-Request the client's LLM to generate text based on provided messages. This is useful when your tool needs to leverage the LLM's capabilities to process data or generate responses.
+Request the client's LLM to generate text based on provided messages. This is useful when your function needs to leverage the LLM's capabilities to process data or generate responses.
 
 ```python
 @mcp.tool()
@@ -279,6 +279,60 @@ async def advanced_tool(ctx: Context) -> str:
 Direct use of `session` or `request_context` requires understanding the low-level MCP Python SDK and may be less stable than using the methods provided directly on the `Context` object.
 </Warning>
 
-## Using Context in Other Components
+## Using Context in Different Components
 
-Currently, Context is primarily designed for use within tool functions. Support for Context in other components like resources and prompts is planned for future releases. 
+All FastMCP components (tools, resources, templates, and prompts) can use the Context object following the same pattern - simply add a parameter with the `Context` type annotation.
+
+### Context in Resources and Templates
+
+Resources and resource templates can access context to customize their behavior:
+
+```python
+@mcp.resource("resource://user-data")
+async def get_user_data(ctx: Context) -> dict:
+    """Fetch personalized user data based on the request context."""
+    user_id = ctx.client_id or "anonymous"
+    await ctx.info(f"Fetching data for user {user_id}")
+    
+    # Example of using context for dynamic resource generation
+    return {
+        "user_id": user_id,
+        "last_access": datetime.now().isoformat(),
+        "request_id": ctx.request_id
+    }
+
+@mcp.resource("resource://users/{user_id}/profile")
+async def get_user_profile(user_id: str, ctx: Context) -> dict:
+    """Fetch user profile from database with context-aware logging."""
+    await ctx.info(f"Fetching profile for user {user_id}")
+    
+    # Example of using context in a template resource
+    # In a real implementation, you might query a database
+    return {
+        "id": user_id,
+        "name": f"User {user_id}",
+        "request_id": ctx.request_id
+    }
+```
+
+### Context in Prompts
+
+Prompts can use context to generate more dynamic templates:
+
+```python
+@mcp.prompt()
+async def data_analysis_request(dataset: str, ctx: Context) -> str:
+    """Generate a request to analyze data with contextual information."""
+    await ctx.info(f"Generating data analysis prompt for {dataset}")
+    
+    # Could use context to read configuration or personalize the prompt
+    return f"""Please analyze the following dataset: {dataset}
+    
+Request initiated at: {datetime.now().isoformat()}
+Request ID: {ctx.request_id}
+"""
+```
+
+<VersionBadge version="2.3.0" />
+
+All FastMCP objects now support context injection using the same consistent pattern, making it easy to add session-aware capabilities to all aspects of your MCP server. 

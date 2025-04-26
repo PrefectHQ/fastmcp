@@ -95,6 +95,36 @@ def get_application_status() -> dict:
 - **`mime_type`**: Specifies the content type (FastMCP often infers a default like `text/plain` or `application/json`, but explicit is better for non-text types).
 - **`tags`**: A set of strings for categorization, potentially used by clients for filtering.
 
+### Accessing MCP Context
+
+<VersionBadge version="2.2.5" />
+
+Resources and resource templates can access additional MCP information and features through the `Context` object. To access it, add a parameter to your resource function with a type annotation of `Context`:
+
+```python {6, 14}
+from fastmcp import FastMCP, Context
+
+mcp = FastMCP(name="DataServer")
+
+@mcp.resource("resource://system-status")
+async def get_system_status(ctx: Context) -> dict:
+    """Provides system status information."""
+    return {
+        "status": "operational",
+        "request_id": ctx.request_id
+    }
+
+@mcp.resource("resource://{name}/details")
+async def get_details(name: str, ctx: Context) -> dict:
+    """Get details for a specific name."""
+    return {
+        "name": name,
+        "accessed_at": ctx.request_id
+    }
+```
+
+For full documentation on the Context object and all its capabilities, see the [Context documentation](/servers/context).
+
 
 ### Asynchronous Resources
 
@@ -204,6 +234,8 @@ Note that this parameter is only available when using `add_resource()` directly 
 ## Resource Templates
 
 Resource Templates allow clients to request resources whose content depends on parameters embedded in the URI. Define a template using the **same `@mcp.resource` decorator**, but include `{parameter_name}` placeholders in the URI string and add corresponding arguments to your function signature.
+
+Resource templates share most configuration options with regular resources (name, description, mime_type, tags), but add the ability to define URI parameters that map to function parameters.
 
 Resource templates generate a new resource for each unique set of parameters, which means that resources can be dynamically created on-demand. For example, if the resource template `"user://profile/{name}"` is registered, MCP clients could request `"user://profile/ford"` or `"user://profile/marvin"` to retrieve either of those two user profiles as resources, without having to register each resource individually.
 
@@ -378,28 +410,6 @@ In this stacked decorator pattern:
 7.  **Response:** The function's return value is formatted (e.g., dict to JSON) and sent back as the resource content.
 
 Templates provide a powerful way to expose parameterized data access points following REST-like principles.
-
-### Custom Template Keys
-
-<VersionBadge version="2.2.0" />
-
-Similar to resources, you can provide custom keys when directly adding templates:
-
-```python
-from fastmcp.resources import ResourceTemplate
-
-# Create a template with a function
-template = ResourceTemplate.from_function(
-    my_function,
-    uri_template="data://{id}/details",
-    name="Data Details"
-)
-
-# Register with a custom key
-mcp._resource_manager.add_template(template, key="custom://{id}/view")
-```
-
-This allows accessing the same template implementation through different URI patterns.
 
 ## Server Behavior
 

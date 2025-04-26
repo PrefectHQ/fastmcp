@@ -263,7 +263,8 @@ FastMCP automatically catches exceptions raised within your tool function:
 
 Using informative exceptions helps the LLM understand failures and react appropriately.
 
-### Accessing MCP Context
+## MCP Context
+
 
 Tools can access MCP features like logging, reading resources, or reporting progress through the `Context` object. To use it, add a parameter to your tool function with the type hint `Context`.
 
@@ -303,39 +304,6 @@ The Context object provides access to:
 - **Request Information**: `ctx.request_id`, `ctx.client_id`
 
 For full documentation on the Context object and all its capabilities, see the [Context documentation](/servers/context).
-
-## Server Behavior
-
-### Duplicate Tools
-
-<VersionBadge version="2.1.0" />
-
-You can control how the FastMCP server behaves if you try to register multiple tools with the same name. This is configured using the `on_duplicate_tools` argument when creating the `FastMCP` instance.
-
-```python
-from fastmcp import FastMCP
-
-mcp = FastMCP(
-    name="StrictServer",
-    # Configure behavior for duplicate tool names
-    on_duplicate_tools="error"
-)
-
-@mcp.tool()
-def my_tool(): return "Version 1"
-
-# This will now raise a ValueError because 'my_tool' already exists
-# and on_duplicate_tools is set to "error".
-# @mcp.tool()
-# def my_tool(): return "Version 2"
-```
-
-The duplicate behavior options are:
-
--   `"warn"` (default): Logs a warning and the new tool replaces the old one.
--   `"error"`: Raises a `ValueError`, preventing the duplicate registration.
--   `"replace"`: Silently replaces the existing tool with the new one.
--   `"ignore"`: Keeps the original tool and ignores the new registration attempt.
 
 ## Parameter Types
 
@@ -663,3 +631,36 @@ Common validation options include:
 | `description` | Any | Human-readable description (appears in schema) |
 
 When a client sends invalid data, FastMCP will return a validation error explaining why the parameter failed validation.
+
+## Server Behavior
+
+### Duplicate Tools
+
+<VersionBadge version="2.1.0" />
+
+You can control how the FastMCP server behaves if you try to register multiple tools with the same name. This is configured using the `on_duplicate_tools` argument when creating the `FastMCP` instance.
+
+```python
+from fastmcp import FastMCP
+
+mcp = FastMCP(
+    name="StrictServer",
+    # Configure behavior for duplicate tool names
+    on_duplicate_tools="error"
+)
+
+@mcp.tool()
+def my_tool(): return "Version 1"
+
+# This will now raise a ValueError because 'my_tool' already exists
+# and on_duplicate_tools is set to "error".
+# @mcp.tool()
+# def my_tool(): return "Version 2"
+```
+
+The duplicate behavior options are:
+
+-   `"warn"` (default): Logs a warning and the new tool replaces the old one.
+-   `"error"`: Raises a `ValueError`, preventing the duplicate registration.
+-   `"replace"`: Silently replaces the existing tool with the new one.
+-   `"ignore"`: Keeps the original tool and ignores the new registration attempt.

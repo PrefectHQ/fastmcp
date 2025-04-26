@@ -171,33 +171,24 @@ async def data_based_prompt(data_id: str) -> str:
 
 Use `async def` when your prompt function performs I/O operations like network requests, database queries, file I/O, or external service calls.
 
-### The MCP Session
+### Accessing MCP Context
 
-Prompts can access the MCP features via the `Context` object, just like tools.
+<VersionBadge version="2.2.5" />
 
-```python
-from fastmcp import Context
+Prompts can access additional MCP information and features through the `Context` object. To access it, add a parameter to your prompt function with a type annotation of `Context`:
+
+```python {6}
+from fastmcp import FastMCP, Context
+
+mcp = FastMCP(name="PromptServer")
 
 @mcp.prompt()
 async def generate_report_request(report_type: str, ctx: Context) -> str:
-    """Generates a request for a report based on available data."""
-    # Log the request
-    await ctx.info(f"Generating prompt for report type: {report_type}")
-    
-    # Could potentially use ctx.read_resource to fetch data
-    # Or ctx.sample to get additional input from the LLM
-    
-    return f"Please create a {report_type} report based on the available data."
+    """Generates a request for a report."""
+    return f"Please create a {report_type} report. Request ID: {ctx.request_id}"
 ```
 
-Using the `ctx` parameter (based on its `Context` type hint), you can access:
-
--   **Logging:** `ctx.debug()`, `ctx.info()`, etc.
--   **Resource Access:** `ctx.read_resource(uri)`
--   **LLM Sampling:** `ctx.sample(...)`
--   **Request Info:** `ctx.request_id`, `ctx.client_id`
-
-Refer to the [Context documentation](/servers/context) for more details on these capabilities.
+For full documentation on the Context object and all its capabilities, see the [Context documentation](/servers/context).
 
 ## Server Behavior
 
