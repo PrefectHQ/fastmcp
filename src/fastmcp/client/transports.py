@@ -6,9 +6,7 @@ import shutil
 import sys
 from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import (
-    TypedDict,
-)
+from typing import Any, TypedDict
 
 from exceptiongroup import BaseExceptionGroup, catch
 from mcp import ClientSession, McpError, StdioServerParameters
@@ -416,7 +414,7 @@ class FastMCPTransport(ClientTransport):
 
 
 def infer_transport(
-    transport: ClientTransport | FastMCPServer | AnyUrl | Path | str,
+    transport: ClientTransport | FastMCPServer | AnyUrl | Path | dict[str, Any] | str,
 ) -> ClientTransport:
     """
     Infer the appropriate transport type from the given transport argument.
@@ -449,6 +447,41 @@ def infer_transport(
     # the transport is a websocket URL
     elif isinstance(transport, AnyUrl | str) and str(transport).startswith("ws"):
         return WSTransport(url=transport)
+
+    ## if the transport is a config dict
+    elif isinstance(transport, dict):
+        if "mcpServers" not in transport:
+            raise ValueError("Invalid transport dictionary: missing 'mcpServers' key")
+        else:
+            server = transport["mcpServers"]
+            if len(list(server.keys())) > 1:
+                raise ValueError(
+                    "Invalid transport dictionary: multiple servers found - only one expected"
+                )
+            server_name = list(server.keys())[0]
+            # Stdio transport
+            if "command" in server[server_name] and "args" in server[server_name]:
+                return StdioTransport(
+                    command=server[server_name]["command"],
+                    args=server[server_name]["args"],
+                    env=server[server_name].get("env", None),
+                    cwd=server[server_name].get("cwd", None),
+                )
+
+            # HTTP transport
+            elif "url" in server:
+                return SSETransport(
+                    url=server["url"],
+                    headers=server.get("headers", None),
+                )
+
+            # WebSocket transport
+            elif "ws_url" in server:
+                return WSTransport(
+                    url=server["ws_url"],
+                )
+
+            raise ValueError("Cannot determine transport type from dictionary")
 
     # the transport is an unknown type
     else:
