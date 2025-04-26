@@ -106,12 +106,86 @@ class TestTools:
             assert isinstance(result[0], TextContent)
             assert result[0].text == '["x", 2]'
 
-    async def test_tool_image_helper(self, tool_server: FastMCP, tmp_path: Path):
+
+class TestToolReturnTypes:
+    async def test_string(self):
+        mcp = FastMCP()
+
+        @mcp.tool()
+        def string_tool() -> str:
+            return "Hello, world!"
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("string_tool", {})
+            assert isinstance(result[0], TextContent)
+            assert result[0].text == "Hello, world!"
+
+    async def test_bytes(self, tmp_path: Path):
+        mcp = FastMCP()
+
+        @mcp.tool()
+        def bytes_tool() -> bytes:
+            return b"Hello, world!"
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("bytes_tool", {})
+            assert isinstance(result[0], TextContent)
+            assert result[0].text == "Hello, world!"
+
+    async def test_uuid(self):
+        mcp = FastMCP()
+
+        test_uuid = uuid.uuid4()
+
+        @mcp.tool()
+        def uuid_tool() -> uuid.UUID:
+            return test_uuid
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("uuid_tool", {})
+            assert isinstance(result[0], TextContent)
+            assert result[0].text == str(test_uuid)
+
+    async def test_path(self):
+        mcp = FastMCP()
+
+        test_path = Path("/tmp/test.txt")
+
+        @mcp.tool()
+        def path_tool() -> Path:
+            return test_path
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("path_tool", {})
+            assert isinstance(result[0], TextContent)
+            assert result[0].text == str(test_path)
+
+    async def test_datetime(self):
+        mcp = FastMCP()
+
+        dt = datetime.datetime(2025, 4, 25, 1, 2, 3)
+
+        @mcp.tool()
+        def datetime_tool() -> datetime.datetime:
+            return dt
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("datetime_tool", {})
+            assert isinstance(result[0], TextContent)
+            assert result[0].text == dt.isoformat()
+
+    async def test_image(self, tmp_path: Path):
+        mcp = FastMCP()
+
+        @mcp.tool()
+        def image_tool(path: str) -> Image:
+            return Image(path)
+
         # Create a test image
         image_path = tmp_path / "test.png"
         image_path.write_bytes(b"fake png data")
 
-        async with Client(tool_server) as client:
+        async with Client(mcp) as client:
             result = await client.call_tool("image_tool", {"path": str(image_path)})
             content = result[0]
             assert isinstance(content, ImageContent)
