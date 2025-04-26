@@ -163,9 +163,22 @@ def _convert_to_content(
 
         return other_content + mcp_types
 
+    # if the result is a bytes object, convert it to a text content object
     if not isinstance(result, str):
         try:
-            result = json.dumps(pydantic_core.to_jsonable_python(result))
+            jsonable_result = pydantic_core.to_jsonable_python(result)
+            if jsonable_result is None:
+                return [TextContent(type="text", text="null")]
+            elif isinstance(jsonable_result, bool):
+                return [
+                    TextContent(
+                        type="text", text="true" if jsonable_result else "false"
+                    )
+                ]
+            elif isinstance(jsonable_result, str | int | float):
+                return [TextContent(type="text", text=str(jsonable_result))]
+            else:
+                return [TextContent(type="text", text=json.dumps(jsonable_result))]
         except Exception:
             result = str(result)
 
