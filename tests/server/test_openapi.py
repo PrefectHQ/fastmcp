@@ -348,7 +348,6 @@ class TestResourceTemplates:
         response = await api_client.get(f"/users/{user_id}")
         assert resource == response.json()
 
-
     async def test_get_resource_template_multi_param(
         self,
         fastmcp_openapi_server: FastMCPOpenAPI,
