@@ -296,7 +296,7 @@ class OpenAPIResource(Resource):
                             # Ensure we don't use resource identifier as parameter
                             if i < expected_param_count:
                                 # Get values from the end of parts
-                                param_value = parts[-1 -i]
+                                param_value = parts[-1 - i]
                                 path_params[param_name] = param_value
 
                     # Replace path parameters with their values
