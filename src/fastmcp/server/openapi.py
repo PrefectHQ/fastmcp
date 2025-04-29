@@ -286,12 +286,14 @@ class OpenAPIResource(Resource):
                     # Find the path parameter names from the route path
                     param_matches = re.findall(r"\{([^}]+)\}", path)
                     if param_matches:
+                        # Reverse sorting from creation order (traversal is backwards)
+                        param_matches.sort(reverse=True)
                         # Number of sent parameters is number of parts -1 (assuming first part is resource identifier)
                         expected_param_count = len(parts) -1
                         # Map parameters from the end of the URI to the parameters in the path
                         # Last parameter in URI (parts[-1]) maps to last parameter in path, and so on
                         for i, param_name in enumerate(param_matches):
-                            if i < len(expected_param_count):  # Ensure we don't use resource identifier as parameter
+                            if i < expected_param_count:  # Ensure we don't use resource identifier as parameter
                                 param_value = parts[-1-i]  # Get values from the end of parts
                                 path_params[param_name] = param_value
 

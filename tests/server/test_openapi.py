@@ -53,7 +53,7 @@ def fastapi_app(users_db: dict[int, User]) -> FastAPI:
     
     @app.get("/users/{user_id}/{is_active}", tags=["users", "detail"])
     async def get_user_active_state(user_id: int, is_active: bool) -> User | None:
-        """Get a user by ID."""
+        """Get a user by ID and filter by active state."""
         user = users_db.get(user_id)
         if user is not None and user.active == is_active:
             return user
@@ -359,7 +359,7 @@ class TestResourceTemplates:
         is_active = True
         async with Client(fastmcp_openapi_server) as client:
             resource_response = await client.read_resource(
-                f"resource://openapi/get_user_users__user_type__user_id__get/{user_id}/{is_active}"
+                f"resource://openapi/get_user_active_state_users__user_id___is_active__get/{is_active}/{user_id}"
             )
             assert isinstance(resource_response[0], TextResourceContents)
             response_text = resource_response[0].text
