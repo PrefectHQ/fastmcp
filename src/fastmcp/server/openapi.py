@@ -294,9 +294,9 @@ class OpenAPIResource(Resource):
                         # Last parameter in URI (parts[-1]) maps to last parameter in path, and so on
                         for i, param_name in enumerate(param_matches):
                             # Ensure we don't use resource identifier as parameter
-                            if i < expected_param_count: 
-                                # Get values from the end of parts 
-                                param_value = parts[-1-i]
+                            if i < expected_param_count:
+                                # Get values from the end of parts
+                                param_value = parts[-1 -i]
                                 path_params[param_name] = param_value
 
                     # Replace path parameters with their values
