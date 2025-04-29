@@ -50,7 +50,7 @@ def fastapi_app(users_db: dict[int, User]) -> FastAPI:
     async def get_user(user_id: int) -> User | None:
         """Get a user by ID."""
         return users_db.get(user_id)
-    
+
     @app.get("/users/{user_id}/{is_active}", tags=["users", "detail"])
     async def get_user_active_state(user_id: int, is_active: bool) -> User | None:
         """Get a user by ID and filter by active state."""
