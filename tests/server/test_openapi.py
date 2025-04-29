@@ -318,7 +318,7 @@ class TestResourceTemplates:
             == r"resource://openapi/get_user_users__user_id__get/{user_id}"
         )
         assert (
-            resource_templates[1].name 
+            resource_templates[1].name
             == "get_user_active_state_users__user_id___is_active__get"
         )
         assert (
