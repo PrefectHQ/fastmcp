@@ -278,21 +278,26 @@ class OpenAPIResource(Resource):
             if "{" in path and "}" in path:
                 # Extract the resource ID from the URI (the last part after the last slash)
                 parts = resource_uri.split("/")
+
                 if len(parts) > 1:
                     # Find all path parameters in the route path
                     path_params = {}
 
-                    # Extract parameters from the URI
-                    param_value = parts[
-                        -1
-                    ]  # The last part contains the parameter value
-
-                    # Find the path parameter name from the route path
+                    # Find the path parameter names from the route path
                     param_matches = re.findall(r"\{([^}]+)\}", path)
                     if param_matches:
-                        # Assume the last parameter in the URI is for the first path parameter in the route
-                        path_param_name = param_matches[0]
-                        path_params[path_param_name] = param_value
+                        # Reverse sorting from creation order (traversal is backwards)
+                        param_matches.sort(reverse=True)
+                        # Number of sent parameters is number of parts -1 (assuming first part is resource identifier)
+                        expected_param_count = len(parts) - 1
+                        # Map parameters from the end of the URI to the parameters in the path
+                        # Last parameter in URI (parts[-1]) maps to last parameter in path, and so on
+                        for i, param_name in enumerate(param_matches):
+                            # Ensure we don't use resource identifier as parameter
+                            if i < expected_param_count:
+                                # Get values from the end of parts
+                                param_value = parts[-1 - i]
+                                path_params[param_name] = param_value
 
                     # Replace path parameters with their values
                     for param_name, param_value in path_params.items():
