@@ -278,7 +278,7 @@ class OpenAPIResource(Resource):
             if "{" in path and "}" in path:
                 # Extract the resource ID from the URI (the last part after the last slash)
                 parts = resource_uri.split("/")
-                
+
                 if len(parts) > 1:
                     # Find all path parameters in the route path
                     path_params = {}
