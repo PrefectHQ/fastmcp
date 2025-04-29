@@ -50,6 +50,14 @@ def fastapi_app(users_db: dict[int, User]) -> FastAPI:
     async def get_user(user_id: int) -> User | None:
         """Get a user by ID."""
         return users_db.get(user_id)
+    
+    @app.get("/users/{user_id}/{is_active}", tags=["users", "detail"])
+    async def get_user_active_state(user_id: int, is_active: bool) -> User | None:
+        """Get a user by ID."""
+        user = users_db.get(user_id)
+        if user is not None and user.active == is_active:
+            return user
+        return None
 
     @app.post("/users", tags=["users", "create"])
     async def create_user(user: UserCreate) -> User:
@@ -303,11 +311,16 @@ class TestResourceTemplates:
         """
         async with Client(fastmcp_openapi_server) as client:
             resource_templates = await client.list_resource_templates()
-        assert len(resource_templates) == 1
+        assert len(resource_templates) == 2
         assert resource_templates[0].name == "get_user_users__user_id__get"
         assert (
             resource_templates[0].uriTemplate
             == r"resource://openapi/get_user_users__user_id__get/{user_id}"
+        )
+        assert resource_templates[1].name == "get_user_active_state_users__user_id___is_active__get"
+        assert (
+            resource_templates[1].uriTemplate
+            == r"resource://openapi/get_user_active_state_users__user_id___is_active__get/{is_active}/{user_id}"
         )
 
     async def test_get_resource_template(
@@ -330,6 +343,30 @@ class TestResourceTemplates:
 
         assert resource == users_db[user_id].model_dump()
         response = await api_client.get(f"/users/{user_id}")
+        assert resource == response.json()
+
+
+    async def test_get_resource_template_multi_param(
+        self,
+        fastmcp_openapi_server: FastMCPOpenAPI,
+        api_client,
+        users_db: dict[int, User],
+    ):
+        """
+        The resource template created by the OpenAPI server should be the same as the original
+        """
+        user_id = 2
+        is_active = True
+        async with Client(fastmcp_openapi_server) as client:
+            resource_response = await client.read_resource(
+                f"resource://openapi/get_user_users__user_type__user_id__get/{user_id}/{is_active}"
+            )
+            assert isinstance(resource_response[0], TextResourceContents)
+            response_text = resource_response[0].text
+            resource = json.loads(response_text)
+
+        assert resource == users_db[user_id].model_dump()
+        response = await api_client.get(f"/users/{user_id}/{is_active}")
         assert resource == response.json()
 
 
@@ -818,7 +855,7 @@ class TestMountFastMCP:
         # Check that templates are available with prefixed URIs
         async with Client(mcp) as client:
             templates = await client.list_resource_templates()
-        assert len(templates) == 1
+        assert len(templates) == 2
         assert templates[0].name == "get_user_users__user_id__get"
         prefixed_template_uri = (
             r"fastapi+resource://openapi/get_user_users__user_id__get/{user_id}"
