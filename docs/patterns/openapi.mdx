@@ -108,24 +108,33 @@ mcp = await FastMCP.from_openapi(
 
 ## Complete Example
 
-```python
+```python [expandable]
 import asyncio
+
 import httpx
+
 from fastmcp import FastMCP
 
 # Sample OpenAPI spec for a Pet Store API
 petstore_spec = {
     "openapi": "3.0.0",
+    "info": {
+        "title": "Pet Store API",
+        "version": "1.0.0",
+        "description": "A sample API for managing pets",
+    },
     "paths": {
         "/pets": {
             "get": {
                 "operationId": "listPets",
-                "summary": "List all pets"
+                "summary": "List all pets",
+                "responses": {"200": {"description": "A list of pets"}},
             },
             "post": {
                 "operationId": "createPet",
-                "summary": "Create a new pet"
-            }
+                "summary": "Create a new pet",
+                "responses": {"201": {"description": "Pet created successfully"}},
+            },
         },
         "/pets/{petId}": {
             "get": {
@@ -136,38 +145,50 @@ petstore_spec = {
                         "name": "petId",
                         "in": "path",
                         "required": True,
-                        "schema": {"type": "string"}
+                        "schema": {"type": "string"},
                     }
-                ]
+                ],
+                "responses": {
+                    "200": {"description": "Pet details"},
+                    "404": {"description": "Pet not found"},
+                },
             }
-        }
-    }
+        },
+    },
 }
 
-async def main():
-    # Client for the Pet Store API
-    client = httpx.AsyncClient(base_url="https://petstore.example.com/api")
-    
-    # Create the MCP server
-    mcp = await FastMCP.from_openapi(
-        openapi_spec=petstore_spec,
-        client=client,
-        name="PetStore"
-    )
-    
+
+async def check_mcp(mcp: FastMCP):
     # List what components were created
-    tools = await mcp.list_tools()
-    resources = await mcp.list_resources()
-    templates = await mcp.list_resource_templates()
-    
-    print(f"Tools: {len(tools)}")          # Should include createPet
-    print(f"Resources: {len(resources)}")  # Should include listPets
-    print(f"Templates: {len(templates)}")  # Should include getPet
-    
-    # Start the MCP server
-    mcp.run()
+    tools = await mcp.get_tools()
+    resources = await mcp.get_resources()
+    templates = await mcp.get_resource_templates()
+
+    print(
+        f"{len(tools)} Tool(s): {', '.join([t.name for t in tools.values()])}"
+    )  # Should include createPet
+    print(
+        f"{len(resources)} Resource(s): {', '.join([r.name for r in resources.values()])}"
+    )  # Should include listPets
+    print(
+        f"{len(templates)} Resource Template(s): {', '.join([t.name for t in templates.values()])}"
+    )  # Should include getPet
+
+    return mcp
+
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    # Client for the Pet Store API
+    client = httpx.AsyncClient(base_url="https://petstore.example.com/api")
+
+    # Create the MCP server
+    mcp = FastMCP.from_openapi(
+        openapi_spec=petstore_spec, client=client, name="PetStore"
+    )
+
+    asyncio.run(check_mcp(mcp))
+
+    # Start the MCP server
+    mcp.run()
 ```
 

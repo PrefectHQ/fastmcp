@@ -73,7 +73,7 @@ For more details on route mapping or custom mapping rules, see the [OpenAPI inte
 
 Here's a more detailed example with a data model:
 
-```python
+```python [expandable]
 import asyncio
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
@@ -108,24 +108,32 @@ def create_item(item: Item):
     return items[item_id]
 
 # Test your MCP server with a client
-async def test():
-    # Create MCP server from FastAPI app
-    mcp = await FastMCP.from_fastapi(app=app)
-    
+async def check_mcp(mcp: FastMCP):
     # List the components that were created
-    tools = await mcp.list_tools()
-    resources = await mcp.list_resources()
-    templates = await mcp.list_resource_templates()
+    tools = await mcp.get_tools()
+    resources = await mcp.get_resources()
+    templates = await mcp.get_resource_templates()
     
-    print(f"Generated {len(tools)} tools")
-    print(f"Generated {len(resources)} resources")
-    print(f"Generated {len(templates)} templates")
+    print(
+        f"{len(tools)} Tool(s): {', '.join([t.name for t in tools.values()])}"
+    )
+    print(
+        f"{len(resources)} Resource(s): {', '.join([r.name for r in resources.values()])}"
+    )
+    print(
+        f"{len(templates)} Resource Template(s): {', '.join([t.name for t in templates.values()])}"
+    )
     
-    # In a real scenario, you would run the server:
-    # mcp.run()
+    return mcp
 
 if __name__ == "__main__":
-    asyncio.run(test())
+    # Create MCP server from FastAPI app
+    mcp = FastMCP.from_fastapi(app=app)
+    
+    asyncio.run(check_mcp(mcp))
+    
+    # In a real scenario, you would run the server:
+    mcp.run()
 ```
 
 ## Benefits
