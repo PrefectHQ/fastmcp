@@ -14,7 +14,6 @@ from typing import TYPE_CHECKING, Any, Generic, Literal
 
 import anyio
 import httpx
-import pydantic_core
 import uvicorn
 from mcp.server.lowlevel.helper_types import ReadResourceContents
 from mcp.server.lowlevel.server import LifespanResultT
@@ -27,6 +26,7 @@ from mcp.types import (
     EmbeddedResource,
     GetPromptResult,
     ImageContent,
+    PromptMessage,
     TextContent,
 )
 from mcp.types import Prompt as MCPPrompt
@@ -435,7 +435,12 @@ class FastMCP(Generic[LifespanResultT]):
             messages = await self._prompt_manager.render_prompt(
                 name, arguments=arguments or {}, context=context
             )
-            return GetPromptResult(messages=pydantic_core.to_jsonable_python(messages))
+
+            return GetPromptResult(
+                messages=[
+                    PromptMessage(role=m.role, content=m.content) for m in messages
+                ]
+            )
         else:
             for server in self._mounted_servers.values():
                 if server.match_prompt(name):

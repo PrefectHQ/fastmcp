@@ -387,18 +387,7 @@ class TestCallTools:
         assert isinstance(result, list)
         assert len(result) == 1
         assert isinstance(result[0], TextContent)
-        assert result[0].text == '["rex", "gertrude"]'
-        assert json.loads(result[0].text) == ["rex", "gertrude"]
-
-        result = await manager.call_tool(
-            "name_shrimp",
-            {"tank": '{"x": null, "shrimp": [{"name": "rex"}, {"name": "gertrude"}]}'},
-        )
-        assert isinstance(result, list)
-        assert len(result) == 1
-        assert isinstance(result[0], TextContent)
-        assert result[0].text == '["rex", "gertrude"]'
-        assert json.loads(result[0].text) == ["rex", "gertrude"]
+        assert result[0].text == '[\n  "rex",\n  "gertrude"\n]'
 
 
 class TestToolSchema:

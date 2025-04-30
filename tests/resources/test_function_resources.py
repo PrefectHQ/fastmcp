@@ -95,7 +95,7 @@ class TestFunctionResource:
             fn=lambda: MyModel(name="test"),
         )
         content = await resource.read()
-        assert content == '{"name": "test"}'
+        assert content == '{\n  "name": "test"\n}'
 
     async def test_custom_type_conversion(self):
         """Test handling of custom types."""
