@@ -10,12 +10,12 @@ from re import Pattern
 from typing import TYPE_CHECKING, Any, Literal
 
 import httpx
-from mcp.types import TextContent
+from mcp.types import EmbeddedResource, ImageContent, TextContent
 from pydantic.networks import AnyUrl
 
 from fastmcp.resources import Resource, ResourceTemplate
 from fastmcp.server.server import FastMCP
-from fastmcp.tools.tool import Tool
+from fastmcp.tools.tool import Tool, _convert_to_content
 from fastmcp.utilities import openapi
 from fastmcp.utilities.func_metadata import func_metadata
 from fastmcp.utilities.logging import get_logger
@@ -239,9 +239,14 @@ class OpenAPITool(Tool):
             # Handle request errors (connection, timeout, etc.)
             raise ValueError(f"Request error: {str(e)}")
 
-    async def run(self, arguments: dict[str, Any], context: Any = None) -> Any:
+    async def run(
+        self,
+        arguments: dict[str, Any],
+        context: Context[ServerSessionT, LifespanContextT] | None = None,
+    ) -> list[TextContent | ImageContent | EmbeddedResource]:
         """Run the tool with arguments and optional context."""
-        return await self._execute_request(**arguments, context=context)
+        response = await self._execute_request(**arguments, context=context)
+        return _convert_to_content(response)
 
 
 class OpenAPIResource(Resource):
@@ -605,13 +610,4 @@ class FastMCPOpenAPI(FastMCP):
 
         context = self.get_context()
         result = await self._tool_manager.call_tool(name, arguments, context=context)
-
-        # For other tools, ensure the response is wrapped in TextContent
-        if isinstance(result, dict | str):
-            if isinstance(result, dict):
-                result_text = json.dumps(result)
-            else:
-                result_text = result
-            return [TextContent(text=result_text, type="text")]
-
         return result
