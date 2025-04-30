@@ -19,7 +19,7 @@ def fastmcp_server():
 
     @mcp.tool()
     async def log(context: Context) -> None:
-        await context.log(message="hello?")
+        await context.info(message="hello?")
 
     @mcp.tool()
     async def echo_log(
