@@ -13,7 +13,10 @@ from mcp.types import Prompt as MCPPrompt
 from mcp.types import PromptArgument as MCPPromptArgument
 from pydantic import BaseModel, BeforeValidator, Field, TypeAdapter, validate_call
 
-from fastmcp.utilities.types import _convert_set_defaults
+from fastmcp.utilities.types import (
+    _convert_set_defaults,
+    is_class_member_of_type,
+)
 
 if TYPE_CHECKING:
     from mcp.server.session import ServerSessionT
@@ -115,7 +118,7 @@ class Prompt(BaseModel):
             else:
                 sig = inspect.signature(fn)
             for param_name, param in sig.parameters.items():
-                if param.annotation is Context:
+                if is_class_member_of_type(param.annotation, Context):
                     context_kwarg = param_name
                     break
 
