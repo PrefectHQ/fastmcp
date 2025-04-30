@@ -161,21 +161,21 @@ class Context(BaseModel, Generic[ServerSessionT, LifespanContextT]):
         return self.request_context.session
 
     # Convenience methods for common log levels
-    async def debug(self, message: str, **extra: Any) -> None:
+    async def debug(self, message: str, logger_name: str | None = None) -> None:
         """Send a debug log message."""
-        await self.log(level="debug", message=message, **extra)
+        await self.log(level="debug", message=message, logger_name=logger_name)
 
-    async def info(self, message: str, **extra: Any) -> None:
+    async def info(self, message: str, logger_name: str | None = None) -> None:
         """Send an info log message."""
-        await self.log(level="info", message=message, **extra)
+        await self.log(level="info", message=message, logger_name=logger_name)
 
-    async def warning(self, message: str, **extra: Any) -> None:
+    async def warning(self, message: str, logger_name: str | None = None) -> None:
         """Send a warning log message."""
-        await self.log(level="warning", message=message, **extra)
+        await self.log(level="warning", message=message, logger_name=logger_name)
 
-    async def error(self, message: str, **extra: Any) -> None:
+    async def error(self, message: str, logger_name: str | None = None) -> None:
         """Send an error log message."""
-        await self.log(level="error", message=message, **extra)
+        await self.log(level="error", message=message, logger_name=logger_name)
 
     async def list_roots(self) -> list[Root]:
         """List the roots available to the server, as indicated by the client."""
