@@ -97,15 +97,12 @@ class FunctionResource(Resource):
 
             if isinstance(result, Resource):
                 return await result.read(context=context)
-            if isinstance(result, bytes):
+            elif isinstance(result, bytes):
                 return result
-            if isinstance(result, str):
+            elif isinstance(result, str):
                 return result
-            try:
-                return json.dumps(pydantic_core.to_jsonable_python(result))
-            except (TypeError, pydantic_core.PydanticSerializationError):
-                # If JSON serialization fails, try str()
-                return str(result)
+            else:
+                return pydantic_core.to_json(result, fallback=str, indent=2).decode()
         except Exception as e:
             raise ValueError(f"Error reading resource {self.uri}: {e}")
 

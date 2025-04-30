@@ -3,7 +3,6 @@
 from __future__ import annotations as _annotations
 
 import inspect
-import json
 from collections.abc import Awaitable, Callable, Sequence
 from typing import TYPE_CHECKING, Annotated, Any, Literal
 
@@ -195,7 +194,9 @@ class Prompt(BaseModel):
                         content = TextContent(type="text", text=msg)
                         messages.append(Message(role="user", content=content))
                     else:
-                        content = json.dumps(pydantic_core.to_jsonable_python(msg))
+                        content = pydantic_core.to_json(
+                            msg, fallback=str, indent=2
+                        ).decode()
                         messages.append(Message(role="user", content=content))
                 except Exception:
                     raise ValueError(

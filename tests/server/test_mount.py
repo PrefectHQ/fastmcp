@@ -227,7 +227,7 @@ class TestResourcesAndTemplates:
         async with Client(main_app) as client:
             resource = await client.read_resource("data+data://users")
             assert isinstance(resource[0], TextResourceContents)
-            assert resource[0].text == '["user1", "user2"]'
+            assert resource[0].text == '[\n  "user1",\n  "user2"\n]'
 
     async def test_mount_with_resource_templates(self):
         """Test mounting a server with resource templates."""

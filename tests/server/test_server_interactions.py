@@ -6,6 +6,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Annotated, Literal
 
+import pydantic_core
 import pytest
 from mcp.types import (
     BlobResourceContents,
@@ -104,7 +105,7 @@ class TestTools:
         async with Client(tool_server) as client:
             result = await client.call_tool("list_tool", {})
             assert isinstance(result[0], TextContent)
-            assert result[0].text == '["x", 2]'
+            assert result[0].text == '[\n  "x",\n  2\n]'
 
 
 class TestToolReturnTypes:
@@ -130,7 +131,7 @@ class TestToolReturnTypes:
         async with Client(mcp) as client:
             result = await client.call_tool("bytes_tool", {})
             assert isinstance(result[0], TextContent)
-            assert result[0].text == "Hello, world!"
+            assert result[0].text == '"Hello, world!"'
 
     async def test_uuid(self):
         mcp = FastMCP()
@@ -144,7 +145,7 @@ class TestToolReturnTypes:
         async with Client(mcp) as client:
             result = await client.call_tool("uuid_tool", {})
             assert isinstance(result[0], TextContent)
-            assert result[0].text == str(test_uuid)
+            assert result[0].text == pydantic_core.to_json(test_uuid).decode()
 
     async def test_path(self):
         mcp = FastMCP()
@@ -158,7 +159,7 @@ class TestToolReturnTypes:
         async with Client(mcp) as client:
             result = await client.call_tool("path_tool", {})
             assert isinstance(result[0], TextContent)
-            assert result[0].text == str(test_path)
+            assert result[0].text == pydantic_core.to_json(test_path).decode()
 
     async def test_datetime(self):
         mcp = FastMCP()
@@ -172,7 +173,7 @@ class TestToolReturnTypes:
         async with Client(mcp) as client:
             result = await client.call_tool("datetime_tool", {})
             assert isinstance(result[0], TextContent)
-            assert result[0].text == dt.isoformat()
+            assert result[0].text == pydantic_core.to_json(dt).decode()
 
     async def test_image(self, tmp_path: Path):
         mcp = FastMCP()

@@ -298,7 +298,7 @@ class TestResourceTemplate:
 
         assert isinstance(resource, FunctionResource)
         content = await resource.read()
-        assert content == "hello"
+        assert content == '"hello"'
 
     async def test_wildcard_param_can_create_resource(self):
         """Test that wildcard parameters are valid."""
