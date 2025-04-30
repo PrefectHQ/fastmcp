@@ -149,83 +149,90 @@ The `Client` provides methods corresponding to standard MCP requests:
 *   **`list_prompts()`**: Retrieves available prompt templates.
 *   **`get_prompt(name: str, arguments: dict[str, Any] | None = None)`**: Retrieves a rendered prompt message list.
 
-### Callbacks
+### Advanced Features
 
-MCP allows servers to make requests *back* to the client for certain capabilities. The `Client` constructor accepts callback functions to handle these server requests:
+MCP allows servers to interact with clients in order to provide additional capabilities. The `Client` constructor accepts additional configuration to handle these server requests.
 
-#### Roots
-
-*   **`roots: RootsList | RootsHandler | None`**: Provides the server with a list of root directories the client grants access to. This can be a static list or a function that dynamically determines roots.
-    ```python
-    from pathlib import Path
-    from fastmcp.client.roots import RootsHandler, RootsList
-    from mcp.shared.context import RequestContext # For type hint
-
-    # Option 1: Static list
-    static_roots: RootsList = [str(Path.home() / "Documents")]
-
-    # Option 2: Dynamic function
-    def dynamic_roots_handler(context: RequestContext) -> RootsList:
-        # Logic to determine accessible roots based on context
-        print(f"Server requested roots (Request ID: {context.request_id})")
-        return [str(Path.home() / "Downloads")]
-
-    client_with_roots = Client(
-        "my_server.py",
-        roots=dynamic_roots_handler # or roots=static_roots
-    )
-
-    # Tell the server the roots might have changed (if needed)
-    # async with client_with_roots:
-    #     await client_with_roots.send_roots_list_changed()
-    ```
-    See `fastmcp.client.roots` for helpers.
 
 #### LLM Sampling
 
-*   **`sampling_handler: SamplingHandler | None`**: Handles `sampling/createMessage` requests from the server. This callback receives messages from the server and should return an LLM completion.
-    ```python
-    from fastmcp.client.sampling import SamplingHandler, MessageResult
-    from mcp.types import SamplingMessage, SamplingParams, TextContent
-    from mcp.shared.context import RequestContext # For type hint
+MCP Servers can request LLM completions from clients. The client can provide a `sampling_handler` to handle these requests. The sampling handler receives a list of messages and other parameters from the server, and should return a string completion.
 
-    async def my_llm_handler(
-        messages: list[SamplingMessage],
-        params: SamplingParams,
-        context: RequestContext
-    ) -> str | MessageResult:
-        print(f"Server requested sampling (Request ID: {context.request_id})")
-        # In a real scenario, call your LLM API here
-        last_user_message = next((m for m in reversed(messages) if m.role == 'user'), None)
-        prompt = last_user_message.content.text if last_user_message and isinstance(last_user_message.content, TextContent) else "Default prompt"
+The following example uses the `marvin` library to generate a completion:
 
-        # Simulate LLM response
-        response_text = f"LLM processed: {prompt[:50]}..."
-        # Return simple string (becomes TextContent) or a MessageResult object
-        return response_text
+```python {8-17, 21}
+import marvin
+from fastmcp import Client
+from fastmcp.client.sampling import (
+    SamplingMessage,
+    SamplingParams,
+    RequestContext,
+)
 
-    client_with_sampling = Client(
-        "my_server.py",
-        sampling_handler=my_llm_handler
+async def sampling_handler(
+    messages: list[SamplingMessage],
+    params: SamplingParams,
+    context: RequestContext
+) -> str:
+    return await marvin.say_async(
+        message=[m.content.text for m in messages],
+        instructions=params.systemPrompt,
     )
-    ```
-    See `fastmcp.client.sampling` for helpers.
+
+client = Client(
+    ...,
+    sampling_handler=sampling_handler,
+)
+```
 
 #### Logging
 
-*   **`log_handler: LoggingFnT | None`**: Receives log messages sent from the server (`ctx.info`, `ctx.error`, etc.).
-    ```python
-    from mcp.client.session import LoggingFnT, LogLevel
+MCP servers can emit logs to clients. The client can set a logging callback to receive these logs.
 
-    def my_log_handler(level: LogLevel, message: str, logger_name: str | None):
-        print(f"[Server Log - {level.upper()}] {logger_name or 'default'}: {message}")
+```python {4-5, 9}
+from fastmcp import Client
+from fastmcp.client.logging import LogHandler, LogMessage
 
-    client_with_logging = Client(
-        "my_server.py",
-        log_handler=my_log_handler
-    )
-    ```
+async def my_log_handler(params: LogMessage):
+    print(f"[Server Log - {params.level.upper()}] {params.logger or 'default'}: {params.data}")
 
+client_with_logging = Client(
+    ...,
+    log_handler=my_log_handler,
+)
+```
+
+#### Roots
+
+Roots are a way for clients to inform servers about the resources they have access to or certain boundaries on their access. The server can use this information to adjust behavior or provide more accurate responses.
+
+Servers can request roots from clients, and clients can notify servers when their roots change.
+
+To set the roots when creating a client, users can either provide a list of roots (which can be a list of strings) or an async function that returns a list of roots.
+
+<CodeGroup>
+```python Static Roots {5}
+from fastmcp import Client
+
+client = Client(
+    ..., 
+    roots=["/path/to/root1", "/path/to/root2"],
+)
+```
+```python Dynamic Roots Callback {4-6, 10}
+from fastmcp import Client
+from fastmcp.client.roots import RequestContext
+
+async def roots_callback(context: RequestContext) -> list[str]:
+    print(f"Server requested roots (Request ID: {context.request_id})")
+    return ["/path/to/root1", "/path/to/root2"]
+
+client = Client(
+    ..., 
+    roots=roots_callback,
+)
+```
+</CodeGroup>
 ### Utility Methods
 
 *   **`ping()`**: Sends a ping request to the server to verify connectivity.

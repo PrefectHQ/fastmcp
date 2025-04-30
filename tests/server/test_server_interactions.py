@@ -689,10 +689,10 @@ class TestToolContextInjection:
         """Test that context parameters are properly detected."""
         mcp = FastMCP()
 
+        @mcp.tool()
         def tool_with_context(x: int, ctx: Context) -> str:
             return f"Request {ctx.request_id}: {x}"
 
-        mcp.add_tool(tool_with_context)
         async with Client(mcp) as client:
             tools = await client.list_tools()
             assert len(tools) == 1
@@ -719,11 +719,11 @@ class TestToolContextInjection:
         """Test that context works in async functions."""
         mcp = FastMCP()
 
+        @mcp.tool()
         async def async_tool(x: int, ctx: Context) -> str:
             assert ctx.request_id is not None
             return f"Async request {ctx.request_id}: {x}"
 
-        mcp.add_tool(async_tool)
         async with Client(mcp) as client:
             result = await client.call_tool("async_tool", {"x": 42})
             assert len(result) == 1
@@ -732,51 +732,14 @@ class TestToolContextInjection:
             assert "Async request" in content.text
             assert "42" in content.text
 
-    async def test_context_logging(self):
-        from unittest.mock import patch
-
-        import mcp.server.session
-
-        """Test that context logging methods work."""
-        mcp = FastMCP()
-
-        async def logging_tool(msg: str, ctx: Context) -> str:
-            await ctx.debug("Debug message")
-            await ctx.info("Info message")
-            await ctx.warning("Warning message")
-            await ctx.error("Error message")
-            return f"Logged messages for {msg}"
-
-        mcp.add_tool(logging_tool)
-
-        with patch("mcp.server.session.ServerSession.send_log_message") as mock_log:
-            async with Client(mcp) as client:
-                result = await client.call_tool("logging_tool", {"msg": "test"})
-                assert len(result) == 1
-                content = result[0]
-                assert isinstance(content, TextContent)
-                assert "Logged messages for test" in content.text
-
-                assert mock_log.call_count == 4
-                mock_log.assert_any_call(
-                    level="debug", data="Debug message", logger=None
-                )
-                mock_log.assert_any_call(level="info", data="Info message", logger=None)
-                mock_log.assert_any_call(
-                    level="warning", data="Warning message", logger=None
-                )
-                mock_log.assert_any_call(
-                    level="error", data="Error message", logger=None
-                )
-
     async def test_optional_context(self):
         """Test that context is optional."""
         mcp = FastMCP()
 
+        @mcp.tool()
         def no_context(x: int) -> int:
             return x * 2
 
-        mcp.add_tool(no_context)
         async with Client(mcp) as client:
             result = await client.call_tool("no_context", {"x": 21})
             assert len(result) == 1

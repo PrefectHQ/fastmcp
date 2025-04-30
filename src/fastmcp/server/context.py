@@ -1,7 +1,8 @@
 from __future__ import annotations as _annotations
 
-from typing import Any, Generic, Literal
+from typing import Any, Generic
 
+from mcp import LoggingLevel
 from mcp.server.lowlevel.helper_types import ReadResourceContents
 from mcp.server.session import ServerSessionT
 from mcp.shared.context import LifespanContextT, RequestContext
@@ -122,19 +123,20 @@ class Context(BaseModel, Generic[ServerSessionT, LifespanContextT]):
 
     async def log(
         self,
-        level: Literal["debug", "info", "warning", "error"],
         message: str,
-        *,
+        level: LoggingLevel | None = None,
         logger_name: str | None = None,
     ) -> None:
         """Send a log message to the client.
 
         Args:
-            level: Log level (debug, info, warning, error)
             message: Log message
+            level: Optional log level. One of "debug", "info", "notice", "warning", "error", "critical",
+                "alert", or "emergency". Default is "info".
             logger_name: Optional logger name
-            **extra: Additional structured data to include
         """
+        if level is None:
+            level = "info"
         await self.request_context.session.send_log_message(
             level=level, data=message, logger=logger_name
         )
@@ -159,21 +161,21 @@ class Context(BaseModel, Generic[ServerSessionT, LifespanContextT]):
         return self.request_context.session
 
     # Convenience methods for common log levels
-    async def debug(self, message: str, **extra: Any) -> None:
+    async def debug(self, message: str, logger_name: str | None = None) -> None:
         """Send a debug log message."""
-        await self.log("debug", message, **extra)
+        await self.log(level="debug", message=message, logger_name=logger_name)
 
-    async def info(self, message: str, **extra: Any) -> None:
+    async def info(self, message: str, logger_name: str | None = None) -> None:
         """Send an info log message."""
-        await self.log("info", message, **extra)
+        await self.log(level="info", message=message, logger_name=logger_name)
 
-    async def warning(self, message: str, **extra: Any) -> None:
+    async def warning(self, message: str, logger_name: str | None = None) -> None:
         """Send a warning log message."""
-        await self.log("warning", message, **extra)
+        await self.log(level="warning", message=message, logger_name=logger_name)
 
-    async def error(self, message: str, **extra: Any) -> None:
+    async def error(self, message: str, logger_name: str | None = None) -> None:
         """Send an error log message."""
-        await self.log("error", message, **extra)
+        await self.log(level="error", message=message, logger_name=logger_name)
 
     async def list_roots(self) -> list[Root]:
         """List the roots available to the server, as indicated by the client."""
