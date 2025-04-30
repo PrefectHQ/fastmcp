@@ -158,7 +158,7 @@ class TestToolReturnTypes:
         async with Client(mcp) as client:
             result = await client.call_tool("path_tool", {})
             assert isinstance(result[0], TextContent)
-            assert result[0].text == f'"{test_path}"'
+            assert result[0].text == f'"{str(test_path)}"'
 
     async def test_datetime(self):
         mcp = FastMCP()
