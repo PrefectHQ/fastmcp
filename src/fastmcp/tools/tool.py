@@ -12,7 +12,11 @@ from pydantic import BaseModel, BeforeValidator, Field
 
 from fastmcp.exceptions import ToolError
 from fastmcp.utilities.func_metadata import FuncMetadata, func_metadata
-from fastmcp.utilities.types import Image, _convert_set_defaults
+from fastmcp.utilities.types import (
+    Image,
+    _convert_set_defaults,
+    is_class_member_of_type,
+)
 
 if TYPE_CHECKING:
     from mcp.server.session import ServerSessionT
@@ -66,7 +70,7 @@ class Tool(BaseModel):
             else:
                 sig = inspect.signature(fn)
             for param_name, param in sig.parameters.items():
-                if param.annotation is Context:
+                if is_class_member_of_type(param.annotation, Context):
                     context_kwarg = param_name
                     break
 

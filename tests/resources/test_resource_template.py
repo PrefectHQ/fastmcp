@@ -2,8 +2,11 @@ import json
 from urllib.parse import quote
 
 import pytest
+from mcp.server.session import ServerSessionT
+from mcp.shared.context import LifespanContextT
 from pydantic import BaseModel
 
+from fastmcp import Context
 from fastmcp.resources import FunctionResource, ResourceTemplate
 from fastmcp.resources.template import match_uri_template
 
@@ -520,3 +523,113 @@ class TestMatchUriTemplate:
         uri_template = "file://abc/{path*}.py"
         result = match_uri_template(uri=uri, uri_template=uri_template)
         assert result == expected_params
+
+
+class TestContextHandling:
+    """Test context handling in resource templates."""
+
+    def test_context_parameter_detection(self):
+        """Test that context parameters are properly detected in
+        ResourceTemplate.from_function()."""
+
+        def template_with_context(x: int, ctx: Context) -> str:
+            return str(x)
+
+        template = ResourceTemplate.from_function(
+            fn=template_with_context,
+            uri_template="test://{x}",
+            name="test",
+        )
+        assert template.context_kwarg == "ctx"
+
+        def template_without_context(x: int) -> str:
+            return str(x)
+
+        template = ResourceTemplate.from_function(
+            fn=template_without_context,
+            uri_template="test://{x}",
+            name="test",
+        )
+        assert template.context_kwarg is None
+
+    def test_parameterized_context_parameter_detection(self):
+        """Test that parameterized context parameters are properly detected in
+        ResourceTemplate.from_function()."""
+
+        def template_with_context(
+            x: int, ctx: Context[ServerSessionT, LifespanContextT]
+        ) -> str:
+            return str(x)
+
+        template = ResourceTemplate.from_function(
+            fn=template_with_context,
+            uri_template="test://{x}",
+            name="test",
+        )
+        assert template.context_kwarg == "ctx"
+
+    def test_parameterized_union_context_parameter_detection(self):
+        """Test that context parameters in a union are properly detected in
+        ResourceTemplate.from_function()."""
+
+        def template_with_context(
+            x: int, ctx: Context[ServerSessionT, LifespanContextT] | None
+        ) -> str:
+            return str(x)
+
+        template = ResourceTemplate.from_function(
+            fn=template_with_context,
+            uri_template="test://{x}",
+            name="test",
+        )
+        assert template.context_kwarg == "ctx"
+
+    async def test_context_injection(self):
+        """Test that context is properly injected during resource creation."""
+
+        def resource_with_context(x: int, ctx: Context) -> str:
+            assert isinstance(ctx, Context)
+            return str(x)
+
+        template = ResourceTemplate.from_function(
+            fn=resource_with_context,
+            uri_template="test://{x}",
+            name="test",
+        )
+        assert template.context_kwarg == "ctx"
+
+        from fastmcp import FastMCP
+
+        mcp = FastMCP()
+        ctx = mcp.get_context()
+
+        resource = await template.create_resource(
+            "test://42",
+            {"x": 42},
+            context=ctx,
+        )
+        assert isinstance(resource, FunctionResource)
+        content = await resource.read()
+        assert content == "42"
+
+    async def test_context_optional(self):
+        """Test that context is optional when creating resources."""
+
+        def resource_with_context(x: int, ctx: Context | None = None) -> str:
+            return str(x)
+
+        template = ResourceTemplate.from_function(
+            fn=resource_with_context,
+            uri_template="test://{x}",
+            name="test",
+        )
+        assert template.context_kwarg == "ctx"
+
+        # Should not raise an error when context is not provided
+        resource = await template.create_resource(
+            "test://42",
+            {"x": 42},
+        )
+        assert isinstance(resource, FunctionResource)
+        content = await resource.read()
+        assert content == "42"

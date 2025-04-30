@@ -20,7 +20,10 @@ from pydantic import (
 )
 
 from fastmcp.resources.types import FunctionResource, Resource
-from fastmcp.utilities.types import _convert_set_defaults
+from fastmcp.utilities.types import (
+    _convert_set_defaults,
+    is_class_member_of_type,
+)
 
 if TYPE_CHECKING:
     from mcp.server.session import ServerSessionT
@@ -113,7 +116,7 @@ class ResourceTemplate(BaseModel):
             else:
                 sig = inspect.signature(fn)
             for param_name, param in sig.parameters.items():
-                if param.annotation is Context:
+                if is_class_member_of_type(param.annotation, Context):
                     context_kwarg = param_name
                     break
 

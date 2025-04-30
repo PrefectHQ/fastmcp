@@ -2,11 +2,39 @@
 
 import base64
 from pathlib import Path
-from typing import TypeVar
+from types import UnionType
+from typing import Annotated, TypeVar, Union, get_args, get_origin
 
 from mcp.types import ImageContent
 
 T = TypeVar("T")
+
+
+def issubclass_safe(cls: type, base: type) -> bool:
+    """Check if cls is a subclass of base, even if cls is a type variable."""
+    try:
+        if origin := get_origin(cls):
+            return issubclass_safe(origin, base)
+        return issubclass(cls, base)
+    except TypeError:
+        return False
+
+
+def is_class_member_of_type(cls: type, base: type) -> bool:
+    """Check if cls is a member of base, even if cls is a type variable."""
+    origin = get_origin(cls)
+    # Handle both types of unions: UnionType (from types module, used with | syntax)
+    # and typing.Union (used with Union[] syntax)
+    if origin is UnionType or origin == Union:
+        return any(is_class_member_of_type(arg, base) for arg in get_args(cls))
+    elif origin is Annotated:
+        # For Annotated[T, ...], check if T is a member of base
+        args = get_args(cls)
+        if args:
+            return is_class_member_of_type(args[0], base)
+        return False
+    else:
+        return issubclass_safe(cls, base)
 
 
 def _convert_set_defaults(maybe_set: set[T] | list[T] | None) -> set[T]:
