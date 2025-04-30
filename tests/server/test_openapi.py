@@ -19,6 +19,8 @@ from fastmcp.server.openapi import (
     OpenAPIResource,
     OpenAPIResourceTemplate,
     OpenAPITool,
+    RouteMap,
+    RouteType,
 )
 
 
@@ -267,6 +269,32 @@ class TestTools:
             response_text = user_response[0].text
             user = json.loads(response_text)
         assert user == expected_data
+
+    async def test_call_tool_return_list(
+        self,
+        fastapi_app: FastAPI,
+        api_client: httpx.AsyncClient,
+        users_db: dict[int, User],
+    ):
+        """
+        The tool created by the OpenAPI server should return a list of content.
+        """
+        openapi_spec = fastapi_app.openapi()
+        mcp_server = FastMCPOpenAPI(
+            openapi_spec=openapi_spec,
+            client=api_client,
+            route_maps=[
+                RouteMap(methods=["GET"], pattern=r".*", route_type=RouteType.TOOL)
+            ],
+        )
+        async with Client(mcp_server) as client:
+            tool_response = await client.call_tool("get_users_users_get", {})
+            assert isinstance(tool_response, list)
+            assert isinstance(tool_response[0], TextContent)
+            assert json.loads(tool_response[0].text) == [
+                user.model_dump()
+                for user in sorted(users_db.values(), key=lambda x: x.id)
+            ]
 
 
 class TestResources:

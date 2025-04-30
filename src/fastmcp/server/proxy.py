@@ -61,7 +61,7 @@ class ProxyTool(Tool):
         self,
         arguments: dict[str, Any],
         context: Context[ServerSessionT, LifespanContextT] | None = None,
-    ) -> Any:
+    ) -> list[TextContent | ImageContent | EmbeddedResource]:
         # the client context manager will swallow any exceptions inside a TaskGroup
         # so we return the raw result and raise an exception ourselves
         async with self._client:
