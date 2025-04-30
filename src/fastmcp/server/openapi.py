@@ -149,19 +149,37 @@ class OpenAPITool(Tool):
         path = self._route.path
 
         # Replace path parameters with values from kwargs
+        # Path parameters should never be None as they're typically required
+        # but we'll handle that case anyway
         path_params = {
             p.name: kwargs.get(p.name)
             for p in self._route.parameters
             if p.location == "path"
+            and p.name in kwargs
+            and kwargs.get(p.name) is not None
         }
+
+        # Ensure all path parameters are provided
+        required_path_params = {
+            p.name
+            for p in self._route.parameters
+            if p.location == "path" and p.required
+        }
+        missing_params = required_path_params - path_params.keys()
+        if missing_params:
+            raise ValueError(f"Missing required path parameters: {missing_params}")
+
         for param_name, param_value in path_params.items():
             path = path.replace(f"{{{param_name}}}", str(param_value))
 
-        # Prepare query parameters
+        # Prepare query parameters - filter out None and empty strings
         query_params = {
             p.name: kwargs.get(p.name)
             for p in self._route.parameters
-            if p.location == "query" and p.name in kwargs
+            if p.location == "query"
+            and p.name in kwargs
+            and kwargs.get(p.name) is not None
+            and kwargs.get(p.name) != ""
         }
 
         # Prepare headers - fix typing by ensuring all values are strings
@@ -312,9 +330,18 @@ class OpenAPIResource(Resource):
                     for param_name, param_value in path_params.items():
                         path = path.replace(f"{{{param_name}}}", str(param_value))
 
+            # Filter any query parameters - get query parameters and filter out None/empty values
+            query_params = {}
+            for param in self._route.parameters:
+                if param.location == "query" and hasattr(self, f"_{param.name}"):
+                    value = getattr(self, f"_{param.name}")
+                    if value is not None and value != "":
+                        query_params[param.name] = value
+
             response = await self._client.request(
                 method=self._route.method,
                 url=path,
+                params=query_params,
                 timeout=self._timeout,
             )
 

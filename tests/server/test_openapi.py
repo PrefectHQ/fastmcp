@@ -14,6 +14,7 @@ from pydantic.networks import AnyUrl
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
+from fastmcp.exceptions import ClientError
 from fastmcp.server.openapi import (
     FastMCPOpenAPI,
     OpenAPIResource,
@@ -52,6 +53,22 @@ def fastapi_app(users_db: dict[int, User]) -> FastAPI:
     async def get_users() -> list[User]:
         """Get all users."""
         return sorted(users_db.values(), key=lambda x: x.id)
+
+    @app.get("/search", tags=["search"])
+    async def search_users(
+        name: str | None = None, active: bool | None = None, min_id: int | None = None
+    ) -> list[User]:
+        """Search users with optional filters."""
+        results = list(users_db.values())
+
+        if name is not None:
+            results = [u for u in results if name.lower() in u.name.lower()]
+        if active is not None:
+            results = [u for u in results if u.active == active]
+        if min_id is not None:
+            results = [u for u in results if u.id >= min_id]
+
+        return sorted(results, key=lambda x: x.id)
 
     @app.get("/users/{user_id}", tags=["users", "detail"])
     async def get_user(user_id: int) -> User | None:
@@ -304,7 +321,7 @@ class TestResources:
         """
         async with Client(fastmcp_openapi_server) as client:
             resources = await client.list_resources()
-        assert len(resources) == 3
+        assert len(resources) == 4
         assert resources[0].uri == AnyUrl("resource://openapi/get_users_users_get")
         assert resources[0].name == "get_users_users_get"
 
@@ -904,7 +921,7 @@ class TestMountFastMCP:
         # Check that resources are available with prefixed URIs
         async with Client(mcp) as client:
             resources = await client.list_resources()
-        assert len(resources) == 3
+        assert len(resources) == 4  # Updated to account for new search endpoint
         # We're checking the key used by mcp to store the resource
         # The prefixed URI is used as the key, but the resource's original uri is preserved
         prefixed_uri = "fastapi+resource://openapi/get_users_users_get"
@@ -932,3 +949,88 @@ class TestMountFastMCP:
         async with Client(mcp) as client:
             prompts = await client.list_prompts()
         assert len(prompts) == 0
+
+
+async def test_empty_query_parameters_not_sent(
+    fastapi_app: FastAPI, api_client: httpx.AsyncClient
+):
+    """Test that empty and None query parameters are not sent in the request."""
+
+    # Create a TransportAdapter to track requests
+    class RequestCapture(httpx.AsyncBaseTransport):
+        def __init__(self, wrapped):
+            self.wrapped = wrapped
+            self.requests = []
+
+        async def handle_async_request(self, request):
+            self.requests.append(request)
+            return await self.wrapped.handle_async_request(request)
+
+    # Use our transport adapter to wrap the original one
+    capture = RequestCapture(api_client._transport)
+    api_client._transport = capture
+
+    # Create the OpenAPI server with new route map to make search endpoint a tool
+    openapi_spec = fastapi_app.openapi()
+    mcp_server = FastMCPOpenAPI(
+        openapi_spec=openapi_spec,
+        client=api_client,
+        route_maps=[
+            RouteMap(methods=["GET"], pattern=r".*", route_type=RouteType.TOOL)
+        ],
+    )
+
+    # Call the search tool with mixed parameter values
+    async with Client(mcp_server) as client:
+        await client.call_tool(
+            "search_users_search_get",
+            {
+                "name": "",  # Empty string should be excluded
+                "active": None,  # None should be excluded
+                "min_id": 2,  # Has value, should be included
+            },
+        )
+
+    # Verify that the request URL only has min_id parameter
+    assert len(capture.requests) > 0
+    request = capture.requests[-1]  # Get the last request
+
+    # URL should only contain min_id=2, not name= or active=
+    url = str(request.url)
+    assert "min_id=2" in url, f"URL should contain min_id=2, got: {url}"
+    assert "name=" not in url, f"URL should not contain name=, got: {url}"
+    assert "active=" not in url, f"URL should not contain active=, got: {url}"
+
+    # More direct check - parse the URL to examine query params
+    from urllib.parse import parse_qs, urlparse
+
+    parsed_url = urlparse(url)
+    query_params = parse_qs(parsed_url.query)
+
+    assert "min_id" in query_params
+    assert "name" not in query_params
+    assert "active" not in query_params
+
+
+async def test_none_path_parameters_rejected(
+    fastapi_app: FastAPI, api_client: httpx.AsyncClient
+):
+    """Test that None values for path parameters are properly rejected."""
+    # Create the OpenAPI server
+    openapi_spec = fastapi_app.openapi()
+    mcp_server = FastMCPOpenAPI(
+        openapi_spec=openapi_spec,
+        client=api_client,
+    )
+
+    # Create a client and try to call a tool with a None path parameter
+    async with Client(mcp_server) as client:
+        # get_user has a required path parameter user_id
+        with pytest.raises(ClientError, match="Missing required path parameters"):
+            await client.call_tool(
+                "update_user_name_users__user_id__name_patch",
+                {
+                    "user_id": None,  # This should cause an error
+                    "name": "New Name",
+                },
+            )

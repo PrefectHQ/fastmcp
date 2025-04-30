@@ -106,6 +106,38 @@ mcp = await FastMCP.from_openapi(
    - It sends the request through the provided httpx client
    - It translates the HTTP response to the appropriate MCP format
 
+### Request Parameter Handling
+
+FastMCP carefully handles different types of parameters in OpenAPI requests:
+
+#### Query Parameters
+
+By default, FastMCP will only include query parameters that have non-empty values. Parameters with `None` values or empty strings (`""`) are automatically filtered out of requests. This ensures that API servers don't receive unnecessary empty parameters that might cause issues.
+
+For example, if you call a tool with these parameters:
+```python
+await client.call_tool("search_products", {
+    "category": "electronics",  # Will be included
+    "min_price": 100,           # Will be included
+    "max_price": None,          # Will be excluded
+    "brand": "",                # Will be excluded
+})
+```
+
+The resulting HTTP request will only include `category=electronics&min_price=100`.
+
+#### Path Parameters
+
+For path parameters, which are typically required by REST APIs, FastMCP filters out `None` values and checks that all required path parameters are provided. If a required path parameter is missing or `None`, an error will be raised.
+
+```python
+# This will work
+await client.call_tool("get_product", {"product_id": 123})
+
+# This will raise ValueError: "Missing required path parameters: {'product_id'}"
+await client.call_tool("get_product", {"product_id": None})
+```
+
 ## Complete Example
 
 ```python [expandable]
