@@ -44,6 +44,19 @@ if __name__ == "__main__":
     mcp.run()  # Start the MCP server
 ```
 
+## Configuration Options
+
+### Timeout
+
+You can set a timeout for all API requests:
+
+```python
+# Set a 5 second timeout for all requests
+mcp = FastMCP.from_fastapi(app=app, timeout=5.0)
+```
+
+This timeout is applied to all requests made by tools, resources, and resource templates.
+
 ## Route Mapping
 
 By default, FastMCP will map FastAPI routes to MCP components according to the following rules:

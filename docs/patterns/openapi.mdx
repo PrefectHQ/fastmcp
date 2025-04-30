@@ -27,6 +27,23 @@ if __name__ == "__main__":
     mcp.run()
 ```
 
+## Configuration Options
+
+### Timeout
+
+You can set a timeout for all API requests:
+
+```python
+# Set a 5 second timeout for all requests
+mcp = FastMCP.from_openapi(
+    openapi_spec=spec, 
+    client=api_client, 
+    timeout=5.0
+)
+```
+
+This timeout is applied to all requests made by tools, resources, and resource templates.
+
 ## Route Mapping
 
 By default, OpenAPI routes are mapped to MCP components based on these rules:
