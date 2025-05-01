@@ -1036,6 +1036,28 @@ def format_description_with_responses(
         required_marker = " (Required)" if request_body.required else ""
         desc_parts.append(f"\n{request_body.description}{required_marker}")
 
+        # Add request body property descriptions if available
+        if request_body.content_schema:
+            media_type = (
+                "application/json"
+                if "application/json" in request_body.content_schema
+                else next(iter(request_body.content_schema), None)
+            )
+            if media_type:
+                schema = request_body.content_schema.get(media_type, {})
+                if isinstance(schema, dict) and "properties" in schema:
+                    desc_parts.append("\n\n**Request Properties:**")
+                    for prop_name, prop_schema in schema["properties"].items():
+                        if (
+                            isinstance(prop_schema, dict)
+                            and "description" in prop_schema
+                        ):
+                            required = prop_name in schema.get("required", [])
+                            req_mark = " (Required)" if required else ""
+                            desc_parts.append(
+                                f"\n- **{prop_name}**{req_mark}: {prop_schema['description']}"
+                            )
+
     # Add response information
     if responses:
         response_section = "\n\n**Responses:**"
@@ -1071,8 +1093,40 @@ def format_description_with_responses(
                     schema = resp_info.content_schema.get(media_type)
                     desc_parts.append(f"  - Content-Type: `{media_type}`")
 
+                    # Add response property descriptions
+                    if isinstance(schema, dict):
+                        # Handle array responses
+                        if schema.get("type") == "array" and "items" in schema:
+                            items_schema = schema["items"]
+                            if (
+                                isinstance(items_schema, dict)
+                                and "properties" in items_schema
+                            ):
+                                desc_parts.append("\n  - **Response Item Properties:**")
+                                for prop_name, prop_schema in items_schema[
+                                    "properties"
+                                ].items():
+                                    if (
+                                        isinstance(prop_schema, dict)
+                                        and "description" in prop_schema
+                                    ):
+                                        desc_parts.append(
+                                            f"\n    - **{prop_name}**: {prop_schema['description']}"
+                                        )
+                        # Handle object responses
+                        elif "properties" in schema:
+                            desc_parts.append("\n  - **Response Properties:**")
+                            for prop_name, prop_schema in schema["properties"].items():
+                                if (
+                                    isinstance(prop_schema, dict)
+                                    and "description" in prop_schema
+                                ):
+                                    desc_parts.append(
+                                        f"\n    - **{prop_name}**: {prop_schema['description']}"
+                                    )
+
+                    # Generate Example
                     if schema:
-                        # Generate Example
                         example = generate_example_from_schema(schema)
                         if example != "unknown_type" and example is not None:
                             desc_parts.append("\n  - **Example:**")
