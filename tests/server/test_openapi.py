@@ -1034,3 +1034,319 @@ async def test_none_path_parameters_rejected(
                     "name": "New Name",
                 },
             )
+
+
+class TestDescriptionPropagation:
+    """Tests for OpenAPI description propagation to FastMCP components.
+
+    Each test focuses on a single, specific behavior to make it immediately clear
+    what's broken when a test fails.
+    """
+
+    @pytest.fixture
+    def simple_openapi_spec(self) -> dict:
+        """Create a minimal OpenAPI spec with obvious test descriptions."""
+        return {
+            "openapi": "3.1.0",
+            "info": {"title": "Test API", "version": "1.0.0"},
+            "paths": {
+                "/items": {
+                    "get": {
+                        "operationId": "listItems",
+                        "summary": "List items summary",
+                        "description": "LIST_DESCRIPTION",
+                        "responses": {
+                            "200": {"description": "LIST_RESPONSE_DESCRIPTION"}
+                        },
+                    }
+                },
+                "/items/{item_id}": {
+                    "get": {
+                        "operationId": "getItem",
+                        "summary": "Get item summary",
+                        "description": "GET_DESCRIPTION",
+                        "parameters": [
+                            {
+                                "name": "item_id",
+                                "in": "path",
+                                "required": True,
+                                "description": "PATH_PARAM_DESCRIPTION",
+                                "schema": {"type": "string"},
+                            },
+                            {
+                                "name": "fields",
+                                "in": "query",
+                                "required": False,
+                                "description": "QUERY_PARAM_DESCRIPTION",
+                                "schema": {"type": "string"},
+                            },
+                        ],
+                        "responses": {
+                            "200": {"description": "GET_RESPONSE_DESCRIPTION"}
+                        },
+                    }
+                },
+                "/items/create": {
+                    "post": {
+                        "operationId": "createItem",
+                        "summary": "Create item summary",
+                        "description": "CREATE_DESCRIPTION",
+                        "requestBody": {
+                            "required": True,
+                            "description": "BODY_DESCRIPTION",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {
+                                            "name": {
+                                                "type": "string",
+                                                "description": "PROP_DESCRIPTION",
+                                            }
+                                        },
+                                        "required": ["name"],
+                                    }
+                                }
+                            },
+                        },
+                        "responses": {
+                            "201": {"description": "CREATE_RESPONSE_DESCRIPTION"}
+                        },
+                    }
+                },
+            },
+        }
+
+    @pytest.fixture
+    async def mock_client(self) -> httpx.AsyncClient:
+        """Create a mock client that returns simple responses."""
+
+        async def _responder(request):
+            if request.url.path == "/items" and request.method == "GET":
+                return httpx.Response(200, json=[{"id": "1", "name": "Item 1"}])
+            elif request.url.path.startswith("/items/") and request.method == "GET":
+                item_id = request.url.path.split("/")[-1]
+                return httpx.Response(
+                    200, json={"id": item_id, "name": f"Item {item_id}"}
+                )
+            elif request.url.path == "/items/create" and request.method == "POST":
+                import json
+
+                data = json.loads(request.content)
+                return httpx.Response(201, json={"id": "new", "name": data.get("name")})
+
+            return httpx.Response(404)
+
+        transport = httpx.MockTransport(_responder)
+        return httpx.AsyncClient(transport=transport, base_url="http://test")
+
+    @pytest.fixture
+    async def test_server(self, simple_openapi_spec, mock_client):
+        """Create a FastMCPOpenAPI server with the simple test spec."""
+        return FastMCPOpenAPI(
+            openapi_spec=simple_openapi_spec,
+            client=mock_client,
+            name="Test API",
+        )
+
+    # --- RESOURCE TESTS ---
+
+    async def test_resource_includes_route_description(self, test_server):
+        """Test that a Resource includes the route description."""
+        resources = list(test_server._resource_manager.get_resources().values())
+        list_resource = next((r for r in resources if r.name == "listItems"), None)
+
+        assert list_resource is not None, "listItems resource wasn't created"
+        assert "LIST_DESCRIPTION" in (list_resource.description or ""), (
+            "Route description missing from Resource"
+        )
+
+    async def test_resource_includes_response_description(self, test_server):
+        """Test that a Resource includes the response description."""
+        resources = list(test_server._resource_manager.get_resources().values())
+        list_resource = next((r for r in resources if r.name == "listItems"), None)
+
+        assert list_resource is not None, "listItems resource wasn't created"
+        assert "LIST_RESPONSE_DESCRIPTION" in (list_resource.description or ""), (
+            "Response description missing from Resource"
+        )
+
+    # --- RESOURCE TEMPLATE TESTS ---
+
+    async def test_template_includes_route_description(self, test_server):
+        """Test that a ResourceTemplate includes the route description."""
+        templates = list(test_server._resource_manager.get_templates().values())
+        get_template = next((t for t in templates if t.name == "getItem"), None)
+
+        assert get_template is not None, "getItem template wasn't created"
+        assert "GET_DESCRIPTION" in (get_template.description or ""), (
+            "Route description missing from ResourceTemplate"
+        )
+
+    async def test_template_includes_path_parameter_description(self, test_server):
+        """Test that a ResourceTemplate includes path parameter descriptions."""
+        templates = list(test_server._resource_manager.get_templates().values())
+        get_template = next((t for t in templates if t.name == "getItem"), None)
+
+        assert get_template is not None, "getItem template wasn't created"
+        assert "PATH_PARAM_DESCRIPTION" in (get_template.description or ""), (
+            "Path parameter description missing from ResourceTemplate description"
+        )
+
+    async def test_template_includes_query_parameter_description(self, test_server):
+        """Test that a ResourceTemplate includes query parameter descriptions."""
+        templates = list(test_server._resource_manager.get_templates().values())
+        get_template = next((t for t in templates if t.name == "getItem"), None)
+
+        assert get_template is not None, "getItem template wasn't created"
+        assert "QUERY_PARAM_DESCRIPTION" in (get_template.description or ""), (
+            "Query parameter description missing from ResourceTemplate description"
+        )
+
+    async def test_template_includes_response_description(self, test_server):
+        """Test that a ResourceTemplate includes response descriptions."""
+        templates = list(test_server._resource_manager.get_templates().values())
+        get_template = next((t for t in templates if t.name == "getItem"), None)
+
+        assert get_template is not None, "getItem template wasn't created"
+        assert "GET_RESPONSE_DESCRIPTION" in (get_template.description or ""), (
+            "Response description missing from ResourceTemplate description"
+        )
+
+    async def test_template_parameter_schema_includes_description(self, test_server):
+        """Test that a ResourceTemplate's parameter schema includes parameter descriptions."""
+        templates = list(test_server._resource_manager.get_templates().values())
+        get_template = next((t for t in templates if t.name == "getItem"), None)
+
+        assert get_template is not None, "getItem template wasn't created"
+        assert "properties" in get_template.parameters, (
+            "Schema properties missing from ResourceTemplate"
+        )
+        assert "item_id" in get_template.parameters["properties"], (
+            "item_id missing from ResourceTemplate schema"
+        )
+        assert "description" in get_template.parameters["properties"]["item_id"], (
+            "Description missing from item_id parameter schema"
+        )
+        assert (
+            "PATH_PARAM_DESCRIPTION"
+            in get_template.parameters["properties"]["item_id"]["description"]
+        ), "Path parameter description incorrect in schema"
+
+    # --- TOOL TESTS ---
+
+    async def test_tool_includes_route_description(self, test_server):
+        """Test that a Tool includes the route description."""
+        tools = test_server._tool_manager.list_tools()
+        create_tool = next((t for t in tools if t.name == "createItem"), None)
+
+        assert create_tool is not None, "createItem tool wasn't created"
+        assert "CREATE_DESCRIPTION" in (create_tool.description or ""), (
+            "Route description missing from Tool"
+        )
+
+    async def test_tool_includes_request_body_description(self, test_server):
+        """Test that a Tool includes the request body description."""
+        tools = test_server._tool_manager.list_tools()
+        create_tool = next((t for t in tools if t.name == "createItem"), None)
+
+        assert create_tool is not None, "createItem tool wasn't created"
+        assert "BODY_DESCRIPTION" in (create_tool.description or ""), (
+            "Request body description missing from Tool"
+        )
+
+    async def test_tool_includes_response_description(self, test_server):
+        """Test that a Tool includes response descriptions."""
+        tools = test_server._tool_manager.list_tools()
+        create_tool = next((t for t in tools if t.name == "createItem"), None)
+
+        assert create_tool is not None, "createItem tool wasn't created"
+        assert "CREATE_RESPONSE_DESCRIPTION" in (create_tool.description or ""), (
+            "Response description missing from Tool"
+        )
+
+    async def test_tool_parameter_schema_includes_property_description(
+        self, test_server
+    ):
+        """Test that a Tool's parameter schema includes property descriptions."""
+        tools = test_server._tool_manager.list_tools()
+        create_tool = next((t for t in tools if t.name == "createItem"), None)
+
+        assert create_tool is not None, "createItem tool wasn't created"
+        assert "properties" in create_tool.parameters, (
+            "Schema properties missing from Tool"
+        )
+        assert "name" in create_tool.parameters["properties"], (
+            "name parameter missing from Tool schema"
+        )
+        assert "description" in create_tool.parameters["properties"]["name"], (
+            "Description missing from name parameter schema"
+        )
+        assert (
+            "PROP_DESCRIPTION"
+            in create_tool.parameters["properties"]["name"]["description"]
+        ), "Property description incorrect in schema"
+
+    # --- CLIENT API TESTS ---
+
+    async def test_client_api_resource_description(self, test_server):
+        """Test that Resource descriptions are accessible via the client API."""
+        async with Client(test_server) as client:
+            resources = await client.list_resources()
+            list_resource = next((r for r in resources if r.name == "listItems"), None)
+
+            assert list_resource is not None, (
+                "listItems resource not accessible via client API"
+            )
+            assert "LIST_DESCRIPTION" in (list_resource.description or ""), (
+                "Route description missing in Resource from client API"
+            )
+
+    async def test_client_api_template_description(self, test_server):
+        """Test that ResourceTemplate descriptions are accessible via the client API."""
+        async with Client(test_server) as client:
+            templates = await client.list_resource_templates()
+            get_template = next((t for t in templates if t.name == "getItem"), None)
+
+            assert get_template is not None, (
+                "getItem template not accessible via client API"
+            )
+            assert "GET_DESCRIPTION" in (get_template.description or ""), (
+                "Route description missing in ResourceTemplate from client API"
+            )
+
+    async def test_client_api_tool_description(self, test_server):
+        """Test that Tool descriptions are accessible via the client API."""
+        async with Client(test_server) as client:
+            tools = await client.list_tools()
+            create_tool = next((t for t in tools if t.name == "createItem"), None)
+
+            assert create_tool is not None, (
+                "createItem tool not accessible via client API"
+            )
+            assert "CREATE_DESCRIPTION" in (create_tool.description or ""), (
+                "Route description missing in Tool from client API"
+            )
+
+    async def test_client_api_tool_parameter_schema(self, test_server):
+        """Test that Tool parameter schemas are accessible via the client API."""
+        async with Client(test_server) as client:
+            tools = await client.list_tools()
+            create_tool = next((t for t in tools if t.name == "createItem"), None)
+
+            assert create_tool is not None, (
+                "createItem tool not accessible via client API"
+            )
+            assert "properties" in create_tool.inputSchema, (
+                "Schema properties missing from Tool inputSchema in client API"
+            )
+            assert "name" in create_tool.inputSchema["properties"], (
+                "name parameter missing from Tool schema in client API"
+            )
+            assert "description" in create_tool.inputSchema["properties"]["name"], (
+                "Description missing from name parameter in client API"
+            )
+            assert (
+                "PROP_DESCRIPTION"
+                in create_tool.inputSchema["properties"]["name"]["description"]
+            ), "Property description incorrect in schema from client API"
