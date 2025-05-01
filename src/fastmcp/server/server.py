@@ -9,6 +9,7 @@ from contextlib import (
     AsyncExitStack,
     asynccontextmanager,
 )
+from contextvars import ContextVar
 from functools import partial
 from typing import TYPE_CHECKING, Any, Generic, Literal
 
@@ -59,6 +60,25 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 NOT_FOUND = object()
+
+
+_current_starlette_request: ContextVar[Request | None] = ContextVar(
+    "starlette_request",
+    default=None,
+)
+
+
+@asynccontextmanager
+async def starlette_request_context(request: Request):
+    token = _current_starlette_request.set(request)
+    try:
+        yield
+    finally:
+        _current_starlette_request.reset(token)
+
+
+def get_current_starlette_request() -> Request | None:
+    return _current_starlette_request.get()
 
 
 class MountedServer:
@@ -291,7 +311,11 @@ class FastMCP(Generic[LifespanResultT]):
             request_context = None
         from fastmcp.server.context import Context
 
-        return Context(request_context=request_context, fastmcp=self)
+        return Context(
+            request_context=request_context,
+            fastmcp=self,
+            request=get_current_starlette_request(),
+        )
 
     async def get_tools(self) -> dict[str, Tool]:
         """Get all registered tools, indexed by registered key."""
@@ -760,11 +784,12 @@ class FastMCP(Generic[LifespanResultT]):
                 request.receive,
                 request._send,  # type: ignore[reportPrivateUsage]
             ) as streams:
-                await self._mcp_server.run(
-                    streams[0],
-                    streams[1],
-                    self._mcp_server.create_initialization_options(),
-                )
+                async with starlette_request_context(request):
+                    await self._mcp_server.run(
+                        streams[0],
+                        streams[1],
+                        self._mcp_server.create_initialization_options(),
+                    )
 
         return Starlette(
             debug=self.settings.debug,

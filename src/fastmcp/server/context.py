@@ -13,8 +13,9 @@ from mcp.types import (
     SamplingMessage,
     TextContent,
 )
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from pydantic.networks import AnyUrl
+from starlette.requests import Request
 
 from fastmcp.server.server import FastMCP
 from fastmcp.utilities.logging import get_logger
@@ -58,17 +59,22 @@ class Context(BaseModel, Generic[ServerSessionT, LifespanContextT]):
 
     _request_context: RequestContext[ServerSessionT, LifespanContextT] | None
     _fastmcp: FastMCP | None
+    _request: Request | None
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     def __init__(
         self,
         *,
         request_context: RequestContext[ServerSessionT, LifespanContextT] | None = None,
         fastmcp: FastMCP | None = None,
+        request: Request | None = None,
         **kwargs: Any,
     ):
         super().__init__(**kwargs)
         self._request_context = request_context
         self._fastmcp = fastmcp
+        self._request = request
 
     @property
     def fastmcp(self) -> FastMCP:
@@ -83,6 +89,13 @@ class Context(BaseModel, Generic[ServerSessionT, LifespanContextT]):
         if self._request_context is None:
             raise ValueError("Context is not available outside of a request")
         return self._request_context
+
+    @property
+    def request(self) -> Request:
+        """Access to the underlying request."""
+        if self._request is None:
+            raise ValueError("Context is not available outside of a request")
+        return self._request
 
     async def report_progress(
         self, progress: float, total: float | None = None
