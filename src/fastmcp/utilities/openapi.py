@@ -1010,14 +1010,14 @@ def format_description_with_responses(
     Args:
         base_description (str): The initial description to be formatted.
         responses (dict[str, Any]): A dictionary of response information, keyed by status code.
-        parameters (list[openapi.ParameterInfo] | None, optional): A list of parameter information, 
-            including path and query parameters. Each parameter includes details such as name, 
+        parameters (list[openapi.ParameterInfo] | None, optional): A list of parameter information,
+            including path and query parameters. Each parameter includes details such as name,
             location, whether it is required, and a description.
-        request_body (openapi.RequestBodyInfo | None, optional): Information about the request body, 
+        request_body (openapi.RequestBodyInfo | None, optional): Information about the request body,
             including its description, whether it is required, and its content schema.
 
     Returns:
-        str: The formatted description string with additional details about responses, parameters, 
+        str: The formatted description string with additional details about responses, parameters,
         and the request body.
     """
     desc_parts = [base_description]
