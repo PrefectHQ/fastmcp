@@ -1001,53 +1001,153 @@ def format_description_with_responses(
     responses: dict[
         str, Any
     ],  # Changed from specific ResponseInfo type to avoid circular imports
+    parameters: list[openapi.ParameterInfo] | None = None,  # Add parameters parameter
+    request_body: openapi.RequestBodyInfo | None = None,  # Add request_body parameter
 ) -> str:
-    """Formats the base description string with response information."""
-    if not responses:
-        return base_description
+    """
+    Formats the base description string with response, parameter, and request body information.
 
+    Args:
+        base_description (str): The initial description to be formatted.
+        responses (dict[str, Any]): A dictionary of response information, keyed by status code.
+        parameters (list[openapi.ParameterInfo] | None, optional): A list of parameter information,
+            including path and query parameters. Each parameter includes details such as name,
+            location, whether it is required, and a description.
+        request_body (openapi.RequestBodyInfo | None, optional): Information about the request body,
+            including its description, whether it is required, and its content schema.
+
+    Returns:
+        str: The formatted description string with additional details about responses, parameters,
+        and the request body.
+    """
     desc_parts = [base_description]
-    response_section = "\n\n**Responses:**"
-    added_response_section = False
 
-    # Determine success codes (common ones)
-    success_codes = {"200", "201", "202", "204"}  # As strings
-    success_status = next((s for s in success_codes if s in responses), None)
+    # Add parameter information
+    if parameters:
+        # Process path parameters
+        path_params = [p for p in parameters if p.location == "path"]
+        if path_params:
+            param_section = "\n\n**Path Parameters:**"
+            desc_parts.append(param_section)
+            for param in path_params:
+                required_marker = " (Required)" if param.required else ""
+                param_desc = f"\n- **{param.name}**{required_marker}: {param.description or 'No description.'}"
+                desc_parts.append(param_desc)
 
-    # Process all responses
-    responses_to_process = responses.items()
+        # Process query parameters
+        query_params = [p for p in parameters if p.location == "query"]
+        if query_params:
+            param_section = "\n\n**Query Parameters:**"
+            desc_parts.append(param_section)
+            for param in query_params:
+                required_marker = " (Required)" if param.required else ""
+                param_desc = f"\n- **{param.name}**{required_marker}: {param.description or 'No description.'}"
+                desc_parts.append(param_desc)
 
-    for status_code, resp_info in sorted(responses_to_process):
-        if not added_response_section:
-            desc_parts.append(response_section)
-            added_response_section = True
+    # Add request body information if present
+    if request_body and request_body.description:
+        req_body_section = "\n\n**Request Body:**"
+        desc_parts.append(req_body_section)
+        required_marker = " (Required)" if request_body.required else ""
+        desc_parts.append(f"\n{request_body.description}{required_marker}")
 
-        status_marker = " (Success)" if status_code == success_status else ""
-        desc_parts.append(
-            f"\n- **{status_code}**{status_marker}: {resp_info.description or 'No description.'}"
-        )
-
-        # Process content schemas for this response
-        if resp_info.content_schema:
-            # Prioritize json, then take first available
+        # Add request body property descriptions if available
+        if request_body.content_schema:
             media_type = (
                 "application/json"
-                if "application/json" in resp_info.content_schema
-                else next(iter(resp_info.content_schema), None)
+                if "application/json" in request_body.content_schema
+                else next(iter(request_body.content_schema), None)
+            )
+            if media_type:
+                schema = request_body.content_schema.get(media_type, {})
+                if isinstance(schema, dict) and "properties" in schema:
+                    desc_parts.append("\n\n**Request Properties:**")
+                    for prop_name, prop_schema in schema["properties"].items():
+                        if (
+                            isinstance(prop_schema, dict)
+                            and "description" in prop_schema
+                        ):
+                            required = prop_name in schema.get("required", [])
+                            req_mark = " (Required)" if required else ""
+                            desc_parts.append(
+                                f"\n- **{prop_name}**{req_mark}: {prop_schema['description']}"
+                            )
+
+    # Add response information
+    if responses:
+        response_section = "\n\n**Responses:**"
+        added_response_section = False
+
+        # Determine success codes (common ones)
+        success_codes = {"200", "201", "202", "204"}  # As strings
+        success_status = next((s for s in success_codes if s in responses), None)
+
+        # Process all responses
+        responses_to_process = responses.items()
+
+        for status_code, resp_info in sorted(responses_to_process):
+            if not added_response_section:
+                desc_parts.append(response_section)
+                added_response_section = True
+
+            status_marker = " (Success)" if status_code == success_status else ""
+            desc_parts.append(
+                f"\n- **{status_code}**{status_marker}: {resp_info.description or 'No description.'}"
             )
 
-            if media_type:
-                schema = resp_info.content_schema.get(media_type)
-                desc_parts.append(f"  - Content-Type: `{media_type}`")
+            # Process content schemas for this response
+            if resp_info.content_schema:
+                # Prioritize json, then take first available
+                media_type = (
+                    "application/json"
+                    if "application/json" in resp_info.content_schema
+                    else next(iter(resp_info.content_schema), None)
+                )
 
-                if schema:
+                if media_type:
+                    schema = resp_info.content_schema.get(media_type)
+                    desc_parts.append(f"  - Content-Type: `{media_type}`")
+
+                    # Add response property descriptions
+                    if isinstance(schema, dict):
+                        # Handle array responses
+                        if schema.get("type") == "array" and "items" in schema:
+                            items_schema = schema["items"]
+                            if (
+                                isinstance(items_schema, dict)
+                                and "properties" in items_schema
+                            ):
+                                desc_parts.append("\n  - **Response Item Properties:**")
+                                for prop_name, prop_schema in items_schema[
+                                    "properties"
+                                ].items():
+                                    if (
+                                        isinstance(prop_schema, dict)
+                                        and "description" in prop_schema
+                                    ):
+                                        desc_parts.append(
+                                            f"\n    - **{prop_name}**: {prop_schema['description']}"
+                                        )
+                        # Handle object responses
+                        elif "properties" in schema:
+                            desc_parts.append("\n  - **Response Properties:**")
+                            for prop_name, prop_schema in schema["properties"].items():
+                                if (
+                                    isinstance(prop_schema, dict)
+                                    and "description" in prop_schema
+                                ):
+                                    desc_parts.append(
+                                        f"\n    - **{prop_name}**: {prop_schema['description']}"
+                                    )
+
                     # Generate Example
-                    example = generate_example_from_schema(schema)
-                    if example != "unknown_type" and example is not None:
-                        desc_parts.append("\n  - **Example:**")
-                        desc_parts.append(
-                            format_json_for_description(example, indent=2)
-                        )
+                    if schema:
+                        example = generate_example_from_schema(schema)
+                        if example != "unknown_type" and example is not None:
+                            desc_parts.append("\n  - **Example:**")
+                            desc_parts.append(
+                                format_json_for_description(example, indent=2)
+                            )
 
     return "\n".join(desc_parts)
 
@@ -1069,7 +1169,15 @@ def _combine_schemas(route: openapi.HTTPRoute) -> dict[str, Any]:
     for param in route.parameters:
         if param.required:
             required.append(param.name)
-        properties[param.name] = param.schema_
+
+        # Copy the schema and add description if available
+        param_schema = param.schema_.copy() if isinstance(param.schema_, dict) else {}
+
+        # Add parameter description to schema if available and not already present
+        if param.description and not param_schema.get("description"):
+            param_schema["description"] = param.description
+
+        properties[param.name] = param_schema
 
     # Add request body if it exists
     if route.request_body and route.request_body.content_schema:
@@ -1077,8 +1185,11 @@ def _combine_schemas(route: openapi.HTTPRoute) -> dict[str, Any]:
         content_type = next(iter(route.request_body.content_schema))
         body_schema = route.request_body.content_schema[content_type]
         body_props = body_schema.get("properties", {})
+
+        # Add request body properties
         for prop_name, prop_schema in body_props.items():
             properties[prop_name] = prop_schema
+
         if route.request_body.required:
             required.extend(body_schema.get("required", []))
 

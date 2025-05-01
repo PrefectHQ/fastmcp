@@ -534,10 +534,12 @@ class FastMCPOpenAPI(FastMCP):
             or f"Executes {route.method} {route.path}"
         )
 
-        # Format enhanced description
+        # Format enhanced description with parameters and request body
         enhanced_description = format_description_with_responses(
             base_description=base_description,
             responses=route.responses,
+            parameters=route.parameters,
+            request_body=route.request_body,
         )
 
         tool = OpenAPITool(
@@ -565,10 +567,12 @@ class FastMCPOpenAPI(FastMCP):
             route.description or route.summary or f"Represents {route.path}"
         )
 
-        # Format enhanced description
+        # Format enhanced description with parameters and request body
         enhanced_description = format_description_with_responses(
             base_description=base_description,
             responses=route.responses,
+            parameters=route.parameters,
+            request_body=route.request_body,
         )
 
         resource = OpenAPIResource(
@@ -600,16 +604,30 @@ class FastMCPOpenAPI(FastMCP):
             route.description or route.summary or f"Template for {route.path}"
         )
 
-        # Format enhanced description
+        # Format enhanced description with parameters and request body
         enhanced_description = format_description_with_responses(
             base_description=base_description,
             responses=route.responses,
+            parameters=route.parameters,
+            request_body=route.request_body,
         )
 
         template_params_schema = {
             "type": "object",
             "properties": {
-                p.name: p.schema_ for p in route.parameters if p.location == "path"
+                p.name: {
+                    **(p.schema_.copy() if isinstance(p.schema_, dict) else {}),
+                    **(
+                        {"description": p.description}
+                        if p.description
+                        and not (
+                            isinstance(p.schema_, dict) and "description" in p.schema_
+                        )
+                        else {}
+                    ),
+                }
+                for p in route.parameters
+                if p.location == "path"
             },
             "required": [
                 p.name for p in route.parameters if p.location == "path" and p.required
