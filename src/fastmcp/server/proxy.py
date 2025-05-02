@@ -65,8 +65,9 @@ class ProxyTool(Tool):
         # the client context manager will swallow any exceptions inside a TaskGroup
         # so we return the raw result and raise an exception ourselves
         async with self._client:
-            result = await self._client.call_tool(
-                self.name, arguments, _return_raw_result=True
+            result = await self._client.call_tool_mcp(
+                name=self.name,
+                arguments=arguments,
             )
         if result.isError:
             raise ValueError(cast(mcp.types.TextContent, result.content[0]).text)

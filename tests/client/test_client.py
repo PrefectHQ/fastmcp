@@ -79,6 +79,19 @@ async def test_list_tools(fastmcp_server):
         assert set(tool.name for tool in result) == {"greet", "add"}
 
 
+async def test_list_tools_mcp(fastmcp_server):
+    """Test the list_tools_mcp method that returns raw MCP protocol objects."""
+    client = Client(transport=FastMCPTransport(fastmcp_server))
+
+    async with client:
+        result = await client.list_tools_mcp()
+
+        # Check that we got the raw MCP ListToolsResult object
+        assert hasattr(result, "tools")
+        assert len(result.tools) == 2
+        assert set(tool.name for tool in result.tools) == {"greet", "add"}
+
+
 async def test_call_tool(fastmcp_server):
     """Test calling a tool with InMemoryClient."""
     client = Client(transport=FastMCPTransport(fastmcp_server))
@@ -88,6 +101,26 @@ async def test_call_tool(fastmcp_server):
 
         # The result content should contain our greeting
         content_str = str(result[0])
+        assert "Hello, World!" in content_str
+
+
+async def test_call_tool_mcp(fastmcp_server):
+    """Test the call_tool_mcp method that returns raw MCP protocol objects."""
+    client = Client(transport=FastMCPTransport(fastmcp_server))
+
+    async with client:
+        result = await client.call_tool_mcp("greet", {"name": "World"})
+
+        # Check that we got the raw MCP CallToolResult object
+        assert hasattr(result, "content")
+        assert hasattr(result, "isError")
+        assert result.isError is False
+        # The content is a list, so we'll check the first element
+        # by properly accessing it
+        content = result.content
+        assert len(content) > 0
+        first_content = content[0]
+        content_str = str(first_content)
         assert "Hello, World!" in content_str
 
 
@@ -103,6 +136,19 @@ async def test_list_resources(fastmcp_server):
         assert str(result[0].uri) == "data://users"
 
 
+async def test_list_resources_mcp(fastmcp_server):
+    """Test the list_resources_mcp method that returns raw MCP protocol objects."""
+    client = Client(transport=FastMCPTransport(fastmcp_server))
+
+    async with client:
+        result = await client.list_resources_mcp()
+
+        # Check that we got the raw MCP ListResourcesResult object
+        assert hasattr(result, "resources")
+        assert len(result.resources) == 1
+        assert str(result.resources[0].uri) == "data://users"
+
+
 async def test_list_prompts(fastmcp_server):
     """Test listing prompts with InMemoryClient."""
     client = Client(transport=FastMCPTransport(fastmcp_server))
@@ -115,6 +161,19 @@ async def test_list_prompts(fastmcp_server):
         assert result[0].name == "welcome"
 
 
+async def test_list_prompts_mcp(fastmcp_server):
+    """Test the list_prompts_mcp method that returns raw MCP protocol objects."""
+    client = Client(transport=FastMCPTransport(fastmcp_server))
+
+    async with client:
+        result = await client.list_prompts_mcp()
+
+        # Check that we got the raw MCP ListPromptsResult object
+        assert hasattr(result, "prompts")
+        assert len(result.prompts) == 1
+        assert result.prompts[0].name == "welcome"
+
+
 async def test_get_prompt(fastmcp_server):
     """Test getting a prompt with InMemoryClient."""
     client = Client(transport=FastMCPTransport(fastmcp_server))
@@ -124,6 +183,20 @@ async def test_get_prompt(fastmcp_server):
 
         # The result should contain our welcome message
         result_str = str(result)
+        assert "Welcome to FastMCP, Developer!" in result_str
+
+
+async def test_get_prompt_mcp(fastmcp_server):
+    """Test the get_prompt_mcp method that returns raw MCP protocol objects."""
+    client = Client(transport=FastMCPTransport(fastmcp_server))
+
+    async with client:
+        result = await client.get_prompt_mcp("welcome", {"name": "Developer"})
+
+        # Check that we got the raw MCP GetPromptResult object
+        assert hasattr(result, "messages")
+        assert len(result.messages) > 0
+        result_str = str(result.messages)
         assert "Welcome to FastMCP, Developer!" in result_str
 
 
@@ -140,6 +213,26 @@ async def test_read_resource(fastmcp_server):
 
         # The contents should include our user list
         contents_str = str(result[0])
+        assert "Alice" in contents_str
+        assert "Bob" in contents_str
+        assert "Charlie" in contents_str
+
+
+async def test_read_resource_mcp(fastmcp_server):
+    """Test the read_resource_mcp method that returns raw MCP protocol objects."""
+    client = Client(transport=FastMCPTransport(fastmcp_server))
+
+    async with client:
+        # Use the URI from the resource we know exists in our server
+        uri = cast(
+            AnyUrl, "data://users"
+        )  # Use cast for type hint only, the URI is valid
+        result = await client.read_resource_mcp(uri)
+
+        # Check that we got the raw MCP ReadResourceResult object
+        assert hasattr(result, "contents")
+        assert len(result.contents) > 0
+        contents_str = str(result.contents[0])
         assert "Alice" in contents_str
         assert "Bob" in contents_str
         assert "Charlie" in contents_str
@@ -211,6 +304,19 @@ async def test_resource_template(fastmcp_server):
         assert '"id": "123"' in content_str
         assert '"name": "User 123"' in content_str
         assert '"active": true' in content_str
+
+
+async def test_list_resource_templates_mcp(fastmcp_server):
+    """Test the list_resource_templates_mcp method that returns raw MCP protocol objects."""
+    client = Client(transport=FastMCPTransport(fastmcp_server))
+
+    async with client:
+        result = await client.list_resource_templates_mcp()
+
+        # Check that we got the raw MCP ListResourceTemplatesResult object
+        assert hasattr(result, "resourceTemplates")
+        assert len(result.resourceTemplates) == 1
+        assert "data://user/{user_id}" in result.resourceTemplates[0].uriTemplate
 
 
 async def test_mcp_resource_generation(fastmcp_server):

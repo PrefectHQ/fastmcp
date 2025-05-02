@@ -149,6 +149,34 @@ The `Client` provides methods corresponding to standard MCP requests:
 *   **`list_prompts()`**: Retrieves available prompt templates.
 *   **`get_prompt(name: str, arguments: dict[str, Any] | None = None)`**: Retrieves a rendered prompt message list.
 
+### Raw MCP Protocol Objects
+
+The FastMCP client attempts to provide a "friendly" interface to the MCP protocol, but sometimes you may need access to the raw MCP protocol objects. Each of the main client methods that returns data has a corresponding `*_mcp` method that returns the raw MCP protocol objects directly.
+
+```python
+# Standard method - returns just the list of tools
+tools = await client.list_tools()
+# tools -> list[mcp.types.Tool]
+
+# Raw MCP method - returns the full protocol object
+result = await client.list_tools_mcp()
+# result -> mcp.types.ListToolsResult
+tools = result.tools
+```
+
+Available raw MCP methods:
+
+*   **`list_tools_mcp()`**: Returns `mcp.types.ListToolsResult`
+*   **`call_tool_mcp(name, arguments)`**: Returns `mcp.types.CallToolResult`
+*   **`list_resources_mcp()`**: Returns `mcp.types.ListResourcesResult`
+*   **`list_resource_templates_mcp()`**: Returns `mcp.types.ListResourceTemplatesResult`
+*   **`read_resource_mcp(uri)`**: Returns `mcp.types.ReadResourceResult`
+*   **`list_prompts_mcp()`**: Returns `mcp.types.ListPromptsResult`
+*   **`get_prompt_mcp(name, arguments)`**: Returns `mcp.types.GetPromptResult`
+*   **`complete_mcp(ref, argument)`**: Returns `mcp.types.CompleteResult`
+
+These methods are especially useful for debugging or when you need to access metadata or fields that aren't exposed by the simplified methods.
+
 ### Advanced Features
 
 MCP allows servers to interact with clients in order to provide additional capabilities. The `Client` constructor accepts additional configuration to handle these server requests.
@@ -268,5 +296,5 @@ async def safe_call_tool():
 Other errors, like connection failures, will raise standard Python exceptions (e.g., `ConnectionError`, `TimeoutError`). 
 
 <Tip>
-The client transport often has its own error-handling mechanisms, so you can not always trap errors like those raised by `call_tool` outside of the `async with` block. Instead, you can call `call_tool(..., _return_raw_result=True)` to get the raw `mcp.types.CallToolResult` object and handle errors yourself by checking its `isError` attribute.
+The client transport often has its own error-handling mechanisms, so you can not always trap errors like those raised by `call_tool` outside of the `async with` block. Instead, you can use `call_tool_mcp()` to get the raw `mcp.types.CallToolResult` object and handle errors yourself by checking its `isError` attribute.
 </Tip>

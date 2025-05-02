@@ -96,7 +96,7 @@ class TestTools:
 
     async def test_call_tool_error_as_client_raw(self, tool_server: FastMCP):
         async with Client(tool_server) as client:
-            result = await client.call_tool("error_tool", {}, _return_raw_result=True)
+            result = await client.call_tool_mcp("error_tool", {})
         assert result.isError
         assert isinstance(result.content[0], TextContent)
         assert "Test error" in result.content[0].text
