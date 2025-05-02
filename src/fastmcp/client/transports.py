@@ -19,6 +19,7 @@ from mcp.client.session import (
 from mcp.client.sse import sse_client
 from mcp.client.stdio import stdio_client
 from mcp.client.websocket import websocket_client
+from mcp.client.streamable_http import streamablehttp_client
 from mcp.shared.memory import create_connected_server_and_client_session
 from pydantic import AnyUrl
 from typing_extensions import Unpack
@@ -123,6 +124,33 @@ class SSETransport(ClientTransport):
 
     def __repr__(self) -> str:
         return f"<SSE(url='{self.url}')>"
+
+class StreamableHttpTransport(ClientTransport):
+    """Transport implementation that connects to an MCP server via Streamable HTTP Requests."""
+
+    def __init__(self, url: str | AnyUrl, headers: dict[str, str] | None = None):
+        if isinstance(url, AnyUrl):
+            url = str(url)
+        if not isinstance(url, str) or not url.startswith("http"):
+            raise ValueError("Invalid HTTP/S URL provided for Streamable HTTP.")
+        self.url = url
+        self.headers = headers or {}
+
+    @contextlib.asynccontextmanager
+    async def connect_session(
+        self, **session_kwargs: Unpack[SessionKwargs]
+    ) -> AsyncIterator[ClientSession]:
+        async with streamablehttp_client(self.url, headers=self.headers) as transport:
+            read_stream, write_stream = transport
+            async with ClientSession(
+                read_stream, write_stream, **session_kwargs
+            ) as session:
+                await session.initialize()
+                yield session
+
+    def __repr__(self) -> str:
+        return f"<StreamableHttp(url='{self.url}')>"
+
 
 
 class StdioTransport(ClientTransport):
