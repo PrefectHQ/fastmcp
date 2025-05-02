@@ -760,7 +760,7 @@ Contributions make the open-source community vibrant! We welcome improvements an
 
 Run the test suite:
 ```bash
-uv run pytest -vv
+uv run --frozen pytest -vv
 ```
 
 #### Formatting & Linting

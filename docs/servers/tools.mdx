@@ -5,6 +5,8 @@ description: Expose functions as executable capabilities for your MCP client.
 icon: wrench
 ---
 
+import { VersionBadge } from '/snippets/version-badge.mdx'
+
 Tools are the core building blocks that allow your LLM to interact with external systems, execute code, and access data that isn't in its training data. In FastMCP, tools are Python functions exposed to LLMs through the MCP protocol.
 
 ## What Are Tools?
@@ -263,8 +265,46 @@ FastMCP automatically catches exceptions raised within your tool function:
 
 Using informative exceptions helps the LLM understand failures and react appropriately.
 
-## MCP Context
+### Annotations
 
+<VersionBadge version="2.2.7" />
+
+FastMCP allows you to add specialized metadata to your tools through annotations. These annotations communicate how tools behave to client applications without consuming token context in LLM prompts.
+
+Annotations serve several purposes in client applications:
+- Adding user-friendly titles for display purposes
+- Indicating whether tools modify data or systems
+- Describing the safety profile of tools (destructive vs. non-destructive)
+- Signaling if tools interact with external systems
+
+You can add annotations to a tool using the `annotations` parameter in the `@mcp.tool()` decorator:
+
+```python
+@mcp.tool(
+    annotations={
+        "title": "Calculate Sum",
+        "readOnlyHint": True,
+        "openWorldHint": False
+    }
+)
+def calculate_sum(a: float, b: float) -> float:
+    """Add two numbers together."""
+    return a + b
+```
+
+FastMCP supports these standard annotations:
+
+| Annotation | Type | Default | Purpose |
+| :--------- | :--- | :------ | :------ |
+| `title` | string | - | Display name for user interfaces |
+| `readOnlyHint` | boolean | false | Indicates if the tool only reads without making changes |
+| `destructiveHint` | boolean | true | For non-readonly tools, signals if changes are destructive |
+| `idempotentHint` | boolean | false | Indicates if repeated identical calls have the same effect as a single call |
+| `openWorldHint` | boolean | true | Specifies if the tool interacts with external systems |
+
+Remember that annotations help make better user experiences but should be treated as advisory hints. They help client applications present appropriate UI elements and safety controls, but won't enforce security boundaries on their own. Always focus on making your annotations accurately represent what your tool actually does.
+
+## MCP Context
 
 Tools can access MCP features like logging, reading resources, or reporting progress through the `Context` object. To use it, add a parameter to your tool function with the type hint `Context`.
 

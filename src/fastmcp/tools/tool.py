@@ -5,7 +5,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Annotated, Any
 
 import pydantic_core
-from mcp.types import EmbeddedResource, ImageContent, TextContent
+from mcp.types import EmbeddedResource, ImageContent, TextContent, ToolAnnotations
 from mcp.types import Tool as MCPTool
 from pydantic import BaseModel, BeforeValidator, Field
 
@@ -42,6 +42,9 @@ class Tool(BaseModel):
     tags: Annotated[set[str], BeforeValidator(_convert_set_defaults)] = Field(
         default_factory=set, description="Tags for the tool"
     )
+    annotations: ToolAnnotations | None = Field(
+        None, description="Additional annotations about the tool"
+    )
 
     @classmethod
     def from_function(
@@ -51,6 +54,7 @@ class Tool(BaseModel):
         description: str | None = None,
         context_kwarg: str | None = None,
         tags: set[str] | None = None,
+        annotations: ToolAnnotations | None = None,
     ) -> Tool:
         """Create a Tool from a function."""
         from fastmcp import Context
@@ -95,6 +99,7 @@ class Tool(BaseModel):
             is_async=is_async,
             context_kwarg=context_kwarg,
             tags=tags or set(),
+            annotations=annotations,
         )
 
     async def run(
@@ -124,6 +129,7 @@ class Tool(BaseModel):
             "name": self.name,
             "description": self.description,
             "inputSchema": self.parameters,
+            "annotations": self.annotations,
         }
         return MCPTool(**kwargs | overrides)
 

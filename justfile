@@ -6,4 +6,4 @@ test: build
 
 # Run pyright on all files
 typecheck:
-    uv run pyright
+    uv run --frozen pyright
