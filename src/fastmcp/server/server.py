@@ -28,6 +28,7 @@ from mcp.types import (
     ImageContent,
     PromptMessage,
     TextContent,
+    ToolAnnotations,
 )
 from mcp.types import Prompt as MCPPrompt
 from mcp.types import Resource as MCPResource
@@ -455,6 +456,7 @@ class FastMCP(Generic[LifespanResultT]):
         name: str | None = None,
         description: str | None = None,
         tags: set[str] | None = None,
+        annotations: ToolAnnotations | dict[str, Any] | None = None,
     ) -> None:
         """Add a tool to the server.
 
@@ -466,9 +468,17 @@ class FastMCP(Generic[LifespanResultT]):
             name: Optional name for the tool (defaults to function name)
             description: Optional description of what the tool does
             tags: Optional set of tags for categorizing the tool
+            annotations: Optional annotations about the tool's behavior
         """
+        if isinstance(annotations, dict):
+            annotations = ToolAnnotations(**annotations)
+
         self._tool_manager.add_tool_from_fn(
-            fn, name=name, description=description, tags=tags
+            fn,
+            name=name,
+            description=description,
+            tags=tags,
+            annotations=annotations,
         )
         self._cache.clear()
 
@@ -477,6 +487,7 @@ class FastMCP(Generic[LifespanResultT]):
         name: str | None = None,
         description: str | None = None,
         tags: set[str] | None = None,
+        annotations: ToolAnnotations | dict[str, Any] | None = None,
     ) -> Callable[[AnyFunction], AnyFunction]:
         """Decorator to register a tool.
 
@@ -488,6 +499,7 @@ class FastMCP(Generic[LifespanResultT]):
             name: Optional name for the tool (defaults to function name)
             description: Optional description of what the tool does
             tags: Optional set of tags for categorizing the tool
+            annotations: Optional annotations about the tool's behavior
 
         Example:
             @server.tool()
@@ -513,7 +525,13 @@ class FastMCP(Generic[LifespanResultT]):
             )
 
         def decorator(fn: AnyFunction) -> AnyFunction:
-            self.add_tool(fn, name=name, description=description, tags=tags)
+            self.add_tool(
+                fn,
+                name=name,
+                description=description,
+                tags=tags,
+                annotations=annotations,
+            )
             return fn
 
         return decorator
