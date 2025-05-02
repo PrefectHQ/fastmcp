@@ -9,7 +9,6 @@ from contextlib import (
     AsyncExitStack,
     asynccontextmanager,
 )
-from contextvars import ContextVar
 from functools import partial
 from typing import TYPE_CHECKING, Any, Generic, Literal
 
@@ -60,6 +59,7 @@ from fastmcp.resources.template import ResourceTemplate
 from fastmcp.tools import ToolManager
 from fastmcp.tools.tool import Tool
 from fastmcp.utilities.decorators import DecoratedFunction
+from fastmcp.utilities.http import RequestMiddleware
 from fastmcp.utilities.logging import configure_logging, get_logger
 
 if TYPE_CHECKING:
@@ -71,25 +71,6 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 NOT_FOUND = object()
-
-
-_current_starlette_request: ContextVar[Request | None] = ContextVar(
-    "starlette_request",
-    default=None,
-)
-
-
-@asynccontextmanager
-async def starlette_request_context(request: Request):
-    token = _current_starlette_request.set(request)
-    try:
-        yield
-    finally:
-        _current_starlette_request.reset(token)
-
-
-def get_current_starlette_request() -> Request | None:
-    return _current_starlette_request.get()
 
 
 class MountedServer:
@@ -333,11 +314,7 @@ class FastMCP(Generic[LifespanResultT]):
             request_context = None
         from fastmcp.server.context import Context
 
-        return Context(
-            request_context=request_context,
-            fastmcp=self,
-            request=get_current_starlette_request(),
-        )
+        return Context(request_context=request_context, fastmcp=self)
 
     async def get_tools(self) -> dict[str, Tool]:
         """Get all registered tools, indexed by registered key."""
@@ -846,10 +823,11 @@ class FastMCP(Generic[LifespanResultT]):
         log_level: str | None = None,
     ) -> None:
         """Run the server using SSE transport."""
-        starlette_app = self.sse_app()
+        app = self.sse_app()
+        app = RequestMiddleware(app)
 
         config = uvicorn.Config(
-            starlette_app,
+            app,
             host=host or self.settings.host,
             port=port or self.settings.port,
             log_level=log_level or self.settings.log_level.lower(),
