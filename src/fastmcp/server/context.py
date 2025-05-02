@@ -227,7 +227,7 @@ class Context(BaseModel, Generic[ServerSessionT, LifespanContextT]):
 
         return result.content
 
-    def get_starlette_request(self) -> Request:
+    def get_http_request(self) -> Request:
         """Get the active starlette request."""
         request = get_current_starlette_request()
         if request is None:
