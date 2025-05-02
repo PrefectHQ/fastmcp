@@ -10,7 +10,7 @@ from re import Pattern
 from typing import TYPE_CHECKING, Any, Literal
 
 import httpx
-from mcp.types import EmbeddedResource, ImageContent, TextContent
+from mcp.types import EmbeddedResource, ImageContent, TextContent, ToolAnnotations
 from pydantic.networks import AnyUrl
 
 from fastmcp.resources import Resource, ResourceTemplate
@@ -126,6 +126,7 @@ class OpenAPITool(Tool):
         is_async: bool = True,
         tags: set[str] = set(),
         timeout: float | None = None,
+        annotations: ToolAnnotations | None = None,
     ):
         super().__init__(
             name=name,
@@ -136,6 +137,7 @@ class OpenAPITool(Tool):
             is_async=is_async,
             context_kwarg="context",  # Default context keyword argument
             tags=tags,
+            annotations=annotations,
         )
         self._client = client
         self._route = route
