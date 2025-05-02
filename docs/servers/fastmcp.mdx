@@ -306,7 +306,11 @@ The `mcp.server.auth` module implements an OAuth 2.0 server interface that serve
 
 ```python
 from fastmcp import FastMCP
-from mcp.server.auth.settings import RevocationOptions, ClientRegistrationOptions, AuthSettings
+from mcp.server.auth.settings import (
+    RevocationOptions,
+    ClientRegistrationOptions,
+    AuthSettings,
+)
 
 
 # Create a server with authentication
