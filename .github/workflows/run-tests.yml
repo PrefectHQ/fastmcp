@@ -59,4 +59,4 @@ jobs:
           uv pip install pyreadline3
 
       - name: Run tests
-        run: uv run pytest -vv
+        run: uv run --frozen pytest -vv

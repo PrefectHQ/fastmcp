@@ -293,3 +293,41 @@ print(mcp.settings.on_duplicate_tools) # Output: "error"
 - **`on_duplicate_prompts`**: How to handle duplicate prompt registrations
 
 All of these can be configured directly as parameters when creating the `FastMCP` instance.
+
+## Authentication
+
+<VersionBadge version="2.2.7" />
+
+FastMCP inherits support for OAuth 2.0 authentication from the MCP protocol, allowing servers to protect their tools and resources behind authentication.
+
+### OAuth 2.0 Support
+
+The `mcp.server.auth` module implements an OAuth 2.0 server interface that servers can use by providing an implementation of the `OAuthServerProvider` protocol.
+
+```python
+from fastmcp import FastMCP
+from mcp.server.auth.settings import (
+    RevocationOptions,
+    ClientRegistrationOptions,
+    AuthSettings,
+)
+
+
+# Create a server with authentication
+mcp = FastMCP(
+    name="SecureApp",
+    auth_provider=MyOAuthServerProvider(),
+    auth=AuthSettings(
+        issuer_url="https://myapp.com",
+        revocation_options=RevocationOptions(
+            enabled=True,
+        ),
+        client_registration_options=ClientRegistrationOptions(
+            enabled=True,
+            valid_scopes=["myscope", "myotherscope"],
+            default_scopes=["myscope"],
+        ),
+        required_scopes=["myscope"],
+    ),
+)
+```
