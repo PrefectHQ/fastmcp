@@ -400,12 +400,9 @@ class Client:
         self,
         name: str,
         arguments: dict[str, Any] | None = None,
-    ) -> (
-        list[
-            mcp.types.TextContent | mcp.types.ImageContent | mcp.types.EmbeddedResource
-        ]
-        | mcp.types.CallToolResult
-    ):
+    ) -> list[
+        mcp.types.TextContent | mcp.types.ImageContent | mcp.types.EmbeddedResource
+    ]:
         """Call a tool on the server.
 
         Unlike call_tool_mcp, this method raises a ClientError if the tool call results in an error.
