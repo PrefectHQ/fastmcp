@@ -762,6 +762,10 @@ Run the test suite:
 ```bash
 uv run pytest -vv
 ```
+or if you want an overview of the code coverage
+```bash
+uv run pytest --cov=src --cov=examples --cov-report=html
+```
 
 #### Formatting & Linting
 
