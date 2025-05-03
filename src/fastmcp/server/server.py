@@ -217,7 +217,6 @@ class FastMCP(Generic[LifespanResultT]):
 
         self._mounted_servers: dict[str, MountedServer] = {}
 
-        # we
         if lifespan is None:
             self._has_lifespan = False
             lifespan = default_lifespan
