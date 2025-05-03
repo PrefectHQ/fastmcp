@@ -5,6 +5,7 @@ from __future__ import annotations
 import enum
 import json
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from re import Pattern
 from typing import TYPE_CHECKING, Any, Literal
@@ -127,6 +128,7 @@ class OpenAPITool(Tool):
         tags: set[str] = set(),
         timeout: float | None = None,
         annotations: ToolAnnotations | None = None,
+        serializer: Callable[[Any], str] | None = None,
     ):
         super().__init__(
             name=name,
@@ -138,6 +140,7 @@ class OpenAPITool(Tool):
             context_kwarg="context",  # Default context keyword argument
             tags=tags,
             annotations=annotations,
+            serializer=serializer,
         )
         self._client = client
         self._route = route
