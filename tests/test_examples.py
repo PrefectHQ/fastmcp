@@ -96,7 +96,7 @@ async def test_echo():
         assert len(result.contents) == 1
         content = result.contents[0]
         assert isinstance(result, ReadResourceResult)
-        assert content.text == 'Echo!'
+        assert content.text == "Echo!"
 
     async with client_session(mcp._mcp_server) as client:
         result = await client.read_resource("echo://server42")
@@ -110,5 +110,4 @@ async def test_echo():
         assert len(result.messages) == 1
         assert isinstance(content, TextResourceContents)
         assert isinstance(result.messages[0], PromptMessage)
-        assert result.messages[0].content.text == 'hello'
-
+        assert result.messages[0].content.text == "hello"
