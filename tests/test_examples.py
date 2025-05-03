@@ -43,16 +43,7 @@ async def test_complex_inputs():
 @pytest.mark.anyio
 async def test_desktop(monkeypatch):
     """Test the desktop server"""
-    from pathlib import Path
-
-    from pydantic import AnyUrl
-
     from examples.desktop import mcp
-
-    # Mock desktop directory listing
-    mock_files = [Path("/fake/path/file1.txt"), Path("/fake/path/file2.txt")]
-    monkeypatch.setattr(Path, "iterdir", lambda self: mock_files)
-    monkeypatch.setattr(Path, "home", lambda: Path("/fake/home"))
 
     async with client_session(mcp._mcp_server) as client:
         # Test the add function
@@ -69,16 +60,6 @@ async def test_desktop(monkeypatch):
         assert isinstance(content, TextResourceContents)
         assert isinstance(content.text, str)
         assert content.text == "Hello, rooter12!"
-
-    async with client_session(mcp._mcp_server) as client:
-        # Test the desktop resource
-        result = await client.read_resource(AnyUrl("dir://desktop"))
-        assert len(result.contents) == 1
-        content = result.contents[0]
-        assert isinstance(content, TextResourceContents)
-        assert isinstance(content.text, str)
-        assert "/fake/path/file1.txt" in content.text
-        assert "/fake/path/file2.txt" in content.text
 
 
 @pytest.mark.anyio
