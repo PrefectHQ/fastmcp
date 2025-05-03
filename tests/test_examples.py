@@ -6,10 +6,10 @@ from mcp.shared.memory import (
 )
 from mcp.types import (
     PromptMessage,
-    ReadResourceResult,
     TextContent,
     TextResourceContents,
 )
+from pydantic import AnyUrl
 
 
 @pytest.mark.anyio
@@ -63,12 +63,14 @@ async def test_desktop(monkeypatch):
         assert content.text == "3"
 
     async with client_session(mcp._mcp_server) as client:
-        result = await client.read_resource("greeting://rooter12")
+        result = await client.read_resource(AnyUrl("greeting://rooter12"))
         assert len(result.contents) == 1
         content = result.contents[0]
-        assert isinstance(result, ReadResourceResult)
+        assert isinstance(content, TextResourceContents)
+        assert isinstance(content.text, str)
         assert content.text == "Hello, rooter12!"
 
+    async with client_session(mcp._mcp_server) as client:
         # Test the desktop resource
         result = await client.read_resource(AnyUrl("dir://desktop"))
         assert len(result.contents) == 1
@@ -92,17 +94,19 @@ async def test_echo():
         assert content.text == "hello"
 
     async with client_session(mcp._mcp_server) as client:
-        result = await client.read_resource("echo://static")
+        result = await client.read_resource(AnyUrl("echo://static"))
         assert len(result.contents) == 1
         content = result.contents[0]
-        assert isinstance(result, ReadResourceResult)
+        assert isinstance(content, TextResourceContents)
+        assert isinstance(content.text, str)
         assert content.text == "Echo!"
 
     async with client_session(mcp._mcp_server) as client:
-        result = await client.read_resource("echo://server42")
+        result = await client.read_resource(AnyUrl("echo://server42"))
         assert len(result.contents) == 1
         content = result.contents[0]
-        assert isinstance(result, ReadResourceResult)
+        assert isinstance(content, TextResourceContents)
+        assert isinstance(content.text, str)
         assert content.text == "Echo: server42"
 
     async with client_session(mcp._mcp_server) as client:
@@ -110,4 +114,5 @@ async def test_echo():
         assert len(result.messages) == 1
         assert isinstance(content, TextResourceContents)
         assert isinstance(result.messages[0], PromptMessage)
+        assert isinstance(result.messages[0].content, TextContent)
         assert result.messages[0].content.text == "hello"
