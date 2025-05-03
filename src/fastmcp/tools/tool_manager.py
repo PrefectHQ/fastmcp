@@ -22,8 +22,13 @@ logger = get_logger(__name__)
 class ToolManager:
     """Manages FastMCP tools."""
 
-    def __init__(self, duplicate_behavior: DuplicateBehavior | None = None):
+    def __init__(
+        self,
+        duplicate_behavior: DuplicateBehavior | None = None,
+        serializer: Callable[[Any], str] | None = None,
+    ):
         self._tools: dict[str, Tool] = {}
+        self._serializer = serializer
 
         # Default to "warn" if None is provided
         if duplicate_behavior is None:
@@ -70,6 +75,7 @@ class ToolManager:
             description=description,
             tags=tags,
             annotations=annotations,
+            serializer=self._serializer,
         )
         return self.add_tool(tool)
 
