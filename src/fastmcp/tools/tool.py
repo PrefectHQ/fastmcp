@@ -27,6 +27,10 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
+def default_serializer(data: Any) -> str:
+    return pydantic_core.to_json(data, fallback=str, indent=2).decode()
+
+
 class Tool(BaseModel):
     """Internal tool registration info."""
 
@@ -185,7 +189,9 @@ def _convert_to_content(
         return other_content + mcp_types
 
     if not isinstance(result, str):
-        if serializer is not None:
+        if serializer is None:
+            result = default_serializer(result)
+        else:
             try:
                 result = serializer(result)
             except Exception as e:
@@ -194,9 +200,6 @@ def _convert_to_content(
                     e,
                     exc_info=True,
                 )
-
-            result = pydantic_core.to_json(result, fallback=str, indent=2).decode()
-        else:
-            result = pydantic_core.to_json(result, fallback=str, indent=2).decode()
+                result = default_serializer(result)
 
     return [TextContent(type="text", text=result)]
