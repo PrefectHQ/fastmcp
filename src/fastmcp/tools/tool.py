@@ -125,7 +125,7 @@ class Tool(BaseModel):
                 arguments_to_validate=arguments,
                 arguments_to_pass_directly=pass_args,
             )
-            return _convert_to_content(result, _serializer=self.serializer)
+            return _convert_to_content(result, serializer=self.serializer)
         except Exception as e:
             raise ToolError(f"Error executing tool {self.name}: {e}") from e
 
@@ -146,8 +146,8 @@ class Tool(BaseModel):
 
 def _convert_to_content(
     result: Any,
+    serializer: Callable[[Any], str] | None = None,
     _process_as_single_item: bool = False,
-    _serializer: Callable[[Any], str] | None = None,
 ) -> list[TextContent | ImageContent | EmbeddedResource]:
     """Convert a result to a sequence of content objects."""
     if result is None:
@@ -182,8 +182,8 @@ def _convert_to_content(
         return other_content + mcp_types
 
     if not isinstance(result, str):
-        if _serializer is not None:
-            result = _serializer(result)
+        if serializer is not None:
+            result = serializer(result)
         else:
             result = pydantic_core.to_json(result, fallback=str, indent=2).decode()
 

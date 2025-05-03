@@ -205,7 +205,7 @@ class FastMCP(Generic[LifespanResultT]):
             | None
         ) = None,
         tags: set[str] | None = None,
-        serializer: Callable[[Any], str] | None = None,
+        tool_serializer: Callable[[Any], str] | None = None,
         **settings: Any,
     ):
         self.tags: set[str] = tags or set()
@@ -215,7 +215,6 @@ class FastMCP(Generic[LifespanResultT]):
                 seconds=self.settings.cache_expiration_seconds
             )
         )
-        self._serializer = serializer
 
         self._mounted_servers: dict[str, MountedServer] = {}
 
@@ -229,7 +228,7 @@ class FastMCP(Generic[LifespanResultT]):
         )
         self._tool_manager = ToolManager(
             duplicate_behavior=self.settings.on_duplicate_tools,
-            serializer=self._serializer,
+            serializer=tool_serializer,
         )
         self._resource_manager = ResourceManager(
             duplicate_behavior=self.settings.on_duplicate_resources

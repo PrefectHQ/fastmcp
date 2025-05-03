@@ -401,7 +401,7 @@ class TestCallTools:
             return json.dumps(data)
 
         # Instantiate FastMCP with the custom serializer
-        mcp = FastMCP(serializer=custom_serializer)
+        mcp = FastMCP(tool_serializer=custom_serializer)
         manager = mcp._tool_manager
 
         def get_data() -> dict:
