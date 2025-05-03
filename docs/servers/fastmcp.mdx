@@ -295,6 +295,40 @@ print(mcp.settings.on_duplicate_tools) # Output: "error"
 
 All of these can be configured directly as parameters when creating the `FastMCP` instance.
 
+### Custom Tool Serialization
+
+<VersionBadge version="2.2.7" />
+
+By default, FastMCP serializes tool return values to JSON when they need to be converted to text. You can customize this behavior by providing a `tool_serializer` function when creating your server:
+
+```python
+import yaml
+from fastmcp import FastMCP
+
+# Define a custom serializer that formats dictionaries as YAML
+def yaml_serializer(data):
+    return yaml.dump(data, sort_keys=False)
+
+# Create a server with the custom serializer
+mcp = FastMCP(name="MyServer", tool_serializer=yaml_serializer)
+
+@mcp.tool()
+def get_config():
+    """Returns configuration in YAML format."""
+    return {"api_key": "abc123", "debug": True, "rate_limit": 100}
+```
+
+The serializer function takes any data object and returns a string representation. This is applied to **all non-string return values** from your tools. Tools that already return strings bypass the serializer.
+
+This customization is useful when you want to:
+- Format data in a specific way (like YAML or custom formats)
+- Control specific serialization options (like indentation or sorting)
+- Add metadata or transform data before sending it to clients
+
+<Tip>
+If the serializer function raises an exception, the tool will fall back to the default JSON serialization to avoid breaking the server.
+</Tip>
+
 ## Authentication
 
 <VersionBadge version="2.2.7" />

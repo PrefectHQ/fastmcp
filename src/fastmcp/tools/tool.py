@@ -11,6 +11,7 @@ from pydantic import BaseModel, BeforeValidator, Field
 
 from fastmcp.exceptions import ToolError
 from fastmcp.utilities.func_metadata import FuncMetadata, func_metadata
+from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import (
     Image,
     _convert_set_defaults,
@@ -22,6 +23,12 @@ if TYPE_CHECKING:
     from mcp.shared.context import LifespanContextT
 
     from fastmcp.server import Context
+
+logger = get_logger(__name__)
+
+
+def default_serializer(data: Any) -> str:
+    return pydantic_core.to_json(data, fallback=str, indent=2).decode()
 
 
 class Tool(BaseModel):
@@ -182,9 +189,17 @@ def _convert_to_content(
         return other_content + mcp_types
 
     if not isinstance(result, str):
-        if serializer is not None:
-            result = serializer(result)
+        if serializer is None:
+            result = default_serializer(result)
         else:
-            result = pydantic_core.to_json(result, fallback=str, indent=2).decode()
+            try:
+                result = serializer(result)
+            except Exception as e:
+                logger.warning(
+                    "Error serializing tool result: %s",
+                    e,
+                    exc_info=True,
+                )
+                result = default_serializer(result)
 
     return [TextContent(type="text", text=result)]
