@@ -253,7 +253,9 @@ async def request_info(ctx: Context) -> dict:
 
 ### Advanced Access
 
-For advanced use cases, you can access the underlying MCP session and FastMCP server.
+For advanced use cases, you can access the underlying MCP session, FastMCP server, and HTTP requests.
+
+#### Accessing FastMCP and Sessions
 
 ```python
 @mcp.tool()
@@ -269,11 +271,35 @@ async def advanced_tool(ctx: Context) -> str:
     return f"Server: {server_name}"
 ```
 
-**Advanced Properties:**
+#### Accessing HTTP Requests
+
+<VersionBadge version="2.2.7" />
+
+For web applications, you can access the underlying HTTP request:
+
+```python
+@mcp.tool()
+async def handle_web_request(ctx: Context) -> dict:
+    """Access HTTP request information from the Starlette request."""
+    request = ctx.get_http_request()
+    
+    # Access HTTP headers, query parameters, etc.
+    user_agent = request.headers.get("user-agent", "Unknown")
+    client_ip = request.client.host if request.client else "Unknown"
+    
+    return {
+        "user_agent": user_agent,
+        "client_ip": client_ip,
+        "path": request.url.path,
+    }
+```
+
+#### Advanced Properties Reference
 
 - **`ctx.fastmcp -> FastMCP`**: Access the server instance the context belongs to
 - **`ctx.session`**: Access the raw `mcp.server.session.ServerSession` object
 - **`ctx.request_context`**: Access the raw `mcp.shared.context.RequestContext` object
+- **`ctx.get_http_request() -> Request`**: Access the active Starlette request object (when running with a web server)
 
 <Warning>
 Direct use of `session` or `request_context` requires understanding the low-level MCP Python SDK and may be less stable than using the methods provided directly on the `Context` object.

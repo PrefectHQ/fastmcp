@@ -2,6 +2,7 @@ from __future__ import annotations as _annotations
 
 from typing import TYPE_CHECKING, Literal
 
+from mcp.server.auth.settings import AuthSettings
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -20,6 +21,8 @@ class Settings(BaseSettings):
         env_prefix="FASTMCP_",
         env_file=".env",
         extra="ignore",
+        env_nested_delimiter="__",
+        nested_model_default_partial_update=True,
     )
 
     test_mode: bool = False
@@ -37,6 +40,8 @@ class ServerSettings(BaseSettings):
         env_prefix="FASTMCP_SERVER_",
         env_file=".env",
         extra="ignore",
+        env_nested_delimiter="__",
+        nested_model_default_partial_update=True,
     )
 
     log_level: LOG_LEVEL = Field(default_factory=lambda: Settings().log_level)
@@ -64,6 +69,8 @@ class ServerSettings(BaseSettings):
 
     # cache settings (for checking mounted servers)
     cache_expiration_seconds: float = 0
+
+    auth: AuthSettings | None = None
 
 
 class ClientSettings(BaseSettings):

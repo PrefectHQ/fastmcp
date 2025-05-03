@@ -13,10 +13,12 @@ from mcp.types import (
     SamplingMessage,
     TextContent,
 )
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from pydantic.networks import AnyUrl
+from starlette.requests import Request
 
 from fastmcp.server.server import FastMCP
+from fastmcp.utilities.http import get_current_starlette_request
 from fastmcp.utilities.logging import get_logger
 
 logger = get_logger(__name__)
@@ -58,6 +60,8 @@ class Context(BaseModel, Generic[ServerSessionT, LifespanContextT]):
 
     _request_context: RequestContext[ServerSessionT, LifespanContextT] | None
     _fastmcp: FastMCP | None
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     def __init__(
         self,
@@ -222,3 +226,10 @@ class Context(BaseModel, Generic[ServerSessionT, LifespanContextT]):
         )
 
         return result.content
+
+    def get_http_request(self) -> Request:
+        """Get the active starlette request."""
+        request = get_current_starlette_request()
+        if request is None:
+            raise ValueError("Request is not available outside a Starlette request")
+        return request

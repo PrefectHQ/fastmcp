@@ -348,7 +348,7 @@ requires-dist = [
     { name = "python-dotenv", specifier = ">=1.1.0" },
     { name = "rich", specifier = ">=13.9.4" },
     { name = "typer", specifier = ">=0.15.2" },
-    { name = "websockets", specifier = ">=15.0.1" },
+    { name = "websockets", specifier = ">=14.0" },
 ]
 
 [package.metadata.requires-dev]
