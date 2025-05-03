@@ -11,7 +11,7 @@ def custom_dict_serializer(data: Any) -> str:
     return yaml.dump(data, width=100, sort_keys=False)
 
 
-server = FastMCP(name="CustomSerializerExample", serializer=custom_dict_serializer)
+server = FastMCP(name="CustomSerializerExample", tool_serializer=custom_dict_serializer)
 
 
 @server.tool()
