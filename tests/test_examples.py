@@ -1,15 +1,14 @@
 """Tests for example servers"""
 
 import pytest
-
 from mcp.shared.memory import (
     create_connected_server_and_client_session as client_session,
 )
 from mcp.types import (
+    PromptMessage,
+    ReadResourceResult,
     TextContent,
     TextResourceContents,
-    ReadResourceResult,
-    PromptMessage,
 )
 
 
@@ -45,7 +44,9 @@ async def test_complex_inputs():
 async def test_desktop(monkeypatch):
     """Test the desktop server"""
     from pathlib import Path
+
     from pydantic import AnyUrl
+
     from examples.desktop import mcp
 
     # Mock desktop directory listing
