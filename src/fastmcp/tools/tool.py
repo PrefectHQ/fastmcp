@@ -45,6 +45,9 @@ class Tool(BaseModel):
     annotations: ToolAnnotations | None = Field(
         None, description="Additional annotations about the tool"
     )
+    serializer: Callable[[Any], str] | None = Field(
+        None, description="Optional custom serializer for tool results"
+    )
 
     @classmethod
     def from_function(
@@ -55,6 +58,7 @@ class Tool(BaseModel):
         context_kwarg: str | None = None,
         tags: set[str] | None = None,
         annotations: ToolAnnotations | None = None,
+        serializer: Callable[[Any], str] | None = None,
     ) -> Tool:
         """Create a Tool from a function."""
         from fastmcp import Context
@@ -100,6 +104,7 @@ class Tool(BaseModel):
             context_kwarg=context_kwarg,
             tags=tags or set(),
             annotations=annotations,
+            serializer=serializer,
         )
 
     async def run(
@@ -120,7 +125,7 @@ class Tool(BaseModel):
                 arguments_to_validate=arguments,
                 arguments_to_pass_directly=pass_args,
             )
-            return _convert_to_content(result)
+            return _convert_to_content(result, serializer=self.serializer)
         except Exception as e:
             raise ToolError(f"Error executing tool {self.name}: {e}") from e
 
@@ -141,6 +146,7 @@ class Tool(BaseModel):
 
 def _convert_to_content(
     result: Any,
+    serializer: Callable[[Any], str] | None = None,
     _process_as_single_item: bool = False,
 ) -> list[TextContent | ImageContent | EmbeddedResource]:
     """Convert a result to a sequence of content objects."""
@@ -176,6 +182,9 @@ def _convert_to_content(
         return other_content + mcp_types
 
     if not isinstance(result, str):
-        result = pydantic_core.to_json(result, fallback=str, indent=2).decode()
+        if serializer is not None:
+            result = serializer(result)
+        else:
+            result = pydantic_core.to_json(result, fallback=str, indent=2).decode()
 
     return [TextContent(type="text", text=result)]

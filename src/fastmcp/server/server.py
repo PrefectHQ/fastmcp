@@ -205,6 +205,7 @@ class FastMCP(Generic[LifespanResultT]):
             | None
         ) = None,
         tags: set[str] | None = None,
+        tool_serializer: Callable[[Any], str] | None = None,
         **settings: Any,
     ):
         self.tags: set[str] = tags or set()
@@ -226,7 +227,8 @@ class FastMCP(Generic[LifespanResultT]):
             lifespan=_lifespan_wrapper(self, lifespan),
         )
         self._tool_manager = ToolManager(
-            duplicate_behavior=self.settings.on_duplicate_tools
+            duplicate_behavior=self.settings.on_duplicate_tools,
+            serializer=tool_serializer,
         )
         self._resource_manager = ResourceManager(
             duplicate_behavior=self.settings.on_duplicate_resources

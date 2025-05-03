@@ -1,6 +1,6 @@
 import json
 import logging
-from typing import Annotated
+from typing import Annotated, Any
 
 import pytest
 from mcp.server.session import ServerSessionT
@@ -391,6 +391,29 @@ class TestCallTools:
         assert len(result) == 1
         assert isinstance(result[0], TextContent)
         assert result[0].text == '[\n  "rex",\n  "gertrude"\n]'
+
+    async def test_call_tool_with_custom_serializer(self):
+        """Test that a custom serializer provided to FastMCP is used by tools."""
+
+        def custom_serializer(data: Any) -> str:
+            if isinstance(data, dict):
+                return f"CUSTOM:{json.dumps(data)}"
+            return json.dumps(data)
+
+        # Instantiate FastMCP with the custom serializer
+        mcp = FastMCP(tool_serializer=custom_serializer)
+        manager = mcp._tool_manager
+
+        def get_data() -> dict:
+            return {"key": "value", "number": 123}
+
+        manager.add_tool_from_fn(get_data)
+
+        result = await manager.call_tool("get_data", {})
+        assert isinstance(result, list)
+        assert len(result) == 1
+        assert isinstance(result[0], TextContent)
+        assert result[0].text == 'CUSTOM:{"key": "value", "number": 123}'
 
 
 class TestToolSchema:
