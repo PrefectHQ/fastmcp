@@ -80,7 +80,7 @@ class TestToolFromFunction:
         ):
             Tool.from_function(lambda x: x)
 
-    def test_no_private_arguments(self):
+    def test_private_arguments(self):
         def add(_a: int, _b: int) -> int:
             """Add two numbers."""
             return _a + _b
