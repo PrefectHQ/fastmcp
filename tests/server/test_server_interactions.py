@@ -460,7 +460,7 @@ class TestToolParameters:
             pass
 
         async with Client(mcp) as client:
-            with pytest.raises(ClientError, match="Field required"):
+            with pytest.raises(ClientError, match="Missing required argument"):
                 await client.call_tool("analyze", {})
 
     async def test_literal_type_validation_error(self):
@@ -537,7 +537,7 @@ class TestToolParameters:
             assert isinstance(result[0], TextContent)
             assert result[0].text == "1.0"
 
-            with pytest.raises(ClientError, match="2 validation errors for analyze"):
+            with pytest.raises(ClientError, match="2 validation errors"):
                 await client.call_tool("analyze", {"x": "not a number"})
 
     async def test_path_type(self):

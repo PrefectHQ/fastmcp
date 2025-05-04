@@ -24,7 +24,6 @@ from fastmcp.resources import Resource, ResourceTemplate
 from fastmcp.server.context import Context
 from fastmcp.server.server import FastMCP
 from fastmcp.tools.tool import Tool
-from fastmcp.utilities.func_metadata import func_metadata
 from fastmcp.utilities.logging import get_logger
 
 if TYPE_CHECKING:
@@ -53,7 +52,6 @@ class ProxyTool(Tool):
             description=tool.description,
             parameters=tool.inputSchema,
             fn=_proxy_passthrough,
-            fn_metadata=func_metadata(_proxy_passthrough),
             is_async=True,
         )
 
