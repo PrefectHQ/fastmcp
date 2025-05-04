@@ -2,7 +2,12 @@ from typing import Annotated, Any
 
 import pytest
 
-from fastmcp.utilities.types import Image, is_class_member_of_type, issubclass_safe
+from fastmcp.utilities.types import (
+    Image,
+    find_kwarg_by_type,
+    is_class_member_of_type,
+    issubclass_safe,
+)
 
 
 class BaseClass:
@@ -143,3 +148,119 @@ class TestImage:
             ValueError, match="Only one of path or data can be provided"
         ):
             Image(path="test.png", data=b"test")
+
+
+class TestFindKwargByType:
+    def test_exact_type_match(self):
+        """Test finding parameter with exact type match."""
+
+        def func(a: int, b: str, c: BaseClass):
+            pass
+
+        assert find_kwarg_by_type(func, BaseClass) == "c"
+
+    def test_no_matching_parameter(self):
+        """Test finding parameter when no match exists."""
+
+        def func(a: int, b: str, c: OtherClass):
+            pass
+
+        assert find_kwarg_by_type(func, BaseClass) is None
+
+    def test_parameter_with_no_annotation(self):
+        """Test with a parameter that has no type annotation."""
+
+        def func(a: int, b, c: BaseClass):
+            pass
+
+        assert find_kwarg_by_type(func, BaseClass) == "c"
+
+    def test_union_type_match_pipe_syntax(self):
+        """Test finding parameter with union type using pipe syntax."""
+
+        def func(a: int, b: str | BaseClass, c: str):
+            pass
+
+        assert find_kwarg_by_type(func, BaseClass) == "b"
+
+    def test_union_type_match_typing_union(self):
+        """Test finding parameter with union type using Union."""
+
+        def func(a: int, b: str | BaseClass, c: str):
+            pass
+
+        assert find_kwarg_by_type(func, BaseClass) == "b"
+
+    def test_annotated_type_match(self):
+        """Test finding parameter with Annotated type."""
+
+        def func(a: int, b: Annotated[BaseClass, "metadata"], c: str):
+            pass
+
+        assert find_kwarg_by_type(func, BaseClass) == "b"
+
+    def test_method_parameter(self):
+        """Test finding parameter in a class method."""
+
+        class TestClass:
+            def method(self, a: int, b: BaseClass):
+                pass
+
+        instance = TestClass()
+        assert find_kwarg_by_type(instance.method, BaseClass) == "b"
+
+    def test_static_method_parameter(self):
+        """Test finding parameter in a static method."""
+
+        class TestClass:
+            @staticmethod
+            def static_method(a: int, b: BaseClass, c: str):
+                pass
+
+        assert find_kwarg_by_type(TestClass.static_method, BaseClass) == "b"
+
+    def test_class_method_parameter(self):
+        """Test finding parameter in a class method."""
+
+        class TestClass:
+            @classmethod
+            def class_method(cls, a: int, b: BaseClass, c: str):
+                pass
+
+        assert find_kwarg_by_type(TestClass.class_method, BaseClass) == "b"
+
+    def test_multiple_matching_parameters(self):
+        """Test finding first parameter when multiple matches exist."""
+
+        def func(a: BaseClass, b: str, c: BaseClass):
+            pass
+
+        # Should return the first match
+        assert find_kwarg_by_type(func, BaseClass) == "a"
+
+    def test_subclass_match(self):
+        """Test finding parameter with a subclass of the target type."""
+
+        def func(a: int, b: ChildClass, c: str):
+            pass
+
+        assert find_kwarg_by_type(func, BaseClass) == "b"
+
+    def test_nonstandard_annotation(self):
+        """Test finding parameter with a nonstandard annotation like an
+        instance. This is irregular."""
+
+        SENTINEL = object()
+
+        def func(a: int, b: SENTINEL, c: str):  # type: ignore
+            pass
+
+        assert find_kwarg_by_type(func, SENTINEL) is None  # type: ignore
+
+    def test_missing_type_annotation(self):
+        """Test finding parameter with a missing type annotation."""
+
+        def func(a: int, b, c: str):
+            pass
+
+        assert find_kwarg_by_type(func, str) == "c"

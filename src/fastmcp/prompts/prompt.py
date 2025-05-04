@@ -12,9 +12,11 @@ from mcp.types import Prompt as MCPPrompt
 from mcp.types import PromptArgument as MCPPromptArgument
 from pydantic import BaseModel, BeforeValidator, Field, TypeAdapter, validate_call
 
+from fastmcp.utilities.json_schema import prune_params
 from fastmcp.utilities.types import (
     _convert_set_defaults,
-    is_class_member_of_type,
+    find_kwarg_by_type,
+    get_cached_typeadapter,
 )
 
 if TYPE_CHECKING:
@@ -110,34 +112,24 @@ class Prompt(BaseModel):
         if func_name == "<lambda>":
             raise ValueError("You must provide a name for lambda functions")
 
+        type_adapter = get_cached_typeadapter(fn)
+        parameters = type_adapter.json_schema()
+
         # Auto-detect context parameter if not provided
         if context_kwarg is None:
-            if inspect.ismethod(fn) and hasattr(fn, "__func__"):
-                sig = inspect.signature(fn.__func__)
-            else:
-                sig = inspect.signature(fn)
-            for param_name, param in sig.parameters.items():
-                if is_class_member_of_type(param.annotation, Context):
-                    context_kwarg = param_name
-                    break
-
-        # Get schema from TypeAdapter - will fail if function isn't properly typed
-        parameters = TypeAdapter(fn).json_schema()
+            context_kwarg = find_kwarg_by_type(fn, kwarg_type=Context)
+        if context_kwarg:
+            parameters = prune_params(parameters, params=[context_kwarg])
 
         # Convert parameters to PromptArguments
         arguments: list[PromptArgument] = []
         if "properties" in parameters:
             for param_name, param in parameters["properties"].items():
-                # Skip context parameter
-                if param_name == context_kwarg:
-                    continue
-
-                required = param_name in parameters.get("required", [])
                 arguments.append(
                     PromptArgument(
                         name=param_name,
                         description=param.get("description"),
-                        required=required,
+                        required=param_name in parameters.get("required", []),
                     )
                 )
 

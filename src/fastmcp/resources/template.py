@@ -22,7 +22,7 @@ from pydantic import (
 from fastmcp.resources.types import FunctionResource, Resource
 from fastmcp.utilities.types import (
     _convert_set_defaults,
-    is_class_member_of_type,
+    find_kwarg_by_type,
 )
 
 if TYPE_CHECKING:
@@ -111,14 +111,7 @@ class ResourceTemplate(BaseModel):
 
         # Auto-detect context parameter if not provided
         if context_kwarg is None:
-            if inspect.ismethod(fn) and hasattr(fn, "__func__"):
-                sig = inspect.signature(fn.__func__)
-            else:
-                sig = inspect.signature(fn)
-            for param_name, param in sig.parameters.items():
-                if is_class_member_of_type(param.annotation, Context):
-                    context_kwarg = param_name
-                    break
+            context_kwarg = find_kwarg_by_type(fn, kwarg_type=Context)
 
         # Validate that URI params match function params
         uri_params = set(re.findall(r"{(\w+)(?:\*)?}", uri_template))
