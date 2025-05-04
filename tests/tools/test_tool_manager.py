@@ -1,7 +1,9 @@
 import json
 import logging
-from typing import Annotated
+import uuid
+from typing import Annotated, Any
 
+import pydantic_core
 import pytest
 from mcp.server.session import ServerSessionT
 from mcp.shared.context import LifespanContextT
@@ -391,6 +393,51 @@ class TestCallTools:
         assert len(result) == 1
         assert isinstance(result[0], TextContent)
         assert result[0].text == '[\n  "rex",\n  "gertrude"\n]'
+
+    async def test_call_tool_with_custom_serializer(self):
+        """Test that a custom serializer provided to FastMCP is used by tools."""
+
+        def custom_serializer(data: Any) -> str:
+            if isinstance(data, dict):
+                return f"CUSTOM:{json.dumps(data)}"
+            return json.dumps(data)
+
+        # Instantiate FastMCP with the custom serializer
+        mcp = FastMCP(tool_serializer=custom_serializer)
+        manager = mcp._tool_manager
+
+        def get_data() -> dict:
+            return {"key": "value", "number": 123}
+
+        manager.add_tool_from_fn(get_data)
+
+        result = await manager.call_tool("get_data", {})
+        assert isinstance(result, list)
+        assert len(result) == 1
+        assert isinstance(result[0], TextContent)
+        assert result[0].text == 'CUSTOM:{"key": "value", "number": 123}'
+
+    async def test_custom_serializer_fallback_on_error(self):
+        """Test that a broken custom serializer gracefully falls back."""
+
+        uuid_result = uuid.uuid4()
+
+        def custom_serializer(data: Any) -> str:
+            return json.dumps(data)
+
+        mcp = FastMCP(tool_serializer=custom_serializer)
+        manager = mcp._tool_manager
+
+        def get_data() -> uuid.UUID:
+            return uuid_result
+
+        manager.add_tool_from_fn(get_data)
+
+        result = await manager.call_tool("get_data", {})
+        assert isinstance(result, list)
+        assert len(result) == 1
+        assert isinstance(result[0], TextContent)
+        assert result[0].text == pydantic_core.to_json(uuid_result).decode()
 
 
 class TestToolSchema:

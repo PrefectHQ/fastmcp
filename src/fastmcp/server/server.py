@@ -205,6 +205,7 @@ class FastMCP(Generic[LifespanResultT]):
             | None
         ) = None,
         tags: set[str] | None = None,
+        tool_serializer: Callable[[Any], str] | None = None,
         **settings: Any,
     ):
         self.tags: set[str] = tags or set()
@@ -218,7 +219,10 @@ class FastMCP(Generic[LifespanResultT]):
         self._mounted_servers: dict[str, MountedServer] = {}
 
         if lifespan is None:
+            self._has_lifespan = False
             lifespan = default_lifespan
+        else:
+            self._has_lifespan = True
 
         self._mcp_server = MCPServer[LifespanResultT](
             name=name or "FastMCP",
@@ -226,7 +230,8 @@ class FastMCP(Generic[LifespanResultT]):
             lifespan=_lifespan_wrapper(self, lifespan),
         )
         self._tool_manager = ToolManager(
-            duplicate_behavior=self.settings.on_duplicate_tools
+            duplicate_behavior=self.settings.on_duplicate_tools,
+            serializer=tool_serializer,
         )
         self._resource_manager = ResourceManager(
             duplicate_behavior=self.settings.on_duplicate_resources
@@ -944,10 +949,62 @@ class FastMCP(Generic[LifespanResultT]):
         tool_separator: str | None = None,
         resource_separator: str | None = None,
         prompt_separator: str | None = None,
+        as_proxy: bool | None = None,
     ) -> None:
+        """Mount another FastMCP server on this server with the given prefix.
+
+        Unlike importing (with import_server), mounting establishes a dynamic connection
+        between servers. When a client interacts with a mounted server's objects through
+        the parent server, requests are forwarded to the mounted server in real-time.
+        This means changes to the mounted server are immediately reflected when accessed
+        through the parent.
+
+        When a server is mounted:
+        - Tools from the mounted server are accessible with prefixed names using the tool_separator.
+          Example: If server has a tool named "get_weather", it will be available as "prefix_get_weather".
+        - Resources are accessible with prefixed URIs using the resource_separator.
+          Example: If server has a resource with URI "weather://forecast", it will be available as
+          "prefix+weather://forecast".
+        - Templates are accessible with prefixed URI templates using the resource_separator.
+          Example: If server has a template with URI "weather://location/{id}", it will be available
+          as "prefix+weather://location/{id}".
+        - Prompts are accessible with prefixed names using the prompt_separator.
+          Example: If server has a prompt named "weather_prompt", it will be available as
+          "prefix_weather_prompt".
+
+        There are two modes for mounting servers:
+        1. Direct mounting (default when server has no custom lifespan): The parent server
+           directly accesses the mounted server's objects in-memory for better performance.
+           In this mode, no client lifecycle events occur on the mounted server, including
+           lifespan execution.
+
+        2. Proxy mounting (default when server has a custom lifespan): The parent server
+           treats the mounted server as a separate entity and communicates with it via a
+           Client transport. This preserves all client-facing behaviors, including lifespan
+           execution, but with slightly higher overhead.
+
+        Args:
+            prefix: Prefix to use for the mounted server's objects.
+            server: The FastMCP server to mount.
+            tool_separator: Separator character for tool names (defaults to "_").
+            resource_separator: Separator character for resource URIs (defaults to "+").
+            prompt_separator: Separator character for prompt names (defaults to "_").
+            as_proxy: Whether to treat the mounted server as a proxy. If None (default),
+                automatically determined based on whether the server has a custom lifespan
+                (True if it has a custom lifespan, False otherwise).
         """
-        Mount another FastMCP server on a given prefix.
-        """
+        from fastmcp import Client
+        from fastmcp.client.transports import FastMCPTransport
+        from fastmcp.server.proxy import FastMCPProxy
+
+        # if as_proxy is not specified and the server has a custom lifespan,
+        # we should treat it as a proxy
+        if as_proxy is None:
+            as_proxy = server._has_lifespan
+
+        if as_proxy and not isinstance(server, FastMCPProxy):
+            server = FastMCPProxy(Client(transport=FastMCPTransport(server)))
+
         mounted_server = MountedServer(
             server=server,
             prefix=prefix,

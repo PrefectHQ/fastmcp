@@ -23,7 +23,7 @@ Alternatively, you can install it directly with `pip` or `uv pip`:
     ```
 </CodeGroup>
 
-## Verify Installation
+### Verify Installation
 
 To verify that FastMCP is installed correctly, you can run the following command:
 
@@ -42,10 +42,26 @@ Python version:                            3.12.2
 Platform:            macOS-15.3.1-arm64-arm-64bit
 FastMCP root path:            ~/Developer/fastmcp
 ```
+## Upgrading from the Official MCP SDK
+
+Upgrading from the official MCP SDK's FastMCP 1.0 to FastMCP 2.0 is easy! The core server API is highly compatible, so after you install the `fastmcp` package, just change your import statement from `from mcp.server.fastmcp import FastMCP` to `from fastmcp import FastMCP`. 
+
+
+```python {1-5}
+# Before
+# from mcp.server.fastmcp import FastMCP
+
+# After
+from fastmcp import FastMCP
+
+mcp = FastMCP("My MCP Server")
+```
+
+While the 1.0 server API is very stable for common use cases, FastMCP 2.0 introduces many new features (like the Client, proxying, composition) documented throughout this site. Review the documentation for details on new capabilities.
 
 ## Installing for Development
 
-If you plan to contribute to FastMCP, you should begin by cloning the repository and using uv to install all dependencies.
+If you plan to contribute to FastMCP, you should begin by cloning the repository and using uv to install all dependencies (development dependencies are installed automatically):
 
 ```bash
 git clone https://github.com/jlowin/fastmcp.git
@@ -53,10 +69,26 @@ cd fastmcp
 uv sync
 ```
 
-This will install all dependencies, including ones for development, and create a virtual environment.
+This will install all dependencies, including ones for development, and create a virtual environment, which you can activate and use as normal.
 
-To run the tests, use pytest:
+### Unit Tests
+
+FastMCP has a comprehensive unit test suite, and all PR's must introduce and pass appropriate tests. To run the tests, use pytest:
 
 ```bash
 pytest
+```
+
+### Pre-Commit Hooks
+
+FastMCP uses pre-commit to manage code quality, including formatting, linting, and type-safety. All PR's must pass the pre-commit hooks, which are run as a part of the CI process. To install the pre-commit hooks, run:
+
+```bash
+uv run pre-commit install
+```
+
+Alternatively, to run pre-commit manually at any time, use:
+
+```bash
+pre-commit run --all-files
 ```

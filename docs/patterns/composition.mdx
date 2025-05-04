@@ -30,8 +30,6 @@ The choice of importing or mounting depends on your use case and requirements. I
 | **Method** | `FastMCP.import_server()` | `FastMCP.mount()` |
 | **Composition Type** | One-time copy (static) | Live link (dynamic) |
 | **Updates** | Changes to subserver NOT reflected | Changes to subserver immediately reflected |
-| **Lifespan** | Not managed | Automatically managed |
-| **Synchronicity** | Async (must be awaited) | Sync |
 | **Best For** | Bundling finalized components | Modular runtime composition |
 
 ### Proxy Servers
@@ -184,12 +182,12 @@ if __name__ == "__main__":
 
 ### How Mounting Works
 
-When you call `main_mcp.mount(prefix, server)`:
+Mounting creates a relationship between two servers where one server (the parent) delegates certain operations to another (the mounted server) based on prefixes. When mounting is configured:
 
-1. **Live Link**: A live connection is established between `main_mcp` and the `subserver`.
-2. **Dynamic Updates**: Changes made to the `subserver` (e.g., adding new tools) **will be reflected** immediately when accessing components through `main_mcp`.
-3. **Lifespan Management**: The `subserver`'s `lifespan` context **is automatically managed** and executed within the `main_mcp`'s lifespan.
-4. **Delegation**: Requests for components matching the prefix are delegated to the subserver at runtime.
+1. **Live Link**: The parent server establishes a connection to the mounted server.
+2. **Dynamic Updates**: Changes made to the mounted server (e.g., adding new tools) are immediately reflected when accessed through the parent server.
+3. **Prefixed Access**: The parent server uses prefixes to route requests to the mounted server.
+4. **Delegation**: Requests for components matching the prefix are delegated to the mounted server at runtime.
 
 The same prefixing rules apply as with `import_server` for naming tools, resources, templates, and prompts.
 
@@ -206,6 +204,51 @@ main_mcp.mount(
     prompt_separator="."      # Prompt name becomes: "api.sub_prompt_name"
 )
 ```
+
+### Direct vs. Proxy Mounting
+
+<VersionBadge version="2.2.7" />
+
+FastMCP supports two modes for mounting servers:
+
+1. **Direct Mounting** (default): The parent server directly accesses the mounted server's objects in memory for optimal performance and observability. In this mode:
+   - No client lifecycle events occur on the mounted server
+   - The mounted server's lifespan context is not executed
+   - Communication is handled through direct method calls
+   
+2. **Proxy Mounting**: The parent server treats the mounted server as a separate entity and communicates with it through a client interface. In this mode:
+   - Full client lifecycle events occur on the mounted server
+   - The mounted server's lifespan is executed when a client connects
+   - Communication happens via an in-memory Client transport
+   - This preserves all client-facing behaviors but is slightly less efficient
+
+You can control which mode to use with the `as_proxy` parameter:
+
+```python
+# Direct mounting (default when no custom lifespan)
+main_mcp.mount("api", api_server)
+
+# Proxy mounting (preserves full client lifecycle)
+main_mcp.mount("api", api_server, as_proxy=True)
+```
+
+FastMCP automatically uses proxy mounting when the mounted server has a custom lifespan, but you can override this behavior by explicitly setting `as_proxy=False` or `as_proxy=True`.
+
+#### Interaction with Proxy Servers
+
+When using `FastMCP.from_client()` to create a proxy server, mounting that server will always use proxy mounting since the proxy server is already designed to be accessed via a client interface.
+
+```python
+from fastmcp import FastMCP, Client
+
+# Create a proxy for a remote server
+remote_proxy = FastMCP.from_client(Client("http://example.com/mcp"))
+
+# Mount the proxy - this will preserve full client lifecycle
+main_server.mount("remote", remote_proxy)
+```
+
+This is particularly useful for incorporating remote servers into your local application architecture.
 
 
 ## Example: Modular Application
