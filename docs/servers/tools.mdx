@@ -43,8 +43,11 @@ When this tool is registered, FastMCP automatically:
 - Generates an input schema based on the function's parameters and type annotations.
 - Handles parameter validation and error reporting.
 
-
 The way you define your Python function dictates how the tool appears and behaves for the LLM client.
+
+<Tip>
+Functions with `*args` or `**kwargs` are not supported as tools. This restriction exists because FastMCP needs to generate a complete parameter schema for the MCP protocol, which isn't possible with variable argument lists.
+</Tip>
 
 ### Parameters
 
@@ -89,6 +92,7 @@ def process_image(
     """Process an image with optional resizing."""
     # Implementation...
 ```
+
 
 You can also use the Field as a default value, though the Annotated approach is preferred:
 

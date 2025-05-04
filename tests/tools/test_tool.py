@@ -63,15 +63,15 @@ class TestToolFromFunction:
         assert tool.parameters["properties"]["data"]["type"] == "string"
         assert isinstance(result[0], ImageContent)
 
-    def test_add_invalid_tool(self):
-        with pytest.raises(AttributeError):
+    def test_non_callable_fn(self):
+        with pytest.raises(TypeError, match="not a callable object"):
             Tool.from_function(1)  # type: ignore
 
-    def test_add_lambda(self):
+    def test_lambda(self):
         tool = Tool.from_function(lambda x: x, name="my_tool")
         assert tool.name == "my_tool"
 
-    def test_add_lambda_with_no_name(self):
+    def test_lambda_with_no_name(self):
         with pytest.raises(
             ValueError, match="You must provide a name for lambda functions"
         ):
@@ -85,6 +85,69 @@ class TestToolFromFunction:
         tool = Tool.from_function(add)
         assert tool.parameters["properties"]["_a"]["type"] == "integer"
         assert tool.parameters["properties"]["_b"]["type"] == "integer"
+
+    def test_tool_with_varargs_not_allowed(self):
+        def func(a: int, b: int, *args: int) -> int:
+            """Add two numbers."""
+            return a + b
+
+        with pytest.raises(
+            ValueError, match=r"Functions with \*args are not supported as tools"
+        ):
+            Tool.from_function(func)
+
+    def test_tool_with_varkwargs_not_allowed(self):
+        def func(a: int, b: int, **kwargs: int) -> int:
+            """Add two numbers."""
+            return a + b
+
+        with pytest.raises(
+            ValueError, match=r"Functions with \*\*kwargs are not supported as tools"
+        ):
+            Tool.from_function(func)
+
+    async def test_instance_method(self):
+        class MyClass:
+            def add(self, x: int, y: int) -> int:
+                """Add two numbers."""
+                return x + y
+
+        obj = MyClass()
+
+        tool = Tool.from_function(obj.add)
+        assert tool.name == "add"
+        assert tool.description == "Add two numbers."
+        assert "self" not in tool.parameters["properties"]
+
+    async def test_instance_method_with_varargs_not_allowed(self):
+        class MyClass:
+            def add(self, x: int, y: int, *args: int) -> int:
+                """Add two numbers."""
+                return x + y
+
+        obj = MyClass()
+
+        with pytest.raises(
+            ValueError, match=r"Functions with \*args are not supported as tools"
+        ):
+            Tool.from_function(obj.add)
+
+    async def test_instance_method_with_varkwargs_not_allowed(self):
+        class MyClass:
+            def add(self, x: int, y: int, **kwargs: int) -> int:
+                """Add two numbers."""
+                return x + y
+
+        obj = MyClass()
+
+        with pytest.raises(
+            ValueError, match=r"Functions with \*\*kwargs are not supported as tools"
+        ):
+            Tool.from_function(obj.add)
+
+    async def test_classmethod(self):
+        class MyClass:
+            x: int = 10
 
 
 class TestToolJsonParsing:

@@ -84,9 +84,9 @@ class TestAddTools:
         assert tool.parameters["properties"]["data"]["type"] == "string"
         assert isinstance(result[0], ImageContent)
 
-    def test_add_invalid_tool(self):
+    def test_add_noncallable_tool(self):
         manager = ToolManager()
-        with pytest.raises(AttributeError):
+        with pytest.raises(TypeError, match="not a callable object"):
             manager.add_tool_from_fn(1)  # type: ignore
 
     def test_add_lambda(self):

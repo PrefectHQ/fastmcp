@@ -239,6 +239,10 @@ Resource templates share most configuration options with regular resources (name
 
 Resource templates generate a new resource for each unique set of parameters, which means that resources can be dynamically created on-demand. For example, if the resource template `"user://profile/{name}"` is registered, MCP clients could request `"user://profile/ford"` or `"user://profile/marvin"` to retrieve either of those two user profiles as resources, without having to register each resource individually.
 
+<Tip>
+Functions with `*args` are not supported as resource templates. However, unlike tools and prompts, resource templates do support `**kwargs` because the URI template defines specific parameter names that will be collected and passed as keyword arguments.
+</Tip>
+
 Here is a complete example that shows how to define two resource templates:
 
 ```python
