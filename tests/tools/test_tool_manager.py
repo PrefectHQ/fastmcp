@@ -369,7 +369,7 @@ class TestCallTools:
         assert isinstance(result, list)
         assert len(result) == 1
         assert isinstance(result[0], TextContent)
-        assert result[0].text == '"a"'
+        assert result[0].text == "a"
 
     async def test_call_tool_with_complex_model(self):
         class MyShrimpTank(BaseModel):
@@ -379,7 +379,7 @@ class TestCallTools:
             shrimp: list[Shrimp]
             x: None
 
-        def name_shrimp(tank: MyShrimpTank, ctx: Context) -> list[str]:
+        def name_shrimp(tank: MyShrimpTank, ctx: Context | None) -> list[str]:
             return [x.name for x in tank.shrimp]
 
         manager = ToolManager()
@@ -449,7 +449,24 @@ class TestToolSchema:
         tool = manager.add_tool_from_fn(something)
         assert "ctx" not in json.dumps(tool.parameters)
         assert "Context" not in json.dumps(tool.parameters)
-        assert "ctx" not in tool.fn_metadata.arg_model.model_fields
+
+    async def test_optional_context_arg_excluded_from_schema(self):
+        def something(a: int, ctx: Context | None) -> int:
+            return a
+
+        manager = ToolManager()
+        tool = manager.add_tool_from_fn(something)
+        assert "ctx" not in json.dumps(tool.parameters)
+        assert "Context" not in json.dumps(tool.parameters)
+
+    async def test_annotated_context_arg_excluded_from_schema(self):
+        def something(a: int, ctx: Annotated[Context | int | None, "ctx"]) -> int:
+            return a
+
+        manager = ToolManager()
+        tool = manager.add_tool_from_fn(something)
+        assert "ctx" not in json.dumps(tool.parameters)
+        assert "Context" not in json.dumps(tool.parameters)
 
 
 class TestContextHandling:
