@@ -122,7 +122,6 @@ class OpenAPITool(Tool):
         name: str,
         description: str,
         parameters: dict[str, Any],
-        is_async: bool = True,
         tags: set[str] = set(),
         timeout: float | None = None,
         annotations: ToolAnnotations | None = None,
@@ -133,7 +132,6 @@ class OpenAPITool(Tool):
             description=description,
             parameters=parameters,
             fn=self._execute_request,  # We'll use an instance method instead of a global function
-            is_async=is_async,
             context_kwarg="context",  # Default context keyword argument
             tags=tags,
             annotations=annotations,
@@ -550,7 +548,6 @@ class FastMCPOpenAPI(FastMCP):
             name=tool_name,
             description=enhanced_description,
             parameters=combined_schema,
-            is_async=True,
             tags=set(route.tags or []),
             timeout=self._timeout,
         )
