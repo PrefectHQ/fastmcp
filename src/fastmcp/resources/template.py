@@ -146,7 +146,7 @@ class ResourceTemplate(BaseModel):
                 f"Required function arguments {required_params} must be a subset of the URI parameters {uri_params}"
             )
 
-        # CHeck if the URI parameters are a subset of the function parameters (skip if **kwargs present)
+        # Check if the URI parameters are a subset of the function parameters (skip if **kwargs present)
         if not any(
             param.kind == inspect.Parameter.VAR_KEYWORD
             for param in sig.parameters.values()
