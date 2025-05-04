@@ -16,8 +16,8 @@ from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import (
     Image,
     _convert_set_defaults,
+    find_kwarg_by_type,
     get_cached_typeadapter,
-    is_class_member_of_type,
 )
 
 if TYPE_CHECKING:
@@ -74,18 +74,11 @@ class Tool(BaseModel):
 
         func_doc = description or fn.__doc__ or ""
 
-        if inspect.ismethod(fn) and hasattr(fn, "__func__"):
-            sig = inspect.signature(fn.__func__)
-        else:
-            sig = inspect.signature(fn)
-        if context_kwarg is None:
-            for param_name, param in sig.parameters.items():
-                if is_class_member_of_type(param.annotation, Context):
-                    context_kwarg = param_name
-                    break
-
         type_adapter = get_cached_typeadapter(fn)
         schema = type_adapter.json_schema()
+
+        if context_kwarg is None:
+            context_kwarg = find_kwarg_by_type(fn, kwarg_type=Context)
         if context_kwarg:
             schema = prune_params(schema, params=[context_kwarg])
 
