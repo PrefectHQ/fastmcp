@@ -53,6 +53,9 @@ def generate_code_request(language: str, task_description: str) -> UserMessage:
 *   **Inferred Metadata:** By default:
     *   Prompt Name: Taken from the function name (`ask_about_topic`).
     *   Prompt Description: Taken from the function's docstring.
+<Tip>
+Functions with `*args` or `**kwargs` are not supported as prompts. This restriction exists because FastMCP needs to generate a complete parameter schema for the MCP protocol, which isn't possible with variable argument lists.
+</Tip>
 
 ### Return Values
 
@@ -104,6 +107,7 @@ def generate_content_request(
         
     return prompt
 ```
+
 
 ### Required vs. Optional Parameters
 

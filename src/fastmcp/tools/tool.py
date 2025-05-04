@@ -67,6 +67,14 @@ class Tool(BaseModel):
         """Create a Tool from a function."""
         from fastmcp import Context
 
+        # Reject functions with *args or **kwargs
+        sig = inspect.signature(fn)
+        for param in sig.parameters.values():
+            if param.kind == inspect.Parameter.VAR_POSITIONAL:
+                raise ValueError("Functions with *args are not supported as tools")
+            if param.kind == inspect.Parameter.VAR_KEYWORD:
+                raise ValueError("Functions with **kwargs are not supported as tools")
+
         func_name = name or fn.__name__
 
         if func_name == "<lambda>":

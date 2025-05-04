@@ -930,7 +930,7 @@ class TestResourceTemplates:
 
         with pytest.raises(
             ValueError,
-            match="URI parameters .* must be a subset of the required function arguments",
+            match="Required function arguments .* must be a subset of the URI parameters",
         ):
 
             @mcp.resource("resource://{name}/data")
@@ -958,7 +958,7 @@ class TestResourceTemplates:
 
         with pytest.raises(
             ValueError,
-            match="URI parameters .* must be a subset of the required function arguments",
+            match="Required function arguments .* must be a subset of the URI parameters",
         ):
 
             @mcp.resource("resource://{org}/{repo}/data")
@@ -976,6 +976,19 @@ class TestResourceTemplates:
             result = await client.read_resource(AnyUrl("resource://static"))
             assert isinstance(result[0], TextResourceContents)
             assert result[0].text == "Static data"
+
+    async def test_template_with_varkwargs(self):
+        """Test that a template can have **kwargs."""
+        mcp = FastMCP()
+
+        @mcp.resource("test://{x}/{y}/{z}")
+        def func(**kwargs: int) -> int:
+            return sum(kwargs.values())
+
+        async with Client(mcp) as client:
+            result = await client.read_resource(AnyUrl("test://1/2/3"))
+            assert isinstance(result[0], TextResourceContents)
+            assert result[0].text == "6"
 
     async def test_template_with_default_params(self):
         """Test that a template can have default parameters."""

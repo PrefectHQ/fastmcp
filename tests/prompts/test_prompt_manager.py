@@ -189,6 +189,30 @@ class TestPromptManager:
         with pytest.raises(ValueError, match="Missing required arguments"):
             await manager.render_prompt("fn")
 
+    async def test_prompt_with_varargs_not_allowed(self):
+        """Test that a prompt with *args is not allowed."""
+
+        def fn(*args: int) -> str:
+            return f"Hello, {args}!"
+
+        manager = PromptManager()
+        with pytest.raises(
+            ValueError, match=r"Functions with \*args are not supported as prompts"
+        ):
+            manager.add_prompt(Prompt.from_function(fn))
+
+    async def test_prompt_with_varkwargs_not_allowed(self):
+        """Test that a prompt with **kwargs is not allowed."""
+
+        def fn(**kwargs: int) -> str:
+            return f"Hello, {kwargs}!"
+
+        manager = PromptManager()
+        with pytest.raises(
+            ValueError, match=r"Functions with \*\*kwargs are not supported as prompts"
+        ):
+            manager.add_prompt(Prompt.from_function(fn))
+
 
 class TestPromptTags:
     """Test functionality related to prompt tags."""

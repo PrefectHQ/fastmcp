@@ -104,7 +104,7 @@ class TestResourceTemplate:
         # This should fail - 'unknown' is not a function parameter
         with pytest.raises(
             ValueError,
-            match="URI parameters .* must be a subset of the required function arguments",
+            match="Required function arguments .* must be a subset of the URI parameters",
         ):
             ResourceTemplate.from_function(
                 fn=my_func,
@@ -132,7 +132,7 @@ class TestResourceTemplate:
         # This should fail - required param is not in URI
         with pytest.raises(
             ValueError,
-            match="URI parameters .* must be a subset of the required function arguments",
+            match="Required function arguments .* must be a subset of the URI parameters",
         ):
             ResourceTemplate.from_function(
                 fn=func_with_required,
@@ -157,7 +157,7 @@ class TestResourceTemplate:
         # This fails - missing one required param
         with pytest.raises(
             ValueError,
-            match="URI parameters .* must be a subset of the required function arguments",
+            match="Required function arguments .* must be a subset of the URI parameters",
         ):
             ResourceTemplate.from_function(
                 fn=multi_required,
@@ -359,6 +359,31 @@ class TestResourceTemplate:
 
         params = template.matches("test://src/path/to/test.py")
         assert params == {"prefix": "src", "path": "path/to/test.py"}
+
+    async def test_function_with_varargs_not_allowed(self):
+        def func(x: int, *args: int) -> int:
+            return x + sum(args)
+
+        with pytest.raises(
+            ValueError,
+            match=r"Functions with \*args are not supported as resource templates",
+        ):
+            ResourceTemplate.from_function(
+                fn=func,
+                uri_template="test://{x}/{args*}",
+                name="test",
+            )
+
+    async def test_function_with_varkwargs_ok(self):
+        def func(x: int, **kwargs: int) -> int:
+            return x + sum(kwargs.values())
+
+        template = ResourceTemplate.from_function(
+            fn=func,
+            uri_template="test://{x}/{y}/{z}",
+            name="test",
+        )
+        assert template.uri_template == "test://{x}/{y}/{z}"
 
 
 class TestMatchUriTemplate:

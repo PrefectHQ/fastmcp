@@ -111,6 +111,13 @@ class Prompt(BaseModel):
 
         if func_name == "<lambda>":
             raise ValueError("You must provide a name for lambda functions")
+            # Reject functions with *args or **kwargs
+        sig = inspect.signature(fn)
+        for param in sig.parameters.values():
+            if param.kind == inspect.Parameter.VAR_POSITIONAL:
+                raise ValueError("Functions with *args are not supported as prompts")
+            if param.kind == inspect.Parameter.VAR_KEYWORD:
+                raise ValueError("Functions with **kwargs are not supported as prompts")
 
         type_adapter = get_cached_typeadapter(fn)
         parameters = type_adapter.json_schema()
