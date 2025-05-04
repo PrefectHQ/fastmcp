@@ -245,3 +245,14 @@ class TestFindKwargByType:
             pass
 
         assert find_kwarg_by_type(func, BaseClass) == "b"
+
+    def test_nonstandard_annotation(self):
+        """Test finding parameter with a nonstandard annotation like an
+        instance. This is irregular."""
+
+        SENTINEL = object()
+
+        def func(a: int, b: SENTINEL, c: str):  # type: ignore
+            pass
+
+        assert find_kwarg_by_type(func, SENTINEL) is None  # type: ignore
