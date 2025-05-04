@@ -126,7 +126,7 @@ class Tool(BaseModel):
                 if isinstance(parsed_args.get(param_name, None), str):
                     try:
                         parsed_args[param_name] = json.loads(parsed_args[param_name])
-                    except Exception:
+                    except json.JSONDecodeError:
                         pass
 
             type_adapter = get_cached_typeadapter(self.fn)
