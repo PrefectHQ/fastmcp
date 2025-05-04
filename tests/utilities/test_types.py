@@ -256,3 +256,11 @@ class TestFindKwargByType:
             pass
 
         assert find_kwarg_by_type(func, SENTINEL) is None  # type: ignore
+
+    def test_missing_type_annotation(self):
+        """Test finding parameter with a missing type annotation."""
+
+        def func(a: int, b, c: str):
+            pass
+
+        assert find_kwarg_by_type(func, str) == "c"
