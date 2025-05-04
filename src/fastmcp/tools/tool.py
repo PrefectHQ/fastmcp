@@ -40,7 +40,6 @@ class Tool(BaseModel):
     name: str = Field(description="Name of the tool")
     description: str = Field(description="Description of what the tool does")
     parameters: dict[str, Any] = Field(description="JSON schema for tool parameters")
-    is_async: bool = Field(description="Whether the tool is async")
     context_kwarg: str | None = Field(
         None, description="Name of the kwarg that should receive context"
     )
@@ -74,7 +73,6 @@ class Tool(BaseModel):
             raise ValueError("You must provide a name for lambda functions")
 
         func_doc = description or fn.__doc__ or ""
-        is_async = inspect.iscoroutinefunction(fn)
 
         if inspect.ismethod(fn) and hasattr(fn, "__func__"):
             sig = inspect.signature(fn.__func__)
@@ -96,7 +94,6 @@ class Tool(BaseModel):
             name=func_name,
             description=func_doc,
             parameters=schema,
-            is_async=is_async,
             context_kwarg=context_kwarg,
             tags=tags or set(),
             annotations=annotations,

@@ -52,7 +52,6 @@ class ProxyTool(Tool):
             description=tool.description,
             parameters=tool.inputSchema,
             fn=_proxy_passthrough,
-            is_async=True,
         )
 
     async def run(

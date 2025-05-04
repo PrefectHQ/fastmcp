@@ -31,7 +31,6 @@ class TestAddTools:
         assert tool is not None
         assert tool.name == "add"
         assert tool.description == "Add two numbers."
-        assert tool.is_async is False
         assert tool.parameters["properties"]["a"]["type"] == "integer"
         assert tool.parameters["properties"]["b"]["type"] == "integer"
 
@@ -49,7 +48,6 @@ class TestAddTools:
         assert tool is not None
         assert tool.name == "fetch_data"
         assert tool.description == "Fetch data from URL."
-        assert tool.is_async is True
         assert tool.parameters["properties"]["url"]["type"] == "string"
 
     def test_pydantic_model_function(self):
@@ -70,7 +68,6 @@ class TestAddTools:
         assert tool is not None
         assert tool.name == "create_user"
         assert tool.description == "Create a new user."
-        assert tool.is_async is False
         assert "name" in tool.parameters["$defs"]["UserInput"]["properties"]
         assert "age" in tool.parameters["$defs"]["UserInput"]["properties"]
         assert "flag" in tool.parameters["properties"]
