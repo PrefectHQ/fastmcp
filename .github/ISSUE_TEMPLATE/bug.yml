@@ -32,7 +32,10 @@ body:
       placeholder: |
         from fastmcp import FastMCP, Client
 
-        ...
+        mcp = FastMCP()
+
+        async with Client(mcp) as client:
+            ...
       render: Python
 
   - type: textarea
