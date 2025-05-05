@@ -27,8 +27,10 @@ body:
         [minimal, reproducible example](https://stackoverflow.com/help/minimal-reproducible-example)
         demonstrating the bug.
 
+        If possible, your example should be a single-file script. Instead of `.run()`-ing an MCP server, use a `Client` to directly interact with it (`async with Client(mcp) as client: ...`) and demonstrate the issue.
+
       placeholder: |
-        from fastmcp import FastMCP
+        from fastmcp import FastMCP, Client
 
         ...
       render: Python
