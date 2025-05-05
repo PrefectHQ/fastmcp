@@ -319,14 +319,16 @@ async def test_import_with_proxy_prompts():
 
     @api_app.prompt()
     def greeting(name: str) -> str:
+        """Example greeting prompt."""
         return f"Hello, {name} from API!"
 
     proxy_app = FastMCP.from_client(Client(api_app))
     await main_app.import_server("api", proxy_app)
 
     result = await main_app._mcp_get_prompt("api_greeting", {"name": "World"})
-    assert result.messages is not None
-    # Check that the message contains our greeting
+    assert isinstance(result.messages[0].content, TextContent)
+    assert result.messages[0].content.text == "Hello, World from API!"
+    assert result.description == "Example greeting prompt."
 
 
 async def test_import_with_proxy_resources():

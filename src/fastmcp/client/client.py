@@ -286,7 +286,7 @@ class Client:
 
     async def get_prompt(
         self, name: str, arguments: dict[str, str] | None = None
-    ) -> list[mcp.types.PromptMessage]:
+    ) -> mcp.types.GetPromptResult:
         """Retrieve a rendered prompt message list from the server.
 
         Args:
@@ -294,13 +294,14 @@ class Client:
             arguments (dict[str, str] | None, optional): Arguments to pass to the prompt. Defaults to None.
 
         Returns:
-            list[mcp.types.PromptMessage]: A list of prompt messages.
+            mcp.types.GetPromptResult: The complete response object from the protocol,
+                containing the prompt messages and any additional metadata.
 
         Raises:
             RuntimeError: If called while the client is not connected.
         """
         result = await self.get_prompt_mcp(name=name, arguments=arguments)
-        return result.messages
+        return result
 
     # --- Completion ---
 

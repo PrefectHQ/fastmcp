@@ -104,6 +104,10 @@ You can make multiple calls to the server within the same `async with` block usi
 
 The `Client` provides methods corresponding to standard MCP requests:
 
+<Warning>
+The standard client methods return user-friendly representations that may change as the protocol evolves. For consistent access to the complete data structure, use the `*_mcp` methods described later.
+</Warning>
+
 #### Tool Operations
 
 *   **`list_tools()`**: Retrieves a list of tools available on the server.
@@ -152,6 +156,10 @@ The `Client` provides methods corresponding to standard MCP requests:
 ### Raw MCP Protocol Objects
 
 The FastMCP client attempts to provide a "friendly" interface to the MCP protocol, but sometimes you may need access to the raw MCP protocol objects. Each of the main client methods that returns data has a corresponding `*_mcp` method that returns the raw MCP protocol objects directly.
+
+<Warning>
+The standard client methods (without `_mcp`) return user-friendly representations of MCP data, while `*_mcp` methods will always return the complete MCP protocol objects. As the protocol evolves, changes to these user-friendly representations may occur and could potentially be breaking. If you need consistent, stable access to the full data structure, prefer using the `*_mcp` methods.
+</Warning>
 
 ```python
 # Standard method - returns just the list of tools

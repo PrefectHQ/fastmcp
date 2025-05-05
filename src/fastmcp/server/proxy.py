@@ -19,7 +19,7 @@ from pydantic.networks import AnyUrl
 
 from fastmcp.client import Client
 from fastmcp.exceptions import NotFoundError
-from fastmcp.prompts import Message, Prompt
+from fastmcp.prompts import Prompt, PromptMessage
 from fastmcp.resources import Resource, ResourceTemplate
 from fastmcp.server.context import Context
 from fastmcp.server.server import FastMCP
@@ -175,10 +175,10 @@ class ProxyPrompt(Prompt):
         self,
         arguments: dict[str, Any],
         context: Context[ServerSessionT, LifespanContextT] | None = None,
-    ) -> list[Message]:
+    ) -> list[PromptMessage]:
         async with self._client:
             result = await self._client.get_prompt(self.name, arguments)
-        return [Message(role=m.role, content=m.content) for m in result]
+        return result.messages
 
 
 class FastMCPProxy(FastMCP):
@@ -291,4 +291,4 @@ class FastMCPProxy(FastMCP):
         except NotFoundError:
             async with self.client:
                 result = await self.client.get_prompt(name, arguments)
-            return GetPromptResult(messages=result)
+            return result

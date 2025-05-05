@@ -4,10 +4,10 @@ from __future__ import annotations as _annotations
 
 import inspect
 from collections.abc import Awaitable, Callable, Sequence
-from typing import TYPE_CHECKING, Annotated, Any, Literal
+from typing import TYPE_CHECKING, Annotated, Any
 
 import pydantic_core
-from mcp.types import EmbeddedResource, ImageContent, TextContent
+from mcp.types import EmbeddedResource, ImageContent, PromptMessage, Role, TextContent
 from mcp.types import Prompt as MCPPrompt
 from mcp.types import PromptArgument as MCPPromptArgument
 from pydantic import BaseModel, BeforeValidator, Field, TypeAdapter, validate_call
@@ -28,32 +28,24 @@ if TYPE_CHECKING:
 CONTENT_TYPES = TextContent | ImageContent | EmbeddedResource
 
 
-class Message(BaseModel):
-    """Base class for all prompt messages."""
-
-    role: Literal["user", "assistant"]
-    content: CONTENT_TYPES
-
-    def __init__(self, content: str | CONTENT_TYPES, **kwargs: Any):
-        if isinstance(content, str):
-            content = TextContent(type="text", text=content)
-        super().__init__(content=content, **kwargs)
-
-
-def UserMessage(content: str | CONTENT_TYPES, **kwargs: Any) -> Message:
-    """A message from the user."""
-    return Message(content=content, role="user", **kwargs)
+def Message(
+    content: str | CONTENT_TYPES, role: Role | None = None, **kwargs: Any
+) -> PromptMessage:
+    """A user-friendly constructor for PromptMessage."""
+    if isinstance(content, str):
+        content = TextContent(type="text", text=content)
+    if role is None:
+        role = "user"
+    return PromptMessage(content=content, role=role, **kwargs)
 
 
-def AssistantMessage(content: str | CONTENT_TYPES, **kwargs: Any) -> Message:
-    """A message from the assistant."""
-    return Message(content=content, role="assistant", **kwargs)
-
-
-message_validator = TypeAdapter[Message](Message)
+message_validator = TypeAdapter[PromptMessage](PromptMessage)
 
 SyncPromptResult = (
-    str | Message | dict[str, Any] | Sequence[str | Message | dict[str, Any]]
+    str
+    | PromptMessage
+    | dict[str, Any]
+    | Sequence[str | PromptMessage | dict[str, Any]]
 )
 PromptResult = SyncPromptResult | Awaitable[SyncPromptResult]
 
@@ -156,7 +148,7 @@ class Prompt(BaseModel):
         self,
         arguments: dict[str, Any] | None = None,
         context: Context[ServerSessionT, LifespanContextT] | None = None,
-    ) -> list[Message]:
+    ) -> list[PromptMessage]:
         """Render the prompt with arguments."""
         # Validate required arguments
         if self.arguments:
@@ -182,21 +174,28 @@ class Prompt(BaseModel):
                 result = [result]
 
             # Convert result to messages
-            messages: list[Message] = []
-            for msg in result:  # type: ignore[reportUnknownVariableType]
+            messages: list[PromptMessage] = []
+            for msg in result:
                 try:
-                    if isinstance(msg, Message):
+                    if isinstance(msg, PromptMessage):
                         messages.append(msg)
-                    elif isinstance(msg, dict):
-                        messages.append(message_validator.validate_python(msg))
                     elif isinstance(msg, str):
-                        content = TextContent(type="text", text=msg)
-                        messages.append(Message(role="user", content=content))
+                        messages.append(
+                            PromptMessage(
+                                role="user",
+                                content=TextContent(type="text", text=msg),
+                            )
+                        )
                     else:
                         content = pydantic_core.to_json(
                             msg, fallback=str, indent=2
                         ).decode()
-                        messages.append(Message(role="user", content=content))
+                        messages.append(
+                            PromptMessage(
+                                role="user",
+                                content=TextContent(type="text", text=content),
+                            )
+                        )
                 except Exception:
                     raise ValueError(
                         f"Could not convert prompt result to message: {msg}"
