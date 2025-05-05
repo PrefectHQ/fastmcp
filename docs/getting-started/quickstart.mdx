@@ -43,7 +43,8 @@ def greet(name: str) -> str:
 
 To test the server, create a FastMCP client and point it at the server object.
 
-```python my_server.py {1, 9-16}
+```python my_server.py {1-2, 10-17}
+import asyncio
 from fastmcp import FastMCP, Client
 
 mcp = FastMCP("My MCP Server")
