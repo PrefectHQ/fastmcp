@@ -640,16 +640,16 @@ class TestPromptDecorator:
 
         async with Client(mcp) as client:
             result = await client.get_prompt("test_prompt", {"name": "World"})
-            assert len(result) == 1
-            message = result[0]
+            assert len(result.messages) == 1
+            message = result.messages[0]
             assert isinstance(message.content, TextContent)
             assert message.content.text == "Hello, World!"
 
             result = await client.get_prompt(
                 "test_prompt", {"name": "World", "greeting": "Hi"}
             )
-            assert len(result) == 1
-            message = result[0]
+            assert len(result.messages) == 1
+            message = result.messages[0]
             assert isinstance(message.content, TextContent)
             assert message.content.text == "Hi, World!"
 
@@ -668,8 +668,8 @@ class TestPromptDecorator:
 
         async with Client(mcp) as client:
             result = await client.get_prompt("test_prompt")
-            assert len(result) == 1
-            message = result[0]
+            assert len(result.messages) == 1
+            message = result.messages[0]
             assert isinstance(message.content, TextContent)
             assert message.content.text == "My prefix: Hello, world!"
 
@@ -687,8 +687,8 @@ class TestPromptDecorator:
 
         async with Client(mcp) as client:
             result = await client.get_prompt("test_prompt")
-            assert len(result) == 1
-            message = result[0]
+            assert len(result.messages) == 1
+            message = result.messages[0]
             assert isinstance(message.content, TextContent)
             assert message.content.text == "Class prefix: Hello, world!"
 
@@ -703,8 +703,8 @@ class TestPromptDecorator:
 
         async with Client(mcp) as client:
             result = await client.get_prompt("test_prompt")
-            assert len(result) == 1
-            message = result[0]
+            assert len(result.messages) == 1
+            message = result.messages[0]
             assert isinstance(message.content, TextContent)
             assert message.content.text == "Static Hello, world!"
 
@@ -717,8 +717,8 @@ class TestPromptDecorator:
 
         async with Client(mcp) as client:
             result = await client.get_prompt("test_prompt")
-            assert len(result) == 1
-            message = result[0]
+            assert len(result.messages) == 1
+            message = result.messages[0]
             assert isinstance(message.content, TextContent)
             assert message.content.text == "Async Hello, world!"
 

@@ -207,7 +207,7 @@ class TestPrompts:
     async def test_render_prompt_calls_prompt(self, proxy_server):
         async with Client(proxy_server) as client:
             result = await client.get_prompt("welcome", {"name": "Alice"})
-        assert isinstance(result[0], mcp.types.PromptMessage)
-        assert result[0].role == "user"
-        assert isinstance(result[0].content, mcp.types.TextContent)
-        assert result[0].content.text == "Welcome to FastMCP, Alice!"
+        assert isinstance(result.messages[0], mcp.types.PromptMessage)
+        assert result.messages[0].role == "user"
+        assert isinstance(result.messages[0].content, mcp.types.TextContent)
+        assert result.messages[0].content.text == "Welcome to FastMCP, Alice!"

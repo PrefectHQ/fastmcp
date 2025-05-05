@@ -5,6 +5,7 @@ from pydantic import AnyUrl
 
 from fastmcp.client import Client
 from fastmcp.client.transports import FastMCPTransport
+from fastmcp.prompts.prompt import TextContent
 from fastmcp.server.server import FastMCP
 
 
@@ -38,6 +39,7 @@ def fastmcp_server():
     # Add a prompt
     @server.prompt()
     def welcome(name: str) -> str:
+        """Example greeting prompt."""
         return f"Welcome to FastMCP, {name}!"
 
     return server
@@ -182,8 +184,9 @@ async def test_get_prompt(fastmcp_server):
         result = await client.get_prompt("welcome", {"name": "Developer"})
 
         # The result should contain our welcome message
-        result_str = str(result)
-        assert "Welcome to FastMCP, Developer!" in result_str
+        assert isinstance(result.messages[0].content, TextContent)
+        assert result.messages[0].content.text == "Welcome to FastMCP, Developer!"
+        assert result.description == "Example greeting prompt."
 
 
 async def test_get_prompt_mcp(fastmcp_server):
@@ -193,11 +196,10 @@ async def test_get_prompt_mcp(fastmcp_server):
     async with client:
         result = await client.get_prompt_mcp("welcome", {"name": "Developer"})
 
-        # Check that we got the raw MCP GetPromptResult object
-        assert hasattr(result, "messages")
-        assert len(result.messages) > 0
-        result_str = str(result.messages)
-        assert "Welcome to FastMCP, Developer!" in result_str
+        # The result should contain our welcome message
+        assert isinstance(result.messages[0].content, TextContent)
+        assert result.messages[0].content.text == "Welcome to FastMCP, Developer!"
+        assert result.description == "Example greeting prompt."
 
 
 async def test_read_resource(fastmcp_server):

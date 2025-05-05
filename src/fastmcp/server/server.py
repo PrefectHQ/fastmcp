@@ -32,7 +32,6 @@ from mcp.types import (
     EmbeddedResource,
     GetPromptResult,
     ImageContent,
-    PromptMessage,
     TextContent,
     ToolAnnotations,
 )
@@ -504,15 +503,10 @@ class FastMCP(Generic[LifespanResultT]):
         """
         if self._prompt_manager.has_prompt(name):
             context = self.get_context()
-            messages = await self._prompt_manager.render_prompt(
+            prompt_result = await self._prompt_manager.render_prompt(
                 name, arguments=arguments or {}, context=context
             )
-
-            return GetPromptResult(
-                messages=[
-                    PromptMessage(role=m.role, content=m.content) for m in messages
-                ]
-            )
+            return prompt_result
         else:
             for server in self._mounted_servers.values():
                 if server.match_prompt(name):
