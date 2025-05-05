@@ -826,16 +826,21 @@ class FastMCP(Generic[LifespanResultT]):
         host: str | None = None,
         port: int | None = None,
         log_level: str | None = None,
+        uvicorn_config: dict | None = None,
     ) -> None:
         """Run the server using SSE transport."""
-        app = self.sse_app()
-        app = RequestMiddleware(app)
+        uvicorn_config = uvicorn_config or {}
+        # the SSE app hangs even when a signal is sent, so we disable the timeout to make it possible to close immediately.
+        # see https://github.com/jlowin/fastmcp/issues/296
+        uvicorn_config.setdefault("timeout_graceful_shutdown", 0)
+        app = RequestMiddleware(self.sse_app())
 
         config = uvicorn.Config(
             app,
             host=host or self.settings.host,
             port=port or self.settings.port,
             log_level=log_level or self.settings.log_level.lower(),
+            **uvicorn_config,
         )
         server = uvicorn.Server(config)
         await server.serve()
