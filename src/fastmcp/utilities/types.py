@@ -6,23 +6,26 @@ from collections.abc import Callable
 from functools import lru_cache
 from pathlib import Path
 from types import UnionType
-from typing import Annotated, TypeVar, Union, get_args, get_origin
+from typing import Annotated, Any, TypeVar, Union, get_args, get_origin
 
 from mcp.types import ImageContent
-from pydantic import TypeAdapter
+from pydantic import ConfigDict, TypeAdapter
 
 T = TypeVar("T")
 
 
 @lru_cache(maxsize=5000)
-def get_cached_typeadapter(cls: T) -> TypeAdapter[T]:
+def get_cached_typeadapter(
+    cls: T, config: frozenset[tuple[str, Any]] | None = None
+) -> TypeAdapter[T]:
     """
     TypeAdapters are heavy objects, and in an application context we'd typically
     create them once in a global scope and reuse them as often as possible.
     However, this isn't feasible for user-generated functions. Instead, we use a
     cache to minimize the cost of creating them as much as possible.
     """
-    return TypeAdapter(cls)
+    config_dict = dict(config or {})
+    return TypeAdapter(cls, config=ConfigDict(**config_dict))
 
 
 def issubclass_safe(cls: type, base: type) -> bool:

@@ -127,7 +127,9 @@ class Tool(BaseModel):
                     except json.JSONDecodeError:
                         pass
 
-            type_adapter = get_cached_typeadapter(self.fn)
+            type_adapter = get_cached_typeadapter(
+                self.fn, config=frozenset([("coerce_numbers_to_str", True)])
+            )
             result = type_adapter.validate_python(parsed_args | injected_args)
             if inspect.isawaitable(result):
                 result = await result
