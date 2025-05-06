@@ -1,6 +1,8 @@
 import datetime
 from typing import Any
 
+UTC = datetime.timezone.utc
+
 
 class TimedCache:
     NOT_FOUND = object()
@@ -10,12 +12,12 @@ class TimedCache:
         self.cache: dict[Any, tuple[Any, datetime.datetime]] = {}
 
     def set(self, key: Any, value: Any) -> None:
-        expires = datetime.datetime.now() + self.expiration
+        expires = datetime.datetime.now(UTC) + self.expiration
         self.cache[key] = (value, expires)
 
     def get(self, key: Any) -> Any:
         value = self.cache.get(key)
-        if value is not None and value[1] > datetime.datetime.now():
+        if value is not None and value[1] > datetime.datetime.now(UTC):
             return value[0]
         else:
             return self.NOT_FOUND
