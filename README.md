@@ -350,6 +350,10 @@ Run tests using pytest:
 ```bash
 pytest
 ```
+or if you want an overview of the code coverage
+```bash
+uv run pytest --cov=src --cov=examples --cov-report=html
+```
 
 ### Static Checks
 
