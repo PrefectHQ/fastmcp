@@ -10,6 +10,7 @@ from mcp.types import EmbeddedResource, ImageContent, TextContent, ToolAnnotatio
 from mcp.types import Tool as MCPTool
 from pydantic import BaseModel, BeforeValidator, Field
 
+import fastmcp
 from fastmcp.exceptions import ToolError
 from fastmcp.utilities.json_schema import prune_params
 from fastmcp.utilities.logging import get_logger
@@ -107,6 +108,7 @@ class Tool(BaseModel):
         context: Context[ServerSessionT, LifespanContextT] | None = None,
     ) -> list[TextContent | ImageContent | EmbeddedResource]:
         """Run the tool with arguments."""
+
         try:
             injected_args = (
                 {self.context_kwarg: context} if self.context_kwarg is not None else {}
@@ -114,22 +116,29 @@ class Tool(BaseModel):
 
             parsed_args = arguments.copy()
 
-            # Pre-parse data from JSON in order to handle cases like `["a", "b", "c"]`
-            # being passed in as JSON inside a string rather than an actual list.
-            #
-            # Claude desktop is prone to this - in fact it seems incapable of NOT doing
-            # this. For sub-models, it tends to pass dicts (JSON objects) as JSON strings,
-            # which can be pre-parsed here.
-            for param_name in self.parameters["properties"]:
-                if isinstance(parsed_args.get(param_name, None), str):
-                    try:
-                        parsed_args[param_name] = json.loads(parsed_args[param_name])
-                    except json.JSONDecodeError:
-                        pass
+            if fastmcp.settings.settings.tool_attempt_parse_json_args:
+                # Pre-parse data from JSON in order to handle cases like `["a", "b", "c"]`
+                # being passed in as JSON inside a string rather than an actual list.
+                #
+                # Claude desktop is prone to this - in fact it seems incapable of NOT doing
+                # this. For sub-models, it tends to pass dicts (JSON objects) as JSON strings,
+                # which can be pre-parsed here.
+                signature = inspect.signature(self.fn)
+                for param_name in self.parameters["properties"]:
+                    if param_name not in signature.parameters:
+                        continue
+                    arg = parsed_args.get(param_name, None)
+                    if isinstance(arg, str) and signature.parameters[
+                        param_name
+                    ].annotation not in (int, float, bool):
+                        # if arg.strip().startswith("{") or arg.strip().startswith("["):
+                        try:
+                            parsed_args[param_name] = json.loads(arg)
 
-            type_adapter = get_cached_typeadapter(
-                self.fn, config=frozenset([("coerce_numbers_to_str", True)])
-            )
+                        except json.JSONDecodeError:
+                            pass
+
+            type_adapter = get_cached_typeadapter(self.fn)
             result = type_adapter.validate_python(parsed_args | injected_args)
             if inspect.isawaitable(result):
                 result = await result

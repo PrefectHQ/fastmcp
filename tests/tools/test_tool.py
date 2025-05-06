@@ -2,8 +2,11 @@ import pytest
 from mcp.types import ImageContent, TextContent
 from pydantic import BaseModel
 
-from fastmcp import Image
+from fastmcp import FastMCP, Image
+from fastmcp.client import Client
+from fastmcp.exceptions import ClientError
 from fastmcp.tools.tool import Tool
+from fastmcp.utilities.tests import temporary_settings
 
 
 class TestToolFromFunction:
@@ -150,8 +153,13 @@ class TestToolFromFunction:
             x: int = 10
 
 
-class TestToolJsonParsing:
+class TestLegacyToolJsonParsing:
     """Tests for Tool's JSON pre-parsing functionality."""
+
+    @pytest.fixture(autouse=True)
+    def enable_legacy_json_parsing(self):
+        with temporary_settings(tool_attempt_parse_json_args=True):
+            yield
 
     async def test_json_string_arguments(self):
         """Test that JSON string arguments are parsed and validated correctly"""
@@ -264,3 +272,78 @@ class TestToolJsonParsing:
         invalid_json = '{"x": 1, "y": {"invalid": "hello"}}'
         with pytest.raises(Exception):
             await tool.run({"data": invalid_json})
+
+    async def test_tool_list_coercion(self):
+        """Test JSON string to collection type coercion."""
+        mcp = FastMCP()
+
+        @mcp.tool()
+        def process_list(items: list[int]) -> int:
+            return sum(items)
+
+        async with Client(mcp) as client:
+            # JSON array string should be coerced to list
+            result = await client.call_tool(
+                "process_list", {"items": "[1, 2, 3, 4, 5]"}
+            )
+            assert isinstance(result[0], TextContent)
+            assert result[0].text == "15"
+
+    async def test_tool_list_coercion_error(self):
+        """Test that a list coercion error is raised if the input is not a valid list."""
+        mcp = FastMCP()
+
+        @mcp.tool()
+        def process_list(items: list[int]) -> int:
+            return sum(items)
+
+        async with Client(mcp) as client:
+            with pytest.raises(
+                ClientError,
+                match="Input should be a valid list",
+            ):
+                await client.call_tool("process_list", {"items": "['a', 'b', 3]"})
+
+    async def test_tool_dict_coercion(self):
+        """Test JSON string to dict type coercion."""
+        mcp = FastMCP()
+
+        @mcp.tool()
+        def process_dict(data: dict[str, int]) -> int:
+            return sum(data.values())
+
+        async with Client(mcp) as client:
+            # JSON object string should be coerced to dict
+            result = await client.call_tool(
+                "process_dict", {"data": '{"a": 1, "b": "2", "c": 3}'}
+            )
+            assert isinstance(result[0], TextContent)
+            assert result[0].text == "6"
+
+    async def test_tool_set_coercion(self):
+        """Test JSON string to set type coercion."""
+        mcp = FastMCP()
+
+        @mcp.tool()
+        def process_set(items: set[int]) -> int:
+            assert isinstance(items, set)
+            return sum(items)
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("process_set", {"items": "[1, 2, 3, 4, 5]"})
+            assert isinstance(result[0], TextContent)
+            assert result[0].text == "15"
+
+    async def test_tool_tuple_coercion(self):
+        """Test JSON string to tuple type coercion."""
+        mcp = FastMCP()
+
+        @mcp.tool()
+        def process_tuple(items: tuple[int, str]) -> int:
+            assert isinstance(items, tuple)
+            return items[0] + len(items[1])
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("process_tuple", {"items": '["1", "two"]'})
+            assert isinstance(result[0], TextContent)
+            assert result[0].text == "4"

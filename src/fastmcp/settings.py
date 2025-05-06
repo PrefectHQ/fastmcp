@@ -27,6 +27,16 @@ class Settings(BaseSettings):
 
     test_mode: bool = False
     log_level: LOG_LEVEL = "INFO"
+    tool_attempt_parse_json_args: bool = Field(
+        default=False,
+        description="""
+        Note: this enables a legacy behavior. If True, will attempt to parse
+        stringified JSON lists and objects strings in tool arguments before
+        passing them to the tool. This is an old behavior that can create
+        unexpected type coercion issues, but may be helpful for less powerful
+        LLMs that stringify JSON instead of passing actual lists and objects.
+        Defaults to False.""",
+    )
 
 
 class ServerSettings(BaseSettings):
@@ -83,3 +93,6 @@ class ClientSettings(BaseSettings):
     )
 
     log_level: LOG_LEVEL = Field(default_factory=lambda: Settings().log_level)
+
+
+settings = Settings()

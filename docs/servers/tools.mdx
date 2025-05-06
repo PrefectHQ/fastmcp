@@ -708,3 +708,13 @@ The duplicate behavior options are:
 -   `"error"`: Raises a `ValueError`, preventing the duplicate registration.
 -   `"replace"`: Silently replaces the existing tool with the new one.
 -   `"ignore"`: Keeps the original tool and ignores the new registration attempt.
+
+### Legacy JSON Parsing
+
+<VersionBadge version="2.2.10" />
+
+FastMCP 1.0 and < 2.2.10 relied on a crutch that attempted to work around LLM limitations by automatically parsing stringified JSON in tool arguments (e.g., converting `"[1,2,3]"` to `[1,2,3]`). As of FastMCP 2.2.10, this behavior is disabled by default because it circumvents type validation and can lead to unexpected type coercion issues (e.g. parsing "true" as a bool and attempting to call a tool that expected a string, which would fail type validation).
+
+Most modern LLMs correctly format JSON, but if working with models that unnecessarily stringify JSON (as was the case with Claude Desktop in late 2024), you can re-enable this behavior on your server by setting the environment variable `FASTMCP_TOOL_ATTEMPT_PARSE_JSON_ARGS=1`.
+
+We strongly recommend leaving this disabled unless necessary.
