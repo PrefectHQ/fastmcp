@@ -14,6 +14,7 @@ from fastmcp import Context, FastMCP, Image
 from fastmcp.exceptions import NotFoundError, ToolError
 from fastmcp.tools import ToolManager
 from fastmcp.tools.tool import Tool
+from fastmcp.utilities.tests import temporary_settings
 
 
 class TestAddTools:
@@ -320,14 +321,6 @@ class TestCallTools:
 
         manager = ToolManager()
         manager.add_tool_from_fn(sum_vals)
-        # Try both with plain list and with JSON list
-
-        result = await manager.call_tool("sum_vals", {"vals": "[1, 2, 3]"})
-        assert isinstance(result, list)
-        assert len(result) == 1
-        assert isinstance(result[0], TextContent)
-        assert result[0].text == "6"
-        assert json.loads(result[0].text) == 6
 
         result = await manager.call_tool("sum_vals", {"vals": [1, 2, 3]})
         assert isinstance(result, list)
@@ -335,6 +328,24 @@ class TestCallTools:
         assert isinstance(result[0], TextContent)
         assert result[0].text == "6"
         assert json.loads(result[0].text) == 6
+
+    async def test_call_tool_with_list_int_input_legacy_behavior(self):
+        """Legacy behavior -- parse a stringified JSON object"""
+
+        def sum_vals(vals: list[int]) -> int:
+            return sum(vals)
+
+        manager = ToolManager()
+        manager.add_tool_from_fn(sum_vals)
+        # Try both with plain list and with JSON list
+
+        with temporary_settings(tool_attempt_parse_json_args=True):
+            result = await manager.call_tool("sum_vals", {"vals": "[1, 2, 3]"})
+            assert isinstance(result, list)
+            assert len(result) == 1
+            assert isinstance(result[0], TextContent)
+            assert result[0].text == "6"
+            assert json.loads(result[0].text) == 6
 
     async def test_call_tool_with_list_str_or_str_input(self):
         def concat_strs(vals: list[str] | str) -> str:
@@ -350,23 +361,33 @@ class TestCallTools:
         assert isinstance(result[0], TextContent)
         assert result[0].text == "abc"
 
-        result = await manager.call_tool("concat_strs", {"vals": '["a", "b", "c"]'})
-        assert isinstance(result, list)
-        assert len(result) == 1
-        assert isinstance(result[0], TextContent)
-        assert result[0].text == "abc"
-
         result = await manager.call_tool("concat_strs", {"vals": "a"})
         assert isinstance(result, list)
         assert len(result) == 1
         assert isinstance(result[0], TextContent)
         assert result[0].text == "a"
 
-        result = await manager.call_tool("concat_strs", {"vals": '"a"'})
-        assert isinstance(result, list)
-        assert len(result) == 1
-        assert isinstance(result[0], TextContent)
-        assert result[0].text == "a"
+    async def test_call_tool_with_list_str_or_str_input_legacy_behavior(self):
+        """Legacy behavior -- parse a stringified JSON object"""
+
+        def concat_strs(vals: list[str] | str) -> str:
+            return vals if isinstance(vals, str) else "".join(vals)
+
+        manager = ToolManager()
+        manager.add_tool_from_fn(concat_strs)
+
+        with temporary_settings(tool_attempt_parse_json_args=True):
+            result = await manager.call_tool("concat_strs", {"vals": '["a", "b", "c"]'})
+            assert isinstance(result, list)
+            assert len(result) == 1
+            assert isinstance(result[0], TextContent)
+            assert result[0].text == "abc"
+
+            result = await manager.call_tool("concat_strs", {"vals": '"a"'})
+            assert isinstance(result, list)
+            assert len(result) == 1
+            assert isinstance(result[0], TextContent)
+            assert result[0].text == "a"
 
     async def test_call_tool_with_complex_model(self):
         class MyShrimpTank(BaseModel):
