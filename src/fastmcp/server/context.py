@@ -17,8 +17,8 @@ from pydantic import BaseModel, ConfigDict
 from pydantic.networks import AnyUrl
 from starlette.requests import Request
 
+from fastmcp.server.http import get_current_starlette_request
 from fastmcp.server.server import FastMCP
-from fastmcp.utilities.http import get_current_starlette_request
 from fastmcp.utilities.logging import get_logger
 
 logger = get_logger(__name__)
