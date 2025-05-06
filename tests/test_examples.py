@@ -85,8 +85,8 @@ async def test_echo():
 
     async with Client(mcp) as client:
         result = await client.get_prompt("echo", {"text": "hello"})
-        assert len(result) == 1
-        assert isinstance(result[0], PromptMessage)
-        assert isinstance(result[0].content, TextContent)
-        assert isinstance(result[0].content.text, str)
-        assert result[0].content.text == "hello"
+        assert len(result.messages) == 1
+        assert isinstance(result.messages[0], PromptMessage)
+        assert isinstance(result.messages[0].content, TextContent)
+        assert isinstance(result.messages[0].content.text, str)
+        assert result.messages[0].content.text == "hello"
