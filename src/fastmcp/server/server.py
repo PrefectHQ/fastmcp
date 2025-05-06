@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any, Generic, Literal
 
 import anyio
 import httpx
+import pydantic
 import uvicorn
 from mcp.server.auth.middleware.auth_context import AuthContextMiddleware
 from mcp.server.auth.middleware.bearer_auth import (
@@ -39,7 +40,7 @@ from mcp.types import Prompt as MCPPrompt
 from mcp.types import Resource as MCPResource
 from mcp.types import ResourceTemplate as MCPResourceTemplate
 from mcp.types import Tool as MCPTool
-from pydantic.networks import AnyUrl
+from pydantic import AnyUrl
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.middleware.authentication import AuthenticationMiddleware
@@ -87,6 +88,8 @@ class MountedServer:
             resource_separator = "+"
         if prompt_separator is None:
             prompt_separator = "_"
+
+        _validate_resource_prefix(f"{prefix}{resource_separator}")
 
         self.server = server
         self.prefix = prefix
@@ -1074,6 +1077,7 @@ class FastMCP(Generic[LifespanResultT]):
 
         # Import resources and templates from the mounted server
         resource_prefix = f"{prefix}{resource_separator}"
+        _validate_resource_prefix(resource_prefix)
         for key, resource in (await server.get_resources()).items():
             self._resource_manager.add_resource(resource, key=f"{resource_prefix}{key}")
         for key, template in (await server.get_resource_templates()).items():
@@ -1131,3 +1135,13 @@ class FastMCP(Generic[LifespanResultT]):
         from fastmcp.server.proxy import FastMCPProxy
 
         return FastMCPProxy(client=client, **settings)
+
+
+def _validate_resource_prefix(prefix: str) -> None:
+    valid_resource = "resource://path/to/resource"
+    try:
+        AnyUrl(f"{prefix}{valid_resource}")
+    except pydantic.ValidationError as e:
+        raise ValueError(
+            f"Resource prefix or separator would result in an invalid resource URI: {e}"
+        )

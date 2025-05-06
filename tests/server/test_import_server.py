@@ -1,6 +1,7 @@
 import json
 from urllib.parse import quote
 
+import pytest
 from mcp.types import TextContent, TextResourceContents
 
 from fastmcp.client.client import Client
@@ -391,3 +392,25 @@ async def test_import_with_proxy_resource_templates():
         user_data = json.loads(result[0].text)
         assert user_data["name"] == "John Doe"
         assert user_data["email"] == "john@example.com"
+
+
+async def test_import_invalid_resource_prefix():
+    main_app = FastMCP("MainApp")
+    api_app = FastMCP("APIApp")
+
+    with pytest.raises(
+        ValueError,
+        match="Resource prefix or separator would result in an invalid resource URI",
+    ):
+        await main_app.import_server("api_sub", api_app)
+
+
+async def test_import_invalid_resource_separator():
+    main_app = FastMCP("MainApp")
+    api_app = FastMCP("APIApp")
+
+    with pytest.raises(
+        ValueError,
+        match="Resource prefix or separator would result in an invalid resource URI",
+    ):
+        await main_app.import_server("api", api_app, resource_separator="_")
