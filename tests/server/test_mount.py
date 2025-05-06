@@ -59,6 +59,26 @@ class TestBasicMount:
         assert isinstance(result[0], TextContent)
         assert result[0].text == "Hello, World!"
 
+    async def test_mount_invalid_resource_prefix(self):
+        main_app = FastMCP("MainApp")
+        api_app = FastMCP("APIApp")
+
+        with pytest.raises(
+            ValueError,
+            match="Resource prefix or separator would result in an invalid resource URI",
+        ):
+            main_app.mount("api_sub", api_app)
+
+    async def test_mount_invalid_resource_separator(self):
+        main_app = FastMCP("MainApp")
+        api_app = FastMCP("APIApp")
+
+        with pytest.raises(
+            ValueError,
+            match="Resource prefix or separator would result in an invalid resource URI",
+        ):
+            main_app.mount("api", api_app, resource_separator="_")
+
     async def test_unmount_server(self):
         """Test unmounting a server removes access to its tools."""
         main_app = FastMCP("MainApp")
