@@ -125,18 +125,25 @@ class Tool(BaseModel):
                 # which can be pre-parsed here.
                 signature = inspect.signature(self.fn)
                 for param_name in self.parameters["properties"]:
+                    arg = parsed_args.get(param_name, None)
+                    # if not in signature, we won't have annotations, so skip logic
                     if param_name not in signature.parameters:
                         continue
-                    arg = parsed_args.get(param_name, None)
-                    if isinstance(arg, str) and signature.parameters[
-                        param_name
-                    ].annotation not in (int, float, bool):
-                        # if arg.strip().startswith("{") or arg.strip().startswith("["):
-                        try:
-                            parsed_args[param_name] = json.loads(arg)
+                    # if not a string, we won't have a JSON to parse, so skip logic
+                    if not isinstance(arg, str):
+                        continue
+                    # skip if the type is a simple type (int, float, bool)
+                    if signature.parameters[param_name].annotation in (
+                        int,
+                        float,
+                        bool,
+                    ):
+                        continue
+                    try:
+                        parsed_args[param_name] = json.loads(arg)
 
-                        except json.JSONDecodeError:
-                            pass
+                    except json.JSONDecodeError:
+                        pass
 
             type_adapter = get_cached_typeadapter(self.fn)
             result = type_adapter.validate_python(parsed_args | injected_args)
