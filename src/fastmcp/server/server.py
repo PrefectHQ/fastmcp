@@ -46,7 +46,7 @@ from fastmcp.prompts import Prompt, PromptManager
 from fastmcp.prompts.prompt import PromptResult
 from fastmcp.resources import Resource, ResourceManager
 from fastmcp.resources.template import ResourceTemplate
-from fastmcp.server.http import RequestContextMiddleware, create_sse_app
+from fastmcp.server.http import create_sse_app
 from fastmcp.tools import ToolManager
 from fastmcp.tools.tool import Tool
 from fastmcp.utilities.cache import TimedCache
@@ -719,7 +719,7 @@ class FastMCP(Generic[LifespanResultT]):
         # timeout to make it possible to close immediately. see
         # https://github.com/jlowin/fastmcp/issues/296
         uvicorn_config.setdefault("timeout_graceful_shutdown", 0)
-        app = RequestContextMiddleware(self.sse_app())
+        app = self.sse_app()
 
         config = uvicorn.Config(
             app,
