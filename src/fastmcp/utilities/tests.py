@@ -1,8 +1,19 @@
+from __future__ import annotations
+
 import copy
+import multiprocessing
+import socket
+import time
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
-from typing import Any
+from typing import TYPE_CHECKING, Any, Literal
+
+import uvicorn
 
 from fastmcp.settings import settings
+
+if TYPE_CHECKING:
+    from fastmcp.server.server import FastMCP
 
 
 @contextmanager
@@ -39,3 +50,64 @@ def temporary_settings(**kwargs: Any):
         for attr in kwargs:
             if hasattr(settings, attr):
                 setattr(settings, attr, old_settings[attr])
+
+
+def _run_server(mcp_server: FastMCP, transport: Literal["sse"], port: int) -> None:
+    # Some Starlette apps are not pickleable, so we need to create them here based on the indicated transport
+    if transport == "sse":
+        app = mcp_server.sse_app()
+    else:
+        raise ValueError(f"Invalid transport: {transport}")
+    uvicorn_server = uvicorn.Server(
+        config=uvicorn.Config(
+            app=app,
+            host="127.0.0.1",
+            port=port,
+            log_level="error",
+        )
+    )
+    uvicorn_server.run()
+
+
+@contextmanager
+def run_server_in_process(
+    server_fn: Callable[[str, int], None],
+) -> Generator[str, None, None]:
+    """
+    Context manager that runs a Starlette app in a separate process and returns the
+    server URL. When the context manager is exited, the server process is killed.
+
+    Args:
+        app: The Starlette app to run.
+
+    Returns:
+        The server URL.
+    """
+    host = "127.0.0.1"
+    with socket.socket() as s:
+        s.bind((host, 0))
+        port = s.getsockname()[1]
+
+    proc = multiprocessing.Process(target=server_fn, args=(host, port), daemon=True)
+    proc.start()
+
+    # Wait for server to be running
+    max_attempts = 100
+    attempt = 0
+    while attempt < max_attempts and proc.is_alive():
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.connect((host, port))
+                break
+        except ConnectionRefusedError:
+            time.sleep(0.01)
+            attempt += 1
+    else:
+        raise RuntimeError(f"Server failed to start after {max_attempts} attempts")
+
+    yield f"http://{host}:{port}"
+
+    proc.kill()
+    proc.join(timeout=2)
+    if proc.is_alive():
+        raise RuntimeError("Server process failed to terminate")

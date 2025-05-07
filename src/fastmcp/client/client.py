@@ -108,9 +108,10 @@ class Client:
 
     # --- MCP Client Methods ---
 
-    async def ping(self) -> None:
+    async def ping(self) -> bool:
         """Send a ping request."""
-        await self.session.send_ping()
+        result = await self.session.send_ping()
+        return isinstance(result, mcp.types.EmptyResult)
 
     async def progress(
         self,
