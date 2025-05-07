@@ -1,0 +1,79 @@
+---
+title: HTTP Requests
+sidebarTitle: HTTP Requests
+description: Accessing and using HTTP requests in FastMCP servers
+icon: network-wired
+---
+import { VersionBadge } from '/snippets/version-badge.mdx'
+
+<VersionBadge version="2.2.11" />
+
+## Overview
+
+When running FastMCP as a web server, your MCP tools, resources, and prompts might need to access the underlying HTTP request information, such as headers, client IP, or query parameters.
+
+FastMCP provides a clean way to access HTTP request information through a dependency function.
+
+## Accessing HTTP Requests
+
+The recommended way to access the current HTTP request is through the `get_http_request()` dependency function:
+
+```python {2, 3, 11}
+from fastmcp import FastMCP
+from fastmcp.server.dependencies import get_http_request
+from starlette.requests import Request
+
+mcp = FastMCP(name="HTTPRequestDemo")
+
+@mcp.tool()
+async def user_agent_info() -> dict:
+    """Return information about the user agent."""
+    # Get the HTTP request
+    request: Request = get_http_request()
+    
+    # Access request data
+    user_agent = request.headers.get("user-agent", "Unknown")
+    client_ip = request.client.host if request.client else "Unknown"
+    
+    return {
+        "user_agent": user_agent,
+        "client_ip": client_ip,
+        "path": request.url.path,
+    }
+```
+
+This approach works anywhere within a request's execution flow, not just within your MCP function. It's useful when:
+
+1. You need access to HTTP information in helper functions
+2. You're calling nested functions that need HTTP request data
+3. You're working with middleware or other request processing code
+
+## Important Notes
+
+- HTTP requests are only available when FastMCP is running as part of a web application
+- Accessing the HTTP request outside of a web request context will raise a `RuntimeError`
+- The `get_http_request()` function returns a standard [Starlette Request](https://www.starlette.io/requests/) object
+
+## Common Use Cases
+
+### Accessing Request Headers
+
+```python
+from fastmcp.server.dependencies import get_http_request
+
+@mcp.tool()
+async def get_auth_info() -> dict:
+    """Get authentication information from request headers."""
+    request = get_http_request()
+    
+    # Get authorization header
+    auth_header = request.headers.get("authorization", "")
+    
+    # Check for Bearer token
+    is_bearer = auth_header.startswith("Bearer ")
+    
+    return {
+        "has_auth": bool(auth_header),
+        "auth_type": "Bearer" if is_bearer else "Other" if auth_header else "None"
+    }
+```

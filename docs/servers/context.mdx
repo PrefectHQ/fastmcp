@@ -21,6 +21,8 @@ The `Context` object provides a clean interface to access MCP features within yo
 
 ## Accessing the Context
 
+### Via Dependency Injection
+
 To use the context object within any of your functions, simply add a parameter to your function signature and type-hint it as `Context`. FastMCP will automatically inject the context instance when your function is called.
 
 **Key Points:**
@@ -32,7 +34,7 @@ To use the context object within any of your functions, simply add a parameter t
 - The type hint can be a union (`Context | None`) or use `Annotated[]` and it will still work properly.
 - Context is only available during a request; attempting to use context methods outside a request will raise errors. If you need to debug or call your context methods outside of a request, you can type your variable as `Context | None=None` to avoid missing argument errors.
 
-### Tools
+#### Tools
 
 ```python
 from fastmcp import FastMCP, Context
@@ -46,7 +48,7 @@ async def process_file(file_uri: str, ctx: Context) -> str:
     return "Processed file"
 ```
 
-### Resources and Templates
+#### Resources and Templates
 
 <VersionBadge version="2.2.5" />
 
@@ -64,7 +66,7 @@ async def get_user_profile(user_id: str, ctx: Context) -> dict:
     return {"id": user_id}
 ```
 
-### Prompts
+#### Prompts
 
 <VersionBadge version="2.2.5" />
 
@@ -76,6 +78,38 @@ async def data_analysis_request(dataset: str, ctx: Context) -> str:
     return f"Please analyze the following dataset: {dataset}"
 ```
 
+
+### Via Dependency Function
+
+<VersionBadge version="2.2.11" />
+
+While the simplest way to access context is through function parameter injection as shown above, there are cases where you need to access the context in code that may not be easy to modify to accept a context parameter, or that is nested deeper within your function calls.
+
+FastMCP provides dependency functions that allow you to retrieve the active context from anywhere within a server request's execution flow:
+
+```python {2,9}
+from fastmcp import FastMCP, Context
+from fastmcp.server.dependencies import get_context
+
+mcp = FastMCP(name="DependencyDemo")
+
+# Utility function that needs context but doesn't receive it as a parameter
+async def process_data(data: list[float]) -> dict:
+    # Get the active context - only works when called within a request
+    ctx = get_context()    
+    await ctx.info(f"Processing {len(data)} data points")
+    
+@mcp.tool()
+async def analyze_dataset(dataset_name: str) -> dict:
+    # Call utility function that uses context internally
+    data = load_data(dataset_name)
+    await process_data(data)
+```
+
+**Important Notes:**
+
+- The `get_context` function should only be used within the context of a server request. Calling it outside of a request will raise a `RuntimeError`.
+- The `get_context` function is server-only and should not be used in client code.
 
 ## Context Capabilities
 
@@ -263,7 +297,7 @@ async def request_info(ctx: Context) -> dict:
 
 For advanced use cases, you can access the underlying MCP session, FastMCP server, and HTTP requests.
 
-#### Accessing FastMCP and Sessions
+#### FastMCP Server and Sessions
 
 ```python
 @mcp.tool()
@@ -279,9 +313,15 @@ async def advanced_tool(ctx: Context) -> str:
     return f"Server: {server_name}"
 ```
 
-#### Accessing HTTP Requests
+#### HTTP Requests
 
 <VersionBadge version="2.2.7" />
+
+<Warning>
+The `ctx.get_http_request()` method is deprecated and will be removed in a future version.
+Please use the `get_http_request()` dependency function instead.
+See the [HTTP Requests pattern](/patterns/http-requests) for more details.
+</Warning>
 
 For web applications, you can access the underlying HTTP request:
 
@@ -307,9 +347,7 @@ async def handle_web_request(ctx: Context) -> dict:
 - **`ctx.fastmcp -> FastMCP`**: Access the server instance the context belongs to
 - **`ctx.session`**: Access the raw `mcp.server.session.ServerSession` object
 - **`ctx.request_context`**: Access the raw `mcp.shared.context.RequestContext` object
-- **`ctx.get_http_request() -> Request`**: Access the active Starlette request object (when running with a web server)
 
 <Warning>
 Direct use of `session` or `request_context` requires understanding the low-level MCP Python SDK and may be less stable than using the methods provided directly on the `Context` object.
 </Warning>
-
