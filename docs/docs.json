@@ -65,6 +65,7 @@
                     "patterns/proxy",
                     "patterns/composition",
                     "patterns/decorating-methods",
+                    "patterns/http-requests",
                     "patterns/openapi",
                     "patterns/fastapi",
                     "patterns/contrib",
