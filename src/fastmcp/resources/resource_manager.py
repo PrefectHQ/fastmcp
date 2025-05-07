@@ -109,7 +109,7 @@ class ResourceManager:
             The added resource. If a resource with the same URI already exists,
             returns the existing resource.
         """
-        resource = FunctionResource.from_function(
+        resource = FunctionResource(
             fn=fn,
             uri=AnyUrl(uri),
             name=name,
@@ -219,12 +219,11 @@ class ResourceManager:
                 return True
         return False
 
-    async def get_resource(self, uri: AnyUrl | str, context=None) -> Resource:
+    async def get_resource(self, uri: AnyUrl | str) -> Resource:
         """Get resource by URI, checking concrete resources first, then templates.
 
         Args:
             uri: The URI of the resource to get
-            context: Optional context object to pass to template resources
 
         Raises:
             NotFoundError: If no resource or template matching the URI is found.
@@ -244,7 +243,6 @@ class ResourceManager:
                     return await template.create_resource(
                         uri_str,
                         params=params,
-                        context=context,
                     )
                 except Exception as e:
                     raise ValueError(f"Error creating resource from template: {e}")

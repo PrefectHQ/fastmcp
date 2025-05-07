@@ -25,9 +25,6 @@ from fastmcp.utilities.openapi import (
 )
 
 if TYPE_CHECKING:
-    from mcp.server.session import ServerSessionT
-    from mcp.shared.context import LifespanContextT
-
     from fastmcp.server import Context
 
 logger = get_logger(__name__)
@@ -132,7 +129,6 @@ class OpenAPITool(Tool):
             description=description,
             parameters=parameters,
             fn=self._execute_request,  # We'll use an instance method instead of a global function
-            context_kwarg="context",  # Default context keyword argument
             tags=tags,
             annotations=annotations,
             serializer=serializer,
@@ -258,12 +254,10 @@ class OpenAPITool(Tool):
             raise ValueError(f"Request error: {str(e)}")
 
     async def run(
-        self,
-        arguments: dict[str, Any],
-        context: Context[ServerSessionT, LifespanContextT] | None = None,
+        self, arguments: dict[str, Any]
     ) -> list[TextContent | ImageContent | EmbeddedResource]:
         """Run the tool with arguments and optional context."""
-        response = await self._execute_request(**arguments, context=context)
+        response = await self._execute_request(**arguments)
         return _convert_to_content(response)
 
 
@@ -292,9 +286,7 @@ class OpenAPIResource(Resource):
         self._route = route
         self._timeout = timeout
 
-    async def read(
-        self, context: Context[ServerSessionT, LifespanContextT] | None = None
-    ) -> str | bytes:
+    async def read(self) -> str | bytes:
         """Fetch the resource data by making an HTTP request."""
         try:
             # Extract path parameters from the URI if present
@@ -399,7 +391,6 @@ class OpenAPIResourceTemplate(ResourceTemplate):
             fn=lambda **kwargs: None,
             parameters=parameters,
             tags=tags,
-            context_kwarg=None,
         )
         self._client = client
         self._route = route
@@ -409,7 +400,7 @@ class OpenAPIResourceTemplate(ResourceTemplate):
         self,
         uri: str,
         params: dict[str, Any],
-        context: Context[ServerSessionT, LifespanContextT] | None = None,
+        context: Context | None = None,
     ) -> Resource:
         """Create a resource with the given parameters."""
         # Generate a URI for this resource instance
@@ -650,7 +641,5 @@ class FastMCPOpenAPI(FastMCP):
 
     async def _mcp_call_tool(self, name: str, arguments: dict[str, Any]) -> Any:
         """Override the call_tool method to return the raw result without converting to content."""
-
-        context = self.get_context()
-        result = await self._tool_manager.call_tool(name, arguments, context=context)
+        result = await self._tool_manager.call_tool(name, arguments)
         return result

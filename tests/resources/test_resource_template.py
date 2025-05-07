@@ -2,8 +2,6 @@ import json
 from urllib.parse import quote
 
 import pytest
-from mcp.server.session import ServerSessionT
-from mcp.shared.context import LifespanContextT
 from pydantic import BaseModel
 
 from fastmcp import Context
@@ -560,54 +558,46 @@ class TestContextHandling:
         def template_with_context(x: int, ctx: Context) -> str:
             return str(x)
 
-        template = ResourceTemplate.from_function(
+        ResourceTemplate.from_function(
             fn=template_with_context,
             uri_template="test://{x}",
             name="test",
         )
-        assert template.context_kwarg == "ctx"
 
         def template_without_context(x: int) -> str:
             return str(x)
 
-        template = ResourceTemplate.from_function(
+        ResourceTemplate.from_function(
             fn=template_without_context,
             uri_template="test://{x}",
             name="test",
         )
-        assert template.context_kwarg is None
 
     def test_parameterized_context_parameter_detection(self):
         """Test that parameterized context parameters are properly detected in
         ResourceTemplate.from_function()."""
 
-        def template_with_context(
-            x: int, ctx: Context[ServerSessionT, LifespanContextT]
-        ) -> str:
+        def template_with_context(x: int, ctx: Context) -> str:
             return str(x)
 
-        template = ResourceTemplate.from_function(
+        ResourceTemplate.from_function(
             fn=template_with_context,
             uri_template="test://{x}",
             name="test",
         )
-        assert template.context_kwarg == "ctx"
 
     def test_parameterized_union_context_parameter_detection(self):
         """Test that context parameters in a union are properly detected in
         ResourceTemplate.from_function()."""
 
-        def template_with_context(
-            x: int, ctx: Context[ServerSessionT, LifespanContextT] | None
-        ) -> str:
+        def template_with_context(x: int, ctx: Context | None) -> str:
             return str(x)
 
-        template = ResourceTemplate.from_function(
+        ResourceTemplate.from_function(
             fn=template_with_context,
             uri_template="test://{x}",
             name="test",
         )
-        assert template.context_kwarg == "ctx"
 
     async def test_context_injection(self):
         """Test that context is properly injected during resource creation."""
@@ -621,18 +611,18 @@ class TestContextHandling:
             uri_template="test://{x}",
             name="test",
         )
-        assert template.context_kwarg == "ctx"
 
         from fastmcp import FastMCP
 
         mcp = FastMCP()
-        ctx = mcp.get_context()
+        context = Context(fastmcp=mcp)
 
-        resource = await template.create_resource(
-            "test://42",
-            {"x": 42},
-            context=ctx,
-        )
+        with context:
+            resource = await template.create_resource(
+                "test://42",
+                {"x": 42},
+            )
+
         assert isinstance(resource, FunctionResource)
         content = await resource.read()
         assert content == "42"
@@ -648,13 +638,19 @@ class TestContextHandling:
             uri_template="test://{x}",
             name="test",
         )
-        assert template.context_kwarg == "ctx"
 
-        # Should not raise an error when context is not provided
-        resource = await template.create_resource(
-            "test://42",
-            {"x": 42},
-        )
+        # Even for optional context, we need to provide a context
+        from fastmcp import FastMCP
+
+        mcp = FastMCP()
+        context = Context(fastmcp=mcp)
+
+        with context:
+            resource = await template.create_resource(
+                "test://42",
+                {"x": 42},
+            )
+
         assert isinstance(resource, FunctionResource)
         content = await resource.read()
         assert content == "42"

@@ -25,7 +25,6 @@ from mcp.server.auth.provider import OAuthAuthorizationServerProvider
 from mcp.server.lowlevel.helper_types import ReadResourceContents
 from mcp.server.lowlevel.server import LifespanResultT
 from mcp.server.lowlevel.server import Server as MCPServer
-from mcp.server.session import ServerSession
 from mcp.server.sse import SseServerTransport
 from mcp.server.stdio import stdio_server
 from mcp.types import (
@@ -49,119 +48,26 @@ from starlette.responses import Response
 from starlette.routing import Mount, Route
 from starlette.types import Receive, Scope, Send
 
-import fastmcp
+import fastmcp.server
 import fastmcp.settings
 from fastmcp.exceptions import NotFoundError, ResourceError
 from fastmcp.prompts import Prompt, PromptManager
 from fastmcp.prompts.prompt import PromptResult
 from fastmcp.resources import Resource, ResourceManager
 from fastmcp.resources.template import ResourceTemplate
+from fastmcp.server.http import RequestContextMiddleware
 from fastmcp.tools import ToolManager
 from fastmcp.tools.tool import Tool
+from fastmcp.utilities.cache import TimedCache
 from fastmcp.utilities.decorators import DecoratedFunction
-from fastmcp.utilities.http import RequestMiddleware
 from fastmcp.utilities.logging import configure_logging, get_logger
 
 if TYPE_CHECKING:
     from fastmcp.client import Client
-    from fastmcp.server.context import Context
     from fastmcp.server.openapi import FastMCPOpenAPI
     from fastmcp.server.proxy import FastMCPProxy
 
 logger = get_logger(__name__)
-
-NOT_FOUND = object()
-
-
-class MountedServer:
-    def __init__(
-        self,
-        prefix: str,
-        server: FastMCP,
-        tool_separator: str | None = None,
-        resource_separator: str | None = None,
-        prompt_separator: str | None = None,
-    ):
-        if tool_separator is None:
-            tool_separator = "_"
-        if resource_separator is None:
-            resource_separator = "+"
-        if prompt_separator is None:
-            prompt_separator = "_"
-
-        _validate_resource_prefix(f"{prefix}{resource_separator}")
-
-        self.server = server
-        self.prefix = prefix
-        self.tool_separator = tool_separator
-        self.resource_separator = resource_separator
-        self.prompt_separator = prompt_separator
-
-    async def get_tools(self) -> dict[str, Tool]:
-        tools = await self.server.get_tools()
-        return {
-            f"{self.prefix}{self.tool_separator}{key}": tool
-            for key, tool in tools.items()
-        }
-
-    async def get_resources(self) -> dict[str, Resource]:
-        resources = await self.server.get_resources()
-        return {
-            f"{self.prefix}{self.resource_separator}{key}": resource
-            for key, resource in resources.items()
-        }
-
-    async def get_resource_templates(self) -> dict[str, ResourceTemplate]:
-        templates = await self.server.get_resource_templates()
-        return {
-            f"{self.prefix}{self.resource_separator}{key}": template
-            for key, template in templates.items()
-        }
-
-    async def get_prompts(self) -> dict[str, Prompt]:
-        prompts = await self.server.get_prompts()
-        return {
-            f"{self.prefix}{self.prompt_separator}{key}": prompt
-            for key, prompt in prompts.items()
-        }
-
-    def match_tool(self, key: str) -> bool:
-        return key.startswith(f"{self.prefix}{self.tool_separator}")
-
-    def strip_tool_prefix(self, key: str) -> str:
-        return key.removeprefix(f"{self.prefix}{self.tool_separator}")
-
-    def match_resource(self, key: str) -> bool:
-        return key.startswith(f"{self.prefix}{self.resource_separator}")
-
-    def strip_resource_prefix(self, key: str) -> str:
-        return key.removeprefix(f"{self.prefix}{self.resource_separator}")
-
-    def match_prompt(self, key: str) -> bool:
-        return key.startswith(f"{self.prefix}{self.prompt_separator}")
-
-    def strip_prompt_prefix(self, key: str) -> str:
-        return key.removeprefix(f"{self.prefix}{self.prompt_separator}")
-
-
-class TimedCache:
-    def __init__(self, expiration: datetime.timedelta):
-        self.expiration = expiration
-        self.cache: dict[Any, tuple[Any, datetime.datetime]] = {}
-
-    def set(self, key: Any, value: Any) -> None:
-        expires = datetime.datetime.now() + self.expiration
-        self.cache[key] = (value, expires)
-
-    def get(self, key: Any) -> Any:
-        value = self.cache.get(key)
-        if value is not None and value[1] > datetime.datetime.now():
-            return value[0]
-        else:
-            return NOT_FOUND
-
-    def clear(self) -> None:
-        self.cache.clear()
 
 
 @asynccontextmanager
@@ -309,23 +215,9 @@ class FastMCP(Generic[LifespanResultT]):
         self._mcp_server.get_prompt()(self._mcp_get_prompt)
         self._mcp_server.list_resource_templates()(self._mcp_list_resource_templates)
 
-    def get_context(self) -> Context[ServerSession, LifespanResultT]:
-        """
-        Returns a Context object. Note that the context will only be valid
-        during a request; outside a request, most methods will error.
-        """
-
-        try:
-            request_context = self._mcp_server.request_context
-        except LookupError:
-            request_context = None
-        from fastmcp.server.context import Context
-
-        return Context(request_context=request_context, fastmcp=self)
-
     async def get_tools(self) -> dict[str, Tool]:
         """Get all registered tools, indexed by registered key."""
-        if (tools := self._cache.get("tools")) is NOT_FOUND:
+        if (tools := self._cache.get("tools")) is self._cache.NOT_FOUND:
             tools = {}
             for server in self._mounted_servers.values():
                 server_tools = await server.get_tools()
@@ -336,7 +228,7 @@ class FastMCP(Generic[LifespanResultT]):
 
     async def get_resources(self) -> dict[str, Resource]:
         """Get all registered resources, indexed by registered key."""
-        if (resources := self._cache.get("resources")) is NOT_FOUND:
+        if (resources := self._cache.get("resources")) is self._cache.NOT_FOUND:
             resources = {}
             for server in self._mounted_servers.values():
                 server_resources = await server.get_resources()
@@ -347,7 +239,9 @@ class FastMCP(Generic[LifespanResultT]):
 
     async def get_resource_templates(self) -> dict[str, ResourceTemplate]:
         """Get all registered resource templates, indexed by registered key."""
-        if (templates := self._cache.get("resource_templates")) is NOT_FOUND:
+        if (
+            templates := self._cache.get("resource_templates")
+        ) is self._cache.NOT_FOUND:
             templates = {}
             for server in self._mounted_servers.values():
                 server_templates = await server.get_resource_templates()
@@ -360,7 +254,7 @@ class FastMCP(Generic[LifespanResultT]):
         """
         List all available prompts.
         """
-        if (prompts := self._cache.get("prompts")) is NOT_FOUND:
+        if (prompts := self._cache.get("prompts")) is self._cache.NOT_FOUND:
             prompts = {}
             for server in self._mounted_servers.values():
                 server_prompts = await server.get_prompts()
@@ -458,43 +352,46 @@ class FastMCP(Generic[LifespanResultT]):
         self, key: str, arguments: dict[str, Any]
     ) -> list[TextContent | ImageContent | EmbeddedResource]:
         """Call a tool by name with arguments."""
-        if self._tool_manager.has_tool(key):
-            context = self.get_context()
-            result = await self._tool_manager.call_tool(key, arguments, context=context)
 
-        else:
-            for server in self._mounted_servers.values():
-                if server.match_tool(key):
-                    new_key = server.strip_tool_prefix(key)
-                    result = await server.server._mcp_call_tool(new_key, arguments)
-                    break
+        with fastmcp.server.context.Context(fastmcp=self):
+            if self._tool_manager.has_tool(key):
+                result = await self._tool_manager.call_tool(key, arguments)
+
             else:
-                raise NotFoundError(f"Unknown tool: {key}")
-        return result
+                for server in self._mounted_servers.values():
+                    if server.match_tool(key):
+                        new_key = server.strip_tool_prefix(key)
+                        result = await server.server._mcp_call_tool(new_key, arguments)
+                        break
+                else:
+                    raise NotFoundError(f"Unknown tool: {key}")
+            return result
 
     async def _mcp_read_resource(self, uri: AnyUrl | str) -> list[ReadResourceContents]:
         """
         Read a resource by URI, in the format expected by the low-level MCP
         server.
         """
-        if self._resource_manager.has_resource(uri):
-            context = self.get_context()
-            resource = await self._resource_manager.get_resource(uri, context=context)
-            try:
-                content = await resource.read(context=context)
-                return [
-                    ReadResourceContents(content=content, mime_type=resource.mime_type)
-                ]
-            except Exception as e:
-                logger.error(f"Error reading resource {uri}: {e}")
-                raise ResourceError(str(e))
-        else:
-            for server in self._mounted_servers.values():
-                if server.match_resource(str(uri)):
-                    new_uri = server.strip_resource_prefix(str(uri))
-                    return await server.server._mcp_read_resource(new_uri)
+        with fastmcp.server.context.Context(fastmcp=self):
+            if self._resource_manager.has_resource(uri):
+                resource = await self._resource_manager.get_resource(uri)
+                try:
+                    content = await resource.read()
+                    return [
+                        ReadResourceContents(
+                            content=content, mime_type=resource.mime_type
+                        )
+                    ]
+                except Exception as e:
+                    logger.error(f"Error reading resource {uri}: {e}")
+                    raise ResourceError(str(e))
             else:
-                raise NotFoundError(f"Unknown resource: {uri}")
+                for server in self._mounted_servers.values():
+                    if server.match_resource(str(uri)):
+                        new_uri = server.strip_resource_prefix(str(uri))
+                        return await server.server._mcp_read_resource(new_uri)
+                else:
+                    raise NotFoundError(f"Unknown resource: {uri}")
 
     async def _mcp_get_prompt(
         self, name: str, arguments: dict[str, Any] | None = None
@@ -504,19 +401,19 @@ class FastMCP(Generic[LifespanResultT]):
         MCP server.
 
         """
-        if self._prompt_manager.has_prompt(name):
-            context = self.get_context()
-            prompt_result = await self._prompt_manager.render_prompt(
-                name, arguments=arguments or {}, context=context
-            )
-            return prompt_result
-        else:
-            for server in self._mounted_servers.values():
-                if server.match_prompt(name):
-                    new_key = server.strip_prompt_prefix(name)
-                    return await server.server._mcp_get_prompt(new_key, arguments)
+        with fastmcp.server.context.Context(fastmcp=self):
+            if self._prompt_manager.has_prompt(name):
+                prompt_result = await self._prompt_manager.render_prompt(
+                    name, arguments=arguments or {}
+                )
+                return prompt_result
             else:
-                raise NotFoundError(f"Unknown prompt: {name}")
+                for server in self._mounted_servers.values():
+                    if server.match_prompt(name):
+                        new_key = server.strip_prompt_prefix(name)
+                    return await server.server._mcp_get_prompt(new_key, arguments)
+                else:
+                    raise NotFoundError(f"Unknown prompt: {name}")
 
     def add_tool(
         self,
@@ -827,10 +724,11 @@ class FastMCP(Generic[LifespanResultT]):
     ) -> None:
         """Run the server using SSE transport."""
         uvicorn_config = uvicorn_config or {}
-        # the SSE app hangs even when a signal is sent, so we disable the timeout to make it possible to close immediately.
-        # see https://github.com/jlowin/fastmcp/issues/296
+        # the SSE app hangs even when a signal is sent, so we disable the
+        # timeout to make it possible to close immediately. see
+        # https://github.com/jlowin/fastmcp/issues/296
         uvicorn_config.setdefault("timeout_graceful_shutdown", 0)
-        app = RequestMiddleware(self.sse_app())
+        app = RequestContextMiddleware(self.sse_app())
 
         config = uvicorn.Config(
             app,
@@ -1145,3 +1043,74 @@ def _validate_resource_prefix(prefix: str) -> None:
         raise ValueError(
             f"Resource prefix or separator would result in an invalid resource URI: {e}"
         )
+
+
+class MountedServer:
+    def __init__(
+        self,
+        prefix: str,
+        server: FastMCP,
+        tool_separator: str | None = None,
+        resource_separator: str | None = None,
+        prompt_separator: str | None = None,
+    ):
+        if tool_separator is None:
+            tool_separator = "_"
+        if resource_separator is None:
+            resource_separator = "+"
+        if prompt_separator is None:
+            prompt_separator = "_"
+
+        _validate_resource_prefix(f"{prefix}{resource_separator}")
+
+        self.server = server
+        self.prefix = prefix
+        self.tool_separator = tool_separator
+        self.resource_separator = resource_separator
+        self.prompt_separator = prompt_separator
+
+    async def get_tools(self) -> dict[str, Tool]:
+        tools = await self.server.get_tools()
+        return {
+            f"{self.prefix}{self.tool_separator}{key}": tool
+            for key, tool in tools.items()
+        }
+
+    async def get_resources(self) -> dict[str, Resource]:
+        resources = await self.server.get_resources()
+        return {
+            f"{self.prefix}{self.resource_separator}{key}": resource
+            for key, resource in resources.items()
+        }
+
+    async def get_resource_templates(self) -> dict[str, ResourceTemplate]:
+        templates = await self.server.get_resource_templates()
+        return {
+            f"{self.prefix}{self.resource_separator}{key}": template
+            for key, template in templates.items()
+        }
+
+    async def get_prompts(self) -> dict[str, Prompt]:
+        prompts = await self.server.get_prompts()
+        return {
+            f"{self.prefix}{self.prompt_separator}{key}": prompt
+            for key, prompt in prompts.items()
+        }
+
+    def match_tool(self, key: str) -> bool:
+        return key.startswith(f"{self.prefix}{self.tool_separator}")
+
+    def strip_tool_prefix(self, key: str) -> str:
+        return key.removeprefix(f"{self.prefix}{self.tool_separator}")
+
+    def match_resource(self, key: str) -> bool:
+        return key.startswith(f"{self.prefix}{self.resource_separator}")
+
+    def strip_resource_prefix(self, key: str) -> str:
+        return key.removeprefix(f"{self.prefix}{self.resource_separator}")
+
+    def match_prompt(self, key: str) -> bool:
+        return key.startswith(f"{self.prefix}{self.prompt_separator}")
+
+    def strip_prompt_prefix(self, key: str) -> str:
+        return key.removeprefix(f"{self.prefix}{self.prompt_separator}")

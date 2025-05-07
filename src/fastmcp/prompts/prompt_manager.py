@@ -13,10 +13,7 @@ from fastmcp.settings import DuplicateBehavior
 from fastmcp.utilities.logging import get_logger
 
 if TYPE_CHECKING:
-    from mcp.server.session import ServerSessionT
-    from mcp.shared.context import LifespanContextT
-
-    from fastmcp.server import Context
+    pass
 
 logger = get_logger(__name__)
 
@@ -82,19 +79,15 @@ class PromptManager:
         self,
         name: str,
         arguments: dict[str, Any] | None = None,
-        context: Context[ServerSessionT, LifespanContextT] | None = None,
     ) -> GetPromptResult:
         """Render a prompt by name with arguments."""
         prompt = self.get_prompt(name)
         if not prompt:
             raise NotFoundError(f"Unknown prompt: {name}")
 
-        messages = await prompt.render(arguments, context=context)
+        messages = await prompt.render(arguments)
 
-        return GetPromptResult(
-            description=prompt.description,
-            messages=messages,
-        )
+        return GetPromptResult(description=prompt.description, messages=messages)
 
     def has_prompt(self, key: str) -> bool:
         """Check if a prompt exists."""

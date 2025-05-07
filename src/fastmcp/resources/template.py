@@ -5,7 +5,7 @@ from __future__ import annotations
 import inspect
 import re
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Annotated, Any
+from typing import Annotated, Any
 from urllib.parse import unquote
 
 from mcp.types import ResourceTemplate as MCPResourceTemplate
@@ -20,16 +20,11 @@ from pydantic import (
 )
 
 from fastmcp.resources.types import FunctionResource, Resource
+from fastmcp.server.dependencies import get_context
 from fastmcp.utilities.types import (
     _convert_set_defaults,
     find_kwarg_by_type,
 )
-
-if TYPE_CHECKING:
-    from mcp.server.session import ServerSessionT
-    from mcp.shared.context import LifespanContextT
-
-    from fastmcp.server import Context
 
 
 def build_regex(template: str) -> re.Pattern:
@@ -79,9 +74,6 @@ class ResourceTemplate(BaseModel):
     parameters: dict[str, Any] = Field(
         description="JSON schema for function parameters"
     )
-    context_kwarg: str | None = Field(
-        None, description="Name of the kwarg that should receive context"
-    )
 
     @field_validator("mime_type", mode="before")
     @classmethod
@@ -100,10 +92,9 @@ class ResourceTemplate(BaseModel):
         description: str | None = None,
         mime_type: str | None = None,
         tags: set[str] | None = None,
-        context_kwarg: str | None = None,
     ) -> ResourceTemplate:
         """Create a template from a function."""
-        from fastmcp import Context
+        from fastmcp.server.context import Context
 
         func_name = name or fn.__name__
         if func_name == "<lambda>":
@@ -119,8 +110,8 @@ class ResourceTemplate(BaseModel):
                 )
 
         # Auto-detect context parameter if not provided
-        if context_kwarg is None:
-            context_kwarg = find_kwarg_by_type(fn, kwarg_type=Context)
+
+        context_kwarg = find_kwarg_by_type(fn, kwarg_type=Context)
 
         # Validate that URI params match function params
         uri_params = set(re.findall(r"{(\w+)(?:\*)?}", uri_template))
@@ -170,25 +161,22 @@ class ResourceTemplate(BaseModel):
             fn=fn,
             parameters=parameters,
             tags=tags or set(),
-            context_kwarg=context_kwarg,
         )
 
     def matches(self, uri: str) -> dict[str, Any] | None:
         """Check if URI matches template and extract parameters."""
         return match_uri_template(uri, self.uri_template)
 
-    async def create_resource(
-        self,
-        uri: str,
-        params: dict[str, Any],
-        context: Context[ServerSessionT, LifespanContextT] | None = None,
-    ) -> Resource:
+    async def create_resource(self, uri: str, params: dict[str, Any]) -> Resource:
         """Create a resource from the template with the given parameters."""
+        from fastmcp.server.context import Context
+
         try:
             # Add context to parameters if needed
             kwargs = params.copy()
-            if self.context_kwarg is not None and context is not None:
-                kwargs[self.context_kwarg] = context
+            context_kwarg = find_kwarg_by_type(self.fn, kwarg_type=Context)
+            if context_kwarg and context_kwarg not in kwargs:
+                kwargs[context_kwarg] = get_context()
 
             # Call function and check if result is a coroutine
             result = self.fn(**kwargs)
@@ -202,7 +190,6 @@ class ResourceTemplate(BaseModel):
                 mime_type=self.mime_type,
                 fn=lambda **kwargs: result,  # Capture result in closure
                 tags=self.tags,
-                context_kwarg=self.context_kwarg,
             )
         except Exception as e:
             raise ValueError(f"Error creating resource from template: {e}")

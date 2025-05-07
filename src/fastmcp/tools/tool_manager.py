@@ -3,7 +3,6 @@ from __future__ import annotations as _annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
-from mcp.shared.context import LifespanContextT
 from mcp.types import EmbeddedResource, ImageContent, TextContent, ToolAnnotations
 
 from fastmcp.exceptions import NotFoundError
@@ -12,9 +11,7 @@ from fastmcp.tools.tool import Tool
 from fastmcp.utilities.logging import get_logger
 
 if TYPE_CHECKING:
-    from mcp.server.session import ServerSessionT
-
-    from fastmcp.server import Context
+    pass
 
 logger = get_logger(__name__)
 
@@ -98,14 +95,11 @@ class ToolManager:
         return tool
 
     async def call_tool(
-        self,
-        key: str,
-        arguments: dict[str, Any],
-        context: Context[ServerSessionT, LifespanContextT] | None = None,
+        self, key: str, arguments: dict[str, Any]
     ) -> list[TextContent | ImageContent | EmbeddedResource]:
         """Call a tool by name with arguments."""
         tool = self.get_tool(key)
         if not tool:
             raise NotFoundError(f"Unknown tool: {key}")
 
-        return await tool.run(arguments, context=context)
+        return await tool.run(arguments)

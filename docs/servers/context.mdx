@@ -23,6 +23,17 @@ The `Context` object provides a clean interface to access MCP features within yo
 
 To use the context object within any of your functions, simply add a parameter to your function signature and type-hint it as `Context`. FastMCP will automatically inject the context instance when your function is called.
 
+**Key Points:**
+
+- The parameter name (e.g., `ctx`, `context`) doesn't matter, only the type hint `Context` is important.
+- The context parameter can be placed anywhere in your function's signature; it will not be exposed to MCP clients as a valid parameter.
+- The context is optional - functions that don't need it can omit the parameter entirely.
+- Context methods are async, so your function usually needs to be async as well.
+- The type hint can be a union (`Context | None`) or use `Annotated[]` and it will still work properly.
+- Context is only available during a request; attempting to use context methods outside a request will raise errors. If you need to debug or call your context methods outside of a request, you can type your variable as `Context | None=None` to avoid missing argument errors.
+
+### Tools
+
 ```python
 from fastmcp import FastMCP, Context
 
@@ -31,43 +42,40 @@ mcp = FastMCP(name="ContextDemo")
 @mcp.tool()
 async def process_file(file_uri: str, ctx: Context) -> str:
     """Processes a file, using context for logging and resource access."""
-    request_id = ctx.request_id
-    await ctx.info(f"[{request_id}] Starting processing for {file_uri}")
-
-    try:
-        # Use context to read a resource
-        contents_list = await ctx.read_resource(file_uri)
-        if not contents_list:
-            await ctx.warning(f"Resource {file_uri} is empty.")
-            return "Resource empty"
-
-        data = contents_list[0].content # Assuming TextResourceContents
-        await ctx.debug(f"Read {len(data)} bytes from {file_uri}")
-
-        # Report progress
-        await ctx.report_progress(progress=50, total=100)
-        
-        # Simulate work
-        processed_data = data.upper() # Example processing
-
-        await ctx.report_progress(progress=100, total=100)
-        await ctx.info(f"Processing complete for {file_uri}")
-
-        return f"Processed data length: {len(processed_data)}"
-
-    except Exception as e:
-        # Use context to log errors
-        await ctx.error(f"Error processing {file_uri}: {str(e)}")
-        raise # Re-raise to send error back to client
+    # Context is available as the ctx parameter
+    return "Processed file"
 ```
 
-**Key Points:**
+### Resources and Templates
 
-- The parameter name (e.g., `ctx`, `context`) doesn't matter, only the type hint `Context` is important.
-- The context parameter can be placed anywhere in your function's signature.
-- The context is optional - functions that don't need it can omit the parameter.
-- Context is only available during a request; attempting to use context methods outside a request will raise errors.
-- Context methods are async, so your function usually needs to be async as well.
+<VersionBadge version="2.2.5" />
+
+```python
+@mcp.resource("resource://user-data")
+async def get_user_data(ctx: Context) -> dict:
+    """Fetch personalized user data based on the request context."""
+    # Context is available as the ctx parameter
+    return {"user_id": "example"}
+
+@mcp.resource("resource://users/{user_id}/profile")
+async def get_user_profile(user_id: str, ctx: Context) -> dict:
+    """Fetch user profile with context-aware logging."""
+    # Context is available as the ctx parameter
+    return {"id": user_id}
+```
+
+### Prompts
+
+<VersionBadge version="2.2.5" />
+
+```python
+@mcp.prompt()
+async def data_analysis_request(dataset: str, ctx: Context) -> str:
+    """Generate a request to analyze data with contextual information."""
+    # Context is available as the ctx parameter
+    return f"Please analyze the following dataset: {dataset}"
+```
+
 
 ## Context Capabilities
 
@@ -305,60 +313,3 @@ async def handle_web_request(ctx: Context) -> dict:
 Direct use of `session` or `request_context` requires understanding the low-level MCP Python SDK and may be less stable than using the methods provided directly on the `Context` object.
 </Warning>
 
-## Using Context in Different Components
-
-All FastMCP components (tools, resources, templates, and prompts) can use the Context object following the same pattern - simply add a parameter with the `Context` type annotation.
-
-### Context in Resources and Templates
-
-Resources and resource templates can access context to customize their behavior:
-
-```python
-@mcp.resource("resource://user-data")
-async def get_user_data(ctx: Context) -> dict:
-    """Fetch personalized user data based on the request context."""
-    user_id = ctx.client_id or "anonymous"
-    await ctx.info(f"Fetching data for user {user_id}")
-    
-    # Example of using context for dynamic resource generation
-    return {
-        "user_id": user_id,
-        "last_access": datetime.now().isoformat(),
-        "request_id": ctx.request_id
-    }
-
-@mcp.resource("resource://users/{user_id}/profile")
-async def get_user_profile(user_id: str, ctx: Context) -> dict:
-    """Fetch user profile from database with context-aware logging."""
-    await ctx.info(f"Fetching profile for user {user_id}")
-    
-    # Example of using context in a template resource
-    # In a real implementation, you might query a database
-    return {
-        "id": user_id,
-        "name": f"User {user_id}",
-        "request_id": ctx.request_id
-    }
-```
-
-### Context in Prompts
-
-Prompts can use context to generate more dynamic templates:
-
-```python
-@mcp.prompt()
-async def data_analysis_request(dataset: str, ctx: Context) -> str:
-    """Generate a request to analyze data with contextual information."""
-    await ctx.info(f"Generating data analysis prompt for {dataset}")
-    
-    # Could use context to read configuration or personalize the prompt
-    return f"""Please analyze the following dataset: {dataset}
-    
-Request initiated at: {datetime.now().isoformat()}
-Request ID: {ctx.request_id}
-"""
-```
-
-<VersionBadge version="2.3.0" />
-
-All FastMCP objects now support context injection using the same consistent pattern, making it easy to add session-aware capabilities to all aspects of your MCP server. 

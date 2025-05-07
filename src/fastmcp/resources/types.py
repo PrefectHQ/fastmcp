@@ -15,14 +15,12 @@ import pydantic.json
 import pydantic_core
 from pydantic import Field, ValidationInfo
 
-import fastmcp
 from fastmcp.resources.resource import Resource
+from fastmcp.server.dependencies import get_context
+from fastmcp.utilities.types import find_kwarg_by_type
 
 if TYPE_CHECKING:
-    from mcp.server.session import ServerSessionT
-    from mcp.shared.context import LifespanContextT
-
-    from fastmcp.server import Context
+    pass
 
 
 class TextResource(Resource):
@@ -30,9 +28,7 @@ class TextResource(Resource):
 
     text: str = Field(description="Text content of the resource")
 
-    async def read(
-        self, context: Context[ServerSessionT, LifespanContextT] | None = None
-    ) -> str:
+    async def read(self) -> str:
         """Read the text content."""
         return self.text
 
@@ -42,9 +38,7 @@ class BinaryResource(Resource):
 
     data: bytes = Field(description="Binary content of the resource")
 
-    async def read(
-        self, context: Context[ServerSessionT, LifespanContextT] | None = None
-    ) -> bytes:
+    async def read(self) -> bytes:
         """Read the binary content."""
         return self.data
 
@@ -63,40 +57,23 @@ class FunctionResource(Resource):
     """
 
     fn: Callable[[], Any]
-    context_kwarg: str | None = Field(
-        default=None, description="Name of the kwarg that should receive context"
-    )
 
-    @classmethod
-    def from_function(
-        cls, fn: Callable[[], Any], context_kwarg: str | None = None, **kwargs
-    ) -> FunctionResource:
-        if context_kwarg is None:
-            parameters = inspect.signature(fn).parameters
-            context_param = next(
-                (p for p in parameters.values() if p.annotation is fastmcp.Context),
-                None,
-            )
-            if context_param is not None:
-                context_kwarg = context_param.name
-        return cls(fn=fn, context_kwarg=context_kwarg, **kwargs)
-
-    async def read(
-        self,
-        context: Context[ServerSessionT, LifespanContextT] | None = None,
-    ) -> str | bytes:
+    async def read(self) -> str | bytes:
         """Read the resource by calling the wrapped function."""
+        from fastmcp.server.context import Context
+
         try:
             kwargs = {}
-            if self.context_kwarg is not None:
-                kwargs[self.context_kwarg] = context
+            context_kwarg = find_kwarg_by_type(self.fn, kwarg_type=Context)
+            if context_kwarg is not None:
+                kwargs[context_kwarg] = get_context()
 
             result = self.fn(**kwargs)
             if inspect.iscoroutinefunction(self.fn):
                 result = await result
 
             if isinstance(result, Resource):
-                return await result.read(context=context)
+                return await result.read()
             elif isinstance(result, bytes):
                 return result
             elif isinstance(result, str):
@@ -140,9 +117,7 @@ class FileResource(Resource):
         mime_type = info.data.get("mime_type", "text/plain")
         return not mime_type.startswith("text/")
 
-    async def read(
-        self, context: Context[ServerSessionT, LifespanContextT] | None = None
-    ) -> str | bytes:
+    async def read(self) -> str | bytes:
         """Read the file content."""
         try:
             if self.is_binary:
@@ -160,9 +135,7 @@ class HttpResource(Resource):
         default="application/json", description="MIME type of the resource content"
     )
 
-    async def read(
-        self, context: Context[ServerSessionT, LifespanContextT] | None = None
-    ) -> str | bytes:
+    async def read(self) -> str | bytes:
         """Read the HTTP content."""
         async with httpx.AsyncClient() as client:
             response = await client.get(self.url)
@@ -214,9 +187,7 @@ class DirectoryResource(Resource):
         except Exception as e:
             raise ValueError(f"Error listing directory {self.path}: {e}")
 
-    async def read(
-        self, context: Context[ServerSessionT, LifespanContextT] | None = None
-    ) -> str:  # Always returns JSON string
+    async def read(self) -> str:  # Always returns JSON string
         """Read the directory listing."""
         try:
             files = await anyio.to_thread.run_sync(self.list_files)

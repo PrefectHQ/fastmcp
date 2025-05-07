@@ -12,6 +12,7 @@ from mcp.types import Prompt as MCPPrompt
 from mcp.types import PromptArgument as MCPPromptArgument
 from pydantic import BaseModel, BeforeValidator, Field, TypeAdapter, validate_call
 
+from fastmcp.server.dependencies import get_context
 from fastmcp.utilities.json_schema import prune_params
 from fastmcp.utilities.types import (
     _convert_set_defaults,
@@ -20,10 +21,7 @@ from fastmcp.utilities.types import (
 )
 
 if TYPE_CHECKING:
-    from mcp.server.session import ServerSessionT
-    from mcp.shared.context import LifespanContextT
-
-    from fastmcp.server import Context
+    pass
 
 CONTENT_TYPES = TextContent | ImageContent | EmbeddedResource
 
@@ -76,9 +74,6 @@ class Prompt(BaseModel):
         None, description="Arguments that can be passed to the prompt"
     )
     fn: Callable[..., PromptResult | Awaitable[PromptResult]]
-    context_kwarg: str | None = Field(
-        None, description="Name of the kwarg that should receive context"
-    )
 
     @classmethod
     def from_function(
@@ -87,7 +82,6 @@ class Prompt(BaseModel):
         name: str | None = None,
         description: str | None = None,
         tags: set[str] | None = None,
-        context_kwarg: str | None = None,
     ) -> Prompt:
         """Create a Prompt from a function.
 
@@ -97,7 +91,7 @@ class Prompt(BaseModel):
         - A dict (converted to a message)
         - A sequence of any of the above
         """
-        from fastmcp import Context
+        from fastmcp.server.context import Context
 
         func_name = name or fn.__name__
 
@@ -115,8 +109,8 @@ class Prompt(BaseModel):
         parameters = type_adapter.json_schema()
 
         # Auto-detect context parameter if not provided
-        if context_kwarg is None:
-            context_kwarg = find_kwarg_by_type(fn, kwarg_type=Context)
+
+        context_kwarg = find_kwarg_by_type(fn, kwarg_type=Context)
         if context_kwarg:
             parameters = prune_params(parameters, params=[context_kwarg])
 
@@ -141,15 +135,15 @@ class Prompt(BaseModel):
             arguments=arguments,
             fn=fn,
             tags=tags or set(),
-            context_kwarg=context_kwarg,
         )
 
     async def render(
         self,
         arguments: dict[str, Any] | None = None,
-        context: Context[ServerSessionT, LifespanContextT] | None = None,
     ) -> list[PromptMessage]:
         """Render the prompt with arguments."""
+        from fastmcp.server.context import Context
+
         # Validate required arguments
         if self.arguments:
             required = {arg.name for arg in self.arguments if arg.required}
@@ -161,8 +155,9 @@ class Prompt(BaseModel):
         try:
             # Prepare arguments with context
             kwargs = arguments.copy() if arguments else {}
-            if self.context_kwarg is not None and context is not None:
-                kwargs[self.context_kwarg] = context
+            context_kwarg = find_kwarg_by_type(self.fn, kwarg_type=Context)
+            if context_kwarg and context_kwarg not in kwargs:
+                kwargs[context_kwarg] = get_context()
 
             # Call function and check if result is a coroutine
             result = self.fn(**kwargs)

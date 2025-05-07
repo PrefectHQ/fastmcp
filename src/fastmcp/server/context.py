@@ -1,11 +1,13 @@
 from __future__ import annotations as _annotations
 
-from typing import Any, Generic
+from collections.abc import Generator
+from contextlib import contextmanager
+from contextvars import ContextVar, Token
+from dataclasses import dataclass
 
 from mcp import LoggingLevel
 from mcp.server.lowlevel.helper_types import ReadResourceContents
-from mcp.server.session import ServerSessionT
-from mcp.shared.context import LifespanContextT, RequestContext
+from mcp.shared.context import RequestContext
 from mcp.types import (
     CreateMessageResult,
     ImageContent,
@@ -13,18 +15,29 @@ from mcp.types import (
     SamplingMessage,
     TextContent,
 )
-from pydantic import BaseModel, ConfigDict
 from pydantic.networks import AnyUrl
 from starlette.requests import Request
 
+import fastmcp.server.dependencies
 from fastmcp.server.server import FastMCP
-from fastmcp.utilities.http import get_current_starlette_request
 from fastmcp.utilities.logging import get_logger
 
 logger = get_logger(__name__)
 
+_current_context: ContextVar[Context | None] = ContextVar("context", default=None)
 
-class Context(BaseModel, Generic[ServerSessionT, LifespanContextT]):
+
+@contextmanager
+def set_context(context: Context) -> Generator[Context, None, None]:
+    token = _current_context.set(context)
+    try:
+        yield context
+    finally:
+        _current_context.reset(token)
+
+
+@dataclass
+class Context:
     """Context object providing access to MCP capabilities.
 
     This provides a cleaner interface to MCP's RequestContext functionality.
@@ -56,37 +69,30 @@ class Context(BaseModel, Generic[ServerSessionT, LifespanContextT]):
 
     The context parameter name can be anything as long as it's annotated with Context.
     The context is optional - tools that don't need it can omit the parameter.
+
     """
 
-    _request_context: RequestContext[ServerSessionT, LifespanContextT] | None
-    _fastmcp: FastMCP | None
+    def __init__(self, fastmcp: FastMCP):
+        self.fastmcp = fastmcp
+        self._tokens: list[Token] = []
 
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+    def __enter__(self) -> Context:
+        """Enter the context manager and set this context as the current context."""
+        # Always set this context and save the token
+        token = _current_context.set(self)
+        self._tokens.append(token)
+        return self
 
-    def __init__(
-        self,
-        *,
-        request_context: RequestContext[ServerSessionT, LifespanContextT] | None = None,
-        fastmcp: FastMCP | None = None,
-        **kwargs: Any,
-    ):
-        super().__init__(**kwargs)
-        self._request_context = request_context
-        self._fastmcp = fastmcp
-
-    @property
-    def fastmcp(self) -> FastMCP:
-        """Access to the FastMCP server."""
-        if self._fastmcp is None:
-            raise ValueError("Context is not available outside of a request")
-        return self._fastmcp
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        """Exit the context manager and reset the most recent token."""
+        if self._tokens:
+            token = self._tokens.pop()
+            _current_context.reset(token)
 
     @property
-    def request_context(self) -> RequestContext[ServerSessionT, LifespanContextT]:
+    def request_context(self) -> RequestContext:
         """Access to the underlying request context."""
-        if self._request_context is None:
-            raise ValueError("Context is not available outside of a request")
-        return self._request_context
+        return self.fastmcp._mcp_server.request_context
 
     async def report_progress(
         self, progress: float, total: float | None = None
@@ -120,10 +126,8 @@ class Context(BaseModel, Generic[ServerSessionT, LifespanContextT]):
         Returns:
             The resource content as either text or bytes
         """
-        assert self._fastmcp is not None, (
-            "Context is not available outside of a request"
-        )
-        return await self._fastmcp._mcp_read_resource(uri)
+        assert self.fastmcp is not None, "Context is not available outside of a request"
+        return await self.fastmcp._mcp_read_resource(uri)
 
     async def log(
         self,
@@ -229,7 +233,5 @@ class Context(BaseModel, Generic[ServerSessionT, LifespanContextT]):
 
     def get_http_request(self) -> Request:
         """Get the active starlette request."""
-        request = get_current_starlette_request()
-        if request is None:
-            raise ValueError("Request is not available outside a Starlette request")
-        return request
+
+        return fastmcp.server.dependencies.get_http_request()
