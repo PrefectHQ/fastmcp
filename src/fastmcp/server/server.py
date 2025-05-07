@@ -728,7 +728,7 @@ class FastMCP(Generic[LifespanResultT]):
         # timeout to make it possible to close immediately. see
         # https://github.com/jlowin/fastmcp/issues/296
         uvicorn_config.setdefault("timeout_graceful_shutdown", 0)
-        app = RequestContextMiddleware(self.sse_app())
+        app = self.sse_app()
 
         config = uvicorn.Config(
             app,
@@ -836,6 +836,8 @@ class FastMCP(Generic[LifespanResultT]):
             )
         # mount these routes last, so they have the lowest route matching precedence
         routes.extend(self._custom_starlette_routes)
+
+        middleware.append(Middleware(RequestContextMiddleware))
 
         # Create Starlette app with routes and middleware
         return Starlette(
