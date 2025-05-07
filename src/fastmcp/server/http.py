@@ -150,9 +150,9 @@ def create_sse_app(
     else:
         # Auth is disabled, no need for RequireAuthMiddleware
         # Since handle_sse is an ASGI app, we need to create a compatible endpoint
-        async def sse_endpoint(request: Request) -> None:
+        async def sse_endpoint(request: Request) -> Response:
             # Convert the Starlette request to ASGI parameters
-            await handle_sse(request.scope, request.receive, request._send)  # type: ignore[reportPrivateUsage]
+            return await handle_sse(request.scope, request.receive, request._send)  # type: ignore[reportPrivateUsage]
 
         routes.append(
             Route(
