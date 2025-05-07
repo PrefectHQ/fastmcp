@@ -78,19 +78,14 @@ def create_sse_app(
         additional_routes: Optional list of custom routes
 
     Returns:
-        A Starlette application configured for SSE
+        A Starlette application with RequestContextMiddleware
     """
-
     # Set up SSE transport
     sse = SseServerTransport(message_path)
 
-    async def handle_sse(scope: Scope, receive: Receive, send: Send):
-        # Add client ID from auth context into request context if available
-        async with sse.connect_sse(
-            scope,
-            receive,
-            send,
-        ) as streams:
+    # Create handler for SSE connections
+    async def handle_sse(scope: Scope, receive: Receive, send: Send) -> Response:
+        async with sse.connect_sse(scope, receive, send) as streams:
             await server._mcp_server.run(
                 streams[0],
                 streams[1],
@@ -98,29 +93,31 @@ def create_sse_app(
             )
         return Response()
 
-    # Create routes
+    # Configure routes and middleware
     routes: list[Route | Mount] = []
     middleware: list[Middleware] = []
-    required_scopes = []
 
-    # Add auth endpoints if auth provider is configured
+    # Handle authentication configuration
     if auth_server_provider:
-        assert auth_settings
+        # Ensure auth settings are provided when auth provider is present
+        if not auth_settings:
+            raise ValueError(
+                "auth_settings must be provided when auth_server_provider is specified"
+            )
 
-        required_scopes = auth_settings.required_scopes or []
-
+        # Configure auth middleware
         middleware = [
-            # extract auth info from request (but do not require it)
             Middleware(
                 AuthenticationMiddleware,
-                backend=BearerAuthBackend(
-                    provider=auth_server_provider,
-                ),
+                backend=BearerAuthBackend(provider=auth_server_provider),
             ),
-            # Add the auth context middleware to store
-            # authenticated user in a contextvar
             Middleware(AuthContextMiddleware),
         ]
+
+        # Get required scopes for authentication
+        required_scopes = auth_settings.required_scopes or []
+
+        # Add auth routes
         routes.extend(
             create_auth_routes(
                 provider=auth_server_provider,
@@ -131,9 +128,7 @@ def create_sse_app(
             )
         )
 
-    # When auth is not configured, we shouldn't require auth
-    if auth_server_provider:
-        # Auth is enabled, wrap the endpoints with RequireAuthMiddleware
+        # Add authenticated routes
         routes.append(
             Route(
                 sse_path,
@@ -148,10 +143,8 @@ def create_sse_app(
             )
         )
     else:
-        # Auth is disabled, no need for RequireAuthMiddleware
-        # Since handle_sse is an ASGI app, we need to create a compatible endpoint
+        # No authentication required
         async def sse_endpoint(request: Request) -> Response:
-            # Convert the Starlette request to ASGI parameters
             return await handle_sse(request.scope, request.receive, request._send)  # type: ignore[reportPrivateUsage]
 
         routes.append(
@@ -168,9 +161,12 @@ def create_sse_app(
             )
         )
 
-    # mount custom routes last, so they have the lowest route matching precedence
+    # Add custom routes with lowest precedence
     if additional_routes:
         routes.extend(additional_routes)
 
-    # Create Starlette app with routes and middleware
+    # Add RequestContextMiddleware as the outermost middleware
+    middleware.append(Middleware(RequestContextMiddleware))
+
+    # Create and return the Starlette app with middleware
     return Starlette(debug=debug, routes=routes, middleware=middleware)
