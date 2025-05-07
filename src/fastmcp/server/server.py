@@ -16,16 +16,10 @@ import anyio
 import httpx
 import pydantic
 import uvicorn
-from mcp.server.auth.middleware.auth_context import AuthContextMiddleware
-from mcp.server.auth.middleware.bearer_auth import (
-    BearerAuthBackend,
-    RequireAuthMiddleware,
-)
 from mcp.server.auth.provider import OAuthAuthorizationServerProvider
 from mcp.server.lowlevel.helper_types import ReadResourceContents
 from mcp.server.lowlevel.server import LifespanResultT
 from mcp.server.lowlevel.server import Server as MCPServer
-from mcp.server.sse import SseServerTransport
 from mcp.server.stdio import stdio_server
 from mcp.types import (
     AnyFunction,
@@ -41,12 +35,9 @@ from mcp.types import ResourceTemplate as MCPResourceTemplate
 from mcp.types import Tool as MCPTool
 from pydantic import AnyUrl
 from starlette.applications import Starlette
-from starlette.middleware import Middleware
-from starlette.middleware.authentication import AuthenticationMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
-from starlette.routing import Mount, Route
-from starlette.types import Receive, Scope, Send
+from starlette.routing import Route
 
 import fastmcp.server
 import fastmcp.settings
@@ -55,7 +46,7 @@ from fastmcp.prompts import Prompt, PromptManager
 from fastmcp.prompts.prompt import PromptResult
 from fastmcp.resources import Resource, ResourceManager
 from fastmcp.resources.template import ResourceTemplate
-from fastmcp.server.http import RequestContextMiddleware
+from fastmcp.server.http import create_sse_app
 from fastmcp.tools import ToolManager
 from fastmcp.tools.tool import Tool
 from fastmcp.utilities.cache import TimedCache
@@ -155,7 +146,7 @@ class FastMCP(Generic[LifespanResultT]):
                 "is specified"
             )
         self._auth_server_provider = auth_server_provider
-        self._custom_starlette_routes: list[Route] = []
+        self._additional_http_routes: list[Route] = []
         self.dependencies = self.settings.dependencies
 
         # Set up MCP protocol handlers
@@ -294,7 +285,7 @@ class FastMCP(Generic[LifespanResultT]):
         def decorator(
             func: Callable[[Request], Awaitable[Response]],
         ) -> Callable[[Request], Awaitable[Response]]:
-            self._custom_starlette_routes.append(
+            self._additional_http_routes.append(
                 Route(
                     path,
                     endpoint=func,
@@ -742,106 +733,14 @@ class FastMCP(Generic[LifespanResultT]):
 
     def sse_app(self) -> Starlette:
         """Return an instance of the SSE server app."""
-        from starlette.middleware import Middleware
-        from starlette.routing import Mount, Route
-
-        # Set up auth context and dependencies
-
-        sse = SseServerTransport(self.settings.message_path)
-
-        async def handle_sse(scope: Scope, receive: Receive, send: Send):
-            # Add client ID from auth context into request context if available
-
-            async with sse.connect_sse(
-                scope,
-                receive,
-                send,
-            ) as streams:
-                await self._mcp_server.run(
-                    streams[0],
-                    streams[1],
-                    self._mcp_server.create_initialization_options(),
-                )
-            return Response()
-
-        # Create routes
-        routes: list[Route | Mount] = []
-        middleware: list[Middleware] = []
-        required_scopes = []
-
-        # Add auth endpoints if auth provider is configured
-        if self._auth_server_provider:
-            assert self.settings.auth
-            from mcp.server.auth.routes import create_auth_routes
-
-            required_scopes = self.settings.auth.required_scopes or []
-
-            middleware = [
-                # extract auth info from request (but do not require it)
-                Middleware(
-                    AuthenticationMiddleware,
-                    backend=BearerAuthBackend(
-                        provider=self._auth_server_provider,
-                    ),
-                ),
-                # Add the auth context middleware to store
-                # authenticated user in a contextvar
-                Middleware(AuthContextMiddleware),
-            ]
-            routes.extend(
-                create_auth_routes(
-                    provider=self._auth_server_provider,
-                    issuer_url=self.settings.auth.issuer_url,
-                    service_documentation_url=self.settings.auth.service_documentation_url,
-                    client_registration_options=self.settings.auth.client_registration_options,
-                    revocation_options=self.settings.auth.revocation_options,
-                )
-            )
-
-        # When auth is not configured, we shouldn't require auth
-        if self._auth_server_provider:
-            # Auth is enabled, wrap the endpoints with RequireAuthMiddleware
-            routes.append(
-                Route(
-                    self.settings.sse_path,
-                    endpoint=RequireAuthMiddleware(handle_sse, required_scopes),
-                    methods=["GET"],
-                )
-            )
-            routes.append(
-                Mount(
-                    self.settings.message_path,
-                    app=RequireAuthMiddleware(sse.handle_post_message, required_scopes),
-                )
-            )
-        else:
-            # Auth is disabled, no need for RequireAuthMiddleware
-            # Since handle_sse is an ASGI app, we need to create a compatible endpoint
-            async def sse_endpoint(request: Request) -> Response:
-                # Convert the Starlette request to ASGI parameters
-                return await handle_sse(request.scope, request.receive, request._send)  # type: ignore[reportPrivateUsage]
-
-            routes.append(
-                Route(
-                    self.settings.sse_path,
-                    endpoint=sse_endpoint,
-                    methods=["GET"],
-                )
-            )
-            routes.append(
-                Mount(
-                    self.settings.message_path,
-                    app=sse.handle_post_message,
-                )
-            )
-        # mount these routes last, so they have the lowest route matching precedence
-        routes.extend(self._custom_starlette_routes)
-
-        middleware.append(Middleware(RequestContextMiddleware))
-
-        # Create Starlette app with routes and middleware
-        return Starlette(
-            debug=self.settings.debug, routes=routes, middleware=middleware
+        return create_sse_app(
+            server=self,
+            message_path=self.settings.message_path,
+            sse_path=self.settings.sse_path,
+            auth_server_provider=self._auth_server_provider,
+            auth_settings=self.settings.auth,
+            debug=self.settings.debug,
+            additional_routes=self._additional_http_routes,
         )
 
     def mount(
