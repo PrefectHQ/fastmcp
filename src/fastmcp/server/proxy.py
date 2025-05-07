@@ -27,9 +27,6 @@ from fastmcp.tools.tool import Tool
 from fastmcp.utilities.logging import get_logger
 
 if TYPE_CHECKING:
-    from mcp.server.session import ServerSessionT
-    from mcp.shared.context import LifespanContextT
-
     from fastmcp.server import Context
 
 logger = get_logger(__name__)
@@ -57,7 +54,7 @@ class ProxyTool(Tool):
     async def run(
         self,
         arguments: dict[str, Any],
-        context: Context[ServerSessionT, LifespanContextT] | None = None,
+        context: Context | None = None,
     ) -> list[TextContent | ImageContent | EmbeddedResource]:
         # the client context manager will swallow any exceptions inside a TaskGroup
         # so we return the raw result and raise an exception ourselves
@@ -89,9 +86,7 @@ class ProxyResource(Resource):
             mime_type=resource.mimeType,
         )
 
-    async def read(
-        self, context: Context[ServerSessionT, LifespanContextT] | None = None
-    ) -> str | bytes:
+    async def read(self) -> str | bytes:
         if self._value is not None:
             return self._value
 
@@ -127,7 +122,7 @@ class ProxyTemplate(ResourceTemplate):
         self,
         uri: str,
         params: dict[str, Any],
-        context: Context[ServerSessionT, LifespanContextT] | None = None,
+        context: Context | None = None,
     ) -> ProxyResource:
         # dont use the provided uri, because it may not be the same as the
         # uri_template on the remote server.
@@ -171,11 +166,7 @@ class ProxyPrompt(Prompt):
             fn=_proxy_passthrough,
         )
 
-    async def render(
-        self,
-        arguments: dict[str, Any],
-        context: Context[ServerSessionT, LifespanContextT] | None = None,
-    ) -> list[PromptMessage]:
+    async def render(self, arguments: dict[str, Any]) -> list[PromptMessage]:
         async with self._client:
             result = await self._client.get_prompt(self.name, arguments)
         return result.messages

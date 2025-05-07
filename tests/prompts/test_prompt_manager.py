@@ -1,8 +1,6 @@
 from typing import Annotated
 
 import pytest
-from mcp.server.session import ServerSessionT
-from mcp.shared.context import LifespanContextT
 
 from fastmcp import Context
 from fastmcp.exceptions import NotFoundError
@@ -308,38 +306,30 @@ class TestContextHandling:
         def prompt_with_context(x: int, ctx: Context) -> str:
             return str(x)
 
-        prompt = Prompt.from_function(prompt_with_context)
-        assert prompt.context_kwarg == "ctx"
+        Prompt.from_function(prompt_with_context)
 
         def prompt_without_context(x: int) -> str:
             return str(x)
 
-        prompt = Prompt.from_function(prompt_without_context)
-        assert prompt.context_kwarg is None
+        Prompt.from_function(prompt_without_context)
 
     def test_parameterized_context_parameter_detection(self):
         """Test that parameterized context parameters are properly detected in
         Prompt.from_function()."""
 
-        def prompt_with_context(
-            x: int, ctx: Context[ServerSessionT, LifespanContextT]
-        ) -> str:
+        def prompt_with_context(x: int, ctx: Context) -> str:
             return str(x)
 
-        prompt = Prompt.from_function(prompt_with_context)
-        assert prompt.context_kwarg == "ctx"
+        Prompt.from_function(prompt_with_context)
 
     def test_parameterized_union_context_parameter_detection(self):
         """Test that context parameters in a union are properly detected in
         Prompt.from_function()."""
 
-        def prompt_with_context(
-            x: int, ctx: Context[ServerSessionT, LifespanContextT] | None
-        ) -> str:
+        def prompt_with_context(x: int, ctx: Context | None) -> str:
             return str(x)
 
-        prompt = Prompt.from_function(prompt_with_context)
-        assert prompt.context_kwarg == "ctx"
+        Prompt.from_function(prompt_with_context)
 
     async def test_context_injection(self):
         """Test that context is properly injected during prompt rendering."""
@@ -349,17 +339,15 @@ class TestContextHandling:
             return str(x)
 
         prompt = Prompt.from_function(prompt_with_context)
-        assert prompt.context_kwarg == "ctx"
 
         from fastmcp import FastMCP
 
         mcp = FastMCP()
-        ctx = mcp.get_context()
+        context = Context(fastmcp=mcp)
 
-        messages = await prompt.render(
-            arguments={"x": 42},
-            context=ctx,
-        )
+        with context:
+            messages = await prompt.render(arguments={"x": 42})
+
         assert len(messages) == 1
         assert isinstance(messages[0].content, TextContent)
         assert messages[0].content.text == "42"
@@ -371,12 +359,18 @@ class TestContextHandling:
             return str(x)
 
         prompt = Prompt.from_function(prompt_with_context)
-        assert prompt.context_kwarg == "ctx"
 
-        # Should not raise an error when context is not provided
-        messages = await prompt.render(
-            arguments={"x": 42},
-        )
+        # Even for optional context, we need to provide a context
+        from fastmcp import FastMCP
+
+        mcp = FastMCP()
+        context = Context(fastmcp=mcp)
+
+        with context:
+            messages = await prompt.render(
+                arguments={"x": 42},
+            )
+
         assert len(messages) == 1
         assert isinstance(messages[0].content, TextContent)
         assert messages[0].content.text == "42"
@@ -388,5 +382,4 @@ class TestContextHandling:
         def prompt_with_context(x: int, ctx: Annotated[Context, "ctx"]) -> str:
             return str(x)
 
-        prompt = Prompt.from_function(prompt_with_context)
-        assert prompt.context_kwarg == "ctx"
+        Prompt.from_function(prompt_with_context)

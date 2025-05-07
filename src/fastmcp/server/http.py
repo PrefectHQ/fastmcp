@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from contextlib import (
-    asynccontextmanager,
-)
+from collections.abc import Generator
+from contextlib import contextmanager
 from contextvars import ContextVar
 
 from starlette.requests import Request
@@ -11,27 +10,22 @@ from fastmcp.utilities.logging import get_logger
 
 logger = get_logger(__name__)
 
-
-_current_starlette_request: ContextVar[Request | None] = ContextVar(
-    "starlette_request",
+_current_http_request: ContextVar[Request | None] = ContextVar(
+    "http_request",
     default=None,
 )
 
 
-@asynccontextmanager
-async def starlette_request_context(request: Request):
-    token = _current_starlette_request.set(request)
+@contextmanager
+def set_http_request(request: Request) -> Generator[Request, None, None]:
+    token = _current_http_request.set(request)
     try:
-        yield
+        yield request
     finally:
-        _current_starlette_request.reset(token)
+        _current_http_request.reset(token)
 
 
-def get_current_starlette_request() -> Request | None:
-    return _current_starlette_request.get()
-
-
-class RequestMiddleware:
+class RequestContextMiddleware:
     """
     Middleware that stores each request in a ContextVar
     """
@@ -40,5 +34,5 @@ class RequestMiddleware:
         self.app = app
 
     async def __call__(self, scope, receive, send):
-        async with starlette_request_context(Request(scope)):
+        with set_http_request(Request(scope)):
             await self.app(scope, receive, send)

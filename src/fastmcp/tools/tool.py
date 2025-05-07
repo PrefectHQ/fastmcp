@@ -12,6 +12,7 @@ from pydantic import BaseModel, BeforeValidator, Field
 
 import fastmcp
 from fastmcp.exceptions import ToolError
+from fastmcp.server.dependencies import get_context
 from fastmcp.utilities.json_schema import prune_params
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import (
@@ -22,10 +23,7 @@ from fastmcp.utilities.types import (
 )
 
 if TYPE_CHECKING:
-    from mcp.server.session import ServerSessionT
-    from mcp.shared.context import LifespanContextT
-
-    from fastmcp.server import Context
+    pass
 
 logger = get_logger(__name__)
 
@@ -41,9 +39,6 @@ class Tool(BaseModel):
     name: str = Field(description="Name of the tool")
     description: str = Field(description="Description of what the tool does")
     parameters: dict[str, Any] = Field(description="JSON schema for tool parameters")
-    context_kwarg: str | None = Field(
-        None, description="Name of the kwarg that should receive context"
-    )
     tags: Annotated[set[str], BeforeValidator(_convert_set_defaults)] = Field(
         default_factory=set, description="Tags for the tool"
     )
@@ -60,13 +55,12 @@ class Tool(BaseModel):
         fn: Callable[..., Any],
         name: str | None = None,
         description: str | None = None,
-        context_kwarg: str | None = None,
         tags: set[str] | None = None,
         annotations: ToolAnnotations | None = None,
         serializer: Callable[[Any], str] | None = None,
     ) -> Tool:
         """Create a Tool from a function."""
-        from fastmcp import Context
+        from fastmcp.server.context import Context
 
         # Reject functions with *args or **kwargs
         sig = inspect.signature(fn)
@@ -86,8 +80,7 @@ class Tool(BaseModel):
         type_adapter = get_cached_typeadapter(fn)
         schema = type_adapter.json_schema()
 
-        if context_kwarg is None:
-            context_kwarg = find_kwarg_by_type(fn, kwarg_type=Context)
+        context_kwarg = find_kwarg_by_type(fn, kwarg_type=Context)
         if context_kwarg:
             schema = prune_params(schema, params=[context_kwarg])
 
@@ -96,25 +89,23 @@ class Tool(BaseModel):
             name=func_name,
             description=func_doc,
             parameters=schema,
-            context_kwarg=context_kwarg,
             tags=tags or set(),
             annotations=annotations,
             serializer=serializer,
         )
 
     async def run(
-        self,
-        arguments: dict[str, Any],
-        context: Context[ServerSessionT, LifespanContextT] | None = None,
+        self, arguments: dict[str, Any]
     ) -> list[TextContent | ImageContent | EmbeddedResource]:
         """Run the tool with arguments."""
+        from fastmcp.server.context import Context
+
+        arguments = arguments.copy()
 
         try:
-            injected_args = (
-                {self.context_kwarg: context} if self.context_kwarg is not None else {}
-            )
-
-            parsed_args = arguments.copy()
+            context_kwarg = find_kwarg_by_type(self.fn, kwarg_type=Context)
+            if context_kwarg and context_kwarg not in arguments:
+                arguments[context_kwarg] = get_context()
 
             if fastmcp.settings.settings.tool_attempt_parse_json_args:
                 # Pre-parse data from JSON in order to handle cases like `["a", "b", "c"]`
@@ -125,7 +116,7 @@ class Tool(BaseModel):
                 # which can be pre-parsed here.
                 signature = inspect.signature(self.fn)
                 for param_name in self.parameters["properties"]:
-                    arg = parsed_args.get(param_name, None)
+                    arg = arguments.get(param_name, None)
                     # if not in signature, we won't have annotations, so skip logic
                     if param_name not in signature.parameters:
                         continue
@@ -140,13 +131,13 @@ class Tool(BaseModel):
                     ):
                         continue
                     try:
-                        parsed_args[param_name] = json.loads(arg)
+                        arguments[param_name] = json.loads(arg)
 
                     except json.JSONDecodeError:
                         pass
 
             type_adapter = get_cached_typeadapter(self.fn)
-            result = type_adapter.validate_python(parsed_args | injected_args)
+            result = type_adapter.validate_python(arguments)
             if inspect.isawaitable(result):
                 result = await result
 
