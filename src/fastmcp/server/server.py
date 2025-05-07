@@ -25,7 +25,6 @@ from mcp.server.auth.provider import OAuthAuthorizationServerProvider
 from mcp.server.lowlevel.helper_types import ReadResourceContents
 from mcp.server.lowlevel.server import LifespanResultT
 from mcp.server.lowlevel.server import Server as MCPServer
-from mcp.server.session import ServerSession
 from mcp.server.sse import SseServerTransport
 from mcp.server.stdio import stdio_server
 from mcp.types import (
@@ -49,14 +48,14 @@ from starlette.responses import Response
 from starlette.routing import Mount, Route
 from starlette.types import Receive, Scope, Send
 
-import fastmcp
+import fastmcp.server
 import fastmcp.settings
 from fastmcp.exceptions import NotFoundError, ResourceError
 from fastmcp.prompts import Prompt, PromptManager
 from fastmcp.prompts.prompt import PromptResult
 from fastmcp.resources import Resource, ResourceManager
 from fastmcp.resources.template import ResourceTemplate
-from fastmcp.server.http import RequestMiddleware
+from fastmcp.server.http import RequestContextMiddleware
 from fastmcp.tools import ToolManager
 from fastmcp.tools.tool import Tool
 from fastmcp.utilities.cache import TimedCache
@@ -65,7 +64,6 @@ from fastmcp.utilities.logging import configure_logging, get_logger
 
 if TYPE_CHECKING:
     from fastmcp.client import Client
-    from fastmcp.server.context import Context
     from fastmcp.server.openapi import FastMCPOpenAPI
     from fastmcp.server.proxy import FastMCPProxy
 
@@ -217,20 +215,6 @@ class FastMCP(Generic[LifespanResultT]):
         self._mcp_server.get_prompt()(self._mcp_get_prompt)
         self._mcp_server.list_resource_templates()(self._mcp_list_resource_templates)
 
-    def get_context(self) -> Context[ServerSession, LifespanResultT]:
-        """
-        Returns a Context object. Note that the context will only be valid
-        during a request; outside a request, most methods will error.
-        """
-
-        try:
-            request_context = self._mcp_server.request_context
-        except LookupError:
-            request_context = None
-        from fastmcp.server.context import Context
-
-        return Context(request_context=request_context, fastmcp=self)
-
     async def get_tools(self) -> dict[str, Tool]:
         """Get all registered tools, indexed by registered key."""
         if (tools := self._cache.get("tools")) is self._cache.NOT_FOUND:
@@ -368,43 +352,46 @@ class FastMCP(Generic[LifespanResultT]):
         self, key: str, arguments: dict[str, Any]
     ) -> list[TextContent | ImageContent | EmbeddedResource]:
         """Call a tool by name with arguments."""
-        if self._tool_manager.has_tool(key):
-            context = self.get_context()
-            result = await self._tool_manager.call_tool(key, arguments, context=context)
 
-        else:
-            for server in self._mounted_servers.values():
-                if server.match_tool(key):
-                    new_key = server.strip_tool_prefix(key)
-                    result = await server.server._mcp_call_tool(new_key, arguments)
-                    break
+        with fastmcp.server.context.Context(fastmcp=self):
+            if self._tool_manager.has_tool(key):
+                result = await self._tool_manager.call_tool(key, arguments)
+
             else:
-                raise NotFoundError(f"Unknown tool: {key}")
-        return result
+                for server in self._mounted_servers.values():
+                    if server.match_tool(key):
+                        new_key = server.strip_tool_prefix(key)
+                        result = await server.server._mcp_call_tool(new_key, arguments)
+                        break
+                else:
+                    raise NotFoundError(f"Unknown tool: {key}")
+            return result
 
     async def _mcp_read_resource(self, uri: AnyUrl | str) -> list[ReadResourceContents]:
         """
         Read a resource by URI, in the format expected by the low-level MCP
         server.
         """
-        if self._resource_manager.has_resource(uri):
-            context = self.get_context()
-            resource = await self._resource_manager.get_resource(uri, context=context)
-            try:
-                content = await resource.read(context=context)
-                return [
-                    ReadResourceContents(content=content, mime_type=resource.mime_type)
-                ]
-            except Exception as e:
-                logger.error(f"Error reading resource {uri}: {e}")
-                raise ResourceError(str(e))
-        else:
-            for server in self._mounted_servers.values():
-                if server.match_resource(str(uri)):
-                    new_uri = server.strip_resource_prefix(str(uri))
-                    return await server.server._mcp_read_resource(new_uri)
+        with fastmcp.server.context.Context(fastmcp=self):
+            if self._resource_manager.has_resource(uri):
+                resource = await self._resource_manager.get_resource(uri)
+                try:
+                    content = await resource.read()
+                    return [
+                        ReadResourceContents(
+                            content=content, mime_type=resource.mime_type
+                        )
+                    ]
+                except Exception as e:
+                    logger.error(f"Error reading resource {uri}: {e}")
+                    raise ResourceError(str(e))
             else:
-                raise NotFoundError(f"Unknown resource: {uri}")
+                for server in self._mounted_servers.values():
+                    if server.match_resource(str(uri)):
+                        new_uri = server.strip_resource_prefix(str(uri))
+                        return await server.server._mcp_read_resource(new_uri)
+                else:
+                    raise NotFoundError(f"Unknown resource: {uri}")
 
     async def _mcp_get_prompt(
         self, name: str, arguments: dict[str, Any] | None = None
@@ -414,19 +401,19 @@ class FastMCP(Generic[LifespanResultT]):
         MCP server.
 
         """
-        if self._prompt_manager.has_prompt(name):
-            context = self.get_context()
-            prompt_result = await self._prompt_manager.render_prompt(
-                name, arguments=arguments or {}, context=context
-            )
-            return prompt_result
-        else:
-            for server in self._mounted_servers.values():
-                if server.match_prompt(name):
-                    new_key = server.strip_prompt_prefix(name)
-                    return await server.server._mcp_get_prompt(new_key, arguments)
+        with fastmcp.server.context.Context(fastmcp=self):
+            if self._prompt_manager.has_prompt(name):
+                prompt_result = await self._prompt_manager.render_prompt(
+                    name, arguments=arguments or {}
+                )
+                return prompt_result
             else:
-                raise NotFoundError(f"Unknown prompt: {name}")
+                for server in self._mounted_servers.values():
+                    if server.match_prompt(name):
+                        new_key = server.strip_prompt_prefix(name)
+                    return await server.server._mcp_get_prompt(new_key, arguments)
+                else:
+                    raise NotFoundError(f"Unknown prompt: {name}")
 
     def add_tool(
         self,
@@ -737,10 +724,11 @@ class FastMCP(Generic[LifespanResultT]):
     ) -> None:
         """Run the server using SSE transport."""
         uvicorn_config = uvicorn_config or {}
-        # the SSE app hangs even when a signal is sent, so we disable the timeout to make it possible to close immediately.
-        # see https://github.com/jlowin/fastmcp/issues/296
+        # the SSE app hangs even when a signal is sent, so we disable the
+        # timeout to make it possible to close immediately. see
+        # https://github.com/jlowin/fastmcp/issues/296
         uvicorn_config.setdefault("timeout_graceful_shutdown", 0)
-        app = RequestMiddleware(self.sse_app())
+        app = RequestContextMiddleware(self.sse_app())
 
         config = uvicorn.Config(
             app,
