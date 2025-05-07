@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator, Generator
+from collections.abc import AsyncGenerator, Callable, Generator
 from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from mcp.server.auth.middleware.auth_context import AuthContextMiddleware
 from mcp.server.auth.middleware.bearer_auth import (
@@ -32,7 +32,6 @@ try:
     STREAMABLE_HTTP_AVAILABLE = True
 except ImportError:
     STREAMABLE_HTTP_AVAILABLE = False
-
 
 if TYPE_CHECKING:
     from fastmcp.server.server import FastMCP
@@ -68,6 +67,85 @@ class RequestContextMiddleware:
                 await self.app(scope, receive, send)
         else:
             await self.app(scope, receive, send)
+
+
+def setup_auth_middleware_and_routes(
+    auth_server_provider: OAuthAuthorizationServerProvider | None,
+    auth_settings: AuthSettings | None,
+) -> tuple[list[Middleware], list[Route | Mount], list[str]]:
+    """Set up authentication middleware and routes if auth is enabled.
+
+    Args:
+        auth_server_provider: The OAuth authorization server provider
+        auth_settings: The auth settings
+
+    Returns:
+        Tuple of (middleware, auth_routes, required_scopes)
+    """
+    middleware: list[Middleware] = []
+    auth_routes: list[Route | Mount] = []
+    required_scopes: list[str] = []
+
+    if auth_server_provider:
+        if not auth_settings:
+            raise ValueError(
+                "auth_settings must be provided when auth_server_provider is specified"
+            )
+
+        middleware = [
+            Middleware(
+                AuthenticationMiddleware,
+                backend=BearerAuthBackend(provider=auth_server_provider),
+            ),
+            Middleware(AuthContextMiddleware),
+        ]
+
+        required_scopes = auth_settings.required_scopes or []
+
+        auth_routes.extend(
+            create_auth_routes(
+                provider=auth_server_provider,
+                issuer_url=auth_settings.issuer_url,
+                service_documentation_url=auth_settings.service_documentation_url,
+                client_registration_options=auth_settings.client_registration_options,
+                revocation_options=auth_settings.revocation_options,
+            )
+        )
+
+    return middleware, auth_routes, required_scopes
+
+
+def create_base_app(
+    routes: list[Route | Mount],
+    middleware: list[Middleware],
+    debug: bool,
+    lifespan: Callable | None = None,
+) -> Starlette:
+    """Create a base Starlette app with common middleware and routes.
+
+    Args:
+        routes: List of routes to include in the app
+        middleware: List of middleware to include in the app
+        debug: Whether to enable debug mode
+        lifespan: Optional lifespan manager for the app
+
+    Returns:
+        A Starlette application
+    """
+    # Always add RequestContextMiddleware as the outermost middleware
+    middleware.append(Middleware(RequestContextMiddleware))
+
+    # Create the app
+    app_kwargs = {
+        "debug": debug,
+        "routes": routes,
+        "middleware": middleware,
+    }
+
+    if lifespan:
+        app_kwargs["lifespan"] = lifespan
+
+    return Starlette(**app_kwargs)
 
 
 def create_sse_app(
@@ -106,42 +184,17 @@ def create_sse_app(
             )
         return Response()
 
-    # Configure routes and middleware
-    routes: list[Route | Mount] = []
-    middleware: list[Middleware] = []
+    # Get auth middleware and routes
+    middleware, auth_routes, required_scopes = setup_auth_middleware_and_routes(
+        auth_server_provider, auth_settings
+    )
 
-    # Handle authentication configuration
+    # Initialize routes with auth routes
+    routes: list[Route | Mount] = auth_routes.copy()
+
+    # Add SSE routes with or without auth
     if auth_server_provider:
-        # Ensure auth settings are provided when auth provider is present
-        if not auth_settings:
-            raise ValueError(
-                "auth_settings must be provided when auth_server_provider is specified"
-            )
-
-        # Configure auth middleware
-        middleware = [
-            Middleware(
-                AuthenticationMiddleware,
-                backend=BearerAuthBackend(provider=auth_server_provider),
-            ),
-            Middleware(AuthContextMiddleware),
-        ]
-
-        # Get required scopes for authentication
-        required_scopes = auth_settings.required_scopes or []
-
-        # Add auth routes
-        routes.extend(
-            create_auth_routes(
-                provider=auth_server_provider,
-                issuer_url=auth_settings.issuer_url,
-                service_documentation_url=auth_settings.service_documentation_url,
-                client_registration_options=auth_settings.client_registration_options,
-                revocation_options=auth_settings.revocation_options,
-            )
-        )
-
-        # Add authenticated routes
+        # Auth is enabled, wrap endpoints with RequireAuthMiddleware
         routes.append(
             Route(
                 sse_path,
@@ -156,7 +209,7 @@ def create_sse_app(
             )
         )
     else:
-        # No authentication required
+        # No auth required
         async def sse_endpoint(request: Request) -> Response:
             return await handle_sse(request.scope, request.receive, request._send)  # type: ignore[reportPrivateUsage]
 
@@ -176,13 +229,10 @@ def create_sse_app(
 
     # Add custom routes with lowest precedence
     if additional_routes:
-        routes.extend(additional_routes)
+        routes.extend(cast(list[Route | Mount], additional_routes))
 
-    # Add RequestContextMiddleware as the outermost middleware
-    middleware.append(Middleware(RequestContextMiddleware))
-
-    # Create and return the Starlette app with middleware
-    return Starlette(debug=debug, routes=routes, middleware=middleware)
+    # Create and return the app
+    return create_base_app(routes, middleware, debug)
 
 
 def create_streamable_http_app(
@@ -231,42 +281,17 @@ def create_streamable_http_app(
     ) -> None:
         await session_manager.handle_request(scope, receive, send)
 
-    # Configure routes and middleware
-    routes: list[Route | Mount] = []
-    middleware: list[Middleware] = []
+    # Get auth middleware and routes
+    middleware, auth_routes, required_scopes = setup_auth_middleware_and_routes(
+        auth_server_provider, auth_settings
+    )
 
-    # Handle authentication configuration
+    # Initialize routes with auth routes
+    routes: list[Route | Mount] = auth_routes.copy()
+
+    # Add StreamableHTTP routes with or without auth
     if auth_server_provider:
-        # Ensure auth settings are provided when auth provider is present
-        if not auth_settings:
-            raise ValueError(
-                "auth_settings must be provided when auth_server_provider is specified"
-            )
-
-        # Configure auth middleware
-        middleware = [
-            Middleware(
-                AuthenticationMiddleware,
-                backend=BearerAuthBackend(provider=auth_server_provider),
-            ),
-            Middleware(AuthContextMiddleware),
-        ]
-
-        # Get required scopes for authentication
-        required_scopes = auth_settings.required_scopes or []
-
-        # Add auth routes
-        routes.extend(
-            create_auth_routes(
-                provider=auth_server_provider,
-                issuer_url=auth_settings.issuer_url,
-                service_documentation_url=auth_settings.service_documentation_url,
-                client_registration_options=auth_settings.client_registration_options,
-                revocation_options=auth_settings.revocation_options,
-            )
-        )
-
-        # Add authenticated route
+        # Auth is enabled, wrap endpoint with RequireAuthMiddleware
         routes.append(
             Mount(
                 streamable_http_path,
@@ -274,7 +299,7 @@ def create_streamable_http_app(
             )
         )
     else:
-        # No authentication required
+        # No auth required
         routes.append(
             Mount(
                 streamable_http_path,
@@ -284,10 +309,7 @@ def create_streamable_http_app(
 
     # Add custom routes with lowest precedence
     if additional_routes:
-        routes.extend(additional_routes)
-
-    # Add RequestContextMiddleware as the outermost middleware
-    middleware.append(Middleware(RequestContextMiddleware))
+        routes.extend(cast(list[Route | Mount], additional_routes))
 
     # Create a lifespan manager to start and stop the session manager
     @asynccontextmanager
@@ -295,10 +317,5 @@ def create_streamable_http_app(
         async with session_manager.run():
             yield
 
-    # Create and return the Starlette app with middleware
-    return Starlette(
-        debug=debug,
-        routes=routes,
-        middleware=middleware,
-        lifespan=lifespan,
-    )
+    # Create and return the app with lifespan
+    return create_base_app(routes, middleware, debug, lifespan)
