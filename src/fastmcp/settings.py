@@ -61,6 +61,7 @@ class ServerSettings(BaseSettings):
     port: int = 8000
     sse_path: str = "/sse"
     message_path: str = "/messages/"
+    streamable_http_path: str = "/mcp"
     debug: bool = False
 
     # resource settings
@@ -81,6 +82,12 @@ class ServerSettings(BaseSettings):
     cache_expiration_seconds: float = 0
 
     auth: AuthSettings | None = None
+
+    # StreamableHTTP settings
+    json_response: bool = False
+    stateless_http: bool = (
+        False  # If True, uses true stateless mode (new transport per request)
+    )
 
 
 class ClientSettings(BaseSettings):

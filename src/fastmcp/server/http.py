@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from collections.abc import Generator
-from contextlib import contextmanager
+from collections.abc import AsyncGenerator, Generator
+from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar
 from typing import TYPE_CHECKING
 
@@ -24,8 +24,18 @@ from starlette.types import Receive, Scope, Send
 
 from fastmcp.utilities.logging import get_logger
 
+# Import these conditionally to handle case where they might not be available
+try:
+    from mcp.server.streamable_http import EventStore
+    from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
+
+    STREAMABLE_HTTP_AVAILABLE = True
+except ImportError:
+    STREAMABLE_HTTP_AVAILABLE = False
+
+
 if TYPE_CHECKING:
-    from fastmcp import FastMCP
+    from fastmcp.server.server import FastMCP
 
 logger = get_logger(__name__)
 
@@ -53,7 +63,10 @@ class RequestContextMiddleware:
         self.app = app
 
     async def __call__(self, scope, receive, send):
-        with set_http_request(Request(scope)):
+        if scope["type"] == "http":
+            with set_http_request(Request(scope)):
+                await self.app(scope, receive, send)
+        else:
             await self.app(scope, receive, send)
 
 
@@ -170,3 +183,122 @@ def create_sse_app(
 
     # Create and return the Starlette app with middleware
     return Starlette(debug=debug, routes=routes, middleware=middleware)
+
+
+def create_streamable_http_app(
+    server: FastMCP,
+    streamable_http_path: str,
+    event_store: EventStore | None = None,
+    auth_server_provider: OAuthAuthorizationServerProvider | None = None,
+    auth_settings: AuthSettings | None = None,
+    json_response: bool = False,
+    stateless_http: bool = False,
+    debug: bool = False,
+    additional_routes: list[Route] | list[Mount] | list[Route | Mount] | None = None,
+) -> Starlette:
+    """Return an instance of the StreamableHTTP server app.
+
+    Args:
+        server: The FastMCP server instance
+        streamable_http_path: Path for StreamableHTTP connections
+        event_store: Optional event store for session management
+        auth_server_provider: Optional auth provider
+        auth_settings: Optional auth settings
+        json_response: Whether to use JSON response format
+        stateless_http: Whether to use stateless mode (new transport per request)
+        debug: Whether to enable debug mode
+        additional_routes: Optional list of custom routes
+
+    Returns:
+        A Starlette application with StreamableHTTP support
+    """
+    if not STREAMABLE_HTTP_AVAILABLE:
+        raise ImportError(
+            "StreamableHTTP transport is not available. Make sure your version of `mcp` is up-to-date."
+        )
+
+    # Create session manager using the provided event store
+    session_manager = StreamableHTTPSessionManager(
+        app=server._mcp_server,
+        event_store=event_store,
+        json_response=json_response,
+        stateless=stateless_http,
+    )
+
+    # Create the ASGI handler
+    async def handle_streamable_http(
+        scope: Scope, receive: Receive, send: Send
+    ) -> None:
+        await session_manager.handle_request(scope, receive, send)
+
+    # Configure routes and middleware
+    routes: list[Route | Mount] = []
+    middleware: list[Middleware] = []
+
+    # Handle authentication configuration
+    if auth_server_provider:
+        # Ensure auth settings are provided when auth provider is present
+        if not auth_settings:
+            raise ValueError(
+                "auth_settings must be provided when auth_server_provider is specified"
+            )
+
+        # Configure auth middleware
+        middleware = [
+            Middleware(
+                AuthenticationMiddleware,
+                backend=BearerAuthBackend(provider=auth_server_provider),
+            ),
+            Middleware(AuthContextMiddleware),
+        ]
+
+        # Get required scopes for authentication
+        required_scopes = auth_settings.required_scopes or []
+
+        # Add auth routes
+        routes.extend(
+            create_auth_routes(
+                provider=auth_server_provider,
+                issuer_url=auth_settings.issuer_url,
+                service_documentation_url=auth_settings.service_documentation_url,
+                client_registration_options=auth_settings.client_registration_options,
+                revocation_options=auth_settings.revocation_options,
+            )
+        )
+
+        # Add authenticated route
+        routes.append(
+            Mount(
+                streamable_http_path,
+                app=RequireAuthMiddleware(handle_streamable_http, required_scopes),
+            )
+        )
+    else:
+        # No authentication required
+        routes.append(
+            Mount(
+                streamable_http_path,
+                app=handle_streamable_http,
+            )
+        )
+
+    # Add custom routes with lowest precedence
+    if additional_routes:
+        routes.extend(additional_routes)
+
+    # Add RequestContextMiddleware as the outermost middleware
+    middleware.append(Middleware(RequestContextMiddleware))
+
+    # Create a lifespan manager to start and stop the session manager
+    @asynccontextmanager
+    async def lifespan(app: Starlette) -> AsyncGenerator[None, None]:
+        async with session_manager.run():
+            yield
+
+    # Create and return the Starlette app with middleware
+    return Starlette(
+        debug=debug,
+        routes=routes,
+        middleware=middleware,
+        lifespan=lifespan,
+    )

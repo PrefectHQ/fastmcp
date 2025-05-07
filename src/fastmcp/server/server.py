@@ -146,6 +146,7 @@ class FastMCP(Generic[LifespanResultT]):
                 "is specified"
             )
         self._auth_server_provider = auth_server_provider
+
         self._additional_http_routes: list[Route] = []
         self.dependencies = self.settings.dependencies
 
@@ -167,30 +168,36 @@ class FastMCP(Generic[LifespanResultT]):
         return self._mcp_server.instructions
 
     async def run_async(
-        self, transport: Literal["stdio", "sse"] | None = None, **transport_kwargs: Any
+        self,
+        transport: Literal["stdio", "sse", "streamable-http"] | None = None,
+        **transport_kwargs: Any,
     ) -> None:
         """Run the FastMCP server asynchronously.
 
         Args:
-            transport: Transport protocol to use ("stdio" or "sse")
+            transport: Transport protocol to use ("stdio", "sse", or "streamable-http")
         """
         if transport is None:
             transport = "stdio"
-        if transport not in ["stdio", "sse"]:
+        if transport not in ["stdio", "sse", "streamable-http"]:
             raise ValueError(f"Unknown transport: {transport}")
 
         if transport == "stdio":
             await self.run_stdio_async(**transport_kwargs)
-        else:  # transport == "sse"
+        elif transport == "sse":
             await self.run_sse_async(**transport_kwargs)
+        else:  # transport == "streamable-http"
+            await self.run_streamable_http_async(**transport_kwargs)
 
     def run(
-        self, transport: Literal["stdio", "sse"] | None = None, **transport_kwargs: Any
+        self,
+        transport: Literal["stdio", "sse", "streamable-http"] | None = None,
+        **transport_kwargs: Any,
     ) -> None:
         """Run the FastMCP server. Note this is a synchronous function.
 
         Args:
-            transport: Transport protocol to use ("stdio" or "sse")
+            transport: Transport protocol to use ("stdio", "sse", or "streamable-http")
         """
         logger.info(f'Starting server "{self.name}"...')
 
@@ -742,6 +749,52 @@ class FastMCP(Generic[LifespanResultT]):
             debug=self.settings.debug,
             additional_routes=self._additional_http_routes,
         )
+
+    def streamable_http_app(self) -> Starlette:
+        """Return an instance of the StreamableHTTP server app."""
+        try:
+            from fastmcp.server.http import create_streamable_http_app
+
+            return create_streamable_http_app(
+                server=self,
+                streamable_http_path=self.settings.streamable_http_path,
+                event_store=None,
+                auth_server_provider=self._auth_server_provider,
+                auth_settings=self.settings.auth,
+                json_response=self.settings.json_response,
+                stateless_http=self.settings.stateless_http,
+                debug=self.settings.debug,
+                additional_routes=self._additional_http_routes,
+            )
+        except ImportError as e:
+            logger.error(f"Failed to create StreamableHTTP app: {e}")
+            raise ImportError(
+                "StreamableHTTP transport is not available. Make sure your version of `mcp` is up-to-date."
+            ) from e
+
+    async def run_streamable_http_async(
+        self,
+        host: str | None = None,
+        port: int | None = None,
+        log_level: str | None = None,
+        uvicorn_config: dict | None = None,
+    ) -> None:
+        """Run the server using StreamableHTTP transport."""
+        uvicorn_config = uvicorn_config or {}
+        uvicorn_config.setdefault("timeout_graceful_shutdown", 0)
+
+        app = self.streamable_http_app()
+
+        config = uvicorn.Config(
+            app,
+            host=host or self.settings.host,
+            port=port or self.settings.port,
+            log_level=log_level or self.settings.log_level.lower(),
+            lifespan="on",
+            **uvicorn_config,
+        )
+        server = uvicorn.Server(config)
+        await server.serve()
 
     def mount(
         self,
