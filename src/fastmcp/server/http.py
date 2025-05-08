@@ -22,9 +22,10 @@ from starlette.responses import Response
 from starlette.routing import Mount, Route
 from starlette.types import Receive, Scope, Send
 
-# This import is vendored until it is finalized in the upstream SDK
-from fastmcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from fastmcp.utilities.logging import get_logger
+
+# This import is vendored until it is finalized in the upstream SDK
+from fastmcp.vendor.streamable_http_manager import StreamableHTTPSessionManager
 
 if TYPE_CHECKING:
     from fastmcp.server.server import FastMCP
