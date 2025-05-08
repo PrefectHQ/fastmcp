@@ -784,6 +784,7 @@ class FastMCP(Generic[LifespanResultT]):
             host=host or self.settings.host,
             port=port or self.settings.port,
             log_level=log_level or self.settings.log_level.lower(),
+            # lifespan is required for streamable http
             lifespan="on",
             **uvicorn_config,
         )
