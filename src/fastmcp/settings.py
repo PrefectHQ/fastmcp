@@ -59,9 +59,9 @@ class ServerSettings(BaseSettings):
     # HTTP settings
     host: str = "127.0.0.1"
     port: int = 8000
-    sse_path: str = "/sse/"
+    sse_path: str = "/sse"
     message_path: str = "/messages/"
-    streamable_http_path: str = "/mcp/"
+    streamable_http_path: str = "/mcp"
     debug: bool = False
 
     # resource settings

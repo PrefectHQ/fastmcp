@@ -66,7 +66,7 @@ When using Stdio transport, you will typically *not* run the server yourself as 
 
 Streamable HTTP is a modern, efficient transport for exposing your MCP server via HTTP. It is generally recommended over SSE for new web-based deployments.
 
-To run a server using Streamable HTTP, you can use the `run()` method with the `transport` argument set to `"streamable-http"`. This will start a Uvicorn server on the default host (`127.0.0.1`), port (`8000`), and path (`/mcp/`).
+To run a server using Streamable HTTP, you can use the `run()` method with the `transport` argument set to `"streamable-http"`. This will start a Uvicorn server on the default host (`127.0.0.1`), port (`8000`), and path (`/mcp`).
 <CodeGroup>
 ```python {6} server.py
 from fastmcp import FastMCP
@@ -81,7 +81,7 @@ import asyncio
 from fastmcp import Client
 
 async def example():
-    async with Client("http://127.0.0.1:8000/mcp/") as client:
+    async with Client("http://127.0.0.1:8000/mcp") as client:
         await client.ping()
 
 if __name__ == "__main__":
@@ -102,7 +102,7 @@ if __name__ == "__main__":
         transport="streamable-http",
         host="127.0.0.1",
         port=4200,
-        path="/my-custom-path/",
+        path="/my-custom-path",
         log_level="debug",
     )
 ```
@@ -111,7 +111,7 @@ import asyncio
 from fastmcp import Client
 
 async def example():
-    async with Client("http://127.0.0.1:4200/my-custom-path/") as client:
+    async with Client("http://127.0.0.1:4200/my-custom-path") as client:
         await client.ping()
 
 if __name__ == "__main__":
@@ -124,7 +124,7 @@ if __name__ == "__main__":
 
 Server-Sent Events (SSE) is an HTTP-based protocol for server-to-client streaming. While FastMCP supports SSE, Streamable HTTP is preferred for new projects.
 
-To run a server using SSE, you can use the `run()` method with the `transport` argument set to `"sse"`. This will start a Uvicorn server on the default host (`127.0.0.1`), port (`8000`), and with default SSE path (`/sse/`) and message path (`/messages/`).
+To run a server using SSE, you can use the `run()` method with the `transport` argument set to `"sse"`. This will start a Uvicorn server on the default host (`127.0.0.1`), port (`8000`), and with default SSE path (`/sse`) and message path (`/messages/`).
 
 <CodeGroup>
 ```python {6} server.py
@@ -142,7 +142,7 @@ from fastmcp.client.transports import SSETransport
 
 async def example():
     async with Client(
-        transport=SSETransport("http://127.0.0.1:8000/sse/")
+        transport=SSETransport("http://127.0.0.1:8000/sse")
     ) as client:
         await client.ping()
 
@@ -169,7 +169,7 @@ if __name__ == "__main__":
         host="127.0.0.1",
         port=4200,
         log_level="debug",
-        path="/my-custom-sse-path/",
+        path="/my-custom-sse-path",
         message_path="/my-custom-message-path/",
     )
 ```
@@ -180,7 +180,7 @@ from fastmcp.client.transports import SSETransport
 
 async def example():
     async with Client(
-        transport=SSETransport("http://127.0.0.1:4200/my-custom-sse-path/")
+        transport=SSETransport("http://127.0.0.1:4200/my-custom-sse-path")
     ) as client:
         await client.ping()
 
