@@ -49,7 +49,16 @@
                     "servers/tools",
                     "servers/resources",
                     "servers/prompts",
-                    "servers/context"
+                    "servers/context",
+                    "patterns/proxy",
+                    "patterns/composition"
+                ]
+            },
+            {
+                "group": "Deployment",
+                "pages": [
+                    "deployment/running-server",
+                    "deployment/authentication"
                 ]
             },
             {
@@ -62,8 +71,6 @@
             {
                 "group": "Patterns",
                 "pages": [
-                    "patterns/proxy",
-                    "patterns/composition",
                     "patterns/decorating-methods",
                     "patterns/http-requests",
                     "patterns/openapi",

@@ -1,9 +1,11 @@
 import abc
 import contextlib
 import datetime
+import inspect
 import os
 import shutil
 import sys
+import warnings
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any, TypedDict
@@ -450,6 +452,8 @@ def infer_transport(
     This function attempts to infer the correct transport type from the provided
     argument, handling various input types and converting them to the appropriate
     ClientTransport subclass.
+
+    For HTTP URLs, they are assumed to be Streamable HTTP URLs unless they end in `/sse`.
     """
     # the transport is already a ClientTransport
     if isinstance(transport, ClientTransport):
@@ -470,7 +474,19 @@ def infer_transport(
 
     # the transport is an http(s) URL
     elif isinstance(transport, AnyUrl | str) and str(transport).startswith("http"):
-        return SSETransport(url=transport)
+        if str(transport).rstrip("/").endswith("/sse"):
+            warnings.warn(
+                inspect.cleandoc(
+                    """
+                    As of FastMCP 2.3.0, HTTP URLs are inferred to use Streamable HTTP.
+                    The provided URL ends in `/sse`, so you may encounter unexpected behavior.
+                    If you intended to use SSE, please use the `SSETransport` class directly.
+                    """
+                ),
+                category=UserWarning,
+                stacklevel=2,
+            )
+        return StreamableHttpTransport(url=transport)
 
     # the transport is a websocket URL
     elif isinstance(transport, AnyUrl | str) and str(transport).startswith("ws"):

@@ -1,0 +1,192 @@
+---
+title: Running Your FastMCP Server
+sidebarTitle: Running the Server
+description: Learn how to run and deploy your FastMCP server using various transport protocols like STDIO, Streamable HTTP, and SSE.
+icon: circle-play
+---
+import { VersionBadge } from '/snippets/version-badge.mdx'
+
+
+FastMCP servers can be run in different ways depending on your application's needs, from local command-line tools to persistent web services. This guide covers the primary methods for running your server, focusing on the available transport protocols: STDIO, Streamable HTTP, and SSE.
+
+## The `run()` Method
+
+The main way to run a FastMCP server from a Python script is by calling the `run()` method on a `FastMCP` instance. 
+
+<Tip>
+For maximum compatibility, it's best practice to place the `run()` call within an `if __name__ == "__main__":` block. This ensures the server starts only when the script is executed directly, not when imported as a module.
+</Tip>
+
+```python {9-10} my_server.py
+from fastmcp import FastMCP
+
+mcp = FastMCP(name="MyServer")
+
+@mcp.tool()
+def hello(name: str) -> str:
+    return f"Hello, {name}!"
+
+if __name__ == "__main__":
+    mcp.run()
+```
+You can now run this MCP server by executing `python my_server.py`. 
+
+MCP servers can be run with a variety of different transport options, depending on your application's requirements. The `run()` method can take a `transport` argument and other transport-specific keyword arguments to configure how the server operates.
+
+## Transport Options
+
+Below is a comparison of available transport options to help you choose the right one for your needs:
+
+| Transport | Use Cases | Recommendation |
+| --------- | --------- | -------------- |
+| **STDIO** | Local tools, command-line scripts, and integrations with clients like Claude Desktop | Best for local tools and when clients manage server processes |
+| **Streamable HTTP** | Web-based deployments, microservices, exposing MCP over a network | Recommended choice for new web-based deployments |
+| **SSE** | Existing web-based deployments that rely on SSE | Suitable for compatibility with SSE clients; prefer Streamable HTTP for new projects |
+
+### STDIO
+
+The STDIO transport is the default and most widely compatible option for local MCP server execution. It is ideal for local tools, command-line integrations, and clients like Claude Desktop. However, it has the disadvantage of having to run the MCP code locally, which can introduce security concerns with third-party servers.
+
+STDIO is the default transport, so you don't need to specify it when calling `run()`. However, you can specify it explicitly to make your intent clear:
+
+```python {6}
+from fastmcp import FastMCP
+
+mcp = FastMCP()
+
+if __name__ == "__main__":
+    mcp.run(transport="stdio")
+```
+
+When using Stdio transport, you will typically *not* run the server yourself as a separate process. Rather, your *clients* will spin up a new server process for each session. As such, no additional configuration is required.
+
+### Streamable HTTP
+
+<VersionBadge version="2.3.0" />
+
+Streamable HTTP is a modern, efficient transport for exposing your MCP server via HTTP. It is generally recommended over SSE for new web-based deployments.
+
+To run a server using Streamable HTTP, you can use the `run()` method with the `transport` argument set to `"streamable-http"`. This will start a Uvicorn server on the default host (`127.0.0.1`), port (`8000`), and path (`/mcp`).
+<CodeGroup>
+```python {6} server.py
+from fastmcp import FastMCP
+
+mcp = FastMCP()
+
+if __name__ == "__main__":
+    mcp.run(transport="streamable-http")
+```
+```python {5} client.py
+import asyncio
+from fastmcp import Client
+
+async def example():
+    async with Client("http://127.0.0.1:8000/mcp") as client:
+        await client.ping()
+
+if __name__ == "__main__":
+    asyncio.run(example())
+```
+</CodeGroup>
+
+To customize the host, port, path, or log level, provide appropriate keyword arguments to the `run()` method.
+
+<CodeGroup>
+```python {8-11} server.py
+from fastmcp import FastMCP
+
+mcp = FastMCP()
+
+if __name__ == "__main__":
+    mcp.run(
+        transport="streamable-http",
+        host="127.0.0.1",
+        port=4200,
+        path="/my-custom-path",
+        log_level="debug",
+    )
+```
+```python {5} client.py
+import asyncio
+from fastmcp import Client
+
+async def example():
+    async with Client("http://127.0.0.1:4200/my-custom-path") as client:
+        await client.ping()
+
+if __name__ == "__main__":
+    asyncio.run(example())
+```
+</CodeGroup>
+
+
+### SSE
+
+Server-Sent Events (SSE) is an HTTP-based protocol for server-to-client streaming. While FastMCP supports SSE, Streamable HTTP is preferred for new projects.
+
+To run a server using SSE, you can use the `run()` method with the `transport` argument set to `"sse"`. This will start a Uvicorn server on the default host (`127.0.0.1`), port (`8000`), and with default SSE path (`/sse`) and message path (`/messages/`).
+
+<CodeGroup>
+```python {6} server.py
+from fastmcp import FastMCP
+
+mcp = FastMCP()
+
+if __name__ == "__main__":
+    mcp.run(transport="sse")
+```
+```python {3,7} client.py
+import asyncio
+from fastmcp import Client
+from fastmcp.client.transports import SSETransport
+
+async def example():
+    async with Client(
+        transport=SSETransport("http://127.0.0.1:8000/sse")
+    ) as client:
+        await client.ping()
+
+if __name__ == "__main__":
+    asyncio.run(example())
+```
+</CodeGroup>
+
+<Tip>
+Notice that the client in the above example uses an explicit `SSETransport` to connect to the server. FastMCP will attempt to infer the appropriate transport from the provided configuration, but HTTP URLs are assumed to be Streamable HTTP (as of FastMCP 2.3.0).
+</Tip>
+
+To customize the host, port, or log level, provide appropriate keyword arguments to the `run()` method. You can also adjust the SSE path (which clients should connect to) and the message POST endpoint (which clients use to send subsequent messages).
+
+<CodeGroup>
+```python {8-12} server.py
+from fastmcp import FastMCP
+
+mcp = FastMCP()
+
+if __name__ == "__main__":
+    mcp.run(
+        transport="sse",
+        host="127.0.0.1",
+        port=4200,
+        log_level="debug",
+        path="/my-custom-sse-path",
+        message_path="/my-custom-message-path/",
+    )
+```
+```python {7} client.py
+import asyncio
+from fastmcp import Client
+from fastmcp.client.transports import SSETransport
+
+async def example():
+    async with Client(
+        transport=SSETransport("http://127.0.0.1:4200/my-custom-sse-path")
+    ) as client:
+        await client.ping()
+
+if __name__ == "__main__":
+    asyncio.run(example())
+```
+</CodeGroup>
+
+Your client only needs to know the host, port, and "main" path; the message path will be transmitted to it as part of the connection handshake.

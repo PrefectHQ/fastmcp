@@ -334,7 +334,7 @@ def run(
         str | None,
         typer.Option(
             "--host",
-            help="Host to bind to when using sse transport (default: 0.0.0.0)",
+            help="Host to bind to when using sse transport (default: 127.0.0.1)",
         ),
     ] = None,
     port: Annotated[
