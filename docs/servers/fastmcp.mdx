@@ -1,6 +1,6 @@
 ---
 title: The FastMCP Server
-sidebarTitle: FastMCP Server
+sidebarTitle: FastMCP Servers
 description: Learn about the core FastMCP server class and how to run it.
 icon: server
 ---
@@ -97,11 +97,7 @@ See [Prompts](/servers/prompts) for detailed documentation.
 
 ## Running the Server
 
-FastMCP servers need a transport mechanism to communicate with clients. In the MCP protocol, servers typically run as separate processes that clients connect to.
-
-### The `__main__` Block Pattern
-
-The standard way to make your server executable is to include a `run()` call inside an `if __name__ == "__main__":` block:
+FastMCP servers need a transport mechanism to communicate with clients. You typically start your server by calling the `mcp.run()` method on your `FastMCP` instance, often within an `if __name__ == "__main__":` block in your main server script. This pattern ensures compatibility with various MCP clients.
 
 ```python
 # my_server.py
@@ -115,118 +111,17 @@ def greet(name: str) -> str:
     return f"Hello, {name}!"
 
 if __name__ == "__main__":
-    # This code only runs when the file is executed directly
-    
-    # Basic run with default settings (stdio transport)
+    # This runs the server, defaulting to STDIO transport
     mcp.run()
     
-    # Or with specific transport and parameters
-    # mcp.run(transport="sse", host="127.0.0.1", port=9000)
+    # To use a different transport, e.g., Streamable HTTP:
+    # mcp.run(transport="streamable-http", host="127.0.0.1", port=9000)
 ```
 
-This pattern is important because:
+FastMCP supports several transport options like STDIO (default, for local tools), Streamable HTTP (recommended for web services), and SSE (legacy web transport). The server can also be run using the FastMCP CLI.
 
-1. **Client Compatibility**: Standard MCP clients (like Claude Desktop) expect to execute your server file directly with `python my_server.py`
-2. **Process Isolation**: Each server runs in its own process, allowing clients to manage multiple servers independently
-3. **Import Safety**: The main block prevents the server from running when the file is imported by other code
+For detailed information on each transport, how to configure them (host, port, paths), and when to use which, please refer to the [**Running Your FastMCP Server**](/deployment/running-server) guide.
 
-While this pattern is technically optional when using FastMCP's CLI, it's considered a best practice for maximum compatibility with all MCP clients.
-
-### Transport Options
-
-FastMCP supports two transport mechanisms:
-
-#### STDIO Transport (Default)
-
-The standard input/output (STDIO) transport is the default and most widely compatible option:
-
-```python
-# Run with stdio (default)
-mcp.run()  # or explicitly: mcp.run(transport="stdio")
-```
-
-With STDIO:
-- The client starts a new server process for each session
-- Communication happens through standard input/output streams
-- The server process terminates when the client disconnects
-- This is ideal for integrations with tools like Claude Desktop, where each conversation gets its own server instance
-
-#### SSE Transport (Server-Sent Events)
-
-For long-running servers that serve multiple clients, FastMCP supports SSE:
-
-```python
-# Run with SSE on default host/port (0.0.0.0:8000)
-mcp.run(transport="sse")
-```
-
-With SSE:
-- The server runs as a persistent web server
-- Multiple clients can connect simultaneously
-- The server stays running until explicitly terminated
-- This is ideal for remote access to services
-
-You can configure transport parameters directly when running the server:
-
-```python
-# Configure with specific parameters
-mcp.run(
-    transport="sse", 
-    host="127.0.0.1",  # Override default host
-    port=8888,         # Override default port
-    log_level="debug"  # Set logging level
-)
-
-# You can also run asynchronously with the same parameters
-import asyncio
-asyncio.run(
-    mcp.run_sse_async(
-        host="127.0.0.1", 
-        port=8888, 
-        log_level="debug"
-    )
-)
-```
-
-Transport parameters passed to `run()` or `run_sse_async()` override any settings defined when creating the FastMCP instance. The most common parameters for SSE transport are:
-
-- `host`: Host to bind to (default: "0.0.0.0")
-- `port`: Port to bind to (default: 8000)
-- `log_level`: Logging level (default: "INFO")
-
-#### Advanced Transport Configuration
-
-Under the hood, FastMCP's `run()` method accepts arbitrary keyword arguments (`**transport_kwargs`) that are passed to the transport-specific run methods:
-
-```python
-# For SSE transport, kwargs are passed to run_sse_async()
-mcp.run(transport="sse", **transport_kwargs)
-
-# For stdio transport, kwargs are passed to run_stdio_async()
-mcp.run(transport="stdio", **transport_kwargs)
-```
-
-This means that any future transport-specific options will be automatically available through the same interface without requiring changes to your code.
-
-### Using the FastMCP CLI
-
-The FastMCP CLI provides a convenient way to run servers:
-
-```bash
-# Run a server (defaults to stdio transport)
-fastmcp run my_server.py:mcp
-
-# Explicitly specify a transport
-fastmcp run my_server.py:mcp --transport sse
-
-# Configure SSE transport with host and port
-fastmcp run my_server.py:mcp --transport sse --host 127.0.0.1 --port 8888
-
-# With log level
-fastmcp run my_server.py:mcp --transport sse --log-level DEBUG
-```
-
-The CLI can dynamically find and run FastMCP server objects in your files, but including the `if __name__ == "__main__":` block ensures compatibility with all clients.
 
 ## Composing Servers
 
@@ -289,7 +184,7 @@ print(mcp.settings.on_duplicate_tools) # Output: "error"
 
 ### Key Configuration Options
 
-- **`host`**: Host address for SSE transport (default: "0.0.0.0")
+- **`host`**: Host address for SSE transport (default: "127.0.0.1")
 - **`port`**: Port number for SSE transport (default: 8000)
 - **`log_level`**: Logging level (default: "INFO")
 - **`on_duplicate_tools`**: How to handle duplicate tool registrations
@@ -336,36 +231,24 @@ If the serializer function raises an exception, the tool will fall back to the d
 
 <VersionBadge version="2.2.7" />
 
-FastMCP inherits support for OAuth 2.0 authentication from the MCP protocol, allowing servers to protect their tools and resources behind authentication.
-
-### OAuth 2.0 Support
-
-The `mcp.server.auth` module implements an OAuth 2.0 server interface that servers can use by providing an implementation of the `OAuthServerProvider` protocol.
+FastMCP supports OAuth 2.0 authentication, allowing servers to protect their tools and resources. This is configured by providing an `auth_server_provider` and `auth` settings during `FastMCP` initialization.
 
 ```python
 from fastmcp import FastMCP
-from mcp.server.auth.settings import (
-    RevocationOptions,
-    ClientRegistrationOptions,
-    AuthSettings,
-)
+from mcp.server.auth.settings import AuthSettings #, ... other auth imports
+# from your_auth_implementation import MyOAuthServerProvider # Placeholder
 
-
-# Create a server with authentication
-mcp = FastMCP(
-    name="SecureApp",
-    auth_provider=MyOAuthServerProvider(),
-    auth=AuthSettings(
-        issuer_url="https://myapp.com",
-        revocation_options=RevocationOptions(
-            enabled=True,
-        ),
-        client_registration_options=ClientRegistrationOptions(
-            enabled=True,
-            valid_scopes=["myscope", "myotherscope"],
-            default_scopes=["myscope"],
-        ),
-        required_scopes=["myscope"],
-    ),
-)
+# Create a server with authentication (conceptual example)
+# mcp = FastMCP(
+#     name="SecureApp",
+#     auth_server_provider=MyOAuthServerProvider(),
+#     auth=AuthSettings(
+#         issuer_url="https://myapp.com",
+#         # ... other OAuth settings ...
+#         required_scopes=["myscope"],
+#     ),
+# )
 ```
+Due to the low-level nature of the current MCP SDK's auth provider interface, detailed implementation is beyond a quick example. Refer to the [MCP SDK documentation](https://modelcontextprotocol.io/specification/2025-03-26/basic/authorization) for specifics on implementing an `OAuthAuthorizationServerProvider`. FastMCP integrates with this by passing the provider and settings to the underlying MCP server.
+
+A dedicated [Authentication guide](/deployment/authentication) will cover this in more detail once higher-level abstractions are available in FastMCP.

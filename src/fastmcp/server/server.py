@@ -718,6 +718,8 @@ class FastMCP(Generic[LifespanResultT]):
         host: str | None = None,
         port: int | None = None,
         log_level: str | None = None,
+        path: str | None = None,
+        message_path: str | None = None,
         uvicorn_config: dict | None = None,
     ) -> None:
         """Run the server using SSE transport."""
@@ -726,7 +728,7 @@ class FastMCP(Generic[LifespanResultT]):
         # timeout to make it possible to close immediately. see
         # https://github.com/jlowin/fastmcp/issues/296
         uvicorn_config.setdefault("timeout_graceful_shutdown", 0)
-        app = self.sse_app()
+        app = self.sse_app(path=path, message_path=message_path)
 
         config = uvicorn.Config(
             app,
@@ -738,25 +740,29 @@ class FastMCP(Generic[LifespanResultT]):
         server = uvicorn.Server(config)
         await server.serve()
 
-    def sse_app(self) -> Starlette:
+    def sse_app(
+        self,
+        path: str | None = None,
+        message_path: str | None = None,
+    ) -> Starlette:
         """Return an instance of the SSE server app."""
         return create_sse_app(
             server=self,
-            message_path=self.settings.message_path,
-            sse_path=self.settings.sse_path,
+            message_path=message_path or self.settings.message_path,
+            sse_path=path or self.settings.sse_path,
             auth_server_provider=self._auth_server_provider,
             auth_settings=self.settings.auth,
             debug=self.settings.debug,
             additional_routes=self._additional_http_routes,
         )
 
-    def streamable_http_app(self) -> Starlette:
+    def streamable_http_app(self, path: str | None = None) -> Starlette:
         """Return an instance of the StreamableHTTP server app."""
         from fastmcp.server.http import create_streamable_http_app
 
         return create_streamable_http_app(
             server=self,
-            streamable_http_path=self.settings.streamable_http_path,
+            streamable_http_path=path or self.settings.streamable_http_path,
             event_store=None,
             auth_server_provider=self._auth_server_provider,
             auth_settings=self.settings.auth,
@@ -771,13 +777,14 @@ class FastMCP(Generic[LifespanResultT]):
         host: str | None = None,
         port: int | None = None,
         log_level: str | None = None,
+        path: str | None = None,
         uvicorn_config: dict | None = None,
     ) -> None:
         """Run the server using StreamableHTTP transport."""
         uvicorn_config = uvicorn_config or {}
         uvicorn_config.setdefault("timeout_graceful_shutdown", 0)
 
-        app = self.streamable_http_app()
+        app = self.streamable_http_app(path=path)
 
         config = uvicorn.Config(
             app,
