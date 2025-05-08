@@ -273,50 +273,40 @@ Learn more: [**OpenAPI Integration**](https://gofastmcp.com/patterns/openapi) | 
 
 ## Running Your Server
 
-You can run your FastMCP server in several ways:
+The main way to run a FastMCP server is by calling the `run()` method on your server instance:
 
-1.  **Development (`fastmcp dev`)**: Recommended for building and testing. Provides an interactive testing environment with the MCP Inspector.
-    ```bash
-    fastmcp dev server.py
-    # Optionally add temporary dependencies
-    fastmcp dev server.py --with pandas numpy
-    ```
+```python
+# server.py
+from fastmcp import FastMCP
 
-2. **FastMCP CLI**: Run your server with the FastMCP CLI. This can autodetect and load your server object and run it with any transport configuration you want. 
-    ```bash
-    fastmcp run path/to/server.py:server_object
+mcp = FastMCP("Demo 🚀")
 
-    # Run as SSE on port 4200
-    fastmcp run path/to/server.py:server_object --transport sse --port 4200
-    ```
-    FastMCP will auto-detect the server object if it's named `mcp`, `app`, or `server`. In these cases, you can omit the `:server_object` part unless you need to select a specific object.
+@mcp.tool()
+def hello(name: str) -> str:
+    return f"Hello, {name}!"
 
-3.  **Direct Execution**: For maximum compatibility with the MCP ecosystem, you can run your server directly as part of a Python script. You will typically do this within an `if __name__ == "__main__":` block in your script:
-    ```python
-    # Add this to server.py
-    if __name__ == "__main__":
-        # Default: runs stdio transport
-        mcp.run()
+if __name__ == "__main__":
+    mcp.run()  # Default: uses STDIO transport
+```
 
-        # Example: Run with SSE transport on a specific port
-        mcp.run(transport="sse", host="127.0.0.1", port=9000)
-    ```
-    Run your script:
-    ```bash
-    python server.py
-    # or using uv to manage the environment
-    uv run python server.py
-    ```
-4.  **Claude Desktop Integration (`fastmcp install`)**: The easiest way to make your server persistently available in the Claude Desktop app. It handles creating an isolated environment using `uv`.
-    ```bash
-    fastmcp install server.py --name "My Analysis Tool"
-    # Optionally add dependencies and environment variables
-    fastmcp install server.py --with requests -v API_KEY=123 -f .env
-    ```
+FastMCP supports three transport protocols:
 
+**STDIO (Default)**: Best for local tools and command-line scripts.
+```python
+mcp.run(transport="stdio")  # Default, so transport argument is optional
+```
 
-See the [**Server Documentation**](https://gofastmcp.com/servers/fastmcp#running-the-server) for more details on transports and configuration.
+**Streamable HTTP**: Recommended for web deployments.
+```python
+mcp.run(transport="streamable-http", host="127.0.0.1", port=8000, path="/mcp")
+```
 
+**SSE**: For compatibility with existing SSE clients.
+```python
+mcp.run(transport="sse", host="127.0.0.1", port=8000)
+```
+
+See the [**Running Server Documentation**](https://gofastmcp.com/deployment/running-server) for more details.
 
 ## Contributing
 
