@@ -18,8 +18,8 @@ from mcp.client.session import (
 )
 from mcp.client.sse import sse_client
 from mcp.client.stdio import stdio_client
-from mcp.client.websocket import websocket_client
 from mcp.client.streamable_http import streamablehttp_client
+from mcp.client.websocket import websocket_client
 from mcp.shared.memory import create_connected_server_and_client_session
 from pydantic import AnyUrl
 from typing_extensions import Unpack
@@ -125,6 +125,7 @@ class SSETransport(ClientTransport):
     def __repr__(self) -> str:
         return f"<SSE(url='{self.url}')>"
 
+
 class StreamableHttpTransport(ClientTransport):
     """Transport implementation that connects to an MCP server via Streamable HTTP Requests."""
 
@@ -141,7 +142,7 @@ class StreamableHttpTransport(ClientTransport):
         self, **session_kwargs: Unpack[SessionKwargs]
     ) -> AsyncIterator[ClientSession]:
         async with streamablehttp_client(self.url, headers=self.headers) as transport:
-            read_stream, write_stream = transport
+            read_stream, write_stream, _ = transport
             async with ClientSession(
                 read_stream, write_stream, **session_kwargs
             ) as session:
@@ -150,7 +151,6 @@ class StreamableHttpTransport(ClientTransport):
 
     def __repr__(self) -> str:
         return f"<StreamableHttp(url='{self.url}')>"
-
 
 
 class StdioTransport(ClientTransport):
