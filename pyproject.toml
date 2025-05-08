@@ -9,7 +9,7 @@ dependencies = [
     "httpx>=0.28.1",
     # "mcp>=1.7.1,<2.0.0",
     # use git commit until 1.7.2 is released
-    "mcp",
+    "mcp @ git+https://github.com/modelcontextprotocol/python-sdk.git@a027d75f609000378522c5873c2a16aa1963d487",
     "openapi-pydantic>=0.5.1",
     "rich>=13.9.4",
     "typer>=0.15.2",
@@ -72,19 +72,15 @@ build-backend = "hatchling.build"
 [tool.hatch.version]
 source = "uv-dynamic-versioning"
 
+[tool.hatch.metadata]
+allow-direct-references = true
+
 [tool.uv-dynamic-versioning]
 vcs = "git"
 style = "pep440"
 bump = true
 fallback-version = "0.0.0"
 
-
-[tool.uv]
-
-[tool.uv.sources]
-mcp = { git = "https://github.com/modelcontextprotocol/python-sdk", rev = "a027d75f609000378522c5873c2a16aa1963d487" }
-# uncomment to omit `dev` default group
-# default-groups = []
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
