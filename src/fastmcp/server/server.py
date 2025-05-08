@@ -752,25 +752,19 @@ class FastMCP(Generic[LifespanResultT]):
 
     def streamable_http_app(self) -> Starlette:
         """Return an instance of the StreamableHTTP server app."""
-        try:
-            from fastmcp.server.http import create_streamable_http_app
+        from fastmcp.server.http import create_streamable_http_app
 
-            return create_streamable_http_app(
-                server=self,
-                streamable_http_path=self.settings.streamable_http_path,
-                event_store=None,
-                auth_server_provider=self._auth_server_provider,
-                auth_settings=self.settings.auth,
-                json_response=self.settings.json_response,
-                stateless_http=self.settings.stateless_http,
-                debug=self.settings.debug,
-                additional_routes=self._additional_http_routes,
-            )
-        except ImportError as e:
-            logger.error(f"Failed to create StreamableHTTP app: {e}")
-            raise ImportError(
-                "StreamableHTTP transport is not available. Make sure your version of `mcp` is up-to-date."
-            ) from e
+        return create_streamable_http_app(
+            server=self,
+            streamable_http_path=self.settings.streamable_http_path,
+            event_store=None,
+            auth_server_provider=self._auth_server_provider,
+            auth_settings=self.settings.auth,
+            json_response=self.settings.json_response,
+            stateless_http=self.settings.stateless_http,
+            debug=self.settings.debug,
+            additional_routes=self._additional_http_routes,
+        )
 
     async def run_streamable_http_async(
         self,

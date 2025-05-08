@@ -22,16 +22,9 @@ from starlette.responses import Response
 from starlette.routing import Mount, Route
 from starlette.types import Receive, Scope, Send
 
+# This import is vendored until it is finalized in the upstream SDK
+from fastmcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from fastmcp.utilities.logging import get_logger
-
-# Import these conditionally to handle case where they might not be available
-try:
-    from mcp.server.streamable_http import EventStore
-    from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
-
-    STREAMABLE_HTTP_AVAILABLE = True
-except ImportError:
-    STREAMABLE_HTTP_AVAILABLE = False
 
 if TYPE_CHECKING:
     from fastmcp.server.server import FastMCP
@@ -238,7 +231,7 @@ def create_sse_app(
 def create_streamable_http_app(
     server: FastMCP,
     streamable_http_path: str,
-    event_store: EventStore | None = None,
+    event_store: None = None,
     auth_server_provider: OAuthAuthorizationServerProvider | None = None,
     auth_settings: AuthSettings | None = None,
     json_response: bool = False,
@@ -262,11 +255,6 @@ def create_streamable_http_app(
     Returns:
         A Starlette application with StreamableHTTP support
     """
-    if not STREAMABLE_HTTP_AVAILABLE:
-        raise ImportError(
-            "StreamableHTTP transport is not available. Make sure your version of `mcp` is up-to-date."
-        )
-
     # Create session manager using the provided event store
     session_manager = StreamableHTTPSessionManager(
         app=server._mcp_server,
