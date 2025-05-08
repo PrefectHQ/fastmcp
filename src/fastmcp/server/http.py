@@ -14,6 +14,7 @@ from mcp.server.auth.provider import OAuthAuthorizationServerProvider
 from mcp.server.auth.routes import create_auth_routes
 from mcp.server.auth.settings import AuthSettings
 from mcp.server.sse import SseServerTransport
+from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.middleware.authentication import AuthenticationMiddleware
@@ -23,9 +24,6 @@ from starlette.routing import Mount, Route
 from starlette.types import Receive, Scope, Send
 
 from fastmcp.utilities.logging import get_logger
-
-# This import is vendored until it is finalized in the upstream SDK
-from fastmcp.vendor.streamable_http_manager import StreamableHTTPSessionManager
 
 if TYPE_CHECKING:
     from fastmcp.server.server import FastMCP
