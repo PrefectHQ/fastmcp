@@ -14,6 +14,69 @@ The FastMCP `Client` relies on a `ClientTransport` object to handle the specific
 While the `Client` often infers the correct transport automatically (see [Client Overview](/clients/client#transport-inference)), you can also instantiate transports explicitly for more control.
 
 
+## Network Transports
+
+These transports connect to servers running over a network, typically long-running services accessible via URLs.
+
+### Streamable HTTP
+
+<VersionBadge version="2.3.0" />
+
+*   **Class:** `fastmcp.client.transports.StreamableHttpTransport`
+*   **Inferred From:** `http://` or `https://` URLs (default for HTTP URLs as of v2.3.0)
+*   **Use Case:** Connecting to persistent MCP servers exposed over HTTP/S using FastMCP's `mcp.run(transport="streamable-http")` mode.
+
+Streamable HTTP is the recommended transport for web-based deployments, providing efficient bidirectional communication over HTTP.
+
+```python
+from fastmcp import Client
+from fastmcp.client.transports import StreamableHttpTransport
+
+http_url = "http://localhost:8000/mcp"
+
+# Option 1: Inferred transport (default for HTTP URLs)
+client_inferred = Client(http_url)
+
+# Option 2: Explicit transport (e.g., to add custom headers)
+headers = {"Authorization": "Bearer mytoken"}
+transport_explicit = StreamableHttpTransport(url=http_url, headers=headers)
+client_explicit = Client(transport_explicit)
+
+async def use_streamable_http_client(client):
+    async with client:
+        tools = await client.list_tools()
+        print(f"Connected via Streamable HTTP, found tools: {tools}")
+
+# asyncio.run(use_streamable_http_client(client_inferred))
+# asyncio.run(use_streamable_http_client(client_explicit))
+```
+
+### SSE (Server-Sent Events)
+
+*   **Class:** `fastmcp.client.transports.SSETransport`
+*   **Inferred From:** Not automatically inferred for most HTTP URLs (as of v2.3.0)
+*   **Use Case:** Connecting to MCP servers using Server-Sent Events, often using FastMCP's `mcp.run(transport="sse")` mode.
+
+While SSE is still supported, Streamable HTTP is the recommended transport for new web-based deployments.
+
+```python
+from fastmcp import Client
+from fastmcp.client.transports import SSETransport
+
+sse_url = "http://localhost:8000/sse"
+
+# Since v2.3.0, HTTP URLs default to StreamableHttpTransport,
+# so you must explicitly use SSETransport for SSE connections
+transport_explicit = SSETransport(url=sse_url)
+client_explicit = Client(transport_explicit)
+
+async def use_sse_client(client):
+    async with client:
+        tools = await client.list_tools()
+        print(f"Connected via SSE, found tools: {tools}")
+
+# asyncio.run(use_sse_client(client_explicit))
+```
 ## Stdio Transports
 
 These transports manage an MCP server running as a subprocess, communicating with it via standard input (stdin) and standard output (stdout). This is the standard mechanism used by clients like Claude Desktop.
@@ -133,70 +196,6 @@ client = Client(transport)
 # async with client:
 #     response = await client.call_tool("get_npm_data", {})
 ```
-## Network Transports
-
-These transports connect to servers running over a network, typically long-running services accessible via URLs.
-
-### SSE (Server-Sent Events)
-
-*   **Class:** `fastmcp.client.transports.SSETransport`
-*   **Inferred From:** `http://` or `https://` URLs
-*   **Use Case:** Connecting to persistent MCP servers exposed over HTTP/S, often using FastMCP's `mcp.run(transport="sse")` mode.
-
-SSE is a simple, unidirectional protocol where the server pushes messages to the client over a standard HTTP connection.
-
-```python
-from fastmcp import Client
-from fastmcp.client.transports import SSETransport
-
-sse_url = "http://localhost:8000/sse"
-
-# Option 1: Inferred transport
-client_inferred = Client(sse_url)
-
-# Option 2: Explicit transport (e.g., to add custom headers)
-headers = {"Authorization": "Bearer mytoken"}
-transport_explicit = SSETransport(url=sse_url, headers=headers)
-client_explicit = Client(transport_explicit)
-
-async def use_sse_client(client):
-    async with client:
-        tools = await client.list_tools()
-        print(f"Connected via SSE, found tools: {tools}")
-
-# asyncio.run(use_sse_client(client_inferred))
-# asyncio.run(use_sse_client(client_explicit))
-```
-
-### WebSocket
-
-*   **Class:** `fastmcp.client.transports.WSTransport`
-*   **Inferred From:** `ws://` or `wss://` URLs
-*   **Use Case:** Connecting to MCP servers using the WebSocket protocol for bidirectional communication.
-
-WebSockets provide a persistent, full-duplex connection between client and server.
-
-```python
-from fastmcp import Client
-from fastmcp.client.transports import WSTransport
-
-ws_url = "ws://localhost:9000"
-
-# Option 1: Inferred transport
-client_inferred = Client(ws_url)
-
-# Option 2: Explicit transport
-transport_explicit = WSTransport(url=ws_url)
-client_explicit = Client(transport_explicit)
-
-async def use_ws_client(client):
-    async with client:
-        tools = await client.list_tools()
-        print(f"Connected via WebSocket, found tools: {tools}")
-
-# asyncio.run(use_ws_client(client_inferred))
-# asyncio.run(use_ws_client(client_explicit))
-```
 
 ## In-Memory Transports
 
@@ -240,6 +239,6 @@ Communication happens through efficient in-memory queues, making it very fast.
 ## Choosing a Transport
 
 *   **Local Development/Testing:** Use `PythonStdioTransport` (inferred from `.py` files) or `FastMCPTransport` (for same-process testing).
-*   **Connecting to Remote/Persistent Servers:** Use `SSETransport` (for `http/s`) or `WSTransport` (for `ws/s`).
+*   **Connecting to Remote/Persistent Servers:** Use `StreamableHttpTransport` (recommended, default for HTTP URLs) or `SSETransport` (legacy option).
 *   **Running Packaged Tools:** Use `UvxStdioTransport` (Python/uv) or `NpxStdioTransport` (Node/npm) if you need to run MCP servers without local installation.
 *   **Integrating with Claude Desktop (or similar):** These tools typically expect to run a Python script, so your server should be runnable via `python your_server.py`, making `PythonStdioTransport` the relevant mechanism on the client side. 
