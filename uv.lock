@@ -339,7 +339,7 @@ dev = [
 requires-dist = [
     { name = "exceptiongroup", specifier = ">=1.2.2" },
     { name = "httpx", specifier = ">=0.28.1" },
-    { name = "mcp", git = "https://github.com/modelcontextprotocol/python-sdk?rev=a027d75f609000378522c5873c2a16aa1963d487" },
+    { name = "mcp", git = "https://github.com/modelcontextprotocol/python-sdk.git?rev=a027d75f609000378522c5873c2a16aa1963d487" },
     { name = "openapi-pydantic", specifier = ">=0.5.1" },
     { name = "python-dotenv", specifier = ">=1.1.0" },
     { name = "rich", specifier = ">=13.9.4" },
@@ -572,7 +572,7 @@ wheels = [
 [[package]]
 name = "mcp"
 version = "1.7.1.dev17+a027d75"
-source = { git = "https://github.com/modelcontextprotocol/python-sdk?rev=a027d75f609000378522c5873c2a16aa1963d487#a027d75f609000378522c5873c2a16aa1963d487" }
+source = { git = "https://github.com/modelcontextprotocol/python-sdk.git?rev=a027d75f609000378522c5873c2a16aa1963d487#a027d75f609000378522c5873c2a16aa1963d487" }
 dependencies = [
     { name = "anyio" },
     { name = "httpx" },
