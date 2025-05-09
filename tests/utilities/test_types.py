@@ -1,3 +1,4 @@
+import base64
 from typing import Annotated, Any
 
 import pytest
@@ -148,6 +149,56 @@ class TestImage:
             ValueError, match="Only one of path or data can be provided"
         ):
             Image(path="test.png", data=b"test")
+
+    def test_get_mime_type_from_path(self, tmp_path):
+        """Test MIME type detection from file extension."""
+        extensions = {
+            ".png": "image/png",
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".gif": "image/gif",
+            ".webp": "image/webp",
+            ".unknown": "application/octet-stream",
+        }
+
+        for ext, mime in extensions.items():
+            path = tmp_path / f"test{ext}"
+            path.write_bytes(b"fake image data")
+            img = Image(path=path)
+            assert img._mime_type == mime
+
+    def test_to_image_content(self, tmp_path, monkeypatch):
+        """Test conversion to ImageContent."""
+        # Test with path
+        img_path = tmp_path / "test.png"
+        test_data = b"fake image data"
+        img_path.write_bytes(test_data)
+
+        img = Image(path=img_path)
+        content = img.to_image_content()
+
+        assert content.type == "image"
+        assert content.mimeType == "image/png"
+        assert content.data == base64.b64encode(test_data).decode()
+
+        # Test with data
+        img = Image(data=test_data, format="jpeg")
+        content = img.to_image_content()
+
+        assert content.type == "image"
+        assert content.mimeType == "image/jpeg"
+        assert content.data == base64.b64encode(test_data).decode()
+
+    def test_to_image_content_error(self, monkeypatch):
+        """Test error case in to_image_content."""
+        # Create an Image with neither path nor data (shouldn't happen due to __init__ checks,
+        # but testing the method's own error handling)
+        img = Image(data=b"test")
+        monkeypatch.setattr(img, "path", None)
+        monkeypatch.setattr(img, "data", None)
+
+        with pytest.raises(ValueError, match="No image data available"):
+            img.to_image_content()
 
 
 class TestFindKwargByType:
