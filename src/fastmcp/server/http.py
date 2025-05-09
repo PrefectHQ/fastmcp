@@ -13,7 +13,6 @@ from mcp.server.auth.middleware.bearer_auth import (
 from mcp.server.auth.provider import OAuthAuthorizationServerProvider
 from mcp.server.auth.routes import create_auth_routes
 from mcp.server.auth.settings import AuthSettings
-from mcp.server.sse import SseServerTransport
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
@@ -23,6 +22,7 @@ from starlette.responses import Response
 from starlette.routing import Mount, Route
 from starlette.types import Receive, Scope, Send
 
+from fastmcp.low_level.sse_server_transport import SseServerTransport
 from fastmcp.utilities.logging import get_logger
 
 if TYPE_CHECKING:

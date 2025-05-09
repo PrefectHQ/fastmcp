@@ -5,6 +5,8 @@ from collections.abc import Generator
 import pytest
 import uvicorn
 from mcp.types import TextResourceContents
+from starlette.applications import Starlette
+from starlette.routing import Mount
 
 from fastmcp.client import Client
 from fastmcp.client.transports import SSETransport
@@ -90,3 +92,30 @@ async def test_http_headers(sse_server: str):
         json_result = json.loads(raw_result[0].text)
         assert "x-demo-header" in json_result
         assert json_result["x-demo-header"] == "ABC"
+
+
+def run_nested_server(host: str, port: int) -> None:
+    try:
+        app = fastmcp_server().sse_app()
+        mount = Starlette(routes=[Mount("/nest-inner", app=app)])
+        mount2 = Starlette(routes=[Mount("/nest-outer", app=mount)])
+        server = uvicorn.Server(
+            config=uvicorn.Config(app=mount2, host=host, port=port, log_level="error")
+        )
+        server.run()
+    except Exception as e:
+        print(f"Server error: {e}")
+        sys.exit(1)
+    sys.exit(0)
+
+
+async def test_nested_sse_server_resolves_correctly():
+    # tests patch for
+    # https://github.com/modelcontextprotocol/python-sdk/pull/659
+
+    with run_server_in_process(run_nested_server) as url:
+        async with Client(
+            transport=SSETransport(f"{url}/nest-outer/nest-inner/sse")
+        ) as client:
+            result = await client.ping()
+            assert result is True
