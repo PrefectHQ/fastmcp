@@ -13,7 +13,6 @@ from mcp.server.auth.middleware.bearer_auth import (
 from mcp.server.auth.provider import OAuthAuthorizationServerProvider
 from mcp.server.auth.routes import create_auth_routes
 from mcp.server.auth.settings import AuthSettings
-from mcp.server.sse import SseServerTransport
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
@@ -23,6 +22,7 @@ from starlette.responses import Response
 from starlette.routing import Mount, Route
 from starlette.types import Receive, Scope, Send
 
+from fastmcp.low_level.sse_server_transport import SseServerTransport
 from fastmcp.utilities.logging import get_logger
 
 if TYPE_CHECKING:
@@ -110,7 +110,7 @@ def setup_auth_middleware_and_routes(
 def create_base_app(
     routes: list[Route | Mount],
     middleware: list[Middleware],
-    debug: bool,
+    debug: bool = False,
     lifespan: Callable | None = None,
 ) -> Starlette:
     """Create a base Starlette app with common middleware and routes.
@@ -127,17 +127,12 @@ def create_base_app(
     # Always add RequestContextMiddleware as the outermost middleware
     middleware.append(Middleware(RequestContextMiddleware))
 
-    # Create the app
-    app_kwargs = {
-        "debug": debug,
-        "routes": routes,
-        "middleware": middleware,
-    }
-
-    if lifespan:
-        app_kwargs["lifespan"] = lifespan
-
-    return Starlette(**app_kwargs)
+    return Starlette(
+        routes=routes,
+        middleware=middleware,
+        debug=debug,
+        lifespan=lifespan,
+    )
 
 
 def create_sse_app(
@@ -224,7 +219,11 @@ def create_sse_app(
         routes.extend(cast(list[Route | Mount], additional_routes))
 
     # Create and return the app
-    return create_base_app(routes, middleware, debug)
+    return create_base_app(
+        routes=routes,
+        middleware=middleware,
+        debug=debug,
+    )
 
 
 def create_streamable_http_app(
@@ -305,4 +304,9 @@ def create_streamable_http_app(
             yield
 
     # Create and return the app with lifespan
-    return create_base_app(routes, middleware, debug, lifespan)
+    return create_base_app(
+        routes=routes,
+        middleware=middleware,
+        debug=debug,
+        lifespan=lifespan,
+    )

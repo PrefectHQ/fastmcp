@@ -58,6 +58,7 @@
                 "group": "Deployment",
                 "pages": [
                     "deployment/running-server",
+                    "deployment/asgi",
                     "deployment/authentication"
                 ]
             },

@@ -1,0 +1,1 @@
+Patched low-level objects. When possible, we prefer the official SDK, but we patch bugs here if necessary.

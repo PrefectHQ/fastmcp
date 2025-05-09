@@ -190,3 +190,24 @@ if __name__ == "__main__":
 </CodeGroup>
 
 Your client only needs to know the host, port, and "main" path; the message path will be transmitted to it as part of the connection handshake.
+
+
+
+## Custom Routes
+
+You can also add custom web routes to your FastMCP server, which will be exposed alongside the MCP endpoint. To do so, use the `@custom_route` decorator. Note that this is less flexible than using a full ASGI framework, but can be useful for adding simple endpoints like health checks to your standalone server.
+
+```python
+from fastmcp import FastMCP
+from starlette.requests import Request
+from starlette.responses import JSONResponse
+
+mcp = FastMCP("MyServer")
+
+@mcp.custom_route("/health", methods=["GET"])
+async def health_check(request: Request) -> JSONResponse:
+    return JSONResponse({"status": "healthy"})
+
+if __name__ == "__main__":
+    mcp.run()
+```
