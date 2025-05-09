@@ -110,7 +110,7 @@ def setup_auth_middleware_and_routes(
 def create_base_app(
     routes: list[Route | Mount],
     middleware: list[Middleware],
-    debug: bool,
+    debug: bool = False,
     lifespan: Callable | None = None,
 ) -> Starlette:
     """Create a base Starlette app with common middleware and routes.
@@ -127,17 +127,12 @@ def create_base_app(
     # Always add RequestContextMiddleware as the outermost middleware
     middleware.append(Middleware(RequestContextMiddleware))
 
-    # Create the app
-    app_kwargs = {
-        "debug": debug,
-        "routes": routes,
-        "middleware": middleware,
-    }
-
-    if lifespan:
-        app_kwargs["lifespan"] = lifespan
-
-    return Starlette(**app_kwargs)
+    return Starlette(
+        routes=routes,
+        middleware=middleware,
+        debug=debug,
+        lifespan=lifespan,
+    )
 
 
 def create_sse_app(
@@ -224,7 +219,11 @@ def create_sse_app(
         routes.extend(cast(list[Route | Mount], additional_routes))
 
     # Create and return the app
-    return create_base_app(routes, middleware, debug)
+    return create_base_app(
+        routes=routes,
+        middleware=middleware,
+        debug=debug,
+    )
 
 
 def create_streamable_http_app(
@@ -305,4 +304,9 @@ def create_streamable_http_app(
             yield
 
     # Create and return the app with lifespan
-    return create_base_app(routes, middleware, debug, lifespan)
+    return create_base_app(
+        routes=routes,
+        middleware=middleware,
+        debug=debug,
+        lifespan=lifespan,
+    )
