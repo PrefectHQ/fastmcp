@@ -89,7 +89,7 @@ This lets us run the server with `python my_server.py`, using the default `stdio
 <Tip>
 Why do we need the `if __name__ == "__main__":` block?
 
-Within the FastMCP ecosystem, this line may be unecessary. However, including it ensures that your FastMCP server runs for all users and clients in a consistent way and is therefore recommended as best practice.
+Within the FastMCP ecosystem, this line may be unnecessary. However, including it ensures that your FastMCP server runs for all users and clients in a consistent way and is therefore recommended as best practice.
 </Tip>
 
 ### Interacting with the Python server
@@ -124,5 +124,5 @@ fastmcp run my_server.py:mcp
 Note that FastMCP *does not* require the `__main__` block in the server file, and will ignore it if it is present. Instead, it looks for the server object provided in the CLI command (here, `mcp`). If no server object is provided, `fastmcp run` will automatically search for servers called "mcp", "app", or "server" in the file.
 
 <Tip>
-We pointed our client at the server file, which is recognized as a Python MCP server and executed with `python my_server.py` by default. This exceutes the `__main__` block of the server file. There are other ways to run the server, which are described in the [server configuration](/servers/fastmcp#running-the-server) guide.
+We pointed our client at the server file, which is recognized as a Python MCP server and executed with `python my_server.py` by default. This executes the `__main__` block of the server file. There are other ways to run the server, which are described in the [server configuration](/servers/fastmcp#running-the-server) guide.
 </Tip>

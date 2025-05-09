@@ -124,7 +124,7 @@ class ProxyTemplate(ResourceTemplate):
         params: dict[str, Any],
         context: Context | None = None,
     ) -> ProxyResource:
-        # dont use the provided uri, because it may not be the same as the
+        # don't use the provided uri, because it may not be the same as the
         # uri_template on the remote server.
         # quote params to ensure they are valid for the uri_template
         parameterized_uri = self.uri_template.format(
