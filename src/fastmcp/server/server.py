@@ -892,7 +892,7 @@ class FastMCP(Generic[LifespanResultT]):
         future changes to the imported server will not be reflected in the
         importing server. Server-level configurations and lifespans are not imported.
 
-        When an server is mounted: - The tools are imported with prefixed names
+        When a server is mounted: - The tools are imported with prefixed names
         using the tool_separator
           Example: If server has a tool named "get_weather", it will be
           available as "weatherget_weather"
