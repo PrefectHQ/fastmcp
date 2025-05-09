@@ -192,7 +192,7 @@ def _convert_to_content(
                 other_content.append(item)
         if other_content:
             other_content = _convert_to_content(
-                other_content, _process_as_single_item=True
+                other_content, serializer=serializer, _process_as_single_item=True
             )
 
         return other_content + mcp_types
