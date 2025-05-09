@@ -47,7 +47,13 @@ fastmcp run server.py
 
 ### 📚 Documentation
 
-This readme provides only a high-level overview. For detailed guides, API references, and advanced patterns, please refer to the complete FastMCP documentation at **[gofastmcp.com](https://gofastmcp.com)**.
+FastMCP's complete documentation is available at **[gofastmcp.com](https://gofastmcp.com)**, including detailed guides, API references, and advanced patterns. This readme provides only a high-level overview.
+
+Documentation is also available in [llms.txt format](https://llmstxt.org/), which is a simple markdown standard that LLMs can consume easily. 
+
+There are two ways to access the LLM-friendly documentation:
+- [`llms.txt`](https://gofastmcp.com/llms.txt) is essentially a sitemap, listing all the pages in the documentation.
+- [`llms-full.txt`](https://gofastmcp.com/llms-full.txt) contains the entire documentation. Note this may exceed the context window of your LLM.
 
 ---
 
