@@ -443,6 +443,34 @@ class TestCallTools:
         assert isinstance(result[0], TextContent)
         assert result[0].text == 'CUSTOM:{"key": "value", "number": 123}'
 
+    async def test_call_tool_with_list_result_custom_serializer(self):
+        """Test that a custom serializer provided to FastMCP is used by tools that return lists."""
+
+        def custom_serializer(data: Any) -> str:
+            if isinstance(data, list):
+                return f"CUSTOM:{json.dumps(data)}"
+            return json.dumps(data)
+
+        mcp = FastMCP(tool_serializer=custom_serializer)
+        manager = mcp._tool_manager
+
+        def get_data() -> list[dict]:
+            return [
+                {"key": "value", "number": 123},
+                {"key": "value2", "number": 456},
+            ]
+
+        manager.add_tool_from_fn(get_data)
+
+        result = await manager.call_tool("get_data", {})
+        assert isinstance(result, list)
+        assert len(result) == 1
+        assert isinstance(result[0], TextContent)
+        assert (
+            result[0].text
+            == 'CUSTOM:[{"key": "value", "number": 123}, {"key": "value2", "number": 456}]'
+        )
+
     async def test_custom_serializer_fallback_on_error(self):
         """Test that a broken custom serializer gracefully falls back."""
 
