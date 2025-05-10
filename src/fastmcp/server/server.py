@@ -1094,11 +1094,13 @@ class FastMCP(Generic[LifespanResultT]):
 
 def _validate_resource_prefix(prefix: str) -> None:
     valid_resource = "resource://path/to/resource"
+    test_case = f"{prefix}{valid_resource}"
     try:
-        AnyUrl(f"{prefix}{valid_resource}")
+        AnyUrl(test_case)
     except pydantic.ValidationError as e:
         raise ValueError(
-            f"Resource prefix or separator would result in an invalid resource URI: {e}"
+            "Resource prefix or separator would result in an "
+            f"invalid resource URI (test case was {test_case!r}): {e}"
         )
 
 
