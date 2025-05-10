@@ -56,9 +56,9 @@ def fastmcp_server():
     return server
 
 
-def run_server(host: str, port: int) -> None:
+def run_server(host: str, port: int, path: str | None = None) -> None:
     try:
-        app = fastmcp_server().http_app(transport="sse")
+        app = fastmcp_server().http_app(transport="sse", path=path)
         server = uvicorn.Server(
             config=uvicorn.Config(app=app, host=host, port=port, log_level="error")
         )
@@ -107,6 +107,13 @@ def run_nested_server(host: str, port: int) -> None:
         print(f"Server error: {e}")
         sys.exit(1)
     sys.exit(0)
+
+
+async def test_run_server_on_path():
+    with run_server_in_process(run_server, "/help") as url:
+        async with Client(transport=SSETransport(f"{url}/help")) as client:
+            result = await client.ping()
+            assert result is True
 
 
 async def test_nested_sse_server_resolves_correctly():

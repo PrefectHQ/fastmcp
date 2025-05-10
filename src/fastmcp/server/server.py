@@ -869,7 +869,7 @@ class FastMCP(Generic[LifespanResultT]):
         elif transport == "sse":
             return create_sse_app(
                 server=self,
-                message_path=path or self.settings.message_path,
+                message_path=self.settings.message_path,
                 sse_path=path or self.settings.sse_path,
                 auth_server_provider=self._auth_server_provider,
                 auth_settings=self.settings.auth,

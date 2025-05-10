@@ -71,7 +71,7 @@ def _run_server(mcp_server: FastMCP, transport: Literal["sse"], port: int) -> No
 
 @contextmanager
 def run_server_in_process(
-    server_fn: Callable[[str, int], None],
+    server_fn: Callable[[str, int], None], *args
 ) -> Generator[str, None, None]:
     """
     Context manager that runs a Starlette app in a separate process and returns the
@@ -88,7 +88,9 @@ def run_server_in_process(
         s.bind((host, 0))
         port = s.getsockname()[1]
 
-    proc = multiprocessing.Process(target=server_fn, args=(host, port), daemon=True)
+    proc = multiprocessing.Process(
+        target=server_fn, args=(host, port, *args), daemon=True
+    )
     proc.start()
 
     # Wait for server to be running
