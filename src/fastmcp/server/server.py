@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime
+import inspect
 import warnings
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import (
@@ -726,7 +727,16 @@ class FastMCP(Generic[LifespanResultT]):
         path: str | None = None,
         uvicorn_config: dict | None = None,
     ) -> None:
-        """Run the server using Streamable HTTP transport."""
+        """Run the server using HTTP transport.
+
+        Args:
+            transport: Transport protocol to use - either "streamable-http" (default) or "sse"
+            host: Host address to bind to (defaults to settings.host)
+            port: Port to bind to (defaults to settings.port)
+            log_level: Log level for the server (defaults to settings.log_level)
+            path: Path for the endpoint (defaults to settings.streamable_http_path or settings.sse_path)
+            uvicorn_config: Additional configuration for the Uvicorn server
+        """
         uvicorn_config = uvicorn_config or {}
         uvicorn_config.setdefault("timeout_graceful_shutdown", 0)
         # lifespan is required for streamable http
@@ -755,11 +765,13 @@ class FastMCP(Generic[LifespanResultT]):
     ) -> None:
         """Run the server using SSE transport."""
         warnings.warn(
-            """
-            The run_sse_async method is deprecated. Use run_http_async for a
-            modern (non-SSE) alternative, or create an SSE app with
-            `fastmcp.server.http.create_sse_app` and run it directly.
-            """,
+            inspect.cleandoc(
+                """
+                The run_sse_async method is deprecated. Use run_http_async for a
+                modern (non-SSE) alternative, or create an SSE app with
+                `fastmcp.server.http.create_sse_app` and run it directly.
+                """
+            ),
             DeprecationWarning,
         )
         await self.run_http_async(
@@ -786,8 +798,12 @@ class FastMCP(Generic[LifespanResultT]):
             middleware: A list of middleware to apply to the app
         """
         warnings.warn(
-            """The sse_app method is deprecated. Use http_app as a modern (non-SSE)
-            alternative, or call `fastmcp.server.http.create_sse_app` directly.""",
+            inspect.cleandoc(
+                """
+                The sse_app method is deprecated. Use http_app as a modern (non-SSE)
+                alternative, or call `fastmcp.server.http.create_sse_app` directly.
+                """
+            ),
             DeprecationWarning,
         )
         return create_sse_app(
@@ -825,6 +841,16 @@ class FastMCP(Generic[LifespanResultT]):
         middleware: list[Middleware] | None = None,
         transport: Literal["streamable-http", "sse"] = "streamable-http",
     ) -> Starlette:
+        """Create a Starlette app using the specified HTTP transport.
+
+        Args:
+            path: The path for the HTTP endpoint
+            middleware: A list of middleware to apply to the app
+            transport: Transport protocol to use - either "streamable-http" (default) or "sse"
+
+        Returns:
+            A Starlette application configured with the specified transport
+        """
         from fastmcp.server.http import create_streamable_http_app
 
         if transport == "streamable-http":
