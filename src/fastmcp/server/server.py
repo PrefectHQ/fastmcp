@@ -35,9 +35,10 @@ from mcp.types import ResourceTemplate as MCPResourceTemplate
 from mcp.types import Tool as MCPTool
 from pydantic import AnyUrl
 from starlette.applications import Starlette
+from starlette.middleware import Middleware
 from starlette.requests import Request
 from starlette.responses import Response
-from starlette.routing import Route
+from starlette.routing import BaseRoute, Route
 
 import fastmcp.server
 import fastmcp.settings
@@ -147,7 +148,7 @@ class FastMCP(Generic[LifespanResultT]):
             )
         self._auth_server_provider = auth_server_provider
 
-        self._additional_http_routes: list[Route] = []
+        self._additional_http_routes: list[BaseRoute] = []
         self.dependencies = self.settings.dependencies
 
         # Set up MCP protocol handlers
@@ -744,6 +745,7 @@ class FastMCP(Generic[LifespanResultT]):
         self,
         path: str | None = None,
         message_path: str | None = None,
+        middleware: list[Middleware] | None = None,
     ) -> Starlette:
         """Return an instance of the SSE server app."""
         return create_sse_app(
@@ -753,10 +755,15 @@ class FastMCP(Generic[LifespanResultT]):
             auth_server_provider=self._auth_server_provider,
             auth_settings=self.settings.auth,
             debug=self.settings.debug,
-            additional_routes=self._additional_http_routes,
+            routes=self._additional_http_routes,
+            middleware=middleware,
         )
 
-    def streamable_http_app(self, path: str | None = None) -> Starlette:
+    def streamable_http_app(
+        self,
+        path: str | None = None,
+        middleware: list[Middleware] | None = None,
+    ) -> Starlette:
         """Return an instance of the StreamableHTTP server app."""
         from fastmcp.server.http import create_streamable_http_app
 
@@ -769,7 +776,8 @@ class FastMCP(Generic[LifespanResultT]):
             json_response=self.settings.json_response,
             stateless_http=self.settings.stateless_http,
             debug=self.settings.debug,
-            additional_routes=self._additional_http_routes,
+            routes=self._additional_http_routes,
+            middleware=middleware,
         )
 
     async def run_streamable_http_async(

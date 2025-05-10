@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import AsyncGenerator, Callable, Generator
 from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 from mcp.server.auth.middleware.auth_context import AuthContextMiddleware
 from mcp.server.auth.middleware.bearer_auth import (
@@ -19,7 +19,7 @@ from starlette.middleware import Middleware
 from starlette.middleware.authentication import AuthenticationMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
-from starlette.routing import Mount, Route
+from starlette.routing import BaseRoute, Mount, Route
 from starlette.types import Receive, Scope, Send
 
 from fastmcp.low_level.sse_server_transport import SseServerTransport
@@ -64,7 +64,7 @@ class RequestContextMiddleware:
 def setup_auth_middleware_and_routes(
     auth_server_provider: OAuthAuthorizationServerProvider | None,
     auth_settings: AuthSettings | None,
-) -> tuple[list[Middleware], list[Route | Mount], list[str]]:
+) -> tuple[list[Middleware], list[BaseRoute], list[str]]:
     """Set up authentication middleware and routes if auth is enabled.
 
     Args:
@@ -75,7 +75,7 @@ def setup_auth_middleware_and_routes(
         Tuple of (middleware, auth_routes, required_scopes)
     """
     middleware: list[Middleware] = []
-    auth_routes: list[Route | Mount] = []
+    auth_routes: list[BaseRoute] = []
     required_scopes: list[str] = []
 
     if auth_server_provider:
@@ -108,7 +108,7 @@ def setup_auth_middleware_and_routes(
 
 
 def create_base_app(
-    routes: list[Route | Mount],
+    routes: list[BaseRoute],
     middleware: list[Middleware],
     debug: bool = False,
     lifespan: Callable | None = None,
@@ -142,7 +142,8 @@ def create_sse_app(
     auth_server_provider: OAuthAuthorizationServerProvider | None = None,
     auth_settings: AuthSettings | None = None,
     debug: bool = False,
-    additional_routes: list[Route] | list[Mount] | list[Route | Mount] | None = None,
+    routes: list[BaseRoute] | None = None,
+    middleware: list[Middleware] | None = None,
 ) -> Starlette:
     """Return an instance of the SSE server app.
 
@@ -153,11 +154,15 @@ def create_sse_app(
         auth_server_provider: Optional auth provider
         auth_settings: Optional auth settings
         debug: Whether to enable debug mode
-        additional_routes: Optional list of custom routes
-
+        routes: Optional list of custom routes
+        middleware: Optional list of middleware
     Returns:
         A Starlette application with RequestContextMiddleware
     """
+
+    server_routes: list[BaseRoute] = []
+    server_middleware: list[Middleware] = []
+
     # Set up SSE transport
     sse = SseServerTransport(message_path)
 
@@ -172,24 +177,24 @@ def create_sse_app(
         return Response()
 
     # Get auth middleware and routes
-    middleware, auth_routes, required_scopes = setup_auth_middleware_and_routes(
+    auth_middleware, auth_routes, required_scopes = setup_auth_middleware_and_routes(
         auth_server_provider, auth_settings
     )
 
-    # Initialize routes with auth routes
-    routes: list[Route | Mount] = auth_routes.copy()
+    server_routes.extend(auth_routes)
+    server_middleware.extend(auth_middleware)
 
     # Add SSE routes with or without auth
     if auth_server_provider:
         # Auth is enabled, wrap endpoints with RequireAuthMiddleware
-        routes.append(
+        server_routes.append(
             Route(
                 sse_path,
                 endpoint=RequireAuthMiddleware(handle_sse, required_scopes),
                 methods=["GET"],
             )
         )
-        routes.append(
+        server_routes.append(
             Mount(
                 message_path,
                 app=RequireAuthMiddleware(sse.handle_post_message, required_scopes),
@@ -200,14 +205,14 @@ def create_sse_app(
         async def sse_endpoint(request: Request) -> Response:
             return await handle_sse(request.scope, request.receive, request._send)  # type: ignore[reportPrivateUsage]
 
-        routes.append(
+        server_routes.append(
             Route(
                 sse_path,
                 endpoint=sse_endpoint,
                 methods=["GET"],
             )
         )
-        routes.append(
+        server_routes.append(
             Mount(
                 message_path,
                 app=sse.handle_post_message,
@@ -215,13 +220,17 @@ def create_sse_app(
         )
 
     # Add custom routes with lowest precedence
-    if additional_routes:
-        routes.extend(cast(list[Route | Mount], additional_routes))
+    if routes:
+        server_routes.extend(routes)
+
+    # Add middleware
+    if middleware:
+        server_middleware.extend(middleware)
 
     # Create and return the app
     return create_base_app(
-        routes=routes,
-        middleware=middleware,
+        routes=server_routes,
+        middleware=server_middleware,
         debug=debug,
     )
 
@@ -235,7 +244,8 @@ def create_streamable_http_app(
     json_response: bool = False,
     stateless_http: bool = False,
     debug: bool = False,
-    additional_routes: list[Route] | list[Mount] | list[Route | Mount] | None = None,
+    routes: list[BaseRoute] | None = None,
+    middleware: list[Middleware] | None = None,
 ) -> Starlette:
     """Return an instance of the StreamableHTTP server app.
 
@@ -248,11 +258,15 @@ def create_streamable_http_app(
         json_response: Whether to use JSON response format
         stateless_http: Whether to use stateless mode (new transport per request)
         debug: Whether to enable debug mode
-        additional_routes: Optional list of custom routes
+        routes: Optional list of custom routes
+        middleware: Optional list of middleware
 
     Returns:
         A Starlette application with StreamableHTTP support
     """
+    server_routes: list[BaseRoute] = []
+    server_middleware: list[Middleware] = []
+
     # Create session manager using the provided event store
     session_manager = StreamableHTTPSessionManager(
         app=server._mcp_server,
@@ -268,17 +282,17 @@ def create_streamable_http_app(
         await session_manager.handle_request(scope, receive, send)
 
     # Get auth middleware and routes
-    middleware, auth_routes, required_scopes = setup_auth_middleware_and_routes(
+    auth_middleware, auth_routes, required_scopes = setup_auth_middleware_and_routes(
         auth_server_provider, auth_settings
     )
 
-    # Initialize routes with auth routes
-    routes: list[Route | Mount] = auth_routes.copy()
+    server_routes.extend(auth_routes)
+    server_middleware.extend(auth_middleware)
 
     # Add StreamableHTTP routes with or without auth
     if auth_server_provider:
         # Auth is enabled, wrap endpoint with RequireAuthMiddleware
-        routes.append(
+        server_routes.append(
             Mount(
                 streamable_http_path,
                 app=RequireAuthMiddleware(handle_streamable_http, required_scopes),
@@ -286,7 +300,7 @@ def create_streamable_http_app(
         )
     else:
         # No auth required
-        routes.append(
+        server_routes.append(
             Mount(
                 streamable_http_path,
                 app=handle_streamable_http,
@@ -294,8 +308,12 @@ def create_streamable_http_app(
         )
 
     # Add custom routes with lowest precedence
-    if additional_routes:
-        routes.extend(cast(list[Route | Mount], additional_routes))
+    if routes:
+        server_routes.extend(routes)
+
+    # Add middleware
+    if middleware:
+        server_middleware.extend(middleware)
 
     # Create a lifespan manager to start and stop the session manager
     @asynccontextmanager
@@ -305,8 +323,8 @@ def create_streamable_http_app(
 
     # Create and return the app with lifespan
     return create_base_app(
-        routes=routes,
-        middleware=middleware,
+        routes=server_routes,
+        middleware=server_middleware,
         debug=debug,
         lifespan=lifespan,
     )
