@@ -8,7 +8,7 @@ from typing import Annotated
 
 from pydantic import BaseModel, Field
 
-from fastmcp.server import FastMCP
+from fastmcp import FastMCP
 
 mcp = FastMCP("Shrimp Tank")
 
