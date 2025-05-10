@@ -106,6 +106,21 @@ class TestBasicMount:
         with pytest.raises(NotFoundError, match="Unknown tool: sub_sub_tool"):
             await main_app._mcp_call_tool("sub_sub_tool", {})
 
+    async def test_mount_with_no_prefix(self):
+        main_app = FastMCP("MainApp")
+        sub_app = FastMCP("SubApp")
+
+        @sub_app.tool()
+        def sub_tool() -> str:
+            return "This is from the sub app"
+
+        main_app.mount(
+            prefix="", server=sub_app, tool_separator="", resource_separator=""
+        )
+
+        tools = await main_app.get_tools()
+        assert "sub_tool" in tools
+
 
 class TestMultipleServerMount:
     """Test mounting multiple servers simultaneously."""
