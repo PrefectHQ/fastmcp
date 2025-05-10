@@ -11,7 +11,7 @@ FastMCP servers can be run in different ways depending on your application's nee
 
 ## The `run()` Method
 
-The main way to run a FastMCP server from a Python script is by calling the `run()` method on a `FastMCP` instance. 
+FastMCP servers can be run directly from Python by calling the `run()` method on a `FastMCP` instance.
 
 <Tip>
 For maximum compatibility, it's best practice to place the `run()` call within an `if __name__ == "__main__":` block. This ensures the server starts only when the script is executed directly, not when imported as a module.
@@ -32,6 +32,34 @@ if __name__ == "__main__":
 You can now run this MCP server by executing `python my_server.py`. 
 
 MCP servers can be run with a variety of different transport options, depending on your application's requirements. The `run()` method can take a `transport` argument and other transport-specific keyword arguments to configure how the server operates.
+
+## The FastMCP CLI
+
+FastMCP also provides a command-line interface for running servers without modifying the source code. After installing FastMCP, you can run your server directly from the command line:
+
+```bash
+fastmcp run server.py
+```
+
+<Tip>
+**Important**: When using `fastmcp run`, it **ignores** the `if __name__ == "__main__"` block entirely. Instead, it looks for a FastMCP object named `mcp`, `server`, or `app` and calls its `run()` method directly with the transport options you specify.
+
+This means you can use `fastmcp run` to override the transport specified in your code, which is particularly useful for testing or changing deployment methods without modifying the code.
+</Tip>
+
+You can specify transport options and other configuration:
+
+```bash
+fastmcp run server.py --transport sse --port 9000
+```
+
+For development and testing, you can use the `dev` command to run your server with the MCP Inspector:
+
+```bash
+fastmcp dev server.py
+```
+
+See the [CLI documentation](/deployment/cli) for detailed information about all available commands and options.
 
 ## Transport Options
 

@@ -50,8 +50,8 @@
                     "servers/resources",
                     "servers/prompts",
                     "servers/context",
-                    "patterns/proxy",
-                    "patterns/composition"
+                    "servers/proxy",
+                    "servers/composition"
                 ]
             },
             {
@@ -59,7 +59,8 @@
                 "pages": [
                     "deployment/running-server",
                     "deployment/asgi",
-                    "deployment/authentication"
+                    "deployment/authentication",
+                    "deployment/cli"
                 ]
             },
             {
@@ -86,5 +87,15 @@
             }
         ]
     },
+    "redirects": [
+        {
+            "destination": "/servers/proxy",
+            "source": "/patterns/proxy"
+        },
+        {
+            "destination": "/servers/composition",
+            "source": "/patterns/composition"
+        }
+    ],
     "theme": "mint"
 }

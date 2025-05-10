@@ -1,0 +1,174 @@
+---
+title: FastMCP CLI
+sidebarTitle: CLI
+description: Learn how to use the FastMCP command-line interface
+icon: terminal
+---
+
+import { VersionBadge } from "/snippets/version-badge.mdx"
+
+
+FastMCP provides a command-line interface (CLI) that makes it easy to run, develop, and install your MCP servers. The CLI is automatically installed when you install FastMCP.
+
+```bash
+fastmcp --help
+```
+
+## Commands Overview
+
+| Command | Purpose | Dependency Management |
+| ------- | ------- | --------------------- |
+| `run` | Run a FastMCP server directly | Uses your current environment; you are responsible for ensuring all dependencies are available |
+| `dev` | Run a server with the MCP Inspector for testing | Creates an isolated environment; dependencies must be explicitly specified with `--with` and/or `--with-editable` |
+| `install` | Install a server in the Claude desktop app | Creates an isolated environment; dependencies must be explicitly specified with `--with` and/or `--with-editable` |
+| `version` | Display version information | N/A |
+
+## Command Details
+
+### `run`
+
+Run a FastMCP server directly.
+
+```bash
+fastmcp run server.py
+```
+
+<Tip>
+This command runs the server directly in your current Python environment. You are responsible for ensuring all dependencies are available.
+</Tip>
+
+#### Options
+
+| Option | Flag | Description |
+| ------ | ---- | ----------- |
+| Transport | `--transport`, `-t` | Transport protocol to use (`stdio`, `streamable-http`, or `sse`) |
+| Host | `--host` | Host to bind to when using http transport (default: 127.0.0.1) |
+| Port | `--port`, `-p` | Port to bind to when using http transport (default: 8000) |
+| Log Level | `--log-level`, `-l` | Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL) |
+
+#### Server Specification
+
+The server can be specified in two ways:
+1. `server.py` - imports the module and looks for a FastMCP object named `mcp`, `server`, or `app`. Errors if no such object is found.
+2. `server.py:custom_name` - imports and uses the specified server object
+
+<Tip>
+When using `fastmcp run`, it **ignores** the `if __name__ == "__main__"` block entirely. Instead, it finds your server object and calls its `run()` method directly with the transport options you specify. This means you can use `fastmcp run` to override the transport specified in your code.
+</Tip>
+
+For example, if your code contains:
+
+```python
+# server.py
+from fastmcp import FastMCP
+
+mcp = FastMCP("MyServer")
+
+@mcp.tool()
+def hello(name: str) -> str:
+    return f"Hello, {name}!"
+
+if __name__ == "__main__":
+    # This is ignored when using `fastmcp run`!
+    mcp.run(transport="stdio")
+```
+
+You can run it with Streamable HTTP transport regardless of what's in the `__main__` block:
+
+```bash
+fastmcp run server.py --transport streamable-http --port 8000
+```
+
+**Example**
+
+```bash
+# Run a server with Streamable HTTP transport on a custom port
+fastmcp run server.py --transport streamable-http --port 8000
+```
+
+### `dev`
+
+Run a MCP server with the [MCP Inspector](https://github.com/modelcontextprotocol/inspector) for testing.
+
+```bash
+fastmcp dev server.py
+```
+
+<Tip> 
+This command runs your server in an isolated environment. All dependencies must be explicitly specified using the `--with` and/or `--with-editable` options.
+</Tip>
+
+<Warning>
+The `dev` command is a shortcut for testing a server over STDIO only. When the Inspector launches, you may need to:
+1. Select "STDIO" from the transport dropdown
+2. Connect manually
+
+This command does not support HTTP testing. To test a server over HTTP:
+1. Start your server manually with HTTP transport using either:
+   ```bash
+   fastmcp run server.py --transport streamable-http
+   ```
+   or
+   ```bash
+   python server.py  # Assuming your __main__ block sets HTTP transport
+   ```
+2. Open the MCP Inspector separately and connect to your running server
+</Warning>
+
+#### Options
+
+| Option | Flag | Description |
+| ------ | ---- | ----------- |
+| Editable Package | `--with-editable`, `-e` | Directory containing pyproject.toml to install in editable mode |
+| Additional Packages | `--with` | Additional packages to install (can be used multiple times) |
+| Inspector Version | `--inspector-version` | Version of the MCP Inspector to use |
+| UI Port | `--ui-port` | Port for the MCP Inspector UI |
+| Server Port | `--server-port` | Port for the MCP Inspector Proxy server |
+
+**Example**
+
+```bash
+# Run dev server with editable mode and additional packages
+fastmcp dev server.py -e . --with pandas --with matplotlib
+```
+
+### `install`
+
+Install a MCP server in the Claude desktop app.
+
+```bash
+fastmcp install server.py
+```
+
+<Tip>
+This command installs your server in an isolated environment. All dependencies must be explicitly specified using the `--with` and/or `--with-editable` options.
+</Tip>
+
+<Warning>
+The `install` command currently only sets up servers for STDIO transport. When installed in the Claude desktop app, your server will be run using STDIO regardless of any transport configuration in your code.
+</Warning>
+
+#### Options
+
+| Option | Flag | Description |
+| ------ | ---- | ----------- |
+| Server Name | `--name`, `-n` | Custom name for the server |
+| Editable Package | `--with-editable`, `-e` | Directory containing pyproject.toml to install in editable mode |
+| Additional Packages | `--with` | Additional packages to install (can be used multiple times) |
+| Environment Variables | `--env-var`, `-v` | Environment variables in KEY=VALUE format (can be used multiple times) |
+| Environment File | `--env-file`, `-f` | Load environment variables from a .env file |
+
+**Example**
+
+```bash
+# Install server with custom name, dependencies, and environment variables
+fastmcp install server.py -n "My Analysis Server" -e . --with pandas --env-var API_KEY=12345
+```
+
+### `version`
+
+Display version information about FastMCP and related components.
+
+```bash
+fastmcp version
+```

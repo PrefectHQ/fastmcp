@@ -327,14 +327,14 @@ def run(
         typer.Option(
             "--transport",
             "-t",
-            help="Transport protocol to use (stdio or sse)",
+            help="Transport protocol to use (stdio, streamable-http, or sse)",
         ),
     ] = None,
     host: Annotated[
         str | None,
         typer.Option(
             "--host",
-            help="Host to bind to when using sse transport (default: 127.0.0.1)",
+            help="Host to bind to when using http transport (default: 127.0.0.1)",
         ),
     ] = None,
     port: Annotated[
@@ -342,7 +342,7 @@ def run(
         typer.Option(
             "--port",
             "-p",
-            help="Port to bind to when using sse transport (default: 8000)",
+            help="Port to bind to when using http transport (default: 8000)",
         ),
     ] = None,
     log_level: Annotated[
@@ -350,20 +350,19 @@ def run(
         typer.Option(
             "--log-level",
             "-l",
-            help="Log level for sse transport (DEBUG, INFO, WARNING, ERROR, CRITICAL)",
+            help="Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)",
         ),
     ] = None,
 ) -> None:
     """Run a MCP server.
 
-    The server can be specified in two ways:\n
+    The server can be specified in two ways:
     1. Module approach: server.py - runs the module directly, expecting a server.run() call.\n
     2. Import approach: server.py:app - imports and runs the specified server object.\n\n
 
     Note: This command runs the server directly. You are responsible for ensuring
-    all dependencies are available.\n
-    For dependency management, use `mcp install` or `mcp dev` instead.
-    """  # noqa: E501
+    all dependencies are available.
+    """
     file, server_object = _parse_file_path(file_spec)
 
     logger.debug(
