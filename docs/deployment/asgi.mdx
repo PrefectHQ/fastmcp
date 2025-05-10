@@ -5,6 +5,9 @@ description: Integrate FastMCP servers into existing Starlette, FastAPI, or othe
 icon: plug
 ---
 
+import { VersionBadge } from '/snippets/version-badge.mdx'
+
+
 While FastMCP provides standalone server capabilities, you can also integrate your FastMCP server into existing web applications. This approach is useful for:
 
 - Adding MCP functionality to an existing website or API
@@ -16,10 +19,13 @@ Please note that all FastMCP servers have a `run()` method that can be used to s
 
 ## ASGI Server
 
-
 FastMCP servers can be created as [Starlette](https://www.starlette.io/) ASGI apps for straightforward hosting or integration into existing applications.
 
 The first step is to obtain a Starlette application instance from your FastMCP server using the `http_app()` method:
+
+<Tip>
+The `http_app()` method is new in FastMCP 2.3.2. In older versions, use `sse_app()` for SSE transport or `streamable_http_app()` for Streamable HTTP transport.
+</Tip>
 
 ```python
 from fastmcp import FastMCP
