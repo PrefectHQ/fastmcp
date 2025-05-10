@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime
+import warnings
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import (
     AbstractAsyncContextManager,
@@ -170,7 +171,7 @@ class FastMCP(Generic[LifespanResultT]):
 
     async def run_async(
         self,
-        transport: Literal["stdio", "sse", "streamable-http"] | None = None,
+        transport: Literal["stdio", "streamable-http", "sse"] | None = None,
         **transport_kwargs: Any,
     ) -> None:
         """Run the FastMCP server asynchronously.
@@ -180,19 +181,21 @@ class FastMCP(Generic[LifespanResultT]):
         """
         if transport is None:
             transport = "stdio"
-        if transport not in ["stdio", "sse", "streamable-http"]:
+        if transport not in ["stdio", "streamable-http", "sse"]:
             raise ValueError(f"Unknown transport: {transport}")
 
         if transport == "stdio":
             await self.run_stdio_async(**transport_kwargs)
+        elif transport == "streamable-http":
+            await self.run_http_async(transport="streamable-http", **transport_kwargs)
         elif transport == "sse":
-            await self.run_sse_async(**transport_kwargs)
-        else:  # transport == "streamable-http"
-            await self.run_streamable_http_async(**transport_kwargs)
+            await self.run_http_async(transport="sse", **transport_kwargs)
+        else:
+            raise ValueError(f"Unknown transport: {transport}")
 
     def run(
         self,
-        transport: Literal["stdio", "sse", "streamable-http"] | None = None,
+        transport: Literal["stdio", "streamable-http", "sse"] | None = None,
         **transport_kwargs: Any,
     ) -> None:
         """Run the FastMCP server. Note this is a synchronous function.
@@ -714,22 +717,22 @@ class FastMCP(Generic[LifespanResultT]):
                 self._mcp_server.create_initialization_options(),
             )
 
-    async def run_sse_async(
+    async def run_http_async(
         self,
+        transport: Literal["streamable-http", "sse"] = "streamable-http",
         host: str | None = None,
         port: int | None = None,
         log_level: str | None = None,
         path: str | None = None,
-        message_path: str | None = None,
         uvicorn_config: dict | None = None,
     ) -> None:
-        """Run the server using SSE transport."""
+        """Run the server using Streamable HTTP transport."""
         uvicorn_config = uvicorn_config or {}
-        # the SSE app hangs even when a signal is sent, so we disable the
-        # timeout to make it possible to close immediately. see
-        # https://github.com/jlowin/fastmcp/issues/296
         uvicorn_config.setdefault("timeout_graceful_shutdown", 0)
-        app = self.sse_app(path=path, message_path=message_path)
+        # lifespan is required for streamable http
+        uvicorn_config["lifespan"] = "on"
+
+        app = self.http_app(path=path, transport=transport)
 
         config = uvicorn.Config(
             app,
@@ -740,6 +743,33 @@ class FastMCP(Generic[LifespanResultT]):
         )
         server = uvicorn.Server(config)
         await server.serve()
+
+    async def run_sse_async(
+        self,
+        host: str | None = None,
+        port: int | None = None,
+        log_level: str | None = None,
+        path: str | None = None,
+        message_path: str | None = None,
+        uvicorn_config: dict | None = None,
+    ) -> None:
+        """Run the server using SSE transport."""
+        warnings.warn(
+            """
+            The run_sse_async method is deprecated. Use run_http_async for a
+            modern (non-SSE) alternative, or create an SSE app with
+            `fastmcp.server.http.create_sse_app` and run it directly.
+            """,
+            DeprecationWarning,
+        )
+        await self.run_http_async(
+            transport="sse",
+            host=host,
+            port=port,
+            log_level=log_level,
+            path=path,
+            uvicorn_config=uvicorn_config,
+        )
 
     def sse_app(
         self,
@@ -755,6 +785,11 @@ class FastMCP(Generic[LifespanResultT]):
             message_path: The path to the message endpoint
             middleware: A list of middleware to apply to the app
         """
+        warnings.warn(
+            """The sse_app method is deprecated. Use http_app as a modern (non-SSE)
+            alternative, or call `fastmcp.server.http.create_sse_app` directly.""",
+            DeprecationWarning,
+        )
         return create_sse_app(
             server=self,
             message_path=message_path or self.settings.message_path,
@@ -778,20 +813,44 @@ class FastMCP(Generic[LifespanResultT]):
             path: The path to the StreamableHTTP endpoint
             middleware: A list of middleware to apply to the app
         """
+        warnings.warn(
+            "The streamable_http_app method is deprecated. Use http_app() instead.",
+            DeprecationWarning,
+        )
+        return self.http_app(path=path, middleware=middleware)
+
+    def http_app(
+        self,
+        path: str | None = None,
+        middleware: list[Middleware] | None = None,
+        transport: Literal["streamable-http", "sse"] = "streamable-http",
+    ) -> Starlette:
         from fastmcp.server.http import create_streamable_http_app
 
-        return create_streamable_http_app(
-            server=self,
-            streamable_http_path=path or self.settings.streamable_http_path,
-            event_store=None,
-            auth_server_provider=self._auth_server_provider,
-            auth_settings=self.settings.auth,
-            json_response=self.settings.json_response,
-            stateless_http=self.settings.stateless_http,
-            debug=self.settings.debug,
-            routes=self._additional_http_routes,
-            middleware=middleware,
-        )
+        if transport == "streamable-http":
+            return create_streamable_http_app(
+                server=self,
+                streamable_http_path=path or self.settings.streamable_http_path,
+                event_store=None,
+                auth_server_provider=self._auth_server_provider,
+                auth_settings=self.settings.auth,
+                json_response=self.settings.json_response,
+                stateless_http=self.settings.stateless_http,
+                debug=self.settings.debug,
+                routes=self._additional_http_routes,
+                middleware=middleware,
+            )
+        elif transport == "sse":
+            return create_sse_app(
+                server=self,
+                message_path=path or self.settings.message_path,
+                sse_path=path or self.settings.sse_path,
+                auth_server_provider=self._auth_server_provider,
+                auth_settings=self.settings.auth,
+                debug=self.settings.debug,
+                routes=self._additional_http_routes,
+                middleware=middleware,
+            )
 
     async def run_streamable_http_async(
         self,
@@ -801,23 +860,18 @@ class FastMCP(Generic[LifespanResultT]):
         path: str | None = None,
         uvicorn_config: dict | None = None,
     ) -> None:
-        """Run the server using StreamableHTTP transport."""
-        uvicorn_config = uvicorn_config or {}
-        uvicorn_config.setdefault("timeout_graceful_shutdown", 0)
-
-        app = self.streamable_http_app(path=path)
-
-        config = uvicorn.Config(
-            app,
-            host=host or self.settings.host,
-            port=port or self.settings.port,
-            log_level=log_level or self.settings.log_level.lower(),
-            # lifespan is required for streamable http
-            lifespan="on",
-            **uvicorn_config,
+        warnings.warn(
+            "The run_streamable_http_async method is deprecated. Use run_http_async instead.",
+            DeprecationWarning,
         )
-        server = uvicorn.Server(config)
-        await server.serve()
+        await self.run_http_async(
+            transport="streamable-http",
+            host=host,
+            port=port,
+            log_level=log_level,
+            path=path,
+            uvicorn_config=uvicorn_config,
+        )
 
     def mount(
         self,

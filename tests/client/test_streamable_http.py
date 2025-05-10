@@ -58,7 +58,7 @@ def fastmcp_server():
 
 def run_server(host: str, port: int) -> None:
     try:
-        app = fastmcp_server().streamable_http_app()
+        app = fastmcp_server().http_app()
         server = uvicorn.Server(
             config=uvicorn.Config(
                 app=app,
@@ -106,7 +106,7 @@ async def test_http_headers(streamable_http_server: str):
 
 def run_nested_server(host: str, port: int) -> None:
     try:
-        mcp_app = fastmcp_server().streamable_http_app()
+        mcp_app = fastmcp_server().http_app()
 
         mount = Starlette(routes=[Mount("/nest-inner", app=mcp_app)])
         mount2 = Starlette(

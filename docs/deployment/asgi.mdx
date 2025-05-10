@@ -19,7 +19,7 @@ Please note that all FastMCP servers have a `run()` method that can be used to s
 
 FastMCP servers can be created as [Starlette](https://www.starlette.io/) ASGI apps for straightforward hosting or integration into existing applications.
 
-The first step is to obtain a Starlette application instance from your FastMCP server using either the `streamable_http_app()` (preferred) or `sse_app()` (legacy) methods:
+The first step is to obtain a Starlette application instance from your FastMCP server using the `http_app()` method:
 
 ```python
 from fastmcp import FastMCP
@@ -30,18 +30,23 @@ mcp = FastMCP("MyServer")
 def hello(name: str) -> str:
     return f"Hello, {name}!"
 
-# Get a Starlette app instance for the preferred transport
-http_app = mcp.streamable_http_app()   # For Streamable HTTP transport
-sse_app = mcp.sse_app()                # For SSE transport
+# Get a Starlette app instance for Streamable HTTP transport (recommended)
+http_app = mcp.http_app()
+
+# For legacy SSE transport (deprecated)
+sse_app = mcp.http_app(transport="sse")
 ```
 
-Both methods return a Starlette application that can be integrated with other ASGI-compatible web frameworks. 
+Both approaches return a Starlette application that can be integrated with other ASGI-compatible web frameworks. 
 
-The MCP server's endpoint is mounted at the root path `/mcp` for Streamable HTTP transport, and `/sse` for SSE transport, though you can change these paths by passing a `path` argument to the `streamable_http_app()` or `sse_app()` methods:
+The MCP server's endpoint is mounted at the root path `/mcp` for Streamable HTTP transport, and `/sse` for SSE transport, though you can change these paths by passing a `path` argument to the `http_app()` method:
 
 ```python
-http_app = mcp.streamable_http_app(path="/custom-mcp-path")
-sse_app = mcp.sse_app(path="/custom-sse-path")
+# For Streamable HTTP transport
+http_app = mcp.http_app(path="/custom-mcp-path")
+
+# For SSE transport (deprecated)
+sse_app = mcp.http_app(path="/custom-sse-path", transport="sse")
 ```
 
 ### Running the Server
@@ -49,9 +54,12 @@ sse_app = mcp.sse_app(path="/custom-sse-path")
 To run the FastMCP server, you can use the `uvicorn` ASGI server:
 
 ```python
+from fastmcp import FastMCP
 import uvicorn
 
-# (define the app here)
+mcp = FastMCP("MyServer")
+
+http_app = mcp.http_app()
 
 if __name__ == "__main__":
     uvicorn.run(http_app, host="0.0.0.0", port=8000)
@@ -83,7 +91,7 @@ custom_middleware = [
 ]
 
 # Create ASGI app with custom middleware
-http_app = mcp.streamable_http_app(middleware=custom_middleware)
+http_app = mcp.http_app(middleware=custom_middleware)
 ```
 
 
@@ -91,7 +99,7 @@ http_app = mcp.streamable_http_app(middleware=custom_middleware)
 
 <VersionBadge version="2.3.1" />
 
-You can mount your FastMCP server in another Starlette application using the `Mount` class.
+You can mount your FastMCP server in another Starlette application:
 
 ```python
 from fastmcp import FastMCP
@@ -102,7 +110,7 @@ from starlette.routing import Mount
 mcp = FastMCP("MyServer")
 
 # Create the ASGI app
-mcp_app = mcp.streamable_http_app(path='/mcp')
+mcp_app = mcp.http_app(path='/mcp')
 
 # Create a Starlette app and mount the MCP server
 app = Starlette(
@@ -134,7 +142,7 @@ from starlette.routing import Mount
 mcp = FastMCP("MyServer")
 
 # Create the ASGI app
-mcp_app = mcp.streamable_http_app(path='/mcp')
+mcp_app = mcp.http_app(path='/mcp')
 
 # Create nested application structure
 inner_app = Starlette(routes=[Mount("/inner", app=mcp_app)])
@@ -164,7 +172,7 @@ from starlette.routing import Mount
 mcp = FastMCP("MyServer")
 
 # Create the ASGI app
-mcp_app = mcp.streamable_http_app(path='/mcp')
+mcp_app = mcp.http_app(path='/mcp')
 
 # Create a FastAPI app and mount the MCP server
 app = FastAPI(lifespan=mcp_app.router.lifespan_context)

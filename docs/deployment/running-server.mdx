@@ -40,8 +40,8 @@ Below is a comparison of available transport options to help you choose the righ
 | Transport | Use Cases | Recommendation |
 | --------- | --------- | -------------- |
 | **STDIO** | Local tools, command-line scripts, and integrations with clients like Claude Desktop | Best for local tools and when clients manage server processes |
-| **Streamable HTTP** | Web-based deployments, microservices, exposing MCP over a network | Recommended choice for new web-based deployments |
-| **SSE** | Existing web-based deployments that rely on SSE | Suitable for compatibility with SSE clients; prefer Streamable HTTP for new projects |
+| **Streamable HTTP** | Web-based deployments, microservices, exposing MCP over a network | Recommended choice for web-based deployments |
+| **SSE** | Existing web-based deployments that rely on SSE | Deprecated - prefer Streamable HTTP for new projects |
 
 ### STDIO
 
@@ -64,7 +64,7 @@ When using Stdio transport, you will typically *not* run the server yourself as 
 
 <VersionBadge version="2.3.0" />
 
-Streamable HTTP is a modern, efficient transport for exposing your MCP server via HTTP. It is generally recommended over SSE for new web-based deployments.
+Streamable HTTP is a modern, efficient transport for exposing your MCP server via HTTP. It is the recommended transport for web-based deployments.
 
 To run a server using Streamable HTTP, you can use the `run()` method with the `transport` argument set to `"streamable-http"`. This will start a Uvicorn server on the default host (`127.0.0.1`), port (`8000`), and path (`/mcp`).
 <CodeGroup>
@@ -122,7 +122,12 @@ if __name__ == "__main__":
 
 ### SSE
 
-Server-Sent Events (SSE) is an HTTP-based protocol for server-to-client streaming. While FastMCP supports SSE, Streamable HTTP is preferred for new projects.
+<Warning>
+The SSE transport is deprecated and may be removed in a future version.
+New applications should use Streamable HTTP transport instead.
+</Warning>
+
+Server-Sent Events (SSE) is an HTTP-based protocol for server-to-client streaming. While FastMCP still supports SSE, it is deprecated and Streamable HTTP is preferred for new projects.
 
 To run a server using SSE, you can use the `run()` method with the `transport` argument set to `"sse"`. This will start a Uvicorn server on the default host (`127.0.0.1`), port (`8000`), and with default SSE path (`/sse`) and message path (`/messages/`).
 
@@ -170,7 +175,6 @@ if __name__ == "__main__":
         port=4200,
         log_level="debug",
         path="/my-custom-sse-path",
-        message_path="/my-custom-message-path/",
     )
 ```
 ```python {7} client.py
@@ -189,9 +193,37 @@ if __name__ == "__main__":
 ```
 </CodeGroup>
 
-Your client only needs to know the host, port, and "main" path; the message path will be transmitted to it as part of the connection handshake.
 
 
+## Async Usage
+
+FastMCP provides both synchronous and asynchronous APIs for running your server. The `run()` method seen in previous examples is a synchronous method that internally uses `anyio.run()` to run the asynchronous server. For applications that are already running in an async context, FastMCP provides the `run_async()` method.
+
+```python {10-12}
+from fastmcp import FastMCP
+import asyncio
+
+mcp = FastMCP(name="MyServer")
+
+@mcp.tool()
+def hello(name: str) -> str:
+    return f"Hello, {name}!"
+
+async def main():
+    # Use run_async() in async contexts
+    await mcp.run_async(transport="streamable-http")
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+<Warning>
+The `run()` method cannot be called from inside an async function because it already creates its own async event loop internally. If you attempt to call `run()` from inside an async function, you'll get an error about the event loop already running.
+
+Always use `run_async()` inside async functions and `run()` in synchronous contexts.
+</Warning>
+
+Both `run()` and `run_async()` accept the same transport arguments, so all the examples above apply to both methods.
 
 ## Custom Routes
 
