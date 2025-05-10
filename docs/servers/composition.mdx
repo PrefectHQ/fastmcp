@@ -179,7 +179,7 @@ main_server.mount("remote", remote_proxy)
 
 ## Customizing Separators
 
-Both `import_server()` and `mount()` allow you to customize the separators used for prefixing components:
+Both `import_server()` and `mount()` allow you to customize the separators used for prefixing components. The defaults are `_` for tools and prompts, and `+` for resources.
 
 <CodeGroup>
 
@@ -187,9 +187,9 @@ Both `import_server()` and `mount()` allow you to customize the separators used 
 await main_mcp.import_server(
     prefix="api",
     app=some_subserver,
-    tool_separator="/",       # Tool name becomes: "api/sub_tool_name"
-    resource_separator=":",   # Resource URI becomes: "api:data://sub_resource"
-    prompt_separator="."      # Prompt name becomes: "api.sub_prompt_name"
+    tool_separator="_",       # Tool name becomes: "api_sub_tool_name"
+    resource_separator="+",   # Resource URI becomes: "api+data://sub_resource"
+    prompt_separator="_"      # Prompt name becomes: "api_sub_prompt_name"
 )
 ```
 
@@ -197,12 +197,16 @@ await main_mcp.import_server(
 main_mcp.mount(
     prefix="api",
     app=some_subserver,
-    tool_separator="/",       # Tool name becomes: "api/sub_tool_name"
-    resource_separator=":",   # Resource URI becomes: "api:data://sub_resource"
-    prompt_separator="."      # Prompt name becomes: "api.sub_prompt_name"
+    tool_separator="_",       # Tool name becomes: "api_sub_tool_name"
+    resource_separator="+",   # Resource URI becomes: "api+data://sub_resource"
+    prompt_separator="_"      # Prompt name becomes: "api_sub_prompt_name"
 )
 ```
 </CodeGroup>
 <Warning>
 Be cautious when choosing separators. Some MCP clients (like Claude Desktop) might have restrictions on characters allowed in tool names (e.g., `/` might not be supported). The defaults (`_` for names, `+` for URIs) are generally safe.
 </Warning>
+
+<Tip>
+To "cleanly" import or mount a server, set the prefix and all separators to `""` (empty string). This is generally unecessary but could save a couple tokens at the risk of a name collision!
+</Tip>
