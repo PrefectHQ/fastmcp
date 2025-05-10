@@ -43,7 +43,7 @@ def fastmcp_server():
 
 def run_server(host: str, port: int) -> None:
     try:
-        app = fastmcp_server().streamable_http_app()
+        app = fastmcp_server().http_app()
         server = uvicorn.Server(
             config=uvicorn.Config(
                 app=app,

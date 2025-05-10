@@ -15,7 +15,7 @@
 > [!NOTE]
 > #### FastMCP 2.0 & The Official MCP SDK
 >
-> Recognize the `FastMCP` name? You might have used the version integrated into the [official MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk), which was based on **FastMCP 1.0**.
+> Recognize the `FastMCP` name? You might have seen the version that was contributed to the [official MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk), which was based on **FastMCP 1.0**.
 >
 > **Welcome to FastMCP 2.0!** This is the actively developed successor, and it significantly expands on 1.0 by introducing powerful client capabilities, server proxying & composition, OpenAPI/FastAPI integration, and more advanced features.
 >

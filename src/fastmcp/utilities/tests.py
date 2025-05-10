@@ -55,7 +55,7 @@ def temporary_settings(**kwargs: Any):
 def _run_server(mcp_server: FastMCP, transport: Literal["sse"], port: int) -> None:
     # Some Starlette apps are not pickleable, so we need to create them here based on the indicated transport
     if transport == "sse":
-        app = mcp_server.sse_app()
+        app = mcp_server.http_app(transport="sse")
     else:
         raise ValueError(f"Invalid transport: {transport}")
     uvicorn_server = uvicorn.Server(

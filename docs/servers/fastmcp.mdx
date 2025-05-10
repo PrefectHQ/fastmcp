@@ -114,11 +114,16 @@ if __name__ == "__main__":
     # This runs the server, defaulting to STDIO transport
     mcp.run()
     
-    # To use a different transport, e.g., Streamable HTTP:
+    # To use a different transport, e.g., HTTP:
     # mcp.run(transport="streamable-http", host="127.0.0.1", port=9000)
 ```
 
-FastMCP supports several transport options like STDIO (default, for local tools), Streamable HTTP (recommended for web services), and SSE (legacy web transport). The server can also be run using the FastMCP CLI.
+FastMCP supports several transport options: 
+- STDIO (default, for local tools)
+- Streamable HTTP (recommended for web services)
+- SSE (legacy web transport, deprecated)
+
+The server can also be run using the FastMCP CLI.
 
 For detailed information on each transport, how to configure them (host, port, paths), and when to use which, please refer to the [**Running Your FastMCP Server**](/deployment/running-server) guide.
 

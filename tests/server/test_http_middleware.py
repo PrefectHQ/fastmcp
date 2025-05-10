@@ -1,4 +1,4 @@
-"""Tests for custom middleware in HTTP servers."""
+"""Tests for middleware in HTTP apps."""
 
 from collections.abc import Callable
 from typing import Any
@@ -68,7 +68,7 @@ async def test_sse_app_with_custom_middleware():
     server._additional_http_routes = routes
 
     # Create the app with custom middleware
-    app = server.sse_app(middleware=custom_middleware)
+    app = server.http_app(transport="sse", middleware=custom_middleware)
 
     # Create a test client
     transport = ASGITransport(app=app)
@@ -99,7 +99,7 @@ async def test_streamable_http_app_with_custom_middleware():
     server._additional_http_routes = routes
 
     # Create the app with custom middleware
-    app = server.streamable_http_app(middleware=custom_middleware)
+    app = server.http_app(transport="streamable-http", middleware=custom_middleware)
 
     # Create a test client
     transport = ASGITransport(app=app)
@@ -204,7 +204,7 @@ async def test_multiple_middleware_ordering():
     server._additional_http_routes = routes
 
     # Create the app with custom middleware
-    app = server.sse_app(middleware=custom_middleware)
+    app = server.http_app(transport="sse", middleware=custom_middleware)
 
     # Create a test client
     transport = ASGITransport(app=app)
