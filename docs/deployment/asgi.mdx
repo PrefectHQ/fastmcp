@@ -63,9 +63,33 @@ Or, from the command line:
 uvicorn path.to.your.app:http_app --host 0.0.0.0 --port 8000
 ```
 
+### Custom Middleware
+
+<VersionBadge version="2.3.2" />
+
+You can add custom Starlette middleware to your FastMCP ASGI apps by passing a list of middleware instances to the app creation methods:
+
+```python
+from fastmcp import FastMCP
+from starlette.middleware import Middleware
+from starlette.middleware.cors import CORSMiddleware
+
+# Create your FastMCP server
+mcp = FastMCP("MyServer")
+
+# Define custom middleware
+custom_middleware = [
+    Middleware(CORSMiddleware, allow_origins=["*"]),
+]
+
+# Create ASGI app with custom middleware
+http_app = mcp.streamable_http_app(middleware=custom_middleware)
+```
 
 
 ## Starlette Integration
+
+<VersionBadge version="2.3.1" />
 
 You can mount your FastMCP server in another Starlette application using the `Mount` class.
 
@@ -126,6 +150,8 @@ In this setup, the MCP server is accessible at the `/outer/inner/mcp` path of th
 For Streamable HTTP transport, you **must** pass the lifespan context from the FastMCP app to the *outer* Starlette app, as nested lifespans are not recognized. Otherwise, the FastMCP server's session manager will not be properly initialized.
 </Warning>
 ## FastAPI Integration
+
+<VersionBadge version="2.3.1" />
 
 FastAPI is built on Starlette, so you can mount your FastMCP server in a similar way:
 

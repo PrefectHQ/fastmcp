@@ -747,7 +747,14 @@ class FastMCP(Generic[LifespanResultT]):
         message_path: str | None = None,
         middleware: list[Middleware] | None = None,
     ) -> Starlette:
-        """Return an instance of the SSE server app."""
+        """
+        Create a Starlette app for the SSE server.
+
+        Args:
+            path: The path to the SSE endpoint
+            message_path: The path to the message endpoint
+            middleware: A list of middleware to apply to the app
+        """
         return create_sse_app(
             server=self,
             message_path=message_path or self.settings.message_path,
@@ -764,7 +771,13 @@ class FastMCP(Generic[LifespanResultT]):
         path: str | None = None,
         middleware: list[Middleware] | None = None,
     ) -> Starlette:
-        """Return an instance of the StreamableHTTP server app."""
+        """
+        Create a Starlette app for the StreamableHTTP server.
+
+        Args:
+            path: The path to the StreamableHTTP endpoint
+            middleware: A list of middleware to apply to the app
+        """
         from fastmcp.server.http import create_streamable_http_app
 
         return create_streamable_http_app(
