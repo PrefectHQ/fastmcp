@@ -22,8 +22,7 @@ As your MCP applications grow, you might want to organize your tools, resources,
 
 ### Importing vs Mounting
 
-The choice of importing or mounting depends on your use case and requirements. In general, importing is best for simpler cases because it copies the imported server's components into the main server, treating them as native integrations. Mounting is best for more complex cases where you need to delegate requests to the subserver at runtime.
-
+The choice of importing or mounting depends on your use case and requirements.
 
 | Feature | Importing | Mounting |
 |---------|----------------|---------|
@@ -36,7 +35,6 @@ The choice of importing or mounting depends on your use case and requirements. I
 
 FastMCP supports [MCP proxying](/patterns/proxy), which allows you to mirror a local or remote server in a local FastMCP instance. Proxies are fully compatible with both importing and mounting.
 
-
 ## Importing (Static Composition)
 
 The `import_server()` method copies all components (tools, resources, templates, prompts) from one `FastMCP` instance (the *subserver*) into another (the *main server*). A `prefix` is added to avoid naming conflicts.
@@ -45,9 +43,7 @@ The `import_server()` method copies all components (tools, resources, templates,
 from fastmcp import FastMCP
 import asyncio
 
-# --- Define Subservers ---
-
-# Weather Service
+# Define subservers
 weather_mcp = FastMCP(name="WeatherService")
 
 @weather_mcp.tool()
@@ -60,43 +56,19 @@ def list_supported_cities() -> list[str]:
     """List cities with weather support."""
     return ["London", "Paris", "Tokyo"]
 
-# Calculator Service
-calc_mcp = FastMCP(name="CalculatorService")
-
-@calc_mcp.tool()
-def add(a: int, b: int) -> int:
-    """Add two numbers."""
-    return a + b
-
-@calc_mcp.prompt()
-def explain_addition() -> str:
-    """Explain the concept of addition."""
-    return "Addition is the process of combining two or more numbers."
-
-# --- Define Main Server ---
+# Define main server
 main_mcp = FastMCP(name="MainApp")
 
-# --- Import Subservers ---
+# Import subserver
 async def setup():
-    # Import weather service with prefix "weather"
     await main_mcp.import_server("weather", weather_mcp)
 
-    # Import calculator service with prefix "calc"
-    await main_mcp.import_server("calc", calc_mcp)
-
-# --- Now, main_mcp contains *copied* components ---
-# Tools:
-# - "weather_get_forecast"
-# - "calc_add"
-# Resources:
-# - "weather+data://cities/supported" (prefixed URI)
-# Prompts:
-# - "calc_explain_addition"
+# Result: main_mcp now contains prefixed components:
+# - Tool: "weather_get_forecast"
+# - Resource: "weather+data://cities/supported" 
 
 if __name__ == "__main__":
-    # In a real app, you might run this async or setup imports differently
     asyncio.run(setup())
-    # Run the main server, which now includes components from both subservers
     main_mcp.run()
 ```
 
@@ -104,34 +76,16 @@ if __name__ == "__main__":
 
 When you call `await main_mcp.import_server(prefix, subserver)`:
 
-1.  **Tools**: All tools from `subserver` are added to `main_mcp`. Their names are automatically prefixed using the `prefix` and a default separator (`_`).
+1.  **Tools**: All tools from `subserver` are added to `main_mcp` with names prefixed using `{prefix}_`.
     -   `subserver.tool(name="my_tool")` becomes `main_mcp.tool(name="{prefix}_my_tool")`.
-2.  **Resources**: All resources from `subserver` are added. Their URIs are prefixed using the `prefix` and a default separator (`+`).
+2.  **Resources**: All resources are added with URIs prefixed using `{prefix}+`.
     -   `subserver.resource(uri="data://info")` becomes `main_mcp.resource(uri="{prefix}+data://info")`.
-3.  **Resource Templates**: All templates from `subserver` are added. Their URI *templates* are prefixed similarly to resources.
+3.  **Resource Templates**: Templates are prefixed similarly to resources.
     -   `subserver.resource(uri="data://{id}")` becomes `main_mcp.resource(uri="{prefix}+data://{id}")`.
-4.  **Prompts**: All prompts from `subserver` are added, with names prefixed like tools.
+4.  **Prompts**: All prompts are added with names prefixed like tools.
     -   `subserver.prompt(name="my_prompt")` becomes `main_mcp.prompt(name="{prefix}_my_prompt")`.
 
-Note that `import_server` performs a **one-time copy** of components from the `subserver` into the `main_mcp` instance at the time the method is called. Changes made to the `subserver` *after* `import_server` is called **will not** be reflected in `main_mcp`. Also, the `subserver`'s `lifespan` context is **not** executed by the main server when using `import_server`.
-
-### Customizing Separators
-
-You might prefer different separators for the prefixed names and URIs. You can customize these when calling `import_server()`:
-
-```python
-await main_mcp.import_server(
-    prefix="api",
-    app=some_subserver,
-    tool_separator="/",       # Tool name becomes: "api/sub_tool_name"
-    resource_separator=":",   # Resource URI becomes: "api:data://sub_resource"
-    prompt_separator="."      # Prompt name becomes: "api.sub_prompt_name"
-)
-```
-
-<Warning>
-Be cautious when choosing separators. Some MCP clients (like Claude Desktop) might have restrictions on characters allowed in tool names (e.g., `/` might not be supported). The defaults (`_` for names, `+` for URIs) are generally safe.
-</Warning>
+Note that `import_server` performs a **one-time copy** of components. Changes made to the `subserver` *after* importing **will not** be reflected in `main_mcp`. The `subserver`'s `lifespan` context is also **not** executed by the main server.
 
 ## Mounting (Live Linking)
 
@@ -141,88 +95,65 @@ The `mount()` method creates a **live link** between the `main_mcp` server and t
 import asyncio
 from fastmcp import FastMCP, Client
 
-# --- Define Subserver ---
+# Define subserver
 dynamic_mcp = FastMCP(name="DynamicService")
+
 @dynamic_mcp.tool()
-def initial_tool(): return "Initial Tool Exists"
+def initial_tool():
+    """Initial tool demonstration."""
+    return "Initial Tool Exists"
 
-# --- Define Main Server ---
+# Mount subserver (synchronous operation)
 main_mcp = FastMCP(name="MainAppLive")
-
-# --- Mount Subserver (Sync operation) ---
 main_mcp.mount("dynamic", dynamic_mcp)
 
-print("Mounted dynamic_mcp.")
-
-# --- Add a tool AFTER mounting ---
+# Add a tool AFTER mounting - it will be accessible through main_mcp
 @dynamic_mcp.tool()
-def added_later(): return "Tool Added Dynamically!"
+def added_later():
+    """Tool added after mounting."""
+    return "Tool Added Dynamically!"
 
-print("Added 'added_later' tool to dynamic_mcp.")
-
-# --- Test Access ---
+# Testing access to mounted tools
 async def test_dynamic_mount():
-    # Need to use await for get_tools now
-    tools_before = await main_mcp.get_tools()
-    print("Tools available via main_mcp:", list(tools_before.keys()))
-    # Expected: ['dynamic_initial_tool', 'dynamic_added_later']
-
+    tools = await main_mcp.get_tools()
+    print("Available tools:", list(tools.keys()))
+    # Shows: ['dynamic_initial_tool', 'dynamic_added_later']
+    
     async with Client(main_mcp) as client:
-        # Call the dynamically added tool via the main server
         result = await client.call_tool("dynamic_added_later")
-        print("Result of calling dynamic_added_later:", result[0].text)
-        # Expected: Tool Added Dynamically!
+        print("Result:", result[0].text)
+        # Shows: "Tool Added Dynamically!"
 
 if __name__ == "__main__":
-     # Need async context to test
-     asyncio.run(test_dynamic_mount())
-     # To run the server itself:
-     # main_mcp.run()
+    asyncio.run(test_dynamic_mount())
 ```
 
 ### How Mounting Works
 
-Mounting creates a relationship between two servers where one server (the parent) delegates certain operations to another (the mounted server) based on prefixes. When mounting is configured:
+When mounting is configured:
 
 1. **Live Link**: The parent server establishes a connection to the mounted server.
-2. **Dynamic Updates**: Changes made to the mounted server (e.g., adding new tools) are immediately reflected when accessed through the parent server.
+2. **Dynamic Updates**: Changes to the mounted server are immediately reflected when accessed through the parent.
 3. **Prefixed Access**: The parent server uses prefixes to route requests to the mounted server.
 4. **Delegation**: Requests for components matching the prefix are delegated to the mounted server at runtime.
 
 The same prefixing rules apply as with `import_server` for naming tools, resources, templates, and prompts.
 
-### Customizing Separators
-
-Similar to `import_server`, you can customize the separators for the prefixed names and URIs:
-
-```python
-main_mcp.mount(
-    prefix="api",
-    app=some_subserver,
-    tool_separator="/",       # Tool name becomes: "api/sub_tool_name"
-    resource_separator=":",   # Resource URI becomes: "api:data://sub_resource"
-    prompt_separator="."      # Prompt name becomes: "api.sub_prompt_name"
-)
-```
-
 ### Direct vs. Proxy Mounting
 
 <VersionBadge version="2.2.7" />
 
-FastMCP supports two modes for mounting servers:
+FastMCP supports two mounting modes:
 
-1. **Direct Mounting** (default): The parent server directly accesses the mounted server's objects in memory for optimal performance and observability. In this mode:
+1. **Direct Mounting** (default): The parent server directly accesses the mounted server's objects in memory.
    - No client lifecycle events occur on the mounted server
    - The mounted server's lifespan context is not executed
    - Communication is handled through direct method calls
    
-2. **Proxy Mounting**: The parent server treats the mounted server as a separate entity and communicates with it through a client interface. In this mode:
+2. **Proxy Mounting**: The parent server treats the mounted server as a separate entity and communicates with it through a client interface.
    - Full client lifecycle events occur on the mounted server
    - The mounted server's lifespan is executed when a client connects
    - Communication happens via an in-memory Client transport
-   - This preserves all client-facing behaviors but is slightly less efficient
-
-You can control which mode to use with the `as_proxy` parameter:
 
 ```python
 # Direct mounting (default when no custom lifespan)
@@ -232,109 +163,50 @@ main_mcp.mount("api", api_server)
 main_mcp.mount("api", api_server, as_proxy=True)
 ```
 
-FastMCP automatically uses proxy mounting when the mounted server has a custom lifespan, but you can override this behavior by explicitly setting `as_proxy=False` or `as_proxy=True`.
+FastMCP automatically uses proxy mounting when the mounted server has a custom lifespan, but you can override this behavior with the `as_proxy` parameter.
 
 #### Interaction with Proxy Servers
 
-When using `FastMCP.from_client()` to create a proxy server, mounting that server will always use proxy mounting since the proxy server is already designed to be accessed via a client interface.
+When using `FastMCP.from_client()` to create a proxy server, mounting that server will always use proxy mounting:
 
 ```python
-from fastmcp import FastMCP, Client
-
 # Create a proxy for a remote server
 remote_proxy = FastMCP.from_client(Client("http://example.com/mcp"))
 
-# Mount the proxy - this will preserve full client lifecycle
+# Mount the proxy (always uses proxy mounting)
 main_server.mount("remote", remote_proxy)
 ```
 
-This is particularly useful for incorporating remote servers into your local application architecture.
+## Customizing Separators
 
-
-## Example: Modular Application
-
-Here's how a modular application might use `import_server`:
+Both `import_server()` and `mount()` allow you to customize the separators used for prefixing components. The defaults are `_` for tools and prompts, and `+` for resources.
 
 <CodeGroup>
-```python main.py
-from fastmcp import FastMCP
-import asyncio
 
-# Import the servers (see other files)
-from modules.text_server import text_mcp
-from modules.data_server import data_mcp
-
-app = FastMCP(name="MainApplication")
-
-# Setup function for async imports
-async def setup():
-    # Import the utility servers
-    await app.import_server("text", text_mcp)
-    await app.import_server("data", data_mcp)
-
-@app.tool()
-def process_and_analyze(record_id: int) -> str:
-    """Fetches a record and analyzes its string representation."""
-    # In a real application, you'd use proper methods to interact between
-    # imported tools rather than accessing internal managers
-    
-    # Get record data
-    record = {"id": record_id, "value": random.random()}
-    
-    # Count words in the record string representation
-    word_count = len(str(record).split())
-    
-    return (
-        f"Record {record_id} has {word_count} words in its string "
-        f"representation."
-    )
-
-if __name__ == "__main__":
-    # Run async setup before starting the server
-    asyncio.run(setup())
-    # Run the server
-    app.run()
-```
-```python modules/text_server.py
-from fastmcp import FastMCP
-
-text_mcp = FastMCP(name="TextUtilities")
-
-@text_mcp.tool()
-def count_words(text: str) -> int:
-    """Counts words in a text."""
-    return len(text.split())
-
-@text_mcp.resource("resource://stopwords")
-def get_stopwords() -> list[str]:
-    """Return a list of common stopwords."""
-    return ["the", "a", "is", "in"]
+```python import_server
+await main_mcp.import_server(
+    prefix="api",
+    app=some_subserver,
+    tool_separator="_",       # Tool name becomes: "api_sub_tool_name"
+    resource_separator="+",   # Resource URI becomes: "api+data://sub_resource"
+    prompt_separator="_"      # Prompt name becomes: "api_sub_prompt_name"
+)
 ```
 
-```python modules/data_server.py
-from fastmcp import FastMCP
-import random
-from typing import dict
-
-data_mcp = FastMCP(name="DataAPI")
-
-@data_mcp.tool()
-def fetch_record(record_id: int) -> dict:
-    """Fetches a dummy data record."""
-    return {"id": record_id, "value": random.random()}
-
-@data_mcp.resource("data://schema/{table}")
-def get_table_schema(table: str) -> dict:
-    """Provides a dummy schema for a table."""
-    return {"table": table, "columns": ["id", "value"]}
+```python mount
+main_mcp.mount(
+    prefix="api",
+    app=some_subserver,
+    tool_separator="_",       # Tool name becomes: "api_sub_tool_name"
+    resource_separator="+",   # Resource URI becomes: "api+data://sub_resource"
+    prompt_separator="_"      # Prompt name becomes: "api_sub_prompt_name"
+)
 ```
-
 </CodeGroup>
-Now, running `main.py` starts a server that exposes:
-- `text_count_words`
-- `data_fetch_record`
-- `process_and_analyze`
-- `text+resource://stopwords`
-- `data+data://schema/{table}` (template)
+<Warning>
+Be cautious when choosing separators. Some MCP clients (like Claude Desktop) might have restrictions on characters allowed in tool names (e.g., `/` might not be supported). The defaults (`_` for names, `+` for URIs) are generally safe.
+</Warning>
 
-This pattern promotes code organization and reuse within your FastMCP projects. 
+<Tip>
+To "cleanly" import or mount a server, set the prefix and all separators to `""` (empty string). This is generally unecessary but could save a couple tokens at the risk of a name collision!
+</Tip>
