@@ -9,6 +9,7 @@ from .transports import (
     UvxStdioTransport,
     NpxStdioTransport,
     FastMCPTransport,
+    StreamableHttpTransport,
 )
 
 __all__ = [
@@ -22,4 +23,5 @@ __all__ = [
     "UvxStdioTransport",
     "NpxStdioTransport",
     "FastMCPTransport",
+    "StreamableHttpTransport",
 ]
