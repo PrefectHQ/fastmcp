@@ -3,8 +3,9 @@ from __future__ import annotations as _annotations
 from typing import TYPE_CHECKING, Literal
 
 from mcp.server.auth.settings import AuthSettings
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from typing_extensions import Self
 
 if TYPE_CHECKING:
     pass
@@ -37,6 +38,15 @@ class Settings(BaseSettings):
         LLMs that stringify JSON instead of passing actual lists and objects.
         Defaults to False.""",
     )
+
+    @model_validator(mode="after")
+    def setup_logging(self) -> Self:
+        """Finalize the settings."""
+        from fastmcp.utilities.logging import configure_logging
+
+        configure_logging(self.log_level)
+
+        return self
 
 
 class ServerSettings(BaseSettings):
