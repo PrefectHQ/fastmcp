@@ -119,9 +119,9 @@ class FastMCP(Generic[LifespanResultT]):
         if settings:
             # TODO: remove settings. Deprecated since 2.3.4
             warnings.warn(
-                "Passing transport-specific and other runtime settings as kwargs "
+                "Passing runtime and transport-specific settings as kwargs "
                 "to the FastMCP constructor is deprecated (as of 2.3.4), "
-                "including most transport settings. Provide settings when calling "
+                "including most transport settings. If possible, provide settings when calling "
                 "run() instead.",
                 DeprecationWarning,
                 stacklevel=2,

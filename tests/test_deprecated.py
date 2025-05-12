@@ -13,7 +13,7 @@ def test_fastmcp_kwargs_settings_deprecation_warning():
     """Test that passing settings as kwargs to FastMCP raises a deprecation warning."""
     with pytest.warns(
         DeprecationWarning,
-        match="Passing settings as kwargs to the FastMCP constructor is deprecated",
+        match="Passing runtime and transport-specific settings as kwargs to the FastMCP constructor is deprecated",
     ):
         server = FastMCP("TestServer", host="127.0.0.2", port=8001)
         assert server.settings.host == "127.0.0.2"
