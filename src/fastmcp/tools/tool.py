@@ -143,6 +143,7 @@ class Tool(BaseModel):
 
             return _convert_to_content(result, serializer=self.serializer)
         except Exception as e:
+            logger.exception(f"Tool {self.name} failed")
             raise ToolError(f"Error executing tool {self.name}: {e}") from e
 
     def to_mcp_tool(self, **overrides: Any) -> MCPTool:
