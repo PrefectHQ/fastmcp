@@ -712,6 +712,25 @@ The duplicate behavior options are:
 -   `"replace"`: Silently replaces the existing tool with the new one.
 -   `"ignore"`: Keeps the original tool and ignores the new registration attempt.
 
+### Removing Tools
+
+<VersionBadge version="2.3.4" />
+
+You can dynamically remove tools from a server using the `remove_tool` method:
+
+```python
+from fastmcp import FastMCP
+
+mcp = FastMCP(name="DynamicToolServer")
+
+@mcp.tool()
+def calculate_sum(a: int, b: int) -> int:
+    """Add two numbers together."""
+    return a + b
+
+mcp.remove_tool("calculate_sum")
+```
+
 ### Legacy JSON Parsing
 
 <VersionBadge version="2.2.10" />
