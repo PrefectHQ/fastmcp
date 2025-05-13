@@ -117,7 +117,7 @@ class TestAddTools:
     def test_remove_tool_missing_key(self):
         """Test removing a tool that does not exist raises NotFoundError."""
         manager = ToolManager()
-        with pytest.raises(NotFoundError, match="Tool 'missing' not found"):
+        with pytest.raises(NotFoundError, match=f"Unknown tool: {'missing'}"):
             manager.remove_tool("missing")
 
     def test_warn_on_duplicate_tools(self, caplog):

@@ -106,7 +106,7 @@ class ToolManager:
         if key in self._tools:
             del self._tools[key]
         else:
-            raise NotFoundError(f"Tool {key!r} not found.")
+            raise NotFoundError(f"Unknown tool: {key}")
 
     async def call_tool(
         self, key: str, arguments: dict[str, Any]
