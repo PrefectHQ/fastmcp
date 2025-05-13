@@ -186,21 +186,6 @@ class TestResourceTemplate:
         data = json.loads(content)
         assert data == {"key": "foo", "value": 123}
 
-    async def test_template_error(self):
-        """Test error handling in template resource creation."""
-
-        def failing_func(x: str) -> str:
-            raise ValueError("Test error")
-
-        template = ResourceTemplate.from_function(
-            fn=failing_func,
-            uri_template="fail://{x}",
-            name="fail",
-        )
-
-        with pytest.raises(ValueError, match="Error creating resource from template"):
-            await template.create_resource("fail://test", {"x": "test"})
-
     async def test_async_text_resource(self):
         """Test creating a text resource from async function."""
 

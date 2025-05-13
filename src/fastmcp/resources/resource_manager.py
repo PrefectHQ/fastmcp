@@ -244,7 +244,11 @@ class ResourceManager:
                         uri_str,
                         params=params,
                     )
+                except ResourceError as e:
+                    logger.error(f"Error creating resource from template: {e}")
+                    raise e
                 except Exception as e:
+                    logger.error(f"Error creating resource from template: {e}")
                     raise ValueError(f"Error creating resource from template: {e}")
 
         raise NotFoundError(f"Unknown resource: {uri_str}")

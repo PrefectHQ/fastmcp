@@ -63,30 +63,23 @@ class FunctionResource(Resource):
         """Read the resource by calling the wrapped function."""
         from fastmcp.server.context import Context
 
-        try:
-            kwargs = {}
-            context_kwarg = find_kwarg_by_type(self.fn, kwarg_type=Context)
-            if context_kwarg is not None:
-                kwargs[context_kwarg] = get_context()
+        kwargs = {}
+        context_kwarg = find_kwarg_by_type(self.fn, kwarg_type=Context)
+        if context_kwarg is not None:
+            kwargs[context_kwarg] = get_context()
 
-            result = self.fn(**kwargs)
-            if inspect.iscoroutinefunction(self.fn):
-                result = await result
+        result = self.fn(**kwargs)
+        if inspect.iscoroutinefunction(self.fn):
+            result = await result
 
-            if isinstance(result, Resource):
-                return await result.read()
-            elif isinstance(result, bytes):
-                return result
-            elif isinstance(result, str):
-                return result
-            else:
-                return pydantic_core.to_json(result, fallback=str, indent=2).decode()
-        except ResourceError as e:
-            logger.exception(f"Error reading resource {self.uri}: {e}")
-            raise e
-        except Exception as e:
-            logger.exception(f"Error reading resource {self.uri}: {e}")
-            raise ValueError(f"Error reading resource {self.uri}.") from e
+        if isinstance(result, Resource):
+            return await result.read()
+        elif isinstance(result, bytes):
+            return result
+        elif isinstance(result, str):
+            return result
+        else:
+            return pydantic_core.to_json(result, fallback=str, indent=2).decode()
 
 
 class FileResource(Resource):

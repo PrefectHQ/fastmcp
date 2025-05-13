@@ -469,3 +469,33 @@ class TestErrorHandling:
             with pytest.raises(Exception) as excinfo:
                 await client.read_resource(AnyUrl("error://resource"))
             assert "This is a resource error (xyz)" in str(excinfo.value)
+
+    async def test_general_template_exceptions_are_masked(self):
+        mcp = FastMCP("TestServer")
+
+        @mcp.resource(uri="exception://resource/{id}")
+        async def exception_resource(id: str):
+            raise ValueError("This is an internal error (sensitive)")
+
+        client = Client(transport=FastMCPTransport(mcp))
+
+        async with client:
+            with pytest.raises(Exception) as excinfo:
+                await client.read_resource(AnyUrl("exception://resource/123"))
+            assert "Error reading resource" in str(excinfo.value)
+            assert "sensitive" not in str(excinfo.value)
+            assert "internal error" not in str(excinfo.value)
+
+    async def test_template_errors_are_sent_to_client(self):
+        mcp = FastMCP("TestServer")
+
+        @mcp.resource(uri="error://resource/{id}")
+        async def error_resource(id: str):
+            raise ResourceError("This is a resource error (xyz)")
+
+        client = Client(transport=FastMCPTransport(mcp))
+
+        async with client:
+            with pytest.raises(Exception) as excinfo:
+                await client.read_resource(AnyUrl("error://resource/123"))
+            assert "This is a resource error (xyz)" in str(excinfo.value)

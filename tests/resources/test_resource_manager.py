@@ -600,8 +600,7 @@ class TestResourceErrorHandling:
         )
         manager.add_template(template)
 
-        # ResourceErrors in templates are wrapped in ValueError
-        with pytest.raises(ValueError) as excinfo:
+        with pytest.raises(ResourceError) as excinfo:
             await manager.read_resource("error://test")
 
         # The original error message should be included in the ValueError
@@ -623,30 +622,5 @@ class TestResourceErrorHandling:
         manager.add_template(template)
 
         # First, the template creation will fail with ValueError
-        with pytest.raises(ValueError):
+        with pytest.raises(ResourceError, match="Error reading resource"):
             await manager.read_resource("buggy://test")
-
-        # Let's test with a template that returns a resource that fails
-        def create_failing_resource(param: str):
-            async def failing_resource():
-                raise ValueError(f"Resource from template fails with {param}")
-
-            return FunctionResource(
-                uri=AnyUrl(f"failing://{param}"),
-                name=f"failing_{param}",
-                fn=failing_resource,
-            )
-
-        template = ResourceTemplate.from_function(
-            fn=create_failing_resource,
-            uri_template="failing://{param}",
-            name="failing_template",
-        )
-        manager.add_template(template)
-
-        with pytest.raises(ResourceError) as excinfo:
-            await manager.read_resource("failing://test")
-
-        # Exception should contain resource URI but not internal details
-        assert "Error reading resource 'failing://test'" in str(excinfo.value)
-        assert "Resource from template fails with test" not in str(excinfo.value)
