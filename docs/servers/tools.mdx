@@ -248,26 +248,29 @@ def do_nothing() -> None:
 
 ### Error Handling
 
-If your tool encounters an error, simply raise a standard Python exception (`ValueError`, `TypeError`, `FileNotFoundError`, custom exceptions, etc.).
+<VersionBadge version="2.3.4" />
 
-```python
+If your tool encounters an error, you can raise a standard Python exception (`ValueError`, `TypeError`, `FileNotFoundError`, custom exceptions, etc.) or a FastMCP `ToolError`.
+
+In all cases, the exception is logged and converted into an MCP error response to be sent back to the client LLM. For security reasons, the error message is **not** included in the response by default. However, if you raise a `ToolError`, the contents of the exception **are** included in the response. This allows you to provide informative error messages to the client LLM on an opt-in basis, which can help the LLM understand failures and react appropriately.
+
+```python {2, 10, 14}
+from fastmcp import FastMCP
+from fastmcp.exceptions import ToolError
+
 @mcp.tool()
 def divide(a: float, b: float) -> float:
     """Divide a by b."""
-    if b == 0:
-        # Raise a standard exception
-        raise ValueError("Division by zero is not allowed.")
+
+    # Python exceptions raise errors but the contents are not sent to clients
     if not isinstance(a, (int, float)) or not isinstance(b, (int, float)):
         raise TypeError("Both arguments must be numbers.")
+
+    if b == 0:
+        # ToolError contents are sent back to clients
+        raise ToolError("Division by zero is not allowed.")
     return a / b
 ```
-
-FastMCP automatically catches exceptions raised within your tool function:
-1.  It converts the exception into an MCP error response, typically including the exception type and message.
-2.  This error response is sent back to the client/LLM.
-3.  The LLM can then inform the user or potentially try the tool again with different arguments.
-
-Using informative exceptions helps the LLM understand failures and react appropriately.
 
 ### Annotations
 

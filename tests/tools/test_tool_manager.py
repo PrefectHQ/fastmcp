@@ -643,7 +643,7 @@ class TestContextHandling:
 
         with context:
             with pytest.raises(
-                ToolError, match="Error executing tool tool_with_context"
+                ToolError, match="Error calling tool 'tool_with_context'"
             ):
                 await manager.call_tool("tool_with_context", {"x": 42})
 
@@ -740,3 +740,67 @@ class TestCustomToolNames:
 
         # But the function is different
         assert stored_tool.fn.__name__ == "replacement_fn"
+
+
+class TestToolErrorHandling:
+    """Test error handling in the ToolManager."""
+
+    async def test_tool_error_passthrough(self):
+        """Test that ToolErrors are passed through directly."""
+        manager = ToolManager()
+
+        def error_tool(x: int) -> int:
+            """Tool that raises a ToolError."""
+            raise ToolError("Specific tool error")
+
+        manager.add_tool_from_fn(error_tool)
+
+        with pytest.raises(ToolError, match="Specific tool error"):
+            await manager.call_tool("error_tool", {"x": 42})
+
+    async def test_exception_converted_to_tool_error(self):
+        """Test that other exceptions are converted to ToolError."""
+        manager = ToolManager()
+
+        def buggy_tool(x: int) -> int:
+            """Tool that raises a ValueError."""
+            raise ValueError("Internal error details")
+
+        manager.add_tool_from_fn(buggy_tool)
+
+        with pytest.raises(ToolError) as excinfo:
+            await manager.call_tool("buggy_tool", {"x": 42})
+
+        # Exception message should contain the tool name but not the internal details
+        assert "Error calling tool 'buggy_tool'" in str(excinfo.value)
+        assert "Internal error details" not in str(excinfo.value)
+
+    async def test_async_tool_error_passthrough(self):
+        """Test that ToolErrors from async tools are passed through directly."""
+        manager = ToolManager()
+
+        async def async_error_tool(x: int) -> int:
+            """Async tool that raises a ToolError."""
+            raise ToolError("Async tool error")
+
+        manager.add_tool_from_fn(async_error_tool)
+
+        with pytest.raises(ToolError, match="Async tool error"):
+            await manager.call_tool("async_error_tool", {"x": 42})
+
+    async def test_async_exception_converted_to_tool_error(self):
+        """Test that other exceptions from async tools are converted to ToolError."""
+        manager = ToolManager()
+
+        async def async_buggy_tool(x: int) -> int:
+            """Async tool that raises a ValueError."""
+            raise ValueError("Internal async error details")
+
+        manager.add_tool_from_fn(async_buggy_tool)
+
+        with pytest.raises(ToolError) as excinfo:
+            await manager.call_tool("async_buggy_tool", {"x": 42})
+
+        # Exception message should contain the tool name but not the internal details
+        assert "Error calling tool 'async_buggy_tool'" in str(excinfo.value)
+        assert "Internal async error details" not in str(excinfo.value)

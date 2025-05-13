@@ -17,6 +17,7 @@ from mcp.types import (
 from pydantic import AnyUrl, Field
 
 from fastmcp import Client, Context, FastMCP
+from fastmcp.client.transports import FastMCPTransport
 from fastmcp.exceptions import ClientError
 from fastmcp.prompts.prompt import EmbeddedResource, PromptMessage
 from fastmcp.resources import FileResource, FunctionResource
@@ -94,12 +95,19 @@ class TestTools:
             with pytest.raises(Exception):
                 await client.call_tool("error_tool", {})
 
-    async def test_call_tool_error_as_client_raw(self, tool_server: FastMCP):
-        async with Client(tool_server) as client:
-            result = await client.call_tool_mcp("error_tool", {})
-        assert result.isError
-        assert isinstance(result.content[0], TextContent)
-        assert "Test error" in result.content[0].text
+    async def test_call_tool_error_as_client_raw(self):
+        """Test raising and catching errors from a tool."""
+        mcp = FastMCP()
+        client = Client(transport=FastMCPTransport(mcp))
+
+        @mcp.tool()
+        def error_tool():
+            raise ValueError("Test error")
+
+        async with client:
+            with pytest.raises(Exception) as excinfo:
+                await client.call_tool("error_tool", {})
+            assert "Error calling tool 'error_tool'" in str(excinfo.value)
 
     async def test_tool_returns_list(self, tool_server: FastMCP):
         async with Client(tool_server) as client:
@@ -313,7 +321,7 @@ class TestToolParameters:
         async with Client(mcp) as client:
             with pytest.raises(
                 ClientError,
-                match="Input should be a valid integer, unable to parse string as an integer",
+                match="Error calling tool 'my_tool'",
             ):
                 await client.call_tool("my_tool", {"x": "not an int"})
 
@@ -357,10 +365,7 @@ class TestToolParameters:
             pass
 
         async with Client(mcp) as client:
-            with pytest.raises(
-                ClientError,
-                match="Input should be greater than or equal to 1",
-            ):
+            with pytest.raises(ClientError, match="Error calling tool 'analyze'"):
                 await client.call_tool("analyze", {"x": 0})
 
     async def test_default_field_validation(self):
@@ -371,10 +376,7 @@ class TestToolParameters:
             pass
 
         async with Client(mcp) as client:
-            with pytest.raises(
-                ClientError,
-                match="Input should be greater than or equal to 1",
-            ):
+            with pytest.raises(ClientError, match="Error calling tool 'analyze'"):
                 await client.call_tool("analyze", {"x": 0})
 
     async def test_default_field_is_still_required_if_no_default_specified(self):
@@ -385,7 +387,7 @@ class TestToolParameters:
             pass
 
         async with Client(mcp) as client:
-            with pytest.raises(ClientError, match="Missing required argument"):
+            with pytest.raises(ClientError, match="Error calling tool 'analyze'"):
                 await client.call_tool("analyze", {})
 
     async def test_literal_type_validation_error(self):
@@ -396,7 +398,7 @@ class TestToolParameters:
             pass
 
         async with Client(mcp) as client:
-            with pytest.raises(ClientError, match="Input should be 'a' or 'b'"):
+            with pytest.raises(ClientError, match="Error calling tool 'analyze'"):
                 await client.call_tool("analyze", {"x": "c"})
 
     async def test_literal_type_validation_success(self):
@@ -424,9 +426,7 @@ class TestToolParameters:
             return x.value
 
         async with Client(mcp) as client:
-            with pytest.raises(
-                ClientError, match="Input should be 'red', 'green' or 'blue'"
-            ):
+            with pytest.raises(ClientError, match="Error calling tool 'analyze'"):
                 await client.call_tool("analyze", {"x": "some-color"})
 
     async def test_enum_type_validation_success(self):
@@ -462,7 +462,7 @@ class TestToolParameters:
             assert isinstance(result[0], TextContent)
             assert result[0].text == "1.0"
 
-            with pytest.raises(ClientError, match="2 validation errors"):
+            with pytest.raises(ClientError, match="Error calling tool 'analyze'"):
                 await client.call_tool("analyze", {"x": "not a number"})
 
     async def test_path_type(self):
@@ -489,7 +489,7 @@ class TestToolParameters:
             return str(path)
 
         async with Client(mcp) as client:
-            with pytest.raises(ClientError, match="Input is not a valid path"):
+            with pytest.raises(ClientError, match="Error calling tool 'send_path'"):
                 await client.call_tool("send_path", {"path": 1})
 
     async def test_uuid_type(self):
@@ -515,7 +515,7 @@ class TestToolParameters:
             return str(x)
 
         async with Client(mcp) as client:
-            with pytest.raises(ClientError, match="Input should be a valid UUID"):
+            with pytest.raises(ClientError, match="Error calling tool 'send_uuid'"):
                 await client.call_tool("send_uuid", {"x": "not a uuid"})
 
     async def test_datetime_type(self):
@@ -554,7 +554,7 @@ class TestToolParameters:
             return x.isoformat()
 
         async with Client(mcp) as client:
-            with pytest.raises(ClientError, match="Input should be a valid datetime"):
+            with pytest.raises(ClientError, match="Error calling tool 'send_datetime'"):
                 await client.call_tool("send_datetime", {"x": "not a datetime"})
 
     async def test_date_type(self):

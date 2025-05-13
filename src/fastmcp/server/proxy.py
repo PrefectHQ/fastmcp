@@ -18,7 +18,7 @@ from mcp.types import (
 from pydantic.networks import AnyUrl
 
 from fastmcp.client import Client
-from fastmcp.exceptions import NotFoundError
+from fastmcp.exceptions import NotFoundError, ResourceError, ToolError
 from fastmcp.prompts import Prompt, PromptMessage
 from fastmcp.resources import Resource, ResourceTemplate
 from fastmcp.server.context import Context
@@ -64,7 +64,7 @@ class ProxyTool(Tool):
                 arguments=arguments,
             )
         if result.isError:
-            raise ValueError(cast(mcp.types.TextContent, result.content[0]).text)
+            raise ToolError(cast(mcp.types.TextContent, result.content[0]).text)
         return result.content
 
 
@@ -97,7 +97,7 @@ class ProxyResource(Resource):
         elif isinstance(result[0], BlobResourceContents):
             return result[0].blob
         else:
-            raise ValueError(f"Unsupported content type: {type(result[0])}")
+            raise ResourceError(f"Unsupported content type: {type(result[0])}")
 
 
 class ProxyTemplate(ResourceTemplate):
@@ -138,7 +138,7 @@ class ProxyTemplate(ResourceTemplate):
         elif isinstance(result[0], BlobResourceContents):
             value = result[0].blob
         else:
-            raise ValueError(f"Unsupported content type: {type(result[0])}")
+            raise ResourceError(f"Unsupported content type: {type(result[0])}")
 
         return ProxyResource(
             client=self._client,

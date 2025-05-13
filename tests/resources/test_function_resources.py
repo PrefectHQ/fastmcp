@@ -80,7 +80,7 @@ class TestFunctionResource:
             name="test",
             fn=failing_func,
         )
-        with pytest.raises(ValueError, match="Error reading resource function://test"):
+        with pytest.raises(ValueError, match="Test error"):
             await resource.read()
 
     async def test_basemodel_conversion(self):

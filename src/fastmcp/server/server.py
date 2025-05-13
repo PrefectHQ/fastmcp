@@ -43,7 +43,7 @@ from starlette.routing import BaseRoute, Route
 
 import fastmcp.server
 import fastmcp.settings
-from fastmcp.exceptions import NotFoundError, ResourceError
+from fastmcp.exceptions import NotFoundError
 from fastmcp.prompts import Prompt, PromptManager
 from fastmcp.prompts.prompt import PromptResult
 from fastmcp.resources import Resource, ResourceManager
@@ -385,16 +385,13 @@ class FastMCP(Generic[LifespanResultT]):
         with fastmcp.server.context.Context(fastmcp=self):
             if self._resource_manager.has_resource(uri):
                 resource = await self._resource_manager.get_resource(uri)
-                try:
-                    content = await resource.read()
-                    return [
-                        ReadResourceContents(
-                            content=content, mime_type=resource.mime_type
-                        )
-                    ]
-                except Exception as e:
-                    logger.error(f"Error reading resource {uri}: {e}")
-                    raise ResourceError(str(e))
+                content = await self._resource_manager.read_resource(uri)
+                return [
+                    ReadResourceContents(
+                        content=content,
+                        mime_type=resource.mime_type,
+                    )
+                ]
             else:
                 for server in self._mounted_servers.values():
                     if server.match_resource(str(uri)):
