@@ -11,7 +11,6 @@ from mcp.types import Tool as MCPTool
 from pydantic import BaseModel, BeforeValidator, Field
 
 import fastmcp
-from fastmcp.exceptions import ToolError
 from fastmcp.server.dependencies import get_context
 from fastmcp.utilities.json_schema import prune_params
 from fastmcp.utilities.logging import get_logger
@@ -102,49 +101,45 @@ class Tool(BaseModel):
 
         arguments = arguments.copy()
 
-        try:
-            context_kwarg = find_kwarg_by_type(self.fn, kwarg_type=Context)
-            if context_kwarg and context_kwarg not in arguments:
-                arguments[context_kwarg] = get_context()
+        context_kwarg = find_kwarg_by_type(self.fn, kwarg_type=Context)
+        if context_kwarg and context_kwarg not in arguments:
+            arguments[context_kwarg] = get_context()
 
-            if fastmcp.settings.settings.tool_attempt_parse_json_args:
-                # Pre-parse data from JSON in order to handle cases like `["a", "b", "c"]`
-                # being passed in as JSON inside a string rather than an actual list.
-                #
-                # Claude desktop is prone to this - in fact it seems incapable of NOT doing
-                # this. For sub-models, it tends to pass dicts (JSON objects) as JSON strings,
-                # which can be pre-parsed here.
-                signature = inspect.signature(self.fn)
-                for param_name in self.parameters["properties"]:
-                    arg = arguments.get(param_name, None)
-                    # if not in signature, we won't have annotations, so skip logic
-                    if param_name not in signature.parameters:
-                        continue
-                    # if not a string, we won't have a JSON to parse, so skip logic
-                    if not isinstance(arg, str):
-                        continue
-                    # skip if the type is a simple type (int, float, bool)
-                    if signature.parameters[param_name].annotation in (
-                        int,
-                        float,
-                        bool,
-                    ):
-                        continue
-                    try:
-                        arguments[param_name] = json.loads(arg)
+        if fastmcp.settings.settings.tool_attempt_parse_json_args:
+            # Pre-parse data from JSON in order to handle cases like `["a", "b", "c"]`
+            # being passed in as JSON inside a string rather than an actual list.
+            #
+            # Claude desktop is prone to this - in fact it seems incapable of NOT doing
+            # this. For sub-models, it tends to pass dicts (JSON objects) as JSON strings,
+            # which can be pre-parsed here.
+            signature = inspect.signature(self.fn)
+            for param_name in self.parameters["properties"]:
+                arg = arguments.get(param_name, None)
+                # if not in signature, we won't have annotations, so skip logic
+                if param_name not in signature.parameters:
+                    continue
+                # if not a string, we won't have a JSON to parse, so skip logic
+                if not isinstance(arg, str):
+                    continue
+                # skip if the type is a simple type (int, float, bool)
+                if signature.parameters[param_name].annotation in (
+                    int,
+                    float,
+                    bool,
+                ):
+                    continue
+                try:
+                    arguments[param_name] = json.loads(arg)
 
-                    except json.JSONDecodeError:
-                        pass
+                except json.JSONDecodeError:
+                    pass
 
-            type_adapter = get_cached_typeadapter(self.fn)
-            result = type_adapter.validate_python(arguments)
-            if inspect.isawaitable(result):
-                result = await result
+        type_adapter = get_cached_typeadapter(self.fn)
+        result = type_adapter.validate_python(arguments)
+        if inspect.isawaitable(result):
+            result = await result
 
-            return _convert_to_content(result, serializer=self.serializer)
-        except Exception as e:
-            logger.exception(f"Tool {self.name} failed")
-            raise ToolError(f"Error executing tool {self.name}: {e}") from e
+        return _convert_to_content(result, serializer=self.serializer)
 
     def to_mcp_tool(self, **overrides: Any) -> MCPTool:
         kwargs = {

@@ -6,7 +6,7 @@ from typing import Any
 
 from pydantic import AnyUrl
 
-from fastmcp.exceptions import NotFoundError
+from fastmcp.exceptions import NotFoundError, ResourceError
 from fastmcp.resources import FunctionResource
 from fastmcp.resources.resource import Resource
 from fastmcp.resources.template import (
@@ -248,6 +248,23 @@ class ResourceManager:
                     raise ValueError(f"Error creating resource from template: {e}")
 
         raise NotFoundError(f"Unknown resource: {uri_str}")
+
+    async def read_resource(self, uri: AnyUrl | str) -> str | bytes:
+        """Read a resource contents."""
+        resource = await self.get_resource(uri)
+
+        try:
+            return await resource.read()
+
+        # raise ResourceErrors as-is
+        except ResourceError as e:
+            logger.error(f"Error reading resource {uri!r}: {e}")
+            raise e
+
+        # raise other exceptions as ResourceErrors without revealing internal details
+        except Exception as e:
+            logger.error(f"Error reading resource {uri!r}: {e}")
+            raise ResourceError(f"Error reading resource {uri!r}") from e
 
     def get_resources(self) -> dict[str, Resource]:
         """Get all registered resources, keyed by URI."""

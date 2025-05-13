@@ -5,6 +5,7 @@ from tempfile import NamedTemporaryFile
 import pytest
 from pydantic import FileUrl
 
+from fastmcp.exceptions import ResourceError
 from fastmcp.resources import FileResource
 
 
@@ -94,7 +95,7 @@ class TestFileResource:
             name="test",
             path=missing,
         )
-        with pytest.raises(ValueError, match="Error reading file"):
+        with pytest.raises(ResourceError, match="Error reading file"):
             await resource.read()
 
     @pytest.mark.skipif(
@@ -109,7 +110,7 @@ class TestFileResource:
                 name="test",
                 path=temp_file,
             )
-            with pytest.raises(ValueError, match="Error reading file"):
+            with pytest.raises(ResourceError, match="Error reading file"):
                 await resource.read()
         finally:
             temp_file.chmod(0o644)  # Restore permissions
