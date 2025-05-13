@@ -94,6 +94,20 @@ class ToolManager:
             self._tools[key] = tool
         return tool
 
+    def remove_tool(self, key: str) -> None:
+        """Remove a tool from the server.
+
+        Args:
+            key: The key of the tool to remove
+
+        Raises:
+            NotFoundError: If the tool is not found
+        """
+        if key in self._tools:
+            del self._tools[key]
+        else:
+            raise NotFoundError(f"Unknown tool: {key}")
+
     async def call_tool(
         self, key: str, arguments: dict[str, Any]
     ) -> list[TextContent | ImageContent | EmbeddedResource]:

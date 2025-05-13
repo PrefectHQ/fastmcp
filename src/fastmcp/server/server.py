@@ -454,6 +454,18 @@ class FastMCP(Generic[LifespanResultT]):
         )
         self._cache.clear()
 
+    def remove_tool(self, name: str) -> None:
+        """Remove a tool from the server.
+
+        Args:
+            name: The name of the tool to remove
+
+        Raises:
+            NotFoundError: If the tool is not found
+        """
+        self._tool_manager.remove_tool(name)
+        self._cache.clear()
+
     def tool(
         self,
         name: str | None = None,
