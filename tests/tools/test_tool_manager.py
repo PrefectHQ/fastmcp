@@ -100,6 +100,26 @@ class TestAddTools:
         ):
             manager.add_tool_from_fn(lambda x: x)
 
+    def test_remove_tool_successfully(self):
+        """Test removing an added tool by key."""
+        manager = ToolManager()
+
+        def add(a: int, b: int) -> int:
+            return a + b
+
+        manager.add_tool_from_fn(add)
+        assert manager.get_tool("add") is not None
+
+        manager.remove_tool("add")
+        with pytest.raises(NotFoundError):
+            manager.get_tool("add")
+
+    def test_remove_tool_missing_key(self):
+        """Test removing a tool that does not exist raises NotFoundError."""
+        manager = ToolManager()
+        with pytest.raises(NotFoundError, match="Tool 'missing' not found"):
+            manager.remove_tool("missing")
+
     def test_warn_on_duplicate_tools(self, caplog):
         """Test warning on duplicate tools."""
         manager = ToolManager(duplicate_behavior="warn")
