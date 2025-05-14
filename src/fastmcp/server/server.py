@@ -19,7 +19,7 @@ import pydantic
 import uvicorn
 from mcp.server.auth.provider import OAuthAuthorizationServerProvider
 from mcp.server.lowlevel.helper_types import ReadResourceContents
-from mcp.server.lowlevel.server import LifespanResultT
+from mcp.server.lowlevel.server import LifespanResultT, NotificationOptions
 from mcp.server.lowlevel.server import Server as MCPServer
 from mcp.server.stdio import stdio_server
 from mcp.types import (
@@ -731,7 +731,9 @@ class FastMCP(Generic[LifespanResultT]):
             await self._mcp_server.run(
                 read_stream,
                 write_stream,
-                self._mcp_server.create_initialization_options(),
+                self._mcp_server.create_initialization_options(
+                    NotificationOptions(tools_changed=True)
+                ),
             )
 
     async def run_http_async(
