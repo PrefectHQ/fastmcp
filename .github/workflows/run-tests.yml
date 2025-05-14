@@ -47,13 +47,13 @@ jobs:
           cache-dependency-glob: "uv.lock"
           python-version: ${{ matrix.python-version }}
       - name: Install FastMCP
-        run: uv sync --dev
+        run: uv sync --dev --frozen
 
-      - name: Fix pyreadline on Windows
-        if: matrix.os == 'windows-latest'
-        run: |
-          uv pip uninstall -y pyreadline
-          uv pip install pyreadline3
+      # - name: Fix pyreadline on Windows
+      #   if: matrix.os == 'windows-latest'
+      #   run: |
+      #     uv pip uninstall -y pyreadline
+      #     uv pip install pyreadline3
 
       - name: Run tests
         run: uv run --frozen pytest
