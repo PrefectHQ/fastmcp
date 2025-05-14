@@ -427,7 +427,7 @@ class Client:
     ]:
         """Call a tool on the server.
 
-        Unlike call_tool_mcp, this method raises a ClientError if the tool call results in an error.
+        Unlike call_tool_mcp, this method raises a ToolError if the tool call results in an error.
 
         Args:
             name (str): The name of the tool to call.
@@ -438,7 +438,7 @@ class Client:
                 The content returned by the tool.
 
         Raises:
-            ClientError: If the tool call results in an error.
+            ToolError: If the tool call results in an error.
             RuntimeError: If called while the client is not connected.
         """
         result = await self.call_tool_mcp(name=name, arguments=arguments or {})
