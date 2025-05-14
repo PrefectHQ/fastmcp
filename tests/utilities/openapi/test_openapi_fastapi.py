@@ -520,3 +520,20 @@ def test_duplicate_tags_handling(fastapi_server):
     # We'll test both possibilities to be safe
     assert "duplicate" in test_route.tags, "Tag 'duplicate' should be present"
     assert "items" in test_route.tags, "Tag 'items' should be present"
+
+
+def test_repr_http_routes(parsed_routes):
+    """Test that HTTPRoute objects can be represented without recursion errors."""
+    # Test repr on all parsed routes
+    for route in parsed_routes:
+        route_repr = repr(route)
+
+        # Verify repr contains essential information
+        assert route.method in route_repr, f"Method {route.method} missing from repr"
+        assert route.path in route_repr, f"Path {route.path} missing from repr"
+
+        # If operation_id exists, it should be in the repr
+        if route.operation_id:
+            assert route.operation_id in route_repr, (
+                f"Operation ID {route.operation_id} missing from repr"
+            )
