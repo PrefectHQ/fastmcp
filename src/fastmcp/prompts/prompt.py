@@ -13,7 +13,7 @@ from mcp.types import PromptArgument as MCPPromptArgument
 from pydantic import BaseModel, BeforeValidator, Field, TypeAdapter, validate_call
 
 from fastmcp.server.dependencies import get_context
-from fastmcp.utilities.json_schema import prune_params
+from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import (
     _convert_set_defaults,
@@ -115,7 +115,11 @@ class Prompt(BaseModel):
 
         context_kwarg = find_kwarg_by_type(fn, kwarg_type=Context)
         if context_kwarg:
-            parameters = prune_params(parameters, params=[context_kwarg])
+            prune_params = [context_kwarg]
+        else:
+            prune_params = None
+
+        parameters = compress_schema(parameters, prune_params=prune_params)
 
         # Convert parameters to PromptArguments
         arguments: list[PromptArgument] = []

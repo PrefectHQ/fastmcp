@@ -1,6 +1,7 @@
 import base64
 import json
 import re
+from enum import Enum
 
 import httpx
 import pytest
@@ -1817,3 +1818,75 @@ class TestReprMethods:
         assert f"name={template.name!r}" in template_repr
         assert "uri_template=" in template_repr
         assert "path=" in template_repr
+
+
+class TestEnumHandling:
+    """Tests for handling enum parameters in OpenAPI schemas."""
+
+    async def test_enum_parameter_schema(self):
+        """Test that enum parameters are properly handled in tool parameter schemas."""
+
+        # Define an enum just like in example.py
+        class QueryEnum(str, Enum):
+            foo = "foo"
+            bar = "bar"
+            baz = "baz"
+
+        # Create a minimal FastAPI app with an endpoint using the enum
+        app = FastAPI()
+
+        @app.post("/items/{item_id}")
+        def read_item(
+            item_id: int,
+            query: QueryEnum | None = None,
+        ):
+            return {"item_id": item_id, "query": query}
+
+        # Create a client for the app
+        client = AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
+
+        # Create the FastMCPOpenAPI server from the app
+        openapi_spec = app.openapi()
+        server = FastMCPOpenAPI(
+            openapi_spec=openapi_spec,
+            client=client,
+            name="Enum Test",
+        )
+
+        # Get the tools from the server
+        tools = server._tool_manager.list_tools()
+
+        # Find the read_item tool
+        read_item_tool = next(
+            (t for t in tools if t.name == "read_item_items__item_id__post"), None
+        )
+
+        # Verify the tool exists
+        assert read_item_tool is not None, "read_item tool wasn't created"
+
+        # Check that the parameters include the enum reference
+        assert "properties" in read_item_tool.parameters
+        assert "query" in read_item_tool.parameters["properties"]
+
+        # Check for the anyOf with $ref to the enum definition
+        query_param = read_item_tool.parameters["properties"]["query"]
+        assert "anyOf" in query_param
+
+        # Find the ref in the anyOf list
+        ref_found = False
+        for option in query_param["anyOf"]:
+            if "$ref" in option and option["$ref"].startswith("#/$defs/QueryEnum"):
+                ref_found = True
+                break
+
+        assert ref_found, "Reference to enum definition not found in query parameter"
+
+        # Check that the $defs section exists and contains the enum definition
+        assert "$defs" in read_item_tool.parameters
+        assert "QueryEnum" in read_item_tool.parameters["$defs"]
+
+        # Verify the enum definition
+        enum_def = read_item_tool.parameters["$defs"]["QueryEnum"]
+        assert "enum" in enum_def
+        assert enum_def["enum"] == ["foo", "bar", "baz"]
+        assert enum_def["type"] == "string"

@@ -21,6 +21,7 @@ from pydantic import (
 
 from fastmcp.resources.types import FunctionResource, Resource
 from fastmcp.server.dependencies import get_context
+from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.types import (
     _convert_set_defaults,
     find_kwarg_by_type,
@@ -149,6 +150,10 @@ class ResourceTemplate(BaseModel):
 
         # Get schema from TypeAdapter - will fail if function isn't properly typed
         parameters = TypeAdapter(fn).json_schema()
+
+        # compress the schema
+        prune_params = [context_kwarg] if context_kwarg else None
+        parameters = compress_schema(parameters, prune_params=prune_params)
 
         # ensure the arguments are properly cast
         fn = validate_call(fn)
