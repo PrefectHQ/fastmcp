@@ -84,6 +84,9 @@ class HTTPRoute(BaseModel):
     responses: dict[str, ResponseInfo] = Field(
         default_factory=dict
     )  # Key: status code str
+    schema_definitions: dict[str, JsonSchema] = Field(
+        default_factory=dict
+    )  # Store component schemas
 
 
 # Export public symbols
@@ -221,6 +224,27 @@ class OpenAPI31Parser(BaseOpenAPIParser):
             logger.warning("OpenAPI schema has no paths defined.")
             return []
 
+        # Extract component schemas to add to each route
+        schema_definitions = {}
+        if hasattr(self.openapi, "components") and self.openapi.components:
+            components = self.openapi.components
+            if hasattr(components, "schemas") and components.schemas:
+                for name, schema in components.schemas.items():
+                    try:
+                        if isinstance(schema, Reference):
+                            resolved_schema = self._resolve_ref(schema)
+                            schema_definitions[name] = self._extract_schema_as_dict(
+                                resolved_schema
+                            )
+                        else:
+                            schema_definitions[name] = self._extract_schema_as_dict(
+                                schema
+                            )
+                    except Exception as e:
+                        logger.warning(
+                            f"Failed to extract schema definition '{name}': {e}"
+                        )
+
         for path_str, path_item_obj in self.openapi.paths.items():
             if not isinstance(path_item_obj, PathItem):
                 logger.warning(
@@ -269,6 +293,7 @@ class OpenAPI31Parser(BaseOpenAPIParser):
                             parameters=parameters,
                             request_body=request_body_info,
                             responses=responses,
+                            schema_definitions=schema_definitions,
                         )
                         routes.append(route)
                         logger.info(
@@ -386,16 +411,36 @@ class OpenAPI31Parser(BaseOpenAPIParser):
 
                 param_schema_dict = {}
                 if param_schema_obj:  # Check if schema exists
+                    # Resolve the schema if it's a reference
+                    resolved_schema = self._resolve_ref(param_schema_obj)
                     param_schema_dict = self._extract_schema_as_dict(param_schema_obj)
+
+                    # Ensure default value is preserved from resolved schema
+                    if (
+                        not isinstance(resolved_schema, Reference)
+                        and hasattr(resolved_schema, "default")
+                        and resolved_schema.default is not None
+                    ):
+                        param_schema_dict["default"] = resolved_schema.default
                 elif parameter.content:
                     # Handle complex parameters with 'content'
                     first_media_type = next(iter(parameter.content.values()), None)
                     if (
                         first_media_type and first_media_type.media_type_schema
                     ):  # CORRECTED: Use 'media_type_schema'
-                        param_schema_dict = self._extract_schema_as_dict(
-                            first_media_type.media_type_schema
-                        )
+                        # Resolve the schema if it's a reference
+                        media_schema = first_media_type.media_type_schema
+                        resolved_media_schema = self._resolve_ref(media_schema)
+                        param_schema_dict = self._extract_schema_as_dict(media_schema)
+
+                        # Ensure default value is preserved from resolved schema
+                        if (
+                            not isinstance(resolved_media_schema, Reference)
+                            and hasattr(resolved_media_schema, "default")
+                            and resolved_media_schema.default is not None
+                        ):
+                            param_schema_dict["default"] = resolved_media_schema.default
+
                         logger.debug(
                             f"Parameter '{parameter.name}' using schema from 'content' field."
                         )
@@ -543,6 +588,27 @@ class OpenAPI30Parser(BaseOpenAPIParser):
             logger.warning("OpenAPI schema has no paths defined.")
             return []
 
+        # Extract component schemas to add to each route
+        schema_definitions = {}
+        if hasattr(self.openapi, "components") and self.openapi.components:
+            components = self.openapi.components
+            if hasattr(components, "schemas") and components.schemas:
+                for name, schema in components.schemas.items():
+                    try:
+                        if isinstance(schema, Reference_30):
+                            resolved_schema = self._resolve_ref(schema)
+                            schema_definitions[name] = self._extract_schema_as_dict(
+                                resolved_schema
+                            )
+                        else:
+                            schema_definitions[name] = self._extract_schema_as_dict(
+                                schema
+                            )
+                    except Exception as e:
+                        logger.warning(
+                            f"Failed to extract schema definition '{name}': {e}"
+                        )
+
         for path_str, path_item_obj in self.openapi.paths.items():
             if not isinstance(path_item_obj, PathItem_30):
                 logger.warning(
@@ -593,6 +659,7 @@ class OpenAPI30Parser(BaseOpenAPIParser):
                             parameters=parameters,
                             request_body=request_body_info,
                             responses=responses,
+                            schema_definitions=schema_definitions,
                         )
                         routes.append(route)
                         logger.info(
@@ -711,14 +778,34 @@ class OpenAPI30Parser(BaseOpenAPIParser):
 
                 param_schema_dict = {}
                 if param_schema_obj:  # Check if schema exists
+                    # Resolve the schema if it's a reference
+                    resolved_schema = self._resolve_ref(param_schema_obj)
                     param_schema_dict = self._extract_schema_as_dict(param_schema_obj)
+
+                    # Ensure default value is preserved from resolved schema
+                    if (
+                        not isinstance(resolved_schema, Reference_30)
+                        and hasattr(resolved_schema, "default")
+                        and resolved_schema.default is not None
+                    ):
+                        param_schema_dict["default"] = resolved_schema.default
                 elif parameter.content:
                     # Handle complex parameters with 'content'
                     first_media_type = next(iter(parameter.content.values()), None)
                     if first_media_type and first_media_type.media_type_schema:
-                        param_schema_dict = self._extract_schema_as_dict(
-                            first_media_type.media_type_schema
-                        )
+                        # Resolve the schema if it's a reference
+                        media_schema = first_media_type.media_type_schema
+                        resolved_media_schema = self._resolve_ref(media_schema)
+                        param_schema_dict = self._extract_schema_as_dict(media_schema)
+
+                        # Ensure default value is preserved from resolved schema
+                        if (
+                            not isinstance(resolved_media_schema, Reference_30)
+                            and hasattr(resolved_media_schema, "default")
+                            and resolved_media_schema.default is not None
+                        ):
+                            param_schema_dict["default"] = resolved_media_schema.default
+
                         logger.debug(
                             f"Parameter '{parameter.name}' using schema from 'content' field."
                         )
@@ -1173,6 +1260,23 @@ def _combine_schemas(route: openapi.HTTPRoute) -> dict[str, Any]:
         # Copy the schema and add description if available
         param_schema = param.schema_.copy() if isinstance(param.schema_, dict) else {}
 
+        # Convert #/components/schemas references to #/$defs references
+        if isinstance(param_schema, dict) and "$ref" in param_schema:
+            ref_path = param_schema["$ref"]
+            if ref_path.startswith("#/components/schemas/"):
+                schema_name = ref_path.split("/")[-1]
+                param_schema["$ref"] = f"#/$defs/{schema_name}"
+
+        # Also handle anyOf, allOf, oneOf references
+        for section in ["anyOf", "allOf", "oneOf"]:
+            if section in param_schema and isinstance(param_schema[section], list):
+                for i, item in enumerate(param_schema[section]):
+                    if isinstance(item, dict) and "$ref" in item:
+                        ref_path = item["$ref"]
+                        if ref_path.startswith("#/components/schemas/"):
+                            schema_name = ref_path.split("/")[-1]
+                            param_schema[section][i]["$ref"] = f"#/$defs/{schema_name}"
+
         # Add parameter description to schema if available and not already present
         if param.description and not param_schema.get("description"):
             param_schema["description"] = param.description
@@ -1193,8 +1297,19 @@ def _combine_schemas(route: openapi.HTTPRoute) -> dict[str, Any]:
         if route.request_body.required:
             required.extend(body_schema.get("required", []))
 
-    return {
+    result = {
         "type": "object",
         "properties": properties,
         "required": required,
     }
+
+    # Add schema definitions if available
+    if route.schema_definitions:
+        result["$defs"] = route.schema_definitions
+
+    # Use compress_schema to remove unused definitions
+    from fastmcp.utilities.json_schema import compress_schema
+
+    result = compress_schema(result)
+
+    return result

@@ -21,6 +21,7 @@ from pydantic import (
 
 from fastmcp.resources.types import FunctionResource, Resource
 from fastmcp.server.dependencies import get_context
+from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.types import (
     _convert_set_defaults,
     find_kwarg_by_type,
@@ -150,6 +151,10 @@ class ResourceTemplate(BaseModel):
         # Get schema from TypeAdapter - will fail if function isn't properly typed
         parameters = TypeAdapter(fn).json_schema()
 
+        # compress the schema
+        prune_params = [context_kwarg] if context_kwarg else None
+        parameters = compress_schema(parameters, prune_params=prune_params)
+
         # ensure the arguments are properly cast
         fn = validate_call(fn)
 
@@ -171,28 +176,27 @@ class ResourceTemplate(BaseModel):
         """Create a resource from the template with the given parameters."""
         from fastmcp.server.context import Context
 
-        try:
-            # Add context to parameters if needed
-            kwargs = params.copy()
-            context_kwarg = find_kwarg_by_type(self.fn, kwarg_type=Context)
-            if context_kwarg and context_kwarg not in kwargs:
-                kwargs[context_kwarg] = get_context()
+        # Add context to parameters if needed
+        kwargs = params.copy()
+        context_kwarg = find_kwarg_by_type(self.fn, kwarg_type=Context)
+        if context_kwarg and context_kwarg not in kwargs:
+            kwargs[context_kwarg] = get_context()
 
+        async def resource_read_fn() -> str | bytes:
             # Call function and check if result is a coroutine
             result = self.fn(**kwargs)
             if inspect.iscoroutine(result):
                 result = await result
+            return result
 
-            return FunctionResource(
-                uri=AnyUrl(uri),  # Explicitly convert to AnyUrl
-                name=self.name,
-                description=self.description,
-                mime_type=self.mime_type,
-                fn=lambda **kwargs: result,  # Capture result in closure
-                tags=self.tags,
-            )
-        except Exception as e:
-            raise ValueError(f"Error creating resource from template: {e}")
+        return FunctionResource(
+            uri=AnyUrl(uri),  # Explicitly convert to AnyUrl
+            name=self.name,
+            description=self.description,
+            mime_type=self.mime_type,
+            fn=resource_read_fn,
+            tags=self.tags,
+        )
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, ResourceTemplate):

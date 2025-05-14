@@ -19,7 +19,7 @@ import pydantic
 import uvicorn
 from mcp.server.auth.provider import OAuthAuthorizationServerProvider
 from mcp.server.lowlevel.helper_types import ReadResourceContents
-from mcp.server.lowlevel.server import LifespanResultT
+from mcp.server.lowlevel.server import LifespanResultT, NotificationOptions
 from mcp.server.lowlevel.server import Server as MCPServer
 from mcp.server.stdio import stdio_server
 from mcp.types import (
@@ -43,7 +43,7 @@ from starlette.routing import BaseRoute, Route
 
 import fastmcp.server
 import fastmcp.settings
-from fastmcp.exceptions import NotFoundError, ResourceError
+from fastmcp.exceptions import NotFoundError
 from fastmcp.prompts import Prompt, PromptManager
 from fastmcp.prompts.prompt import PromptResult
 from fastmcp.resources import Resource, ResourceManager
@@ -385,16 +385,13 @@ class FastMCP(Generic[LifespanResultT]):
         with fastmcp.server.context.Context(fastmcp=self):
             if self._resource_manager.has_resource(uri):
                 resource = await self._resource_manager.get_resource(uri)
-                try:
-                    content = await resource.read()
-                    return [
-                        ReadResourceContents(
-                            content=content, mime_type=resource.mime_type
-                        )
-                    ]
-                except Exception as e:
-                    logger.error(f"Error reading resource {uri}: {e}")
-                    raise ResourceError(str(e))
+                content = await self._resource_manager.read_resource(uri)
+                return [
+                    ReadResourceContents(
+                        content=content,
+                        mime_type=resource.mime_type,
+                    )
+                ]
             else:
                 for server in self._mounted_servers.values():
                     if server.match_resource(str(uri)):
@@ -455,6 +452,18 @@ class FastMCP(Generic[LifespanResultT]):
             tags=tags,
             annotations=annotations,
         )
+        self._cache.clear()
+
+    def remove_tool(self, name: str) -> None:
+        """Remove a tool from the server.
+
+        Args:
+            name: The name of the tool to remove
+
+        Raises:
+            NotFoundError: If the tool is not found
+        """
+        self._tool_manager.remove_tool(name)
         self._cache.clear()
 
     def tool(
@@ -722,7 +731,9 @@ class FastMCP(Generic[LifespanResultT]):
             await self._mcp_server.run(
                 read_stream,
                 write_stream,
-                self._mcp_server.create_initialization_options(),
+                self._mcp_server.create_initialization_options(
+                    NotificationOptions(tools_changed=True)
+                ),
             )
 
     async def run_http_async(

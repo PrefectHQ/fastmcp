@@ -72,6 +72,25 @@ class TestTools:
         assert len(mcp_tools) == 1
         assert mcp_tools[0].name == "custom_name"
 
+    async def test_remove_tool_successfully(self):
+        """Test that FastMCP.remove_tool removes the tool from the registry."""
+
+        mcp = FastMCP()
+
+        @mcp.tool(name="adder")
+        def add(a: int, b: int) -> int:
+            return a + b
+
+        mcp_tools = await mcp.get_tools()
+        assert "adder" in mcp_tools
+
+        mcp.remove_tool("adder")
+        mcp_tools = await mcp.get_tools()
+        assert "adder" not in mcp_tools
+
+        with pytest.raises(NotFoundError, match="Unknown tool: adder"):
+            await mcp._mcp_call_tool("adder", {"a": 1, "b": 2})
+
 
 class TestToolDecorator:
     async def test_no_tools_before_decorator(self):

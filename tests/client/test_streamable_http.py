@@ -106,7 +106,7 @@ async def test_http_headers(streamable_http_server: str):
 
 def run_nested_server(host: str, port: int) -> None:
     try:
-        mcp_app = fastmcp_server().http_app()
+        mcp_app = fastmcp_server().http_app(path="/final/mcp")
 
         mount = Starlette(routes=[Mount("/nest-inner", app=mcp_app)])
         mount2 = Starlette(
@@ -135,7 +135,7 @@ async def test_nested_streamable_http_server_resolves_correctly():
 
     with run_server_in_process(run_nested_server) as url:
         async with Client(
-            transport=StreamableHttpTransport(f"{url}/nest-outer/nest-inner/mcp")
+            transport=StreamableHttpTransport(f"{url}/nest-outer/nest-inner/final/mcp")
         ) as client:
             result = await client.ping()
             assert result is True

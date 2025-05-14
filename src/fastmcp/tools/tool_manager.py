@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Any
 
 from mcp.types import EmbeddedResource, ImageContent, TextContent, ToolAnnotations
 
-from fastmcp.exceptions import NotFoundError
+from fastmcp.exceptions import NotFoundError, ToolError
 from fastmcp.settings import DuplicateBehavior
 from fastmcp.tools.tool import Tool
 from fastmcp.utilities.logging import get_logger
@@ -94,6 +94,20 @@ class ToolManager:
             self._tools[key] = tool
         return tool
 
+    def remove_tool(self, key: str) -> None:
+        """Remove a tool from the server.
+
+        Args:
+            key: The key of the tool to remove
+
+        Raises:
+            NotFoundError: If the tool is not found
+        """
+        if key in self._tools:
+            del self._tools[key]
+        else:
+            raise NotFoundError(f"Unknown tool: {key}")
+
     async def call_tool(
         self, key: str, arguments: dict[str, Any]
     ) -> list[TextContent | ImageContent | EmbeddedResource]:
@@ -102,4 +116,15 @@ class ToolManager:
         if not tool:
             raise NotFoundError(f"Unknown tool: {key}")
 
-        return await tool.run(arguments)
+        try:
+            return await tool.run(arguments)
+
+        # raise ToolErrors as-is
+        except ToolError as e:
+            logger.exception(f"Error calling tool {key!r}: {e}")
+            raise e
+
+        # raise other exceptions as ToolErrors without revealing internal details
+        except Exception as e:
+            logger.exception(f"Error calling tool {key!r}: {e}")
+            raise ToolError(f"Error calling tool {key!r}") from e

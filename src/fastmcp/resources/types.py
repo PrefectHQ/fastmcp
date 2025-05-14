@@ -6,7 +6,7 @@ import inspect
 import json
 from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import anyio
 import anyio.to_thread
@@ -15,12 +15,13 @@ import pydantic.json
 import pydantic_core
 from pydantic import Field, ValidationInfo
 
+from fastmcp.exceptions import ResourceError
 from fastmcp.resources.resource import Resource
 from fastmcp.server.dependencies import get_context
+from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import find_kwarg_by_type
 
-if TYPE_CHECKING:
-    pass
+logger = get_logger(__name__)
 
 
 class TextResource(Resource):
@@ -62,26 +63,23 @@ class FunctionResource(Resource):
         """Read the resource by calling the wrapped function."""
         from fastmcp.server.context import Context
 
-        try:
-            kwargs = {}
-            context_kwarg = find_kwarg_by_type(self.fn, kwarg_type=Context)
-            if context_kwarg is not None:
-                kwargs[context_kwarg] = get_context()
+        kwargs = {}
+        context_kwarg = find_kwarg_by_type(self.fn, kwarg_type=Context)
+        if context_kwarg is not None:
+            kwargs[context_kwarg] = get_context()
 
-            result = self.fn(**kwargs)
-            if inspect.iscoroutinefunction(self.fn):
-                result = await result
+        result = self.fn(**kwargs)
+        if inspect.iscoroutinefunction(self.fn):
+            result = await result
 
-            if isinstance(result, Resource):
-                return await result.read()
-            elif isinstance(result, bytes):
-                return result
-            elif isinstance(result, str):
-                return result
-            else:
-                return pydantic_core.to_json(result, fallback=str, indent=2).decode()
-        except Exception as e:
-            raise ValueError(f"Error reading resource {self.uri}: {e}")
+        if isinstance(result, Resource):
+            return await result.read()
+        elif isinstance(result, bytes):
+            return result
+        elif isinstance(result, str):
+            return result
+        else:
+            return pydantic_core.to_json(result, fallback=str, indent=2).decode()
 
 
 class FileResource(Resource):
@@ -124,7 +122,7 @@ class FileResource(Resource):
                 return await anyio.to_thread.run_sync(self.path.read_bytes)
             return await anyio.to_thread.run_sync(self.path.read_text)
         except Exception as e:
-            raise ValueError(f"Error reading file {self.path}: {e}")
+            raise ResourceError(f"Error reading file {self.path}") from e
 
 
 class HttpResource(Resource):
@@ -185,7 +183,7 @@ class DirectoryResource(Resource):
                 else list(self.path.rglob("*"))
             )
         except Exception as e:
-            raise ValueError(f"Error listing directory {self.path}: {e}")
+            raise ResourceError(f"Error listing directory {self.path}: {e}")
 
     async def read(self) -> str:  # Always returns JSON string
         """Read the directory listing."""
@@ -193,5 +191,5 @@ class DirectoryResource(Resource):
             files = await anyio.to_thread.run_sync(self.list_files)
             file_list = [str(f.relative_to(self.path)) for f in files if f.is_file()]
             return json.dumps({"files": file_list}, indent=2)
-        except Exception as e:
-            raise ValueError(f"Error reading directory {self.path}: {e}")
+        except Exception:
+            raise ResourceError(f"Error reading directory {self.path}")

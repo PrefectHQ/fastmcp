@@ -300,7 +300,7 @@ class TestLegacyToolJsonParsing:
         async with Client(mcp) as client:
             with pytest.raises(
                 ClientError,
-                match="Input should be a valid list",
+                match="Error calling tool 'process_list'",
             ):
                 await client.call_tool("process_list", {"items": "['a', 'b', 3]"})
 

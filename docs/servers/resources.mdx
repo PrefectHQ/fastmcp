@@ -147,6 +147,7 @@ async def read_important_log() -> str:
         return "Log file not found."
 ```
 
+
 ### Resource Classes
 
 While `@mcp.resource` is ideal for dynamic content, you can directly register pre-defined resources (like static files or simple text) using `mcp.add_resource()` and concrete `Resource` subclasses.
@@ -403,17 +404,45 @@ In this stacked decorator pattern:
 - Each parameter defaults to `None` when not included in the URI
 - The function logic handles whichever parameter is provided
 
-**How Templates Work:**
-
-1.  **Definition:** When FastMCP sees `{...}` placeholders in the `@resource` URI and matching function parameters, it registers a `ResourceTemplate`.
-2.  **Discovery:** Clients list templates via `resources/listResourceTemplates`.
-3.  **Request & Matching:** A client requests a specific URI, e.g., `weather://london/current`. FastMCP matches this to the `weather://{city}/current` template.
-4.  **Parameter Extraction:** It extracts the parameter value: `city="london"`.
-5.  **Type Conversion & Function Call:** It converts extracted values to the types hinted in the function and calls `get_weather(city="london")`.
-6.  **Default Values:** For any function parameters with default values not included in the URI template, FastMCP uses the default values.
-7.  **Response:** The function's return value is formatted (e.g., dict to JSON) and sent back as the resource content.
-
 Templates provide a powerful way to expose parameterized data access points following REST-like principles.
+
+## Error Handling
+
+<VersionBadge version="2.3.4" />
+
+If your resource function encounters an error, you can raise a standard Python exception (`ValueError`, `TypeError`, `FileNotFoundError`, custom exceptions, etc.) or a FastMCP `ResourceError`.
+
+For security reasons, most exceptions are wrapped in a generic `ResourceError` before being sent to the client, with internal error details masked. However, if you raise a `ResourceError` directly, its contents **are** included in the response. This allows you to provide informative error messages to the client on an opt-in basis.
+
+```python
+from fastmcp import FastMCP
+from fastmcp.exceptions import ResourceError
+
+mcp = FastMCP(name="DataServer")
+
+@mcp.resource("resource://safe-error")
+def fail_with_details() -> str:
+    """This resource provides detailed error information."""
+    # ResourceError contents are sent back to clients
+    raise ResourceError("Unable to retrieve data: file not found")
+
+@mcp.resource("resource://masked-error")
+def fail_with_masked_details() -> str:
+    """This resource masks internal error details."""
+    # Other exceptions are converted to ResourceError with generic message
+    raise ValueError("Sensitive internal file path: /etc/secrets.conf")
+
+@mcp.resource("data://{id}")
+def get_data_by_id(id: str) -> dict:
+    """Template resources also support the same error handling pattern."""
+    if id == "secure":
+        raise ValueError("Cannot access secure data")
+    elif id == "missing":
+        raise ResourceError("Data ID 'missing' not found in database")
+    return {"id": id, "value": "data"}
+```
+
+This error handling pattern applies to both regular resources and resource templates.
 
 ## Server Behavior
 
