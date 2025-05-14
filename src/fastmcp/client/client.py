@@ -1,9 +1,10 @@
 import datetime
-from contextlib import AbstractAsyncContextManager
+from contextlib import AsyncExitStack
 from pathlib import Path
 from typing import Any, cast
 
 import mcp.types
+from exceptiongroup import catch
 from mcp import ClientSession
 from pydantic import AnyUrl
 
@@ -14,8 +15,9 @@ from fastmcp.client.roots import (
     create_roots_callback,
 )
 from fastmcp.client.sampling import SamplingHandler, create_sampling_callback
-from fastmcp.exceptions import ClientError
+from fastmcp.exceptions import ToolError
 from fastmcp.server import FastMCP
+from fastmcp.utilities.exceptions import get_catch_handlers
 
 from .transports import ClientTransport, SessionKwargs, infer_transport
 
@@ -49,7 +51,7 @@ class Client:
     ):
         self.transport = infer_transport(transport)
         self._session: ClientSession | None = None
-        self._session_cm: AbstractAsyncContextManager[ClientSession] | None = None
+        self._exit_stack: AsyncExitStack | None = None
         self._nesting_counter: int = 0
 
         self._session_kwargs: SessionKwargs = {
@@ -91,9 +93,23 @@ class Client:
 
     async def __aenter__(self):
         if self._nesting_counter == 0:
-            # create new session
-            self._session_cm = self.transport.connect_session(**self._session_kwargs)
-            self._session = await self._session_cm.__aenter__()
+            # Create exit stack to manage both context managers
+            stack = AsyncExitStack()
+            await stack.__aenter__()
+
+            # Add the exception handling context
+            stack.enter_context(catch(get_catch_handlers()))
+
+            # the above catch will only apply once this __aenter__ finishes so
+            # we need to wrap the session creation in a new context in case it
+            # raises errors itself
+            with catch(get_catch_handlers()):
+                # Create and enter the transport session using the exit stack
+                session_cm = self.transport.connect_session(**self._session_kwargs)
+                self._session = await stack.enter_async_context(session_cm)
+
+            # Store the stack for cleanup in __aexit__
+            self._exit_stack = stack
 
         self._nesting_counter += 1
         return self
@@ -101,10 +117,14 @@ class Client:
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         self._nesting_counter -= 1
 
-        if self._nesting_counter == 0 and self._session_cm is not None:
-            await self._session_cm.__aexit__(exc_type, exc_val, exc_tb)
-            self._session_cm = None
-            self._session = None
+        if self._nesting_counter == 0:
+            # Exit the stack which will handle cleaning up the session
+            if self._exit_stack is not None:
+                try:
+                    await self._exit_stack.__aexit__(exc_type, exc_val, exc_tb)
+                finally:
+                    self._exit_stack = None
+                    self._session = None
 
     # --- MCP Client Methods ---
 
@@ -424,5 +444,5 @@ class Client:
         result = await self.call_tool_mcp(name=name, arguments=arguments or {})
         if result.isError:
             msg = cast(mcp.types.TextContent, result.content[0]).text
-            raise ClientError(msg)
+            raise ToolError(msg)
         return result.content
