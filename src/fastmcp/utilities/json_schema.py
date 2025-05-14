@@ -31,8 +31,6 @@ def _walk_and_prune(
     prune_additional_properties: bool = False,
 ) -> dict:
     """Walk the schema and optionally prune titles, unused definitions, and additionalProperties: false."""
-    # Deep copy to avoid modifying the original
-    schema = copy.deepcopy(schema)
 
     # Will only be used if prune_defs is True
     used_defs: set[str] = set()
