@@ -15,7 +15,7 @@ from pydantic.networks import AnyUrl
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
-from fastmcp.exceptions import ClientError
+from fastmcp.exceptions import ToolError
 from fastmcp.server.openapi import (
     FastMCPOpenAPI,
     OpenAPIResource,
@@ -1029,7 +1029,7 @@ async def test_none_path_parameters_rejected(
     # Create a client and try to call a tool with a None path parameter
     async with Client(mcp_server) as client:
         # get_user has a required path parameter user_id
-        with pytest.raises(ClientError, match="Missing required path parameters"):
+        with pytest.raises(ToolError, match="Missing required path parameters"):
             await client.call_tool(
                 "update_user_name_users__user_id__name_patch",
                 {

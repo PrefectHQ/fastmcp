@@ -4,11 +4,12 @@ from typing import Any
 import mcp.types
 import pytest
 from dirty_equals import Contains
+from mcp import McpError
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.client.transports import FastMCPTransport
-from fastmcp.exceptions import ClientError
+from fastmcp.exceptions import ToolError
 from fastmcp.server.proxy import FastMCPProxy
 
 USERS = [
@@ -109,7 +110,7 @@ class TestTools:
         assert proxy_result[0].text == "3"
 
     async def test_error_tool_raises_error(self, proxy_server):
-        with pytest.raises(ClientError, match=""):
+        with pytest.raises(ToolError, match=""):
             async with Client(proxy_server) as client:
                 await client.call_tool("error_tool", {})
 
@@ -147,9 +148,7 @@ class TestResources:
         assert json.loads(result[0].text) == USERS
 
     async def test_read_resource_returns_none_if_not_found(self, proxy_server):
-        with pytest.raises(
-            ClientError, match="Unknown resource: resource://nonexistent"
-        ):
+        with pytest.raises(McpError, match="Unknown resource: resource://nonexistent"):
             async with Client(proxy_server) as client:
                 await client.read_resource("resource://nonexistent")
 
