@@ -13,7 +13,7 @@ import annotated_types
 import pytest
 from pydantic import BaseModel, Field
 
-from fastmcp.utilities.json_schema import prune_params
+from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.types import get_cached_typeadapter
 
 
@@ -175,7 +175,7 @@ def test_skip_names():
     # Get schema and prune parameters
     type_adapter = get_cached_typeadapter(func_with_many_params)
     schema = type_adapter.json_schema()
-    pruned_schema = prune_params(schema, params=["skip_this", "also_skip"])
+    pruned_schema = compress_schema(schema, prune_params=["skip_this", "also_skip"])
 
     # Check that only the desired parameters remain
     assert "keep_this" in pruned_schema["properties"]
