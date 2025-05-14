@@ -138,6 +138,10 @@ class OpenAPITool(Tool):
         self._route = route
         self._timeout = timeout
 
+    def __repr__(self) -> str:
+        """Custom representation to prevent recursion errors when printing."""
+        return f"OpenAPITool(name={self.name!r}, method={self._route.method}, path={self._route.path})"
+
     async def _execute_request(self, *args, **kwargs):
         """Execute the HTTP request based on the route configuration."""
         context = kwargs.get("context")
@@ -287,6 +291,10 @@ class OpenAPIResource(Resource):
         self._route = route
         self._timeout = timeout
 
+    def __repr__(self) -> str:
+        """Custom representation to prevent recursion errors when printing."""
+        return f"OpenAPIResource(name={self.name!r}, uri={self.uri!r}, path={self._route.path})"
+
     async def read(self) -> str | bytes:
         """Fetch the resource data by making an HTTP request."""
         try:
@@ -396,6 +404,10 @@ class OpenAPIResourceTemplate(ResourceTemplate):
         self._client = client
         self._route = route
         self._timeout = timeout
+
+    def __repr__(self) -> str:
+        """Custom representation to prevent recursion errors when printing."""
+        return f"OpenAPIResourceTemplate(name={self.name!r}, uri_template={self.uri_template!r}, path={self._route.path})"
 
     async def create_resource(
         self,

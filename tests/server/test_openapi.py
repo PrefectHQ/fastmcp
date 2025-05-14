@@ -1771,3 +1771,49 @@ class TestFastAPIDescriptionPropagation:
                 "name parameter missing from Tool schema in client API"
             )
             # We don't test for the description field content as it may not be consistently propagated
+
+
+class TestReprMethods:
+    """Tests for the custom __repr__ methods of OpenAPI objects."""
+
+    async def test_openapi_tool_repr(self, fastmcp_openapi_server: FastMCPOpenAPI):
+        """Test that OpenAPITool's __repr__ method works without recursion errors."""
+        tools = fastmcp_openapi_server._tool_manager.list_tools()
+        tool = next(iter(tools))
+
+        # Verify repr doesn't cause recursion and contains expected elements
+        tool_repr = repr(tool)
+        assert "OpenAPITool" in tool_repr
+        assert f"name={tool.name!r}" in tool_repr
+        assert "method=" in tool_repr
+        assert "path=" in tool_repr
+
+    async def test_openapi_resource_repr(self, fastmcp_openapi_server: FastMCPOpenAPI):
+        """Test that OpenAPIResource's __repr__ method works without recursion errors."""
+        resources = list(
+            fastmcp_openapi_server._resource_manager.get_resources().values()
+        )
+        resource = next(iter(resources))
+
+        # Verify repr doesn't cause recursion and contains expected elements
+        resource_repr = repr(resource)
+        assert "OpenAPIResource" in resource_repr
+        assert f"name={resource.name!r}" in resource_repr
+        assert "uri=" in resource_repr
+        assert "path=" in resource_repr
+
+    async def test_openapi_resource_template_repr(
+        self, fastmcp_openapi_server: FastMCPOpenAPI
+    ):
+        """Test that OpenAPIResourceTemplate's __repr__ method works without recursion errors."""
+        templates = list(
+            fastmcp_openapi_server._resource_manager.get_templates().values()
+        )
+        template = next(iter(templates))
+
+        # Verify repr doesn't cause recursion and contains expected elements
+        template_repr = repr(template)
+        assert "OpenAPIResourceTemplate" in template_repr
+        assert f"name={template.name!r}" in template_repr
+        assert "uri_template=" in template_repr
+        assert "path=" in template_repr
