@@ -1,9 +1,19 @@
 from fastmcp.utilities.json_schema import (
-    _prune_additional_properties,
     _prune_param,
-    _prune_unused_defs,
+    _walk_and_prune,
     compress_schema,
 )
+
+
+# Create wrappers for backward compatibility with tests
+def _prune_unused_defs(schema):
+    """Wrapper for _walk_and_prune that only prunes definitions."""
+    return _walk_and_prune(schema, prune_defs=True)
+
+
+def _prune_additional_properties(schema):
+    """Wrapper for _walk_and_prune that only prunes additionalProperties: false."""
+    return _walk_and_prune(schema, prune_additional_properties=True)
 
 
 class TestPruneParam:
@@ -244,3 +254,51 @@ class TestCompressSchema:
         assert "$defs" not in result  # Both defs should be gone
         # Check that additionalProperties was removed
         assert "additionalProperties" not in result
+
+    def test_prune_titles(self):
+        """Test pruning title fields."""
+        schema = {
+            "title": "Root Schema",
+            "type": "object",
+            "properties": {
+                "foo": {"title": "Foo Property", "type": "string"},
+                "bar": {
+                    "title": "Bar Property",
+                    "type": "object",
+                    "properties": {
+                        "nested": {"title": "Nested Property", "type": "string"}
+                    },
+                },
+            },
+        }
+        result = compress_schema(schema, prune_titles=True)
+        assert "title" not in result
+        assert "title" not in result["properties"]["foo"]
+        assert "title" not in result["properties"]["bar"]
+        assert "title" not in result["properties"]["bar"]["properties"]["nested"]
+
+    def test_prune_nested_additional_properties(self):
+        """Test pruning additionalProperties: false at all levels."""
+        schema = {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "foo": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "nested": {
+                            "type": "object",
+                            "additionalProperties": False,
+                        }
+                    },
+                },
+            },
+        }
+        result = compress_schema(schema)
+        assert "additionalProperties" not in result
+        assert "additionalProperties" not in result["properties"]["foo"]
+        assert (
+            "additionalProperties"
+            not in result["properties"]["foo"]["properties"]["nested"]
+        )
