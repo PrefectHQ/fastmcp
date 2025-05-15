@@ -137,6 +137,10 @@ async def test_nested_sse_server_resolves_correctly():
 
 
 class TestTimeout:
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason="This test is flaky on Windows. Sometimes the client timeout is respected and sometimes it is not.",
+    )
     async def test_timeout(self, sse_server: str):
         with pytest.raises(
             McpError,
