@@ -171,7 +171,9 @@ class Client:
         message: str | None = None,
     ) -> None:
         """Send a progress notification."""
-        await self.session.send_progress_notification(progress_token, progress, total, message)
+        await self.session.send_progress_notification(
+            progress_token, progress, total, message
+        )
 
     async def set_logging_level(self, level: mcp.types.LoggingLevel) -> None:
         """Send a logging/setLevel request."""

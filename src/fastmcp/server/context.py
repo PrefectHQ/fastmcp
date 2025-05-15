@@ -115,7 +115,10 @@ class Context:
             return
 
         await self.request_context.session.send_progress_notification(
-            progress_token=progress_token, progress=progress, total=total, message=message
+            progress_token=progress_token,
+            progress=progress,
+            total=total,
+            message=message,
         )
 
     async def read_resource(self, uri: str | AnyUrl) -> list[ReadResourceContents]:
