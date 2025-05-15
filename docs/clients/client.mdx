@@ -30,9 +30,8 @@ The following inference rules are used to determine the appropriate `ClientTrans
 3.  **`Path` or `str` pointing to an existing file**:
     *   If it ends with `.py`: Creates a `PythonStdioTransport` to run the script using `python`.
     *   If it ends with `.js`: Creates a `NodeStdioTransport` to run the script using `node`.
-4.  **`AnyUrl` or `str` pointing to a URL**:
-    *   If it starts with `http://` or `https://`: Creates an `SSETransport`.
-    *   If it starts with `ws://` or `wss://`: Creates a `WSTransport`.
+4.  **`AnyUrl` or `str` pointing to a URL that begins with `http://` or `https://`**:
+    *   Creates a `StreamableHttpTransport`
 5.  **Other**: Raises a `ValueError` if the type cannot be inferred.
 
 ```python
@@ -41,24 +40,24 @@ from fastmcp import Client, FastMCP
 
 # Example transports (more details in Transports page)
 server_instance = FastMCP(name="TestServer") # In-memory server
-sse_url = "http://localhost:8000/sse"       # SSE server URL
+http_url = "https://example.com/mcp"        # HTTP server URL
 ws_url = "ws://localhost:9000"             # WebSocket server URL
 server_script = "my_mcp_server.py"         # Path to a Python server file
 
 # Client automatically infers the transport type
 client_in_memory = Client(server_instance)
-client_sse = Client(sse_url)
+client_http = Client(http_url)
 client_ws = Client(ws_url)
 client_stdio = Client(server_script)
 
 print(client_in_memory.transport)
-print(client_sse.transport)
+print(client_http.transport)
 print(client_ws.transport)
 print(client_stdio.transport)
 
 # Expected Output (types may vary slightly based on environment):
 # <FastMCP(server='TestServer')>
-# <SSE(url='http://localhost:8000/sse')>
+# <StreamableHttp(url='https://example.com/mcp')>
 # <WebSocket(url='ws://localhost:9000')>
 # <PythonStdioTransport(command='python', args=['/path/to/your/my_mcp_server.py'])>
 ```

@@ -544,12 +544,6 @@ def infer_transport(
                     headers=server.get("headers", None),
                 )
 
-            # WebSocket transport
-            elif "ws_url" in server:
-                return WSTransport(
-                    url=server["ws_url"],
-                )
-
             raise ValueError("Cannot determine transport type from dictionary")
 
     # the transport is an unknown type
