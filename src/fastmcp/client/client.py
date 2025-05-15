@@ -35,8 +35,35 @@ class Client:
     """
     MCP client that delegates connection management to a Transport instance.
 
-    The Client class is primarily concerned with MCP protocol logic,
-    while the Transport handles connection establishment and management.
+    The Client class is responsible for MCP protocol logic, while the Transport
+    handles connection establishment and management. Client provides methods
+    for working with resources, prompts, tools and other MCP capabilities.
+
+    Args:
+        transport: Connection source specification, which can be:
+            - ClientTransport: Direct transport instance
+            - FastMCP: In-process FastMCP server
+            - AnyUrl | str: URL to connect to
+            - Path: File path for local socket
+            - dict: Transport configuration
+        roots: Optional RootsList or RootsHandler for filesystem access
+        sampling_handler: Optional handler for sampling requests
+        log_handler: Optional handler for log messages
+        message_handler: Optional handler for protocol messages
+        timeout: Optional timeout for requests (seconds or timedelta)
+
+    Examples:
+        ```python
+        # Connect to FastMCP server
+        client = Client("http://localhost:8080")
+
+        async with client:
+            # List available resources
+            resources = await client.list_resources()
+
+            # Call a tool
+            result = await client.call_tool("my_tool", {"param": "value"})
+        ```
     """
 
     def __init__(
@@ -47,19 +74,22 @@ class Client:
         sampling_handler: SamplingHandler | None = None,
         log_handler: LogHandler | None = None,
         message_handler: MessageHandler | None = None,
-        read_timeout_seconds: datetime.timedelta | None = None,
+        timeout: datetime.timedelta | float | int | None = None,
     ):
         self.transport = infer_transport(transport)
         self._session: ClientSession | None = None
         self._exit_stack: AsyncExitStack | None = None
         self._nesting_counter: int = 0
 
+        if isinstance(timeout, int | float):
+            timeout = datetime.timedelta(seconds=timeout)
+
         self._session_kwargs: SessionKwargs = {
             "sampling_callback": None,
             "list_roots_callback": None,
             "logging_callback": log_handler,
             "message_handler": message_handler,
-            "read_timeout_seconds": read_timeout_seconds,
+            "read_timeout_seconds": timeout,
         }
 
         if roots is not None:
@@ -397,7 +427,10 @@ class Client:
     # --- Call Tool ---
 
     async def call_tool_mcp(
-        self, name: str, arguments: dict[str, Any]
+        self,
+        name: str,
+        arguments: dict[str, Any],
+        timeout: datetime.timedelta | float | int | None = None,
     ) -> mcp.types.CallToolResult:
         """Send a tools/call request and return the complete MCP protocol result.
 
@@ -407,7 +440,7 @@ class Client:
         Args:
             name (str): The name of the tool to call.
             arguments (dict[str, Any]): Arguments to pass to the tool.
-
+            timeout (datetime.timedelta | float | int | None, optional): The timeout for the tool call. Defaults to None.
         Returns:
             mcp.types.CallToolResult: The complete response object from the protocol,
                 containing the tool result and any additional metadata.
@@ -415,13 +448,19 @@ class Client:
         Raises:
             RuntimeError: If called while the client is not connected.
         """
-        result = await self.session.call_tool(name=name, arguments=arguments)
+
+        if isinstance(timeout, int | float):
+            timeout = datetime.timedelta(seconds=timeout)
+        result = await self.session.call_tool(
+            name=name, arguments=arguments, read_timeout_seconds=timeout
+        )
         return result
 
     async def call_tool(
         self,
         name: str,
         arguments: dict[str, Any] | None = None,
+        timeout: datetime.timedelta | float | int | None = None,
     ) -> list[
         mcp.types.TextContent | mcp.types.ImageContent | mcp.types.EmbeddedResource
     ]:
@@ -441,7 +480,11 @@ class Client:
             ToolError: If the tool call results in an error.
             RuntimeError: If called while the client is not connected.
         """
-        result = await self.call_tool_mcp(name=name, arguments=arguments or {})
+        result = await self.call_tool_mcp(
+            name=name,
+            arguments=arguments or {},
+            timeout=timeout,
+        )
         if result.isError:
             msg = cast(mcp.types.TextContent, result.content[0]).text
             raise ToolError(msg)

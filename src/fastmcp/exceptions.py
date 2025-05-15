@@ -1,5 +1,7 @@
 """Custom exceptions for FastMCP."""
 
+from mcp import McpError  # noqa: F401
+
 
 class FastMCPError(Exception):
     """Base error for FastMCP."""

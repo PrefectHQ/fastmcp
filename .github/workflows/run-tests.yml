@@ -46,6 +46,7 @@ jobs:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
           python-version: ${{ matrix.python-version }}
+
       - name: Install FastMCP
         run: uv sync --dev --locked
 

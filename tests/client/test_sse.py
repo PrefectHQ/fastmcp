@@ -1,9 +1,11 @@
+import asyncio
 import json
 import sys
 from collections.abc import Generator
 
 import pytest
 import uvicorn
+from mcp import McpError
 from mcp.types import TextResourceContents
 from starlette.applications import Starlette
 from starlette.routing import Mount
@@ -30,6 +32,12 @@ def fastmcp_server():
     def add(a: int, b: int) -> int:
         """Add two numbers together."""
         return a + b
+
+    @server.tool()
+    async def sleep(seconds: float) -> str:
+        """Sleep for a given number of seconds."""
+        await asyncio.sleep(seconds)
+        return f"Slept for {seconds} seconds"
 
     # Add a resource
     @server.resource(uri="data://users")
@@ -126,3 +134,49 @@ async def test_nested_sse_server_resolves_correctly():
         ) as client:
             result = await client.ping()
             assert result is True
+
+
+class TestTimeout:
+    async def test_timeout(self, sse_server: str):
+        with pytest.raises(
+            McpError,
+            match="Timed out while waiting for response to ClientRequest. Waited 0.01 seconds",
+        ):
+            async with Client(
+                transport=SSETransport(sse_server),
+                timeout=0.01,
+            ) as client:
+                await client.call_tool("sleep", {"seconds": 0.1})
+
+    async def test_timeout_tool_call(self, sse_server: str):
+        async with Client(transport=SSETransport(sse_server)) as client:
+            with pytest.raises(McpError, match="Timed out"):
+                await client.call_tool("sleep", {"seconds": 0.1}, timeout=0.01)
+
+    async def test_timeout_tool_call_overrides_client_timeout_if_lower(
+        self, sse_server: str
+    ):
+        async with Client(
+            transport=SSETransport(sse_server),
+            timeout=2,
+        ) as client:
+            with pytest.raises(McpError, match="Timed out"):
+                await client.call_tool("sleep", {"seconds": 0.1}, timeout=0.01)
+
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason="This test is flaky on Windows. Sometimes the client timeout is respected and sometimes it is not.",
+    )
+    async def test_timeout_client_timeout_does_not_override_tool_call_timeout_if_lower(
+        self, sse_server: str
+    ):
+        """
+        With SSE, the tool call timeout always takes precedence over the client.
+
+        Note: on Windows, the behavior appears unpredictable.
+        """
+        async with Client(
+            transport=SSETransport(sse_server),
+            timeout=0.01,
+        ) as client:
+            await client.call_tool("sleep", {"seconds": 0.1}, timeout=2)

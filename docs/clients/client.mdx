@@ -115,14 +115,18 @@ The standard client methods return user-friendly representations that may change
     tools = await client.list_tools()
     # tools -> list[mcp.types.Tool]
     ```
-*   **`call_tool(name: str, arguments: dict[str, Any] | None = None)`**: Executes a tool on the server.
+*   **`call_tool(name: str, arguments: dict[str, Any] | None = None, timeout: float | None = None)`**: Executes a tool on the server.
     ```python
     result = await client.call_tool("add", {"a": 5, "b": 3})
     # result -> list[mcp.types.TextContent | mcp.types.ImageContent | ...]
     print(result[0].text) # Assuming TextContent, e.g., '8'
+    
+    # With timeout (aborts if execution takes longer than 2 seconds)
+    result = await client.call_tool("long_running_task", {"param": "value"}, timeout=2.0)
     ```
     *   Arguments are passed as a dictionary. FastMCP servers automatically handle JSON string parsing for complex types if needed.
     *   Returns a list of content objects (usually `TextContent` or `ImageContent`).
+    *   The optional `timeout` parameter limits the maximum execution time (in seconds) for this specific call, overriding any client-level timeout.
 
 #### Resource Operations
 
@@ -191,6 +195,45 @@ These methods are especially useful for debugging or when you need to access met
 
 MCP allows servers to interact with clients in order to provide additional capabilities. The `Client` constructor accepts additional configuration to handle these server requests.
 
+#### Timeout Control
+
+<VersionBadge version="2.3.4" />
+
+You can control request timeouts at both the client level and individual request level:
+
+```python
+from fastmcp import Client
+from fastmcp.exceptions import McpError
+
+# Client with a global 5-second timeout for all requests
+client = Client(
+    my_mcp_server,
+    timeout=5.0  # Default timeout in seconds
+)
+
+async with client:
+    # This uses the global 5-second timeout
+    result1 = await client.call_tool("quick_task", {"param": "value"})
+    
+    # This specifies a 10-second timeout for this specific call
+    result2 = await client.call_tool("slow_task", {"param": "value"}, timeout=10.0)
+    
+    try:
+        # This will likely timeout
+        result3 = await client.call_tool("medium_task", {"param": "value"}, timeout=0.01)
+    except McpError as e:
+        # Handle timeout error
+        print(f"The task timed out: {e}")
+```
+
+<Warning>
+Timeout behavior varies between transport types:
+
+- With **SSE** transport, the per-request (tool call) timeout **always** takes precedence, regardless of which is lower.
+- With **HTTP** transport, the **lower** of the two timeouts (client or tool call) takes precedence.
+
+For consistent behavior across all transports, we recommend explicitly setting timeouts at the individual tool call level when needed, rather than relying on client-level timeouts.
+</Warning>
 
 #### LLM Sampling
 
