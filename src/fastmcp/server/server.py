@@ -418,7 +418,7 @@ class FastMCP(Generic[LifespanResultT]):
                 for server in self._mounted_servers.values():
                     if server.match_prompt(name):
                         new_key = server.strip_prompt_prefix(name)
-                    return await server.server._mcp_get_prompt(new_key, arguments)
+                        return await server.server._mcp_get_prompt(new_key, arguments)
                 else:
                     raise NotFoundError(f"Unknown prompt: {name}")
 
