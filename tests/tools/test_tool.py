@@ -4,7 +4,7 @@ from pydantic import BaseModel
 
 from fastmcp import FastMCP, Image
 from fastmcp.client import Client
-from fastmcp.exceptions import ClientError
+from fastmcp.exceptions import ToolError
 from fastmcp.tools.tool import Tool
 from fastmcp.utilities.tests import temporary_settings
 
@@ -299,7 +299,7 @@ class TestLegacyToolJsonParsing:
 
         async with Client(mcp) as client:
             with pytest.raises(
-                ClientError,
+                ToolError,
                 match="Error calling tool 'process_list'",
             ):
                 await client.call_tool("process_list", {"items": "['a', 'b', 3]"})

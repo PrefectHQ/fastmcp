@@ -89,7 +89,7 @@ proxy = FastMCP.from_client(client, name="SSE to Stdio Proxy")
 You can also proxy an in-memory `FastMCP` instance, which is useful for adjusting the configuration or behavior of a server you don't completely control.
 
 ```python
-from fastmcp import FastMCP
+from fastmcp import FastMCP, Client
 
 # Original server
 original_server = FastMCP(name="Original")
@@ -98,9 +98,12 @@ original_server = FastMCP(name="Original")
 def tool_a() -> str: 
     return "A"
 
-# Create a proxy of the original server
+# To proxy an in-memory server, first create a Client to it.
+client_to_original = Client(original_server)
+
+# Create a proxy of the original server using the client.
 proxy = FastMCP.from_client(
-    original_server,
+    client_to_original,
     name="Proxy Server"
 )
 

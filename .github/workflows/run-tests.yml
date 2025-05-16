@@ -13,13 +13,9 @@ on:
       - "uv.lock"
       - "pyproject.toml"
       - ".github/workflows/**"
+
+  # run on all pull requests because these checks are required and will block merges otherwise
   pull_request:
-    paths:
-      - "src/**"
-      - "tests/**"
-      - "uv.lock"
-      - "pyproject.toml"
-      - ".github/workflows/**"
 
   workflow_dispatch:
 
@@ -45,18 +41,10 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
-
-      - name: Set up Python ${{ matrix.python-version }}
-        run: uv python install ${{ matrix.python-version }}
+          python-version: ${{ matrix.python-version }}
 
       - name: Install FastMCP
-        run: uv sync --dev
-
-      - name: Fix pyreadline on Windows
-        if: matrix.os == 'windows-latest'
-        run: |
-          uv pip uninstall -y pyreadline
-          uv pip install pyreadline3
+        run: uv sync --dev --locked
 
       - name: Run tests
-        run: uv run --frozen pytest
+        run: uv run pytest

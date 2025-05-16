@@ -1,9 +1,11 @@
+import asyncio
 import json
 import sys
 from collections.abc import Generator
 
 import pytest
 import uvicorn
+from mcp import McpError
 from mcp.types import TextResourceContents
 from starlette.applications import Starlette
 from starlette.routing import Mount
@@ -30,6 +32,12 @@ def fastmcp_server():
     def add(a: int, b: int) -> int:
         """Add two numbers together."""
         return a + b
+
+    @server.tool()
+    async def sleep(seconds: float) -> str:
+        """Sleep for a given number of seconds."""
+        await asyncio.sleep(seconds)
+        return f"Slept for {seconds} seconds"
 
     # Add a resource
     @server.resource(uri="data://users")
@@ -139,3 +147,42 @@ async def test_nested_streamable_http_server_resolves_correctly():
         ) as client:
             result = await client.ping()
             assert result is True
+
+
+class TestTimeout:
+    async def test_timeout(self, streamable_http_server: str):
+        # note this transport behaves differently than others and raises
+        # McpError from the *client* context
+        with pytest.raises(McpError, match="Timed out"):
+            async with Client(
+                transport=StreamableHttpTransport(streamable_http_server),
+                timeout=0.01,
+            ) as client:
+                await client.call_tool("sleep", {"seconds": 0.1})
+
+    async def test_timeout_tool_call(self, streamable_http_server: str):
+        async with Client(
+            transport=StreamableHttpTransport(streamable_http_server),
+        ) as client:
+            with pytest.raises(McpError):
+                await client.call_tool("sleep", {"seconds": 0.1}, timeout=0.01)
+
+    async def test_timeout_tool_call_overrides_client_timeout(
+        self, streamable_http_server: str
+    ):
+        async with Client(
+            transport=StreamableHttpTransport(streamable_http_server),
+            timeout=2,
+        ) as client:
+            with pytest.raises(McpError):
+                await client.call_tool("sleep", {"seconds": 0.1}, timeout=0.01)
+
+    async def test_timeout_client_timeout_overrides_tool_call_timeout_if_lower(
+        self, streamable_http_server: str
+    ):
+        with pytest.raises(McpError):
+            async with Client(
+                transport=StreamableHttpTransport(streamable_http_server),
+                timeout=0.01,
+            ) as client:
+                await client.call_tool("sleep", {"seconds": 0.1}, timeout=2)

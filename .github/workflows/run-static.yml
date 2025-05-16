@@ -14,13 +14,10 @@ on:
       - "uv.lock"
       - "pyproject.toml"
       - ".github/workflows/**"
+
+  # run on all pull requests because these checks are required and will block merges otherwise
   pull_request:
-    paths:
-      - "src/**"
-      - "tests/**"
-      - "uv.lock"
-      - "pyproject.toml"
-      - ".github/workflows/**"
+
   workflow_dispatch:
 
 permissions:

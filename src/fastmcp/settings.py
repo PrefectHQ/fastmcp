@@ -1,6 +1,7 @@
 from __future__ import annotations as _annotations
 
-from typing import TYPE_CHECKING, Literal
+import inspect
+from typing import TYPE_CHECKING, Annotated, Literal
 
 from mcp.server.auth.settings import AuthSettings
 from pydantic import Field, model_validator
@@ -28,16 +29,37 @@ class Settings(BaseSettings):
 
     test_mode: bool = False
     log_level: LOG_LEVEL = "INFO"
-    tool_attempt_parse_json_args: bool = Field(
-        default=False,
-        description="""
-        Note: this enables a legacy behavior. If True, will attempt to parse
-        stringified JSON lists and objects strings in tool arguments before
-        passing them to the tool. This is an old behavior that can create
-        unexpected type coercion issues, but may be helpful for less powerful
-        LLMs that stringify JSON instead of passing actual lists and objects.
-        Defaults to False.""",
-    )
+    client_raise_first_exceptiongroup_error: Annotated[
+        bool,
+        Field(
+            default=True,
+            description=inspect.cleandoc(
+                """
+                Many MCP components operate in anyio taskgroups, and raise
+                ExceptionGroups instead of exceptions. If this setting is True, FastMCP Clients
+                will `raise` the first error in any ExceptionGroup instead of raising
+                the ExceptionGroup as a whole. This is useful for debugging, but may
+                mask other errors.
+                """
+            ),
+        ),
+    ] = True
+    tool_attempt_parse_json_args: Annotated[
+        bool,
+        Field(
+            default=False,
+            description=inspect.cleandoc(
+                """
+                Note: this enables a legacy behavior. If True, will attempt to parse
+                stringified JSON lists and objects strings in tool arguments before
+                passing them to the tool. This is an old behavior that can create
+                unexpected type coercion issues, but may be helpful for less powerful
+                LLMs that stringify JSON instead of passing actual lists and objects.
+                Defaults to False.
+                """
+            ),
+        ),
+    ] = False
 
     @model_validator(mode="after")
     def setup_logging(self) -> Self:
@@ -64,7 +86,10 @@ class ServerSettings(BaseSettings):
         nested_model_default_partial_update=True,
     )
 
-    log_level: LOG_LEVEL = Field(default_factory=lambda: Settings().log_level)
+    log_level: Annotated[
+        LOG_LEVEL,
+        Field(default_factory=lambda: Settings().log_level),
+    ]
 
     # HTTP settings
     host: str = "127.0.0.1"
@@ -83,10 +108,13 @@ class ServerSettings(BaseSettings):
     # prompt settings
     on_duplicate_prompts: DuplicateBehavior = "warn"
 
-    dependencies: list[str] = Field(
-        default_factory=list,
-        description="List of dependencies to install in the server environment",
-    )
+    dependencies: Annotated[
+        list[str],
+        Field(
+            default_factory=list,
+            description="List of dependencies to install in the server environment",
+        ),
+    ] = []
 
     # cache settings (for checking mounted servers)
     cache_expiration_seconds: float = 0
@@ -98,18 +126,6 @@ class ServerSettings(BaseSettings):
     stateless_http: bool = (
         False  # If True, uses true stateless mode (new transport per request)
     )
-
-
-class ClientSettings(BaseSettings):
-    """FastMCP client settings."""
-
-    model_config = SettingsConfigDict(
-        env_prefix="FASTMCP_CLIENT_",
-        env_file=".env",
-        extra="ignore",
-    )
-
-    log_level: LOG_LEVEL = Field(default_factory=lambda: Settings().log_level)
 
 
 settings = Settings()

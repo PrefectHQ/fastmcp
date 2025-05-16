@@ -32,7 +32,7 @@ async def test_tool_functionality(mcp_server):
     # Pass the server directly to the Client constructor
     async with Client(mcp_server) as client:
         result = await client.call_tool("greet", {"name": "World"})
-        assert "Hello, World!" in str(result[0])
+        assert result[0].text == "Hello, World!"
 ```
 
 This pattern creates a direct connection between the client and server, allowing you to test your server's functionality efficiently.

@@ -1,9 +1,10 @@
 import datetime
-from contextlib import AbstractAsyncContextManager
+from contextlib import AsyncExitStack
 from pathlib import Path
 from typing import Any, cast
 
 import mcp.types
+from exceptiongroup import catch
 from mcp import ClientSession
 from pydantic import AnyUrl
 
@@ -14,8 +15,9 @@ from fastmcp.client.roots import (
     create_roots_callback,
 )
 from fastmcp.client.sampling import SamplingHandler, create_sampling_callback
-from fastmcp.exceptions import ClientError
+from fastmcp.exceptions import ToolError
 from fastmcp.server import FastMCP
+from fastmcp.utilities.exceptions import get_catch_handlers
 
 from .transports import ClientTransport, SessionKwargs, infer_transport
 
@@ -33,8 +35,35 @@ class Client:
     """
     MCP client that delegates connection management to a Transport instance.
 
-    The Client class is primarily concerned with MCP protocol logic,
-    while the Transport handles connection establishment and management.
+    The Client class is responsible for MCP protocol logic, while the Transport
+    handles connection establishment and management. Client provides methods
+    for working with resources, prompts, tools and other MCP capabilities.
+
+    Args:
+        transport: Connection source specification, which can be:
+            - ClientTransport: Direct transport instance
+            - FastMCP: In-process FastMCP server
+            - AnyUrl | str: URL to connect to
+            - Path: File path for local socket
+            - dict: Transport configuration
+        roots: Optional RootsList or RootsHandler for filesystem access
+        sampling_handler: Optional handler for sampling requests
+        log_handler: Optional handler for log messages
+        message_handler: Optional handler for protocol messages
+        timeout: Optional timeout for requests (seconds or timedelta)
+
+    Examples:
+        ```python
+        # Connect to FastMCP server
+        client = Client("http://localhost:8080")
+
+        async with client:
+            # List available resources
+            resources = await client.list_resources()
+
+            # Call a tool
+            result = await client.call_tool("my_tool", {"param": "value"})
+        ```
     """
 
     def __init__(
@@ -45,19 +74,22 @@ class Client:
         sampling_handler: SamplingHandler | None = None,
         log_handler: LogHandler | None = None,
         message_handler: MessageHandler | None = None,
-        read_timeout_seconds: datetime.timedelta | None = None,
+        timeout: datetime.timedelta | float | int | None = None,
     ):
         self.transport = infer_transport(transport)
         self._session: ClientSession | None = None
-        self._session_cm: AbstractAsyncContextManager[ClientSession] | None = None
+        self._exit_stack: AsyncExitStack | None = None
         self._nesting_counter: int = 0
+
+        if isinstance(timeout, int | float):
+            timeout = datetime.timedelta(seconds=timeout)
 
         self._session_kwargs: SessionKwargs = {
             "sampling_callback": None,
             "list_roots_callback": None,
             "logging_callback": log_handler,
             "message_handler": message_handler,
-            "read_timeout_seconds": read_timeout_seconds,
+            "read_timeout_seconds": timeout,
         }
 
         if roots is not None:
@@ -91,9 +123,23 @@ class Client:
 
     async def __aenter__(self):
         if self._nesting_counter == 0:
-            # create new session
-            self._session_cm = self.transport.connect_session(**self._session_kwargs)
-            self._session = await self._session_cm.__aenter__()
+            # Create exit stack to manage both context managers
+            stack = AsyncExitStack()
+            await stack.__aenter__()
+
+            # Add the exception handling context
+            stack.enter_context(catch(get_catch_handlers()))
+
+            # the above catch will only apply once this __aenter__ finishes so
+            # we need to wrap the session creation in a new context in case it
+            # raises errors itself
+            with catch(get_catch_handlers()):
+                # Create and enter the transport session using the exit stack
+                session_cm = self.transport.connect_session(**self._session_kwargs)
+                self._session = await stack.enter_async_context(session_cm)
+
+            # Store the stack for cleanup in __aexit__
+            self._exit_stack = stack
 
         self._nesting_counter += 1
         return self
@@ -101,10 +147,14 @@ class Client:
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         self._nesting_counter -= 1
 
-        if self._nesting_counter == 0 and self._session_cm is not None:
-            await self._session_cm.__aexit__(exc_type, exc_val, exc_tb)
-            self._session_cm = None
-            self._session = None
+        if self._nesting_counter == 0:
+            # Exit the stack which will handle cleaning up the session
+            if self._exit_stack is not None:
+                try:
+                    await self._exit_stack.__aexit__(exc_type, exc_val, exc_tb)
+                finally:
+                    self._exit_stack = None
+                    self._session = None
 
     # --- MCP Client Methods ---
 
@@ -118,9 +168,12 @@ class Client:
         progress_token: str | int,
         progress: float,
         total: float | None = None,
+        message: str | None = None,
     ) -> None:
         """Send a progress notification."""
-        await self.session.send_progress_notification(progress_token, progress, total)
+        await self.session.send_progress_notification(
+            progress_token, progress, total, message
+        )
 
     async def set_logging_level(self, level: mcp.types.LoggingLevel) -> None:
         """Send a logging/setLevel request."""
@@ -377,7 +430,10 @@ class Client:
     # --- Call Tool ---
 
     async def call_tool_mcp(
-        self, name: str, arguments: dict[str, Any]
+        self,
+        name: str,
+        arguments: dict[str, Any],
+        timeout: datetime.timedelta | float | int | None = None,
     ) -> mcp.types.CallToolResult:
         """Send a tools/call request and return the complete MCP protocol result.
 
@@ -387,7 +443,7 @@ class Client:
         Args:
             name (str): The name of the tool to call.
             arguments (dict[str, Any]): Arguments to pass to the tool.
-
+            timeout (datetime.timedelta | float | int | None, optional): The timeout for the tool call. Defaults to None.
         Returns:
             mcp.types.CallToolResult: The complete response object from the protocol,
                 containing the tool result and any additional metadata.
@@ -395,19 +451,25 @@ class Client:
         Raises:
             RuntimeError: If called while the client is not connected.
         """
-        result = await self.session.call_tool(name=name, arguments=arguments)
+
+        if isinstance(timeout, int | float):
+            timeout = datetime.timedelta(seconds=timeout)
+        result = await self.session.call_tool(
+            name=name, arguments=arguments, read_timeout_seconds=timeout
+        )
         return result
 
     async def call_tool(
         self,
         name: str,
         arguments: dict[str, Any] | None = None,
+        timeout: datetime.timedelta | float | int | None = None,
     ) -> list[
         mcp.types.TextContent | mcp.types.ImageContent | mcp.types.EmbeddedResource
     ]:
         """Call a tool on the server.
 
-        Unlike call_tool_mcp, this method raises a ClientError if the tool call results in an error.
+        Unlike call_tool_mcp, this method raises a ToolError if the tool call results in an error.
 
         Args:
             name (str): The name of the tool to call.
@@ -418,11 +480,15 @@ class Client:
                 The content returned by the tool.
 
         Raises:
-            ClientError: If the tool call results in an error.
+            ToolError: If the tool call results in an error.
             RuntimeError: If called while the client is not connected.
         """
-        result = await self.call_tool_mcp(name=name, arguments=arguments or {})
+        result = await self.call_tool_mcp(
+            name=name,
+            arguments=arguments or {},
+            timeout=timeout,
+        )
         if result.isError:
             msg = cast(mcp.types.TextContent, result.content[0]).text
-            raise ClientError(msg)
+            raise ToolError(msg)
         return result.content

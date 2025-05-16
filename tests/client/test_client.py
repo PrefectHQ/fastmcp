@@ -1,6 +1,8 @@
+import asyncio
 from typing import cast
 
 import pytest
+from mcp import McpError
 from pydantic import AnyUrl
 
 from fastmcp.client import Client
@@ -26,6 +28,12 @@ def fastmcp_server():
     def add(a: int, b: int) -> int:
         """Add two numbers together."""
         return a + b
+
+    @server.tool()
+    async def sleep(seconds: float) -> str:
+        """Sleep for a given number of seconds."""
+        await asyncio.sleep(seconds)
+        return f"Slept for {seconds} seconds"
 
     # Add a resource
     @server.resource(uri="data://users")
@@ -78,8 +86,8 @@ async def test_list_tools(fastmcp_server):
         result = await client.list_tools()
 
         # Check that our tools are available
-        assert len(result) == 2
-        assert set(tool.name for tool in result) == {"greet", "add"}
+        assert len(result) == 3
+        assert set(tool.name for tool in result) == {"greet", "add", "sleep"}
 
 
 async def test_list_tools_mcp(fastmcp_server):
@@ -91,8 +99,8 @@ async def test_list_tools_mcp(fastmcp_server):
 
         # Check that we got the raw MCP ListToolsResult object
         assert hasattr(result, "tools")
-        assert len(result.tools) == 2
-        assert set(tool.name for tool in result.tools) == {"greet", "add"}
+        assert len(result.tools) == 3
+        assert set(tool.name for tool in result.tools) == {"greet", "add", "sleep"}
 
 
 async def test_call_tool(fastmcp_server):
@@ -499,3 +507,39 @@ class TestErrorHandling:
             with pytest.raises(Exception) as excinfo:
                 await client.read_resource(AnyUrl("error://resource/123"))
             assert "This is a resource error (xyz)" in str(excinfo.value)
+
+
+class TestTimeout:
+    async def test_timeout(self, fastmcp_server: FastMCP):
+        async with Client(
+            transport=FastMCPTransport(fastmcp_server), timeout=0.01
+        ) as client:
+            with pytest.raises(
+                McpError,
+                match="Timed out while waiting for response to ClientRequest. Waited 0.01 seconds",
+            ):
+                await client.call_tool("sleep", {"seconds": 0.1})
+
+    async def test_timeout_tool_call(self, fastmcp_server: FastMCP):
+        async with Client(transport=FastMCPTransport(fastmcp_server)) as client:
+            with pytest.raises(McpError):
+                await client.call_tool("sleep", {"seconds": 0.1}, timeout=0.01)
+
+    async def test_timeout_tool_call_overrides_client_timeout(
+        self, fastmcp_server: FastMCP
+    ):
+        async with Client(
+            transport=FastMCPTransport(fastmcp_server),
+            timeout=2,
+        ) as client:
+            with pytest.raises(McpError):
+                await client.call_tool("sleep", {"seconds": 0.1}, timeout=0.01)
+
+    async def test_timeout_tool_call_overrides_client_timeout_even_if_lower(
+        self, fastmcp_server: FastMCP
+    ):
+        async with Client(
+            transport=FastMCPTransport(fastmcp_server),
+            timeout=0.01,
+        ) as client:
+            await client.call_tool("sleep", {"seconds": 0.1}, timeout=2)
