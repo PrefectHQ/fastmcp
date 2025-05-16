@@ -72,7 +72,7 @@ There are a few things to note here:
 In order to run the server with Python, we need to add a `run` statement to the `__main__` block of the server file.
 
 ```python my_server.py {9-10}
-from fastmcp import FastMCP, Client
+from fastmcp import FastMCP
 
 mcp = FastMCP("My MCP Server")
 
@@ -99,6 +99,7 @@ Now that the server can be executed with `python my_server.py`, we can interact 
 In a new file, create a client and point it at the server file:
 
 ```python my_client.py
+import asyncio
 from fastmcp import Client
 
 client = Client("my_server.py")
