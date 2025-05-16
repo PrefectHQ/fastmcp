@@ -1,0 +1,29 @@
+documentation:
+  - changed-files:
+      - any-glob-to-any-file: "docs/**"
+
+example:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "examples/**"
+
+tests:
+  - changed-files:
+      - any-glob-to-any-file: "tests/**"
+
+"component: HTTP":
+  - changed-files:
+      - any-glob-to-any-file: "src/fastmcp/server/http.py"
+
+"component: client":
+  - changed-files:
+      - any-glob-to-any-file: "src/fastmcp/client/**"
+
+"contrib":
+  - changed-files:
+      - any-glob-to-any-file: "src/fastmcp/contrib/**"
+
+"component: openapi":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "src/**/*openapi*.py"
