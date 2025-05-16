@@ -56,7 +56,7 @@ class Context:
         ctx.error("Error message")
 
         # Report progress
-        ctx.report_progress(50, 100)
+        ctx.report_progress(50, 100, "Processing")
 
         # Access resources
         data = ctx.read_resource("resource://data")
@@ -96,7 +96,7 @@ class Context:
         return self.fastmcp._mcp_server.request_context
 
     async def report_progress(
-        self, progress: float, total: float | None = None
+        self, progress: float, total: float | None = None, message: str | None = None
     ) -> None:
         """Report progress for the current operation.
 
@@ -115,7 +115,10 @@ class Context:
             return
 
         await self.request_context.session.send_progress_notification(
-            progress_token=progress_token, progress=progress, total=total
+            progress_token=progress_token,
+            progress=progress,
+            total=total,
+            message=message,
         )
 
     async def read_resource(self, uri: str | AnyUrl) -> list[ReadResourceContents]:
