@@ -96,6 +96,7 @@ reportMissingTypeStubs = false
 useLibraryCodeForTypes = true
 venvPath = "."
 venv = ".venv"
+strict = ["src/fastmcp/server/server.py"]
 
 [tool.ruff.lint]
 extend-select = ["I", "UP"]
