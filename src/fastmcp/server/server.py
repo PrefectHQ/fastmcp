@@ -66,7 +66,7 @@ DuplicateBehavior = Literal["warn", "error", "replace", "ignore"]
 
 
 @asynccontextmanager
-async def default_lifespan(server: FastMCP) -> AsyncIterator[Any]:
+async def default_lifespan(server: FastMCP[LifespanResultT]) -> AsyncIterator[Any]:
     """Default lifespan context manager that does nothing.
 
     Args:
@@ -79,8 +79,10 @@ async def default_lifespan(server: FastMCP) -> AsyncIterator[Any]:
 
 
 def _lifespan_wrapper(
-    app: FastMCP,
-    lifespan: Callable[[FastMCP], AbstractAsyncContextManager[LifespanResultT]],
+    app: FastMCP[LifespanResultT],
+    lifespan: Callable[
+        [FastMCP[LifespanResultT]], AbstractAsyncContextManager[LifespanResultT]
+    ],
 ) -> Callable[
     [MCPServer[LifespanResultT]], AbstractAsyncContextManager[LifespanResultT]
 ]:
@@ -189,15 +191,13 @@ class FastMCP(Generic[LifespanResultT]):
         """
         if transport is None:
             transport = "stdio"
-        if transport not in ["stdio", "streamable-http", "sse"]:
+        if transport not in {"stdio", "streamable-http", "sse"}:
             raise ValueError(f"Unknown transport: {transport}")
 
         if transport == "stdio":
             await self.run_stdio_async(**transport_kwargs)
-        elif transport == "streamable-http":
-            await self.run_http_async(transport="streamable-http", **transport_kwargs)
-        elif transport == "sse":
-            await self.run_http_async(transport="sse", **transport_kwargs)
+        elif transport in {"streamable-http", "sse"}:
+            await self.run_http_async(transport=transport, **transport_kwargs)
         else:
             raise ValueError(f"Unknown transport: {transport}")
 
@@ -228,7 +228,7 @@ class FastMCP(Generic[LifespanResultT]):
     async def get_tools(self) -> dict[str, Tool]:
         """Get all registered tools, indexed by registered key."""
         if (tools := self._cache.get("tools")) is self._cache.NOT_FOUND:
-            tools = {}
+            tools: dict[str, Tool] = {}
             for server in self._mounted_servers.values():
                 server_tools = await server.get_tools()
                 tools.update(server_tools)
@@ -239,7 +239,7 @@ class FastMCP(Generic[LifespanResultT]):
     async def get_resources(self) -> dict[str, Resource]:
         """Get all registered resources, indexed by registered key."""
         if (resources := self._cache.get("resources")) is self._cache.NOT_FOUND:
-            resources = {}
+            resources: dict[str, Resource] = {}
             for server in self._mounted_servers.values():
                 server_resources = await server.get_resources()
                 resources.update(server_resources)
@@ -252,7 +252,7 @@ class FastMCP(Generic[LifespanResultT]):
         if (
             templates := self._cache.get("resource_templates")
         ) is self._cache.NOT_FOUND:
-            templates = {}
+            templates: dict[str, ResourceTemplate] = {}
             for server in self._mounted_servers.values():
                 server_templates = await server.get_resource_templates()
                 templates.update(server_templates)
@@ -265,7 +265,7 @@ class FastMCP(Generic[LifespanResultT]):
         List all available prompts.
         """
         if (prompts := self._cache.get("prompts")) is self._cache.NOT_FOUND:
-            prompts = {}
+            prompts: dict[str, Prompt] = {}
             for server in self._mounted_servers.values():
                 server_prompts = await server.get_prompts()
                 prompts.update(server_prompts)
@@ -743,7 +743,8 @@ class FastMCP(Generic[LifespanResultT]):
         port: int | None = None,
         log_level: str | None = None,
         path: str | None = None,
-        uvicorn_config: dict | None = None,
+        uvicorn_config: dict[str, Any] | None = None,
+        middleware: list[Middleware] | None = None,
     ) -> None:
         """Run the server using HTTP transport.
 
@@ -760,7 +761,7 @@ class FastMCP(Generic[LifespanResultT]):
         # lifespan is required for streamable http
         uvicorn_config["lifespan"] = "on"
 
-        app = self.http_app(path=path, transport=transport)
+        app = self.http_app(path=path, transport=transport, middleware=middleware)
 
         config = uvicorn.Config(
             app,
@@ -779,7 +780,7 @@ class FastMCP(Generic[LifespanResultT]):
         log_level: str | None = None,
         path: str | None = None,
         message_path: str | None = None,
-        uvicorn_config: dict | None = None,
+        uvicorn_config: dict[str, Any] | None = None,
     ) -> None:
         """Run the server using SSE transport."""
 
@@ -901,7 +902,7 @@ class FastMCP(Generic[LifespanResultT]):
         port: int | None = None,
         log_level: str | None = None,
         path: str | None = None,
-        uvicorn_config: dict | None = None,
+        uvicorn_config: dict[str, Any] | None = None,
     ) -> None:
         # Deprecated since 2.3.2
         warnings.warn(
@@ -1128,7 +1129,7 @@ class MountedServer:
     def __init__(
         self,
         prefix: str,
-        server: FastMCP,
+        server: FastMCP[LifespanResultT],
         tool_separator: str | None = None,
         resource_separator: str | None = None,
         prompt_separator: str | None = None,

@@ -10,9 +10,16 @@ from mcp.server.auth.middleware.bearer_auth import (
     BearerAuthBackend,
     RequireAuthMiddleware,
 )
-from mcp.server.auth.provider import OAuthAuthorizationServerProvider
+from mcp.server.auth.provider import (
+    AccessTokenT,
+    AuthorizationCodeT,
+    OAuthAuthorizationServerProvider,
+    RefreshTokenT,
+)
 from mcp.server.auth.routes import create_auth_routes
 from mcp.server.auth.settings import AuthSettings
+from mcp.server.lowlevel.server import LifespanResultT
+from mcp.server.sse import SseServerTransport
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
@@ -22,13 +29,13 @@ from starlette.responses import Response
 from starlette.routing import BaseRoute, Mount, Route
 from starlette.types import Receive, Scope, Send
 
-from fastmcp.low_level.sse_server_transport import SseServerTransport
 from fastmcp.utilities.logging import get_logger
 
 if TYPE_CHECKING:
     from fastmcp.server.server import FastMCP
 
 logger = get_logger(__name__)
+
 
 _current_http_request: ContextVar[Request | None] = ContextVar(
     "http_request",
@@ -62,7 +69,10 @@ class RequestContextMiddleware:
 
 
 def setup_auth_middleware_and_routes(
-    auth_server_provider: OAuthAuthorizationServerProvider | None,
+    auth_server_provider: OAuthAuthorizationServerProvider[
+        AuthorizationCodeT, RefreshTokenT, AccessTokenT
+    ]
+    | None,
     auth_settings: AuthSettings | None,
 ) -> tuple[list[Middleware], list[BaseRoute], list[str]]:
     """Set up authentication middleware and routes if auth is enabled.
@@ -136,10 +146,13 @@ def create_base_app(
 
 
 def create_sse_app(
-    server: FastMCP,
+    server: FastMCP[LifespanResultT],
     message_path: str,
     sse_path: str,
-    auth_server_provider: OAuthAuthorizationServerProvider | None = None,
+    auth_server_provider: OAuthAuthorizationServerProvider[
+        AuthorizationCodeT, RefreshTokenT, AccessTokenT
+    ]
+    | None = None,
     auth_settings: AuthSettings | None = None,
     debug: bool = False,
     routes: list[BaseRoute] | None = None,
@@ -236,10 +249,13 @@ def create_sse_app(
 
 
 def create_streamable_http_app(
-    server: FastMCP,
+    server: FastMCP[LifespanResultT],
     streamable_http_path: str,
     event_store: None = None,
-    auth_server_provider: OAuthAuthorizationServerProvider | None = None,
+    auth_server_provider: OAuthAuthorizationServerProvider[
+        AuthorizationCodeT, RefreshTokenT, AccessTokenT
+    ]
+    | None = None,
     auth_settings: AuthSettings | None = None,
     json_response: bool = False,
     stateless_http: bool = False,
