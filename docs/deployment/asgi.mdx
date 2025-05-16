@@ -43,7 +43,7 @@ http_app = mcp.http_app()
 sse_app = mcp.http_app(transport="sse")
 ```
 
-Both approaches return a Starlette application that can be integrated with other ASGI-compatible web frameworks. 
+Both approaches return a Starlette application that can be integrated with other ASGI-compatible web frameworks.
 
 The MCP server's endpoint is mounted at the root path `/mcp` for Streamable HTTP transport, and `/sse` for SSE transport, though you can change these paths by passing a `path` argument to the `http_app()` method:
 
@@ -199,13 +199,13 @@ In addition to adding your FastMCP server to an existing ASGI app, you can also 
 ```python
 from fastmcp import FastMCP
 from starlette.requests import Request
-from starlette.responses import JSONResponse
+from starlette.responses import PlainTextResponse
 
 mcp = FastMCP("MyServer")
 
 @mcp.custom_route("/health", methods=["GET"])
-async def health_check(request: Request) -> JSONResponse:
-    return JSONResponse({"status": "healthy"})
+async def health_check(request: Request) -> PlainTextResponse:
+    return PlainTextResponse("OK")
 ```
 
-These routes will be included in the FastMCP app when mounted in your web application. 
+These routes will be included in the FastMCP app when mounted in your web application.
