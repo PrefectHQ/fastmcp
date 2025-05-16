@@ -263,7 +263,7 @@ def dev(
     try:
         # Import server to get dependencies
         server = _import_server(file, server_object)
-        if hasattr(server, "dependencies"):
+        if hasattr(server, "dependencies") and server.dependencies is not None:
             with_packages = list(set(with_packages + server.dependencies))
 
         env_vars = {}
