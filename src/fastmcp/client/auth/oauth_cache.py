@@ -4,8 +4,10 @@ from pathlib import Path
 from typing import Any, ClassVar, Literal
 from urllib.parse import urlparse
 
-from fastmcp.client.auth.httpx_client import logger
 from fastmcp.settings import settings
+from fastmcp.utilities.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class OAuthCache:
