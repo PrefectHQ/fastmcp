@@ -266,7 +266,7 @@ mcp = FastMCP("MyServer")
 
 @mcp.custom_route("/health", methods=["GET"])
 async def health_check(request: Request) -> PlainTextResponse:
-    return PlainTextResponse("OK")return JSONResponse({"status": "healthy"})
+    return PlainTextResponse("OK")
 
 if __name__ == "__main__":
     mcp.run()
