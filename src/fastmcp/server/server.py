@@ -189,15 +189,13 @@ class FastMCP(Generic[LifespanResultT]):
         """
         if transport is None:
             transport = "stdio"
-        if transport not in ["stdio", "streamable-http", "sse"]:
+        if transport not in {"stdio", "streamable-http", "sse"}:
             raise ValueError(f"Unknown transport: {transport}")
 
         if transport == "stdio":
             await self.run_stdio_async(**transport_kwargs)
-        elif transport == "streamable-http":
-            await self.run_http_async(transport="streamable-http", **transport_kwargs)
-        elif transport == "sse":
-            await self.run_http_async(transport="sse", **transport_kwargs)
+        elif transport in {"streamable-http", "sse"}:
+            await self.run_http_async(transport=transport, **transport_kwargs)
         else:
             raise ValueError(f"Unknown transport: {transport}")
 
@@ -744,6 +742,7 @@ class FastMCP(Generic[LifespanResultT]):
         log_level: str | None = None,
         path: str | None = None,
         uvicorn_config: dict | None = None,
+        middleware: list[Middleware] | None = None,
     ) -> None:
         """Run the server using HTTP transport.
 
@@ -760,7 +759,7 @@ class FastMCP(Generic[LifespanResultT]):
         # lifespan is required for streamable http
         uvicorn_config["lifespan"] = "on"
 
-        app = self.http_app(path=path, transport=transport)
+        app = self.http_app(path=path, transport=transport, middleware=middleware)
 
         config = uvicorn.Config(
             app,
