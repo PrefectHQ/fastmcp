@@ -124,7 +124,7 @@ app = Starlette(
         Mount("/mcp-server", app=mcp_app),
         # Add other routes as needed
     ],
-    lifespan=mcp_app.router.lifespan_context,
+    lifespan=mcp_app.lifespan,
 )
 ```
 
@@ -154,7 +154,7 @@ mcp_app = mcp.http_app(path='/mcp')
 inner_app = Starlette(routes=[Mount("/inner", app=mcp_app)])
 app = Starlette(
     routes=[Mount("/outer", app=inner_app)],
-    lifespan=mcp_app.router.lifespan_context,
+    lifespan=mcp_app.lifespan,
 )
 ```
 
@@ -181,7 +181,7 @@ mcp = FastMCP("MyServer")
 mcp_app = mcp.http_app(path='/mcp')
 
 # Create a FastAPI app and mount the MCP server
-app = FastAPI(lifespan=mcp_app.router.lifespan_context)
+app = FastAPI(lifespan=mcp_app.lifespan)
 app.mount("/mcp-server", mcp_app)
 ```
 
