@@ -1,12 +1,22 @@
+import abc
+import contextlib
 import datetime
+from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, TypedDict, cast
 
 import mcp.types
 from exceptiongroup import catch
 from mcp import ClientSession
+from mcp.client.session import (
+    ListRootsFnT,
+    LoggingFnT,
+    MessageHandlerFnT,
+    SamplingFnT,
+)
 from pydantic import AnyUrl
+from typing_extensions import Unpack
 
 from fastmcp.client.logging import LogHandler, MessageHandler
 from fastmcp.client.roots import (
@@ -19,16 +29,61 @@ from fastmcp.exceptions import ToolError
 from fastmcp.server import FastMCP
 from fastmcp.utilities.exceptions import get_catch_handlers
 
-from .transports import ClientTransport, SessionKwargs, infer_transport
-
 __all__ = [
     "Client",
+    "ClientTransport",
+    "SessionKwargs",
     "RootsHandler",
     "RootsList",
     "LogHandler",
     "MessageHandler",
     "SamplingHandler",
 ]
+
+
+class SessionKwargs(TypedDict, total=False):
+    """Keyword arguments for the MCP ClientSession constructor."""
+
+    sampling_callback: SamplingFnT | None
+    list_roots_callback: ListRootsFnT | None
+    logging_callback: LoggingFnT | None
+    message_handler: MessageHandlerFnT | None
+    read_timeout_seconds: datetime.timedelta | None
+
+
+class ClientTransport(abc.ABC):
+    """
+    Abstract base class for different MCP client transport mechanisms.
+
+    A Transport is responsible for establishing and managing connections
+    to an MCP server, and providing a ClientSession within an async context.
+    """
+
+    @abc.abstractmethod
+    @contextlib.asynccontextmanager
+    async def connect_session(
+        self, **session_kwargs: Unpack[SessionKwargs]
+    ) -> AsyncIterator[ClientSession]:
+        """
+        Establishes a connection and yields an active, initialized ClientSession.
+
+        The session is guaranteed to be valid only within the scope of the
+        async context manager. Connection setup and teardown are handled
+        within this context.
+
+        Args:
+            **session_kwargs: Keyword arguments to pass to the ClientSession
+                              constructor (e.g., callbacks, timeouts).
+
+        Yields:
+            An initialized mcp.ClientSession instance.
+        """
+        raise NotImplementedError
+        yield None  # type: ignore
+
+    def __repr__(self) -> str:
+        # Basic representation for subclasses
+        return f"<{self.__class__.__name__}>"
 
 
 class Client:
@@ -76,6 +131,8 @@ class Client:
         message_handler: MessageHandler | None = None,
         timeout: datetime.timedelta | float | int | None = None,
     ):
+        from fastmcp.client.transports import infer_transport
+
         self.transport = infer_transport(transport)
         self._session: ClientSession | None = None
         self._exit_stack: AsyncExitStack | None = None

@@ -1,6 +1,7 @@
 from __future__ import annotations as _annotations
 
 import inspect
+from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Literal
 
 from mcp.server.auth.settings import AuthSettings
@@ -26,6 +27,8 @@ class Settings(BaseSettings):
         env_nested_delimiter="__",
         nested_model_default_partial_update=True,
     )
+
+    home: Path = Path.home() / ".fastmcp"
 
     test_mode: bool = False
     log_level: LOG_LEVEL = "INFO"

@@ -1,76 +1,38 @@
-import abc
 import contextlib
-import datetime
-import inspect
 import os
 import shutil
 import sys
-import warnings
 from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import Any, TypedDict, cast
+from typing import Any
 
 from mcp import ClientSession, StdioServerParameters
-from mcp.client.session import (
-    ListRootsFnT,
-    LoggingFnT,
-    MessageHandlerFnT,
-    SamplingFnT,
-)
-from mcp.client.sse import sse_client
 from mcp.client.stdio import stdio_client
-from mcp.client.streamable_http import streamablehttp_client
 from mcp.client.websocket import websocket_client
 from mcp.shared.memory import create_connected_server_and_client_session
 from pydantic import AnyUrl
 from typing_extensions import Unpack
 
+from fastmcp.client.client import ClientTransport, SessionKwargs
+from fastmcp.client.sse import SSETransport
+from fastmcp.client.streamable_http import StreamableHttpTransport
 from fastmcp.server import FastMCP as FastMCPServer
 
-
-class SessionKwargs(TypedDict, total=False):
-    """Keyword arguments for the MCP ClientSession constructor."""
-
-    sampling_callback: SamplingFnT | None
-    list_roots_callback: ListRootsFnT | None
-    logging_callback: LoggingFnT | None
-    message_handler: MessageHandlerFnT | None
-    read_timeout_seconds: datetime.timedelta | None
-
-
-class ClientTransport(abc.ABC):
-    """
-    Abstract base class for different MCP client transport mechanisms.
-
-    A Transport is responsible for establishing and managing connections
-    to an MCP server, and providing a ClientSession within an async context.
-    """
-
-    @abc.abstractmethod
-    @contextlib.asynccontextmanager
-    async def connect_session(
-        self, **session_kwargs: Unpack[SessionKwargs]
-    ) -> AsyncIterator[ClientSession]:
-        """
-        Establishes a connection and yields an active, initialized ClientSession.
-
-        The session is guaranteed to be valid only within the scope of the
-        async context manager. Connection setup and teardown are handled
-        within this context.
-
-        Args:
-            **session_kwargs: Keyword arguments to pass to the ClientSession
-                              constructor (e.g., callbacks, timeouts).
-
-        Yields:
-            An initialized mcp.ClientSession instance.
-        """
-        raise NotImplementedError
-        yield None  # type: ignore
-
-    def __repr__(self) -> str:
-        # Basic representation for subclasses
-        return f"<{self.__class__.__name__}>"
+__all__ = [
+    "ClientTransport",
+    "SSETransport",
+    "StreamableHttpTransport",
+    "FastMCPServer",
+    "WSTransport",
+    "StdioTransport",
+    "PythonStdioTransport",
+    "FastMCPStdioTransport",
+    "NodeStdioTransport",
+    "UvxStdioTransport",
+    "NpxStdioTransport",
+    "FastMCPTransport",
+    "infer_transport",
+]
 
 
 class WSTransport(ClientTransport):
@@ -97,101 +59,6 @@ class WSTransport(ClientTransport):
 
     def __repr__(self) -> str:
         return f"<WebSocket(url='{self.url}')>"
-
-
-class SSETransport(ClientTransport):
-    """Transport implementation that connects to an MCP server via Server-Sent Events."""
-
-    def __init__(
-        self,
-        url: str | AnyUrl,
-        headers: dict[str, str] | None = None,
-        sse_read_timeout: datetime.timedelta | float | int | None = None,
-    ):
-        if isinstance(url, AnyUrl):
-            url = str(url)
-        if not isinstance(url, str) or not url.startswith("http"):
-            raise ValueError("Invalid HTTP/S URL provided for SSE.")
-        self.url = url
-        self.headers = headers or {}
-
-        if isinstance(sse_read_timeout, int | float):
-            sse_read_timeout = datetime.timedelta(seconds=sse_read_timeout)
-        self.sse_read_timeout = sse_read_timeout
-
-    @contextlib.asynccontextmanager
-    async def connect_session(
-        self, **session_kwargs: Unpack[SessionKwargs]
-    ) -> AsyncIterator[ClientSession]:
-        client_kwargs = {}
-        # sse_read_timeout has a default value set, so we can't pass None without overriding it
-        # instead we simply leave the kwarg out if it's not provided
-        if self.sse_read_timeout is not None:
-            client_kwargs["sse_read_timeout"] = self.sse_read_timeout.total_seconds()
-        if session_kwargs.get("read_timeout_seconds", None) is not None:
-            read_timeout_seconds = cast(
-                datetime.timedelta, session_kwargs.get("read_timeout_seconds")
-            )
-            client_kwargs["timeout"] = read_timeout_seconds.total_seconds()
-
-        async with sse_client(
-            self.url, headers=self.headers, **client_kwargs
-        ) as transport:
-            read_stream, write_stream = transport
-            async with ClientSession(
-                read_stream, write_stream, **session_kwargs
-            ) as session:
-                await session.initialize()
-                yield session
-
-    def __repr__(self) -> str:
-        return f"<SSE(url='{self.url}')>"
-
-
-class StreamableHttpTransport(ClientTransport):
-    """Transport implementation that connects to an MCP server via Streamable HTTP Requests."""
-
-    def __init__(
-        self,
-        url: str | AnyUrl,
-        headers: dict[str, str] | None = None,
-        sse_read_timeout: datetime.timedelta | float | int | None = None,
-    ):
-        if isinstance(url, AnyUrl):
-            url = str(url)
-        if not isinstance(url, str) or not url.startswith("http"):
-            raise ValueError("Invalid HTTP/S URL provided for Streamable HTTP.")
-        self.url = url
-        self.headers = headers or {}
-
-        if isinstance(sse_read_timeout, int | float):
-            sse_read_timeout = datetime.timedelta(seconds=sse_read_timeout)
-        self.sse_read_timeout = sse_read_timeout
-
-    @contextlib.asynccontextmanager
-    async def connect_session(
-        self, **session_kwargs: Unpack[SessionKwargs]
-    ) -> AsyncIterator[ClientSession]:
-        client_kwargs = {}
-        # sse_read_timeout has a default value set, so we can't pass None without overriding it
-        # instead we simply leave the kwarg out if it's not provided
-        if self.sse_read_timeout is not None:
-            client_kwargs["sse_read_timeout"] = self.sse_read_timeout
-        if session_kwargs.get("read_timeout_seconds", None) is not None:
-            client_kwargs["timeout"] = session_kwargs.get("read_timeout_seconds")
-
-        async with streamablehttp_client(
-            self.url, headers=self.headers, **client_kwargs
-        ) as transport:
-            read_stream, write_stream, _ = transport
-            async with ClientSession(
-                read_stream, write_stream, **session_kwargs
-            ) as session:
-                await session.initialize()
-                yield session
-
-    def __repr__(self) -> str:
-        return f"<StreamableHttp(url='{self.url}')>"
 
 
 class StdioTransport(ClientTransport):
@@ -500,18 +367,9 @@ def infer_transport(
     # the transport is an http(s) URL
     elif isinstance(transport, AnyUrl | str) and str(transport).startswith("http"):
         if str(transport).rstrip("/").endswith("/sse"):
-            warnings.warn(
-                inspect.cleandoc(
-                    """
-                    As of FastMCP 2.3.0, HTTP URLs are inferred to use Streamable HTTP.
-                    The provided URL ends in `/sse`, so you may encounter unexpected behavior.
-                    If you intended to use SSE, please use the `SSETransport` class directly.
-                    """
-                ),
-                category=UserWarning,
-                stacklevel=2,
-            )
-        return StreamableHttpTransport(url=transport)
+            return SSETransport(url=transport)
+        else:
+            return StreamableHttpTransport(url=transport)
 
     # the transport is a websocket URL
     elif isinstance(transport, AnyUrl | str) and str(transport).startswith("ws"):
