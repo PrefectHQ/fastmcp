@@ -512,11 +512,11 @@ class TestErrorHandling:
 class TestTimeout:
     async def test_timeout(self, fastmcp_server: FastMCP):
         async with Client(
-            transport=FastMCPTransport(fastmcp_server), timeout=0.01
+            transport=FastMCPTransport(fastmcp_server), timeout=0.05
         ) as client:
             with pytest.raises(
                 McpError,
-                match="Timed out while waiting for response to ClientRequest. Waited 0.01 seconds",
+                match="Timed out while waiting for response to ClientRequest. Waited 0.05 seconds",
             ):
                 await client.call_tool("sleep", {"seconds": 0.1})
 
