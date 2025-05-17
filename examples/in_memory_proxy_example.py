@@ -3,9 +3,8 @@ This example demonstrates how to set up and use an in-memory FastMCP proxy.
 
 It illustrates the pattern:
 1. Create an original FastMCP server with some tools.
-2. Create a Client that connects to this original server (in-memory).
-3. Create a proxy FastMCP server using FastMCP.from_client(), passing it the client from step 2.
-4. Use another Client to connect to the proxy server (in-memory) and interact with the original server's tools through the proxy.
+2. Create a proxy FastMCP server using ``FastMCP.as_proxy(original_server)``.
+3. Use another Client to connect to the proxy server (in-memory) and interact with the original server's tools through the proxy.
 """
 
 import asyncio
@@ -36,24 +35,18 @@ async def main():
     original_server.add_tool(EchoService().echo)
     print(f"   -> Original Server '{original_server.name}' created.")
 
-    # 2. Client for Proxy
-    print("\nStep 2: Creating a Client to connect to the Original Server...")
-    print("          (This client will be used internally by the proxy server)")
-    client_to_original = Client(original_server)
-    print(f"   -> Client for proxy created, targeting '{original_server.name}'.")
-
-    # 3. Proxy Server Creation
-    print("\nStep 3: Creating the Proxy Server (InMemoryProxy)...")
+    # 2. Proxy Server Creation
+    print("\nStep 2: Creating the Proxy Server (InMemoryProxy)...")
     print(
-        f"          (Using FastMCP.from_client, passing it the client from Step 2 that targets '{original_server.name}')"
+        f"          (Using FastMCP.as_proxy to wrap '{original_server.name}' directly)"
     )
-    proxy_server = FastMCP.from_client(client_to_original, name="InMemoryProxy")
+    proxy_server = FastMCP.as_proxy(original_server, name="InMemoryProxy")
     print(
         f"   -> Proxy Server '{proxy_server.name}' created, proxying '{original_server.name}'."
     )
 
-    # 4. Interacting via Proxy
-    print("\nStep 4: Using a new Client to connect to the Proxy Server and interact...")
+    # 3. Interacting via Proxy
+    print("\nStep 3: Using a new Client to connect to the Proxy Server and interact...")
     async with Client(proxy_server) as final_client:
         print(f"   -> Successfully connected to proxy '{proxy_server.name}'.")
 

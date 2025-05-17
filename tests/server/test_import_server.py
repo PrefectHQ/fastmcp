@@ -299,7 +299,7 @@ async def test_import_with_proxy_tools():
     def get_data(query: str) -> str:
         return f"Data for query: {query}"
 
-    proxy_app = FastMCP.from_client(Client(api_app))
+    proxy_app = FastMCP.as_proxy(Client(api_app))
     await main_app.import_server("api", proxy_app)
 
     result = await main_app._mcp_call_tool("api_get_data", {"query": "test"})
@@ -323,7 +323,7 @@ async def test_import_with_proxy_prompts():
         """Example greeting prompt."""
         return f"Hello, {name} from API!"
 
-    proxy_app = FastMCP.from_client(Client(api_app))
+    proxy_app = FastMCP.as_proxy(Client(api_app))
     await main_app.import_server("api", proxy_app)
 
     result = await main_app._mcp_get_prompt("api_greeting", {"name": "World"})
@@ -351,7 +351,7 @@ async def test_import_with_proxy_resources():
             "base_url": "https://api.example.com",
         }
 
-    proxy_app = FastMCP.from_client(Client(api_app))
+    proxy_app = FastMCP.as_proxy(Client(api_app))
     await main_app.import_server("api", proxy_app)
 
     # Access the resource through the main app with the prefixed key
@@ -379,7 +379,7 @@ async def test_import_with_proxy_resource_templates():
     def create_user(name: str, email: str):
         return {"name": name, "email": email}
 
-    proxy_app = FastMCP.from_client(Client(api_app))
+    proxy_app = FastMCP.as_proxy(Client(api_app))
     await main_app.import_server("api", proxy_app)
 
     # Instantiate the template through the main app with the prefixed key

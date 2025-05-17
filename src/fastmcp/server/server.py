@@ -11,6 +11,7 @@ from contextlib import (
     asynccontextmanager,
 )
 from functools import partial
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Generic, Literal
 
 import anyio
@@ -60,6 +61,7 @@ from fastmcp.utilities.logging import get_logger
 
 if TYPE_CHECKING:
     from fastmcp.client import Client
+    from fastmcp.client.transports import ClientTransport
     from fastmcp.server.openapi import FastMCPOpenAPI
     from fastmcp.server.proxy import FastMCPProxy
 logger = get_logger(__name__)
@@ -1105,13 +1107,46 @@ class FastMCP(Generic[LifespanResultT]):
         )
 
     @classmethod
+    def as_proxy(
+        cls,
+        backend: Client
+        | ClientTransport
+        | FastMCP[Any]
+        | AnyUrl
+        | Path
+        | dict[str, Any]
+        | str,
+        **settings: Any,
+    ) -> FastMCPProxy:
+        """Create a FastMCP proxy server for the given backend.
+
+        The ``backend`` argument can be either an existing :class:`~fastmcp.client.Client`
+        instance or any value accepted as the ``transport`` argument of
+        :class:`~fastmcp.client.Client`. This mirrors the convenience of the
+        ``Client`` constructor.
+        """
+        from fastmcp.server.proxy import FastMCPProxy
+
+        if isinstance(backend, Client):
+            client = backend
+        else:
+            client = Client(backend)
+
+        return FastMCPProxy(client=client, **settings)
+
+    @classmethod
     def from_client(cls, client: Client, **settings: Any) -> FastMCPProxy:
         """
         Create a FastMCP proxy server from a FastMCP client.
         """
-        from fastmcp.server.proxy import FastMCPProxy
+        # Deprecated since 2.4.0
+        warnings.warn(
+            "FastMCP.from_client() is deprecated; use FastMCP.as_proxy() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
 
-        return FastMCPProxy(client=client, **settings)
+        return cls.as_proxy(client, **settings)
 
 
 def _validate_resource_prefix(prefix: str) -> None:

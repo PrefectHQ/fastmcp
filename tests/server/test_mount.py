@@ -373,7 +373,7 @@ class TestProxyServer:
             return f"Data for {query}"
 
         # Create proxy server
-        proxy_server = FastMCP.from_client(
+        proxy_server = FastMCP.as_proxy(
             Client(transport=FastMCPTransport(original_server))
         )
 
@@ -396,7 +396,7 @@ class TestProxyServer:
         original_server = FastMCP("OriginalServer")
 
         # Create proxy server
-        proxy_server = FastMCP.from_client(
+        proxy_server = FastMCP.as_proxy(
             Client(transport=FastMCPTransport(original_server))
         )
 
@@ -428,7 +428,7 @@ class TestProxyServer:
             return {"api_key": "12345"}
 
         # Create proxy server
-        proxy_server = FastMCP.from_client(
+        proxy_server = FastMCP.as_proxy(
             Client(transport=FastMCPTransport(original_server))
         )
 
@@ -452,7 +452,7 @@ class TestProxyServer:
             return f"Welcome, {name}!"
 
         # Create proxy server
-        proxy_server = FastMCP.from_client(
+        proxy_server = FastMCP.as_proxy(
             Client(transport=FastMCPTransport(original_server))
         )
 
@@ -510,7 +510,7 @@ class TestAsProxyKwarg:
     async def test_as_proxy_ignored_for_proxy_mounts_default(self):
         mcp = FastMCP("Main")
         sub = FastMCP("Sub")
-        sub_proxy = FastMCP.from_client(Client(transport=FastMCPTransport(sub)))
+        sub_proxy = FastMCP.as_proxy(Client(transport=FastMCPTransport(sub)))
 
         mcp.mount("sub", sub_proxy)
 
@@ -519,7 +519,7 @@ class TestAsProxyKwarg:
     async def test_as_proxy_ignored_for_proxy_mounts_false(self):
         mcp = FastMCP("Main")
         sub = FastMCP("Sub")
-        sub_proxy = FastMCP.from_client(Client(transport=FastMCPTransport(sub)))
+        sub_proxy = FastMCP.as_proxy(Client(transport=FastMCPTransport(sub)))
 
         mcp.mount("sub", sub_proxy, as_proxy=False)
 
@@ -528,7 +528,7 @@ class TestAsProxyKwarg:
     async def test_as_proxy_ignored_for_proxy_mounts_true(self):
         mcp = FastMCP("Main")
         sub = FastMCP("Sub")
-        sub_proxy = FastMCP.from_client(Client(transport=FastMCPTransport(sub)))
+        sub_proxy = FastMCP.as_proxy(Client(transport=FastMCPTransport(sub)))
 
         mcp.mount("sub", sub_proxy, as_proxy=True)
 
