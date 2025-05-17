@@ -35,7 +35,6 @@ from mcp.types import Resource as MCPResource
 from mcp.types import ResourceTemplate as MCPResourceTemplate
 from mcp.types import Tool as MCPTool
 from pydantic import AnyUrl
-from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.requests import Request
 from starlette.responses import Response
@@ -48,7 +47,11 @@ from fastmcp.prompts import Prompt, PromptManager
 from fastmcp.prompts.prompt import PromptResult
 from fastmcp.resources import Resource, ResourceManager
 from fastmcp.resources.template import ResourceTemplate
-from fastmcp.server.http import create_sse_app
+from fastmcp.server.http import (
+    StarletteWithLifespan,
+    create_sse_app,
+    create_streamable_http_app,
+)
 from fastmcp.tools import ToolManager
 from fastmcp.tools.tool import Tool
 from fastmcp.utilities.cache import TimedCache
@@ -59,7 +62,6 @@ if TYPE_CHECKING:
     from fastmcp.client import Client
     from fastmcp.server.openapi import FastMCPOpenAPI
     from fastmcp.server.proxy import FastMCPProxy
-
 logger = get_logger(__name__)
 
 DuplicateBehavior = Literal["warn", "error", "replace", "ignore"]
@@ -806,7 +808,7 @@ class FastMCP(Generic[LifespanResultT]):
         path: str | None = None,
         message_path: str | None = None,
         middleware: list[Middleware] | None = None,
-    ) -> Starlette:
+    ) -> StarletteWithLifespan:
         """
         Create a Starlette app for the SSE server.
 
@@ -837,7 +839,7 @@ class FastMCP(Generic[LifespanResultT]):
         self,
         path: str | None = None,
         middleware: list[Middleware] | None = None,
-    ) -> Starlette:
+    ) -> StarletteWithLifespan:
         """
         Create a Starlette app for the StreamableHTTP server.
 
@@ -858,7 +860,7 @@ class FastMCP(Generic[LifespanResultT]):
         path: str | None = None,
         middleware: list[Middleware] | None = None,
         transport: Literal["streamable-http", "sse"] = "streamable-http",
-    ) -> Starlette:
+    ) -> StarletteWithLifespan:
         """Create a Starlette app using the specified HTTP transport.
 
         Args:
@@ -869,7 +871,6 @@ class FastMCP(Generic[LifespanResultT]):
         Returns:
             A Starlette application configured with the specified transport
         """
-        from fastmcp.server.http import create_streamable_http_app
 
         if transport == "streamable-http":
             return create_streamable_http_app(

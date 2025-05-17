@@ -27,7 +27,7 @@ from starlette.middleware.authentication import AuthenticationMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
 from starlette.routing import BaseRoute, Mount, Route
-from starlette.types import Receive, Scope, Send
+from starlette.types import Lifespan, Receive, Scope, Send
 
 from fastmcp.utilities.logging import get_logger
 
@@ -41,6 +41,12 @@ _current_http_request: ContextVar[Request | None] = ContextVar(
     "http_request",
     default=None,
 )
+
+
+class StarletteWithLifespan(Starlette):
+    @property
+    def lifespan(self) -> Lifespan:
+        return self.router.lifespan_context
 
 
 @contextmanager
@@ -122,7 +128,7 @@ def create_base_app(
     middleware: list[Middleware],
     debug: bool = False,
     lifespan: Callable | None = None,
-) -> Starlette:
+) -> StarletteWithLifespan:
     """Create a base Starlette app with common middleware and routes.
 
     Args:
@@ -137,7 +143,7 @@ def create_base_app(
     # Always add RequestContextMiddleware as the outermost middleware
     middleware.append(Middleware(RequestContextMiddleware))
 
-    return Starlette(
+    return StarletteWithLifespan(
         routes=routes,
         middleware=middleware,
         debug=debug,
@@ -157,7 +163,7 @@ def create_sse_app(
     debug: bool = False,
     routes: list[BaseRoute] | None = None,
     middleware: list[Middleware] | None = None,
-) -> Starlette:
+) -> StarletteWithLifespan:
     """Return an instance of the SSE server app.
 
     Args:
@@ -262,7 +268,7 @@ def create_streamable_http_app(
     debug: bool = False,
     routes: list[BaseRoute] | None = None,
     middleware: list[Middleware] | None = None,
-) -> Starlette:
+) -> StarletteWithLifespan:
     """Return an instance of the StreamableHTTP server app.
 
     Args:
