@@ -1125,6 +1125,7 @@ class FastMCP(Generic[LifespanResultT]):
         :class:`~fastmcp.client.Client`. This mirrors the convenience of the
         ``Client`` constructor.
         """
+        from fastmcp.client.client import Client
         from fastmcp.server.proxy import FastMCPProxy
 
         if isinstance(backend, Client):
