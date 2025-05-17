@@ -247,11 +247,15 @@ def create_sse_app(
         server_middleware.extend(middleware)
 
     # Create and return the app
-    return create_base_app(
+    app = create_base_app(
         routes=server_routes,
         middleware=server_middleware,
         debug=debug,
     )
+    # Store the FastMCP server instance on the Starlette app state
+    app.state.fastmcp_server = server
+
+    return app
 
 
 def create_streamable_http_app(
@@ -344,9 +348,13 @@ def create_streamable_http_app(
             yield
 
     # Create and return the app with lifespan
-    return create_base_app(
+    app = create_base_app(
         routes=server_routes,
         middleware=server_middleware,
         debug=debug,
         lifespan=lifespan,
     )
+    # Store the FastMCP server instance on the Starlette app state
+    app.state.fastmcp_server = server
+
+    return app
