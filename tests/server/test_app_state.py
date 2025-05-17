@@ -1,4 +1,3 @@
-import pytest
 from fastmcp.server import FastMCP
 from fastmcp.server.http import create_sse_app, create_streamable_http_app
 
