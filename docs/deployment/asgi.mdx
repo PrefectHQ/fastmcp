@@ -45,6 +45,9 @@ sse_app = mcp.http_app(transport="sse")
 
 Both approaches return a Starlette application that can be integrated with other ASGI-compatible web frameworks.
 
+The returned app stores the `FastMCP` instance on `app.state.fastmcp_server`, so you
+can access it from custom middleware or routes via `request.app.state.fastmcp_server`.
+
 The MCP server's endpoint is mounted at the root path `/mcp` for Streamable HTTP transport, and `/sse` for SSE transport, though you can change these paths by passing a `path` argument to the `http_app()` method:
 
 ```python
