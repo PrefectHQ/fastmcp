@@ -119,7 +119,7 @@ def run_nested_server(host: str, port: int) -> None:
         mount = Starlette(routes=[Mount("/nest-inner", app=mcp_app)])
         mount2 = Starlette(
             routes=[Mount("/nest-outer", app=mount)],
-            lifespan=mcp_app.router.lifespan_context,
+            lifespan=mcp_app.lifespan,
         )
         server = uvicorn.Server(
             config=uvicorn.Config(
