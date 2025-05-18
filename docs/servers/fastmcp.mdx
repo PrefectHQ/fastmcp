@@ -156,7 +156,7 @@ main.mount("sub", sub)
 
 <VersionBadge version="2.0.0" />
 
-FastMCP can act as a proxy for any MCP server (local or remote) using `FastMCP.from_client`, letting you bridge transports or add a frontend to existing servers. For example, you can expose a remote SSE server locally via stdio, or vice versa.
+FastMCP can act as a proxy for any MCP server (local or remote) using `FastMCP.as_proxy`, letting you bridge transports or add a frontend to existing servers. For example, you can expose a remote SSE server locally via stdio, or vice versa.
 
 See the [Proxying Servers](/patterns/proxy) guide for details and advanced usage.
 
@@ -164,7 +164,7 @@ See the [Proxying Servers](/patterns/proxy) guide for details and advanced usage
 from fastmcp import FastMCP, Client
 
 backend = Client("http://example.com/mcp/sse")
-proxy = FastMCP.from_client(backend, name="ProxyServer")
+proxy = FastMCP.as_proxy(backend, name="ProxyServer")
 # Now use the proxy like any FastMCP server
 ```
 

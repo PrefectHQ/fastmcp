@@ -167,11 +167,11 @@ FastMCP automatically uses proxy mounting when the mounted server has a custom l
 
 #### Interaction with Proxy Servers
 
-When using `FastMCP.from_client()` to create a proxy server, mounting that server will always use proxy mounting:
+When using `FastMCP.as_proxy()` to create a proxy server, mounting that server will always use proxy mounting:
 
 ```python
 # Create a proxy for a remote server
-remote_proxy = FastMCP.from_client(Client("http://example.com/mcp"))
+remote_proxy = FastMCP.as_proxy(Client("http://example.com/mcp"))
 
 # Mount the proxy (always uses proxy mounting)
 main_server.mount("remote", remote_proxy)

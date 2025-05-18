@@ -66,7 +66,7 @@ def fastmcp_server():
 @pytest.fixture
 async def proxy_server(fastmcp_server):
     """Fixture that creates a FastMCP proxy server."""
-    return FastMCP.from_client(Client(transport=FastMCPTransport(fastmcp_server)))
+    return FastMCP.as_proxy(Client(transport=FastMCPTransport(fastmcp_server)))
 
 
 async def test_create_proxy(fastmcp_server):
@@ -79,6 +79,29 @@ async def test_create_proxy(fastmcp_server):
     assert isinstance(server, FastMCPProxy)
     assert isinstance(server, FastMCP)
     assert server.name == "FastMCP"
+
+
+async def test_as_proxy_with_server(fastmcp_server):
+    """FastMCP.as_proxy should accept a FastMCP instance."""
+    proxy = FastMCP.as_proxy(fastmcp_server)
+    result = await proxy._mcp_call_tool("greet", {"name": "Test"})
+    assert isinstance(result[0], mcp.types.TextContent)
+    assert result[0].text == "Hello, Test!"
+
+
+async def test_as_proxy_with_transport(fastmcp_server):
+    """FastMCP.as_proxy should accept a ClientTransport."""
+    proxy = FastMCP.as_proxy(FastMCPTransport(fastmcp_server))
+    result = await proxy._mcp_call_tool("greet", {"name": "Test"})
+    assert isinstance(result[0], mcp.types.TextContent)
+    assert result[0].text == "Hello, Test!"
+
+
+def test_as_proxy_with_url():
+    """FastMCP.as_proxy should accept a URL without connecting."""
+    proxy = FastMCP.as_proxy("http://example.com/mcp")
+    assert isinstance(proxy, FastMCPProxy)
+    assert repr(proxy.client.transport).startswith("<StreamableHttp(")
 
 
 class TestTools:
