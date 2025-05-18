@@ -173,74 +173,6 @@ class TestHelperFunctions:
             "file.py:server",
         ]
 
-    def test_parse_file_path_simple(self):
-        """Test parsing simple file path."""
-        with (
-            patch("pathlib.Path.exists") as mock_exists,
-            patch("pathlib.Path.is_file") as mock_is_file,
-            patch("pathlib.Path.expanduser") as mock_expanduser,
-            patch("pathlib.Path.resolve") as mock_resolve,
-        ):
-            mock_exists.return_value = True
-            mock_is_file.return_value = True
-            mock_expanduser.return_value = Path("file.py")
-            mock_resolve.return_value = Path("file.py")
-
-            path, obj = cli._parse_file_path("file.py")
-            assert path == Path("file.py")
-            assert obj is None
-
-    def test_parse_file_path_with_object(self):
-        """Test parsing file path with object."""
-        with (
-            patch("pathlib.Path.exists") as mock_exists,
-            patch("pathlib.Path.is_file") as mock_is_file,
-            patch("pathlib.Path.expanduser") as mock_expanduser,
-            patch("pathlib.Path.resolve") as mock_resolve,
-        ):
-            mock_exists.return_value = True
-            mock_is_file.return_value = True
-            mock_expanduser.return_value = Path("file.py")
-            mock_resolve.return_value = Path("file.py")
-
-            path, obj = cli._parse_file_path("file.py:server")
-            assert path == Path("file.py")
-            assert obj == "server"
-
-    def test_parse_file_path_windows(self):
-        """Test parsing Windows file path."""
-        with (
-            patch("pathlib.Path.exists") as mock_exists,
-            patch("pathlib.Path.is_file") as mock_is_file,
-            patch("pathlib.Path.expanduser") as mock_expanduser,
-            patch("pathlib.Path.resolve") as mock_resolve,
-        ):
-            mock_exists.return_value = True
-            mock_is_file.return_value = True
-            mock_expanduser.return_value = Path("C:/path/file.py")
-            mock_resolve.return_value = Path("C:/path/file.py")
-
-            path, obj = cli._parse_file_path("C:/path/file.py:server")
-            assert path == Path("C:/path/file.py")
-            assert obj == "server"
-
-    def test_parse_file_path_not_file(self, mock_exit, mock_logger):
-        """Test parsing path that is not a file."""
-        with (
-            patch("pathlib.Path.exists") as mock_exists,
-            patch("pathlib.Path.is_file") as mock_is_file,
-            patch("pathlib.Path.expanduser") as mock_expanduser,
-            patch("pathlib.Path.resolve") as mock_resolve,
-        ):
-            mock_exists.return_value = True
-            mock_is_file.return_value = False
-            mock_expanduser.return_value = Path("directory")
-            mock_resolve.return_value = Path("directory")
-
-            cli._parse_file_path("directory")
-            mock_logger.error.assert_called_once()
-            mock_exit.assert_called_once_with(1)
-
 
 class TestVersionCommand:
     """Tests for the version command."""
@@ -259,8 +191,8 @@ class TestDevCommand:
     def test_dev_command_success(self, temp_python_file, mock_logger):
         """Test successful dev command execution."""
         with (
-            patch("fastmcp.cli.cli._parse_file_path") as mock_parse,
-            patch("fastmcp.cli.cli._import_server") as mock_import,
+            patch("fastmcp.cli.run.parse_file_path") as mock_parse,
+            patch("fastmcp.cli.run.import_server") as mock_import,
             patch("fastmcp.cli.cli._get_npx_command") as mock_get_npx,
             patch("fastmcp.cli.cli._build_uv_command") as mock_build_uv,
             patch("subprocess.run") as mock_run,
@@ -285,8 +217,8 @@ class TestDevCommand:
     def test_dev_command_with_ui_port(self, temp_python_file):
         """Test dev command with UI port."""
         with (
-            patch("fastmcp.cli.cli._parse_file_path") as mock_parse,
-            patch("fastmcp.cli.cli._import_server") as mock_import,
+            patch("fastmcp.cli.run.parse_file_path") as mock_parse,
+            patch("fastmcp.cli.run.import_server") as mock_import,
             patch("fastmcp.cli.cli._get_npx_command") as mock_get_npx,
             patch("fastmcp.cli.cli._build_uv_command") as mock_build_uv,
             patch("subprocess.run") as mock_run,
@@ -310,8 +242,8 @@ class TestDevCommand:
     def test_dev_command_with_server_port(self, temp_python_file):
         """Test dev command with server port."""
         with (
-            patch("fastmcp.cli.cli._parse_file_path") as mock_parse,
-            patch("fastmcp.cli.cli._import_server") as mock_import,
+            patch("fastmcp.cli.run.parse_file_path") as mock_parse,
+            patch("fastmcp.cli.run.import_server") as mock_import,
             patch("fastmcp.cli.cli._get_npx_command") as mock_get_npx,
             patch("fastmcp.cli.cli._build_uv_command") as mock_build_uv,
             patch("subprocess.run") as mock_run,
@@ -335,8 +267,8 @@ class TestDevCommand:
     def test_dev_command_inspector_version(self, temp_python_file):
         """Test dev command with specific inspector version."""
         with (
-            patch("fastmcp.cli.cli._parse_file_path") as mock_parse,
-            patch("fastmcp.cli.cli._import_server") as mock_import,
+            patch("fastmcp.cli.run.parse_file_path") as mock_parse,
+            patch("fastmcp.cli.run.import_server") as mock_import,
             patch("fastmcp.cli.cli._get_npx_command") as mock_get_npx,
             patch("fastmcp.cli.cli._build_uv_command") as mock_build_uv,
             patch("subprocess.run") as mock_run,
@@ -360,11 +292,12 @@ class TestDevCommand:
 class TestRunCommand:
     """Tests for the run command."""
 
-    def test_run_command_success(self, temp_python_file, mock_logger):
+    def test_run_command_success(self, temp_python_file):
         """Test successful run command execution."""
         with (
-            patch("fastmcp.cli.cli._parse_file_path") as mock_parse,
-            patch("fastmcp.cli.cli._import_server") as mock_import,
+            patch("fastmcp.cli.run.parse_file_path") as mock_parse,
+            patch("fastmcp.cli.run.import_server") as mock_import,
+            patch("fastmcp.cli.run.logger") as mock_logger,
         ):
             mock_parse.return_value = (temp_python_file, None)
             mock_server = MagicMock()
@@ -374,15 +307,15 @@ class TestRunCommand:
             result = runner.invoke(cli.app, ["run", str(temp_python_file)])
             assert result.exit_code == 0
             mock_server.run.assert_called_once_with()
-            mock_logger.info.assert_called_with(
+            mock_logger.debug.assert_called_with(
                 f'Found server "test_server" in {temp_python_file}'
             )
 
     def test_run_command_with_transport(self, temp_python_file):
         """Test run command with transport option."""
         with (
-            patch("fastmcp.cli.cli._parse_file_path") as mock_parse,
-            patch("fastmcp.cli.cli._import_server") as mock_import,
+            patch("fastmcp.cli.run.parse_file_path") as mock_parse,
+            patch("fastmcp.cli.run.import_server") as mock_import,
         ):
             mock_parse.return_value = (temp_python_file, None)
             mock_server = MagicMock()
@@ -398,8 +331,8 @@ class TestRunCommand:
     def test_run_command_with_host(self, temp_python_file):
         """Test run command with host option."""
         with (
-            patch("fastmcp.cli.cli._parse_file_path") as mock_parse,
-            patch("fastmcp.cli.cli._import_server") as mock_import,
+            patch("fastmcp.cli.run.parse_file_path") as mock_parse,
+            patch("fastmcp.cli.run.import_server") as mock_import,
         ):
             mock_parse.return_value = (temp_python_file, None)
             mock_server = MagicMock()
@@ -415,8 +348,8 @@ class TestRunCommand:
     def test_run_command_with_port(self, temp_python_file):
         """Test run command with port option."""
         with (
-            patch("fastmcp.cli.cli._parse_file_path") as mock_parse,
-            patch("fastmcp.cli.cli._import_server") as mock_import,
+            patch("fastmcp.cli.run.parse_file_path") as mock_parse,
+            patch("fastmcp.cli.run.import_server") as mock_import,
         ):
             mock_parse.return_value = (temp_python_file, None)
             mock_server = MagicMock()
@@ -432,8 +365,8 @@ class TestRunCommand:
     def test_run_command_with_log_level(self, temp_python_file):
         """Test run command with log level option."""
         with (
-            patch("fastmcp.cli.cli._parse_file_path") as mock_parse,
-            patch("fastmcp.cli.cli._import_server") as mock_import,
+            patch("fastmcp.cli.run.parse_file_path") as mock_parse,
+            patch("fastmcp.cli.run.import_server") as mock_import,
         ):
             mock_parse.return_value = (temp_python_file, None)
             mock_server = MagicMock()
@@ -449,8 +382,8 @@ class TestRunCommand:
     def test_run_command_with_multiple_options(self, temp_python_file):
         """Test run command with multiple options."""
         with (
-            patch("fastmcp.cli.cli._parse_file_path") as mock_parse,
-            patch("fastmcp.cli.cli._import_server") as mock_import,
+            patch("fastmcp.cli.run.parse_file_path") as mock_parse,
+            patch("fastmcp.cli.run.import_server") as mock_import,
         ):
             mock_parse.return_value = (temp_python_file, None)
             mock_server = MagicMock()
