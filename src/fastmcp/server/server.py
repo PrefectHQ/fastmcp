@@ -213,7 +213,6 @@ class FastMCP(Generic[LifespanResultT]):
         Args:
             transport: Transport protocol to use ("stdio", "sse", or "streamable-http")
         """
-        logger.info(f'Starting server "{self.name}"...')
 
         anyio.run(partial(self.run_async, transport, **transport_kwargs))
 
@@ -730,6 +729,7 @@ class FastMCP(Generic[LifespanResultT]):
     async def run_stdio_async(self) -> None:
         """Run the server using stdio transport."""
         async with stdio_server() as (read_stream, write_stream):
+            logger.info(f"Starting MCP server {self.name!r} with transport 'stdio'")
             await self._mcp_server.run(
                 read_stream,
                 write_stream,
@@ -763,16 +763,24 @@ class FastMCP(Generic[LifespanResultT]):
         # lifespan is required for streamable http
         uvicorn_config["lifespan"] = "on"
 
+        host = host or self.settings.host
+        port = port or self.settings.port
+        log_level = log_level or self.settings.log_level.lower()
+
         app = self.http_app(path=path, transport=transport, middleware=middleware)
 
         config = uvicorn.Config(
             app,
-            host=host or self.settings.host,
-            port=port or self.settings.port,
-            log_level=log_level or self.settings.log_level.lower(),
+            host=host,
+            port=port,
+            log_level=log_level,
             **uvicorn_config,
         )
         server = uvicorn.Server(config)
+        path = app.state.path.lstrip("/")  # type: ignore
+        logger.info(
+            f"Starting MCP server {self.name!r} with transport {transport!r} on http://{host}:{port}/{path}"
+        )
         await server.serve()
 
     async def run_sse_async(
