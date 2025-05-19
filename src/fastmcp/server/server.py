@@ -778,7 +778,7 @@ class FastMCP(Generic[LifespanResultT]):
             **uvicorn_config,
         }
 
-        if "log_config" not in uvicorn_config:
+        if "log_config" not in uvicorn_config and "log_level" not in uvicorn_config:
             config_kwargs["log_level"] = log_level
 
         config = uvicorn.Config(**config_kwargs)
