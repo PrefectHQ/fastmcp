@@ -74,7 +74,7 @@ async def test_create_proxy(fastmcp_server):
     # Create a client
     client = Client(transport=FastMCPTransport(fastmcp_server))
 
-    server = FastMCPProxy.from_client(client)
+    server = FastMCPProxy.as_proxy(client)
 
     assert isinstance(server, FastMCPProxy)
     assert isinstance(server, FastMCP)
