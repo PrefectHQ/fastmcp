@@ -760,24 +760,24 @@ class FastMCP(Generic[LifespanResultT]):
             path: Path for the endpoint (defaults to settings.streamable_http_path or settings.sse_path)
             uvicorn_config: Additional configuration for the Uvicorn server
         """
-        uvicorn_config = uvicorn_config or {}
-        uvicorn_config.setdefault("timeout_graceful_shutdown", 0)
-        # lifespan is required for streamable http
-        uvicorn_config["lifespan"] = "on"
-
         host = host or self.settings.host
         port = port or self.settings.port
-        log_level = log_level or self.settings.log_level.lower()
+        default_log_level_to_use = log_level or self.settings.log_level.lower()
 
         app = self.http_app(path=path, transport=transport, middleware=middleware)
 
-        config = uvicorn.Config(
-            app,
-            host=host,
-            port=port,
-            log_level=log_level,
-            **uvicorn_config,
-        )
+        _uvicorn_config_from_user = uvicorn_config or {}
+
+        config_kwargs: dict[str, Any] = {
+            "timeout_graceful_shutdown": 0,
+            "lifespan": "on",
+        }
+        config_kwargs.update(_uvicorn_config_from_user)
+
+        if "log_config" not in config_kwargs and "log_level" not in config_kwargs:
+            config_kwargs["log_level"] = default_log_level_to_use
+
+        config = uvicorn.Config(app, host=host, port=port, **config_kwargs)
         server = uvicorn.Server(config)
         path = app.state.path.lstrip("/")  # type: ignore
         logger.info(
@@ -1040,9 +1040,6 @@ class FastMCP(Generic[LifespanResultT]):
         - The prompts are imported with prefixed names using the
           prompt_separator Example: If server has a prompt named
           "weather_prompt", it will be available as "weather_weather_prompt"
-        - The mounted server's lifespan will be executed when the parent
-          server's lifespan runs, ensuring that any setup needed by the mounted
-          server is performed
 
         Args:
             prefix: The prefix to use for the mounted server server: The FastMCP
