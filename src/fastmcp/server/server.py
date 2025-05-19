@@ -771,13 +771,17 @@ class FastMCP(Generic[LifespanResultT]):
 
         app = self.http_app(path=path, transport=transport, middleware=middleware)
 
-        config = uvicorn.Config(
-            app,
-            host=host,
-            port=port,
-            log_level=log_level,
+        config_kwargs: dict[str, Any] = {
+            "app": app,
+            "host": host,
+            "port": port,
             **uvicorn_config,
-        )
+        }
+
+        if "log_config" not in uvicorn_config:
+            config_kwargs["log_level"] = log_level
+
+        config = uvicorn.Config(**config_kwargs)
         server = uvicorn.Server(config)
         path = app.state.path.lstrip("/")  # type: ignore
         logger.info(
