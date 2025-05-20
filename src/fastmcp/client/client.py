@@ -160,8 +160,6 @@ class Client:
             ) as session:
                 self._session = session
                 # Initialize the session
-                self._initialize_result = await self._session.initialize()
-
                 try:
                     with anyio.fail_after(1):
                         self._initialize_result = await self._session.initialize()
