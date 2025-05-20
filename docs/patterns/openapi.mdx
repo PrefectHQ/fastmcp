@@ -61,19 +61,27 @@ Internally, FastMCP uses a priority-ordered set of `RouteMap` objects to determi
 # Simplified version of the actual mapping rules
 DEFAULT_ROUTE_MAPPINGS = [
     # GET with path parameters -> ResourceTemplate
-    RouteMap(methods=["GET"], pattern=r".*\{.*\}.*", 
-             route_type=RouteType.RESOURCE_TEMPLATE),
+    RouteMap(
+        methods=["GET"], 
+        pattern=r".*\{.*\}.*", 
+        route_type=RouteType.RESOURCE_TEMPLATE,
+    ),
     
     # GET without path parameters -> Resource
-    RouteMap(methods=["GET"], pattern=r".*", 
-             route_type=RouteType.RESOURCE),
+    RouteMap(
+        methods=["GET"], 
+        pattern=r".*", 
+        route_type=RouteType.RESOURCE,
+    ),
     
     # All other methods -> Tool
-    RouteMap(methods=["POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
-             pattern=r".*", route_type=RouteType.TOOL),
+    RouteMap(
+        methods="*",
+        pattern=r".*", 
+        route_type=RouteType.TOOL,
+    ),
 ]
 ```
-
 ### Custom Route Maps
 
 Users can add custom route maps to override the default mapping behavior. User-supplied route maps are always applied first, before the default route maps.
@@ -96,6 +104,35 @@ mcp = await FastMCP.from_openapi(
     route_maps=custom_maps
 )
 ```
+
+
+### All Routes as Tools
+
+When building AI agent backends, it's often useful to treat all routes as callable tools regardless of their HTTP method. You can use the `all_routes_as_tools` parameter to automatically map every route to a Tool:
+
+```python
+# Make all endpoints tools, regardless of HTTP method
+mcp = FastMCP.from_openapi(
+    openapi_spec=spec,
+    client=api_client,
+    all_routes_as_tools=True
+)
+```
+
+This is equivalent to defining a single route map that matches all routes:
+
+```python
+# Same effect as all_routes_as_tools=True
+mcp = FastMCP.from_openapi(
+    openapi_spec=spec,
+    client=api_client,
+    route_maps=[
+        RouteMap(methods="*", pattern=r".*", route_type=RouteType.TOOL)
+    ]
+)
+```
+
+Note that `all_routes_as_tools` and `route_maps` cannot be used together - if you need more complex mapping rules, use `route_maps` instead.
 
 ## How It Works
 

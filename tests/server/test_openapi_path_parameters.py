@@ -87,7 +87,6 @@ async def test_fastmcp_from_openapi(array_path_spec, mock_client):
     assert "test-operation" in tool_names
 
 
-@pytest.mark.asyncio
 async def test_array_path_parameter_handling(mock_client):
     """Test how array path parameters are handled."""
     # Create a simple route with array path parameter
@@ -158,7 +157,6 @@ async def test_array_path_parameter_handling(mock_client):
     )
 
 
-@pytest.mark.asyncio
 async def test_integration_array_path_parameter(array_path_spec, mock_client):
     """Integration test for array path parameters."""
     # Create FastMCP from the spec
@@ -192,7 +190,6 @@ async def test_integration_array_path_parameter(array_path_spec, mock_client):
     )
 
 
-@pytest.mark.asyncio
 async def test_complex_nested_array_path_parameter(mock_client):
     """Test handling of complex nested array path parameters."""
     # Create a route with a path parameter that contains nested objects in an array
@@ -262,7 +259,6 @@ async def test_complex_nested_array_path_parameter(mock_client):
     assert "{" not in called_url, "The URL should not contain Python object syntax"
 
 
-@pytest.mark.asyncio
 async def test_array_query_param_with_fastapi():
     """Test array query parameters using FastAPI and FastMCP.from_fastapi integration."""
     # Create a FastAPI app with a route that has an array query parameter
@@ -323,7 +319,6 @@ async def test_array_query_param_with_fastapi():
         assert result_data == {"selected": ["monday", "tuesday"]}
 
 
-@pytest.mark.asyncio
 async def test_array_query_parameter_format(mock_client):
     """Test that array query parameters are formatted as comma-separated values when explode=False."""
     # Create a route with array query parameter
@@ -394,7 +389,6 @@ async def test_array_query_parameter_format(mock_client):
     )
 
 
-@pytest.mark.asyncio
 async def test_array_query_parameter_exploded_format(mock_client):
     """Test that array query parameters are formatted as separate parameters when explode=True."""
     # Create a route with array query parameter with explode=True (default)
