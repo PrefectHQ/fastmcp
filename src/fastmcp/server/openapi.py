@@ -171,6 +171,24 @@ class OpenAPITool(Tool):
             raise ToolError(f"Missing required path parameters: {missing_params}")
 
         for param_name, param_value in path_params.items():
+            # Handle array path parameters with style 'simple' (comma-separated)
+            # In OpenAPI, 'simple' is the default style for path parameters
+            # and explode=False behavior for arrays
+            param_info = next(
+                (p for p in self._route.parameters if p.name == param_name), None
+            )
+
+            if param_info and isinstance(param_value, list):
+                # Check if schema indicates an array type
+                schema = param_info.schema_
+                is_array = schema.get("type") == "array"
+
+                if is_array:
+                    # Format array values as comma-separated string
+                    # This follows the OpenAPI 'simple' style (default for path)
+                    # and explode=False behavior for arrays
+                    param_value = ",".join(str(item) for item in param_value)
+
             path = path.replace(f"{{{param_name}}}", str(param_value))
 
         # Prepare query parameters - filter out None and empty strings
