@@ -1145,7 +1145,7 @@ class FastMCP(Generic[LifespanResultT]):
         """
         Create a FastMCP proxy server from a FastMCP client.
         """
-        # Deprecated since 2.4.0
+        # Deprecated since 2.3.5
         warnings.warn(
             "FastMCP.from_client() is deprecated; use FastMCP.as_proxy() instead.",
             DeprecationWarning,
