@@ -8,7 +8,8 @@ from exceptiongroup import catch
 from mcp import ClientSession
 from pydantic import AnyUrl
 
-from fastmcp.client.logging import LogHandler, MessageHandler
+from fastmcp.client.logging import LogHandler, MessageHandler, default_log_handler
+from fastmcp.client.progress import ProgressHandler, default_progress_handler
 from fastmcp.client.roots import (
     RootsHandler,
     RootsList,
@@ -28,6 +29,7 @@ __all__ = [
     "LogHandler",
     "MessageHandler",
     "SamplingHandler",
+    "ProgressHandler",
 ]
 
 
@@ -50,6 +52,7 @@ class Client:
         sampling_handler: Optional handler for sampling requests
         log_handler: Optional handler for log messages
         message_handler: Optional handler for protocol messages
+        progress_handler: Optional handler for progress notifications
         timeout: Optional timeout for requests (seconds or timedelta)
 
     Examples:
@@ -74,12 +77,21 @@ class Client:
         sampling_handler: SamplingHandler | None = None,
         log_handler: LogHandler | None = None,
         message_handler: MessageHandler | None = None,
+        progress_handler: ProgressHandler | None = None,
         timeout: datetime.timedelta | float | int | None = None,
     ):
         self.transport = infer_transport(transport)
         self._session: ClientSession | None = None
         self._exit_stack: AsyncExitStack | None = None
         self._nesting_counter: int = 0
+
+        if log_handler is None:
+            log_handler = default_log_handler
+
+        if progress_handler is None:
+            progress_handler = default_progress_handler
+
+        self._progress_handler = progress_handler
 
         if isinstance(timeout, int | float):
             timeout = datetime.timedelta(seconds=timeout)
@@ -96,7 +108,9 @@ class Client:
             self.set_roots(roots)
 
         if sampling_handler is not None:
-            self.set_sampling_callback(sampling_handler)
+            self._session_kwargs["sampling_callback"] = create_sampling_callback(
+                sampling_handler
+            )
 
     @property
     def session(self) -> ClientSession:
@@ -433,6 +447,7 @@ class Client:
         self,
         name: str,
         arguments: dict[str, Any],
+        progress_handler: ProgressHandler | None = None,
         timeout: datetime.timedelta | float | int | None = None,
     ) -> mcp.types.CallToolResult:
         """Send a tools/call request and return the complete MCP protocol result.
@@ -444,6 +459,8 @@ class Client:
             name (str): The name of the tool to call.
             arguments (dict[str, Any]): Arguments to pass to the tool.
             timeout (datetime.timedelta | float | int | None, optional): The timeout for the tool call. Defaults to None.
+            progress_handler (ProgressHandler | None, optional): The progress handler to use for the tool call. Defaults to None.
+
         Returns:
             mcp.types.CallToolResult: The complete response object from the protocol,
                 containing the tool result and any additional metadata.
@@ -455,7 +472,10 @@ class Client:
         if isinstance(timeout, int | float):
             timeout = datetime.timedelta(seconds=timeout)
         result = await self.session.call_tool(
-            name=name, arguments=arguments, read_timeout_seconds=timeout
+            name=name,
+            arguments=arguments,
+            read_timeout_seconds=timeout,
+            progress_callback=progress_handler or self._progress_handler,
         )
         return result
 
@@ -464,6 +484,7 @@ class Client:
         name: str,
         arguments: dict[str, Any] | None = None,
         timeout: datetime.timedelta | float | int | None = None,
+        progress_handler: ProgressHandler | None = None,
     ) -> list[
         mcp.types.TextContent | mcp.types.ImageContent | mcp.types.EmbeddedResource
     ]:
@@ -474,6 +495,8 @@ class Client:
         Args:
             name (str): The name of the tool to call.
             arguments (dict[str, Any] | None, optional): Arguments to pass to the tool. Defaults to None.
+            timeout (datetime.timedelta | float | int | None, optional): The timeout for the tool call. Defaults to None.
+            progress_handler (ProgressHandler | None, optional): The progress handler to use for the tool call. Defaults to None.
 
         Returns:
             list[mcp.types.TextContent | mcp.types.ImageContent | mcp.types.EmbeddedResource]:
@@ -487,6 +510,7 @@ class Client:
             name=name,
             arguments=arguments or {},
             timeout=timeout,
+            progress_handler=progress_handler,
         )
         if result.isError:
             msg = cast(mcp.types.TextContent, result.content[0]).text
