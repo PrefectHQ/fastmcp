@@ -44,6 +44,7 @@ class ClientTransport(abc.ABC):
 
     A Transport is responsible for establishing and managing connections
     to an MCP server, and providing a ClientSession within an async context.
+
     """
 
     @abc.abstractmethod
@@ -52,7 +53,9 @@ class ClientTransport(abc.ABC):
         self, **session_kwargs: Unpack[SessionKwargs]
     ) -> AsyncIterator[ClientSession]:
         """
-        Establishes a connection and yields an active, initialized ClientSession.
+        Establishes a connection and yields an active ClientSession.
+
+        The ClientSession is *not* expected to be initialized in this context manager.
 
         The session is guaranteed to be valid only within the scope of the
         async context manager. Connection setup and teardown are handled
@@ -63,7 +66,7 @@ class ClientTransport(abc.ABC):
                               constructor (e.g., callbacks, timeouts).
 
         Yields:
-            An initialized mcp.ClientSession instance.
+            A mcp.ClientSession instance.
         """
         raise NotImplementedError
         yield None  # type: ignore
@@ -92,7 +95,6 @@ class WSTransport(ClientTransport):
             async with ClientSession(
                 read_stream, write_stream, **session_kwargs
             ) as session:
-                await session.initialize()  # Initialize after session creation
                 yield session
 
     def __repr__(self) -> str:
@@ -141,7 +143,6 @@ class SSETransport(ClientTransport):
             async with ClientSession(
                 read_stream, write_stream, **session_kwargs
             ) as session:
-                await session.initialize()
                 yield session
 
     def __repr__(self) -> str:
@@ -187,7 +188,6 @@ class StreamableHttpTransport(ClientTransport):
             async with ClientSession(
                 read_stream, write_stream, **session_kwargs
             ) as session:
-                await session.initialize()
                 yield session
 
     def __repr__(self) -> str:
@@ -235,7 +235,6 @@ class StdioTransport(ClientTransport):
             async with ClientSession(
                 read_stream, write_stream, **session_kwargs
             ) as session:
-                await session.initialize()
                 yield session
 
     def __repr__(self) -> str:
