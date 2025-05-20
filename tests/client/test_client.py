@@ -10,6 +10,7 @@ from fastmcp.client import Client
 from fastmcp.client.transports import (
     FastMCPTransport,
     SSETransport,
+    StdioTransport,
     StreamableHttpTransport,
     infer_transport,
 )
@@ -640,3 +641,31 @@ class TestInferTransport:
     def test_url_returns_streamable_http_transport(self, url):
         """Test that URLs without /sse/ pattern return StreamableHttpTransport."""
         assert isinstance(infer_transport(url), StreamableHttpTransport)
+
+    def test_infer_remote_transport_from_config(self):
+        config = {
+            "mcpServers": {
+                "test_server": {
+                    "url": "http://localhost:8000/sse",
+                    "headers": {"Authorization": "Bearer 123"},
+                },
+            }
+        }
+        transport = infer_transport(config)
+        assert isinstance(transport, SSETransport)
+        assert transport.url == "http://localhost:8000/sse"
+        assert transport.headers == {"Authorization": "Bearer 123"}
+
+    def test_infer_local_transport_from_config(self):
+        config = {
+            "mcpServers": {
+                "test_server": {
+                    "command": "echo",
+                    "args": ["hello"],
+                },
+            }
+        }
+        transport = infer_transport(config)
+        assert isinstance(transport, StdioTransport)
+        assert transport.command == "echo"
+        assert transport.args == ["hello"]

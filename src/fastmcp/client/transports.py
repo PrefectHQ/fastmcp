@@ -6,8 +6,7 @@ import shutil
 import sys
 from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import Any, TypedDict, cast
-from urllib.parse import urlparse
+from typing import TYPE_CHECKING, Any, TypedDict, cast
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.session import (
@@ -26,6 +25,10 @@ from typing_extensions import Unpack
 
 from fastmcp.server import FastMCP as FastMCPServer
 from fastmcp.utilities.logging import get_logger
+from fastmcp.utilities.mcp_config import MCPConfig, infer_transport_type_from_url
+
+if TYPE_CHECKING:
+    from fastmcp.utilities.mcp_config import MCPConfig
 
 logger = get_logger(__name__)
 
@@ -470,7 +473,13 @@ class FastMCPTransport(ClientTransport):
 
 
 def infer_transport(
-    transport: ClientTransport | FastMCPServer | AnyUrl | Path | dict[str, Any] | str,
+    transport: ClientTransport
+    | FastMCPServer
+    | AnyUrl
+    | Path
+    | MCPConfig
+    | dict[str, Any]
+    | str,
 ) -> ClientTransport:
     """
     Infer the appropriate transport type from the given transport argument.
@@ -481,6 +490,8 @@ def infer_transport(
 
     For HTTP URLs, they are assumed to be Streamable HTTP URLs unless they end in `/sse`.
     """
+    from fastmcp.utilities.mcp_config import MCPConfig
+
     # the transport is already a ClientTransport
     if isinstance(transport, ClientTransport):
         return transport
@@ -500,45 +511,24 @@ def infer_transport(
 
     # the transport is an http(s) URL
     elif isinstance(transport, AnyUrl | str) and str(transport).startswith("http"):
-        transport_str = str(transport)
-        # Parse out just the path portion to check for /sse
-        parsed_url = urlparse(transport_str)
-        path = parsed_url.path
-
-        # Check if path contains /sse/ or ends with /sse
-        if "/sse/" in path or path.rstrip("/").endswith("/sse"):
+        inferred_transport_type = infer_transport_type_from_url(transport)
+        if inferred_transport_type == "sse":
             inferred_transport = SSETransport(url=transport)
         else:
             inferred_transport = StreamableHttpTransport(url=transport)
 
-    ## if the transport is a config dict
-    elif isinstance(transport, dict):
-        if "mcpServers" not in transport:
-            raise ValueError("Invalid transport dictionary: missing 'mcpServers' key")
+    # if the transport is a config dict or MCPConfig
+    elif isinstance(transport, dict | MCPConfig):
+        if isinstance(transport, dict):
+            config = MCPConfig.from_dict(transport)
         else:
-            server = transport["mcpServers"]
-            if len(list(server.keys())) > 1:
-                raise ValueError(
-                    "Invalid transport dictionary: multiple servers found - only one expected"
-                )
-            server_name = list(server.keys())[0]
-            # Stdio transport
-            if "command" in server[server_name] and "args" in server[server_name]:
-                inferred_transport = StdioTransport(
-                    command=server[server_name]["command"],
-                    args=server[server_name]["args"],
-                    env=server[server_name].get("env", None),
-                    cwd=server[server_name].get("cwd", None),
-                )
-
-            # HTTP transport
-            elif "url" in server:
-                inferred_transport = SSETransport(
-                    url=server["url"],
-                    headers=server.get("headers", None),
-                )
-
-            raise ValueError("Cannot determine transport type from dictionary")
+            config = transport
+        inferred_transports = config.to_transports()
+        if len(inferred_transports) > 1:
+            raise ValueError(
+                "Invalid transport dictionary: multiple servers found - only one expected"
+            )
+        inferred_transport = list(inferred_transports.values())[0]
 
     # the transport is an unknown type
     else:
