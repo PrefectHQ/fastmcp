@@ -1,14 +1,13 @@
 import abc
 import contextlib
 import datetime
-import inspect
 import os
 import shutil
 import sys
-import warnings
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any, TypedDict, cast
+from urllib.parse import urlparse
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.session import (
@@ -26,6 +25,9 @@ from pydantic import AnyUrl
 from typing_extensions import Unpack
 
 from fastmcp.server import FastMCP as FastMCPServer
+from fastmcp.utilities.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class SessionKwargs(TypedDict, total=False):
@@ -486,36 +488,29 @@ def infer_transport(
 
     # the transport is a FastMCP server
     elif isinstance(transport, FastMCPServer):
-        return FastMCPTransport(mcp=transport)
+        inferred_transport = FastMCPTransport(mcp=transport)
 
     # the transport is a path to a script
     elif isinstance(transport, Path | str) and Path(transport).exists():
         if str(transport).endswith(".py"):
-            return PythonStdioTransport(script_path=transport)
+            inferred_transport = PythonStdioTransport(script_path=transport)
         elif str(transport).endswith(".js"):
-            return NodeStdioTransport(script_path=transport)
+            inferred_transport = NodeStdioTransport(script_path=transport)
         else:
             raise ValueError(f"Unsupported script type: {transport}")
 
     # the transport is an http(s) URL
     elif isinstance(transport, AnyUrl | str) and str(transport).startswith("http"):
-        if str(transport).rstrip("/").endswith("/sse"):
-            warnings.warn(
-                inspect.cleandoc(
-                    """
-                    As of FastMCP 2.3.0, HTTP URLs are inferred to use Streamable HTTP.
-                    The provided URL ends in `/sse`, so you may encounter unexpected behavior.
-                    If you intended to use SSE, please use the `SSETransport` class directly.
-                    """
-                ),
-                category=UserWarning,
-                stacklevel=2,
-            )
-        return StreamableHttpTransport(url=transport)
+        transport_str = str(transport)
+        # Parse out just the path portion to check for /sse
+        parsed_url = urlparse(transport_str)
+        path = parsed_url.path
 
-    # the transport is a websocket URL
-    elif isinstance(transport, AnyUrl | str) and str(transport).startswith("ws"):
-        return WSTransport(url=transport)
+        # Check if path contains /sse/ or ends with /sse
+        if "/sse/" in path or path.rstrip("/").endswith("/sse"):
+            inferred_transport = SSETransport(url=transport)
+        else:
+            inferred_transport = StreamableHttpTransport(url=transport)
 
     ## if the transport is a config dict
     elif isinstance(transport, dict):
@@ -530,7 +525,7 @@ def infer_transport(
             server_name = list(server.keys())[0]
             # Stdio transport
             if "command" in server[server_name] and "args" in server[server_name]:
-                return StdioTransport(
+                inferred_transport = StdioTransport(
                     command=server[server_name]["command"],
                     args=server[server_name]["args"],
                     env=server[server_name].get("env", None),
@@ -539,7 +534,7 @@ def infer_transport(
 
             # HTTP transport
             elif "url" in server:
-                return SSETransport(
+                inferred_transport = SSETransport(
                     url=server["url"],
                     headers=server.get("headers", None),
                 )
@@ -549,3 +544,6 @@ def infer_transport(
     # the transport is an unknown type
     else:
         raise ValueError(f"Could not infer a valid transport from: {transport}")
+
+    logger.debug(f"Inferred transport: {inferred_transport}")
+    return inferred_transport
