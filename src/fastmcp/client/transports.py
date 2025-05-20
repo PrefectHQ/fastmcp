@@ -22,7 +22,6 @@ from mcp.client.stdio import stdio_client
 from mcp.client.streamable_http import streamablehttp_client
 from mcp.client.websocket import websocket_client
 from mcp.shared.memory import create_connected_server_and_client_session
-from mcp.shared.session import ProgressFnT
 from pydantic import AnyUrl
 from typing_extensions import Unpack
 
@@ -36,7 +35,6 @@ class SessionKwargs(TypedDict, total=False):
     list_roots_callback: ListRootsFnT | None
     logging_callback: LoggingFnT | None
     message_handler: MessageHandlerFnT | None
-    progress_callback: ProgressFnT | None
     read_timeout_seconds: datetime.timedelta | None
 
 

@@ -59,8 +59,10 @@ async def test_progress_handler_can_be_supplied_on_tool_call(fastmcp_server: Fas
 async def test_progress_handler_supplied_on_tool_call_overrides_default(
     fastmcp_server: FastMCP,
 ):
-    async def bad_progress_handler(*args, **kwargs):
-        1 / 0
+    async def bad_progress_handler(
+        progress: float, total: float | None, message: str | None
+    ) -> None:
+        raise Exception("This should not be called")
 
     async with Client(fastmcp_server, progress_handler=bad_progress_handler) as client:
         await client.call_tool("progress_tool", {}, progress_handler=progress_handler)
