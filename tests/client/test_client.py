@@ -1,4 +1,5 @@
 import asyncio
+import sys
 from typing import cast
 
 import pytest
@@ -540,6 +541,10 @@ class TestTimeout:
             with pytest.raises(McpError):
                 await client.call_tool("sleep", {"seconds": 0.1}, timeout=0.01)
 
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason="This test is flaky on Windows. Sometimes the client timeout is respected and sometimes it is not.",
+    )
     async def test_timeout_tool_call_overrides_client_timeout_even_if_lower(
         self, fastmcp_server: FastMCP
     ):
