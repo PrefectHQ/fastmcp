@@ -149,6 +149,10 @@ async def test_nested_streamable_http_server_resolves_correctly():
             assert result is True
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="Timeout tests are flaky on Windows. Timeouts *are* supported but the tests are unreliable.",
+)
 class TestTimeout:
     async def test_timeout(self, streamable_http_server: str):
         # note this transport behaves differently than others and raises
