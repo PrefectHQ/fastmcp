@@ -1,10 +1,8 @@
 import json
 import logging
-from typing import Any, Literal, cast
+from typing import Any, Generic, Literal, TypeVar
 
-# Using the recommended library: openapi-pydantic
 from openapi_pydantic import (
-    MediaType,
     OpenAPI,
     Operation,
     Parameter,
@@ -26,7 +24,7 @@ from openapi_pydantic.v3.v3_0 import Response as Response_30
 from openapi_pydantic.v3.v3_0 import Schema as Schema_30
 from pydantic import BaseModel, Field, ValidationError
 
-from fastmcp.utilities import openapi
+from fastmcp.utilities.json_schema import compress_schema
 
 logger = logging.getLogger(__name__)
 
@@ -48,8 +46,6 @@ class ParameterInfo(BaseModel):
     required: bool = False
     schema_: JsonSchema = Field(..., alias="schema")  # Target name in IR
     description: str | None = None
-
-    # No model_config needed here if we populate manually after accessing 'in'
 
 
 class RequestBodyInfo(BaseModel):
@@ -101,60 +97,17 @@ __all__ = [
     "parse_openapi_to_http_routes",
 ]
 
-# --- Helper Functions ---
+# Type variables for generic parser
+TOpenAPI = TypeVar("TOpenAPI", OpenAPI, OpenAPI_30)
+TSchema = TypeVar("TSchema", Schema, Schema_30)
+TReference = TypeVar("TReference", Reference, Reference_30)
+TParameter = TypeVar("TParameter", Parameter, Parameter_30)
+TRequestBody = TypeVar("TRequestBody", RequestBody, RequestBody_30)
+TResponse = TypeVar("TResponse", Response, Response_30)
+TOperation = TypeVar("TOperation", Operation, Operation_30)
+TPathItem = TypeVar("TPathItem", PathItem, PathItem_30)
 
 
-def _resolve_ref(
-    item: Reference | Schema | Parameter | RequestBody | Any, openapi: OpenAPI
-) -> Any:
-    """Resolves a potential Reference object to its target definition (no changes needed here)."""
-    if isinstance(item, Reference):
-        ref_str = item.ref
-        try:
-            if not ref_str.startswith("#/"):
-                raise ValueError(
-                    f"External or non-local reference not supported: {ref_str}"
-                )
-            parts = ref_str.strip("#/").split("/")
-            target = openapi
-            for part in parts:
-                if part.isdigit() and isinstance(target, list):
-                    target = target[int(part)]
-                elif isinstance(target, BaseModel):
-                    # Use model_extra for fields not explicitly defined (like components types)
-                    # Check class fields first, then model_extra
-                    if part in target.__class__.model_fields:
-                        target = getattr(target, part, None)
-                    elif target.model_extra and part in target.model_extra:
-                        target = target.model_extra[part]
-                    else:
-                        # Special handling for components sub-types common structure
-                        if part == "components" and hasattr(target, "components"):
-                            target = getattr(target, "components")
-                        elif hasattr(target, part):  # Fallback check
-                            target = getattr(target, part, None)
-                        else:
-                            target = None  # Part not found
-                elif isinstance(target, dict):
-                    target = target.get(part)
-                else:
-                    raise ValueError(
-                        f"Cannot traverse part '{part}' in reference '{ref_str}' from type {type(target)}"
-                    )
-                if target is None:
-                    raise ValueError(
-                        f"Reference part '{part}' not found in path '{ref_str}'"
-                    )
-            if isinstance(target, Reference):
-                return _resolve_ref(target, openapi)
-            return target
-        except (AttributeError, KeyError, IndexError, TypeError, ValueError) as e:
-            raise ValueError(f"Failed to resolve reference '{ref_str}': {e}") from e
-    return item
-
-
-# --- Main Parsing Function ---
-# (No changes needed in the main loop logic, only in the helpers it calls)
 def parse_openapi_to_http_routes(openapi_dict: dict[str, Any]) -> list[HTTPRoute]:
     """
     Parses an OpenAPI schema dictionary into a list of HTTPRoute objects
@@ -172,7 +125,16 @@ def parse_openapi_to_http_routes(openapi_dict: dict[str, Any]) -> list[HTTPRoute
             logger.info(
                 f"Successfully parsed OpenAPI 3.0 schema version: {openapi_30.openapi}"
             )
-            parser = OpenAPI30Parser(openapi_30)
+            parser = OpenAPIParser(
+                openapi_30,
+                Reference_30,
+                Schema_30,
+                Parameter_30,
+                RequestBody_30,
+                Response_30,
+                Operation_30,
+                PathItem_30,
+            )
             return parser.parse()
         else:
             # Default to OpenAPI 3.1 models
@@ -180,7 +142,16 @@ def parse_openapi_to_http_routes(openapi_dict: dict[str, Any]) -> list[HTTPRoute
             logger.info(
                 f"Successfully parsed OpenAPI 3.1 schema version: {openapi_31.openapi}"
             )
-            parser = OpenAPI31Parser(openapi_31)
+            parser = OpenAPIParser(
+                openapi_31,
+                Reference,
+                Schema,
+                Parameter,
+                RequestBody,
+                Response,
+                Operation,
+                PathItem,
+            )
             return parser.parse()
     except ValidationError as e:
         logger.error(f"OpenAPI schema validation failed: {e}")
@@ -189,151 +160,72 @@ def parse_openapi_to_http_routes(openapi_dict: dict[str, Any]) -> list[HTTPRoute
         raise ValueError(f"Invalid OpenAPI schema: {error_details}") from e
 
 
-# Base parser class for shared functionality
-class BaseOpenAPIParser:
-    """Base class for OpenAPI parsers with common functionality."""
+class OpenAPIParser(
+    Generic[
+        TOpenAPI,
+        TReference,
+        TSchema,
+        TParameter,
+        TRequestBody,
+        TResponse,
+        TOperation,
+        TPathItem,
+    ]
+):
+    """Unified parser for OpenAPI schemas with generic type parameters to handle both 3.0 and 3.1."""
+
+    def __init__(
+        self,
+        openapi: TOpenAPI,
+        reference_cls: type[TReference],
+        schema_cls: type[TSchema],
+        parameter_cls: type[TParameter],
+        request_body_cls: type[TRequestBody],
+        response_cls: type[TResponse],
+        operation_cls: type[TOperation],
+        path_item_cls: type[TPathItem],
+    ):
+        """Initialize the parser with the OpenAPI schema and type classes."""
+        self.openapi = openapi
+        self.reference_cls = reference_cls
+        self.schema_cls = schema_cls
+        self.parameter_cls = parameter_cls
+        self.request_body_cls = request_body_cls
+        self.response_cls = response_cls
+        self.operation_cls = operation_cls
+        self.path_item_cls = path_item_cls
 
     def _convert_to_parameter_location(self, param_in: str) -> ParameterLocation:
         """Convert string parameter location to our ParameterLocation type."""
-        if param_in == "path":
-            return "path"
-        elif param_in == "query":
-            return "query"
-        elif param_in == "header":
-            return "header"
-        elif param_in == "cookie":
-            return "cookie"
-        else:
-            logger.warning(
-                f"Unknown parameter location: {param_in}, defaulting to 'query'"
-            )
-            return "query"
+        if param_in in ["path", "query", "header", "cookie"]:
+            return param_in  # type: ignore[return-value]  # Safe cast since we checked values
+        logger.warning(f"Unknown parameter location: {param_in}, defaulting to 'query'")
+        return "query"  # type: ignore[return-value]  # Safe cast to default value
 
-
-class OpenAPI31Parser(BaseOpenAPIParser):
-    """Parser for OpenAPI 3.1 schemas."""
-
-    def __init__(self, openapi: OpenAPI):
-        self.openapi = openapi
-
-    def parse(self) -> list[HTTPRoute]:
-        """Parse an OpenAPI 3.1 schema into HTTP routes."""
-        routes: list[HTTPRoute] = []
-
-        if not self.openapi.paths:
-            logger.warning("OpenAPI schema has no paths defined.")
-            return []
-
-        # Extract component schemas to add to each route
-        schema_definitions = {}
-        if hasattr(self.openapi, "components") and self.openapi.components:
-            components = self.openapi.components
-            if hasattr(components, "schemas") and components.schemas:
-                for name, schema in components.schemas.items():
-                    try:
-                        if isinstance(schema, Reference):
-                            resolved_schema = self._resolve_ref(schema)
-                            schema_definitions[name] = self._extract_schema_as_dict(
-                                resolved_schema
-                            )
-                        else:
-                            schema_definitions[name] = self._extract_schema_as_dict(
-                                schema
-                            )
-                    except Exception as e:
-                        logger.warning(
-                            f"Failed to extract schema definition '{name}': {e}"
-                        )
-
-        for path_str, path_item_obj in self.openapi.paths.items():
-            if not isinstance(path_item_obj, PathItem):
-                logger.warning(
-                    f"Skipping invalid path item object for path '{path_str}' (type: {type(path_item_obj)})"
-                )
-                continue
-
-            path_level_params = path_item_obj.parameters
-
-            # Iterate through possible HTTP methods defined in the PathItem model fields
-            # Use model_fields from the class, not the instance
-            for method_lower in PathItem.model_fields.keys():
-                if method_lower not in [
-                    "get",
-                    "put",
-                    "post",
-                    "delete",
-                    "options",
-                    "head",
-                    "patch",
-                    "trace",
-                ]:
-                    continue
-
-                operation: Operation | None = getattr(path_item_obj, method_lower, None)
-
-                if operation and isinstance(operation, Operation):
-                    method_upper = cast(HttpMethod, method_lower.upper())
-                    logger.debug(f"Processing operation: {method_upper} {path_str}")
-                    try:
-                        parameters = self._extract_parameters(
-                            operation.parameters, path_level_params
-                        )
-                        request_body_info = self._extract_request_body(
-                            operation.requestBody
-                        )
-                        responses = self._extract_responses(operation.responses)
-
-                        route = HTTPRoute(
-                            path=path_str,
-                            method=method_upper,
-                            operation_id=operation.operationId,
-                            summary=operation.summary,
-                            description=operation.description,
-                            tags=operation.tags or [],
-                            parameters=parameters,
-                            request_body=request_body_info,
-                            responses=responses,
-                            schema_definitions=schema_definitions,
-                        )
-                        routes.append(route)
-                        logger.info(
-                            f"Successfully extracted route: {method_upper} {path_str}"
-                        )
-                    except Exception as op_error:
-                        op_id = operation.operationId or "unknown"
-                        logger.error(
-                            f"Failed to process operation {method_upper} {path_str} (ID: {op_id}): {op_error}",
-                            exc_info=True,
-                        )
-
-        logger.info(f"Finished parsing. Extracted {len(routes)} HTTP routes.")
-        return routes
-
-    def _resolve_ref(
-        self, item: Reference | Schema | Parameter | RequestBody | Any
-    ) -> Any:
-        """Resolves a potential Reference object to its target definition."""
-        if isinstance(item, Reference):
+    def _resolve_ref(self, item: Any) -> Any:
+        """Resolves a reference to its target definition."""
+        if isinstance(item, self.reference_cls):
             ref_str = item.ref
             try:
                 if not ref_str.startswith("#/"):
                     raise ValueError(
                         f"External or non-local reference not supported: {ref_str}"
                     )
+
                 parts = ref_str.strip("#/").split("/")
                 target = self.openapi
+
                 for part in parts:
                     if part.isdigit() and isinstance(target, list):
                         target = target[int(part)]
                     elif isinstance(target, BaseModel):
-                        # Use model_extra for fields not explicitly defined (like components types)
                         # Check class fields first, then model_extra
                         if part in target.__class__.model_fields:
                             target = getattr(target, part, None)
                         elif target.model_extra and part in target.model_extra:
                             target = target.model_extra[part]
                         else:
-                            # Special handling for components sub-types common structure
+                            # Special handling for components
                             if part == "components" and hasattr(target, "components"):
                                 target = getattr(target, "components")
                             elif hasattr(target, part):  # Fallback check
@@ -344,123 +236,123 @@ class OpenAPI31Parser(BaseOpenAPIParser):
                         target = target.get(part)
                     else:
                         raise ValueError(
-                            f"Cannot traverse part '{part}' in reference '{ref_str}' from type {type(target)}"
+                            f"Cannot traverse part '{part}' in reference '{ref_str}'"
                         )
+
                     if target is None:
                         raise ValueError(
                             f"Reference part '{part}' not found in path '{ref_str}'"
                         )
-                if isinstance(target, Reference):
+
+                # Handle nested references
+                if isinstance(target, self.reference_cls):
                     return self._resolve_ref(target)
+
                 return target
             except (AttributeError, KeyError, IndexError, TypeError, ValueError) as e:
                 raise ValueError(f"Failed to resolve reference '{ref_str}': {e}") from e
+
         return item
 
-    def _extract_schema_as_dict(self, schema_obj: Schema | Reference) -> JsonSchema:
-        """Resolves a schema/reference and returns it as a dictionary."""
-        resolved_schema = self._resolve_ref(schema_obj)
-        if isinstance(resolved_schema, Schema):
-            # Using exclude_none=True might be better than exclude_unset sometimes
-            return resolved_schema.model_dump(
-                mode="json", by_alias=True, exclude_none=True
-            )
-        elif isinstance(resolved_schema, dict):
-            logger.warning(
-                "Resolved schema reference resulted in a dict, not a Schema model."
-            )
-            return resolved_schema
-        else:
-            ref_str = getattr(schema_obj, "ref", "unknown")
-            logger.warning(
-                f"Expected Schema after resolving ref '{ref_str}', got {type(resolved_schema)}. Returning empty dict."
-            )
+    def _extract_schema_as_dict(self, schema_obj: Any) -> JsonSchema:
+        """Resolves a schema and returns it as a dictionary."""
+        try:
+            resolved_schema = self._resolve_ref(schema_obj)
+
+            if isinstance(resolved_schema, (self.schema_cls)):
+                # Convert schema to dictionary
+                return resolved_schema.model_dump(
+                    mode="json", by_alias=True, exclude_none=True
+                )
+            elif isinstance(resolved_schema, dict):
+                return resolved_schema
+            else:
+                logger.warning(
+                    f"Expected Schema after resolving, got {type(resolved_schema)}. Returning empty dict."
+                )
+                return {}
+        except Exception as e:
+            logger.error(f"Failed to extract schema as dict: {e}", exc_info=False)
             return {}
 
     def _extract_parameters(
         self,
-        operation_params: list[Parameter | Reference] | None,
-        path_item_params: list[Parameter | Reference] | None,
+        operation_params: list[Any] | None = None,
+        path_item_params: list[Any] | None = None,
     ) -> list[ParameterInfo]:
-        """Extracts and resolves parameters using corrected attribute names."""
+        """Extract and resolve parameters from operation and path item."""
         extracted_params: list[ParameterInfo] = []
         seen_params: dict[
             tuple[str, str], bool
-        ] = {}  # Use string keys to avoid type issues
-        all_params_refs = (operation_params or []) + (path_item_params or [])
+        ] = {}  # Use tuple of (name, location) as key
+        all_params = (operation_params or []) + (path_item_params or [])
 
-        for param_or_ref in all_params_refs:
+        for param_or_ref in all_params:
             try:
-                parameter = cast(Parameter, self._resolve_ref(param_or_ref))
-                if not isinstance(parameter, Parameter):
-                    # ... (error logging remains the same)
+                parameter = self._resolve_ref(param_or_ref)
+
+                if not isinstance(parameter, self.parameter_cls):
+                    logger.warning(
+                        f"Expected Parameter after resolving, got {type(parameter)}. Skipping."
+                    )
                     continue
 
-                # --- *** CORRECTED ATTRIBUTE ACCESS HERE *** ---
-                param_in = parameter.param_in  # CORRECTED: Use 'param_in'
+                # Extract parameter info - handle both 3.0 and 3.1 parameter models
+                param_in = parameter.param_in  # Both use param_in
                 param_location = self._convert_to_parameter_location(param_in)
-                param_schema_obj = (
-                    parameter.param_schema
-                )  # CORRECTED: Use 'param_schema'
-                # --- *** ---
+                param_schema_obj = parameter.param_schema  # Both use param_schema
 
+                # Skip duplicate parameters (same name and location)
                 param_key = (parameter.name, param_in)
                 if param_key in seen_params:
                     continue
                 seen_params[param_key] = True
 
+                # Extract schema
                 param_schema_dict = {}
-                if param_schema_obj:  # Check if schema exists
-                    # Resolve the schema if it's a reference
-                    resolved_schema = self._resolve_ref(param_schema_obj)
+                if param_schema_obj:
+                    # Process schema object
                     param_schema_dict = self._extract_schema_as_dict(param_schema_obj)
 
-                    # Ensure default value is preserved from resolved schema
+                    # Handle default value
+                    resolved_schema = self._resolve_ref(param_schema_obj)
                     if (
-                        not isinstance(resolved_schema, Reference)
+                        not isinstance(resolved_schema, self.reference_cls)
                         and hasattr(resolved_schema, "default")
                         and resolved_schema.default is not None
                     ):
                         param_schema_dict["default"] = resolved_schema.default
-                elif parameter.content:
-                    # Handle complex parameters with 'content'
+
+                elif hasattr(parameter, "content") and parameter.content:
+                    # Handle content-based parameters
                     first_media_type = next(iter(parameter.content.values()), None)
                     if (
-                        first_media_type and first_media_type.media_type_schema
-                    ):  # CORRECTED: Use 'media_type_schema'
-                        # Resolve the schema if it's a reference
+                        first_media_type
+                        and hasattr(first_media_type, "media_type_schema")
+                        and first_media_type.media_type_schema
+                    ):
                         media_schema = first_media_type.media_type_schema
-                        resolved_media_schema = self._resolve_ref(media_schema)
                         param_schema_dict = self._extract_schema_as_dict(media_schema)
 
-                        # Ensure default value is preserved from resolved schema
+                        # Handle default value in content schema
+                        resolved_media_schema = self._resolve_ref(media_schema)
                         if (
-                            not isinstance(resolved_media_schema, Reference)
+                            not isinstance(resolved_media_schema, self.reference_cls)
                             and hasattr(resolved_media_schema, "default")
                             and resolved_media_schema.default is not None
                         ):
                             param_schema_dict["default"] = resolved_media_schema.default
 
-                        logger.debug(
-                            f"Parameter '{parameter.name}' using schema from 'content' field."
-                        )
-
-                # Manually create ParameterInfo instance using correct field names
+                # Create parameter info object
                 param_info = ParameterInfo(
                     name=parameter.name,
-                    location=param_location,  # Use converted parameter location
+                    location=param_location,
                     required=parameter.required,
-                    schema=param_schema_dict,  # Populate 'schema' field in IR
+                    schema=param_schema_dict,
                     description=parameter.description,
                 )
                 extracted_params.append(param_info)
-
-            except (
-                ValidationError,
-                ValueError,
-                AttributeError,
-                TypeError,
-            ) as e:  # Added TypeError
+            except Exception as e:
                 param_name = getattr(
                     param_or_ref, "name", getattr(param_or_ref, "ref", "unknown")
                 )
@@ -470,52 +362,48 @@ class OpenAPI31Parser(BaseOpenAPIParser):
 
         return extracted_params
 
-    def _extract_request_body(
-        self, request_body_or_ref: RequestBody | Reference | None
-    ) -> RequestBodyInfo | None:
-        """Extracts and resolves the request body using corrected attribute names."""
+    def _extract_request_body(self, request_body_or_ref: Any) -> RequestBodyInfo | None:
+        """Extract and resolve request body information."""
         if not request_body_or_ref:
             return None
+
         try:
-            request_body = cast(RequestBody, self._resolve_ref(request_body_or_ref))
-            if not isinstance(request_body, RequestBody):
-                # ... (error logging remains the same)
+            request_body = self._resolve_ref(request_body_or_ref)
+
+            if not isinstance(request_body, self.request_body_cls):
+                logger.warning(
+                    f"Expected RequestBody after resolving, got {type(request_body)}. Returning None."
+                )
                 return None
 
-            content_schemas: dict[str, JsonSchema] = {}
-            if request_body.content:
+            # Create request body info
+            request_body_info = RequestBodyInfo(
+                required=request_body.required,
+                description=request_body.description,
+            )
+
+            # Extract content schemas
+            if hasattr(request_body, "content") and request_body.content:
                 for media_type_str, media_type_obj in request_body.content.items():
-                    # --- *** CORRECTED ATTRIBUTE ACCESS HERE *** ---
                     if (
-                        isinstance(media_type_obj, MediaType)
+                        media_type_obj
+                        and hasattr(media_type_obj, "media_type_schema")
                         and media_type_obj.media_type_schema
-                    ):  # CORRECTED: Use 'media_type_schema'
-                        # --- *** ---
+                    ):
                         try:
-                            # Use the corrected attribute here as well
                             schema_dict = self._extract_schema_as_dict(
                                 media_type_obj.media_type_schema
                             )
-                            content_schemas[media_type_str] = schema_dict
-                        except ValueError as schema_err:
-                            logger.error(
-                                f"Failed to extract schema for media type '{media_type_str}' in request body: {schema_err}"
+                            request_body_info.content_schema[media_type_str] = (
+                                schema_dict
                             )
-                    elif not isinstance(media_type_obj, MediaType):
-                        logger.warning(
-                            f"Skipping invalid media type object for '{media_type_str}' (type: {type(media_type_obj)}) in request body."
-                        )
-                    elif not media_type_obj.media_type_schema:  # Corrected check
-                        logger.warning(
-                            f"Skipping media type '{media_type_str}' in request body because it lacks a schema."
-                        )
+                        except Exception as e:
+                            logger.error(
+                                f"Failed to extract schema for media type '{media_type_str}': {e}"
+                            )
 
-            return RequestBodyInfo(
-                required=request_body.required,
-                content_schema=content_schemas,
-                description=request_body.description,
-            )
-        except (ValidationError, ValueError, AttributeError) as e:
+            return request_body_info
+        except Exception as e:
             ref_name = getattr(request_body_or_ref, "ref", "unknown")
             logger.error(
                 f"Failed to extract request body '{ref_name}': {e}", exc_info=False
@@ -523,47 +411,49 @@ class OpenAPI31Parser(BaseOpenAPIParser):
             return None
 
     def _extract_responses(
-        self,
-        operation_responses: dict[str, Response | Reference] | None,
+        self, operation_responses: dict[str, Any] | None
     ) -> dict[str, ResponseInfo]:
-        """Extracts and resolves response information for an operation."""
+        """Extract and resolve response information."""
         extracted_responses: dict[str, ResponseInfo] = {}
+
         if not operation_responses:
             return extracted_responses
 
         for status_code, resp_or_ref in operation_responses.items():
             try:
-                response = cast(Response, self._resolve_ref(resp_or_ref))
-                if not isinstance(response, Response):
-                    ref_str = getattr(resp_or_ref, "ref", "unknown")
+                response = self._resolve_ref(resp_or_ref)
+
+                if not isinstance(response, self.response_cls):
                     logger.warning(
-                        f"Expected Response after resolving ref '{ref_str}' for status code {status_code}, got {type(response)}. Skipping."
+                        f"Expected Response after resolving for status code {status_code}, "
+                        f"got {type(response)}. Skipping."
                     )
                     continue
 
-                content_schemas: dict[str, JsonSchema] = {}
-                if response.content:
+                # Create response info
+                resp_info = ResponseInfo(description=response.description)
+
+                # Extract content schemas
+                if hasattr(response, "content") and response.content:
                     for media_type_str, media_type_obj in response.content.items():
                         if (
-                            isinstance(media_type_obj, MediaType)
+                            media_type_obj
+                            and hasattr(media_type_obj, "media_type_schema")
                             and media_type_obj.media_type_schema
                         ):
                             try:
                                 schema_dict = self._extract_schema_as_dict(
                                     media_type_obj.media_type_schema
                                 )
-                                content_schemas[media_type_str] = schema_dict
-                            except ValueError as schema_err:
+                                resp_info.content_schema[media_type_str] = schema_dict
+                            except Exception as e:
                                 logger.error(
-                                    f"Failed to extract schema for media type '{media_type_str}' in response {status_code}: {schema_err}"
+                                    f"Failed to extract schema for media type '{media_type_str}' "
+                                    f"in response {status_code}: {e}"
                                 )
 
-                resp_info = ResponseInfo(
-                    description=response.description, content_schema=content_schemas
-                )
                 extracted_responses[str(status_code)] = resp_info
-
-            except (ValidationError, ValueError, AttributeError) as e:
+            except Exception as e:
                 ref_name = getattr(resp_or_ref, "ref", "unknown")
                 logger.error(
                     f"Failed to extract response for status code {status_code} "
@@ -573,29 +463,22 @@ class OpenAPI31Parser(BaseOpenAPIParser):
 
         return extracted_responses
 
-
-class OpenAPI30Parser(BaseOpenAPIParser):
-    """Parser for OpenAPI 3.0 schemas."""
-
-    def __init__(self, openapi: OpenAPI_30):
-        self.openapi = openapi
-
     def parse(self) -> list[HTTPRoute]:
-        """Parse an OpenAPI 3.0 schema into HTTP routes."""
+        """Parse the OpenAPI schema into HTTP routes."""
         routes: list[HTTPRoute] = []
 
-        if not self.openapi.paths:
+        if not hasattr(self.openapi, "paths") or not self.openapi.paths:
             logger.warning("OpenAPI schema has no paths defined.")
             return []
 
-        # Extract component schemas to add to each route
+        # Extract component schemas
         schema_definitions = {}
         if hasattr(self.openapi, "components") and self.openapi.components:
             components = self.openapi.components
             if hasattr(components, "schemas") and components.schemas:
                 for name, schema in components.schemas.items():
                     try:
-                        if isinstance(schema, Reference_30):
+                        if isinstance(schema, self.reference_cls):
                             resolved_schema = self._resolve_ref(schema)
                             schema_definitions[name] = self._extract_schema_as_dict(
                                 resolved_schema
@@ -609,53 +492,58 @@ class OpenAPI30Parser(BaseOpenAPIParser):
                             f"Failed to extract schema definition '{name}': {e}"
                         )
 
+        # Process paths and operations
         for path_str, path_item_obj in self.openapi.paths.items():
-            if not isinstance(path_item_obj, PathItem_30):
+            if not isinstance(path_item_obj, self.path_item_cls):
                 logger.warning(
-                    f"Skipping invalid path item object for path '{path_str}' (type: {type(path_item_obj)})"
+                    f"Skipping invalid path item for path '{path_str}' (type: {type(path_item_obj)})"
                 )
                 continue
 
-            path_level_params = path_item_obj.parameters
+            path_level_params = (
+                path_item_obj.parameters
+                if hasattr(path_item_obj, "parameters")
+                else None
+            )
 
-            # Iterate through possible HTTP methods defined in the PathItem model fields
-            # Use model_fields from the class, not the instance
-            for method_lower in PathItem_30.model_fields.keys():
-                if method_lower not in [
-                    "get",
-                    "put",
-                    "post",
-                    "delete",
-                    "options",
-                    "head",
-                    "patch",
-                    "trace",
-                ]:
-                    continue
+            # Get HTTP methods from the path item class fields
+            http_methods = [
+                "get",
+                "put",
+                "post",
+                "delete",
+                "options",
+                "head",
+                "patch",
+                "trace",
+            ]
+            for method_lower in http_methods:
+                operation = getattr(path_item_obj, method_lower, None)
 
-                operation: Operation_30 | None = getattr(
-                    path_item_obj, method_lower, None
-                )
+                if operation and isinstance(operation, self.operation_cls):
+                    # Cast method to HttpMethod - safe since we only use valid HTTP methods
+                    method_upper = method_lower.upper()
 
-                if operation and isinstance(operation, Operation_30):
-                    method_upper = cast(HttpMethod, method_lower.upper())
-                    logger.debug(f"Processing operation: {method_upper} {path_str}")
                     try:
                         parameters = self._extract_parameters(
-                            operation.parameters, path_level_params
+                            getattr(operation, "parameters", None), path_level_params
                         )
+
                         request_body_info = self._extract_request_body(
-                            operation.requestBody
+                            getattr(operation, "requestBody", None)
                         )
-                        responses = self._extract_responses(operation.responses)
+
+                        responses = self._extract_responses(
+                            getattr(operation, "responses", None)
+                        )
 
                         route = HTTPRoute(
                             path=path_str,
-                            method=method_upper,
-                            operation_id=operation.operationId,
-                            summary=operation.summary,
-                            description=operation.description,
-                            tags=operation.tags or [],
+                            method=method_upper,  # type: ignore[arg-type]  # Known valid HTTP method
+                            operation_id=getattr(operation, "operationId", None),
+                            summary=getattr(operation, "summary", None),
+                            description=getattr(operation, "description", None),
+                            tags=getattr(operation, "tags", []) or [],
                             parameters=parameters,
                             request_body=request_body_info,
                             responses=responses,
@@ -666,7 +554,7 @@ class OpenAPI30Parser(BaseOpenAPIParser):
                             f"Successfully extracted route: {method_upper} {path_str}"
                         )
                     except Exception as op_error:
-                        op_id = operation.operationId or "unknown"
+                        op_id = getattr(operation, "operationId", "unknown")
                         logger.error(
                             f"Failed to process operation {method_upper} {path_str} (ID: {op_id}): {op_error}",
                             exc_info=True,
@@ -674,257 +562,6 @@ class OpenAPI30Parser(BaseOpenAPIParser):
 
         logger.info(f"Finished parsing. Extracted {len(routes)} HTTP routes.")
         return routes
-
-    def _resolve_ref(
-        self, item: Reference_30 | Schema_30 | Parameter_30 | RequestBody_30 | Any
-    ) -> Any:
-        """Resolves a potential Reference object to its target definition for OpenAPI 3.0."""
-        if isinstance(item, Reference_30):
-            ref_str = item.ref
-            try:
-                if not ref_str.startswith("#/"):
-                    raise ValueError(
-                        f"External or non-local reference not supported: {ref_str}"
-                    )
-                parts = ref_str.strip("#/").split("/")
-                target = self.openapi
-                for part in parts:
-                    if part.isdigit() and isinstance(target, list):
-                        target = target[int(part)]
-                    elif isinstance(target, BaseModel):
-                        # Use model_extra for fields not explicitly defined (like components types)
-                        # Check class fields first, then model_extra
-                        if part in target.__class__.model_fields:
-                            target = getattr(target, part, None)
-                        elif target.model_extra and part in target.model_extra:
-                            target = target.model_extra[part]
-                        else:
-                            # Special handling for components sub-types common structure
-                            if part == "components" and hasattr(target, "components"):
-                                target = getattr(target, "components")
-                            elif hasattr(target, part):  # Fallback check
-                                target = getattr(target, part, None)
-                            else:
-                                target = None  # Part not found
-                    elif isinstance(target, dict):
-                        target = target.get(part)
-                    else:
-                        raise ValueError(
-                            f"Cannot traverse part '{part}' in reference '{ref_str}' from type {type(target)}"
-                        )
-                    if target is None:
-                        raise ValueError(
-                            f"Reference part '{part}' not found in path '{ref_str}'"
-                        )
-                if isinstance(target, Reference_30):
-                    return self._resolve_ref(target)
-                return target
-            except (AttributeError, KeyError, IndexError, TypeError, ValueError) as e:
-                raise ValueError(f"Failed to resolve reference '{ref_str}': {e}") from e
-        return item
-
-    def _extract_schema_as_dict(
-        self, schema_obj: Schema_30 | Reference_30
-    ) -> JsonSchema:
-        """Resolves a schema/reference and returns it as a dictionary for OpenAPI 3.0."""
-        resolved_schema = self._resolve_ref(schema_obj)
-        if isinstance(resolved_schema, Schema_30):
-            # Using exclude_none=True might be better than exclude_unset sometimes
-            return resolved_schema.model_dump(
-                mode="json", by_alias=True, exclude_none=True
-            )
-        elif isinstance(resolved_schema, dict):
-            logger.warning(
-                "Resolved schema reference resulted in a dict, not a Schema model."
-            )
-            return resolved_schema
-        else:
-            ref_str = getattr(schema_obj, "ref", "unknown")
-            logger.warning(
-                f"Expected Schema after resolving ref '{ref_str}', got {type(resolved_schema)}. Returning empty dict."
-            )
-            return {}
-
-    def _extract_parameters(
-        self,
-        operation_params: list[Parameter_30 | Reference_30] | None,
-        path_item_params: list[Parameter_30 | Reference_30] | None,
-    ) -> list[ParameterInfo]:
-        """Extracts and resolves parameters for OpenAPI 3.0."""
-        extracted_params: list[ParameterInfo] = []
-        seen_params: dict[
-            tuple[str, str], bool
-        ] = {}  # Use string keys to avoid type issues
-        all_params_refs = (operation_params or []) + (path_item_params or [])
-
-        for param_or_ref in all_params_refs:
-            try:
-                parameter = cast(Parameter_30, self._resolve_ref(param_or_ref))
-                if not isinstance(parameter, Parameter_30):
-                    logger.warning(
-                        f"Expected Parameter after resolving reference, got {type(parameter)}. Skipping."
-                    )
-                    continue
-
-                # OpenAPI 3.0 uses 'in' field for parameter location
-                param_in = parameter.param_in
-                param_location = self._convert_to_parameter_location(param_in)
-                param_schema_obj = parameter.param_schema
-
-                param_key = (parameter.name, param_in)
-                if param_key in seen_params:
-                    continue
-                seen_params[param_key] = True
-
-                param_schema_dict = {}
-                if param_schema_obj:  # Check if schema exists
-                    # Resolve the schema if it's a reference
-                    resolved_schema = self._resolve_ref(param_schema_obj)
-                    param_schema_dict = self._extract_schema_as_dict(param_schema_obj)
-
-                    # Ensure default value is preserved from resolved schema
-                    if (
-                        not isinstance(resolved_schema, Reference_30)
-                        and hasattr(resolved_schema, "default")
-                        and resolved_schema.default is not None
-                    ):
-                        param_schema_dict["default"] = resolved_schema.default
-                elif parameter.content:
-                    # Handle complex parameters with 'content'
-                    first_media_type = next(iter(parameter.content.values()), None)
-                    if first_media_type and first_media_type.media_type_schema:
-                        # Resolve the schema if it's a reference
-                        media_schema = first_media_type.media_type_schema
-                        resolved_media_schema = self._resolve_ref(media_schema)
-                        param_schema_dict = self._extract_schema_as_dict(media_schema)
-
-                        # Ensure default value is preserved from resolved schema
-                        if (
-                            not isinstance(resolved_media_schema, Reference_30)
-                            and hasattr(resolved_media_schema, "default")
-                            and resolved_media_schema.default is not None
-                        ):
-                            param_schema_dict["default"] = resolved_media_schema.default
-
-                        logger.debug(
-                            f"Parameter '{parameter.name}' using schema from 'content' field."
-                        )
-
-                # Manually create ParameterInfo instance using correct field names
-                param_info = ParameterInfo(
-                    name=parameter.name,
-                    location=param_location,  # Use converted parameter location
-                    required=parameter.required,
-                    schema=param_schema_dict,  # Populate 'schema' field in IR
-                    description=parameter.description,
-                )
-                extracted_params.append(param_info)
-
-            except (
-                ValidationError,
-                ValueError,
-                AttributeError,
-                TypeError,
-            ) as e:  # Added TypeError
-                param_name = getattr(
-                    param_or_ref, "name", getattr(param_or_ref, "ref", "unknown")
-                )
-                logger.error(
-                    f"Failed to extract parameter '{param_name}': {e}", exc_info=False
-                )
-
-        return extracted_params
-
-    def _extract_request_body(
-        self, request_body_or_ref: RequestBody_30 | Reference_30 | None
-    ) -> RequestBodyInfo | None:
-        """Extracts request body information for OpenAPI 3.0 using correct attribute names."""
-        if request_body_or_ref is None:
-            return None
-
-        try:
-            request_body = cast(RequestBody_30, self._resolve_ref(request_body_or_ref))
-
-            if not isinstance(request_body, RequestBody_30):
-                logger.warning(
-                    f"Expected RequestBody after resolving reference, got {type(request_body)}. Returning None."
-                )
-                return None
-
-            request_body_info = RequestBodyInfo(
-                required=request_body.required,
-                description=request_body.description,
-            )
-
-            # Process content field for request body schemas
-            if request_body.content:
-                for media_type_key, media_type_obj in request_body.content.items():
-                    if (
-                        media_type_obj and media_type_obj.media_type_schema
-                    ):  # CORRECTED: Use 'media_type_schema'
-                        schema_dict = self._extract_schema_as_dict(
-                            media_type_obj.media_type_schema
-                        )
-                        request_body_info.content_schema[media_type_key] = schema_dict
-
-            return request_body_info
-
-        except (ValidationError, ValueError, AttributeError) as e:
-            ref_str = getattr(request_body_or_ref, "ref", "unknown")
-            logger.error(
-                f"Failed to extract request body info from reference '{ref_str}': {e}",
-                exc_info=False,
-            )
-            return None
-
-    def _extract_responses(
-        self,
-        operation_responses: dict[str, Response_30 | Reference_30] | None,
-    ) -> dict[str, ResponseInfo]:
-        """Extracts response information from an OpenAPI 3.0 operation's responses."""
-        extracted_responses: dict[str, ResponseInfo] = {}
-        if not operation_responses:
-            return extracted_responses
-
-        for status_code, response_or_ref in operation_responses.items():
-            try:
-                # Skip 'default' response for simplicity if needed
-                # if status_code == "default":
-                #    continue
-
-                response = cast(Response_30, self._resolve_ref(response_or_ref))
-
-                if not isinstance(response, Response_30):
-                    logger.warning(
-                        f"Expected Response after resolving reference for status code {status_code}, "
-                        f"got {type(response)}. Skipping."
-                    )
-                    continue
-
-                response_info = ResponseInfo(description=response.description)
-
-                # Extract content schemas if present
-                if response.content:
-                    for media_type_key, media_type_obj in response.content.items():
-                        if (
-                            media_type_obj and media_type_obj.media_type_schema
-                        ):  # CORRECTED: Use 'media_type_schema'
-                            schema_dict = self._extract_schema_as_dict(
-                                media_type_obj.media_type_schema
-                            )
-                            response_info.content_schema[media_type_key] = schema_dict
-
-                extracted_responses[status_code] = response_info
-
-            except (ValidationError, ValueError, AttributeError) as e:
-                ref_str = getattr(response_or_ref, "ref", "unknown")
-                logger.error(
-                    f"Failed to extract response info for status code {status_code} "
-                    f"from reference '{ref_str}': {e}",
-                    exc_info=False,
-                )
-
-        return extracted_responses
 
 
 def clean_schema_for_display(schema: JsonSchema | None) -> JsonSchema | None:
@@ -956,6 +593,7 @@ def clean_schema_for_display(schema: JsonSchema | None) -> JsonSchema | None:
         # "multipleOf", "minItems", "maxItems", "uniqueItems",
         # "minProperties", "maxProperties"
     ]
+
     for field in fields_to_remove:
         if field in cleaned:
             cleaned.pop(field)
@@ -984,11 +622,6 @@ def clean_schema_for_display(schema: JsonSchema | None) -> JsonSchema | None:
         elif cleaned["additionalProperties"] is True:
             # Maybe keep 'true' or represent as 'Allows additional properties' text?
             pass  # Keep simple boolean for now
-
-    # Remove title if it just repeats the property name (heuristic)
-    # This requires knowing the property name, so better done when formatting properties dict
-
-    return cleaned
 
 
 def generate_example_from_schema(schema: JsonSchema | None) -> Any:
@@ -1088,8 +721,8 @@ def format_description_with_responses(
     responses: dict[
         str, Any
     ],  # Changed from specific ResponseInfo type to avoid circular imports
-    parameters: list[openapi.ParameterInfo] | None = None,  # Add parameters parameter
-    request_body: openapi.RequestBodyInfo | None = None,  # Add request_body parameter
+    parameters: list[ParameterInfo] | None = None,  # Add parameters parameter
+    request_body: RequestBodyInfo | None = None,  # Add request_body parameter
 ) -> str:
     """
     Formats the base description string with response, parameter, and request body information.
@@ -1097,10 +730,10 @@ def format_description_with_responses(
     Args:
         base_description (str): The initial description to be formatted.
         responses (dict[str, Any]): A dictionary of response information, keyed by status code.
-        parameters (list[openapi.ParameterInfo] | None, optional): A list of parameter information,
+        parameters (list[ParameterInfo] | None, optional): A list of parameter information,
             including path and query parameters. Each parameter includes details such as name,
             location, whether it is required, and a description.
-        request_body (openapi.RequestBodyInfo | None, optional): Information about the request body,
+        request_body (RequestBodyInfo | None, optional): Information about the request body,
             including its description, whether it is required, and its content schema.
 
     Returns:
@@ -1239,7 +872,7 @@ def format_description_with_responses(
     return "\n".join(desc_parts)
 
 
-def _combine_schemas(route: openapi.HTTPRoute) -> dict[str, Any]:
+def _combine_schemas(route: HTTPRoute) -> dict[str, Any]:
     """
     Combines parameter and request body schemas into a single schema.
 
@@ -1308,8 +941,6 @@ def _combine_schemas(route: openapi.HTTPRoute) -> dict[str, Any]:
         result["$defs"] = route.schema_definitions
 
     # Use compress_schema to remove unused definitions
-    from fastmcp.utilities.json_schema import compress_schema
-
     result = compress_schema(result)
 
     return result
