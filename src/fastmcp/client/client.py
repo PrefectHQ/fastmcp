@@ -8,7 +8,12 @@ from exceptiongroup import catch
 from mcp import ClientSession
 from pydantic import AnyUrl
 
-from fastmcp.client.logging import LogHandler, MessageHandler, default_log_handler
+from fastmcp.client.logging import (
+    LogHandler,
+    MessageHandler,
+    create_log_callback,
+    default_log_handler,
+)
 from fastmcp.client.progress import ProgressHandler, default_progress_handler
 from fastmcp.client.roots import (
     RootsHandler,
@@ -100,7 +105,7 @@ class Client:
         self._session_kwargs: SessionKwargs = {
             "sampling_callback": None,
             "list_roots_callback": None,
-            "logging_callback": log_handler,
+            "logging_callback": create_log_callback(log_handler),
             "message_handler": message_handler,
             "read_timeout_seconds": timeout,
         }
