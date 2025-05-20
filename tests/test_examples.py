@@ -1,6 +1,5 @@
 """Tests for example servers"""
 
-import pytest
 from mcp.types import (
     PromptMessage,
     TextContent,
@@ -11,7 +10,6 @@ from pydantic import AnyUrl
 from fastmcp import Client
 
 
-@pytest.mark.anyio
 async def test_simple_echo():
     """Test the simple echo server"""
     from examples.simple_echo import mcp
@@ -23,7 +21,6 @@ async def test_simple_echo():
         assert result[0].text == "hello"
 
 
-@pytest.mark.anyio
 async def test_complex_inputs():
     """Test the complex inputs server"""
     from examples.complex_inputs import mcp
@@ -38,7 +35,6 @@ async def test_complex_inputs():
         assert result[0].text == '[\n  "bob",\n  "alice",\n  "charlie"\n]'
 
 
-@pytest.mark.anyio
 async def test_desktop(monkeypatch):
     """Test the desktop server"""
     from examples.desktop import mcp
@@ -58,7 +54,6 @@ async def test_desktop(monkeypatch):
         assert result[0].text == "Hello, rooter12!"
 
 
-@pytest.mark.anyio
 async def test_echo():
     """Test the echo server"""
     from examples.echo import mcp
