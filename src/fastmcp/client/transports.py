@@ -6,7 +6,7 @@ import shutil
 import sys
 from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, TypedDict, cast
+from typing import TYPE_CHECKING, Any, Literal, TypedDict, cast
 from urllib.parse import urlparse
 
 from mcp import ClientSession, StdioServerParameters
@@ -24,12 +24,12 @@ from mcp.shared.memory import create_connected_server_and_client_session
 from pydantic import AnyUrl
 from typing_extensions import Unpack
 
-from fastmcp.client.mcp_config import MCPConfig
 from fastmcp.server import FastMCP as FastMCPServer
 from fastmcp.utilities.logging import get_logger
+from fastmcp.utilities.mcp_config import MCPConfig
 
 if TYPE_CHECKING:
-    from fastmcp.client.mcp_config import MCPConfig
+    from fastmcp.utilities.mcp_config import MCPConfig
 
 logger = get_logger(__name__)
 
@@ -491,7 +491,7 @@ def infer_transport(
 
     For HTTP URLs, they are assumed to be Streamable HTTP URLs unless they end in `/sse`.
     """
-    from fastmcp.client.mcp_config import MCPConfig
+    from fastmcp.utilities.mcp_config import MCPConfig
 
     # the transport is already a ClientTransport
     if isinstance(transport, ClientTransport):
@@ -512,13 +512,8 @@ def infer_transport(
 
     # the transport is an http(s) URL
     elif isinstance(transport, AnyUrl | str) and str(transport).startswith("http"):
-        transport_str = str(transport)
-        # Parse out just the path portion to check for /sse
-        parsed_url = urlparse(transport_str)
-        path = parsed_url.path
-
-        # Check if path contains /sse/ or ends with /sse
-        if "/sse/" in path or path.rstrip("/").endswith("/sse"):
+        inferred_transport_type = infer_transport_type_from_url(transport)
+        if inferred_transport_type == "sse":
             inferred_transport = SSETransport(url=transport)
         else:
             inferred_transport = StreamableHttpTransport(url=transport)
@@ -542,3 +537,22 @@ def infer_transport(
 
     logger.debug(f"Inferred transport: {inferred_transport}")
     return inferred_transport
+
+
+def infer_transport_type_from_url(
+    url: str | AnyUrl,
+) -> Literal["streamable-http", "sse"]:
+    """
+    Infer the appropriate transport type from the given URL.
+    """
+    url = str(url)
+    if not url.startswith("http"):
+        raise ValueError(f"Invalid URL: {url}")
+
+    parsed_url = urlparse(url)
+    path = parsed_url.path
+
+    if "/sse/" in path or path.rstrip("/").endswith("/sse"):
+        return "sse"
+    else:
+        return "streamable-http"
