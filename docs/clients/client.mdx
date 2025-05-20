@@ -209,11 +209,19 @@ Available raw MCP methods:
 
 These methods are especially useful for debugging or when you need to access metadata or fields that aren't exposed by the simplified methods.
 
-### Advanced Features
+### Additional Features
 
-MCP allows servers to interact with clients in order to provide additional capabilities. The `Client` constructor accepts additional configuration to handle these server requests.
+#### Pinging the server
 
-#### Timeout Control
+The client can be used to ping the server to verify connectivity.
+
+```python
+async with client:
+    await client.ping()
+    print("Server is reachable")
+```
+
+#### Timeouts
 
 <VersionBadge version="2.3.4" />
 
@@ -253,154 +261,7 @@ Timeout behavior varies between transport types:
 For consistent behavior across all transports, we recommend explicitly setting timeouts at the individual tool call level when needed, rather than relying on client-level timeouts.
 </Warning>
 
-#### Progress Tracking
-
-<VersionBadge version="2.3.5" />
-
-MCP servers can report progress during long-running operations. The client can set a progress handler to receive and process these updates.
-
-```python
-from fastmcp import Client
-from fastmcp.client.progress import ProgressHandler
-
-# A simple progress handler that prints progress updates
-async def my_progress_handler(
-    progress: float, 
-    total: float | None, 
-    message: str | None
-) -> None:
-    """Handle progress updates from the server."""
-    if total is not None:
-        percent = (progress / total) * 100
-        print(f"Progress: {percent:.1f}% ({progress}/{total})")
-    else:
-        print(f"Progress: {progress}")
-    
-    if message:
-        print(f"Message: {message}")
-
-# Set the progress handler at client level
-client = Client(
-    my_mcp_server,
-    progress_handler=my_progress_handler
-)
-```
-
-By default, FastMCP uses a handler that logs progress updates at the debug level. This default handler properly handles cases where `total` or `message` might be None.
-
-You can override the progress handler for specific tool calls:
-
-```python
-# Client uses the default debug logger for progress
-client = Client(my_mcp_server)
-
-async with client:
-    # Use default progress handler (debug logging)
-    result1 = await client.call_tool("long_task", {"param": "value"})
-    
-    # Override with custom progress handler just for this call
-    result2 = await client.call_tool(
-        "another_task", 
-        {"param": "value"}, 
-        progress_handler=my_progress_handler
-    )
-```
-
-A typical progress update includes:
-- Current progress value (e.g., 2 of 5 steps completed)
-- Total expected value (may be None)
-- Status message (may be None)
-
-#### LLM Sampling
-
-MCP Servers can request LLM completions from clients. The client can provide a `sampling_handler` to handle these requests. The sampling handler receives a list of messages and other parameters from the server, and should return a string completion.
-
-The following example uses the `marvin` library to generate a completion:
-
-```python {8-17, 21}
-import marvin
-from fastmcp import Client
-from fastmcp.client.sampling import (
-    SamplingMessage,
-    SamplingParams,
-    RequestContext,
-)
-
-async def sampling_handler(
-    messages: list[SamplingMessage],
-    params: SamplingParams,
-    context: RequestContext
-) -> str:
-    return await marvin.say_async(
-        message=[m.content.text for m in messages],
-        instructions=params.systemPrompt,
-    )
-
-client = Client(
-    ...,
-    sampling_handler=sampling_handler,
-)
-```
-
-#### Logging
-
-MCP servers can emit logs to clients. The client can set a logging callback to receive these logs.
-
-```python {4-5, 9}
-from fastmcp import Client
-from fastmcp.client.logging import LogHandler, LogMessage
-
-async def my_log_handler(params: LogMessage):
-    print(f"[Server Log - {params.level.upper()}] {params.logger or 'default'}: {params.data}")
-
-client_with_logging = Client(
-    ...,
-    log_handler=my_log_handler,
-)
-```
-
-#### Roots
-
-Roots are a way for clients to inform servers about the resources they have access to or certain boundaries on their access. The server can use this information to adjust behavior or provide more accurate responses.
-
-Servers can request roots from clients, and clients can notify servers when their roots change.
-
-To set the roots when creating a client, users can either provide a list of roots (which can be a list of strings) or an async function that returns a list of roots.
-
-<CodeGroup>
-```python Static Roots {5}
-from fastmcp import Client
-
-client = Client(
-    ..., 
-    roots=["/path/to/root1", "/path/to/root2"],
-)
-```
-```python Dynamic Roots Callback {4-6, 10}
-from fastmcp import Client
-from fastmcp.client.roots import RequestContext
-
-async def roots_callback(context: RequestContext) -> list[str]:
-    print(f"Server requested roots (Request ID: {context.request_id})")
-    return ["/path/to/root1", "/path/to/root2"]
-
-client = Client(
-    ..., 
-    roots=roots_callback,
-)
-```
-</CodeGroup>
-### Utility Methods
-
-*   **`ping()`**: Sends a ping request to the server to verify connectivity.
-    ```python
-    async def check_connection():
-        async with client:
-            await client.ping()
-            print("Server is reachable")
-    ```
-
-### Error Handling
+#### Error Handling
 
 When a `call_tool` request results in an error on the server (e.g., the tool function raised an exception), the `client.call_tool()` method will raise a `fastmcp.client.ClientError`.
 

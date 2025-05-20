@@ -67,6 +67,7 @@
                 "group": "Clients",
                 "pages": [
                     "clients/client",
+                    "clients/features",
                     "clients/transports"
                 ]
             },
