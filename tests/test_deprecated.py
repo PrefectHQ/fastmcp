@@ -40,7 +40,6 @@ def test_streamable_http_app_deprecation_warning():
         assert isinstance(app, Starlette)
 
 
-@pytest.mark.asyncio
 async def test_run_sse_async_deprecation_warning():
     """Test that run_sse_async raises a deprecation warning."""
     server = FastMCP("TestServer")
@@ -58,7 +57,6 @@ async def test_run_sse_async_deprecation_warning():
         assert call_kwargs.get("transport") == "sse"
 
 
-@pytest.mark.asyncio
 async def test_run_streamable_http_async_deprecation_warning():
     """Test that run_streamable_http_async raises a deprecation warning."""
     server = FastMCP("TestServer")

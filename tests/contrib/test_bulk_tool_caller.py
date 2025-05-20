@@ -85,7 +85,6 @@ ERROR_TOOL_NAME = "error_tool"
 NO_RETURN_TOOL_NAME = "no_return_tool"
 
 
-@pytest.mark.asyncio
 async def test_call_tool_bulk_single_success(bulk_caller_live: BulkToolCaller):
     """Test single successful call via call_tool_bulk using echo_tool."""
     tool_arguments = [{"arg1": "value1"}]
@@ -98,7 +97,6 @@ async def test_call_tool_bulk_single_success(bulk_caller_live: BulkToolCaller):
     assert result == expected_result
 
 
-@pytest.mark.asyncio
 async def test_call_tool_bulk_multiple_success(bulk_caller_live: BulkToolCaller):
     """Test multiple successful calls via call_tool_bulk using echo_tool."""
     tool_arguments = [{"arg1": "value1"}, {"arg1": "value2"}]
@@ -110,7 +108,6 @@ async def test_call_tool_bulk_multiple_success(bulk_caller_live: BulkToolCaller)
     assert results == expected_results
 
 
-@pytest.mark.asyncio
 async def test_call_tool_bulk_error_stops(bulk_caller_live: BulkToolCaller):
     """Test call_tool_bulk stops on first error using error_tool."""
     tool_arguments = [{"arg1": "error_value"}, {"arg1": "value2"}]
@@ -125,7 +122,6 @@ async def test_call_tool_bulk_error_stops(bulk_caller_live: BulkToolCaller):
     assert result == expected_result
 
 
-@pytest.mark.asyncio
 async def test_call_tool_bulk_error_continues(bulk_caller_live: BulkToolCaller):
     """Test call_tool_bulk continues on error using error_tool and echo_tool."""
     tool_arguments = [{"arg1": "error_value"}, {"arg1": "success_value"}]
@@ -148,7 +144,6 @@ async def test_call_tool_bulk_error_continues(bulk_caller_live: BulkToolCaller):
     assert success_result == expected_success_result
 
 
-@pytest.mark.asyncio
 async def test_call_tools_bulk_single_success(bulk_caller_live: BulkToolCaller):
     """Test single successful call via call_tools_bulk using echo_tool."""
     tool_calls = [CallToolRequest(tool=ECHO_TOOL_NAME, arguments={"arg1": "value1"})]
@@ -161,7 +156,6 @@ async def test_call_tools_bulk_single_success(bulk_caller_live: BulkToolCaller):
     assert result == expected_result
 
 
-@pytest.mark.asyncio
 async def test_call_tools_bulk_multiple_success(bulk_caller_live: BulkToolCaller):
     """Test multiple successful calls via call_tools_bulk with different tools."""
     tool_calls = [
@@ -181,7 +175,6 @@ async def test_call_tools_bulk_multiple_success(bulk_caller_live: BulkToolCaller
     assert results == expected_results
 
 
-@pytest.mark.asyncio
 async def test_call_tools_bulk_error_stops(bulk_caller_live: BulkToolCaller):
     """Test call_tools_bulk stops on first error using error_tool."""
     tool_calls = [
@@ -199,7 +192,6 @@ async def test_call_tools_bulk_error_stops(bulk_caller_live: BulkToolCaller):
     assert result == expected_result
 
 
-@pytest.mark.asyncio
 async def test_call_tools_bulk_error_continues(bulk_caller_live: BulkToolCaller):
     """Test call_tools_bulk continues on error using error_tool and echo_tool."""
     tool_calls = [
