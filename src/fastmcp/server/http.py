@@ -306,7 +306,29 @@ def create_streamable_http_app(
     async def handle_streamable_http(
         scope: Scope, receive: Receive, send: Send
     ) -> None:
-        await session_manager.handle_request(scope, receive, send)
+        try:
+            await session_manager.handle_request(scope, receive, send)
+        except RuntimeError as e:
+            if str(e) == "Task group is not initialized. Make sure to use run().":
+                logger.error(
+                    f"Original RuntimeError from mcp library: {e}", exc_info=True
+                )
+                new_error_message = (
+                    "FastMCP's StreamableHTTPSessionManager task group was not initialized. "
+                    "This commonly occurs when the FastMCP application's lifespan is not "
+                    "passed to the parent ASGI application (e.g., FastAPI or Starlette). "
+                    "Please ensure you are setting `lifespan=mcp_app.lifespan` in your "
+                    "parent app's constructor, where `mcp_app` is the application instance "
+                    "returned by `fastmcp_instance.http_app()`. \\n"
+                    "For more details, see the FastMCP ASGI integration documentation: "
+                    "https://gofastmcp.com/deployment/asgi"
+                )
+                # Raise a new RuntimeError that includes the original error's message
+                # for full context, but leads with the more helpful guidance.
+                raise RuntimeError(f"{new_error_message}\\nOriginal error: {e}") from e
+            else:
+                # Re-raise other RuntimeErrors if they don't match the specific message
+                raise
 
     # Get auth middleware and routes
     auth_middleware, auth_routes, required_scopes = setup_auth_middleware_and_routes(

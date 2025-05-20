@@ -71,7 +71,7 @@ def _run_server(mcp_server: FastMCP, transport: Literal["sse"], port: int) -> No
 
 @contextmanager
 def run_server_in_process(
-    server_fn: Callable[[str, int], None], *args
+    server_fn: Callable[..., None], *args
 ) -> Generator[str, None, None]:
     """
     Context manager that runs a Starlette app in a separate process and returns the
@@ -109,7 +109,11 @@ def run_server_in_process(
 
     yield f"http://{host}:{port}"
 
-    proc.kill()
-    proc.join(timeout=2)
+    proc.terminate()
+    proc.join(timeout=5)
     if proc.is_alive():
-        raise RuntimeError("Server process failed to terminate")
+        # If it's still alive, then force kill it
+        proc.kill()
+        proc.join(timeout=2)
+        if proc.is_alive():
+            raise RuntimeError("Server process failed to terminate even after kill")

@@ -4,7 +4,6 @@ from collections.abc import Callable
 from typing import Any
 
 import httpx
-import pytest
 from httpx import ASGITransport
 from starlette.middleware import Middleware
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -51,7 +50,6 @@ async def endpoint_handler(request: Request):
     return JSONResponse({"message": "Hello, world!"})
 
 
-@pytest.mark.asyncio
 async def test_sse_app_with_custom_middleware():
     """Test that custom middleware works with SSE app."""
     server = FastMCP(name="TestServer")
@@ -82,7 +80,6 @@ async def test_sse_app_with_custom_middleware():
         assert response.headers["X-Custom-Header"] == "test-value"
 
 
-@pytest.mark.asyncio
 async def test_streamable_http_app_with_custom_middleware():
     """Test that custom middleware works with StreamableHTTP app."""
     server = FastMCP(name="TestServer")
@@ -113,7 +110,6 @@ async def test_streamable_http_app_with_custom_middleware():
         assert response.headers["X-Custom-Header"] == "test-value"
 
 
-@pytest.mark.asyncio
 async def test_create_sse_app_with_custom_middleware():
     """Test that custom middleware works with create_sse_app function."""
     server = FastMCP(name="TestServer")
@@ -149,7 +145,6 @@ async def test_create_sse_app_with_custom_middleware():
         assert data["state"]["modified_by"] == "middleware"
 
 
-@pytest.mark.asyncio
 async def test_create_streamable_http_app_with_custom_middleware():
     """Test that custom middleware works with create_streamable_http_app function."""
     server = FastMCP(name="TestServer")
@@ -184,7 +179,6 @@ async def test_create_streamable_http_app_with_custom_middleware():
         assert data["state"]["modified_by"] == "middleware"
 
 
-@pytest.mark.asyncio
 async def test_multiple_middleware_ordering():
     """Test that multiple middleware are applied in the correct order."""
     server = FastMCP(name="TestServer")
