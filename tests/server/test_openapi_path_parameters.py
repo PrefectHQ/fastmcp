@@ -1,10 +1,12 @@
+from typing import Annotated, Literal
 from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
+from fastapi import FastAPI, Query
 
-from fastmcp import FastMCP
-from fastmcp.server.openapi import OpenAPITool
+from fastmcp import Client, FastMCP
+from fastmcp.server.openapi import OpenAPITool, RouteMap, RouteType
 from fastmcp.utilities.openapi import HTTPRoute, ParameterInfo
 
 
@@ -258,3 +260,206 @@ async def test_complex_nested_array_path_parameter(mock_client):
     assert "active" in called_url, "The URL should contain filter values"
     assert "}" not in called_url, "The URL should not contain Python object syntax"
     assert "{" not in called_url, "The URL should not contain Python object syntax"
+
+
+@pytest.mark.asyncio
+async def test_array_query_param_with_fastapi():
+    """Test array query parameters using FastAPI and FastMCP.from_fastapi integration."""
+    # Create a FastAPI app with a route that has an array query parameter
+    app = FastAPI()
+
+    @app.get("/select")
+    async def select_days(
+        days: Annotated[
+            list[
+                Literal[
+                    "monday",
+                    "tuesday",
+                    "wednesday",
+                    "thursday",
+                    "friday",
+                    "saturday",
+                    "sunday",
+                ]
+            ],
+            Query(explode=True),
+        ],
+    ):  # Using explode=True to get days=monday&days=tuesday format
+        return {"selected": days}
+
+    # Create a FastMCP server from the FastAPI app
+    mcp = FastMCP.from_fastapi(
+        app,
+        route_maps=[
+            RouteMap(methods=["GET"], pattern=r".*", route_type=RouteType.TOOL)
+        ],
+    )
+
+    # Test with the client
+    async with Client(mcp) as client:
+        # Get the actual tool name first
+        tools = await client.list_tools()
+        tool_names = [tool.name for tool in tools]
+        assert len(tool_names) == 1, (
+            f"Expected one tool, got {len(tool_names)}: {tool_names}"
+        )
+        tool_name = tool_names[0]
+
+        # Single day
+        result = await client.call_tool(tool_name, {"days": ["monday"]})
+        # Client returns TextContent objects, so parse the JSON
+        assert len(result) == 1
+        assert result[0].type == "text"
+        import json
+
+        result_data = json.loads(result[0].text)
+        assert result_data == {"selected": ["monday"]}
+
+        # Multiple days
+        result = await client.call_tool(tool_name, {"days": ["monday", "tuesday"]})
+        assert len(result) == 1
+        assert result[0].type == "text"
+        result_data = json.loads(result[0].text)
+        assert result_data == {"selected": ["monday", "tuesday"]}
+
+
+@pytest.mark.asyncio
+async def test_array_query_parameter_format(mock_client):
+    """Test that array query parameters are formatted as comma-separated values when explode=False."""
+    # Create a route with array query parameter
+    route = HTTPRoute(
+        path="/select",
+        method="GET",
+        operation_id="test-operation",
+        parameters=[
+            ParameterInfo(
+                name="days",
+                location="query",  # This is a query parameter
+                required=True,
+                schema={
+                    "type": "array",
+                    "explode": False,  # Set explode=False to test comma-separated formatting
+                    "items": {
+                        "type": "string",
+                        "enum": [
+                            "monday",
+                            "tuesday",
+                            "wednesday",
+                            "thursday",
+                            "friday",
+                            "saturday",
+                            "sunday",
+                        ],
+                    },
+                },
+            )
+        ],
+    )
+
+    # Create the tool
+    tool = OpenAPITool(
+        client=mock_client,
+        route=route,
+        name="test-operation",
+        description="Test operation",
+        parameters={},
+    )
+
+    # Test with a single value
+    await tool._execute_request(days=["monday"])
+
+    # Check that the query parameter is formatted correctly
+    mock_client.request.assert_called_with(
+        method="GET",
+        url="/select",
+        params={"days": "monday"},  # Should be formatted as a string, not a list
+        headers={},
+        json=None,
+        timeout=None,
+    )
+    mock_client.request.reset_mock()
+
+    # Test with multiple values
+    await tool._execute_request(days=["monday", "tuesday"])
+
+    # Check that the query parameter is formatted correctly
+    # It should be 'days=monday,tuesday' not 'days=["monday","tuesday"]'
+    mock_client.request.assert_called_with(
+        method="GET",
+        url="/select",
+        params={"days": "monday,tuesday"},  # Should be comma-separated
+        headers={},
+        json=None,
+        timeout=None,
+    )
+
+
+@pytest.mark.asyncio
+async def test_array_query_parameter_exploded_format(mock_client):
+    """Test that array query parameters are formatted as separate parameters when explode=True."""
+    # Create a route with array query parameter with explode=True (default)
+    route = HTTPRoute(
+        path="/select-exploded",
+        method="GET",
+        operation_id="test-exploded-operation",
+        parameters=[
+            ParameterInfo(
+                name="days",
+                location="query",  # This is a query parameter
+                required=True,
+                schema={
+                    "type": "array",
+                    "explode": True,  # Set explode=True for separate parameter serialization
+                    "items": {
+                        "type": "string",
+                        "enum": [
+                            "monday",
+                            "tuesday",
+                            "wednesday",
+                            "thursday",
+                            "friday",
+                            "saturday",
+                            "sunday",
+                        ],
+                    },
+                },
+            )
+        ],
+    )
+
+    # Create the tool
+    tool = OpenAPITool(
+        client=mock_client,
+        route=route,
+        name="test-exploded-operation",
+        description="Test operation with exploded arrays",
+        parameters={},
+    )
+
+    # Test with a single value
+    await tool._execute_request(days=["monday"])
+
+    # Check that the query parameter is formatted correctly
+    mock_client.request.assert_called_with(
+        method="GET",
+        url="/select-exploded",
+        params={"days": ["monday"]},  # Should be passed as a list for explode=True
+        headers={},
+        json=None,
+        timeout=None,
+    )
+    mock_client.request.reset_mock()
+
+    # Test with multiple values
+    await tool._execute_request(days=["monday", "tuesday"])
+
+    # Check that the query parameter is formatted correctly
+    # It should be passed as an array, which httpx will serialize as days=monday&days=tuesday
+    mock_client.request.assert_called_with(
+        method="GET",
+        url="/select-exploded",
+        params={"days": ["monday", "tuesday"]},  # Should be passed as a list
+        headers={},
+        json=None,
+        timeout=None,
+    )
