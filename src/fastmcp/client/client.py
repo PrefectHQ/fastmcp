@@ -1,5 +1,5 @@
 import datetime
-from contextlib import AsyncExitStack
+from contextlib import AsyncExitStack, asynccontextmanager
 from pathlib import Path
 from typing import Any, cast
 
@@ -84,6 +84,7 @@ class Client:
         self._session: ClientSession | None = None
         self._exit_stack: AsyncExitStack | None = None
         self._nesting_counter: int = 0
+        self._initialize_result: mcp.types.InitializeResult | None = None
 
         if log_handler is None:
             log_handler = default_log_handler
@@ -117,9 +118,18 @@ class Client:
         """Get the current active session. Raises RuntimeError if not connected."""
         if self._session is None:
             raise RuntimeError(
-                "Client is not connected. Use 'async with client:' context manager first."
+                "Client is not connected. Use the 'async with client:' context manager first."
             )
         return self._session
+
+    @property
+    def initialize_result(self) -> mcp.types.InitializeResult:
+        """Get the result of the initialization request."""
+        if self._initialize_result is None:
+            raise RuntimeError(
+                "Client is not connected. Use the 'async with client:' context manager first."
+            )
+        return self._initialize_result
 
     def set_roots(self, roots: RootsList | RootsHandler) -> None:
         """Set the roots for the client. This does not automatically call `send_roots_list_changed`."""
@@ -135,27 +145,35 @@ class Client:
         """Check if the client is currently connected."""
         return self._session is not None
 
+    @asynccontextmanager
+    async def _context_manager(self):
+        with catch(get_catch_handlers()):
+            async with self.transport.connect_session(
+                **self._session_kwargs
+            ) as session:
+                self._session = session
+                # Initialize the session
+                self._initialize_result = await self._session.initialize()
+
+                try:
+                    yield
+                finally:
+                    self._exit_stack = None
+                    self._session = None
+                    self._initialize_result = None
+
     async def __aenter__(self):
         if self._nesting_counter == 0:
             # Create exit stack to manage both context managers
             stack = AsyncExitStack()
             await stack.__aenter__()
 
-            # Add the exception handling context
-            stack.enter_context(catch(get_catch_handlers()))
+            await stack.enter_async_context(self._context_manager())
 
-            # the above catch will only apply once this __aenter__ finishes so
-            # we need to wrap the session creation in a new context in case it
-            # raises errors itself
-            with catch(get_catch_handlers()):
-                # Create and enter the transport session using the exit stack
-                session_cm = self.transport.connect_session(**self._session_kwargs)
-                self._session = await stack.enter_async_context(session_cm)
-
-            # Store the stack for cleanup in __aexit__
             self._exit_stack = stack
 
         self._nesting_counter += 1
+
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
@@ -168,7 +186,6 @@ class Client:
                     await self._exit_stack.__aexit__(exc_type, exc_val, exc_tb)
                 finally:
                     self._exit_stack = None
-                    self._session = None
 
     # --- MCP Client Methods ---
 

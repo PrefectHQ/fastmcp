@@ -256,18 +256,51 @@ async def test_read_resource_mcp(fastmcp_server):
 
 
 async def test_client_connection(fastmcp_server):
-    """Test that the client connects and disconnects properly."""
+    """Test that connect is idempotent."""
     client = Client(transport=FastMCPTransport(fastmcp_server))
 
-    # Before connection
+    # Connect idempotently
+    async with client:
+        assert client.is_connected()
+        # Make a request to ensure connection is working
+        await client.ping()
     assert not client.is_connected()
 
-    # During connection
+
+async def test_initialize_result_connected(fastmcp_server):
+    """Test that initialize_result returns the correct result when connected."""
+    client = Client(transport=FastMCPTransport(fastmcp_server))
+
+    # Initialize result should not be accessible before connection
+    with pytest.raises(RuntimeError, match="Client is not connected"):
+        _ = client.initialize_result
+
+    async with client:
+        # Once connected, initialize_result should be available
+        result = client.initialize_result
+
+        # Verify the initialize result has expected properties
+        assert hasattr(result, "serverInfo")
+        assert result.serverInfo.name == "TestServer"
+        assert result.serverInfo.version is not None
+
+
+async def test_initialize_result_disconnected(fastmcp_server):
+    """Test that initialize_result raises an error when not connected."""
+    client = Client(transport=FastMCPTransport(fastmcp_server))
+
+    # Initialize result should not be accessible before connection
+    with pytest.raises(RuntimeError, match="Client is not connected"):
+        _ = client.initialize_result
+
+    # Connect and then disconnect
     async with client:
         assert client.is_connected()
 
-    # After connection
+    # After disconnection, initialize_result should raise an error
     assert not client.is_connected()
+    with pytest.raises(RuntimeError, match="Client is not connected"):
+        _ = client.initialize_result
 
 
 async def test_client_nested_context_manager(fastmcp_server):
