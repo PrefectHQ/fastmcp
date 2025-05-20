@@ -188,3 +188,73 @@ async def test_integration_array_path_parameter(array_path_spec, mock_client):
         json=None,
         timeout=None,
     )
+
+
+@pytest.mark.asyncio
+async def test_complex_nested_array_path_parameter(mock_client):
+    """Test handling of complex nested array path parameters."""
+    # Create a route with a path parameter that contains nested objects in an array
+    route = HTTPRoute(
+        path="/report/{filters}",
+        method="GET",
+        operation_id="test-complex-filters",
+        parameters=[
+            ParameterInfo(
+                name="filters",
+                location="path",
+                required=True,
+                schema={
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "field": {"type": "string"},
+                            "value": {"type": "string"},
+                        },
+                    },
+                },
+            )
+        ],
+    )
+
+    # Create the tool
+    tool = OpenAPITool(
+        client=mock_client,
+        route=route,
+        name="test-complex-filters",
+        description="Test operation with complex filters",
+        parameters={},
+    )
+
+    # Test with a more complex path parameter
+    # This would typically be serialized as JSON or a more complex format
+    # But for path parameters with style=simple, it should be comma-separated
+    complex_filters = [
+        {"field": "status", "value": "active"},
+        {"field": "type", "value": "user"},
+    ]
+
+    # Execute the request with complex filters
+    await tool._execute_request(filters=complex_filters)
+
+    # The complex object should be properly serialized in the URL
+    # For path parameters, this would typically need a custom serialization strategy
+    # but our implementation should handle it safely
+    call_args = mock_client.request.call_args
+
+    # Verify the request was made
+    assert call_args is not None, "The request was not made"
+
+    # Get the called URL and verify it contains the serialized path parameter
+    called_url = call_args[1].get("url")
+
+    # Check that the path parameter is handled (we don't expect perfect serialization,
+    # but it should not cause errors and should maintain the array structure)
+    assert "/report/" in called_url, "The URL should contain the path prefix"
+
+    # Check that it didn't just convert the objects to string representations
+    # that include the Python object syntax
+    assert "status" in called_url, "The URL should contain filter field names"
+    assert "active" in called_url, "The URL should contain filter values"
+    assert "}" not in called_url, "The URL should not contain Python object syntax"
+    assert "{" not in called_url, "The URL should not contain Python object syntax"
