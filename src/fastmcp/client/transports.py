@@ -6,8 +6,7 @@ import shutil
 import sys
 from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, TypedDict, cast
-from urllib.parse import urlparse
+from typing import TYPE_CHECKING, Any, TypedDict, cast
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.session import (
@@ -26,7 +25,7 @@ from typing_extensions import Unpack
 
 from fastmcp.server import FastMCP as FastMCPServer
 from fastmcp.utilities.logging import get_logger
-from fastmcp.utilities.mcp_config import MCPConfig
+from fastmcp.utilities.mcp_config import MCPConfig, infer_transport_type_from_url
 
 if TYPE_CHECKING:
     from fastmcp.utilities.mcp_config import MCPConfig
@@ -537,22 +536,3 @@ def infer_transport(
 
     logger.debug(f"Inferred transport: {inferred_transport}")
     return inferred_transport
-
-
-def infer_transport_type_from_url(
-    url: str | AnyUrl,
-) -> Literal["streamable-http", "sse"]:
-    """
-    Infer the appropriate transport type from the given URL.
-    """
-    url = str(url)
-    if not url.startswith("http"):
-        raise ValueError(f"Invalid URL: {url}")
-
-    parsed_url = urlparse(url)
-    path = parsed_url.path
-
-    if "/sse/" in path or path.rstrip("/").endswith("/sse"):
-        return "sse"
-    else:
-        return "streamable-http"
