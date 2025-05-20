@@ -3,6 +3,7 @@ from contextlib import AsyncExitStack, asynccontextmanager
 from pathlib import Path
 from typing import Any, cast
 
+import anyio
 import mcp.types
 from exceptiongroup import catch
 from mcp import ClientSession
@@ -158,10 +159,12 @@ class Client:
             ) as session:
                 self._session = session
                 # Initialize the session
-                self._initialize_result = await self._session.initialize()
-
                 try:
+                    with anyio.fail_after(1):
+                        self._initialize_result = await self._session.initialize()
                     yield
+                except TimeoutError:
+                    raise RuntimeError("Failed to initialize server session")
                 finally:
                     self._exit_stack = None
                     self._session = None
