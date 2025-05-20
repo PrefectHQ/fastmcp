@@ -1,4 +1,5 @@
 import asyncio
+import sys
 from typing import cast
 
 import pytest
@@ -6,7 +7,12 @@ from mcp import McpError
 from pydantic import AnyUrl
 
 from fastmcp.client import Client
-from fastmcp.client.transports import FastMCPTransport
+from fastmcp.client.transports import (
+    FastMCPTransport,
+    SSETransport,
+    StreamableHttpTransport,
+    infer_transport,
+)
 from fastmcp.exceptions import ResourceError, ToolError
 from fastmcp.prompts.prompt import TextContent
 from fastmcp.server.server import FastMCP
@@ -250,18 +256,51 @@ async def test_read_resource_mcp(fastmcp_server):
 
 
 async def test_client_connection(fastmcp_server):
-    """Test that the client connects and disconnects properly."""
+    """Test that connect is idempotent."""
     client = Client(transport=FastMCPTransport(fastmcp_server))
 
-    # Before connection
+    # Connect idempotently
+    async with client:
+        assert client.is_connected()
+        # Make a request to ensure connection is working
+        await client.ping()
     assert not client.is_connected()
 
-    # During connection
+
+async def test_initialize_result_connected(fastmcp_server):
+    """Test that initialize_result returns the correct result when connected."""
+    client = Client(transport=FastMCPTransport(fastmcp_server))
+
+    # Initialize result should not be accessible before connection
+    with pytest.raises(RuntimeError, match="Client is not connected"):
+        _ = client.initialize_result
+
+    async with client:
+        # Once connected, initialize_result should be available
+        result = client.initialize_result
+
+        # Verify the initialize result has expected properties
+        assert hasattr(result, "serverInfo")
+        assert result.serverInfo.name == "TestServer"
+        assert result.serverInfo.version is not None
+
+
+async def test_initialize_result_disconnected(fastmcp_server):
+    """Test that initialize_result raises an error when not connected."""
+    client = Client(transport=FastMCPTransport(fastmcp_server))
+
+    # Initialize result should not be accessible before connection
+    with pytest.raises(RuntimeError, match="Client is not connected"):
+        _ = client.initialize_result
+
+    # Connect and then disconnect
     async with client:
         assert client.is_connected()
 
-    # After connection
+    # After disconnection, initialize_result should raise an error
     assert not client.is_connected()
+    with pytest.raises(RuntimeError, match="Client is not connected"):
+        _ = client.initialize_result
 
 
 async def test_client_nested_context_manager(fastmcp_server):
@@ -509,6 +548,10 @@ class TestErrorHandling:
             assert "This is a resource error (xyz)" in str(excinfo.value)
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="Timeout tests are flaky on Windows. Timeouts *are* supported but the tests are unreliable.",
+)
 class TestTimeout:
     async def test_timeout(self, fastmcp_server: FastMCP):
         async with Client(
@@ -535,6 +578,10 @@ class TestTimeout:
             with pytest.raises(McpError):
                 await client.call_tool("sleep", {"seconds": 0.1}, timeout=0.01)
 
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason="This test is flaky on Windows. Sometimes the client timeout is respected and sometimes it is not.",
+    )
     async def test_timeout_tool_call_overrides_client_timeout_even_if_lower(
         self, fastmcp_server: FastMCP
     ):
@@ -543,3 +590,53 @@ class TestTimeout:
             timeout=0.01,
         ) as client:
             await client.call_tool("sleep", {"seconds": 0.1}, timeout=2)
+
+
+class TestInferTransport:
+    """Tests for the infer_transport function."""
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "http://example.com/api/sse/stream",
+            "https://localhost:8080/mcp/sse/endpoint",
+            "http://example.com/api/sse",
+            "https://localhost:8080/mcp/sse",
+            "http://example.com/api/sse?param=value",
+            "https://localhost:8080/mcp/sse/?param=value",
+            "https://localhost:8000/mcp/sse?x=1&y=2",
+        ],
+        ids=[
+            "path_with_sse_directory",
+            "path_with_sse_subdirectory",
+            "path_ending_with_sse",
+            "path_ending_with_sse_https",
+            "path_with_sse_and_query_params",
+            "path_with_sse_slash_and_query_params",
+            "path_with_sse_and_ampersand_param",
+        ],
+    )
+    def test_url_returns_sse_transport(self, url):
+        """Test that URLs with /sse/ pattern return SSETransport."""
+        assert isinstance(infer_transport(url), SSETransport)
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "http://example.com/api",
+            "https://localhost:8080/mcp",
+            "http://example.com/asset/image.jpg",
+            "https://localhost:8080/sservice/endpoint",
+            "https://example.com/assets/file",
+        ],
+        ids=[
+            "regular_http_url",
+            "regular_https_url",
+            "url_with_unrelated_path",
+            "url_with_sservice_in_path",
+            "url_with_assets_in_path",
+        ],
+    )
+    def test_url_returns_streamable_http_transport(self, url):
+        """Test that URLs without /sse/ pattern return StreamableHttpTransport."""
+        assert isinstance(infer_transport(url), StreamableHttpTransport)

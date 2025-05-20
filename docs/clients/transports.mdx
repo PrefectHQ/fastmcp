@@ -40,7 +40,7 @@ Streamable HTTP is the recommended transport for web-based deployments, providin
 #### Overview
 
 - **Class:** `fastmcp.client.transports.StreamableHttpTransport`
-- **Inferred From:** URLs starting with `http://` or `https://` (default for HTTP URLs since v2.3.0)
+- **Inferred From:** URLs starting with `http://` or `https://` (default for HTTP URLs since v2.3.0) that do not contain `/sse/` in the path
 - **Server Compatibility:** Works with FastMCP servers running in `streamable-http` mode
 
 #### Basic Usage
@@ -60,6 +60,15 @@ async def main():
         print(f"Available tools: {tools}")
 
 asyncio.run(main())
+```
+
+You can also explicitly instantiate the transport:
+
+```python
+from fastmcp.client.transports import StreamableHttpTransport
+
+transport = StreamableHttpTransport(url="https://example.com/mcp")
+client = Client(transport)
 ```
 
 #### Authentication with Headers
@@ -88,23 +97,19 @@ Server-Sent Events (SSE) is a transport that allows servers to push data to clie
 #### Overview
 
 - **Class:** `fastmcp.client.transports.SSETransport`
-- **Inferred From:** Not automatically inferred for HTTP URLs since v2.3.0 (must be explicitly specified)
+- **Inferred From:** HTTP URLs containing `/sse/` in the path
 - **Server Compatibility:** Works with FastMCP servers running in `sse` mode
 
 #### Basic Usage
 
-Since v2.3.0, you must explicitly create an `SSETransport` for SSE connections:
+The simplest way to use SSE is to let the transport be inferred from a URL with `/sse/` in the path:
 
 ```python
 from fastmcp import Client
-from fastmcp.client.transports import SSETransport
 import asyncio
 
-# Create an SSE transport
-transport = SSETransport(url="https://example.com/sse")
-
-# Pass the transport to the client
-client = Client(transport)
+# The Client automatically uses SSETransport for URLs containing /sse/ in the path
+client = Client("https://example.com/sse")
 
 async def main():
     async with client:
@@ -112,6 +117,15 @@ async def main():
         print(f"Available tools: {tools}")
 
 asyncio.run(main())
+```
+
+You can also explicitly instantiate the transport for URLs that do not contain `/sse/` in the path or for more control: 
+
+```python
+from fastmcp.client.transports import SSETransport
+
+transport = SSETransport(url="https://example.com/sse")
+client = Client(transport)
 ```
 
 #### Authentication with Headers
