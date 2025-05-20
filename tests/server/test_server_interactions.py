@@ -655,8 +655,7 @@ class TestToolContextInjection:
             assert len(result) == 1
             content = result[0]
             assert isinstance(content, TextContent)
-            assert "Async request" in content.text
-            assert "42" in content.text
+            assert content.text == "Async request 2: 42"
 
     async def test_optional_context(self):
         """Test that context is optional."""
@@ -797,6 +796,7 @@ class TestResourceContext:
         async with Client(mcp) as client:
             result = await client.read_resource(AnyUrl("resource://test"))
             assert isinstance(result[0], TextResourceContents)
+            assert result[0].text == "2"
 
 
 class TestResourceTemplates:
@@ -1094,7 +1094,7 @@ class TestResourceTemplateContext:
         async with Client(mcp) as client:
             result = await client.read_resource(AnyUrl("resource://test"))
             assert isinstance(result[0], TextResourceContents)
-            assert result[0].text.startswith("Resource template: test")
+            assert result[0].text.startswith("Resource template: test 2")
 
 
 class TestPrompts:
