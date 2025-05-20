@@ -1,9 +1,7 @@
+from collections.abc import Awaitable, Callable
 from typing import TypeAlias
 
-from mcp.client.session import (
-    LoggingFnT,
-    MessageHandlerFnT,
-)
+from mcp.client.session import LoggingFnT, MessageHandlerFnT
 from mcp.types import LoggingMessageNotificationParams
 
 from fastmcp.utilities.logging import get_logger
@@ -11,11 +9,19 @@ from fastmcp.utilities.logging import get_logger
 logger = get_logger(__name__)
 
 LogMessage: TypeAlias = LoggingMessageNotificationParams
-LogHandler: TypeAlias = LoggingFnT
+LogHandler: TypeAlias = Callable[[LogMessage], Awaitable[None]]
 MessageHandler: TypeAlias = MessageHandlerFnT
 
-__all__ = ["LogMessage", "LogHandler", "MessageHandler"]
+
+async def default_log_handler(message: LogMessage) -> None:
+    logger.debug(f"Log received: {message}")
 
 
-async def default_log_handler(params: LogMessage) -> None:
-    logger.debug(f"Log received: {params}")
+def create_log_callback(handler: LogHandler | None = None) -> LoggingFnT:
+    if handler is None:
+        handler = default_log_handler
+
+    async def log_callback(params: LoggingMessageNotificationParams) -> None:
+        await handler(params)
+
+    return log_callback
