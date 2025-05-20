@@ -1,4 +1,3 @@
-import asyncio
 import datetime
 from contextlib import AsyncExitStack, asynccontextmanager
 from pathlib import Path
@@ -164,7 +163,7 @@ class Client:
                     with anyio.fail_after(1):
                         self._initialize_result = await self._session.initialize()
                     yield
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     raise RuntimeError("Failed to initialize server session")
                 finally:
                     self._exit_stack = None
