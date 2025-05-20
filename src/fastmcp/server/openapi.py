@@ -47,7 +47,7 @@ class RouteType(enum.Enum):
 class RouteMap:
     """Mapping configuration for HTTP routes to FastMCP component types."""
 
-    methods: list[HttpMethod]
+    methods: list[HttpMethod] | Literal["*"]
     pattern: Pattern[str] | str
     route_type: RouteType
 
@@ -86,7 +86,7 @@ def _determine_route_type(
     # Check mappings in priority order (first match wins)
     for route_map in mappings:
         # Check if the HTTP method matches
-        if route.method in route_map.methods:
+        if route_map.methods == "*" or route.method in route_map.methods:
             # Handle both string patterns and compiled Pattern objects
             if isinstance(route_map.pattern, Pattern):
                 pattern_matches = route_map.pattern.search(route.path)

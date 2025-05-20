@@ -1890,3 +1890,287 @@ class TestEnumHandling:
         assert "enum" in enum_def
         assert enum_def["enum"] == ["foo", "bar", "baz"]
         assert enum_def["type"] == "string"
+
+
+class TestRouteMapWildcard:
+    """Tests for wildcard RouteMap methods functionality."""
+
+    @pytest.fixture
+    def basic_openapi_spec(self) -> dict:
+        """Create a minimal OpenAPI spec with different HTTP methods."""
+        return {
+            "openapi": "3.1.0",
+            "info": {"title": "Test API", "version": "1.0.0"},
+            "paths": {
+                "/users": {
+                    "get": {
+                        "operationId": "getUsers",
+                        "responses": {"200": {"description": "Success"}},
+                    },
+                    "post": {
+                        "operationId": "createUser",
+                        "responses": {"201": {"description": "Created"}},
+                    },
+                },
+                "/posts": {
+                    "get": {
+                        "operationId": "getPosts",
+                        "responses": {"200": {"description": "Success"}},
+                    },
+                    "post": {
+                        "operationId": "createPost",
+                        "responses": {"201": {"description": "Created"}},
+                    },
+                },
+            },
+        }
+
+    @pytest.fixture
+    async def mock_basic_client(self) -> httpx.AsyncClient:
+        """Create a simple mock client."""
+
+        async def _responder(request):
+            return httpx.Response(200, json={"status": "ok"})
+
+        transport = httpx.MockTransport(_responder)
+        return httpx.AsyncClient(transport=transport, base_url="http://test")
+
+    async def test_wildcard_matches_all_methods(
+        self, basic_openapi_spec, mock_basic_client
+    ):
+        """Test that a RouteMap with methods='*' matches all HTTP methods."""
+        # Create a single route map with wildcard method
+        route_maps = [RouteMap(methods="*", pattern=r".*", route_type=RouteType.TOOL)]
+
+        mcp = FastMCPOpenAPI(
+            openapi_spec=basic_openapi_spec,
+            client=mock_basic_client,
+            route_maps=route_maps,
+        )
+
+        # All operations should be mapped to tools
+        tools = mcp._tool_manager.list_tools()
+        tool_names = {tool.name for tool in tools}
+
+        # Check that all operations were mapped as tools
+        expected_tools = {"getUsers", "createUser", "getPosts", "createPost"}
+        assert tool_names == expected_tools
+
+        # No resources or templates should be created
+        resources = mcp._resource_manager.get_resources()
+        templates = mcp._resource_manager.get_templates()
+        assert len(resources) == 0
+        assert len(templates) == 0
+
+    async def test_priority_specific_over_wildcard(
+        self, basic_openapi_spec, mock_basic_client
+    ):
+        """Test that specific method maps take priority over wildcard."""
+        # Create route maps with specific method first, then wildcard
+        route_maps = [
+            # GET operations should be mapped to resources
+            RouteMap(methods=["GET"], pattern=r".*", route_type=RouteType.RESOURCE),
+            # All other operations should be mapped to tools
+            RouteMap(methods="*", pattern=r".*", route_type=RouteType.TOOL),
+        ]
+
+        mcp = FastMCPOpenAPI(
+            openapi_spec=basic_openapi_spec,
+            client=mock_basic_client,
+            route_maps=route_maps,
+        )
+
+        # Check GET operations went to resources
+        resources = mcp._resource_manager.get_resources()
+        resource_names = {r.name for r in resources.values()}
+        assert "getUsers" in resource_names
+        assert "getPosts" in resource_names
+        assert len(resources) == 2
+
+        # Check other operations went to tools
+        tools = mcp._tool_manager.list_tools()
+        tool_names = {tool.name for tool in tools}
+        assert "createUser" in tool_names
+        assert "createPost" in tool_names
+        assert len(tools) == 2
+
+    async def test_priority_wildcard_first(self, basic_openapi_spec, mock_basic_client):
+        """Test that when wildcard is first, it matches everything."""
+        # Create route maps with wildcard first, then specific methods
+        route_maps = [
+            # Wildcard first matches everything
+            RouteMap(methods="*", pattern=r".*", route_type=RouteType.TOOL),
+            # This should never be reached
+            RouteMap(methods=["GET"], pattern=r".*", route_type=RouteType.RESOURCE),
+        ]
+
+        mcp = FastMCPOpenAPI(
+            openapi_spec=basic_openapi_spec,
+            client=mock_basic_client,
+            route_maps=route_maps,
+        )
+
+        # All operations should be tools
+        tools = mcp._tool_manager.list_tools()
+        assert len(tools) == 4
+
+        # No resources should be created
+        resources = mcp._resource_manager.get_resources()
+        assert len(resources) == 0
+
+    async def test_wildcard_with_specific_paths(
+        self, basic_openapi_spec, mock_basic_client
+    ):
+        """Test wildcard methods combined with specific path patterns."""
+        route_maps = [
+            # All methods on /users path -> Resources
+            RouteMap(methods="*", pattern=r".*/users$", route_type=RouteType.RESOURCE),
+            # All methods on /posts path -> Tools
+            RouteMap(methods="*", pattern=r".*/posts$", route_type=RouteType.TOOL),
+        ]
+
+        mcp = FastMCPOpenAPI(
+            openapi_spec=basic_openapi_spec,
+            client=mock_basic_client,
+            route_maps=route_maps,
+        )
+
+        # Check /users operations went to resources
+        resources = mcp._resource_manager.get_resources()
+        resource_names = {r.name for r in resources.values()}
+        assert "getUsers" in resource_names
+        assert "createUser" in resource_names
+        assert len(resources) == 2
+
+        # Check /posts operations went to tools
+        tools = mcp._tool_manager.list_tools()
+        tool_names = {tool.name for tool in tools}
+        assert "getPosts" in tool_names
+        assert "createPost" in tool_names
+        assert len(tools) == 2
+
+
+class TestAllRoutesAsTools:
+    """Tests for the all_routes_as_tools parameter in FastMCP class methods."""
+
+    @pytest.fixture
+    def simple_api_spec(self) -> dict:
+        """A simple OpenAPI spec with both GET and POST methods."""
+        return {
+            "openapi": "3.1.0",
+            "info": {"title": "Test API", "version": "1.0.0"},
+            "paths": {
+                "/items": {
+                    "get": {
+                        "operationId": "getItems",
+                        "responses": {"200": {"description": "Success"}},
+                    },
+                    "post": {
+                        "operationId": "createItem",
+                        "responses": {"201": {"description": "Created"}},
+                    },
+                },
+            },
+        }
+
+    @pytest.fixture
+    async def mock_client(self) -> httpx.AsyncClient:
+        """Simple mock client for testing."""
+
+        async def _responder(request):
+            return httpx.Response(200, json={"result": "ok"})
+
+        transport = httpx.MockTransport(_responder)
+        return httpx.AsyncClient(transport=transport, base_url="http://test")
+
+    async def test_from_openapi_all_routes_as_tools(self, simple_api_spec, mock_client):
+        """Test FastMCP.from_openapi with all_routes_as_tools=True."""
+        # Create server with all routes as tools
+        server = FastMCP.from_openapi(
+            openapi_spec=simple_api_spec, client=mock_client, all_routes_as_tools=True
+        )
+
+        # All operations (GET and POST) should be mapped to tools
+        tools = server._tool_manager.list_tools()
+        tool_names = {t.name for t in tools}
+
+        assert "getItems" in tool_names
+        assert "createItem" in tool_names
+        assert len(tools) == 2
+
+        # No resources or templates should be created
+        resources = server._resource_manager.get_resources()
+        templates = server._resource_manager.get_templates()
+        assert len(resources) == 0
+        assert len(templates) == 0
+
+    async def test_from_openapi_all_routes_as_tools_conflicting_args(
+        self, simple_api_spec, mock_client
+    ):
+        """Test FastMCP.from_openapi raises error when both route_maps and all_routes_as_tools are provided."""
+        # Try to create server with conflicting args
+        with pytest.raises(
+            ValueError, match="Cannot specify both all_routes_as_tools and route_maps"
+        ):
+            FastMCP.from_openapi(
+                openapi_spec=simple_api_spec,
+                client=mock_client,
+                all_routes_as_tools=True,
+                route_maps=[
+                    RouteMap(
+                        methods=["GET"], pattern=r".*", route_type=RouteType.RESOURCE
+                    )
+                ],
+            )
+
+    async def test_from_fastapi_all_routes_as_tools(self):
+        """Test FastMCP.from_fastapi with all_routes_as_tools=True."""
+        # Create a simple FastAPI app
+        app = FastAPI(title="Test FastAPI")
+
+        @app.get("/items")
+        async def get_items():
+            return [{"id": 1, "name": "Item 1"}]
+
+        @app.post("/items")
+        async def create_item(item: dict):
+            return {"id": 2, **item}
+
+        # Create server with all routes as tools
+        server = FastMCP.from_fastapi(app=app, all_routes_as_tools=True)
+
+        # Both GET and POST operations should be mapped to tools
+        tools = server._tool_manager.list_tools()
+
+        # Get tool names from the generated operation IDs
+        tool_names = {t.name for t in tools}
+
+        # Check that both routes were mapped to tools
+        # The exact names depend on FastAPI's operation ID generation
+        assert len(tools) == 2
+        assert any("get" in name.lower() for name in tool_names)
+        assert any("post" in name.lower() for name in tool_names)
+
+        # No resources or templates should be created
+        resources = server._resource_manager.get_resources()
+        templates = server._resource_manager.get_templates()
+        assert len(resources) == 0
+        assert len(templates) == 0
+
+    async def test_from_fastapi_all_routes_as_tools_conflicting_args(self):
+        """Test FastMCP.from_fastapi raises error when both route_maps and all_routes_as_tools are provided."""
+        app = FastAPI(title="Test FastAPI")
+
+        # Try to create server with conflicting args
+        with pytest.raises(
+            ValueError, match="Cannot specify both all_routes_as_tools and route_maps"
+        ):
+            FastMCP.from_fastapi(
+                app=app,
+                all_routes_as_tools=True,
+                route_maps=[
+                    RouteMap(
+                        methods=["GET"], pattern=r".*", route_type=RouteType.RESOURCE
+                    )
+                ],
+            )
