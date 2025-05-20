@@ -309,7 +309,10 @@ def create_streamable_http_app(
         try:
             await session_manager.handle_request(scope, receive, send)
         except RuntimeError as e:
-            if "Task group is not initialized" in str(e):
+            if str(e) == "Task group is not initialized. Make sure to use run().":
+                logger.error(
+                    f"Original RuntimeError from mcp library: {e}", exc_info=True
+                )
                 new_error_message = (
                     "FastMCP's StreamableHTTPSessionManager task group was not initialized. "
                     "This commonly occurs when the FastMCP application's lifespan is not "
