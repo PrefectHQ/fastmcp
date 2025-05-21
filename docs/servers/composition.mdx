@@ -208,8 +208,8 @@ This was the default format in FastMCP before 2.4. While still supported, it's n
 You can configure the prefix format globally in code:
 
 ```python
-from fastmcp import settings
-settings.settings.resource_prefix_format = "protocol" 
+import fastmcp
+fastmcp.settings.settings.resource_prefix_format = "protocol" 
 ```
 
 Or via environment variable:
@@ -221,6 +221,8 @@ FASTMCP_RESOURCE_PREFIX_FORMAT=protocol
 Or per-server:
 
 ```python
+from fastmcp import FastMCP
+
 # Create a server that uses legacy protocol format
 server = FastMCP("LegacyServer", resource_prefix_format="protocol")
 
