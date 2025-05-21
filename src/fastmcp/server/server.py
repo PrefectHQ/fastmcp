@@ -988,6 +988,7 @@ class FastMCP(Generic[LifespanResultT]):
         from fastmcp.server.proxy import FastMCPProxy
 
         if tool_separator is not None:
+            # Deprecated since 2.3.6
             warnings.warn(
                 "The tool_separator parameter is deprecated and will be removed in a future version. "
                 "Tools are now prefixed using 'prefix_toolname' format.",
@@ -996,6 +997,7 @@ class FastMCP(Generic[LifespanResultT]):
             )
 
         if resource_separator is not None:
+            # Deprecated since 2.3.6
             warnings.warn(
                 "The resource_separator parameter is deprecated and ignored. "
                 "Resource prefixes are now added using the protocol://prefix/path format.",
@@ -1004,6 +1006,7 @@ class FastMCP(Generic[LifespanResultT]):
             )
 
         if prompt_separator is not None:
+            # Deprecated since 2.3.6
             warnings.warn(
                 "The prompt_separator parameter is deprecated and will be removed in a future version. "
                 "Prompts are now prefixed using 'prefix_promptname' format.",
@@ -1070,6 +1073,7 @@ class FastMCP(Generic[LifespanResultT]):
             prompt_separator: Deprecated. Separator for prompt names.
         """
         if tool_separator is not None:
+            # Deprecated since 2.3.6
             warnings.warn(
                 "The tool_separator parameter is deprecated and will be removed in a future version. "
                 "Tools are now prefixed using 'prefix_toolname' format.",
@@ -1078,6 +1082,7 @@ class FastMCP(Generic[LifespanResultT]):
             )
 
         if resource_separator is not None:
+            # Deprecated since 2.3.6
             warnings.warn(
                 "The resource_separator parameter is deprecated and ignored. "
                 "Resource prefixes are now added using the protocol://prefix/path format.",
@@ -1086,6 +1091,7 @@ class FastMCP(Generic[LifespanResultT]):
             )
 
         if prompt_separator is not None:
+            # Deprecated since 2.3.6
             warnings.warn(
                 "The prompt_separator parameter is deprecated and will be removed in a future version. "
                 "Prompts are now prefixed using 'prefix_promptname' format.",
