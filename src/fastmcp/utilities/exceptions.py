@@ -18,7 +18,6 @@ def iter_exc(group: BaseExceptionGroup):
 
 
 def _exception_handler(group: BaseExceptionGroup):
-    print(list(iter_exc(group)))
     for leaf in iter_exc(group):
         if isinstance(leaf, httpx.ConnectTimeout):
             raise McpError(
