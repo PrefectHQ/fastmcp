@@ -68,6 +68,9 @@ logger = get_logger(__name__)
 
 DuplicateBehavior = Literal["warn", "error", "replace", "ignore"]
 
+# Compiled URI parsing regex to split a URI into protocol and path components
+URI_PATTERN = re.compile(r"^([^:]+://)(.*?)$")
+
 
 @asynccontextmanager
 async def default_lifespan(server: FastMCP[LifespanResultT]) -> AsyncIterator[Any]:
@@ -1312,7 +1315,7 @@ def add_resource_prefix(uri: str, prefix: str) -> str:
         return uri
 
     # Split the URI into protocol and path
-    match = re.match(r"^([^:]+://)(.*?)$", uri)
+    match = URI_PATTERN.match(uri)
     if not match:
         raise ValueError(f"Invalid URI format: {uri}. Expected protocol://path format.")
 
@@ -1345,7 +1348,7 @@ def remove_resource_prefix(uri: str, prefix: str) -> str:
         return uri
 
     # Split the URI into protocol and path
-    match = re.match(r"^([^:]+://)(.*?)$", uri)
+    match = URI_PATTERN.match(uri)
     if not match:
         raise ValueError(f"Invalid URI format: {uri}. Expected protocol://path format.")
 
@@ -1384,7 +1387,7 @@ def has_resource_prefix(uri: str, prefix: str) -> bool:
         return False
 
     # Split the URI into protocol and path
-    match = re.match(r"^([^:]+://)(.*?)$", uri)
+    match = URI_PATTERN.match(uri)
     if not match:
         raise ValueError(f"Invalid URI format: {uri}. Expected protocol://path format.")
 
