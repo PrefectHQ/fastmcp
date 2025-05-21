@@ -37,7 +37,7 @@ Clients must be initialized with a `transport`. You can either provide an alread
 The following inference rules are used to determine the appropriate `ClientTransport` based on the input type:
 
 1.  **`ClientTransport` Instance**: If you provide an already instantiated transport object, it's used directly.
-2.  **`FastMCP` Instance**: Creates a `FastMCPTransport` for efficient in-memory communication (ideal for testing).
+2.  **`FastMCP` Instance**: Creates a `FastMCPTransport` for efficient in-memory communication (ideal for testing). This also works with a **FastMCP 1.0 server** created via `mcp.server.fastmcp.FastMCP`.
 3.  **`Path` or `str` pointing to an existing file**:
     *   If it ends with `.py`: Creates a `PythonStdioTransport` to run the script using `python`.
     *   If it ends with `.js`: Creates a `NodeStdioTransport` to run the script using `node`.
