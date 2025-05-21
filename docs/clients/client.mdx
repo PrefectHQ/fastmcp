@@ -53,25 +53,37 @@ from fastmcp import Client, FastMCP
 # Example transports (more details in Transports page)
 server_instance = FastMCP(name="TestServer") # In-memory server
 http_url = "https://example.com/mcp"        # HTTP server URL
-ws_url = "ws://localhost:9000"             # WebSocket server URL
 server_script = "my_mcp_server.py"         # Path to a Python server file
 
 # Client automatically infers the transport type
 client_in_memory = Client(server_instance)
 client_http = Client(http_url)
-client_ws = Client(ws_url)
+
 client_stdio = Client(server_script)
 
 print(client_in_memory.transport)
 print(client_http.transport)
-print(client_ws.transport)
 print(client_stdio.transport)
 
 # Expected Output (types may vary slightly based on environment):
 # <FastMCP(server='TestServer')>
 # <StreamableHttp(url='https://example.com/mcp')>
-# <WebSocket(url='ws://localhost:9000')>
 # <PythonStdioTransport(command='python', args=['/path/to/your/my_mcp_server.py'])>
+```
+
+You can also initialize a client from an MCP configuration dictionary or `MCPConfig` file:
+
+```python
+from fastmcp import Client
+
+config = {
+    "mcpServers": {
+        "local": {"command": "python", "args": ["local_server.py"]},
+        "remote": {"url": "https://example.com/mcp"},
+    }
+}
+
+client_config = Client(config)
 ```
 <Tip>
 For more control over connection details (like headers for SSE, environment variables for Stdio), you can instantiate the specific `ClientTransport` class yourself and pass it to the `Client`. See the [Transports](/clients/transports) page for details.
