@@ -104,6 +104,64 @@ proxy = FastMCP.as_proxy(
 # requests to original_server
 ```
 
+### Configuration-Based Proxies
+
+<VersionBadge version="2.3.6" />
+
+You can create a proxy directly from a configuration dictionary that follows the MCPConfig schema. This is useful for quickly setting up proxies to remote servers without manually configuring each connection detail.
+
+```python
+from fastmcp import FastMCP
+
+# Create a proxy directly from a config dictionary
+config = {
+    "mcpServers": {
+        "default": {  # For single server configs, 'default' is commonly used
+            "url": "https://example.com/mcp",
+            "transport": "streamable-http"
+        }
+    }
+}
+
+# Create a proxy to the configured server
+proxy = FastMCP.as_proxy(config, name="Config-Based Proxy")
+
+# Run the proxy with stdio transport for local access
+if __name__ == "__main__":
+    proxy.run()
+```
+
+<Note>
+The MCPConfig format follows an emerging standard for MCP server configuration and may evolve as the specification matures. While FastMCP aims to maintain compatibility with future versions, be aware that field names or structure might change.
+</Note>
+
+You can also use MCPConfig to create a proxy to multiple servers. When multiple servers are specified, they are automatically mounted with their config names as prefixes, providing a unified interface to all servers:
+
+```python
+from fastmcp import FastMCP
+
+# Multi-server configuration
+config = {
+    "mcpServers": {
+        "weather": {
+            "url": "https://weather-api.example.com/mcp",
+            "transport": "streamable-http"
+        },
+        "calendar": {
+            "url": "https://calendar-api.example.com/mcp",
+            "transport": "streamable-http"
+        }
+    }
+}
+
+# Create a proxy to multiple servers
+composite_proxy = FastMCP.as_proxy(config, name="Composite Proxy")
+
+# Tools and resources are accessible with prefixes:
+# - weather_get_forecast, calendar_add_event 
+# - weather://weather/icons/sunny, calendar://calendar/events/today
+```
+
 ## `FastMCPProxy` Class
 
 Internally, `FastMCP.as_proxy()` uses the `FastMCPProxy` class. You generally don't need to interact with this class directly, but it's available if needed.

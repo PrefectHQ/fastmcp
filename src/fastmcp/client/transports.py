@@ -474,7 +474,52 @@ class FastMCPTransport(ClientTransport):
 
 
 class MCPConfigTransport(ClientTransport):
-    """Transport for running MCPConfig."""
+    """Transport for connecting to one or more MCP servers defined in an MCPConfig.
+
+    This transport provides a unified interface to multiple MCP servers defined in an MCPConfig
+    object or dictionary matching the MCPConfig schema. It supports two key scenarios:
+
+    1. If the MCPConfig contains exactly one server, it creates a direct transport to that server.
+    2. If the MCPConfig contains multiple servers, it creates a composite client by mounting
+       all servers on a single FastMCP instance, with each server's name used as its mounting prefix.
+
+    In the multi-server case, tools are accessible with the prefix pattern `{server_name}_{tool_name}`
+    and resources with the pattern `protocol://{server_name}/path/to/resource`.
+
+    This is particularly useful for creating clients that need to interact with multiple specialized
+    MCP servers through a single interface, simplifying client code.
+
+    Examples:
+        ```python
+        from fastmcp import Client
+        from fastmcp.utilities.mcp_config import MCPConfig
+
+        # Create a config with multiple servers
+        config = {
+            "mcpServers": {
+                "weather": {
+                    "url": "https://weather-api.example.com/mcp",
+                    "transport": "streamable-http"
+                },
+                "calendar": {
+                    "url": "https://calendar-api.example.com/mcp",
+                    "transport": "streamable-http"
+                }
+            }
+        }
+
+        # Create a client with the config
+        client = Client(config)
+
+        async with client:
+            # Access tools with prefixes
+            weather = await client.call_tool("weather_get_forecast", {"city": "London"})
+            events = await client.call_tool("calendar_list_events", {"date": "2023-06-01"})
+
+            # Access resources with prefixed URIs
+            icons = await client.read_resource("weather://weather/icons/sunny")
+        ```
+    """
 
     def __init__(self, config: MCPConfig | dict):
         from fastmcp.client.client import Client
@@ -526,7 +571,38 @@ def infer_transport(
     argument, handling various input types and converting them to the appropriate
     ClientTransport subclass.
 
+    The function supports these input types:
+    - ClientTransport: Used directly without modification
+    - FastMCPServer: Creates an in-memory FastMCPTransport
+    - Path or str (file path): Creates PythonStdioTransport (.py) or NodeStdioTransport (.js)
+    - AnyUrl or str (URL): Creates StreamableHttpTransport (default) or SSETransport (for /sse endpoints)
+    - MCPConfig or dict: Creates MCPConfigTransport, potentially connecting to multiple servers
+
     For HTTP URLs, they are assumed to be Streamable HTTP URLs unless they end in `/sse`.
+
+    For MCPConfig with multiple servers, a composite client is created where each server
+    is mounted with its name as prefix. This allows accessing tools and resources from multiple
+    servers through a single unified client interface, using naming patterns like
+    `servername_toolname` for tools and `protocol://servername/path` for resources.
+    If the MCPConfig contains only one server, a direct connection is established without prefixing.
+
+    Examples:
+        ```python
+        # Connect to a local Python script
+        transport = infer_transport("my_script.py")
+
+        # Connect to a remote server via HTTP
+        transport = infer_transport("http://example.com/mcp")
+
+        # Connect to multiple servers using MCPConfig
+        config = {
+            "mcpServers": {
+                "weather": {"url": "http://weather.example.com/mcp"},
+                "calendar": {"url": "http://calendar.example.com/mcp"}
+            }
+        }
+        transport = infer_transport(config)
+        ```
     """
     from fastmcp.utilities.mcp_config import MCPConfig
 
