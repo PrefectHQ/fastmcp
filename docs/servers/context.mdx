@@ -228,7 +228,7 @@ async def analyze_sentiment(text: str, ctx: Context) -> dict:
     # Create a sampling prompt asking for sentiment analysis
     prompt = f"Analyze the sentiment of the following text as positive, negative, or neutral. Just output a single word - 'positive', 'negative', or 'neutral'. Text to analyze: {text}"
     
-    # Send the sampling request to the clients LLM (provide a hint for the model you want to use)
+    # Send the sampling request to the client's LLM (provide a hint for the model you want to use)
     response = await ctx.sample(prompt, model_preferences="claude-3-sonnet")
     
     # Process the LLM's response
