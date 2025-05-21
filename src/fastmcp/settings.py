@@ -29,6 +29,7 @@ class Settings(BaseSettings):
 
     test_mode: bool = False
     log_level: LOG_LEVEL = "INFO"
+
     client_raise_first_exceptiongroup_error: Annotated[
         bool,
         Field(
@@ -44,6 +45,21 @@ class Settings(BaseSettings):
             ),
         ),
     ] = True
+
+    resource_prefix_format: Annotated[
+        Literal["protocol", "path"],
+        Field(
+            default="path",
+            description=inspect.cleandoc(
+                """
+                When perfixing a resource URI, either use path formatting (resource://prefix/path)
+                or protocol formatting (prefix+resource://path). Protocol formatting was the default in FastMCP < 2.4;
+                path formatting is current default.
+                """
+            ),
+        ),
+    ] = "path"
+
     tool_attempt_parse_json_args: Annotated[
         bool,
         Field(

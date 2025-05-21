@@ -181,6 +181,57 @@ remote_proxy = FastMCP.as_proxy(Client("http://example.com/mcp"))
 main_server.mount("remote", remote_proxy)
 ```
 
-<Warning>
-Some MCP clients (like Claude Desktop) might have restrictions on characters allowed in tool names. FastMCP uses standard naming conventions: tools and prompts are prefixed with `{prefix}_` (e.g., "weather_forecast"), and resources use the format `protocol://{prefix}/path` (e.g., "data://weather/forecast").
-</Warning>
+
+
+## Resource Prefix Formats
+
+When mounting or importing servers, resource URIs are usually prefixed to avoid naming conflicts. FastMCP supports two different formats for resource prefixes:
+
+### Path Format (Default)
+
+In path format, prefixes are added to the path component of the URI:
+
+```
+resource://prefix/path/to/resource
+```
+
+This is the default format since FastMCP 2.4. This format is recommended because it avoids issues with URI protocol restrictions (like underscores not being allowed in protocol names).
+
+### Protocol Format (Legacy)
+
+In protocol format, prefixes are added as part of the protocol:
+
+```
+prefix+resource://path/to/resource
+```
+
+This was the default format in FastMCP before 2.4. While still supported, it's not recommended for new code as it can cause problems with prefix names that aren't valid in URI protocols.
+
+### Configuring the Prefix Format
+
+You can configure the prefix format globally in code:
+
+```python
+import fastmcp
+fastmcp.settings.settings.resource_prefix_format = "protocol" 
+```
+
+Or via environment variable:
+
+```bash
+FASTMCP_RESOURCE_PREFIX_FORMAT=protocol
+```
+
+Or per-server:
+
+```python
+from fastmcp import FastMCP
+
+# Create a server that uses legacy protocol format
+server = FastMCP("LegacyServer", resource_prefix_format="protocol")
+
+# Create a server that uses new path format
+server = FastMCP("NewServer", resource_prefix_format="path")
+```
+
+When mounting or importing servers, the prefix format of the parent server is used.
