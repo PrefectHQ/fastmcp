@@ -12,6 +12,8 @@ from mcp.shared.context import RequestContext
 from mcp.types import (
     CreateMessageResult,
     ImageContent,
+    ModelHint,
+    ModelPreferences,
     Root,
     SamplingMessage,
     TextContent,
@@ -200,6 +202,7 @@ class Context:
         system_prompt: str | None = None,
         temperature: float | None = None,
         max_tokens: int | None = None,
+        model_preferences: ModelPreferences | str | list[str] | None = None,
     ) -> TextContent | ImageContent:
         """
         Send a sampling request to the client and await the response.
@@ -231,6 +234,7 @@ class Context:
             system_prompt=system_prompt,
             temperature=temperature,
             max_tokens=max_tokens,
+            model_preferences=self._parse_model_preferences(model_preferences),
         )
 
         return result.content
@@ -248,3 +252,42 @@ class Context:
         )
 
         return fastmcp.server.dependencies.get_http_request()
+
+    def _parse_model_preferences(self, model_preferences) -> ModelPreferences | None:
+        """
+        Validates and converts user input for model_preferences into a ModelPreferences object.
+
+        Args:
+            model_preferences (ModelPreferences | str | list[str] | None):
+                The model preferences to use. Accepts:
+                - ModelPreferences (returns as-is)
+                - str (single model hint)
+                - list[str] (multiple model hints)
+                - None (no preferences)
+
+        Returns:
+            ModelPreferences | None: The parsed ModelPreferences object, or None if not provided.
+
+        Raises:
+            ValueError: If the input is not a supported type or contains invalid values.
+        """
+        if model_preferences is None:
+            return None
+        if isinstance(model_preferences, ModelPreferences):
+            return model_preferences
+        if isinstance(model_preferences, str):
+            # Single model hint
+            return ModelPreferences(hints=[ModelHint(name=model_preferences)])
+        if isinstance(model_preferences, list):
+            # List of model hints (strings)
+            if not all(isinstance(h, str) for h in model_preferences):
+                raise ValueError(
+                    "All elements of model_preferences list must be"
+                    " strings (model name hints)."
+                )
+            return ModelPreferences(
+                hints=[ModelHint(name=h) for h in model_preferences]
+            )
+        raise ValueError(
+            "model_preferences must be one of: ModelPreferences, str, list[str], or None."
+        )
