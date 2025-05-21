@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime
+import re
 import warnings
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import (
@@ -16,7 +17,6 @@ from typing import TYPE_CHECKING, Any, Generic, Literal
 
 import anyio
 import httpx
-import pydantic
 import uvicorn
 from mcp.server.auth.provider import OAuthAuthorizationServerProvider
 from mcp.server.lowlevel.helper_types import ReadResourceContents
@@ -67,6 +67,9 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 DuplicateBehavior = Literal["warn", "error", "replace", "ignore"]
+
+# Compiled URI parsing regex to split a URI into protocol and path components
+URI_PATTERN = re.compile(r"^([^:]+://)(.*?)$")
 
 
 @asynccontextmanager
@@ -935,10 +938,11 @@ class FastMCP(Generic[LifespanResultT]):
         self,
         prefix: str,
         server: FastMCP[LifespanResultT],
+        as_proxy: bool | None = None,
+        *,
         tool_separator: str | None = None,
         resource_separator: str | None = None,
         prompt_separator: str | None = None,
-        as_proxy: bool | None = None,
     ) -> None:
         """Mount another FastMCP server on this server with the given prefix.
 
@@ -949,15 +953,15 @@ class FastMCP(Generic[LifespanResultT]):
         through the parent.
 
         When a server is mounted:
-        - Tools from the mounted server are accessible with prefixed names using the tool_separator.
+        - Tools from the mounted server are accessible with prefixed names.
           Example: If server has a tool named "get_weather", it will be available as "prefix_get_weather".
-        - Resources are accessible with prefixed URIs using the resource_separator.
+        - Resources are accessible with prefixed URIs.
           Example: If server has a resource with URI "weather://forecast", it will be available as
-          "prefix+weather://forecast".
-        - Templates are accessible with prefixed URI templates using the resource_separator.
+          "weather://prefix/forecast".
+        - Templates are accessible with prefixed URI templates.
           Example: If server has a template with URI "weather://location/{id}", it will be available
-          as "prefix+weather://location/{id}".
-        - Prompts are accessible with prefixed names using the prompt_separator.
+          as "weather://prefix/location/{id}".
+        - Prompts are accessible with prefixed names.
           Example: If server has a prompt named "weather_prompt", it will be available as
           "prefix_weather_prompt".
 
@@ -975,16 +979,43 @@ class FastMCP(Generic[LifespanResultT]):
         Args:
             prefix: Prefix to use for the mounted server's objects.
             server: The FastMCP server to mount.
-            tool_separator: Separator character for tool names (defaults to "_").
-            resource_separator: Separator character for resource URIs (defaults to "+").
-            prompt_separator: Separator character for prompt names (defaults to "_").
             as_proxy: Whether to treat the mounted server as a proxy. If None (default),
                 automatically determined based on whether the server has a custom lifespan
                 (True if it has a custom lifespan, False otherwise).
+            tool_separator: Deprecated. Separator character for tool names.
+            resource_separator: Deprecated. Separator character for resource URIs.
+            prompt_separator: Deprecated. Separator character for prompt names.
         """
         from fastmcp import Client
         from fastmcp.client.transports import FastMCPTransport
         from fastmcp.server.proxy import FastMCPProxy
+
+        if tool_separator is not None:
+            # Deprecated since 2.3.6
+            warnings.warn(
+                "The tool_separator parameter is deprecated and will be removed in a future version. "
+                "Tools are now prefixed using 'prefix_toolname' format.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+
+        if resource_separator is not None:
+            # Deprecated since 2.3.6
+            warnings.warn(
+                "The resource_separator parameter is deprecated and ignored. "
+                "Resource prefixes are now added using the protocol://prefix/path format.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+
+        if prompt_separator is not None:
+            # Deprecated since 2.3.6
+            warnings.warn(
+                "The prompt_separator parameter is deprecated and will be removed in a future version. "
+                "Prompts are now prefixed using 'prefix_promptname' format.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
 
         # if as_proxy is not specified and the server has a custom lifespan,
         # we should treat it as a proxy
@@ -997,9 +1028,6 @@ class FastMCP(Generic[LifespanResultT]):
         mounted_server = MountedServer(
             server=server,
             prefix=prefix,
-            tool_separator=tool_separator,
-            resource_separator=resource_separator,
-            prompt_separator=prompt_separator,
         )
         self._mounted_servers[prefix] = mounted_server
         self._cache.clear()
@@ -1025,57 +1053,77 @@ class FastMCP(Generic[LifespanResultT]):
         future changes to the imported server will not be reflected in the
         importing server. Server-level configurations and lifespans are not imported.
 
-        When a server is mounted: - The tools are imported with prefixed names
-        using the tool_separator
+        When a server is imported:
+        - The tools are imported with prefixed names
           Example: If server has a tool named "get_weather", it will be
-          available as "weatherget_weather"
-        - The resources are imported with prefixed URIs using the
-          resource_separator Example: If server has a resource with URI
-          "weather://forecast", it will be available as
-          "weather+weather://forecast"
-        - The templates are imported with prefixed URI templates using the
-          resource_separator Example: If server has a template with URI
-          "weather://location/{id}", it will be available as
-          "weather+weather://location/{id}"
-        - The prompts are imported with prefixed names using the
-          prompt_separator Example: If server has a prompt named
-          "weather_prompt", it will be available as "weather_weather_prompt"
+          available as "prefix_get_weather"
+        - The resources are imported with prefixed URIs using the new format
+          Example: If server has a resource with URI "weather://forecast", it will
+          be available as "weather://prefix/forecast"
+        - The templates are imported with prefixed URI templates using the new format
+          Example: If server has a template with URI "weather://location/{id}", it will
+          be available as "weather://prefix/location/{id}"
+        - The prompts are imported with prefixed names
+          Example: If server has a prompt named "weather_prompt", it will be available as
+          "prefix_weather_prompt"
 
         Args:
-            prefix: The prefix to use for the mounted server server: The FastMCP
-            server to mount tool_separator: Separator for tool names (defaults
-            to "_") resource_separator: Separator for resource URIs (defaults to
-            "+") prompt_separator: Separator for prompt names (defaults to "_")
+            prefix: The prefix to use for the imported server
+            server: The FastMCP server to import
+            tool_separator: Deprecated. Separator for tool names.
+            resource_separator: Deprecated and ignored. Prefix is now
+              applied using the protocol://prefix/path format
+            prompt_separator: Deprecated. Separator for prompt names.
         """
-        if tool_separator is None:
-            tool_separator = "_"
-        if resource_separator is None:
-            resource_separator = "+"
-        if prompt_separator is None:
-            prompt_separator = "_"
+        if tool_separator is not None:
+            # Deprecated since 2.3.6
+            warnings.warn(
+                "The tool_separator parameter is deprecated and will be removed in a future version. "
+                "Tools are now prefixed using 'prefix_toolname' format.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+
+        if resource_separator is not None:
+            # Deprecated since 2.3.6
+            warnings.warn(
+                "The resource_separator parameter is deprecated and ignored. "
+                "Resource prefixes are now added using the protocol://prefix/path format.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+
+        if prompt_separator is not None:
+            # Deprecated since 2.3.6
+            warnings.warn(
+                "The prompt_separator parameter is deprecated and will be removed in a future version. "
+                "Prompts are now prefixed using 'prefix_promptname' format.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
 
         # Import tools from the mounted server
-        tool_prefix = f"{prefix}{tool_separator}"
+        tool_prefix = f"{prefix}_"
         for key, tool in (await server.get_tools()).items():
             self._tool_manager.add_tool(tool, key=f"{tool_prefix}{key}")
 
         # Import resources and templates from the mounted server
-        resource_prefix = f"{prefix}{resource_separator}"
-        _validate_resource_prefix(resource_prefix)
         for key, resource in (await server.get_resources()).items():
-            self._resource_manager.add_resource(resource, key=f"{resource_prefix}{key}")
+            prefixed_key = add_resource_prefix(key, prefix)
+            self._resource_manager.add_resource(resource, key=prefixed_key)
+
         for key, template in (await server.get_resource_templates()).items():
-            self._resource_manager.add_template(template, key=f"{resource_prefix}{key}")
+            prefixed_key = add_resource_prefix(key, prefix)
+            self._resource_manager.add_template(template, key=prefixed_key)
 
         # Import prompts from the mounted server
-        prompt_prefix = f"{prefix}{prompt_separator}"
+        prompt_prefix = f"{prefix}_"
         for key, prompt in (await server.get_prompts()).items():
             self._prompt_manager.add_prompt(prompt, key=f"{prompt_prefix}{key}")
 
         logger.info(f"Imported server {server.name} with prefix '{prefix}'")
         logger.debug(f"Imported tools with prefix '{tool_prefix}'")
-        logger.debug(f"Imported resources with prefix '{resource_prefix}'")
-        logger.debug(f"Imported templates with prefix '{resource_prefix}'")
+        logger.debug(f"Imported resources and templates with prefix '{prefix}/'")
         logger.debug(f"Imported prompts with prefix '{prompt_prefix}'")
 
         self._cache.clear()
@@ -1194,84 +1242,157 @@ class FastMCP(Generic[LifespanResultT]):
         return cls.as_proxy(client, **settings)
 
 
-def _validate_resource_prefix(prefix: str) -> None:
-    valid_resource = "resource://path/to/resource"
-    test_case = f"{prefix}{valid_resource}"
-    try:
-        AnyUrl(test_case)
-    except pydantic.ValidationError as e:
-        raise ValueError(
-            "Resource prefix or separator would result in an "
-            f"invalid resource URI (test case was {test_case!r}): {e}"
-        )
-
-
 class MountedServer:
     def __init__(
         self,
         prefix: str,
         server: FastMCP[LifespanResultT],
-        tool_separator: str | None = None,
-        resource_separator: str | None = None,
-        prompt_separator: str | None = None,
     ):
-        if tool_separator is None:
-            tool_separator = "_"
-        if resource_separator is None:
-            resource_separator = "+"
-        if prompt_separator is None:
-            prompt_separator = "_"
-
-        _validate_resource_prefix(f"{prefix}{resource_separator}")
-
         self.server = server
         self.prefix = prefix
-        self.tool_separator = tool_separator
-        self.resource_separator = resource_separator
-        self.prompt_separator = prompt_separator
 
     async def get_tools(self) -> dict[str, Tool]:
         tools = await self.server.get_tools()
-        return {
-            f"{self.prefix}{self.tool_separator}{key}": tool
-            for key, tool in tools.items()
-        }
+        return {f"{self.prefix}_{key}": tool for key, tool in tools.items()}
 
     async def get_resources(self) -> dict[str, Resource]:
         resources = await self.server.get_resources()
         return {
-            f"{self.prefix}{self.resource_separator}{key}": resource
+            add_resource_prefix(key, self.prefix): resource
             for key, resource in resources.items()
         }
 
     async def get_resource_templates(self) -> dict[str, ResourceTemplate]:
         templates = await self.server.get_resource_templates()
         return {
-            f"{self.prefix}{self.resource_separator}{key}": template
+            add_resource_prefix(key, self.prefix): template
             for key, template in templates.items()
         }
 
     async def get_prompts(self) -> dict[str, Prompt]:
         prompts = await self.server.get_prompts()
-        return {
-            f"{self.prefix}{self.prompt_separator}{key}": prompt
-            for key, prompt in prompts.items()
-        }
+        return {f"{self.prefix}_{key}": prompt for key, prompt in prompts.items()}
 
     def match_tool(self, key: str) -> bool:
-        return key.startswith(f"{self.prefix}{self.tool_separator}")
+        return key.startswith(f"{self.prefix}_")
 
     def strip_tool_prefix(self, key: str) -> str:
-        return key.removeprefix(f"{self.prefix}{self.tool_separator}")
+        return key.removeprefix(f"{self.prefix}_")
 
     def match_resource(self, key: str) -> bool:
-        return key.startswith(f"{self.prefix}{self.resource_separator}")
+        return has_resource_prefix(key, self.prefix)
 
     def strip_resource_prefix(self, key: str) -> str:
-        return key.removeprefix(f"{self.prefix}{self.resource_separator}")
+        return remove_resource_prefix(key, self.prefix)
 
     def match_prompt(self, key: str) -> bool:
-        return key.startswith(f"{self.prefix}{self.prompt_separator}")
+        return key.startswith(f"{self.prefix}_")
 
     def strip_prompt_prefix(self, key: str) -> str:
-        return key.removeprefix(f"{self.prefix}{self.prompt_separator}")
+        return key.removeprefix(f"{self.prefix}_")
+
+
+def add_resource_prefix(uri: str, prefix: str) -> str:
+    """Add a prefix to a resource URI.
+
+    Args:
+        uri: The original resource URI
+        prefix: The prefix to add
+
+    Returns:
+        The resource URI with the prefix added
+
+    Examples:
+        >>> add_resource_prefix("resource://path/to/resource", "prefix")
+        "resource://prefix/path/to/resource"
+        >>> add_resource_prefix("resource:///absolute/path", "prefix")
+        "resource://prefix//absolute/path"
+
+    Raises:
+        ValueError: If the URI doesn't match the expected protocol://path format
+    """
+    if not prefix:
+        return uri
+
+    # Split the URI into protocol and path
+    match = URI_PATTERN.match(uri)
+    if not match:
+        raise ValueError(f"Invalid URI format: {uri}. Expected protocol://path format.")
+
+    protocol, path = match.groups()
+
+    # Add the prefix to the path
+    return f"{protocol}{prefix}/{path}"
+
+
+def remove_resource_prefix(uri: str, prefix: str) -> str:
+    """Remove a prefix from a resource URI.
+
+    Args:
+        uri: The resource URI with a prefix
+        prefix: The prefix to remove
+
+    Returns:
+        The resource URI with the prefix removed
+
+    Examples:
+        >>> remove_resource_prefix("resource://prefix/path/to/resource", "prefix")
+        "resource://path/to/resource"
+        >>> remove_resource_prefix("resource://prefix//absolute/path", "prefix")
+        "resource:///absolute/path"
+
+    Raises:
+        ValueError: If the URI doesn't match the expected protocol://path format
+    """
+    if not prefix:
+        return uri
+
+    # Split the URI into protocol and path
+    match = URI_PATTERN.match(uri)
+    if not match:
+        raise ValueError(f"Invalid URI format: {uri}. Expected protocol://path format.")
+
+    protocol, path = match.groups()
+
+    # Check if the path starts with the prefix followed by a /
+    prefix_pattern = f"^{re.escape(prefix)}/(.*?)$"
+    path_match = re.match(prefix_pattern, path)
+    if not path_match:
+        return uri
+
+    # Return the URI without the prefix
+    return f"{protocol}{path_match.group(1)}"
+
+
+def has_resource_prefix(uri: str, prefix: str) -> bool:
+    """Check if a resource URI has a specific prefix.
+
+    Args:
+        uri: The resource URI to check
+        prefix: The prefix to look for
+
+    Returns:
+        True if the URI has the specified prefix, False otherwise
+
+    Examples:
+        >>> has_resource_prefix("resource://prefix/path/to/resource", "prefix")
+        True
+        >>> has_resource_prefix("resource://other/path/to/resource", "prefix")
+        False
+
+    Raises:
+        ValueError: If the URI doesn't match the expected protocol://path format
+    """
+    if not prefix:
+        return False
+
+    # Split the URI into protocol and path
+    match = URI_PATTERN.match(uri)
+    if not match:
+        raise ValueError(f"Invalid URI format: {uri}. Expected protocol://path format.")
+
+    _, path = match.groups()
+
+    # Check if the path starts with the prefix followed by a /
+    prefix_pattern = f"^{re.escape(prefix)}/"
+    return bool(re.match(prefix_pattern, path))
