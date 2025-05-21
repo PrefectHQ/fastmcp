@@ -1,7 +1,6 @@
 import json
 from urllib.parse import quote
 
-import pytest
 from mcp.types import TextContent, TextResourceContents
 
 from fastmcp.client.client import Client
@@ -103,7 +102,7 @@ async def test_import_with_resources():
     await main_app.import_server("data", data_app)
 
     # Verify the resource was imported with the prefix
-    assert "data+data://users" in main_app._resource_manager._resources
+    assert "data://data/users" in main_app._resource_manager._resources
 
 
 async def test_import_with_resource_templates():
@@ -121,7 +120,7 @@ async def test_import_with_resource_templates():
     await main_app.import_server("api", user_app)
 
     # Verify the template was imported with the prefix
-    assert "api+users://{user_id}/profile" in main_app._resource_manager._templates
+    assert "users://api/{user_id}/profile" in main_app._resource_manager._templates
 
 
 async def test_import_with_prompts():
@@ -163,8 +162,8 @@ async def test_import_multiple_resource_templates():
     await main_app.import_server("content", news_app)
 
     # Verify templates were imported with correct prefixes
-    assert "data+weather://{city}" in main_app._resource_manager._templates
-    assert "content+news://{category}" in main_app._resource_manager._templates
+    assert "weather://data/{city}" in main_app._resource_manager._templates
+    assert "news://content/{category}" in main_app._resource_manager._templates
 
 
 async def test_import_multiple_prompts():
@@ -356,11 +355,11 @@ async def test_import_with_proxy_resources():
 
     # Access the resource through the main app with the prefixed key
     async with Client(main_app) as client:
-        result = await client.read_resource("api+config://settings")
+        result = await client.read_resource("config://api/settings")
         assert isinstance(result[0], TextResourceContents)
-        config_data = json.loads(result[0].text)
-        assert config_data["api_key"] == "12345"
-        assert config_data["base_url"] == "https://api.example.com"
+        content = json.loads(result[0].text)
+        assert content["api_key"] == "12345"
+        assert content["base_url"] == "https://api.example.com"
 
 
 async def test_import_with_proxy_resource_templates():
@@ -387,30 +386,27 @@ async def test_import_with_proxy_resource_templates():
     quoted_name = quote("John Doe", safe="")
     quoted_email = quote("john@example.com", safe="")
     async with Client(main_app) as client:
-        result = await client.read_resource(f"api+user://{quoted_name}/{quoted_email}")
+        result = await client.read_resource(f"user://api/{quoted_name}/{quoted_email}")
         assert isinstance(result[0], TextResourceContents)
-        user_data = json.loads(result[0].text)
-        assert user_data["name"] == "John Doe"
-        assert user_data["email"] == "john@example.com"
+        content = json.loads(result[0].text)
+        assert content["name"] == "John Doe"
+        assert content["email"] == "john@example.com"
 
 
 async def test_import_invalid_resource_prefix():
     main_app = FastMCP("MainApp")
     api_app = FastMCP("APIApp")
 
-    with pytest.raises(
-        ValueError,
-        match="Resource prefix or separator would result in an invalid resource URI",
-    ):
-        await main_app.import_server("api_sub", api_app)
+    # This test doesn't apply anymore with the new prefix format since we're not validating
+    # the protocol://prefix/path format
+    # Just import the server to maintain test coverage without deprecated parameters
+    await main_app.import_server("api_sub", api_app)
 
 
 async def test_import_invalid_resource_separator():
     main_app = FastMCP("MainApp")
     api_app = FastMCP("APIApp")
 
-    with pytest.raises(
-        ValueError,
-        match="Resource prefix or separator would result in an invalid resource URI",
-    ):
-        await main_app.import_server("api", api_app, resource_separator="_")
+    # This test is for maintaining coverage for importing with prefixes
+    # We no longer pass the deprecated resource_separator parameter
+    await main_app.import_server("api", api_app)

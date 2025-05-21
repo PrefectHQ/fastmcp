@@ -65,7 +65,7 @@ async def setup():
 
 # Result: main_mcp now contains prefixed components:
 # - Tool: "weather_get_forecast"
-# - Resource: "weather+data://cities/supported" 
+# - Resource: "data://weather/cities/supported" 
 
 if __name__ == "__main__":
     asyncio.run(setup())
@@ -78,11 +78,11 @@ When you call `await main_mcp.import_server(prefix, subserver)`:
 
 1.  **Tools**: All tools from `subserver` are added to `main_mcp` with names prefixed using `{prefix}_`.
     -   `subserver.tool(name="my_tool")` becomes `main_mcp.tool(name="{prefix}_my_tool")`.
-2.  **Resources**: All resources are added with URIs prefixed using `{prefix}+`.
-    -   `subserver.resource(uri="data://info")` becomes `main_mcp.resource(uri="{prefix}+data://info")`.
+2.  **Resources**: All resources are added with URIs prefixed in the format `protocol://{prefix}/path`.
+    -   `subserver.resource(uri="data://info")` becomes `main_mcp.resource(uri="data://{prefix}/info")`.
 3.  **Resource Templates**: Templates are prefixed similarly to resources.
-    -   `subserver.resource(uri="data://{id}")` becomes `main_mcp.resource(uri="{prefix}+data://{id}")`.
-4.  **Prompts**: All prompts are added with names prefixed like tools.
+    -   `subserver.resource(uri="data://{id}")` becomes `main_mcp.resource(uri="data://{prefix}/{id}")`.
+4.  **Prompts**: All prompts are added with names prefixed using `{prefix}_`.
     -   `subserver.prompt(name="my_prompt")` becomes `main_mcp.prompt(name="{prefix}_my_prompt")`.
 
 Note that `import_server` performs a **one-time copy** of components. Changes made to the `subserver` *after* importing **will not** be reflected in `main_mcp`. The `subserver`'s `lifespan` context is also **not** executed by the main server.
@@ -177,36 +177,6 @@ remote_proxy = FastMCP.as_proxy(Client("http://example.com/mcp"))
 main_server.mount("remote", remote_proxy)
 ```
 
-## Customizing Separators
-
-Both `import_server()` and `mount()` allow you to customize the separators used for prefixing components. The defaults are `_` for tools and prompts, and `+` for resources.
-
-<CodeGroup>
-
-```python import_server
-await main_mcp.import_server(
-    prefix="api",
-    app=some_subserver,
-    tool_separator="_",       # Tool name becomes: "api_sub_tool_name"
-    resource_separator="+",   # Resource URI becomes: "api+data://sub_resource"
-    prompt_separator="_"      # Prompt name becomes: "api_sub_prompt_name"
-)
-```
-
-```python mount
-main_mcp.mount(
-    prefix="api",
-    app=some_subserver,
-    tool_separator="_",       # Tool name becomes: "api_sub_tool_name"
-    resource_separator="+",   # Resource URI becomes: "api+data://sub_resource"
-    prompt_separator="_"      # Prompt name becomes: "api_sub_prompt_name"
-)
-```
-</CodeGroup>
 <Warning>
-Be cautious when choosing separators. Some MCP clients (like Claude Desktop) might have restrictions on characters allowed in tool names (e.g., `/` might not be supported). The defaults (`_` for names, `+` for URIs) are generally safe.
+Some MCP clients (like Claude Desktop) might have restrictions on characters allowed in tool names. FastMCP uses standard naming conventions: tools and prompts are prefixed with `{prefix}_` (e.g., "weather_forecast"), and resources use the format `protocol://{prefix}/path` (e.g., "data://weather/forecast").
 </Warning>
-
-<Tip>
-To "cleanly" import or mount a server, set the prefix and all separators to `""` (empty string). This is generally unecessary but could save a couple tokens at the risk of a name collision!
-</Tip>
