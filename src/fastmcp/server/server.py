@@ -58,6 +58,7 @@ from fastmcp.tools.tool import Tool
 from fastmcp.utilities.cache import TimedCache
 from fastmcp.utilities.decorators import DecoratedFunction
 from fastmcp.utilities.logging import get_logger
+from fastmcp.utilities.mcp_config import MCPConfig
 
 if TYPE_CHECKING:
     from fastmcp.client import Client
@@ -1206,6 +1207,7 @@ class FastMCP(Generic[LifespanResultT]):
         | FastMCP[Any]
         | AnyUrl
         | Path
+        | MCPConfig
         | dict[str, Any]
         | str,
         **settings: Any,

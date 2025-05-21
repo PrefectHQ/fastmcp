@@ -6,7 +6,6 @@ from urllib.parse import urlparse
 from pydantic import AnyUrl, BaseModel, Field
 
 if TYPE_CHECKING:
-    from fastmcp.client.client import Client
     from fastmcp.client.transports import (
         SSETransport,
         StdioTransport,
@@ -75,16 +74,3 @@ class MCPConfig(BaseModel):
     @classmethod
     def from_dict(cls, config: dict[str, Any]) -> MCPConfig:
         return cls(mcpServers=config.get("mcpServers", config))
-
-    def to_transports(
-        self,
-    ) -> dict[str, StdioTransport | StreamableHttpTransport | SSETransport]:
-        return {name: server.to_transport() for name, server in self.mcpServers.items()}
-
-    def to_clients(self) -> dict[str, Client]:
-        from fastmcp.client.client import Client
-
-        return {
-            name: Client(transport=transport)
-            for name, transport in self.to_transports().items()
-        }

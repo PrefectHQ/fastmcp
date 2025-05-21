@@ -25,7 +25,6 @@ from fastmcp.server.context import Context
 from fastmcp.server.server import FastMCP
 from fastmcp.tools.tool import Tool
 from fastmcp.utilities.logging import get_logger
-from fastmcp.utilities.mcp_config import MCPConfig
 
 if TYPE_CHECKING:
     from fastmcp.server import Context
@@ -177,13 +176,6 @@ class FastMCPProxy(FastMCP):
     def __init__(self, client: Client, **kwargs):
         super().__init__(**kwargs)
         self.client = client
-
-    @classmethod
-    async def from_mcp_config(cls, config: MCPConfig | dict) -> FastMCPProxy:
-        if isinstance(config, dict):
-            config = MCPConfig.from_dict(config)
-        clients = config.to_clients()
-        return cls(client=clients[list(clients.keys())[0]])
 
     async def get_tools(self) -> dict[str, Tool]:
         tools = await super().get_tools()

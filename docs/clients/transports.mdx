@@ -318,3 +318,63 @@ asyncio.run(main())
 ```
 
 Communication happens through efficient in-memory queues, making it very fast and ideal for unit testing. 
+
+## Configuration-Based Transports
+
+### MCPConfig Transport
+
+<VersionBadge version="2.3.6" />
+
+- **Class:** `fastmcp.client.transports.MCPConfigTransport`
+- **Inferred From:** An instance of `MCPConfig` or a dictionary matching the MCPConfig schema
+- **Use Case:** Connecting to one or more MCP servers defined in a configuration object
+
+MCPConfig follows an emerging standard for MCP server configuration but is subject to change as the specification evolves. The standard supports both local servers (running via stdio) and remote servers (accessed via HTTP).
+
+```python
+from fastmcp import Client
+
+# Configuration for multiple MCP servers (both local and remote)
+config = {
+    "mcpServers": {
+        # Remote HTTP server
+        "weather": {
+            "url": "https://weather-api.example.com/mcp",
+            "transport": "streamable-http"
+        },
+        # Local stdio server
+        "assistant": {
+            "command": "python",
+            "args": ["./assistant_server.py"],
+            "env": {"DEBUG": "true"}
+        },
+        # Another remote server
+        "calendar": {
+            "url": "https://calendar-api.example.com/mcp",
+            "transport": "streamable-http"
+        }
+    }
+}
+
+# Create a transport from the config (happens automatically with Client)
+client = Client(config)
+
+async def main():
+    async with client:
+        # Tools are accessible with server name prefixes
+        weather = await client.call_tool("weather_get_forecast", {"city": "London"})
+        answer = await client.call_tool("assistant_answer_question", {"query": "What is MCP?"})
+        events = await client.call_tool("calendar_list_events", {"date": "2023-06-01"})
+        
+        # Resources use prefixed URI paths
+        icons = await client.read_resource("weather://weather/icons/sunny")
+        docs = await client.read_resource("resource://assistant/docs/mcp")
+
+asyncio.run(main())
+```
+
+If your configuration has only a single server, the client will connect directly to that server without any prefixing. This makes it convenient to switch between single and multi-server configurations without changing your client code.
+
+<Note>
+The MCPConfig format is an emerging standard for MCP server configuration and may change as the MCP ecosystem evolves. While FastMCP aims to maintain compatibility with future versions, be aware that field names or structure might change.
+</Note> 

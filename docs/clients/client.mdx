@@ -43,7 +43,8 @@ The following inference rules are used to determine the appropriate `ClientTrans
     *   If it ends with `.js`: Creates a `NodeStdioTransport` to run the script using `node`.
 4.  **`AnyUrl` or `str` pointing to a URL that begins with `http://` or `https://`**:
     *   Creates a `StreamableHttpTransport`
-5.  **Other**: Raises a `ValueError` if the type cannot be inferred.
+5.  **`MCPConfig` or dictionary matching MCPConfig schema**: Creates a client that connects to one or more MCP servers specified in the config.
+6.  **Other**: Raises a `ValueError` if the type cannot be inferred.
 
 ```python
 import asyncio
@@ -52,29 +53,99 @@ from fastmcp import Client, FastMCP
 # Example transports (more details in Transports page)
 server_instance = FastMCP(name="TestServer") # In-memory server
 http_url = "https://example.com/mcp"        # HTTP server URL
-ws_url = "ws://localhost:9000"             # WebSocket server URL
 server_script = "my_mcp_server.py"         # Path to a Python server file
 
 # Client automatically infers the transport type
 client_in_memory = Client(server_instance)
 client_http = Client(http_url)
-client_ws = Client(ws_url)
+
 client_stdio = Client(server_script)
 
 print(client_in_memory.transport)
 print(client_http.transport)
-print(client_ws.transport)
 print(client_stdio.transport)
 
 # Expected Output (types may vary slightly based on environment):
 # <FastMCP(server='TestServer')>
 # <StreamableHttp(url='https://example.com/mcp')>
-# <WebSocket(url='ws://localhost:9000')>
 # <PythonStdioTransport(command='python', args=['/path/to/your/my_mcp_server.py'])>
+```
+
+You can also initialize a client from an MCP configuration dictionary or `MCPConfig` file:
+
+```python
+from fastmcp import Client
+
+config = {
+    "mcpServers": {
+        "local": {"command": "python", "args": ["local_server.py"]},
+        "remote": {"url": "https://example.com/mcp"},
+    }
+}
+
+client_config = Client(config)
 ```
 <Tip>
 For more control over connection details (like headers for SSE, environment variables for Stdio), you can instantiate the specific `ClientTransport` class yourself and pass it to the `Client`. See the [Transports](/clients/transports) page for details.
 </Tip>
+
+### Multi-Server Clients
+
+<VersionBadge version="2.3.6" />
+
+FastMCP supports creating clients that connect to multiple MCP servers through a single client interface using a standard MCP configuration format (`MCPConfig`). This configuration approach makes it easy to connect to multiple specialized servers or create composable systems with a simple, declarative syntax.
+
+<Note>
+The MCP configuration format follows an emerging standard and may evolve as the specification matures. FastMCP will strive to maintain compatibility with future versions, but be aware that field names or structure might change.
+</Note>
+
+When you create a client with an `MCPConfig` containing multiple servers:
+
+1. FastMCP creates a composite client that internally mounts all servers using their config names as prefixes
+2. Tools and resources from each server are accessible with appropriate prefixes in the format `servername_toolname` and `protocol://servername/resource/path`
+3. You interact with this as a single unified client, with requests automatically routed to the appropriate server
+
+```python
+from fastmcp import Client
+
+# Create a standard MCP configuration with multiple servers
+config = {
+    "mcpServers": {
+        # A remote HTTP server
+        "weather": {
+            "url": "https://weather-api.example.com/mcp",
+            "transport": "streamable-http"
+        },
+        # A local server running via stdio
+        "assistant": {
+            "command": "python",
+            "args": ["./my_assistant_server.py"],
+            "env": {"DEBUG": "true"}
+        }
+    }
+}
+
+# Create a client that connects to both servers
+client = Client(config)
+
+async def main():
+    async with client:
+        # Access tools from different servers with prefixes
+        weather_data = await client.call_tool("weather_get_forecast", {"city": "London"})
+        response = await client.call_tool("assistant_answer_question", {"question": "What's the capital of France?"})
+        
+        # Access resources with prefixed URIs
+        weather_icons = await client.read_resource("weather://weather/icons/sunny")
+        templates = await client.read_resource("resource://assistant/templates/list")
+        
+        print(f"Weather: {weather_data}")
+        print(f"Assistant: {response}")
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+If your configuration has only a single server, FastMCP will create a direct client to that server without any prefixing.
 
 ## Client Usage
 

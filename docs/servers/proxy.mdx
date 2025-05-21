@@ -10,7 +10,7 @@ import { VersionBadge } from '/snippets/version-badge.mdx'
 
 FastMCP provides a powerful proxying capability that allows one FastMCP server instance to act as a frontend for another MCP server (which could be remote, running on a different transport, or even another FastMCP instance). This is achieved using the `FastMCP.as_proxy()` class method.
 
-`as_proxy()` accepts either an existing `Client` or any argument that can be passed to a `Client` as its `transport` parameter&mdash;such as another `FastMCP` instance or a URL to a remote server.
+`as_proxy()` accepts either an existing `Client` or any argument that can be passed to a `Client` as its `transport` parameter&mdash;such as another `FastMCP` instance, a URL to a remote server, or an MCP configuration dictionary.
 
 ## What is Proxying?
 
@@ -46,7 +46,7 @@ from fastmcp import FastMCP
 
 # Provide the backend in any form accepted by Client
 proxy_server = FastMCP.as_proxy(
-    "backend_server.py",  # Could also be a FastMCP instance or a remote URL
+    "backend_server.py",  # Could also be a FastMCP instance, config dict, or a remote URL
     name="MyProxyServer"  # Optional settings for the proxy
 )
 
@@ -102,6 +102,64 @@ proxy = FastMCP.as_proxy(
 
 # proxy is now a regular FastMCP server that forwards
 # requests to original_server
+```
+
+### Configuration-Based Proxies
+
+<VersionBadge version="2.3.6" />
+
+You can create a proxy directly from a configuration dictionary that follows the MCPConfig schema. This is useful for quickly setting up proxies to remote servers without manually configuring each connection detail.
+
+```python
+from fastmcp import FastMCP
+
+# Create a proxy directly from a config dictionary
+config = {
+    "mcpServers": {
+        "default": {  # For single server configs, 'default' is commonly used
+            "url": "https://example.com/mcp",
+            "transport": "streamable-http"
+        }
+    }
+}
+
+# Create a proxy to the configured server
+proxy = FastMCP.as_proxy(config, name="Config-Based Proxy")
+
+# Run the proxy with stdio transport for local access
+if __name__ == "__main__":
+    proxy.run()
+```
+
+<Note>
+The MCPConfig format follows an emerging standard for MCP server configuration and may evolve as the specification matures. While FastMCP aims to maintain compatibility with future versions, be aware that field names or structure might change.
+</Note>
+
+You can also use MCPConfig to create a proxy to multiple servers. When multiple servers are specified, they are automatically mounted with their config names as prefixes, providing a unified interface to all servers:
+
+```python
+from fastmcp import FastMCP
+
+# Multi-server configuration
+config = {
+    "mcpServers": {
+        "weather": {
+            "url": "https://weather-api.example.com/mcp",
+            "transport": "streamable-http"
+        },
+        "calendar": {
+            "url": "https://calendar-api.example.com/mcp",
+            "transport": "streamable-http"
+        }
+    }
+}
+
+# Create a proxy to multiple servers
+composite_proxy = FastMCP.as_proxy(config, name="Composite Proxy")
+
+# Tools and resources are accessible with prefixes:
+# - weather_get_forecast, calendar_add_event 
+# - weather://weather/icons/sunny, calendar://calendar/events/today
 ```
 
 ## `FastMCPProxy` Class
