@@ -9,6 +9,7 @@ from pydantic import AnyUrl
 from fastmcp.client import Client
 from fastmcp.client.transports import (
     FastMCPTransport,
+    MCPConfigTransport,
     SSETransport,
     StdioTransport,
     StreamableHttpTransport,
@@ -652,9 +653,10 @@ class TestInferTransport:
             }
         }
         transport = infer_transport(config)
-        assert isinstance(transport, SSETransport)
-        assert transport.url == "http://localhost:8000/sse"
-        assert transport.headers == {"Authorization": "Bearer 123"}
+        assert isinstance(transport, MCPConfigTransport)
+        assert isinstance(transport.transport, SSETransport)
+        assert transport.transport.url == "http://localhost:8000/sse"
+        assert transport.transport.headers == {"Authorization": "Bearer 123"}
 
     def test_infer_local_transport_from_config(self):
         config = {
@@ -666,6 +668,25 @@ class TestInferTransport:
             }
         }
         transport = infer_transport(config)
-        assert isinstance(transport, StdioTransport)
-        assert transport.command == "echo"
-        assert transport.args == ["hello"]
+        assert isinstance(transport, MCPConfigTransport)
+        assert isinstance(transport.transport, StdioTransport)
+        assert transport.transport.command == "echo"
+        assert transport.transport.args == ["hello"]
+
+    def test_infer_composite_client(config):
+        config = {
+            "mcpServers": {
+                "local": {
+                    "command": "echo",
+                    "args": ["hello"],
+                },
+                "remote": {
+                    "url": "http://localhost:8000/sse",
+                    "headers": {"Authorization": "Bearer 123"},
+                },
+            }
+        }
+        transport = infer_transport(config)
+        assert isinstance(transport, MCPConfigTransport)
+        assert isinstance(transport.transport, FastMCPTransport)
+        assert len(transport.transport.server._mounted_servers) == 2

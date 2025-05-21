@@ -1,3 +1,9 @@
+import inspect
+from pathlib import Path
+
+from mcp.types import TextContent
+
+from fastmcp.client.client import Client
 from fastmcp.client.transports import (
     SSETransport,
     StdioTransport,
@@ -90,3 +96,47 @@ def test_parse_multiple_servers():
     assert mcp_config.mcpServers["test_server_2"].command == "echo"
     assert mcp_config.mcpServers["test_server_2"].args == ["hello"]
     assert mcp_config.mcpServers["test_server_2"].env == {"TEST": "test"}
+
+
+async def test_multi_client(tmp_path: Path):
+    server_script = inspect.cleandoc("""
+        from fastmcp import FastMCP
+
+        mcp = FastMCP()
+
+        @mcp.tool()
+        def add(a: int, b: int) -> int:
+            return a + b
+
+        if __name__ == '__main__':
+            mcp.run()
+        """)
+
+    script_path = tmp_path / "test.py"
+    script_path.write_text(server_script)
+
+    config = {
+        "mcpServers": {
+            "test_1": {
+                "command": "python",
+                "args": [str(script_path)],
+            },
+            "test_2": {
+                "command": "python",
+                "args": [str(script_path)],
+            },
+        }
+    }
+
+    client = Client(config)
+
+    async with client:
+        tools = await client.list_tools()
+        assert len(tools) == 2
+
+        result_1 = await client.call_tool("test_1_add", {"a": 1, "b": 2})
+        result_2 = await client.call_tool("test_2_add", {"a": 1, "b": 2})
+        assert isinstance(result_1[0], TextContent)
+        assert result_1[0].text == "3"
+        assert isinstance(result_2[0], TextContent)
+        assert result_2[0].text == "3"
