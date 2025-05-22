@@ -535,8 +535,12 @@ class MCPConfigTransport(ClientTransport):
             config = MCPConfig.from_dict(config)
         self.config = config
 
+        # if there are no servers, raise an error
+        if len(self.config.mcpServers) == 0:
+            raise ValueError("No MCP servers defined in the config")
+
         # if there's exactly one server, create a client for that server
-        if len(self.config.mcpServers) == 1:
+        elif len(self.config.mcpServers) == 1:
             self.transport = list(self.config.mcpServers.values())[0].to_transport()
 
         # otherwise create a composite client
