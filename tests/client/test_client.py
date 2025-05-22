@@ -673,7 +673,7 @@ class TestInferTransport:
         assert transport.transport.command == "echo"
         assert transport.transport.args == ["hello"]
 
-    def test_infer_composite_client(config):
+    def test_infer_composite_client(self):
         config = {
             "mcpServers": {
                 "local": {
@@ -689,4 +689,17 @@ class TestInferTransport:
         transport = infer_transport(config)
         assert isinstance(transport, MCPConfigTransport)
         assert isinstance(transport.transport, FastMCPTransport)
-        assert len(transport.transport.server._mounted_servers) == 2
+        assert len(cast(FastMCP, transport.transport.server)._mounted_servers) == 2
+
+    def test_infer_fastmcp_server(self, fastmcp_server):
+        """FastMCP server instances should infer to FastMCPTransport."""
+        transport = infer_transport(fastmcp_server)
+        assert isinstance(transport, FastMCPTransport)
+
+    def test_infer_fastmcp_v1_server(self):
+        """FastMCP 1.0 server instances should infer to FastMCPTransport."""
+        from mcp.server.fastmcp import FastMCP as FastMCP1
+
+        server = FastMCP1()
+        transport = infer_transport(server)
+        assert isinstance(transport, FastMCPTransport)
