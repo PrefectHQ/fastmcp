@@ -241,6 +241,7 @@ def create_sse_app(
     # Add custom routes with lowest precedence
     if routes:
         server_routes.extend(routes)
+    server_routes.extend(server._additional_http_routes)
 
     # Add middleware
     if middleware:
@@ -359,6 +360,7 @@ def create_streamable_http_app(
     # Add custom routes with lowest precedence
     if routes:
         server_routes.extend(routes)
+    server_routes.extend(server._additional_http_routes)
 
     # Add middleware
     if middleware:

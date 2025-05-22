@@ -854,7 +854,6 @@ class FastMCP(Generic[LifespanResultT]):
             auth_server_provider=self._auth_server_provider,
             auth_settings=self.settings.auth,
             debug=self.settings.debug,
-            routes=self._additional_http_routes,
             middleware=middleware,
         )
 
@@ -905,7 +904,6 @@ class FastMCP(Generic[LifespanResultT]):
                 json_response=self.settings.json_response,
                 stateless_http=self.settings.stateless_http,
                 debug=self.settings.debug,
-                routes=self._additional_http_routes,
                 middleware=middleware,
             )
         elif transport == "sse":
@@ -916,7 +914,6 @@ class FastMCP(Generic[LifespanResultT]):
                 auth_server_provider=self._auth_server_provider,
                 auth_settings=self.settings.auth,
                 debug=self.settings.debug,
-                routes=self._additional_http_routes,
                 middleware=middleware,
             )
 
