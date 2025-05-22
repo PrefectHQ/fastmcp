@@ -19,6 +19,7 @@ from mcp.client.sse import sse_client
 from mcp.client.stdio import stdio_client
 from mcp.client.streamable_http import streamablehttp_client
 from mcp.client.websocket import websocket_client
+from mcp.server.fastmcp import FastMCP as FastMCP1Server
 from mcp.shared.memory import create_connected_server_and_client_session
 from pydantic import AnyUrl
 from typing_extensions import Unpack
@@ -448,15 +449,21 @@ class NpxStdioTransport(StdioTransport):
 
 
 class FastMCPTransport(ClientTransport):
-    """
-    Special transport for in-memory connections to an MCP server.
+    """In-memory transport for FastMCP servers.
 
-    This is particularly useful for testing or when client and server
-    are in the same process.
+    This transport connects directly to a FastMCP server instance in the same
+    Python process. It works with both FastMCP 2.x servers and FastMCP 1.0
+    servers from the low-level MCP SDK. This is particularly useful for unit
+    tests or scenarios where client and server run in the same runtime.
     """
 
-    def __init__(self, mcp: FastMCPServer):
-        self.server = mcp  # Can be FastMCP or MCPServer
+    def __init__(self, mcp: FastMCPServer | FastMCP1Server):
+        """Initialize a FastMCPTransport from a FastMCP server instance."""
+
+        # Accept both FastMCP 2.x and FastMCP 1.0 servers. Both expose a
+        # ``_mcp_server`` attribute pointing to the underlying MCP server
+        # implementation, so we can treat them identically.
+        self.server = mcp
 
     @contextlib.asynccontextmanager
     async def connect_session(
@@ -562,6 +569,7 @@ class MCPConfigTransport(ClientTransport):
 def infer_transport(
     transport: ClientTransport
     | FastMCPServer
+    | FastMCP1Server
     | AnyUrl
     | Path
     | MCPConfig
@@ -577,7 +585,7 @@ def infer_transport(
 
     The function supports these input types:
     - ClientTransport: Used directly without modification
-    - FastMCPServer: Creates an in-memory FastMCPTransport
+    - FastMCPServer or FastMCP1Server: Creates an in-memory FastMCPTransport
     - Path or str (file path): Creates PythonStdioTransport (.py) or NodeStdioTransport (.js)
     - AnyUrl or str (URL): Creates StreamableHttpTransport (default) or SSETransport (for /sse endpoints)
     - MCPConfig or dict: Creates MCPConfigTransport, potentially connecting to multiple servers
@@ -614,8 +622,8 @@ def infer_transport(
     if isinstance(transport, ClientTransport):
         return transport
 
-    # the transport is a FastMCP server
-    elif isinstance(transport, FastMCPServer):
+    # the transport is a FastMCP server (2.x or 1.0)
+    elif isinstance(transport, FastMCPServer | FastMCP1Server):
         inferred_transport = FastMCPTransport(mcp=transport)
 
     # the transport is a path to a script
