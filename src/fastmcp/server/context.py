@@ -253,7 +253,9 @@ class Context:
 
         return fastmcp.server.dependencies.get_http_request()
 
-    def _parse_model_preferences(self, model_preferences) -> ModelPreferences | None:
+    def _parse_model_preferences(
+        self, model_preferences: ModelPreferences | str | list[str] | None
+    ) -> ModelPreferences | None:
         """
         Validates and converts user input for model_preferences into a ModelPreferences object.
 
@@ -273,12 +275,12 @@ class Context:
         """
         if model_preferences is None:
             return None
-        if isinstance(model_preferences, ModelPreferences):
+        elif isinstance(model_preferences, ModelPreferences):
             return model_preferences
-        if isinstance(model_preferences, str):
+        elif isinstance(model_preferences, str):
             # Single model hint
             return ModelPreferences(hints=[ModelHint(name=model_preferences)])
-        if isinstance(model_preferences, list):
+        elif isinstance(model_preferences, list):
             # List of model hints (strings)
             if not all(isinstance(h, str) for h in model_preferences):
                 raise ValueError(
@@ -288,6 +290,7 @@ class Context:
             return ModelPreferences(
                 hints=[ModelHint(name=h) for h in model_preferences]
             )
-        raise ValueError(
-            "model_preferences must be one of: ModelPreferences, str, list[str], or None."
-        )
+        else:
+            raise ValueError(
+                "model_preferences must be one of: ModelPreferences, str, list[str], or None."
+            )
