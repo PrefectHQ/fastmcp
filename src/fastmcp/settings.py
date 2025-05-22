@@ -124,6 +124,23 @@ class ServerSettings(BaseSettings):
     # prompt settings
     on_duplicate_prompts: DuplicateBehavior = "warn"
 
+    # error handling
+    mask_error_details: Annotated[
+        bool,
+        Field(
+            default=False,
+            description=inspect.cleandoc(
+                """
+                If True, error details from user-supplied functions (tool, resource, prompt)
+                will be masked before being sent to clients. Only error messages from explicitly
+                raised ToolError, ResourceError, or PromptError will be included in responses.
+                If False (default), all error details will be included in responses, but prefixed
+                with appropriate context.
+                """
+            ),
+        ),
+    ] = False
+
     dependencies: Annotated[
         list[str],
         Field(

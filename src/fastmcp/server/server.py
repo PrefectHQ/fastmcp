@@ -125,6 +125,7 @@ class FastMCP(Generic[LifespanResultT]):
         on_duplicate_resources: DuplicateBehavior | None = None,
         on_duplicate_prompts: DuplicateBehavior | None = None,
         resource_prefix_format: Literal["protocol", "path"] | None = None,
+        mask_error_details: bool | None = None,
         **settings: Any,
     ):
         if settings:
@@ -138,6 +139,10 @@ class FastMCP(Generic[LifespanResultT]):
                 stacklevel=2,
             )
         self.settings = fastmcp.settings.ServerSettings(**settings)
+
+        # If mask_error_details is provided, override the settings value
+        if mask_error_details is not None:
+            self.settings.mask_error_details = mask_error_details
 
         self.resource_prefix_format: Literal["protocol", "path"]
         if resource_prefix_format is None:
@@ -157,11 +162,16 @@ class FastMCP(Generic[LifespanResultT]):
         self._tool_manager = ToolManager(
             duplicate_behavior=on_duplicate_tools,
             serializer=tool_serializer,
+            mask_error_details=self.settings.mask_error_details,
         )
         self._resource_manager = ResourceManager(
-            duplicate_behavior=on_duplicate_resources
+            duplicate_behavior=on_duplicate_resources,
+            mask_error_details=self.settings.mask_error_details,
         )
-        self._prompt_manager = PromptManager(duplicate_behavior=on_duplicate_prompts)
+        self._prompt_manager = PromptManager(
+            duplicate_behavior=on_duplicate_prompts,
+            mask_error_details=self.settings.mask_error_details,
+        )
 
         if lifespan is None:
             self._has_lifespan = False
@@ -377,21 +387,30 @@ class FastMCP(Generic[LifespanResultT]):
     async def _mcp_call_tool(
         self, key: str, arguments: dict[str, Any]
     ) -> list[TextContent | ImageContent | EmbeddedResource]:
-        """Call a tool by name with arguments."""
+        """Handle MCP 'callTool' requests.
 
+        Args:
+            key: The name of the tool to call
+            arguments: Arguments to pass to the tool
+
+        Returns:
+            List of MCP Content objects containing the tool results
+        """
+        logger.debug("Call tool: %s with %s", key, arguments)
+
+        # Create and use context for the entire call
         with fastmcp.server.context.Context(fastmcp=self):
+            # Get tool, checking first from our tools, then from the mounted servers
             if self._tool_manager.has_tool(key):
-                result = await self._tool_manager.call_tool(key, arguments)
+                return await self._tool_manager.call_tool(key, arguments)
 
-            else:
-                for server in self._mounted_servers.values():
-                    if server.match_tool(key):
-                        new_key = server.strip_tool_prefix(key)
-                        result = await server.server._mcp_call_tool(new_key, arguments)
-                        break
-                else:
-                    raise NotFoundError(f"Unknown tool: {key}")
-            return result
+            # Check mounted servers to see if they have the tool
+            for server in self._mounted_servers.values():
+                if server.match_tool(key):
+                    tool_key = server.strip_tool_prefix(key)
+                    return await server.server._mcp_call_tool(tool_key, arguments)
+
+            raise NotFoundError(f"Unknown tool: {key}")
 
     async def _mcp_read_resource(self, uri: AnyUrl | str) -> list[ReadResourceContents]:
         """
@@ -419,24 +438,30 @@ class FastMCP(Generic[LifespanResultT]):
     async def _mcp_get_prompt(
         self, name: str, arguments: dict[str, Any] | None = None
     ) -> GetPromptResult:
-        """
-        Get a prompt by name with arguments, in the format expected by the low-level
-        MCP server.
+        """Handle MCP 'getPrompt' requests.
 
+        Args:
+            name: The name of the prompt to render
+            arguments: Arguments to pass to the prompt
+
+        Returns:
+            GetPromptResult containing the rendered prompt messages
         """
+        logger.debug("Get prompt: %s with %s", name, arguments)
+
+        # Create and use context for the entire call
         with fastmcp.server.context.Context(fastmcp=self):
+            # Get prompt, checking first from our prompts, then from the mounted servers
             if self._prompt_manager.has_prompt(name):
-                prompt_result = await self._prompt_manager.render_prompt(
-                    name, arguments=arguments or {}
-                )
-                return prompt_result
-            else:
-                for server in self._mounted_servers.values():
-                    if server.match_prompt(name):
-                        new_key = server.strip_prompt_prefix(name)
-                        return await server.server._mcp_get_prompt(new_key, arguments)
-                else:
-                    raise NotFoundError(f"Unknown prompt: {name}")
+                return await self._prompt_manager.render_prompt(name, arguments)
+
+            # Check mounted servers to see if they have the prompt
+            for server in self._mounted_servers.values():
+                if server.match_prompt(name):
+                    prompt_name = server.strip_prompt_prefix(name)
+                    return await server.server._mcp_get_prompt(prompt_name, arguments)
+
+            raise NotFoundError(f"Unknown prompt: {name}")
 
     def add_tool(
         self,

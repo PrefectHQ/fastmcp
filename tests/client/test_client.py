@@ -219,6 +219,13 @@ async def test_get_prompt_mcp(fastmcp_server):
         assert result.description == "Example greeting prompt."
 
 
+async def test_read_resource_invalid_uri(fastmcp_server):
+    """Test reading a resource with an invalid URI."""
+    client = Client(transport=FastMCPTransport(fastmcp_server))
+    with pytest.raises(ValueError, match="Provided resource URI is invalid"):
+        await client.read_resource("invalid_uri")
+
+
 async def test_read_resource(fastmcp_server):
     """Test reading a resource with InMemoryClient."""
     client = Client(transport=FastMCPTransport(fastmcp_server))
@@ -457,8 +464,24 @@ async def test_tagged_template_functionality(tagged_resources_server):
 
 
 class TestErrorHandling:
-    async def test_general_tool_exceptions_are_masked(self):
+    async def test_general_tool_exceptions_are_not_masked_by_default(self):
         mcp = FastMCP("TestServer")
+
+        @mcp.tool()
+        def error_tool():
+            raise ValueError("This is a test error (abc)")
+
+        client = Client(transport=FastMCPTransport(mcp))
+
+        async with client:
+            result = await client.call_tool_mcp("error_tool", {})
+            assert result.isError
+            assert isinstance(result.content[0], TextContent)
+            assert "test error" in result.content[0].text
+            assert "abc" in result.content[0].text
+
+    async def test_general_tool_exceptions_are_masked_when_enabled(self):
+        mcp = FastMCP("TestServer", mask_error_details=True)
 
         @mcp.tool()
         def error_tool():
@@ -489,8 +512,24 @@ class TestErrorHandling:
             assert "test error" in result.content[0].text
             assert "abc" in result.content[0].text
 
-    async def test_general_resource_exceptions_are_masked(self):
+    async def test_general_resource_exceptions_are_not_masked_by_default(self):
         mcp = FastMCP("TestServer")
+
+        @mcp.resource(uri="exception://resource")
+        async def exception_resource():
+            raise ValueError("This is an internal error (sensitive)")
+
+        client = Client(transport=FastMCPTransport(mcp))
+
+        async with client:
+            with pytest.raises(Exception) as excinfo:
+                await client.read_resource(AnyUrl("exception://resource"))
+            assert "Error reading resource" in str(excinfo.value)
+            assert "sensitive" in str(excinfo.value)
+            assert "internal error" in str(excinfo.value)
+
+    async def test_general_resource_exceptions_are_masked_when_enabled(self):
+        mcp = FastMCP("TestServer", mask_error_details=True)
 
         @mcp.resource(uri="exception://resource")
         async def exception_resource():
@@ -519,8 +558,24 @@ class TestErrorHandling:
                 await client.read_resource(AnyUrl("error://resource"))
             assert "This is a resource error (xyz)" in str(excinfo.value)
 
-    async def test_general_template_exceptions_are_masked(self):
+    async def test_general_template_exceptions_are_not_masked_by_default(self):
         mcp = FastMCP("TestServer")
+
+        @mcp.resource(uri="exception://resource/{id}")
+        async def exception_resource(id: str):
+            raise ValueError("This is an internal error (sensitive)")
+
+        client = Client(transport=FastMCPTransport(mcp))
+
+        async with client:
+            with pytest.raises(Exception) as excinfo:
+                await client.read_resource(AnyUrl("exception://resource/123"))
+            assert "Error reading resource" in str(excinfo.value)
+            assert "sensitive" in str(excinfo.value)
+            assert "internal error" in str(excinfo.value)
+
+    async def test_general_template_exceptions_are_masked_when_enabled(self):
+        mcp = FastMCP("TestServer", mask_error_details=True)
 
         @mcp.resource(uri="exception://resource/{id}")
         async def exception_resource(id: str):

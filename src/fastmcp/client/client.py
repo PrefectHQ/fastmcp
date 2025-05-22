@@ -322,7 +322,12 @@ class Client:
             RuntimeError: If called while the client is not connected.
         """
         if isinstance(uri, str):
-            uri = AnyUrl(uri)  # Ensure AnyUrl
+            try:
+                uri = AnyUrl(uri)  # Ensure AnyUrl
+            except Exception as e:
+                raise ValueError(
+                    f"Provided resource URI is invalid: {str(uri)!r}"
+                ) from e
         result = await self.read_resource_mcp(uri)
         return result.contents
 
