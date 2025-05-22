@@ -60,6 +60,20 @@ mcp = FastMCP("My MCP Server")
 Prior to `fastmcp==2.3.0` and `mcp==1.8.0`, the 2.x API always mirrored the 1.0 API. However, as the projects diverge, this can not be guaranteed. You may see deprecation warnings if you attempt to use 1.0 APIs in FastMCP 2.x. Please refer to this documentation for details on new capabilities.
 </Warning>
 
+## Versioning and Breaking Changes
+
+While we make every effort not to introduce backwards-incompatible changes to our public APIs and behavior, FastMCP exists in a rapidly evolving MCP landscape. We're committed to bringing the most cutting-edge features to our users, which occasionally necessitates changes to existing functionality.
+
+As a practice, breaking changes will only occur on minor version changes (e.g., 2.3.x to 2.4.0). A minor version change indicates either:
+- A significant new feature set that warrants a new minor version
+- Introducing breaking changes that may affect behavior on upgrade
+
+For users concerned about stability in production environments, we recommend pinning FastMCP to a specific version in your dependencies.
+
+Whenever possible, FastMCP will issue deprecation warnings when users attempt to use APIs that are either deprecated or destined for future removal. These warnings will be maintained for at least 1 minor version release, and may be maintained longer.
+
+Note that the "public API" includes the core functionality of the `FastMCP` server and its methods. It does not include private methods or objects that are stored as private attributes, as we do not expect users to rely on those implementation details.
+
 ## Installing for Development
 
 If you plan to contribute to FastMCP, you should begin by cloning the repository and using uv to install all dependencies (development dependencies are installed automatically):
