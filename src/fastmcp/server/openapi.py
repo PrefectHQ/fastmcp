@@ -5,8 +5,9 @@ from __future__ import annotations
 import enum
 import json
 import re
+import warnings
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from re import Pattern
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -33,46 +34,176 @@ logger = get_logger(__name__)
 HttpMethod = Literal["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
 
 
-class RouteType(enum.Enum):
-    """Type of FastMCP component to create from a route."""
+class MCPType(enum.Enum):
+    """Type of FastMCP component to create from a route.
+
+    Enum values:
+        TOOL: Convert the route to a callable Tool
+        RESOURCE: Convert the route to a Resource (typically GET endpoints)
+        RESOURCE_TEMPLATE: Convert the route to a ResourceTemplate (typically GET with path params)
+        PROMPT: Convert the route to a Prompt (not yet implemented)
+        EXCLUDE: Exclude the route from being converted to any MCP component
+        IGNORE: Deprecated, use EXCLUDE instead
+    """
 
     TOOL = "TOOL"
     RESOURCE = "RESOURCE"
     RESOURCE_TEMPLATE = "RESOURCE_TEMPLATE"
     PROMPT = "PROMPT"
-    IGNORE = "IGNORE"
+    EXCLUDE = "EXCLUDE"
+
+
+# Keep RouteType as an alias to MCPType for backward compatibility
+class RouteType(enum.Enum):
+    """
+    Deprecated: Use MCPType instead.
+
+    This enum is kept for backward compatibility and will be removed in a future version.
+    """
+
+    TOOL = "TOOL"
+    RESOURCE = "RESOURCE"
+    RESOURCE_TEMPLATE = "RESOURCE_TEMPLATE"
+    PROMPT = "PROMPT"
+    EXCLUDE = "EXCLUDE"
+    IGNORE = "IGNORE"  # Deprecated, use EXCLUDE instead
+
+    def __new__(cls, value):
+        # Deprecated in 2.4.1
+        warnings.warn(
+            "RouteType is deprecated and will be removed in a future version. "
+            "Use MCPType instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+
+        # Add a specific warning for the deprecated IGNORE value
+        if value == "IGNORE":
+            warnings.warn(
+                "RouteType.IGNORE is deprecated and will be removed in a future version. "
+                "Use MCPType.EXCLUDE instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+
+        instance = object.__new__(cls)
+        instance._value_ = value
+        return instance
 
 
 @dataclass
 class RouteMap:
     """Mapping configuration for HTTP routes to FastMCP component types."""
 
-    methods: list[HttpMethod] | Literal["*"]
-    pattern: Pattern[str] | str
-    route_type: RouteType
+    methods: list[HttpMethod] | Literal["*"] = field(default="*")
+    pattern: Pattern[str] | str = field(default=r".*")
+    mcp_type: MCPType | None = field(default=None)
+    route_type: RouteType | MCPType | None = field(default=None)
+
+    def __post_init__(self):
+        """Validate and process the route map after initialization."""
+        # Handle backward compatibility for route_type
+        if self.mcp_type is None and self.route_type is not None:
+            warnings.warn(
+                "The 'route_type' parameter is deprecated and will be removed in a future version. "
+                "Use 'mcp_type' instead with the appropriate MCPType value.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+
+            # Check for the deprecated IGNORE value
+            if self.route_type == RouteType.IGNORE:
+                warnings.warn(
+                    "RouteType.IGNORE is deprecated and will be removed in a future version. "
+                    "Use MCPType.EXCLUDE instead.",
+                    DeprecationWarning,
+                    stacklevel=2,
+                )
+
+            # Convert from RouteType to MCPType if needed
+            if isinstance(self.route_type, RouteType):
+                route_type_name = self.route_type.name
+                if route_type_name == "IGNORE":
+                    route_type_name = "EXCLUDE"
+                self.mcp_type = getattr(MCPType, route_type_name)
+            else:
+                self.mcp_type = self.route_type
+        elif self.mcp_type is None:
+            raise ValueError("`mcp_type` must be provided")
+
+        # Set route_type to match mcp_type for backward compatibility
+        if self.route_type is None:
+            self.route_type = self.mcp_type
+
+
+# Common route map pattern functions
+def EXCLUDE_ALL() -> RouteMap:
+    """
+    Create a RouteMap that excludes all routes that haven't been matched by earlier rules.
+
+    This is useful as the last route map to exclude any routes that don't match specific patterns.
+
+    Returns:
+        RouteMap: A route map that excludes all routes
+    """
+    return RouteMap(methods="*", pattern=r".*", mcp_type=MCPType.EXCLUDE)
+
+
+def ALL_TOOLS() -> RouteMap:
+    """
+    Create a RouteMap that converts all routes to tools that haven't been matched by earlier rules.
+
+    This is useful to replace the last item in the default route mappings to make all unmatched routes tools.
+
+    Returns:
+        RouteMap: A route map that converts all routes to tools
+    """
+    return RouteMap(methods="*", pattern=r".*", mcp_type=MCPType.TOOL)
+
+
+def PATTERN_AS_TOOLS(pattern: str) -> RouteMap:
+    """
+    Create a RouteMap that converts routes matching a specific pattern to tools.
+
+    Args:
+        pattern: Regex pattern to match routes
+
+    Returns:
+        RouteMap: A route map that converts routes matching the pattern to tools
+    """
+    return RouteMap(methods="*", pattern=pattern, mcp_type=MCPType.TOOL)
+
+
+def EXCLUDE_PATTERN(pattern: str) -> RouteMap:
+    """
+    Create a RouteMap that excludes routes matching a specific pattern.
+
+    Args:
+        pattern: Regex pattern to match routes to exclude
+
+    Returns:
+        RouteMap: A route map that excludes routes matching the pattern
+    """
+    return RouteMap(methods="*", pattern=pattern, mcp_type=MCPType.EXCLUDE)
 
 
 # Default route mappings as a list, where order determines priority
 DEFAULT_ROUTE_MAPPINGS = [
     # GET requests with path parameters go to ResourceTemplate
     RouteMap(
-        methods=["GET"], pattern=r".*\{.*\}.*", route_type=RouteType.RESOURCE_TEMPLATE
+        methods=["GET"], pattern=r".*\{.*\}.*", mcp_type=MCPType.RESOURCE_TEMPLATE
     ),
     # GET requests without path parameters go to Resource
-    RouteMap(methods=["GET"], pattern=r".*", route_type=RouteType.RESOURCE),
+    RouteMap(methods=["GET"], pattern=r".*", mcp_type=MCPType.RESOURCE),
     # All other HTTP methods go to Tool
-    RouteMap(
-        methods=["POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
-        pattern=r".*",
-        route_type=RouteType.TOOL,
-    ),
+    ALL_TOOLS(),
 ]
 
 
 def _determine_route_type(
     route: openapi.HTTPRoute,
     mappings: list[RouteMap],
-) -> RouteType:
+) -> MCPType:
     """
     Determines the FastMCP component type based on the route and mappings.
 
@@ -81,7 +212,7 @@ def _determine_route_type(
         mappings: List of RouteMap objects in priority order
 
     Returns:
-        RouteType for this route
+        MCPType for this route
     """
     # Check mappings in priority order (first match wins)
     for route_map in mappings:
@@ -94,13 +225,15 @@ def _determine_route_type(
                 pattern_matches = re.search(route_map.pattern, route.path)
 
             if pattern_matches:
+                # We know mcp_type is not None here due to post_init validation
+                assert route_map.mcp_type is not None
                 logger.debug(
-                    f"Route {route.method} {route.path} matched mapping to {route_map.route_type.name}"
+                    f"Route {route.method} {route.path} matched mapping to {route_map.mcp_type.name}"
                 )
-                return route_map.route_type
+                return route_map.mcp_type
 
     # Default fallback
-    return RouteType.TOOL
+    return MCPType.TOOL
 
 
 # Placeholder function to provide function metadata
@@ -555,13 +688,13 @@ class FastMCPOpenAPI(FastMCP):
             RouteMap(
                 methods=["GET", "POST", "PATCH"],
                 pattern=r".*/users/.*",
-                route_type=RouteType.RESOURCE_TEMPLATE
+                mcp_type=MCPType.RESOURCE_TEMPLATE
             ),
             # Map all analytics endpoints to Tool
             RouteMap(
                 methods=["GET"],
                 pattern=r".*/analytics/.*",
-                route_type=RouteType.TOOL
+                mcp_type=MCPType.TOOL
             ),
         ]
 
@@ -615,19 +748,19 @@ class FastMCPOpenAPI(FastMCP):
                 path_name = "_".join(p for p in path_parts if not p.startswith("{"))
                 operation_id = f"{route.method.lower()}_{path_name}"
 
-            if route_type == RouteType.TOOL:
+            if route_type == MCPType.TOOL:
                 self._create_openapi_tool(route, operation_id)
-            elif route_type == RouteType.RESOURCE:
+            elif route_type == MCPType.RESOURCE:
                 self._create_openapi_resource(route, operation_id)
-            elif route_type == RouteType.RESOURCE_TEMPLATE:
+            elif route_type == MCPType.RESOURCE_TEMPLATE:
                 self._create_openapi_template(route, operation_id)
-            elif route_type == RouteType.PROMPT:
+            elif route_type == MCPType.PROMPT:
                 # Not implemented yet
                 logger.warning(
                     f"PROMPT route type not implemented: {route.method} {route.path}"
                 )
-            elif route_type == RouteType.IGNORE:
-                logger.info(f"Ignoring route: {route.method} {route.path}")
+            elif route_type == MCPType.EXCLUDE:
+                logger.info(f"Excluding route: {route.method} {route.path}")
 
         logger.info(f"Created FastMCP OpenAPI server with {len(http_routes)} routes")
 

@@ -2152,3 +2152,71 @@ class TestAllRoutesAsTools:
                     )
                 ],
             )
+
+
+class TestRouteTypeExclude:
+    @pytest.fixture
+    def basic_openapi_spec(self) -> dict:
+        return {
+            "openapi": "3.0.0",
+            "info": {"title": "Test API", "version": "1.0.0"},
+            "paths": {
+                "/items": {
+                    "get": {
+                        "operationId": "get_items",
+                        "summary": "Get all items",
+                        "responses": {"200": {"description": "Success"}},
+                    }
+                },
+                "/users": {
+                    "get": {
+                        "operationId": "get_users",
+                        "summary": "Get all users",
+                        "responses": {"200": {"description": "Success"}},
+                    }
+                },
+                "/analytics": {
+                    "get": {
+                        "operationId": "get_analytics",
+                        "summary": "Get analytics data",
+                        "responses": {"200": {"description": "Success"}},
+                    }
+                },
+            },
+        }
+
+    @pytest.fixture
+    async def mock_client(self) -> httpx.AsyncClient:
+        async def _responder(request):
+            return httpx.Response(200, json={"success": True})
+
+        return httpx.AsyncClient(transport=httpx.MockTransport(_responder))
+
+    async def test_exclude_routes(self, basic_openapi_spec, mock_client):
+        # Create a server with custom mappings that exclude specific routes
+        server = FastMCPOpenAPI(
+            openapi_spec=basic_openapi_spec,
+            client=mock_client,
+            route_maps=[
+                # Exclude analytics endpoints
+                RouteMap(
+                    methods=["GET"],
+                    pattern=r"^/analytics$",
+                    route_type=RouteType.IGNORE,
+                ),
+                # Make everything else a resource
+                RouteMap(methods=["GET"], pattern=r".*", route_type=RouteType.RESOURCE),
+            ],
+        )
+
+        # Check that resources were created for non-excluded routes
+        resources = await server.get_resources()
+        resource_uris = [str(r.uri) for r in resources.values()]
+
+        # The /analytics endpoint should be excluded
+        assert "resource://openapi/get_items" in resource_uris
+        assert "resource://openapi/get_users" in resource_uris
+        assert "resource://openapi/get_analytics" not in resource_uris
+
+        # Should only have 2 resources (analytics is excluded)
+        assert len(resources) == 2

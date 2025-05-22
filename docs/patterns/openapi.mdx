@@ -64,37 +64,34 @@ DEFAULT_ROUTE_MAPPINGS = [
     RouteMap(
         methods=["GET"], 
         pattern=r".*\{.*\}.*", 
-        route_type=RouteType.RESOURCE_TEMPLATE,
+        mcp_type=MCPType.RESOURCE_TEMPLATE,
     ),
     
     # GET without path parameters -> Resource
     RouteMap(
         methods=["GET"], 
         pattern=r".*", 
-        route_type=RouteType.RESOURCE,
+        mcp_type=MCPType.RESOURCE,
     ),
     
     # All other methods -> Tool
-    RouteMap(
-        methods="*",
-        pattern=r".*", 
-        route_type=RouteType.TOOL,
-    ),
+    ALL_TOOLS(),
 ]
 ```
+
 ### Custom Route Maps
 
 Users can add custom route maps to override the default mapping behavior. User-supplied route maps are always applied first, before the default route maps.
 
 ```python
-from fastmcp.server.openapi import RouteMap, RouteType
+from fastmcp.server.openapi import RouteMap, MCPType
 
 # Custom mapping rules
 custom_maps = [
     # Force all analytics endpoints to be Tools
     RouteMap(methods=["GET"], 
              pattern=r"^/analytics/.*", 
-             route_type=RouteType.TOOL)
+             mcp_type=MCPType.TOOL)
 ]
 
 # Apply custom mappings
@@ -105,6 +102,9 @@ mcp = await FastMCP.from_openapi(
 )
 ```
 
+<Info>
+For backward compatibility, FastMCP still supports the `route_type` parameter and `RouteType` enum, but they are deprecated and will be removed in a future version. You will see deprecation warnings if you use them.
+</Info>
 
 ### All Routes as Tools
 
@@ -127,12 +127,45 @@ mcp = FastMCP.from_openapi(
     openapi_spec=spec,
     client=api_client,
     route_maps=[
-        RouteMap(methods="*", pattern=r".*", route_type=RouteType.TOOL)
+        RouteMap(methods="*", pattern=r".*", mcp_type=MCPType.TOOL)
     ]
 )
 ```
 
 Note that `all_routes_as_tools` and `route_maps` cannot be used together - if you need more complex mapping rules, use `route_maps` instead.
+
+### Excluding Routes
+
+If you want to exclude certain routes from being converted to MCP components, you can map them to `MCPType.EXCLUDE`. This is useful for endpoints that should not be accessible to the agent.
+
+```python
+from fastmcp.server.openapi import RouteMap, MCPType
+
+# Custom mapping rules to exclude specific routes
+custom_maps = [
+    # Exclude all admin endpoints
+    RouteMap(
+        methods="*", 
+        pattern=r"^/admin/.*", 
+        mcp_type=MCPType.EXCLUDE
+    ),
+    # Exclude analytics GET endpoints
+    RouteMap(
+        methods=["GET"], 
+        pattern=r"^/analytics/.*", 
+        mcp_type=MCPType.EXCLUDE
+    )
+]
+
+# Apply custom mappings
+mcp = FastMCP.from_openapi(
+    openapi_spec=spec,
+    client=api_client,
+    route_maps=custom_maps
+)
+```
+
+When a route is mapped to `MCPType.EXCLUDE`, FastMCP will log its presence but won't create any MCP component for it, effectively making it invisible to clients and agents using the MCP server.
 
 ## How It Works
 
@@ -260,4 +293,69 @@ if __name__ == "__main__":
     # Start the MCP server
     mcp.run()
 ```
+
+### Route Map Shortcuts
+
+FastMCP provides several shortcut functions to create common route maps more easily:
+
+```python
+from fastmcp.server.openapi import (
+    ALL_TOOLS,
+    EXCLUDE_ALL,
+    EXCLUDE_PATTERN,
+    PATTERN_AS_TOOLS,
+)
+
+# Create an MCP server with custom route maps using shortcuts
+mcp = FastMCP.from_openapi(
+    openapi_spec=spec,
+    client=api_client,
+    route_maps=[
+        # First exclude all admin endpoints
+        EXCLUDE_PATTERN(r"^/admin/.*"),
+        
+        # Make all /api/v1 endpoints tools
+        PATTERN_AS_TOOLS(r"^/api/v1/.*"),
+        
+        # Make all remaining routes tools
+        ALL_TOOLS(),
+    ]
+)
+```
+
+Available shortcuts:
+
+| Shortcut Function | Description |
+|------------------|-------------|
+| `ALL_TOOLS()` | Converts all matching routes to tools |
+| `EXCLUDE_ALL()` | Excludes all matching routes from being converted to any component |
+| `PATTERN_AS_TOOLS(pattern)` | Converts routes matching a specific pattern to tools |
+| `EXCLUDE_PATTERN(pattern)` | Excludes routes matching a specific pattern |
+
+These shortcuts are particularly useful for:
+
+1. Converting all remaining unmatched routes to tools (use `ALL_TOOLS()`)
+2. Excluding whole sections of your API (use `EXCLUDE_PATTERN("/path/.*")`)
+3. Converting routes matching specific patterns to tools (use `PATTERN_AS_TOOLS("/path/.*")`)
+
+The `all_routes_as_tools=True` parameter is equivalent to using just `[ALL_TOOLS()]` as your route maps.
+
+<Tip>
+You can use `EXCLUDE_ALL()` as the last entry in your custom route maps to completely ignore the default route maps. Since custom route maps are applied first and default maps are appended afterward, having `EXCLUDE_ALL()` at the end of your custom maps will match any routes that your earlier custom rules didn't match, preventing the default maps from having any effect.
+
+```python
+# Create server that only uses custom route maps, ignoring defaults
+mcp = FastMCP.from_openapi(
+    openapi_spec=spec,
+    client=api_client,
+    route_maps=[
+        # Routes to keep as tools
+        PATTERN_AS_TOOLS(r"^/api/v1/.*"),
+        
+        # Exclude everything else (ignores default route maps)
+        EXCLUDE_ALL(),
+    ]
+)
+```
+</Tip>
 
