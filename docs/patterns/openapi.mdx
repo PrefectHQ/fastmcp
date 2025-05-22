@@ -31,20 +31,61 @@ if __name__ == "__main__":
 
 ### Timeout
 
-You can set a timeout for all API requests:
+You can set a timeout for all requests by providing a `timeout` parameter (in seconds):
 
 ```python
-# Set a 5 second timeout for all requests
 mcp = FastMCP.from_openapi(
     openapi_spec=spec, 
-    client=api_client, 
-    timeout=5.0
+    client=api_client,
+    timeout=30.0  # 30 second timeout
 )
 ```
 
-This timeout is applied to all requests made by tools, resources, and resource templates.
+### Component Naming
 
-## Route Mapping
+<VersionBadge version="2.5.0" />
+
+You can customize how FastMCP names the components generated from your OpenAPI spec:
+
+```python
+# Custom naming function
+def my_component_namer(route, mcp_type, default_name):
+    # Create custom names based on the route and component type
+    if route.operation_id:
+        return route.operation_id
+    
+    # For example, prefix with component type
+    prefix = {
+        MCPType.TOOL: "tool_",
+        MCPType.RESOURCE: "resource_",
+        MCPType.RESOURCE_TEMPLATE: "template_",
+    }.get(mcp_type, "")
+    
+    path_name = route.path.replace("/", "_").strip("_")
+    return f"{prefix}{path_name}"
+
+mcp = FastMCP.from_openapi(
+    openapi_spec=spec,
+    client=api_client,
+    component_namer=my_component_namer
+)
+```
+
+By default, FastMCP generates component names as follows:
+
+- If the route has an `operationId` in the OpenAPI spec, that is used
+- Otherwise, the name is generated from the route path:
+  - For `GET` routes mapped to resources: Just the resource name (e.g., `/users` → `users`)
+  - For routes with path parameters mapped to templates: The path with parameter names (e.g., `/users/{id}` → `users_id`)
+  - For other methods mapped to tools: Method + resource name (e.g., `POST /users` → `post_users`)
+
+#### Handling Name Collisions
+
+When multiple routes would generate the same component name, FastMCP automatically appends a number suffix to ensure uniqueness (e.g., `users`, `users_2`, `users_3`). You'll see these numbered suffixes in the component names returned by `get_tools()`, `get_resources()`, etc.
+
+If you need more control over naming, you can provide a custom `component_namer` function that handles potential collisions in your own way.
+
+### Route Mapping
 
 By default, OpenAPI routes are mapped to MCP components based on these rules:
 
@@ -53,7 +94,6 @@ By default, OpenAPI routes are mapped to MCP components based on these rules:
 | `GET` without path params | `GET /stats` | Resource | Simple resources for fetching data |
 | `GET` with path params | `GET /users/{id}` | Resource Template | Path parameters become template parameters |
 | `POST`, `PUT`, `PATCH`, `DELETE`, etc. | `POST /users` | Tool | Operations that modify data |
-
 
 Internally, FastMCP uses a priority-ordered set of `RouteMap` objects to determine the component type. Route maps indicate that a specific HTTP method (or methods) and path pattern should be treated as a specific component type. This is the default set of route maps:
 
@@ -79,7 +119,7 @@ DEFAULT_ROUTE_MAPPINGS = [
 ]
 ```
 
-### Custom Route Maps
+#### Custom Route Maps
 
 Users can add custom route maps to override the default mapping behavior. User-supplied route maps are always applied first, before the default route maps.
 
@@ -95,7 +135,7 @@ custom_maps = [
 ]
 
 # Apply custom mappings
-mcp = await FastMCP.from_openapi(
+mcp = FastMCP.from_openapi(
     openapi_spec=spec,
     client=api_client,
     route_maps=custom_maps
@@ -106,23 +146,19 @@ mcp = await FastMCP.from_openapi(
 For backward compatibility, FastMCP still supports the `route_type` parameter and `RouteType` enum, but they are deprecated and will be removed in a future version. You will see deprecation warnings if you use them.
 </Info>
 
-### All Routes as Tools
+#### All Routes as Tools
 
-When building AI agent backends, it's often useful to treat all routes as callable tools regardless of their HTTP method. You can use the `all_routes_as_tools` parameter to automatically map every route to a Tool:
+When building AI agent backends, it's often useful to treat all routes as callable tools regardless of their HTTP method. You can use the `ALL_TOOLS()` shortcut or create a custom route map:
 
 ```python
-# Make all endpoints tools, regardless of HTTP method
+# Make all endpoints tools using the shortcut
 mcp = FastMCP.from_openapi(
     openapi_spec=spec,
     client=api_client,
-    all_routes_as_tools=True
+    route_maps=[ALL_TOOLS()]
 )
-```
 
-This is equivalent to defining a single route map that matches all routes:
-
-```python
-# Same effect as all_routes_as_tools=True
+# Same effect using a custom route map
 mcp = FastMCP.from_openapi(
     openapi_spec=spec,
     client=api_client,
@@ -132,9 +168,7 @@ mcp = FastMCP.from_openapi(
 )
 ```
 
-Note that `all_routes_as_tools` and `route_maps` cannot be used together - if you need more complex mapping rules, use `route_maps` instead.
-
-### Excluding Routes
+#### Excluding Routes
 
 If you want to exclude certain routes from being converted to MCP components, you can map them to `MCPType.EXCLUDE`. This is useful for endpoints that should not be accessible to the agent.
 
@@ -167,134 +201,38 @@ mcp = FastMCP.from_openapi(
 
 When a route is mapped to `MCPType.EXCLUDE`, FastMCP will log its presence but won't create any MCP component for it, effectively making it invisible to clients and agents using the MCP server.
 
-## How It Works
-
-1. FastMCP parses your OpenAPI spec to extract routes and schemas
-2. It applies mapping rules to categorize each route
-3. When an MCP client calls a tool or accesses a resource:
-   - FastMCP constructs an HTTP request based on the OpenAPI definition
-   - It sends the request through the provided httpx client
-   - It translates the HTTP response to the appropriate MCP format
-
-### Request Parameter Handling
-
-FastMCP carefully handles different types of parameters in OpenAPI requests:
-
-#### Query Parameters
-
-By default, FastMCP will only include query parameters that have non-empty values. Parameters with `None` values or empty strings (`""`) are automatically filtered out of requests. This ensures that API servers don't receive unnecessary empty parameters that might cause issues.
-
-For example, if you call a tool with these parameters:
-```python
-await client.call_tool("search_products", {
-    "category": "electronics",  # Will be included
-    "min_price": 100,           # Will be included
-    "max_price": None,          # Will be excluded
-    "brand": "",                # Will be excluded
-})
-```
-
-The resulting HTTP request will only include `category=electronics&min_price=100`.
-
-#### Path Parameters
-
-For path parameters, which are typically required by REST APIs, FastMCP filters out `None` values and checks that all required path parameters are provided. If a required path parameter is missing or `None`, an error will be raised.
+You can customize this behavior by providing a list of `RouteMap` objects:
 
 ```python
-# This will work
-await client.call_tool("get_product", {"product_id": 123})
+from fastmcp.server.openapi import FastMCPOpenAPI, RouteMap, MCPType
 
-# This will raise ValueError: "Missing required path parameters: {'product_id'}"
-await client.call_tool("get_product", {"product_id": None})
+# Custom route mappings
+custom_mappings = [
+    # Convert all user-related routes to tools
+    RouteMap(
+        methods=["GET", "POST", "PUT", "DELETE"],
+        pattern=r"^/users.*",
+        mcp_type=MCPType.TOOL
+    ),
+    # Exclude analytics routes
+    RouteMap(
+        methods=["*"],  # All methods
+        pattern=r"^/analytics.*",
+        mcp_type=MCPType.EXCLUDE
+    ),
+]
+
+# Create server with custom mappings
+mcp = FastMCPOpenAPI(
+    openapi_spec=spec,
+    client=httpx.AsyncClient(),
+    route_maps=custom_mappings,
+)
 ```
 
-## Complete Example
+#### Route Map Shortcuts
 
-```python [expandable]
-import asyncio
-
-import httpx
-
-from fastmcp import FastMCP
-
-# Sample OpenAPI spec for a Pet Store API
-petstore_spec = {
-    "openapi": "3.0.0",
-    "info": {
-        "title": "Pet Store API",
-        "version": "1.0.0",
-        "description": "A sample API for managing pets",
-    },
-    "paths": {
-        "/pets": {
-            "get": {
-                "operationId": "listPets",
-                "summary": "List all pets",
-                "responses": {"200": {"description": "A list of pets"}},
-            },
-            "post": {
-                "operationId": "createPet",
-                "summary": "Create a new pet",
-                "responses": {"201": {"description": "Pet created successfully"}},
-            },
-        },
-        "/pets/{petId}": {
-            "get": {
-                "operationId": "getPet",
-                "summary": "Get a pet by ID",
-                "parameters": [
-                    {
-                        "name": "petId",
-                        "in": "path",
-                        "required": True,
-                        "schema": {"type": "string"},
-                    }
-                ],
-                "responses": {
-                    "200": {"description": "Pet details"},
-                    "404": {"description": "Pet not found"},
-                },
-            }
-        },
-    },
-}
-
-
-async def check_mcp(mcp: FastMCP):
-    # List what components were created
-    tools = await mcp.get_tools()
-    resources = await mcp.get_resources()
-    templates = await mcp.get_resource_templates()
-
-    print(
-        f"{len(tools)} Tool(s): {', '.join([t.name for t in tools.values()])}"
-    )  # Should include createPet
-    print(
-        f"{len(resources)} Resource(s): {', '.join([r.name for r in resources.values()])}"
-    )  # Should include listPets
-    print(
-        f"{len(templates)} Resource Template(s): {', '.join([t.name for t in templates.values()])}"
-    )  # Should include getPet
-
-    return mcp
-
-
-if __name__ == "__main__":
-    # Client for the Pet Store API
-    client = httpx.AsyncClient(base_url="https://petstore.example.com/api")
-
-    # Create the MCP server
-    mcp = FastMCP.from_openapi(
-        openapi_spec=petstore_spec, client=client, name="PetStore"
-    )
-
-    asyncio.run(check_mcp(mcp))
-
-    # Start the MCP server
-    mcp.run()
-```
-
-### Route Map Shortcuts
+<VersionBadge version="2.5.0" />
 
 FastMCP provides several shortcut functions to create common route maps more easily:
 
@@ -338,8 +276,6 @@ These shortcuts are particularly useful for:
 2. Excluding whole sections of your API (use `EXCLUDE_PATTERN("/path/.*")`)
 3. Converting routes matching specific patterns to tools (use `PATTERN_AS_TOOLS("/path/.*")`)
 
-The `all_routes_as_tools=True` parameter is equivalent to using just `[ALL_TOOLS()]` as your route maps.
-
 <Tip>
 You can use `EXCLUDE_ALL()` as the last entry in your custom route maps to completely ignore the default route maps. Since custom route maps are applied first and default maps are appended afterward, having `EXCLUDE_ALL()` at the end of your custom maps will match any routes that your earlier custom rules didn't match, preventing the default maps from having any effect.
 
@@ -359,3 +295,61 @@ mcp = FastMCP.from_openapi(
 ```
 </Tip>
 
+## How It Works
+
+1. FastMCP parses your OpenAPI spec to extract routes and schemas
+2. It applies mapping rules to categorize each route
+3. When an MCP client calls a tool or accesses a resource:
+   - FastMCP constructs an HTTP request based on the OpenAPI definition
+   - It sends the request through the provided httpx client
+   - It translates the HTTP response to the appropriate MCP format
+
+### Request Parameter Handling
+
+FastMCP carefully handles different types of parameters in OpenAPI requests:
+
+#### Query Parameters
+
+By default, FastMCP will only include query parameters that have non-empty values. Parameters with `None` values or empty strings (`""`) are automatically filtered out of requests. This ensures that API servers don't receive unnecessary empty parameters that might cause issues.
+
+For example, if you call a tool with these parameters:
+```python
+await client.call_tool("search_products", {
+    "category": "electronics",  # Will be included
+    "min_price": 100,           # Will be included
+    "max_price": None,          # Will be excluded
+    "brand": "",                # Will be excluded
+})
+```
+
+The resulting HTTP request will only include `category=electronics&min_price=100`.
+
+#### Path Parameters
+
+For path parameters, which are typically required by REST APIs, FastMCP filters out `None` values and checks that all required path parameters are provided. If a required path parameter is missing or `None`, an error will be raised.
+
+```python
+# This will work
+await client.call_tool("get_product", {"product_id": 123})
+
+# This will raise ValueError: "Missing required path parameters: {'product_id'}"
+await client.call_tool("get_product", {"product_id": None})
+```
+
+## Example: Custom Authentication
+
+If your API requires authentication, you can set headers on the client:
+
+```python
+import httpx
+from fastmcp import FastMCP
+
+# Create a client with authentication
+api_client = httpx.AsyncClient(
+    base_url="https://api.example.com",
+    headers={"Authorization": "Bearer YOUR_TOKEN"}
+)
+
+# Create an MCP server from your OpenAPI spec
+mcp = FastMCP.from_openapi(openapi_spec=spec, client=api_client)
+```

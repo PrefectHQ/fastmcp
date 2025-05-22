@@ -11,7 +11,6 @@ from fastmcp.server.openapi import (
     FastMCPOpenAPI,
     MCPType,
     RouteMap,
-    RouteType,
 )
 
 
@@ -52,6 +51,8 @@ class TestRouteMapShortcuts:
 
     def test_backward_compatibility(self):
         """Test that backward compatibility with RouteType and route_type works."""
+        from fastmcp.server.openapi import RouteType
+
         # Test creating a RouteMap with route_type
         with pytest.warns(DeprecationWarning):
             route_map = RouteMap(

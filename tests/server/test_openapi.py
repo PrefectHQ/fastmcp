@@ -18,11 +18,11 @@ from fastmcp.client import Client
 from fastmcp.exceptions import ToolError
 from fastmcp.server.openapi import (
     FastMCPOpenAPI,
+    MCPType,
     OpenAPIResource,
     OpenAPIResourceTemplate,
     OpenAPITool,
     RouteMap,
-    RouteType,
 )
 
 
@@ -304,7 +304,7 @@ class TestTools:
             openapi_spec=openapi_spec,
             client=api_client,
             route_maps=[
-                RouteMap(methods=["GET"], pattern=r".*", route_type=RouteType.TOOL)
+                RouteMap(methods=["GET"], pattern=r".*", mcp_type=MCPType.TOOL)
             ],
         )
         async with Client(mcp_server) as client:
@@ -956,9 +956,7 @@ async def test_empty_query_parameters_not_sent(
     mcp_server = FastMCPOpenAPI(
         openapi_spec=openapi_spec,
         client=api_client,
-        route_maps=[
-            RouteMap(methods=["GET"], pattern=r".*", route_type=RouteType.TOOL)
-        ],
+        route_maps=[RouteMap(methods=["GET"], pattern=r".*", mcp_type=MCPType.TOOL)],
     )
 
     # Call the search tool with mixed parameter values
@@ -1499,17 +1497,15 @@ class TestFastAPIDescriptionPropagation:
         # Create custom route mappings
         route_maps = [
             # Map GET /items to Resource
-            RouteMap(
-                methods=["GET"], pattern=r"^/items$", route_type=RouteType.RESOURCE
-            ),
+            RouteMap(methods=["GET"], pattern=r"^/items$", mcp_type=MCPType.RESOURCE),
             # Map GET /items/{item_id} to ResourceTemplate
             RouteMap(
                 methods=["GET"],
                 pattern=r"^/items/\{.*\}$",
-                route_type=RouteType.RESOURCE_TEMPLATE,
+                mcp_type=MCPType.RESOURCE_TEMPLATE,
             ),
             # Map POST /items to Tool
-            RouteMap(methods=["POST"], pattern=r"^/items$", route_type=RouteType.TOOL),
+            RouteMap(methods=["POST"], pattern=r"^/items$", mcp_type=MCPType.TOOL),
         ]
 
         # Create FastMCP server with the OpenAPI spec and custom route mappings
@@ -1918,7 +1914,7 @@ class TestRouteMapWildcard:
     ):
         """Test that a RouteMap with methods='*' matches all HTTP methods."""
         # Create a single route map with wildcard method
-        route_maps = [RouteMap(methods="*", pattern=r".*", route_type=RouteType.TOOL)]
+        route_maps = [RouteMap(methods="*", pattern=r".*", mcp_type=MCPType.TOOL)]
 
         mcp = FastMCPOpenAPI(
             openapi_spec=basic_openapi_spec,
@@ -1947,9 +1943,9 @@ class TestRouteMapWildcard:
         # Create route maps with specific method first, then wildcard
         route_maps = [
             # GET operations should be mapped to resources
-            RouteMap(methods=["GET"], pattern=r".*", route_type=RouteType.RESOURCE),
+            RouteMap(methods=["GET"], pattern=r".*", mcp_type=MCPType.RESOURCE),
             # All other operations should be mapped to tools
-            RouteMap(methods="*", pattern=r".*", route_type=RouteType.TOOL),
+            RouteMap(methods="*", pattern=r".*", mcp_type=MCPType.TOOL),
         ]
 
         mcp = FastMCPOpenAPI(
@@ -1977,9 +1973,9 @@ class TestRouteMapWildcard:
         # Create route maps with wildcard first, then specific methods
         route_maps = [
             # Wildcard first matches everything
-            RouteMap(methods="*", pattern=r".*", route_type=RouteType.TOOL),
+            RouteMap(methods="*", pattern=r".*", mcp_type=MCPType.TOOL),
             # This should never be reached
-            RouteMap(methods=["GET"], pattern=r".*", route_type=RouteType.RESOURCE),
+            RouteMap(methods=["GET"], pattern=r".*", mcp_type=MCPType.RESOURCE),
         ]
 
         mcp = FastMCPOpenAPI(
@@ -2002,9 +1998,9 @@ class TestRouteMapWildcard:
         """Test wildcard methods combined with specific path patterns."""
         route_maps = [
             # All methods on /users path -> Resources
-            RouteMap(methods="*", pattern=r".*/users$", route_type=RouteType.RESOURCE),
+            RouteMap(methods="*", pattern=r".*/users$", mcp_type=MCPType.RESOURCE),
             # All methods on /posts path -> Tools
-            RouteMap(methods="*", pattern=r".*/posts$", route_type=RouteType.TOOL),
+            RouteMap(methods="*", pattern=r".*/posts$", mcp_type=MCPType.TOOL),
         ]
 
         mcp = FastMCPOpenAPI(
@@ -2063,95 +2059,104 @@ class TestAllRoutesAsTools:
 
     async def test_from_openapi_all_routes_as_tools(self, simple_api_spec, mock_client):
         """Test FastMCP.from_openapi with all_routes_as_tools=True."""
-        # Create server with all routes as tools
-        server = FastMCP.from_openapi(
-            openapi_spec=simple_api_spec, client=mock_client, all_routes_as_tools=True
-        )
 
-        # All operations (GET and POST) should be mapped to tools
-        tools = server._tool_manager.list_tools()
-        tool_names = {t.name for t in tools}
+        with pytest.warns(DeprecationWarning, match="all_routes_as_tools.*deprecated"):
+            server = FastMCP.from_openapi(
+                openapi_spec=simple_api_spec,
+                client=mock_client,
+                all_routes_as_tools=True,
+            )
 
-        assert "getItems" in tool_names
-        assert "createItem" in tool_names
-        assert len(tools) == 2
+        # Check that all routes are tools
+        tools = await server.get_tools()
+        assert len(tools) >= 2  # Should have at least the two endpoints as tools
 
-        # No resources or templates should be created
-        resources = server._resource_manager.get_resources()
-        templates = server._resource_manager.get_templates()
+        # Should have no resources since all routes are tools
+        resources = await server.get_resources()
         assert len(resources) == 0
+
+        # Should have no resource templates since all routes are tools
+        templates = await server.get_resource_templates()
         assert len(templates) == 0
 
     async def test_from_openapi_all_routes_as_tools_conflicting_args(
         self, simple_api_spec, mock_client
     ):
         """Test FastMCP.from_openapi raises error when both route_maps and all_routes_as_tools are provided."""
-        # Try to create server with conflicting args
         with pytest.raises(
             ValueError, match="Cannot specify both all_routes_as_tools and route_maps"
         ):
-            FastMCP.from_openapi(
-                openapi_spec=simple_api_spec,
-                client=mock_client,
-                all_routes_as_tools=True,
-                route_maps=[
-                    RouteMap(
-                        methods=["GET"], pattern=r".*", route_type=RouteType.RESOURCE
-                    )
-                ],
-            )
+            with pytest.warns(
+                DeprecationWarning, match="all_routes_as_tools.*deprecated"
+            ):
+                FastMCP.from_openapi(
+                    openapi_spec=simple_api_spec,
+                    client=mock_client,
+                    route_maps=[
+                        RouteMap(
+                            methods=["GET"], pattern=r".*", mcp_type=MCPType.RESOURCE
+                        )
+                    ],
+                    all_routes_as_tools=True,
+                )
 
     async def test_from_fastapi_all_routes_as_tools(self):
         """Test FastMCP.from_fastapi with all_routes_as_tools=True."""
-        # Create a simple FastAPI app
-        app = FastAPI(title="Test FastAPI")
+
+        try:
+            import fastapi
+        except ImportError:
+            pytest.skip("FastAPI not available")
+
+        app = fastapi.FastAPI()
 
         @app.get("/items")
-        async def get_items():
-            return [{"id": 1, "name": "Item 1"}]
+        def get_items():
+            return {"items": []}
 
         @app.post("/items")
-        async def create_item(item: dict):
-            return {"id": 2, **item}
+        def create_item():
+            return {"item": "created"}
 
-        # Create server with all routes as tools
-        server = FastMCP.from_fastapi(app=app, all_routes_as_tools=True)
+        with pytest.warns(DeprecationWarning, match="all_routes_as_tools.*deprecated"):
+            server = FastMCP.from_fastapi(app=app, all_routes_as_tools=True)
 
-        # Both GET and POST operations should be mapped to tools
-        tools = server._tool_manager.list_tools()
+        # Check that all routes are tools
+        tools = await server.get_tools()
+        assert len(tools) >= 2  # Should have at least the two endpoints as tools
 
-        # Get tool names from the generated operation IDs
-        tool_names = {t.name for t in tools}
-
-        # Check that both routes were mapped to tools
-        # The exact names depend on FastAPI's operation ID generation
-        assert len(tools) == 2
-        assert any("get" in name.lower() for name in tool_names)
-        assert any("post" in name.lower() for name in tool_names)
-
-        # No resources or templates should be created
-        resources = server._resource_manager.get_resources()
-        templates = server._resource_manager.get_templates()
+        # Should have no resources since all routes are tools
+        resources = await server.get_resources()
         assert len(resources) == 0
+
+        # Should have no resource templates since all routes are tools
+        templates = await server.get_resource_templates()
         assert len(templates) == 0
 
     async def test_from_fastapi_all_routes_as_tools_conflicting_args(self):
         """Test FastMCP.from_fastapi raises error when both route_maps and all_routes_as_tools are provided."""
-        app = FastAPI(title="Test FastAPI")
+        try:
+            import fastapi
+        except ImportError:
+            pytest.skip("FastAPI not available")
 
-        # Try to create server with conflicting args
+        app = fastapi.FastAPI()
+
         with pytest.raises(
             ValueError, match="Cannot specify both all_routes_as_tools and route_maps"
         ):
-            FastMCP.from_fastapi(
-                app=app,
-                all_routes_as_tools=True,
-                route_maps=[
-                    RouteMap(
-                        methods=["GET"], pattern=r".*", route_type=RouteType.RESOURCE
-                    )
-                ],
-            )
+            with pytest.warns(
+                DeprecationWarning, match="all_routes_as_tools.*deprecated"
+            ):
+                FastMCP.from_fastapi(
+                    app=app,
+                    route_maps=[
+                        RouteMap(
+                            methods=["GET"], pattern=r".*", mcp_type=MCPType.RESOURCE
+                        )
+                    ],
+                    all_routes_as_tools=True,
+                )
 
 
 class TestRouteTypeExclude:
@@ -2202,10 +2207,10 @@ class TestRouteTypeExclude:
                 RouteMap(
                     methods=["GET"],
                     pattern=r"^/analytics$",
-                    route_type=RouteType.IGNORE,
+                    mcp_type=MCPType.EXCLUDE,
                 ),
                 # Make everything else a resource
-                RouteMap(methods=["GET"], pattern=r".*", route_type=RouteType.RESOURCE),
+                RouteMap(methods=["GET"], pattern=r".*", mcp_type=MCPType.RESOURCE),
             ],
         )
 

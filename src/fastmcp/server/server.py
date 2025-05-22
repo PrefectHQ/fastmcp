@@ -1147,19 +1147,22 @@ class FastMCP(Generic[LifespanResultT]):
         """
         Create a FastMCP server from an OpenAPI specification.
         """
-        from .openapi import FastMCPOpenAPI, RouteMap, RouteType
+        from .openapi import ALL_TOOLS, FastMCPOpenAPI
+
+        # Deprecated since 2.5.0
+        if all_routes_as_tools:
+            warnings.warn(
+                "The 'all_routes_as_tools' parameter is deprecated and will be removed in a future version. "
+                "Use 'route_maps=[ALL_TOOLS()]' instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
 
         if all_routes_as_tools and route_maps:
             raise ValueError("Cannot specify both all_routes_as_tools and route_maps")
 
         elif all_routes_as_tools:
-            route_maps = [
-                RouteMap(
-                    methods="*",
-                    pattern=r".*",
-                    route_type=RouteType.TOOL,
-                )
-            ]
+            route_maps = [ALL_TOOLS()]
 
         return FastMCPOpenAPI(
             openapi_spec=openapi_spec,
@@ -1181,15 +1184,21 @@ class FastMCP(Generic[LifespanResultT]):
         Create a FastMCP server from a FastAPI application.
         """
 
-        from .openapi import FastMCPOpenAPI, RouteMap, RouteType
+        from .openapi import ALL_TOOLS, FastMCPOpenAPI
+
+        if all_routes_as_tools:
+            warnings.warn(
+                "The 'all_routes_as_tools' parameter is deprecated and will be removed in a future version. "
+                "Use 'route_maps=[ALL_TOOLS()]' instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
 
         if all_routes_as_tools and route_maps:
             raise ValueError("Cannot specify both all_routes_as_tools and route_maps")
 
         elif all_routes_as_tools:
-            route_maps = [
-                RouteMap(methods="*", pattern=r".*", route_type=RouteType.TOOL)
-            ]
+            route_maps = [ALL_TOOLS()]
 
         client = httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://fastapi"
