@@ -228,8 +228,8 @@ async def analyze_sentiment(text: str, ctx: Context) -> dict:
     # Create a sampling prompt asking for sentiment analysis
     prompt = f"Analyze the sentiment of the following text as positive, negative, or neutral. Just output a single word - 'positive', 'negative', or 'neutral'. Text to analyze: {text}"
     
-    # Send the sampling request to the client's LLM
-    response = await ctx.sample(prompt)
+    # Send the sampling request to the client's LLM (provide a hint for the model you want to use)
+    response = await ctx.sample(prompt, model_preferences="claude-3-sonnet")
     
     # Process the LLM's response
     sentiment = response.text.strip().lower()
@@ -247,11 +247,12 @@ async def analyze_sentiment(text: str, ctx: Context) -> dict:
 
 **Method signature:**
 
-- **`ctx.sample(messages: str | list[str | SamplingMessage], system_prompt: str | None = None, temperature: float | None = None, max_tokens: int | None = None) -> TextContent | ImageContent`**
+- **`ctx.sample(messages: str | list[str | SamplingMessage], system_prompt: str | None = None, temperature: float | None = None, max_tokens: int | None = None, model_preferences: ModelPreferences | str | list[str] | None = None) -> TextContent | ImageContent`**
   - `messages`: A string or list of strings/message objects to send to the LLM
   - `system_prompt`: Optional system prompt to guide the LLM's behavior
   - `temperature`: Optional sampling temperature (controls randomness)
   - `max_tokens`: Optional maximum number of tokens to generate (defaults to 512)
+  - `model_preferences`: Optional model selection preferences (e.g., a model hint string, list of hints, or a ModelPreferences object)
   - Returns the LLM's response as TextContent or ImageContent
 
 When providing a simple string, it's treated as a user message. For more complex scenarios, you can provide a list of messages with different roles.

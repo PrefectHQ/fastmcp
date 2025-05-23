@@ -9,7 +9,7 @@ from fastmcp.client.transports import (
     StdioTransport,
     StreamableHttpTransport,
 )
-from fastmcp.utilities.mcp_config import LocalMCPServer, MCPConfig, RemoteMCPServer
+from fastmcp.utilities.mcp_config import MCPConfig, RemoteMCPServer, StdioMCPServer
 
 
 def test_parse_single_stdio_config():
@@ -89,7 +89,7 @@ def test_parse_multiple_servers():
     assert isinstance(mcp_config.mcpServers["test_server"], RemoteMCPServer)
     assert isinstance(mcp_config.mcpServers["test_server"].to_transport(), SSETransport)
 
-    assert isinstance(mcp_config.mcpServers["test_server_2"], LocalMCPServer)
+    assert isinstance(mcp_config.mcpServers["test_server_2"], StdioMCPServer)
     assert isinstance(
         mcp_config.mcpServers["test_server_2"].to_transport(), StdioTransport
     )
