@@ -879,7 +879,6 @@ class FastMCP(Generic[LifespanResultT]):
             auth_server_provider=self._auth_server_provider,
             auth_settings=self.settings.auth,
             debug=self.settings.debug,
-            routes=self._additional_http_routes,
             middleware=middleware,
         )
 
@@ -930,7 +929,6 @@ class FastMCP(Generic[LifespanResultT]):
                 json_response=self.settings.json_response,
                 stateless_http=self.settings.stateless_http,
                 debug=self.settings.debug,
-                routes=self._additional_http_routes,
                 middleware=middleware,
             )
         elif transport == "sse":
@@ -941,7 +939,6 @@ class FastMCP(Generic[LifespanResultT]):
                 auth_server_provider=self._auth_server_provider,
                 auth_settings=self.settings.auth,
                 debug=self.settings.debug,
-                routes=self._additional_http_routes,
                 middleware=middleware,
             )
 
@@ -1026,7 +1023,7 @@ class FastMCP(Generic[LifespanResultT]):
         from fastmcp.server.proxy import FastMCPProxy
 
         if tool_separator is not None:
-            # Deprecated since 2.3.6
+            # Deprecated since 2.4.0
             warnings.warn(
                 "The tool_separator parameter is deprecated and will be removed in a future version. "
                 "Tools are now prefixed using 'prefix_toolname' format.",
@@ -1035,7 +1032,7 @@ class FastMCP(Generic[LifespanResultT]):
             )
 
         if resource_separator is not None:
-            # Deprecated since 2.3.6
+            # Deprecated since 2.4.0
             warnings.warn(
                 "The resource_separator parameter is deprecated and ignored. "
                 "Resource prefixes are now added using the protocol://prefix/path format.",
@@ -1044,7 +1041,7 @@ class FastMCP(Generic[LifespanResultT]):
             )
 
         if prompt_separator is not None:
-            # Deprecated since 2.3.6
+            # Deprecated since 2.4.0
             warnings.warn(
                 "The prompt_separator parameter is deprecated and will be removed in a future version. "
                 "Prompts are now prefixed using 'prefix_promptname' format.",
@@ -1111,7 +1108,7 @@ class FastMCP(Generic[LifespanResultT]):
             prompt_separator: Deprecated. Separator for prompt names.
         """
         if tool_separator is not None:
-            # Deprecated since 2.3.6
+            # Deprecated since 2.4.0
             warnings.warn(
                 "The tool_separator parameter is deprecated and will be removed in a future version. "
                 "Tools are now prefixed using 'prefix_toolname' format.",
@@ -1120,7 +1117,7 @@ class FastMCP(Generic[LifespanResultT]):
             )
 
         if resource_separator is not None:
-            # Deprecated since 2.3.6
+            # Deprecated since 2.4.0
             warnings.warn(
                 "The resource_separator parameter is deprecated and ignored. "
                 "Resource prefixes are now added using the protocol://prefix/path format.",
@@ -1129,7 +1126,7 @@ class FastMCP(Generic[LifespanResultT]):
             )
 
         if prompt_separator is not None:
-            # Deprecated since 2.3.6
+            # Deprecated since 2.4.0
             warnings.warn(
                 "The prompt_separator parameter is deprecated and will be removed in a future version. "
                 "Prompts are now prefixed using 'prefix_promptname' format.",
@@ -1175,19 +1172,22 @@ class FastMCP(Generic[LifespanResultT]):
         """
         Create a FastMCP server from an OpenAPI specification.
         """
-        from .openapi import FastMCPOpenAPI, RouteMap, RouteType
+        from .openapi import FastMCPOpenAPI, MCPType, RouteMap
+
+        # Deprecated since 2.5.0
+        if all_routes_as_tools:
+            warnings.warn(
+                "The 'all_routes_as_tools' parameter is deprecated and will be removed in a future version. "
+                'Use \'route_maps=[RouteMap(methods="*", pattern=r".*", mcp_type=MCPType.TOOL)]\' instead.',
+                DeprecationWarning,
+                stacklevel=2,
+            )
 
         if all_routes_as_tools and route_maps:
             raise ValueError("Cannot specify both all_routes_as_tools and route_maps")
 
         elif all_routes_as_tools:
-            route_maps = [
-                RouteMap(
-                    methods="*",
-                    pattern=r".*",
-                    route_type=RouteType.TOOL,
-                )
-            ]
+            route_maps = [RouteMap(methods="*", pattern=r".*", mcp_type=MCPType.TOOL)]
 
         return FastMCPOpenAPI(
             openapi_spec=openapi_spec,
@@ -1209,15 +1209,22 @@ class FastMCP(Generic[LifespanResultT]):
         Create a FastMCP server from a FastAPI application.
         """
 
-        from .openapi import FastMCPOpenAPI, RouteMap, RouteType
+        from .openapi import FastMCPOpenAPI, MCPType, RouteMap
+
+        # Deprecated since 2.5.0
+        if all_routes_as_tools:
+            warnings.warn(
+                "The 'all_routes_as_tools' parameter is deprecated and will be removed in a future version. "
+                'Use \'route_maps=[RouteMap(methods="*", pattern=r".*", mcp_type=MCPType.TOOL)]\' instead.',
+                DeprecationWarning,
+                stacklevel=2,
+            )
 
         if all_routes_as_tools and route_maps:
             raise ValueError("Cannot specify both all_routes_as_tools and route_maps")
 
         elif all_routes_as_tools:
-            route_maps = [
-                RouteMap(methods="*", pattern=r".*", route_type=RouteType.TOOL)
-            ]
+            route_maps = [RouteMap(methods="*", pattern=r".*", mcp_type=MCPType.TOOL)]
 
         client = httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://fastapi"

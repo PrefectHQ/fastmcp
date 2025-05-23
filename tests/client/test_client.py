@@ -728,7 +728,19 @@ class TestInferTransport:
         assert transport.transport.command == "echo"
         assert transport.transport.args == ["hello"]
 
-    def test_infer_composite_client(config):
+    def test_config_with_no_servers(self):
+        """Test that an empty MCPConfig raises a ValueError."""
+        config = {"mcpServers": {}}
+        with pytest.raises(ValueError, match="No MCP servers defined in the config"):
+            infer_transport(config)
+
+    def test_mcpconfigtransport_with_no_servers(self):
+        """Test that MCPConfigTransport raises a ValueError when initialized with an empty config."""
+        config = {"mcpServers": {}}
+        with pytest.raises(ValueError, match="No MCP servers defined in the config"):
+            MCPConfigTransport(config=config)
+
+    def test_infer_composite_client(self):
         config = {
             "mcpServers": {
                 "local": {
@@ -744,4 +756,17 @@ class TestInferTransport:
         transport = infer_transport(config)
         assert isinstance(transport, MCPConfigTransport)
         assert isinstance(transport.transport, FastMCPTransport)
-        assert len(transport.transport.server._mounted_servers) == 2
+        assert len(cast(FastMCP, transport.transport.server)._mounted_servers) == 2
+
+    def test_infer_fastmcp_server(self, fastmcp_server):
+        """FastMCP server instances should infer to FastMCPTransport."""
+        transport = infer_transport(fastmcp_server)
+        assert isinstance(transport, FastMCPTransport)
+
+    def test_infer_fastmcp_v1_server(self):
+        """FastMCP 1.0 server instances should infer to FastMCPTransport."""
+        from mcp.server.fastmcp import FastMCP as FastMCP1
+
+        server = FastMCP1()
+        transport = infer_transport(server)
+        assert isinstance(transport, FastMCPTransport)

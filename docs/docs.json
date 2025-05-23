@@ -50,6 +50,7 @@
                     "servers/resources",
                     "servers/prompts",
                     "servers/context",
+                    "servers/openapi",
                     "servers/proxy",
                     "servers/composition"
                 ]
@@ -76,8 +77,6 @@
                 "pages": [
                     "patterns/decorating-methods",
                     "patterns/http-requests",
-                    "patterns/openapi",
-                    "patterns/fastapi",
                     "patterns/contrib",
                     "patterns/testing"
                 ]
