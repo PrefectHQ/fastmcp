@@ -130,7 +130,7 @@ class TestClientHeaders:
             transport=SSETransport(sse_server, headers={"X-TEST": "test-123"})
         ) as client:
             result = await client.read_resource(
-                "resource://get_header_by_name_headers__header_name__get/x-test"
+                "resource://get_header_by_name_headers/x-test"
             )
             assert isinstance(result[0], TextResourceContents)
             header = json.loads(result[0].text)
@@ -143,7 +143,7 @@ class TestClientHeaders:
             )
         ) as client:
             result = await client.read_resource(
-                "resource://get_header_by_name_headers__header_name__get/x-test"
+                "resource://get_header_by_name_headers/x-test"
             )
             assert isinstance(result[0], TextResourceContents)
             header = json.loads(result[0].text)

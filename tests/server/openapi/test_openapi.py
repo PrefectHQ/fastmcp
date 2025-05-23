@@ -208,7 +208,7 @@ class TestTools:
             },
         )
         assert tools[1].model_dump() == dict(
-            name="update_user_name_users__user_id__name_patch",
+            name="update_user_name_users",
             annotations=None,
             description=IsStr(
                 regex=r"^Update a user's name\..*$", regex_flags=re.DOTALL
@@ -248,9 +248,7 @@ class TestTools:
 
         # Check that the user was created via MCP
         async with Client(fastmcp_openapi_server) as client:
-            user_response = await client.read_resource(
-                "resource://get_user_users__user_id__get/4"
-            )
+            user_response = await client.read_resource("resource://get_user_users/4")
             assert isinstance(user_response[0], TextResourceContents)
             response_text = user_response[0].text
             user = json.loads(response_text)
@@ -264,7 +262,7 @@ class TestTools:
         """
         async with Client(fastmcp_openapi_server) as client:
             tool_response = await client.call_tool(
-                "update_user_name_users__user_id__name_patch",
+                "update_user_name_users",
                 {"user_id": 1, "name": "XYZ"},
             )
 
@@ -282,9 +280,7 @@ class TestTools:
 
         # Check that the user was updated via MCP
         async with Client(fastmcp_openapi_server) as client:
-            user_response = await client.read_resource(
-                "resource://get_user_users__user_id__get/1"
-            )
+            user_response = await client.read_resource("resource://get_user_users/1")
             assert isinstance(user_response[0], TextResourceContents)
             response_text = user_response[0].text
             user = json.loads(response_text)
@@ -387,18 +383,14 @@ class TestResourceTemplates:
         async with Client(fastmcp_openapi_server) as client:
             resource_templates = await client.list_resource_templates()
         assert len(resource_templates) == 2
-        assert resource_templates[0].name == "get_user_users__user_id__get"
+        assert resource_templates[0].name == "get_user_users"
         assert (
-            resource_templates[0].uriTemplate
-            == r"resource://get_user_users__user_id__get/{user_id}"
+            resource_templates[0].uriTemplate == r"resource://get_user_users/{user_id}"
         )
-        assert (
-            resource_templates[1].name
-            == "get_user_active_state_users__user_id___is_active__get"
-        )
+        assert resource_templates[1].name == "get_user_active_state_users"
         assert (
             resource_templates[1].uriTemplate
-            == r"resource://get_user_active_state_users__user_id___is_active__get/{is_active}/{user_id}"
+            == r"resource://get_user_active_state_users/{is_active}/{user_id}"
         )
 
     async def test_get_resource_template(
@@ -413,7 +405,7 @@ class TestResourceTemplates:
         user_id = 2
         async with Client(fastmcp_openapi_server) as client:
             resource_response = await client.read_resource(
-                f"resource://get_user_users__user_id__get/{user_id}"
+                f"resource://get_user_users/{user_id}"
             )
             assert isinstance(resource_response[0], TextResourceContents)
             response_text = resource_response[0].text
@@ -436,7 +428,7 @@ class TestResourceTemplates:
         is_active = True
         async with Client(fastmcp_openapi_server) as client:
             resource_response = await client.read_resource(
-                f"resource://get_user_active_state_users__user_id___is_active__get/{is_active}/{user_id}"
+                f"resource://get_user_active_state_users/{is_active}/{user_id}"
             )
             assert isinstance(resource_response[0], TextResourceContents)
             response_text = resource_response[0].text
@@ -472,11 +464,7 @@ class TestTagTransfer:
             (t for t in tools if t.name == "create_user_users_post"), None
         )
         update_user_tool = next(
-            (
-                t
-                for t in tools
-                if t.name == "update_user_name_users__user_id__name_patch"
-            ),
+            (t for t in tools if t.name == "update_user_name_users"),
             None,
         )
 
@@ -524,7 +512,7 @@ class TestTagTransfer:
 
         # Find the get_user template
         get_user_template = next(
-            (t for t in templates if t.name == "get_user_users__user_id__get"), None
+            (t for t in templates if t.name == "get_user_users"), None
         )
 
         assert get_user_template is not None
@@ -545,7 +533,7 @@ class TestTagTransfer:
 
         # Find the get_user template
         get_user_template = next(
-            (t for t in templates if t.name == "get_user_users__user_id__get"), None
+            (t for t in templates if t.name == "get_user_users"), None
         )
 
         assert get_user_template is not None
@@ -553,7 +541,7 @@ class TestTagTransfer:
         # Manually create a resource from template
         params = {"user_id": 1}
         resource = await get_user_template.create_resource(
-            "resource://get_user_users__user_id__get/1", params
+            "resource://get_user_users/1", params
         )
 
         # Verify tags are preserved from template to resource
@@ -997,7 +985,7 @@ async def test_none_path_parameters_rejected(
         # get_user has a required path parameter user_id
         with pytest.raises(ToolError, match="Missing required path parameters"):
             await client.call_tool(
-                "update_user_name_users__user_id__name_patch",
+                "update_user_name_users",
                 {
                     "user_id": None,  # This should cause an error
                     "name": "New Name",
@@ -1560,9 +1548,7 @@ class TestFastAPIDescriptionPropagation:
     async def test_template_includes_function_docstring(self, fastapi_server):
         """Test that a ResourceTemplate includes the function docstring."""
         templates = list(fastapi_server._resource_manager.get_templates().values())
-        get_template = next(
-            (t for t in templates if "items__item_id__get" in t.name), None
-        )
+        get_template = next((t for t in templates if "get_item_items" in t.name), None)
 
         assert get_template is not None, "GET /items/{item_id} template wasn't created"
         description = get_template.description or ""
@@ -1577,9 +1563,7 @@ class TestFastAPIDescriptionPropagation:
         are not properly propagated to the OpenAPI schema. The parameters appear but without the description.
         """
         templates = list(fastapi_server._resource_manager.get_templates().values())
-        get_template = next(
-            (t for t in templates if "items__item_id__get" in t.name), None
-        )
+        get_template = next((t for t in templates if "get_item_items" in t.name), None)
 
         assert get_template is not None, "GET /items/{item_id} template wasn't created"
         description = get_template.description or ""
@@ -1599,9 +1583,7 @@ class TestFastAPIDescriptionPropagation:
         are not properly propagated to the OpenAPI schema. The parameters appear but without the description.
         """
         templates = list(fastapi_server._resource_manager.get_templates().values())
-        get_template = next(
-            (t for t in templates if "items__item_id__get" in t.name), None
-        )
+        get_template = next((t for t in templates if "get_item_items" in t.name), None)
 
         assert get_template is not None, "GET /items/{item_id} template wasn't created"
         description = get_template.description or ""
@@ -1617,9 +1599,7 @@ class TestFastAPIDescriptionPropagation:
     async def test_template_parameter_schema_includes_description(self, fastapi_server):
         """Test that a ResourceTemplate's parameter schema includes parameter descriptions."""
         templates = list(fastapi_server._resource_manager.get_templates().values())
-        get_template = next(
-            (t for t in templates if "items__item_id__get" in t.name), None
-        )
+        get_template = next((t for t in templates if "get_item_items" in t.name), None)
 
         assert get_template is not None, "GET /items/{item_id} template wasn't created"
         assert "properties" in get_template.parameters, (
@@ -1691,7 +1671,7 @@ class TestFastAPIDescriptionPropagation:
         async with Client(fastapi_server) as client:
             templates = await client.list_resource_templates()
             get_template = next(
-                (t for t in templates if "items__item_id__get" in t.name), None
+                (t for t in templates if "get_item_items" in t.name), None
             )
 
             assert get_template is not None, (
@@ -1821,9 +1801,7 @@ class TestEnumHandling:
         tools = server._tool_manager.list_tools()
 
         # Find the read_item tool
-        read_item_tool = next(
-            (t for t in tools if t.name == "read_item_items__item_id__post"), None
-        )
+        read_item_tool = next((t for t in tools if t.name == "read_item_items"), None)
 
         # Verify the tool exists
         assert read_item_tool is not None, "read_item tool wasn't created"
