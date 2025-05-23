@@ -15,11 +15,11 @@
 > [!NOTE]
 > #### FastMCP 2.0 & The Official MCP SDK
 >
-> Recognize the `FastMCP` name? You might have seen the version that was contributed to the [official MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk), which was based on **FastMCP 1.0**.
+> FastMCP is the standard framework for building MCP servers and clients. FastMCP 1.0 was incorporated into the [official MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk).
 >
-> **Welcome to FastMCP 2.0!** This is the actively developed successor, and it significantly expands on 1.0 by introducing powerful client capabilities, server proxying & composition, OpenAPI/FastAPI integration, and more advanced features.
+> **This is FastMCP 2.0,** the actively maintained version that significantly expands on 1.0's basic server-building capabilities by introducing full client support, server composition, OpenAPI/FastAPI integration, remote server proxying, built-in testing tools, and more.
 >
-> FastMCP 2.0 is the recommended path for building modern, powerful MCP applications. Ready to upgrade or get started? Follow the [installation instructions](https://gofastmcp.com/getting-started/installation), which include specific steps for upgrading from the official MCP SDK.
+> FastMCP 2.0 is the complete toolkit for modern AI applications. Ready to upgrade or get started? Follow the [installation instructions](https://gofastmcp.com/getting-started/installation), which include specific steps for upgrading from the official MCP SDK.
 
 ---
 
