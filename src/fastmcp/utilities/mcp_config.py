@@ -32,11 +32,12 @@ def infer_transport_type_from_url(
         return "streamable-http"
 
 
-class LocalMCPServer(BaseModel):
+class StdioMCPServer(BaseModel):
     command: str
     args: list[str] = Field(default_factory=list)
     env: dict[str, Any] = Field(default_factory=dict)
     cwd: str | None = None
+    transport: Literal["stdio"] = "stdio"
 
     def to_transport(self) -> StdioTransport:
         from fastmcp.client.transports import StdioTransport
@@ -51,8 +52,8 @@ class LocalMCPServer(BaseModel):
 
 class RemoteMCPServer(BaseModel):
     url: str
-    transport: Literal["streamable-http", "sse", "http"] | None = None
     headers: dict[str, str] = Field(default_factory=dict)
+    transport: Literal["streamable-http", "sse", "http"] | None = None
 
     def to_transport(self) -> StreamableHttpTransport | SSETransport:
         from fastmcp.client.transports import SSETransport, StreamableHttpTransport
@@ -69,7 +70,7 @@ class RemoteMCPServer(BaseModel):
 
 
 class MCPConfig(BaseModel):
-    mcpServers: dict[str, LocalMCPServer | RemoteMCPServer]
+    mcpServers: dict[str, StdioMCPServer | RemoteMCPServer]
 
     @classmethod
     def from_dict(cls, config: dict[str, Any]) -> MCPConfig:

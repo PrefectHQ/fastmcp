@@ -673,6 +673,18 @@ class TestInferTransport:
         assert transport.transport.command == "echo"
         assert transport.transport.args == ["hello"]
 
+    def test_config_with_no_servers(self):
+        """Test that an empty MCPConfig raises a ValueError."""
+        config = {"mcpServers": {}}
+        with pytest.raises(ValueError, match="No MCP servers defined in the config"):
+            infer_transport(config)
+
+    def test_mcpconfigtransport_with_no_servers(self):
+        """Test that MCPConfigTransport raises a ValueError when initialized with an empty config."""
+        config = {"mcpServers": {}}
+        with pytest.raises(ValueError, match="No MCP servers defined in the config"):
+            MCPConfigTransport(config=config)
+
     def test_infer_composite_client(self):
         config = {
             "mcpServers": {
