@@ -249,7 +249,7 @@ class TestTools:
         # Check that the user was created via MCP
         async with Client(fastmcp_openapi_server) as client:
             user_response = await client.read_resource(
-                "resource://openapi/get_user_users__user_id__get/4"
+                "resource://get_user_users__user_id__get/4"
             )
             assert isinstance(user_response[0], TextResourceContents)
             response_text = user_response[0].text
@@ -283,7 +283,7 @@ class TestTools:
         # Check that the user was updated via MCP
         async with Client(fastmcp_openapi_server) as client:
             user_response = await client.read_resource(
-                "resource://openapi/get_user_users__user_id__get/1"
+                "resource://get_user_users__user_id__get/1"
             )
             assert isinstance(user_response[0], TextResourceContents)
             response_text = user_response[0].text
@@ -325,7 +325,7 @@ class TestResources:
         async with Client(fastmcp_openapi_server) as client:
             resources = await client.list_resources()
         assert len(resources) == 4
-        assert resources[0].uri == AnyUrl("resource://openapi/get_users_users_get")
+        assert resources[0].uri == AnyUrl("resource://get_users_users_get")
         assert resources[0].name == "get_users_users_get"
 
     async def test_get_resource(
@@ -343,7 +343,7 @@ class TestResources:
         )
         async with Client(fastmcp_openapi_server) as client:
             resource_response = await client.read_resource(
-                "resource://openapi/get_users_users_get"
+                "resource://get_users_users_get"
             )
             assert isinstance(resource_response[0], TextResourceContents)
             response_text = resource_response[0].text
@@ -360,7 +360,7 @@ class TestResources:
         """Test reading a resource that returns bytes."""
         async with Client(fastmcp_openapi_server) as client:
             resource_response = await client.read_resource(
-                "resource://openapi/ping_bytes_ping_bytes_get"
+                "resource://ping_bytes_ping_bytes_get"
             )
             assert isinstance(resource_response[0], BlobResourceContents)
             assert base64.b64decode(resource_response[0].blob) == b"pong"
@@ -372,9 +372,7 @@ class TestResources:
     ):
         """Test reading a resource that returns a string."""
         async with Client(fastmcp_openapi_server) as client:
-            resource_response = await client.read_resource(
-                "resource://openapi/ping_ping_get"
-            )
+            resource_response = await client.read_resource("resource://ping_ping_get")
             assert isinstance(resource_response[0], TextResourceContents)
             assert resource_response[0].text == "pong"
 
@@ -392,7 +390,7 @@ class TestResourceTemplates:
         assert resource_templates[0].name == "get_user_users__user_id__get"
         assert (
             resource_templates[0].uriTemplate
-            == r"resource://openapi/get_user_users__user_id__get/{user_id}"
+            == r"resource://get_user_users__user_id__get/{user_id}"
         )
         assert (
             resource_templates[1].name
@@ -400,7 +398,7 @@ class TestResourceTemplates:
         )
         assert (
             resource_templates[1].uriTemplate
-            == r"resource://openapi/get_user_active_state_users__user_id___is_active__get/{is_active}/{user_id}"
+            == r"resource://get_user_active_state_users__user_id___is_active__get/{is_active}/{user_id}"
         )
 
     async def test_get_resource_template(
@@ -415,7 +413,7 @@ class TestResourceTemplates:
         user_id = 2
         async with Client(fastmcp_openapi_server) as client:
             resource_response = await client.read_resource(
-                f"resource://openapi/get_user_users__user_id__get/{user_id}"
+                f"resource://get_user_users__user_id__get/{user_id}"
             )
             assert isinstance(resource_response[0], TextResourceContents)
             response_text = resource_response[0].text
@@ -438,7 +436,7 @@ class TestResourceTemplates:
         is_active = True
         async with Client(fastmcp_openapi_server) as client:
             resource_response = await client.read_resource(
-                f"resource://openapi/get_user_active_state_users__user_id___is_active__get/{is_active}/{user_id}"
+                f"resource://get_user_active_state_users__user_id___is_active__get/{is_active}/{user_id}"
             )
             assert isinstance(resource_response[0], TextResourceContents)
             response_text = resource_response[0].text
@@ -555,7 +553,7 @@ class TestTagTransfer:
         # Manually create a resource from template
         params = {"user_id": 1}
         resource = await get_user_template.create_resource(
-            "resource://openapi/get_user_users__user_id__get/1", params
+            "resource://get_user_users__user_id__get/1", params
         )
 
         # Verify tags are preserved from template to resource
@@ -672,7 +670,7 @@ class TestOpenAPI30Compatibility:
         async with Client(openapi_30_server) as client:
             resources = await client.list_resources()
         assert len(resources) == 1
-        assert resources[0].uri == AnyUrl("resource://openapi/listProducts")
+        assert resources[0].uri == AnyUrl("resource://listProducts")
 
     async def test_resource_template_discovery(self, openapi_30_server):
         """Test that resource templates are correctly discovered from an OpenAPI 3.0 spec."""
@@ -680,7 +678,7 @@ class TestOpenAPI30Compatibility:
             templates = await client.list_resource_templates()
         assert len(templates) == 1
         assert templates[0].name == "getProduct"
-        assert templates[0].uriTemplate == r"resource://openapi/getProduct/{product_id}"
+        assert templates[0].uriTemplate == r"resource://getProduct/{product_id}"
 
     async def test_tool_discovery(self, openapi_30_server):
         """Test that tools are correctly discovered from an OpenAPI 3.0 spec."""
@@ -694,9 +692,7 @@ class TestOpenAPI30Compatibility:
     async def test_resource_access(self, openapi_30_server):
         """Test reading a resource from an OpenAPI 3.0 server."""
         async with Client(openapi_30_server) as client:
-            resource_response = await client.read_resource(
-                "resource://openapi/listProducts"
-            )
+            resource_response = await client.read_resource("resource://listProducts")
             assert isinstance(resource_response[0], TextResourceContents)
             response_text = resource_response[0].text
             content = json.loads(response_text)
@@ -707,9 +703,7 @@ class TestOpenAPI30Compatibility:
     async def test_resource_template_access(self, openapi_30_server):
         """Test reading a resource from template from an OpenAPI 3.0 server."""
         async with Client(openapi_30_server) as client:
-            resource_response = await client.read_resource(
-                "resource://openapi/getProduct/p1"
-            )
+            resource_response = await client.read_resource("resource://getProduct/p1")
             assert isinstance(resource_response[0], TextResourceContents)
             response_text = resource_response[0].text
             content = json.loads(response_text)
@@ -852,7 +846,7 @@ class TestOpenAPI31Compatibility:
         async with Client(openapi_31_server) as client:
             resources = await client.list_resources()
         assert len(resources) == 1
-        assert resources[0].uri == AnyUrl("resource://openapi/listOrders")
+        assert resources[0].uri == AnyUrl("resource://listOrders")
 
     async def test_resource_template_discovery(self, openapi_31_server):
         """Test that resource templates are correctly discovered from an OpenAPI 3.1 spec."""
@@ -860,7 +854,7 @@ class TestOpenAPI31Compatibility:
             templates = await client.list_resource_templates()
         assert len(templates) == 1
         assert templates[0].name == "getOrder"
-        assert templates[0].uriTemplate == r"resource://openapi/getOrder/{order_id}"
+        assert templates[0].uriTemplate == r"resource://getOrder/{order_id}"
 
     async def test_tool_discovery(self, openapi_31_server):
         """Test that tools are correctly discovered from an OpenAPI 3.1 spec."""
@@ -874,9 +868,7 @@ class TestOpenAPI31Compatibility:
     async def test_resource_access(self, openapi_31_server):
         """Test reading a resource from an OpenAPI 3.1 server."""
         async with Client(openapi_31_server) as client:
-            resource_response = await client.read_resource(
-                "resource://openapi/listOrders"
-            )
+            resource_response = await client.read_resource("resource://listOrders")
             assert isinstance(resource_response[0], TextResourceContents)
             response_text = resource_response[0].text
             content = json.loads(response_text)
@@ -887,9 +879,7 @@ class TestOpenAPI31Compatibility:
     async def test_resource_template_access(self, openapi_31_server):
         """Test reading a resource from template from an OpenAPI 3.1 server."""
         async with Client(openapi_31_server) as client:
-            resource_response = await client.read_resource(
-                "resource://openapi/getOrder/o1"
-            )
+            resource_response = await client.read_resource("resource://getOrder/o1")
             assert isinstance(resource_response[0], TextResourceContents)
             response_text = resource_response[0].text
             content = json.loads(response_text)

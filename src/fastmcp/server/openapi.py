@@ -17,6 +17,7 @@ from pydantic.networks import AnyUrl
 
 from fastmcp.exceptions import ToolError
 from fastmcp.resources import Resource, ResourceTemplate
+from fastmcp.server.dependencies import get_http_request
 from fastmcp.server.server import FastMCP
 from fastmcp.tools.tool import Tool, _convert_to_content
 from fastmcp.utilities import openapi
@@ -365,6 +366,20 @@ class OpenAPITool(Tool):
 
         # Prepare headers - fix typing by ensuring all values are strings
         headers = {}
+
+        # Try to get headers from the current MCP client HTTP request
+        try:
+            http_request = get_http_request()
+            # Add headers from the MCP client request
+            for name, value in http_request.headers.items():
+                # Don't override headers that are already set on the client
+                if name not in self._client.headers:
+                    headers[name] = str(value)
+        except RuntimeError:
+            # No active HTTP request (e.g., STDIO transport), continue without client headers
+            pass
+
+        # Add any OpenAPI-defined header parameters (these take precedence over client headers)
         for p in self._route.parameters:
             if (
                 p.location == "header"
@@ -519,10 +534,24 @@ class OpenAPIResource(Resource):
                     if value is not None and value != "":
                         query_params[param.name] = value
 
+            # Prepare headers from MCP client request if available
+            headers = {}
+            try:
+                http_request = get_http_request()
+                # Add headers from the MCP client request
+                for name, value in http_request.headers.items():
+                    # Don't override headers that are already set on the client
+                    if name not in self._client.headers:
+                        headers[name] = str(value)
+            except RuntimeError:
+                # No active HTTP request (e.g., STDIO transport), continue without client headers
+                pass
+
             response = await self._client.request(
                 method=self._route.method,
                 url=path,
                 params=query_params,
+                headers=headers,
                 timeout=self._timeout,
             )
 
@@ -733,6 +762,7 @@ class FastMCPOpenAPI(FastMCP):
     ) -> str:
         """Generate a default name from the route path."""
         # First check for OpenAPI operationId which takes precedence
+
         if route.operation_id:
             return route.operation_id
 
@@ -848,7 +878,7 @@ class FastMCPOpenAPI(FastMCP):
         # Get a unique resource name
         resource_name = self._get_unique_name(name, "resources")
 
-        resource_uri = f"resource://openapi/{resource_name}"
+        resource_uri = f"resource://{resource_name}"
         base_description = (
             route.description or route.summary or f"Represents {route.path}"
         )
@@ -896,7 +926,7 @@ class FastMCPOpenAPI(FastMCP):
         path_params = [p.name for p in route.parameters if p.location == "path"]
         path_params.sort()  # Sort for consistent URIs
 
-        uri_template_str = f"resource://openapi/{template_name}"
+        uri_template_str = f"resource://{template_name}"
         if path_params:
             uri_template_str += "/" + "/".join(f"{{{p}}}" for p in path_params)
 

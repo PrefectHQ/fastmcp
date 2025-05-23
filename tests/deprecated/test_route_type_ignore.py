@@ -109,5 +109,5 @@ class TestRouteTypeIgnoreDeprecation:
         resource_uris = [str(r.uri) for r in resources.values()]
 
         # Analytics should be excluded
-        assert "resource://openapi/get_items" in resource_uris
-        assert "resource://openapi/get_analytics" not in resource_uris
+        assert "resource://get_items" in resource_uris
+        assert "resource://get_analytics" not in resource_uris
