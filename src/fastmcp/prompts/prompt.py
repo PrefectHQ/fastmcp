@@ -97,7 +97,7 @@ class Prompt(BaseModel):
         """
         from fastmcp.server.context import Context
 
-        func_name = name or fn.__name__
+        func_name = name or getattr(fn, "__name__", None) or fn.__class__.__name__
 
         if func_name == "<lambda>":
             raise ValueError("You must provide a name for lambda functions")
@@ -108,6 +108,12 @@ class Prompt(BaseModel):
                 raise ValueError("Functions with *args are not supported as prompts")
             if param.kind == inspect.Parameter.VAR_KEYWORD:
                 raise ValueError("Functions with **kwargs are not supported as prompts")
+
+        description = description or fn.__doc__
+
+        # if the fn is a callable class, we need to get the __call__ method from here out
+        if not inspect.isfunction(fn):
+            fn = fn.__call__
 
         type_adapter = get_cached_typeadapter(fn)
         parameters = type_adapter.json_schema()
@@ -139,7 +145,7 @@ class Prompt(BaseModel):
 
         return cls(
             name=func_name,
-            description=description or fn.__doc__,
+            description=description,
             arguments=arguments,
             fn=fn,
             tags=tags or set(),

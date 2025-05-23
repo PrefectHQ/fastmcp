@@ -48,6 +48,7 @@ dev = [
     "pytest>=8.3.3",
     "pytest-asyncio>=0.23.5",
     "pytest-cov>=6.1.1",
+    "pytest-env>=1.1.5",
     "pytest-flakefinder",
     "pytest-report>=0.2.1",
     "pytest-timeout>=2.4.0",
@@ -84,6 +85,11 @@ asyncio_default_fixture_loop_scope = "session"
 asyncio_default_test_loop_scope = "session"
 filterwarnings = []
 timeout = 3
+env = [
+    "FASTMCP_TEST_MODE=1",
+    'D:FASTMCP_LOG_LEVEL=DEBUG',
+    'D:FASTMCP_ENABLE_RICH_TRACEBACKS=0',
+]
 
 [tool.pyright]
 include = ["src", "tests"]

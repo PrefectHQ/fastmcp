@@ -368,6 +368,31 @@ class TestResourceTemplate:
         )
         assert template.uri_template == "test://{x}/{y}/{z}"
 
+    async def test_callable_object_as_template(self):
+        """Test that a callable object can be used as a template."""
+
+        class MyTemplate:
+            """This is my template"""
+
+            def __call__(self, x: str) -> str:
+                """ignore this"""
+                return f"X was {x}"
+
+        template = ResourceTemplate.from_function(
+            fn=MyTemplate(),
+            uri_template="test://{x}",
+            name="test",
+        )
+
+        resource = await template.create_resource(
+            "test://foo",
+            {"x": "foo"},
+        )
+
+        assert isinstance(resource, FunctionResource)
+        content = await resource.read()
+        assert content == "X was foo"
+
 
 class TestMatchUriTemplate:
     """Test match_uri_template function."""

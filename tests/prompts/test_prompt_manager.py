@@ -141,6 +141,8 @@ class TestPromptManager:
         assert prompts["fn1"] == prompt1
         assert prompts["fn2"] == prompt2
 
+
+class TestRenderPrompt:
     async def test_render_prompt(self):
         """Test rendering a prompt."""
 
@@ -171,6 +173,48 @@ class TestPromptManager:
         manager.add_prompt(prompt)
         result = await manager.render_prompt("fn", arguments={"name": "World"})
         assert result.description == "An example prompt."
+        assert result.messages == [
+            PromptMessage(
+                role="user", content=TextContent(type="text", text="Hello, World!")
+            )
+        ]
+
+    async def test_render_prompt_callable_object(self):
+        """Test rendering a prompt with a callable object."""
+
+        class MyPrompt:
+            """A callable object that can be used as a prompt."""
+
+            def __call__(self, name: str) -> str:
+                """ignore this"""
+                return f"Hello, {name}!"
+
+        manager = PromptManager()
+        prompt = Prompt.from_function(MyPrompt())
+        manager.add_prompt(prompt)
+        result = await manager.render_prompt("MyPrompt", arguments={"name": "World"})
+        assert result.description == "A callable object that can be used as a prompt."
+        assert result.messages == [
+            PromptMessage(
+                role="user", content=TextContent(type="text", text="Hello, World!")
+            )
+        ]
+
+    async def test_render_prompt_callable_object_async(self):
+        """Test rendering a prompt with a callable object."""
+
+        class MyPrompt:
+            """A callable object that can be used as a prompt."""
+
+            async def __call__(self, name: str) -> str:
+                """ignore this"""
+                return f"Hello, {name}!"
+
+        manager = PromptManager()
+        prompt = Prompt.from_function(MyPrompt())
+        manager.add_prompt(prompt)
+        result = await manager.render_prompt("MyPrompt", arguments={"name": "World"})
+        assert result.description == "A callable object that can be used as a prompt."
         assert result.messages == [
             PromptMessage(
                 role="user", content=TextContent(type="text", text="Hello, World!")
