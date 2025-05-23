@@ -231,6 +231,38 @@ mcp = FastMCP.from_openapi(
 
 ## Customizing MCP Components
 
+
+
+### Component Names
+
+<VersionBadge version="2.5.0" />
+
+FastMCP automatically generates names for MCP components based on the OpenAPI specification. By default, it uses the `operationId` from your OpenAPI spec, up to the first double underscore (`__`).
+
+All component names are automatically:
+- **Slugified**: Spaces and special characters are converted to underscores or removed
+- **Truncated**: Limited to 56 characters maximum to ensure compatibility
+- **Unique**: If multiple components have the same name, a number is automatically appended to make them unique
+
+For more control over component names, you can provide an `mcp_names` dictionary that maps `operationId` values to your desired names. The `operationId` must be exactly as it appears in the OpenAPI spec. The provided name will always be slugified and truncated.
+
+```python {5-9}
+from fastmcp import FastMCP
+
+mcp = FastMCP.from_openapi(
+    ...
+    mcp_names={
+        "list_users__with_pagination": "user_list",
+        "create_user__admin_required": "create_user", 
+        "get_user_details__admin_required": "user_detail",
+    }
+)
+```
+
+Any `operationId` not found in `mcp_names` will use the default strategy (operationId up to the first `__`).
+
+
+### Advanced Customization
 <VersionBadge version="2.5.0" />
 
 By default, FastMCP creates MCP components using a variety of metadata from the OpenAPI spec, such as incorporating the OpenAPI description into the MCP component description.
@@ -271,7 +303,6 @@ mcp = FastMCP.from_openapi(
     mcp_component_fn=customize_components,
 )
 ```
-
 ## Request Parameter Handling
 
 FastMCP intelligently handles different types of parameters in OpenAPI requests:
@@ -376,15 +407,15 @@ from fastmcp import FastMCP
 # Your FastAPI app
 app = FastAPI(title="My API", version="1.0.0")
 
-@app.get("/items", tags=["items"])
+@app.get("/items", tags=["items"], operation_id="list_items")
 def list_items():
     return [{"id": 1, "name": "Item 1"}, {"id": 2, "name": "Item 2"}]
 
-@app.get("/items/{item_id}", tags=["items", "detail"])
+@app.get("/items/{item_id}", tags=["items", "detail"], operation_id="get_item")
 def get_item(item_id: int):
     return {"id": item_id, "name": f"Item {item_id}"}
 
-@app.post("/items", tags=["items", "create"])
+@app.post("/items", tags=["items", "create"], operation_id="create_item")
 def create_item(name: str):
     return {"id": 3, "name": name}
 
@@ -394,6 +425,8 @@ mcp = FastMCP.from_fastapi(app=app)
 if __name__ == "__main__":
     mcp.run()  # Run as MCP server
 ```
+
+Note that operation ids are optional, but are used to create component names. You can also provide custom names, just like with OpenAPI specs.
 
 <Warning>
 FastMCP servers are not FastAPI apps, even when created from one. To learn how to deploy them as an ASGI app, see the [ASGI Integration](/deployment/asgi) documentation.
@@ -413,6 +446,7 @@ mcp = FastMCP.from_fastapi(
     app=app,
     name="My Custom Server",
     timeout=5.0,
+    mcp_names={"operationId": "friendly_name"},  # Custom component names
     route_maps=[
         # Admin endpoints become tools
         RouteMap(methods="*", pattern=r"^/admin/.*", mcp_type=MCPType.TOOL),
@@ -421,6 +455,9 @@ mcp = FastMCP.from_fastapi(
     ],
     route_map_fn=my_route_mapper,
     mcp_component_fn=my_component_customizer,
+    mcp_names={
+        "get_user_details_users__user_id__get": "get_user_details",
+    }
 )
 ```
 
@@ -430,4 +467,3 @@ mcp = FastMCP.from_fastapi(
 - **Schema inheritance**: Pydantic models and validation are preserved  
 - **ASGI transport**: Direct in-memory communication (no HTTP overhead)
 - **Full FastAPI features**: Dependencies, middleware, authentication all work
-

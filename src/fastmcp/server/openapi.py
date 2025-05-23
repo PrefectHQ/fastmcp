@@ -6,6 +6,7 @@ import enum
 import json
 import re
 import warnings
+from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from re import Pattern
@@ -34,6 +35,29 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 HttpMethod = Literal["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
+
+
+def _slugify(text: str) -> str:
+    """
+    Convert text to a URL-friendly slug format that only contains lowercase
+    letters, uppercase letters, numbers, and underscores.
+    """
+    if not text:
+        return ""
+
+    # Replace spaces and common separators with underscores
+    slug = re.sub(r"[\s\-\.]+", "_", text)
+
+    # Remove non-alphanumeric characters except underscores
+    slug = re.sub(r"[^a-zA-Z0-9_]", "", slug)
+
+    # Remove multiple consecutive underscores
+    slug = re.sub(r"_+", "_", slug)
+
+    # Remove leading/trailing underscores
+    slug = slug.strip("_")
+
+    return slug
 
 
 def _get_mcp_client_headers() -> dict[str, str]:
@@ -695,6 +719,7 @@ class FastMCPOpenAPI(FastMCP):
         route_maps: list[RouteMap] | None = None,
         route_map_fn: RouteMapFn | None = None,
         mcp_component_fn: ComponentFn | None = None,
+        mcp_names: dict[str, str] | None = None,
         timeout: float | None = None,
         **settings: Any,
     ):
@@ -712,6 +737,11 @@ class FastMCPOpenAPI(FastMCP):
             mcp_component_fn: Optional callable for component customization.
                 Receives (route, component) and can modify the component in-place.
                 Called on every created component.
+            mcp_names: Optional dictionary mapping operationId to desired component names.
+                If an operationId is not in the dictionary, falls back to using the
+                operationId up to the first double underscore. If no operationId exists,
+                falls back to slugified summary or path-based naming.
+                All names are truncated to 56 characters maximum.
             timeout: Optional timeout (in seconds) for all requests
             **settings: Additional settings for FastMCP
         """
@@ -721,9 +751,15 @@ class FastMCPOpenAPI(FastMCP):
         self._timeout = timeout
         self._route_map_fn = route_map_fn
         self._mcp_component_fn = mcp_component_fn
+        self._mcp_names = mcp_names or {}
 
         # Keep track of names to detect collisions
-        self._used_names = {"tools": set(), "resources": set(), "templates": set()}
+        self._used_names = {
+            "tool": Counter(),
+            "resource": Counter(),
+            "resource_template": Counter(),
+            "prompt": Counter(),
+        }
 
         http_routes = openapi.parse_openapi_to_http_routes(openapi_spec)
 
@@ -766,40 +802,31 @@ class FastMCPOpenAPI(FastMCP):
     def _generate_default_name(
         self, route: openapi.HTTPRoute, mcp_type: MCPType
     ) -> str:
-        """Generate a default name from the route path."""
-        # First check for OpenAPI operationId which takes precedence
+        """Generate a default name from the route using the configured strategy."""
+        name = ""
 
+        # First check if there's a custom mapping for this operationId
         if route.operation_id:
-            return route.operation_id
-
-        # For path-based naming, clean up the path
-        path_parts = route.path.strip("/").split("/")
-
-        # Remove path parameters (parts with {})
-        clean_parts = []
-        for part in path_parts:
-            if part.startswith("{") and part.endswith("}"):
-                # For templates, include parameter name without braces
-                if mcp_type == MCPType.RESOURCE_TEMPLATE:
-                    param_name = part[1:-1]  # Remove braces
-                    clean_parts.append(param_name)
+            if route.operation_id in self._mcp_names:
+                name = self._mcp_names[route.operation_id]
             else:
-                clean_parts.append(part)
+                # If there's a double underscore in the operationId, use the first part
+                name = route.operation_id.split("__")[0]
+        else:
+            name = route.summary or f"{route.method}_{route.path}"
 
-        # Join the parts
-        resource_name = "_".join(clean_parts)
+        name = _slugify(name)
 
-        # For tools, might be useful to keep the method for clarity on what it does
-        if mcp_type == MCPType.TOOL:
-            # Only include method if it helps distinguish (POST, PUT, PATCH, DELETE)
-            # For GET we don't need the method as it's implied for resources
-            if route.method != "GET":
-                resource_name = f"{route.method.lower()}_{resource_name}"
+        # Truncate to 56 characters maximum
+        if len(name) > 56:
+            name = name[:56]
 
-        return resource_name
+        return name
 
     def _get_unique_name(
-        self, name: str, component_type: Literal["tools", "resources", "templates"]
+        self,
+        name: str,
+        component_type: Literal["tool", "resource", "resource_template", "prompt"],
     ) -> str:
         """
         Ensure the name is unique within its component type by appending numbers if needed.
@@ -812,23 +839,18 @@ class FastMCPOpenAPI(FastMCP):
             str: A unique name for the component
         """
         # Check if the name is already used
-        if name not in self._used_names[component_type]:
-            self._used_names[component_type].add(name)
+        self._used_names[component_type][name] += 1
+        if self._used_names[component_type][name] == 1:
             return name
 
-        # Find the next available number suffix
-        counter = 2
-        while f"{name}_{counter}" in self._used_names[component_type]:
-            counter += 1
+        else:
+            # Create the new name
+            new_name = f"{name}_{self._used_names[component_type][name]}"
+            logger.debug(
+                f"Name collision detected: '{name}' already exists as a {component_type[:-1]}. "
+                f"Using '{new_name}' instead."
+            )
 
-        # Create the new name
-        new_name = f"{name}_{counter}"
-        logger.debug(
-            f"Name collision detected: '{name}' already exists as a {component_type[:-1]}. "
-            f"Using '{new_name}' instead."
-        )
-
-        self._used_names[component_type].add(new_name)
         return new_name
 
     def _create_openapi_tool(self, route: openapi.HTTPRoute, name: str):
@@ -836,7 +858,7 @@ class FastMCPOpenAPI(FastMCP):
         combined_schema = _combine_schemas(route)
 
         # Get a unique tool name
-        tool_name = self._get_unique_name(name, "tools")
+        tool_name = self._get_unique_name(name, "tool")
 
         base_description = (
             route.description
@@ -882,7 +904,7 @@ class FastMCPOpenAPI(FastMCP):
     def _create_openapi_resource(self, route: openapi.HTTPRoute, name: str):
         """Creates and registers an OpenAPIResource with enhanced description."""
         # Get a unique resource name
-        resource_name = self._get_unique_name(name, "resources")
+        resource_name = self._get_unique_name(name, "resource")
 
         resource_uri = f"resource://{resource_name}"
         base_description = (
@@ -927,7 +949,7 @@ class FastMCPOpenAPI(FastMCP):
     def _create_openapi_template(self, route: openapi.HTTPRoute, name: str):
         """Creates and registers an OpenAPIResourceTemplate with enhanced description."""
         # Get a unique template name
-        template_name = self._get_unique_name(name, "templates")
+        template_name = self._get_unique_name(name, "resource_template")
 
         path_params = [p.name for p in route.parameters if p.location == "path"]
         path_params.sort()  # Sort for consistent URIs

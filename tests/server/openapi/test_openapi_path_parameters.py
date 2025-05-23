@@ -84,7 +84,7 @@ async def test_fastmcp_from_openapi(array_path_spec, mock_client):
     # Verify the tool was created using the MCP protocol method
     tools_result = await mcp.get_tools()
     tool_names = [tool.name for tool in tools_result.values()]
-    assert "test-operation" in tool_names
+    assert "test_operation" in tool_names
 
 
 async def test_array_path_parameter_handling(mock_client):
@@ -93,7 +93,7 @@ async def test_array_path_parameter_handling(mock_client):
     route = HTTPRoute(
         path="/select/{days}",
         method="PUT",
-        operation_id="test-operation",
+        operation_id="test_operation",
         parameters=[
             ParameterInfo(
                 name="days",
@@ -122,7 +122,7 @@ async def test_array_path_parameter_handling(mock_client):
     tool = OpenAPITool(
         client=mock_client,
         route=route,
-        name="test-operation",
+        name="test_operation",
         description="Test operation",
         parameters={},
     )
@@ -163,7 +163,7 @@ async def test_integration_array_path_parameter(array_path_spec, mock_client):
     mcp = FastMCP.from_openapi(array_path_spec, client=mock_client)
 
     # Call the tool with a single value
-    await mcp._mcp_call_tool("test-operation", {"days": ["monday"]})
+    await mcp._mcp_call_tool("test_operation", {"days": ["monday"]})
 
     # Check the request was made correctly
     mock_client.request.assert_called_with(
@@ -177,7 +177,7 @@ async def test_integration_array_path_parameter(array_path_spec, mock_client):
     mock_client.request.reset_mock()
 
     # Call the tool with multiple values
-    await mcp._mcp_call_tool("test-operation", {"days": ["monday", "tuesday"]})
+    await mcp._mcp_call_tool("test_operation", {"days": ["monday", "tuesday"]})
 
     # Check the request was made correctly
     mock_client.request.assert_called_with(
