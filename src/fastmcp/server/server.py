@@ -63,7 +63,9 @@ from fastmcp.utilities.mcp_config import MCPConfig
 if TYPE_CHECKING:
     from fastmcp.client import Client
     from fastmcp.client.transports import ClientTransport
-    from fastmcp.server.openapi import FastMCPOpenAPI, RouteMap, RouteMapFn
+    from fastmcp.server.openapi import ComponentFn as OpenAPIComponentFn
+    from fastmcp.server.openapi import FastMCPOpenAPI, RouteMap
+    from fastmcp.server.openapi import RouteMapFn as OpenAPIRouteMapFn
     from fastmcp.server.proxy import FastMCPProxy
 logger = get_logger(__name__)
 
@@ -1141,7 +1143,8 @@ class FastMCP(Generic[LifespanResultT]):
         openapi_spec: dict[str, Any],
         client: httpx.AsyncClient,
         route_maps: list[RouteMap] | None = None,
-        route_map_fn: RouteMapFn | None = None,
+        route_map_fn: OpenAPIRouteMapFn | None = None,
+        mcp_component_fn: OpenAPIComponentFn | None = None,
         all_routes_as_tools: bool = False,
         **settings: Any,
     ) -> FastMCPOpenAPI:
@@ -1170,6 +1173,7 @@ class FastMCP(Generic[LifespanResultT]):
             client=client,
             route_maps=route_maps,
             route_map_fn=route_map_fn,
+            mcp_component_fn=mcp_component_fn,
             **settings,
         )
 
@@ -1179,7 +1183,8 @@ class FastMCP(Generic[LifespanResultT]):
         app: Any,
         name: str | None = None,
         route_maps: list[RouteMap] | None = None,
-        route_map_fn: RouteMapFn | None = None,
+        route_map_fn: OpenAPIRouteMapFn | None = None,
+        mcp_component_fn: OpenAPIComponentFn | None = None,
         all_routes_as_tools: bool = False,
         **settings: Any,
     ) -> FastMCPOpenAPI:
@@ -1216,6 +1221,7 @@ class FastMCP(Generic[LifespanResultT]):
             name=name,
             route_maps=route_maps,
             route_map_fn=route_map_fn,
+            mcp_component_fn=mcp_component_fn,
             **settings,
         )
 

@@ -22,6 +22,7 @@ from fastmcp.tools.tool import Tool, _convert_to_content
 from fastmcp.utilities import openapi
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.openapi import (
+    HTTPRoute,
     _combine_schemas,
     format_description_with_responses,
 )
@@ -33,8 +34,15 @@ logger = get_logger(__name__)
 
 HttpMethod = Literal["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
 
-# Type definition for the route mapping function
-RouteMapFn = Callable[[openapi.HTTPRoute, "MCPType", str], tuple["MCPType", str] | None]
+# Type definitions for the mapping functions
+RouteMapFn = Callable[[HTTPRoute, "MCPType"], "MCPType | None"]
+ComponentFn = Callable[
+    [
+        HTTPRoute,
+        "OpenAPITool | OpenAPIResource | OpenAPIResourceTemplate",
+    ],
+    None,
+]
 
 
 class MCPType(enum.Enum):
@@ -44,7 +52,6 @@ class MCPType(enum.Enum):
         TOOL: Convert the route to a callable Tool
         RESOURCE: Convert the route to a Resource (typically GET endpoints)
         RESOURCE_TEMPLATE: Convert the route to a ResourceTemplate (typically GET with path params)
-        PROMPT: Convert the route to a Prompt (not yet implemented)
         EXCLUDE: Exclude the route from being converted to any MCP component
         IGNORE: Deprecated, use EXCLUDE instead
     """
@@ -52,7 +59,7 @@ class MCPType(enum.Enum):
     TOOL = "TOOL"
     RESOURCE = "RESOURCE"
     RESOURCE_TEMPLATE = "RESOURCE_TEMPLATE"
-    PROMPT = "PROMPT"
+    # PROMPT = "PROMPT"
     EXCLUDE = "EXCLUDE"
 
 
@@ -67,7 +74,6 @@ class RouteType(enum.Enum):
     TOOL = "TOOL"
     RESOURCE = "RESOURCE"
     RESOURCE_TEMPLATE = "RESOURCE_TEMPLATE"
-    PROMPT = "PROMPT"
     IGNORE = "IGNORE"
 
 
@@ -667,6 +673,7 @@ class FastMCPOpenAPI(FastMCP):
         name: str | None = None,
         route_maps: list[RouteMap] | None = None,
         route_map_fn: RouteMapFn | None = None,
+        mcp_component_fn: ComponentFn | None = None,
         timeout: float | None = None,
         **settings: Any,
     ):
@@ -678,9 +685,12 @@ class FastMCPOpenAPI(FastMCP):
             client: httpx AsyncClient for making HTTP requests
             name: Optional name for the server
             route_maps: Optional list of RouteMap objects defining route mappings
-            route_map_fn: Optional callable for advanced users to customize route mapping.
-                Receives (route, mcp_type, name) and returns (mcp_type, name) tuple or None.
+            route_map_fn: Optional callable for advanced route type mapping.
+                Receives (route, mcp_type) and returns MCPType or None.
                 Only called on routes that matched a route_map and were not excluded.
+            component_fn: Optional callable for component customization.
+                Receives (route, component) and can modify the component in-place.
+                Called on every created component.
             timeout: Optional timeout (in seconds) for all requests
             **settings: Additional settings for FastMCP
         """
@@ -689,6 +699,7 @@ class FastMCPOpenAPI(FastMCP):
         self._client = client
         self._timeout = timeout
         self._route_map_fn = route_map_fn
+        self._mcp_component_fn = mcp_component_fn
 
         # Keep track of names to detect collisions
         self._used_names = {"tools": set(), "resources": set(), "templates": set()}
@@ -701,18 +712,15 @@ class FastMCPOpenAPI(FastMCP):
             # Determine route type based on mappings or default rules
             route_type = _determine_route_type(route, route_maps)
 
-            # Generate a default name from the route
-            component_name = self._generate_default_name(route, route_type)
-
-            # Call route_map_fn if provided and route is not excluded
-            if self._route_map_fn is not None and route_type != MCPType.EXCLUDE:
+            # Call route_map_fn if provided
+            if self._route_map_fn is not None:
                 try:
-                    result = self._route_map_fn(route, route_type, component_name)
+                    result = self._route_map_fn(route, route_type)
                     if result is not None:
-                        route_type, component_name = result
+                        route_type = result
                         logger.debug(
                             f"Route {route.method} {route.path} mapping customized by route_map_fn: "
-                            f"type={route_type.name}, name={component_name}"
+                            f"type={route_type.name}"
                         )
                 except Exception as e:
                     logger.warning(
@@ -720,17 +728,15 @@ class FastMCPOpenAPI(FastMCP):
                         f"Using default values."
                     )
 
+            # Generate a default name from the route
+            component_name = self._generate_default_name(route, route_type)
+
             if route_type == MCPType.TOOL:
                 self._create_openapi_tool(route, component_name)
             elif route_type == MCPType.RESOURCE:
                 self._create_openapi_resource(route, component_name)
             elif route_type == MCPType.RESOURCE_TEMPLATE:
                 self._create_openapi_template(route, component_name)
-            elif route_type == MCPType.PROMPT:
-                # Not implemented yet
-                logger.warning(
-                    f"PROMPT route type not implemented: {route.method} {route.path}"
-                )
             elif route_type == MCPType.EXCLUDE:
                 logger.info(f"Excluding route: {route.method} {route.path}")
 
@@ -833,6 +839,18 @@ class FastMCPOpenAPI(FastMCP):
             tags=set(route.tags or []),
             timeout=self._timeout,
         )
+
+        # Call component_fn if provided
+        if self._mcp_component_fn is not None:
+            try:
+                self._mcp_component_fn(route, tool)
+                logger.debug(f"Tool {tool_name} customized by component_fn")
+            except Exception as e:
+                logger.warning(
+                    f"Error in component_fn for tool {tool_name}: {e}. "
+                    f"Using component as-is."
+                )
+
         # Register the tool by directly assigning to the tools dictionary
         self._tool_manager._tools[tool_name] = tool
         logger.debug(
@@ -866,6 +884,18 @@ class FastMCPOpenAPI(FastMCP):
             tags=set(route.tags or []),
             timeout=self._timeout,
         )
+
+        # Call component_fn if provided
+        if self._mcp_component_fn is not None:
+            try:
+                self._mcp_component_fn(route, resource)
+                logger.debug(f"Resource {resource_uri} customized by component_fn")
+            except Exception as e:
+                logger.warning(
+                    f"Error in component_fn for resource {resource_uri}: {e}. "
+                    f"Using component as-is."
+                )
+
         # Register the resource by directly assigning to the resources dictionary
         self._resource_manager._resources[str(resource.uri)] = resource
         logger.debug(
@@ -928,6 +958,18 @@ class FastMCPOpenAPI(FastMCP):
             tags=set(route.tags or []),
             timeout=self._timeout,
         )
+
+        # Call component_fn if provided
+        if self._mcp_component_fn is not None:
+            try:
+                self._mcp_component_fn(route, template)
+                logger.debug(f"Template {uri_template_str} customized by component_fn")
+            except Exception as e:
+                logger.warning(
+                    f"Error in component_fn for template {uri_template_str}: {e}. "
+                    f"Using component as-is."
+                )
+
         # Register the template by directly assigning to the templates dictionary
         self._resource_manager._templates[uri_template_str] = template
         logger.debug(
