@@ -248,13 +248,21 @@ def do_nothing() -> None:
 
 ### Error Handling
 
-<VersionBadge version="2.3.4" />
+<VersionBadge version="2.4.1" />
 
 If your tool encounters an error, you can raise a standard Python exception (`ValueError`, `TypeError`, `FileNotFoundError`, custom exceptions, etc.) or a FastMCP `ToolError`.
 
-In all cases, the exception is logged and converted into an MCP error response to be sent back to the client LLM. For security reasons, the error message is **not** included in the response by default. However, if you raise a `ToolError`, the contents of the exception **are** included in the response. This allows you to provide informative error messages to the client LLM on an opt-in basis, which can help the LLM understand failures and react appropriately.
+By default, all exceptions (including their details) are logged and converted into an MCP error response to be sent back to the client LLM. This helps the LLM understand failures and react appropriately.
 
-```python {2, 10, 14}
+If you want to mask internal error details for security reasons, you can:
+
+1. Use the `mask_error_details=True` parameter when creating your `FastMCP` instance:
+```python
+mcp = FastMCP(name="SecureServer", mask_error_details=True)
+```
+
+2. Or use `ToolError` to explicitly control what error information is sent to clients:
+```python
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 
@@ -262,15 +270,19 @@ from fastmcp.exceptions import ToolError
 def divide(a: float, b: float) -> float:
     """Divide a by b."""
 
-    # Python exceptions raise errors but the contents are not sent to clients
+    if b == 0:
+        # Error messages from ToolError are always sent to clients,
+        # regardless of mask_error_details setting
+        raise ToolError("Division by zero is not allowed.")
+    
+    # If mask_error_details=True, this message would be masked
     if not isinstance(a, (int, float)) or not isinstance(b, (int, float)):
         raise TypeError("Both arguments must be numbers.")
-
-    if b == 0:
-        # ToolError contents are sent back to clients
-        raise ToolError("Division by zero is not allowed.")
+        
     return a / b
 ```
+
+When `mask_error_details=True`, only error messages from `ToolError` will include details, other exceptions will be converted to a generic message.
 
 ### Annotations
 

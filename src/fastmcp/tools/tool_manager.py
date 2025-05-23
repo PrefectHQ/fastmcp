@@ -23,9 +23,11 @@ class ToolManager:
         self,
         duplicate_behavior: DuplicateBehavior | None = None,
         serializer: Callable[[Any], str] | None = None,
+        mask_error_details: bool = False,
     ):
         self._tools: dict[str, Tool] = {}
         self._serializer = serializer
+        self.mask_error_details = mask_error_details
 
         # Default to "warn" if None is provided
         if duplicate_behavior is None:
@@ -124,7 +126,12 @@ class ToolManager:
             logger.exception(f"Error calling tool {key!r}: {e}")
             raise e
 
-        # raise other exceptions as ToolErrors without revealing internal details
+        # Handle other exceptions
         except Exception as e:
             logger.exception(f"Error calling tool {key!r}: {e}")
-            raise ToolError(f"Error calling tool {key!r}") from e
+            if self.mask_error_details:
+                # Mask internal details
+                raise ToolError(f"Error calling tool {key!r}") from e
+            else:
+                # Include original error details
+                raise ToolError(f"Error calling tool {key!r}: {e}") from e

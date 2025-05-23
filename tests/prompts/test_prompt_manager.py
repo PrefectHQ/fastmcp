@@ -3,7 +3,7 @@ from typing import Annotated
 import pytest
 
 from fastmcp import Context
-from fastmcp.exceptions import NotFoundError
+from fastmcp.exceptions import NotFoundError, PromptError
 from fastmcp.prompts import Prompt
 from fastmcp.prompts.prompt import PromptMessage, TextContent
 from fastmcp.prompts.prompt_manager import PromptManager
@@ -192,7 +192,7 @@ class TestPromptManager:
         manager = PromptManager()
         prompt = Prompt.from_function(fn)
         manager.add_prompt(prompt)
-        with pytest.raises(ValueError, match="Missing required arguments"):
+        with pytest.raises(PromptError, match="Missing required arguments"):
             await manager.render_prompt("fn")
 
     async def test_prompt_with_varargs_not_allowed(self):

@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 from mcp import GetPromptResult
 
-from fastmcp.exceptions import NotFoundError
+from fastmcp.exceptions import NotFoundError, PromptError
 from fastmcp.prompts.prompt import Prompt, PromptResult
 from fastmcp.settings import DuplicateBehavior
 from fastmcp.utilities.logging import get_logger
@@ -21,8 +21,13 @@ logger = get_logger(__name__)
 class PromptManager:
     """Manages FastMCP prompts."""
 
-    def __init__(self, duplicate_behavior: DuplicateBehavior | None = None):
+    def __init__(
+        self,
+        duplicate_behavior: DuplicateBehavior | None = None,
+        mask_error_details: bool = False,
+    ):
         self._prompts: dict[str, Prompt] = {}
+        self.mask_error_details = mask_error_details
 
         # Default to "warn" if None is provided
         if duplicate_behavior is None:
@@ -85,9 +90,24 @@ class PromptManager:
         if not prompt:
             raise NotFoundError(f"Unknown prompt: {name}")
 
-        messages = await prompt.render(arguments)
+        try:
+            messages = await prompt.render(arguments)
+            return GetPromptResult(description=prompt.description, messages=messages)
 
-        return GetPromptResult(description=prompt.description, messages=messages)
+        # Pass through PromptErrors as-is
+        except PromptError as e:
+            logger.exception(f"Error rendering prompt {name!r}: {e}")
+            raise e
+
+        # Handle other exceptions
+        except Exception as e:
+            logger.exception(f"Error rendering prompt {name!r}: {e}")
+            if self.mask_error_details:
+                # Mask internal details
+                raise PromptError(f"Error rendering prompt {name!r}")
+            else:
+                # Include original error details
+                raise PromptError(f"Error rendering prompt {name!r}: {e}")
 
     def has_prompt(self, key: str) -> bool:
         """Check if a prompt exists."""

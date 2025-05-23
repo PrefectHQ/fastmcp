@@ -563,28 +563,6 @@ class TestResourceErrorHandling:
         with pytest.raises(ResourceError, match="Specific resource error"):
             await manager.read_resource("error://resource")
 
-    async def test_exception_converted_to_resource_error(self):
-        """Test that other exceptions are converted to ResourceError."""
-        manager = ResourceManager()
-
-        async def buggy_resource():
-            """Resource that raises a ValueError."""
-            raise ValueError("Internal error details")
-
-        resource = FunctionResource(
-            uri=AnyUrl("buggy://resource"),
-            name="buggy_resource",
-            fn=buggy_resource,
-        )
-        manager.add_resource(resource)
-
-        with pytest.raises(ResourceError) as excinfo:
-            await manager.read_resource("buggy://resource")
-
-        # Exception message should contain the resource URI but not the internal details
-        assert "Error reading resource 'buggy://resource'" in str(excinfo.value)
-        assert "Internal error details" not in str(excinfo.value)
-
     async def test_template_resource_error_passthrough(self):
         """Test that ResourceErrors from template-generated resources are passed through."""
         manager = ResourceManager()
@@ -606,21 +584,46 @@ class TestResourceErrorHandling:
         # The original error message should be included in the ValueError
         assert "Template error with param test" in str(excinfo.value)
 
-    async def test_template_exception_converted_to_resource_error(self):
-        """Test that other exceptions from template-generated resources are converted."""
+    async def test_exception_converted_to_resource_error_with_details(self):
+        """Test that other exceptions are converted to ResourceError with details by default."""
         manager = ResourceManager()
 
-        def buggy_template(param: str):
-            """Template that raises a ValueError."""
-            raise ValueError(f"Internal template error with {param}")
+        async def buggy_resource():
+            """Resource that raises a ValueError."""
+            raise ValueError("Internal error details")
 
-        template = ResourceTemplate.from_function(
-            fn=buggy_template,
-            uri_template="buggy://{param}",
-            name="buggy_template",
+        resource = FunctionResource(
+            uri=AnyUrl("buggy://resource"),
+            name="buggy_resource",
+            fn=buggy_resource,
         )
-        manager.add_template(template)
+        manager.add_resource(resource)
 
-        # First, the template creation will fail with ValueError
-        with pytest.raises(ResourceError, match="Error reading resource"):
-            await manager.read_resource("buggy://test")
+        with pytest.raises(ResourceError) as excinfo:
+            await manager.read_resource("buggy://resource")
+
+        # The error message should include the original exception details
+        assert "Error reading resource 'buggy://resource'" in str(excinfo.value)
+        assert "Internal error details" in str(excinfo.value)
+
+    async def test_exception_converted_to_masked_resource_error(self):
+        """Test that other exceptions are masked when enabled."""
+        manager = ResourceManager(mask_error_details=True)
+
+        async def buggy_resource():
+            """Resource that raises a ValueError."""
+            raise ValueError("Internal error details")
+
+        resource = FunctionResource(
+            uri=AnyUrl("buggy://resource"),
+            name="buggy_resource",
+            fn=buggy_resource,
+        )
+        manager.add_resource(resource)
+
+        with pytest.raises(ResourceError) as excinfo:
+            await manager.read_resource("buggy://resource")
+
+        # The error message should not include the original exception details
+        assert "Error reading resource 'buggy://resource'" in str(excinfo.value)
+        assert "Internal error details" not in str(excinfo.value)
