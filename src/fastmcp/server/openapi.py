@@ -642,26 +642,12 @@ class FastMCPOpenAPI(FastMCP):
             ),
         ]
 
-        # Advanced: Custom route mapping function for fine-grained control
-        def custom_route_mapper(route, mcp_type, name):
-            # Convert all admin routes to tools regardless of HTTP method
-            if "/admin/" in route.path:
-                return MCPType.TOOL, f"admin_{name}"
-
-            # Rename all user-specific routes to include "user_"
-            if "/users/{id}" in route.path:
-                return mcp_type, f"user_{name}"
-
-            # Accept defaults for all other routes
-            return None
-
         # Create server with custom mappings and route mapper
         server = FastMCPOpenAPI(
             openapi_spec=spec,
             client=httpx.AsyncClient(),
             name="API Server",
             route_maps=custom_mappings,
-            route_map_fn=custom_route_mapper,
         )
         ```
     """
@@ -687,8 +673,8 @@ class FastMCPOpenAPI(FastMCP):
             route_maps: Optional list of RouteMap objects defining route mappings
             route_map_fn: Optional callable for advanced route type mapping.
                 Receives (route, mcp_type) and returns MCPType or None.
-                Only called on routes that matched a route_map and were not excluded.
-            component_fn: Optional callable for component customization.
+                Called on every route, including excluded ones.
+            mcp_component_fn: Optional callable for component customization.
                 Receives (route, component) and can modify the component in-place.
                 Called on every created component.
             timeout: Optional timeout (in seconds) for all requests
