@@ -76,6 +76,7 @@ class RouteMap:
     pattern: Pattern[str] | str = field(default=r".*")
     mcp_type: MCPType | None = field(default=None)
     route_type: RouteType | MCPType | None = field(default=None)
+    tags: set[str] = field(default_factory=set)
 
     def __post_init__(self):
         """Validate and process the route map after initialization."""
@@ -119,57 +120,6 @@ class RouteMap:
             self.route_type = self.mcp_type
 
 
-# Common route map pattern functions
-def EXCLUDE_ALL() -> RouteMap:
-    """
-    Create a RouteMap that excludes all routes that haven't been matched by earlier rules.
-
-    This is useful as the last route map to exclude any routes that don't match specific patterns.
-
-    Returns:
-        RouteMap: A route map that excludes all routes
-    """
-    return RouteMap(methods="*", pattern=r".*", mcp_type=MCPType.EXCLUDE)
-
-
-def ALL_TOOLS() -> RouteMap:
-    """
-    Create a RouteMap that converts all routes to tools that haven't been matched by earlier rules.
-
-    This is useful to replace the last item in the default route mappings to make all unmatched routes tools.
-
-    Returns:
-        RouteMap: A route map that converts all routes to tools
-    """
-    return RouteMap(methods="*", pattern=r".*", mcp_type=MCPType.TOOL)
-
-
-def PATTERN_AS_TOOLS(pattern: str) -> RouteMap:
-    """
-    Create a RouteMap that converts routes matching a specific pattern to tools.
-
-    Args:
-        pattern: Regex pattern to match routes
-
-    Returns:
-        RouteMap: A route map that converts routes matching the pattern to tools
-    """
-    return RouteMap(methods="*", pattern=pattern, mcp_type=MCPType.TOOL)
-
-
-def EXCLUDE_PATTERN(pattern: str) -> RouteMap:
-    """
-    Create a RouteMap that excludes routes matching a specific pattern.
-
-    Args:
-        pattern: Regex pattern to match routes to exclude
-
-    Returns:
-        RouteMap: A route map that excludes routes matching the pattern
-    """
-    return RouteMap(methods="*", pattern=pattern, mcp_type=MCPType.EXCLUDE)
-
-
 # Default route mappings as a list, where order determines priority
 DEFAULT_ROUTE_MAPPINGS = [
     # GET requests with path parameters go to ResourceTemplate
@@ -179,7 +129,7 @@ DEFAULT_ROUTE_MAPPINGS = [
     # GET requests without path parameters go to Resource
     RouteMap(methods=["GET"], pattern=r".*", mcp_type=MCPType.RESOURCE),
     # All other HTTP methods go to Tool
-    ALL_TOOLS(),
+    RouteMap(methods="*", pattern=r".*", mcp_type=MCPType.TOOL),
 ]
 
 
@@ -208,6 +158,15 @@ def _determine_route_type(
                 pattern_matches = re.search(route_map.pattern, route.path)
 
             if pattern_matches:
+                # Check if tags match (if specified)
+                # If route_map.tags is empty, tags are not matched
+                # If route_map.tags is non-empty, all tags must be present in route.tags (AND condition)
+                if route_map.tags:
+                    route_tags_set = set(route.tags or [])
+                    if not route_map.tags.issubset(route_tags_set):
+                        # Tags don't match, continue to next mapping
+                        continue
+
                 # We know mcp_type is not None here due to post_init validation
                 assert route_map.mcp_type is not None
                 logger.debug(
