@@ -12,6 +12,7 @@ from mcp.types import Prompt as MCPPrompt
 from mcp.types import PromptArgument as MCPPromptArgument
 from pydantic import BaseModel, BeforeValidator, Field, TypeAdapter, validate_call
 
+from fastmcp.exceptions import PromptError
 from fastmcp.server.dependencies import get_context
 from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.logging import get_logger
@@ -199,12 +200,12 @@ class Prompt(BaseModel):
                             )
                         )
                 except Exception:
-                    raise ValueError("Could not convert prompt result to message.")
+                    raise PromptError("Could not convert prompt result to message.")
 
             return messages
         except Exception as e:
             logger.exception(f"Error rendering prompt {self.name}: {e}")
-            raise ValueError(f"Error rendering prompt {self.name}.")
+            raise PromptError(f"Error rendering prompt {self.name}.")
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Prompt):

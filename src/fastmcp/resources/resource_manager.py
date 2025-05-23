@@ -22,9 +22,22 @@ logger = get_logger(__name__)
 class ResourceManager:
     """Manages FastMCP resources."""
 
-    def __init__(self, duplicate_behavior: DuplicateBehavior | None = None):
+    def __init__(
+        self,
+        duplicate_behavior: DuplicateBehavior | None = None,
+        mask_error_details: bool = False,
+    ):
+        """Initialize the ResourceManager.
+
+        Args:
+            duplicate_behavior: How to handle duplicate resources
+                (warn, error, replace, ignore)
+            mask_error_details: Whether to mask error details from exceptions
+                other than ResourceError
+        """
         self._resources: dict[str, Resource] = {}
         self._templates: dict[str, ResourceTemplate] = {}
+        self.mask_error_details = mask_error_details
 
         # Default to "warn" if None is provided
         if duplicate_behavior is None:
@@ -35,7 +48,6 @@ class ResourceManager:
                 f"Invalid duplicate_behavior: {duplicate_behavior}. "
                 f"Must be one of: {', '.join(DuplicateBehavior.__args__)}"
             )
-
         self.duplicate_behavior = duplicate_behavior
 
     def add_resource_or_template_from_fn(
@@ -244,12 +256,21 @@ class ResourceManager:
                         uri_str,
                         params=params,
                     )
+                # Pass through ResourceErrors as-is
                 except ResourceError as e:
                     logger.error(f"Error creating resource from template: {e}")
                     raise e
+                # Handle other exceptions
                 except Exception as e:
                     logger.error(f"Error creating resource from template: {e}")
-                    raise ValueError(f"Error creating resource from template: {e}")
+                    if self.mask_error_details:
+                        # Mask internal details
+                        raise ValueError("Error creating resource from template") from e
+                    else:
+                        # Include original error details
+                        raise ValueError(
+                            f"Error creating resource from template: {e}"
+                        ) from e
 
         raise NotFoundError(f"Unknown resource: {uri_str}")
 
@@ -265,10 +286,15 @@ class ResourceManager:
             logger.error(f"Error reading resource {uri!r}: {e}")
             raise e
 
-        # raise other exceptions as ResourceErrors without revealing internal details
+        # Handle other exceptions
         except Exception as e:
             logger.error(f"Error reading resource {uri!r}: {e}")
-            raise ResourceError(f"Error reading resource {uri!r}") from e
+            if self.mask_error_details:
+                # Mask internal details
+                raise ResourceError(f"Error reading resource {uri!r}") from e
+            else:
+                # Include original error details
+                raise ResourceError(f"Error reading resource {uri!r}: {e}") from e
 
     def get_resources(self) -> dict[str, Resource]:
         """Get all registered resources, keyed by URI."""
