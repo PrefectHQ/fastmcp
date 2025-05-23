@@ -1170,6 +1170,7 @@ class FastMCP(Generic[LifespanResultT]):
         route_maps: list[RouteMap] | None = None,
         route_map_fn: OpenAPIRouteMapFn | None = None,
         mcp_component_fn: OpenAPIComponentFn | None = None,
+        mcp_names: dict[str, str] | None = None,
         all_routes_as_tools: bool = False,
         **settings: Any,
     ) -> FastMCPOpenAPI:
@@ -1199,6 +1200,7 @@ class FastMCP(Generic[LifespanResultT]):
             route_maps=route_maps,
             route_map_fn=route_map_fn,
             mcp_component_fn=mcp_component_fn,
+            mcp_names=mcp_names,
             **settings,
         )
 
@@ -1210,6 +1212,7 @@ class FastMCP(Generic[LifespanResultT]):
         route_maps: list[RouteMap] | None = None,
         route_map_fn: OpenAPIRouteMapFn | None = None,
         mcp_component_fn: OpenAPIComponentFn | None = None,
+        mcp_names: dict[str, str] | None = None,
         all_routes_as_tools: bool = False,
         httpx_client_kwargs: dict[str, Any] | None = None,
         **settings: Any,
@@ -1253,6 +1256,7 @@ class FastMCP(Generic[LifespanResultT]):
             route_maps=route_maps,
             route_map_fn=route_map_fn,
             mcp_component_fn=mcp_component_fn,
+            mcp_names=mcp_names,
             **settings,
         )
 
