@@ -44,7 +44,7 @@ Internally, FastMCP uses a priority-ordered list of `RouteMap` objects to determ
 
 - **Methods**: HTTP methods to match (e.g. `["GET", "POST"]` or `"*"` for all)
 - **Pattern**: Regex pattern to match the route path (e.g. `r"^/users/.*"` or `r".*"` for all)
-- **Tags**: A set of OpenAPI tags that must all be present (`{}` means all tags)
+- **Tags**: A set of OpenAPI tags that must all be present. An empty set (`{}`) means no tag filtering, so the route matches regardless of its tags.
 - **MCP type**: What MCP component type to create (the options are `TOOL`, `RESOURCE`, `RESOURCE_TEMPLATE`, `PROMPT`, or `EXCLUDE` to exclude the route from the MCP server)
 
 Each OpenAPI route is matched against `RouteMap` objects in order, and the **first match wins** to determine the MCP component type. For example, here are the default route mappings, expressed as `RouteMap` objects in priority order:
