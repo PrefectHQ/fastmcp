@@ -241,7 +241,7 @@ FastMCP automatically generates names for MCP components based on the OpenAPI sp
 
 All component names are automatically:
 - **Slugified**: Spaces and special characters are converted to underscores or removed
-- **Truncated**: Limited to 48 characters maximum to ensure compatibility
+- **Truncated**: Limited to 56 characters maximum to ensure compatibility
 - **Unique**: If multiple components have the same name, a number is automatically appended to make them unique
 
 For more control over component names, you can provide an `mcp_names` dictionary that maps `operationId` values to your desired names. The `operationId` must be exactly as it appears in the OpenAPI spec. The provided name will always be slugified and truncated.
