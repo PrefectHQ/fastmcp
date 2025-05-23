@@ -33,6 +33,9 @@ logger = get_logger(__name__)
 
 HttpMethod = Literal["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
 
+# Type definition for the route mapping function
+RouteMapFn = Callable[[openapi.HTTPRoute, "MCPType", str], tuple["MCPType", str] | None]
+
 
 class MCPType(enum.Enum):
     """Type of FastMCP component to create from a route.
@@ -614,7 +617,7 @@ class FastMCPOpenAPI(FastMCP):
 
     Example:
         ```python
-        from fastmcp.server.openapi import FastMCPOpenAPI, RouteMap, RouteType
+        from fastmcp.server.openapi import FastMCPOpenAPI, RouteMap, MCPType
         import httpx
 
         # Define custom route mappings
@@ -633,12 +636,26 @@ class FastMCPOpenAPI(FastMCP):
             ),
         ]
 
-        # Create server with custom mappings
+        # Advanced: Custom route mapping function for fine-grained control
+        def custom_route_mapper(route, mcp_type, name):
+            # Convert all admin routes to tools regardless of HTTP method
+            if "/admin/" in route.path:
+                return MCPType.TOOL, f"admin_{name}"
+
+            # Rename all user-specific routes to include "user_"
+            if "/users/{id}" in route.path:
+                return mcp_type, f"user_{name}"
+
+            # Accept defaults for all other routes
+            return None
+
+        # Create server with custom mappings and route mapper
         server = FastMCPOpenAPI(
             openapi_spec=spec,
             client=httpx.AsyncClient(),
             name="API Server",
             route_maps=custom_mappings,
+            route_map_fn=custom_route_mapper,
         )
         ```
     """
@@ -649,6 +666,7 @@ class FastMCPOpenAPI(FastMCP):
         client: httpx.AsyncClient,
         name: str | None = None,
         route_maps: list[RouteMap] | None = None,
+        route_map_fn: RouteMapFn | None = None,
         timeout: float | None = None,
         **settings: Any,
     ):
@@ -660,6 +678,9 @@ class FastMCPOpenAPI(FastMCP):
             client: httpx AsyncClient for making HTTP requests
             name: Optional name for the server
             route_maps: Optional list of RouteMap objects defining route mappings
+            route_map_fn: Optional callable for advanced users to customize route mapping.
+                Receives (route, mcp_type, name) and returns (mcp_type, name) tuple or None.
+                Only called on routes that matched a route_map and were not excluded.
             timeout: Optional timeout (in seconds) for all requests
             **settings: Additional settings for FastMCP
         """
@@ -667,6 +688,7 @@ class FastMCPOpenAPI(FastMCP):
 
         self._client = client
         self._timeout = timeout
+        self._route_map_fn = route_map_fn
 
         # Keep track of names to detect collisions
         self._used_names = {"tools": set(), "resources": set(), "templates": set()}
@@ -681,6 +703,22 @@ class FastMCPOpenAPI(FastMCP):
 
             # Generate a default name from the route
             component_name = self._generate_default_name(route, route_type)
+
+            # Call route_map_fn if provided and route is not excluded
+            if self._route_map_fn is not None and route_type != MCPType.EXCLUDE:
+                try:
+                    result = self._route_map_fn(route, route_type, component_name)
+                    if result is not None:
+                        route_type, component_name = result
+                        logger.debug(
+                            f"Route {route.method} {route.path} mapping customized by route_map_fn: "
+                            f"type={route_type.name}, name={component_name}"
+                        )
+                except Exception as e:
+                    logger.warning(
+                        f"Error in route_map_fn for {route.method} {route.path}: {e}. "
+                        f"Using default values."
+                    )
 
             if route_type == MCPType.TOOL:
                 self._create_openapi_tool(route, component_name)

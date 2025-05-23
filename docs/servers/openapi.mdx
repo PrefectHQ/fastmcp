@@ -118,6 +118,47 @@ To prevent the default mappings from being applied, add a catch-all exclusion ro
 
 To filter routes by OpenAPI tags, use `RouteMap(tags={...})`. The route must have ALL of the specified tags to be matched. If no tags are specified, all routes will be matched.
 
+### Advanced Route Mapping
+
+<VersionBadge version="2.5.0" />
+
+For advanced users who need fine-grained control over route mapping, you can provide a `route_map_fn` callable. This function receives each route that was matched by a route map (and wasn't excluded) along with the assigned MCP type and name, and can return either `None` to accept the defaults or a `(mcp_type, name)` tuple to override the type and/or object name.
+
+```python
+from fastmcp.server.openapi import MCPType
+
+def custom_route_mapper(route, mcp_type, name):
+    """Custom route mapping function for advanced control."""
+    # Convert all admin routes to tools regardless of HTTP method
+    if "/admin/" in route.path:
+        return MCPType.TOOL, f"admin_{name}"
+    
+    # Rename all user-specific routes to have the prefix "user_"
+    if "/users/{id}" in route.path:
+        return mcp_type, f"user_{name}"
+    
+    # Accept defaults for all other routes
+    return None
+
+mcp = FastMCP.from_openapi(
+    openapi_spec=spec,
+    client=api_client,
+    route_map_fn=custom_route_mapper,
+)
+```
+
+The `route_map_fn` receives:
+- `route`: The OpenAPI route object with properties like `.method`, `.path`, `.operation_id`, etc.
+- `mcp_type`: The assigned `MCPType` (based on route maps)
+- `name`: The assigned component name (derived from operation ID or path)
+
+It should return either:
+- `None` to accept the defaults
+- `(mcp_type, name)` tuple to override the type and/or name
+
+<Warning>
+The `route_map_fn` is only called for routes that matched a route map and were **not** excluded. It will not be called for routes with `MCPType.EXCLUDE`.
+</Warning>
 
 ## Request Parameter Handling
 
