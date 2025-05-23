@@ -1186,6 +1186,7 @@ class FastMCP(Generic[LifespanResultT]):
         route_map_fn: OpenAPIRouteMapFn | None = None,
         mcp_component_fn: OpenAPIComponentFn | None = None,
         all_routes_as_tools: bool = False,
+        httpx_client_kwargs: dict[str, Any] | None = None,
         **settings: Any,
     ) -> FastMCPOpenAPI:
         """
@@ -1209,8 +1210,13 @@ class FastMCP(Generic[LifespanResultT]):
         elif all_routes_as_tools:
             route_maps = [RouteMap(methods="*", pattern=r".*", mcp_type=MCPType.TOOL)]
 
+        if httpx_client_kwargs is None:
+            httpx_client_kwargs = {}
+        httpx_client_kwargs.setdefault("base_url", "http://fastapi")
+
         client = httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://fastapi"
+            transport=httpx.ASGITransport(app=app),
+            **httpx_client_kwargs,
         )
 
         name = name or app.title
