@@ -181,6 +181,9 @@ class TestClientHeaders:
             assert headers["x-server"] == "test-abc"
 
     async def test_client_headers_proxy(self, proxy_server: str):
+        """
+        Test that client headers are passed through the proxy to the remove server.
+        """
         async with Client(transport=StreamableHttpTransport(proxy_server)) as client:
             await client.ping()
             result = await client.read_resource("resource://get_headers_headers_get")
