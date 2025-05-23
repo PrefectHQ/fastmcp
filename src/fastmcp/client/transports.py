@@ -35,8 +35,8 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
+# these headers, when forwarded to the remote server, can cause issues
 EXCLUDE_HEADERS = {
-    "content-type",
     "content-length",
 }
 
@@ -149,7 +149,9 @@ class SSETransport(ClientTransport):
             active_request = get_http_request()
             for name, value in active_request.headers.items():
                 name = name.lower()
-                if name not in self.headers and name not in EXCLUDE_HEADERS:
+                if name not in self.headers and name not in {
+                    h.lower() for h in EXCLUDE_HEADERS
+                }:
                     client_kwargs["headers"][name] = str(value)
         except RuntimeError:
             client_kwargs["headers"] = self.headers
@@ -210,7 +212,9 @@ class StreamableHttpTransport(ClientTransport):
             active_request = get_http_request()
             for name, value in active_request.headers.items():
                 name = name.lower()
-                if name not in self.headers and name not in EXCLUDE_HEADERS:
+                if name not in self.headers and name not in {
+                    h.lower() for h in EXCLUDE_HEADERS
+                }:
                     client_kwargs["headers"][name] = str(value)
 
         except RuntimeError:
