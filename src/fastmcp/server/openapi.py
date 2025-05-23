@@ -38,7 +38,10 @@ HttpMethod = Literal["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
 
 
 def _slugify(text: str) -> str:
-    """Convert text to a URL-friendly slug format."""
+    """
+    Convert text to a URL-friendly slug format that only contains lowercase
+    letters, uppercase letters, numbers, and underscores.
+    """
     if not text:
         return ""
 
@@ -807,7 +810,7 @@ class FastMCPOpenAPI(FastMCP):
             if route.operation_id in self._mcp_names:
                 name = self._mcp_names[route.operation_id]
             else:
-                # If there's a double underscore, use the first part
+                # If there's a double underscore in the operationId, use the first part
                 name = route.operation_id.split("__")[0]
         else:
             name = route.summary or f"{route.method}_{route.path}"
