@@ -917,7 +917,7 @@ class TestMountFastMCP:
         assert len(resources) == 4  # Updated to account for new search endpoint
         # We're checking the key used by mcp to store the resource
         # The prefixed URI is used as the key, but the resource's original uri is preserved
-        prefixed_uri = "resource://fastapi/openapi/get_users_users_get"
+        prefixed_uri = "resource://fastapi/get_users_users_get"
         resource = mcp._resource_manager.get_resources().get(prefixed_uri)
         assert resource is not None
 
