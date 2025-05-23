@@ -29,6 +29,16 @@ class Settings(BaseSettings):
 
     test_mode: bool = False
     log_level: LOG_LEVEL = "INFO"
+    enable_rich_tracebacks: Annotated[
+        bool,
+        Field(
+            description=inspect.cleandoc(
+                """
+                If True, will use rich tracebacks for logging.
+                """
+            )
+        ),
+    ] = True
 
     client_raise_first_exceptiongroup_error: Annotated[
         bool,
@@ -82,7 +92,9 @@ class Settings(BaseSettings):
         """Finalize the settings."""
         from fastmcp.utilities.logging import configure_logging
 
-        configure_logging(self.log_level)
+        configure_logging(
+            self.log_level, enable_rich_tracebacks=self.enable_rich_tracebacks
+        )
 
         return self
 

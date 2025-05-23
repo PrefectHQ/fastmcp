@@ -47,6 +47,30 @@ class TestRenderPrompt:
             )
         ]
 
+    async def test_callable_object(self):
+        class MyPrompt:
+            def __call__(self, name: str) -> str:
+                return f"Hello, {name}!"
+
+        prompt = Prompt.from_function(MyPrompt())
+        assert await prompt.render(arguments=dict(name="World")) == [
+            PromptMessage(
+                role="user", content=TextContent(type="text", text="Hello, World!")
+            )
+        ]
+
+    async def test_async_callable_object(self):
+        class MyPrompt:
+            async def __call__(self, name: str) -> str:
+                return f"Hello, {name}!"
+
+        prompt = Prompt.from_function(MyPrompt())
+        assert await prompt.render(arguments=dict(name="World")) == [
+            PromptMessage(
+                role="user", content=TextContent(type="text", text="Hello, World!")
+            )
+        ]
+
     async def test_fn_with_invalid_kwargs(self):
         async def fn(name: str, age: int = 30) -> str:
             return f"Hello, {name}! You're {age} years old."

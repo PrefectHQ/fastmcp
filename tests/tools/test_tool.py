@@ -21,6 +21,7 @@ class TestToolFromFunction:
 
         assert tool.name == "add"
         assert tool.description == "Add two numbers."
+        assert len(tool.parameters["properties"]) == 2
         assert tool.parameters["properties"]["a"]["type"] == "integer"
         assert tool.parameters["properties"]["b"]["type"] == "integer"
 
@@ -36,6 +37,36 @@ class TestToolFromFunction:
         assert tool.name == "fetch_data"
         assert tool.description == "Fetch data from URL."
         assert tool.parameters["properties"]["url"]["type"] == "string"
+
+    def test_callable_object(self):
+        class Adder:
+            """Adds two numbers."""
+
+            def __call__(self, x: int, y: int) -> int:
+                """ignore this"""
+                return x + y
+
+        tool = Tool.from_function(Adder())
+        assert tool.name == "Adder"
+        assert tool.description == "Adds two numbers."
+        assert len(tool.parameters["properties"]) == 2
+        assert tool.parameters["properties"]["x"]["type"] == "integer"
+        assert tool.parameters["properties"]["y"]["type"] == "integer"
+
+    def test_async_callable_object(self):
+        class Adder:
+            """Adds two numbers."""
+
+            async def __call__(self, x: int, y: int) -> int:
+                """ignore this"""
+                return x + y
+
+        tool = Tool.from_function(Adder())
+        assert tool.name == "Adder"
+        assert tool.description == "Adds two numbers."
+        assert len(tool.parameters["properties"]) == 2
+        assert tool.parameters["properties"]["x"]["type"] == "integer"
+        assert tool.parameters["properties"]["y"]["type"] == "integer"
 
     def test_pydantic_model_function(self):
         """Test registering a function that takes a Pydantic model."""

@@ -71,6 +71,44 @@ class TestAddTools:
         assert "age" in tool.parameters["$defs"]["UserInput"]["properties"]
         assert "flag" in tool.parameters["properties"]
 
+    def test_callable_object(self):
+        class Adder:
+            """Adds two numbers."""
+
+            def __call__(self, x: int, y: int) -> int:
+                """ignore this"""
+                return x + y
+
+        manager = ToolManager()
+        manager.add_tool_from_fn(Adder())
+
+        tool = manager.get_tool("Adder")
+        assert tool is not None
+        assert tool.name == "Adder"
+        assert tool.description == "Adds two numbers."
+        assert len(tool.parameters["properties"]) == 2
+        assert tool.parameters["properties"]["x"]["type"] == "integer"
+        assert tool.parameters["properties"]["y"]["type"] == "integer"
+
+    def test_async_callable_object(self):
+        class Adder:
+            """Adds two numbers."""
+
+            async def __call__(self, x: int, y: int) -> int:
+                """ignore this"""
+                return x + y
+
+        manager = ToolManager()
+        manager.add_tool_from_fn(Adder())
+
+        tool = manager.get_tool("Adder")
+        assert tool is not None
+        assert tool.name == "Adder"
+        assert tool.description == "Adds two numbers."
+        assert len(tool.parameters["properties"]) == 2
+        assert tool.parameters["properties"]["x"]["type"] == "integer"
+        assert tool.parameters["properties"]["y"]["type"] == "integer"
+
     async def test_tool_with_image_return(self):
         def image_tool(data: bytes) -> Image:
             return Image(data=data)
@@ -302,6 +340,40 @@ class TestCallTools:
         assert isinstance(result[0], TextContent)
         assert result[0].text == "10"
         assert json.loads(result[0].text) == 10
+
+    async def test_call_tool_callable_object(self):
+        class Adder:
+            """Adds two numbers."""
+
+            def __call__(self, x: int, y: int) -> int:
+                """ignore this"""
+                return x + y
+
+        manager = ToolManager()
+        manager.add_tool_from_fn(Adder())
+        result = await manager.call_tool("Adder", {"x": 1, "y": 2})
+        assert isinstance(result, list)
+        assert len(result) == 1
+        assert isinstance(result[0], TextContent)
+        assert result[0].text == "3"
+        assert json.loads(result[0].text) == 3
+
+    async def test_call_tool_callable_object_async(self):
+        class Adder:
+            """Adds two numbers."""
+
+            async def __call__(self, x: int, y: int) -> int:
+                """ignore this"""
+                return x + y
+
+        manager = ToolManager()
+        manager.add_tool_from_fn(Adder())
+        result = await manager.call_tool("Adder", {"x": 1, "y": 2})
+        assert isinstance(result, list)
+        assert len(result) == 1
+        assert isinstance(result[0], TextContent)
+        assert result[0].text == "3"
+        assert json.loads(result[0].text) == 3
 
     async def test_call_tool_with_default_args(self):
         def add(a: int, b: int = 1) -> int:

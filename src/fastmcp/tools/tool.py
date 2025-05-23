@@ -69,12 +69,16 @@ class Tool(BaseModel):
             if param.kind == inspect.Parameter.VAR_KEYWORD:
                 raise ValueError("Functions with **kwargs are not supported as tools")
 
-        func_name = name or fn.__name__
+        func_name = name or getattr(fn, "__name__", None) or fn.__class__.__name__
 
         if func_name == "<lambda>":
             raise ValueError("You must provide a name for lambda functions")
 
         func_doc = description or fn.__doc__ or ""
+
+        # if the fn is a callable class, we need to get the __call__ method from here out
+        if not inspect.isroutine(fn):
+            fn = fn.__call__
 
         type_adapter = get_cached_typeadapter(fn)
         schema = type_adapter.json_schema()
