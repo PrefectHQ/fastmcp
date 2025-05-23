@@ -169,7 +169,7 @@ class TestClientHeaders:
             headers = json.loads(result[0].text)
             assert headers["x-test"] == "test-123"
 
-    async def test_client_doesnt_override_server_headers(self, shttp_server: str):
+    async def test_client_overrides_server_headers(self, shttp_server: str):
         async with Client(
             transport=StreamableHttpTransport(
                 shttp_server, headers={"X-SERVER": "test-client"}
@@ -178,7 +178,7 @@ class TestClientHeaders:
             result = await client.read_resource("resource://get_headers_headers_get")
             assert isinstance(result[0], TextResourceContents)
             headers = json.loads(result[0].text)
-            assert headers["x-server"] == "test-abc"
+            assert headers["x-server"] == "test-client"
 
     async def test_client_headers_proxy(self, proxy_server: str):
         """
