@@ -150,7 +150,7 @@ class ResourceTemplate(BaseModel):
 
         description = description or fn.__doc__ or ""
 
-        if not inspect.isfunction(fn):
+        if not inspect.isroutine(fn):
             fn = fn.__call__
 
         type_adapter = get_cached_typeadapter(fn)
