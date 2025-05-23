@@ -71,15 +71,39 @@ class TestClientHeaders:
             sys.exit(1)
         sys.exit(0)
 
-    @pytest.fixture(autouse=True, scope="class")
+    def run_proxy_server(self, host: str, port: int, remote_url: str) -> None:
+        try:
+            client = Client(transport=StreamableHttpTransport(remote_url))
+            app = FastMCP.as_proxy(client).http_app(transport="streamable-http")
+            server = uvicorn.Server(
+                config=uvicorn.Config(
+                    app=app,
+                    host=host,
+                    port=port,
+                    log_level="error",
+                    lifespan="on",
+                )
+            )
+            server.run()
+        except Exception as e:
+            print(f"Server error: {e}")
+            sys.exit(1)
+        sys.exit(0)
+
+    @pytest.fixture(scope="class")
     def shttp_server(self) -> Generator[str, None, None]:
         with run_server_in_process(self.run_shttp_server) as url:
             yield f"{url}/mcp"
 
-    @pytest.fixture(autouse=True, scope="class")
+    @pytest.fixture(scope="class")
     def sse_server(self) -> Generator[str, None, None]:
         with run_server_in_process(self.run_sse_server) as url:
             yield f"{url}/sse"
+
+    @pytest.fixture(scope="class")
+    def proxy_server(self, shttp_server: str) -> Generator[str, None, None]:
+        with run_server_in_process(self.run_proxy_server, shttp_server + "/mcp") as url:
+            yield f"{url}/mcp"
 
     async def test_client_headers_sse_resource(self, sse_server: str):
         async with Client(
@@ -151,6 +175,14 @@ class TestClientHeaders:
                 shttp_server, headers={"X-SERVER": "test-client"}
             )
         ) as client:
+            result = await client.read_resource("resource://get_headers_headers_get")
+            assert isinstance(result[0], TextResourceContents)
+            headers = json.loads(result[0].text)
+            assert headers["x-server"] == "test-abc"
+
+    async def test_client_headers_proxy(self, proxy_server: str):
+        async with Client(transport=StreamableHttpTransport(proxy_server)) as client:
+            await client.ping()
             result = await client.read_resource("resource://get_headers_headers_get")
             assert isinstance(result[0], TextResourceContents)
             headers = json.loads(result[0].text)
