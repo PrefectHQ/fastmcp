@@ -148,6 +148,7 @@ class SSETransport(ClientTransport):
         try:
             active_request = get_http_request()
             for name, value in active_request.headers.items():
+                name = name.lower()
                 if name not in self.headers and name not in EXCLUDE_HEADERS:
                     client_kwargs["headers"][name] = str(value)
         except RuntimeError:
@@ -208,6 +209,7 @@ class StreamableHttpTransport(ClientTransport):
         try:
             active_request = get_http_request()
             for name, value in active_request.headers.items():
+                name = name.lower()
                 if name not in self.headers and name not in EXCLUDE_HEADERS:
                     client_kwargs["headers"][name] = str(value)
 
