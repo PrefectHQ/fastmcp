@@ -9,7 +9,7 @@ from fastmcp.utilities.openapi import parse_openapi_to_http_routes
 
 
 @pytest.fixture
-def fastapi_server() -> FastAPI:
+def fastapi_app() -> FastAPI:
     """Fixture that returns a FastAPI app for live OpenAPI schema testing."""
     from enum import Enum
 
@@ -228,9 +228,9 @@ def fastapi_server() -> FastAPI:
 
 
 @pytest.fixture
-def fastapi_openapi_schema(fastapi_server) -> dict[str, Any]:
+def fastapi_openapi_schema(fastapi_app) -> dict[str, Any]:
     """Fixture that returns the OpenAPI schema from a live FastAPI server."""
-    return fastapi_server.openapi()
+    return fastapi_app.openapi()
 
 
 @pytest.fixture
@@ -472,11 +472,11 @@ def test_tag_consistency_across_related_endpoints(route_map):
         )
 
 
-def test_tag_order_preservation(fastapi_server):
+def test_tag_order_preservation(fastapi_app):
     """Test that tag order is preserved in the parsed routes."""
 
     # Add a new endpoint with specifically ordered tags
-    @fastapi_server.get(
+    @fastapi_app.get(
         "/test-tag-order",
         tags=["first", "second", "third"],
         operation_id="test_tag_order",
@@ -485,7 +485,7 @@ def test_tag_order_preservation(fastapi_server):
         return {"result": "testing tag order"}
 
     # Get the updated schema and parse routes
-    routes = parse_openapi_to_http_routes(fastapi_server.openapi())
+    routes = parse_openapi_to_http_routes(fastapi_app.openapi())
 
     # Find our test route
     test_route = next((r for r in routes if r.path == "/test-tag-order"), None)
@@ -497,11 +497,11 @@ def test_tag_order_preservation(fastapi_server):
     )
 
 
-def test_duplicate_tags_handling(fastapi_server):
+def test_duplicate_tags_handling(fastapi_app):
     """Test handling of duplicate tags in the OpenAPI schema."""
 
     # Add an endpoint with duplicate tags
-    @fastapi_server.get(
+    @fastapi_app.get(
         "/test-duplicate-tags",
         tags=["duplicate", "items", "duplicate"],
         operation_id="test_duplicate_tags",
@@ -510,7 +510,7 @@ def test_duplicate_tags_handling(fastapi_server):
         return {"result": "testing duplicate tags"}
 
     # Get the updated schema and parse routes
-    routes = parse_openapi_to_http_routes(fastapi_server.openapi())
+    routes = parse_openapi_to_http_routes(fastapi_app.openapi())
 
     # Find our test route
     test_route = next((r for r in routes if r.path == "/test-duplicate-tags"), None)
