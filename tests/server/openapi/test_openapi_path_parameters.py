@@ -6,7 +6,7 @@ import pytest
 from fastapi import FastAPI, Query
 
 from fastmcp import Client, FastMCP
-from fastmcp.server.openapi import OpenAPITool, RouteMap, RouteType
+from fastmcp.server.openapi import MCPType, OpenAPITool, RouteMap
 from fastmcp.utilities.openapi import HTTPRoute, ParameterInfo
 
 
@@ -286,9 +286,7 @@ async def test_array_query_param_with_fastapi():
     # Create a FastMCP server from the FastAPI app
     mcp = FastMCP.from_fastapi(
         app,
-        route_maps=[
-            RouteMap(methods=["GET"], pattern=r".*", route_type=RouteType.TOOL)
-        ],
+        route_maps=[RouteMap(methods=["GET"], pattern=r".*", mcp_type=MCPType.TOOL)],
     )
 
     # Test with the client
