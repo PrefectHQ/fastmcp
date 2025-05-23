@@ -41,51 +41,9 @@ mcp = FastMCP.from_openapi(
 )
 ```
 
-### Component Naming
+## Route Mapping
 
 <VersionBadge version="2.5.0" />
-
-You can customize how FastMCP names the components generated from your OpenAPI spec:
-
-```python
-# Custom naming function
-def my_component_namer(route, mcp_type, default_name):
-    # Create custom names based on the route and component type
-    if route.operation_id:
-        return route.operation_id
-    
-    # For example, prefix with component type
-    prefix = {
-        MCPType.TOOL: "tool_",
-        MCPType.RESOURCE: "resource_",
-        MCPType.RESOURCE_TEMPLATE: "template_",
-    }.get(mcp_type, "")
-    
-    path_name = route.path.replace("/", "_").strip("_")
-    return f"{prefix}{path_name}"
-
-mcp = FastMCP.from_openapi(
-    openapi_spec=spec,
-    client=api_client,
-    component_namer=my_component_namer
-)
-```
-
-By default, FastMCP generates component names as follows:
-
-- If the route has an `operationId` in the OpenAPI spec, that is used
-- Otherwise, the name is generated from the route path:
-  - For `GET` routes mapped to resources: Just the resource name (e.g., `/users` → `users`)
-  - For routes with path parameters mapped to templates: The path with parameter names (e.g., `/users/{id}` → `users_id`)
-  - For other methods mapped to tools: Method + resource name (e.g., `POST /users` → `post_users`)
-
-#### Handling Name Collisions
-
-When multiple routes would generate the same component name, FastMCP automatically appends a number suffix to ensure uniqueness (e.g., `users`, `users_2`, `users_3`). You'll see these numbered suffixes in the component names returned by `get_tools()`, `get_resources()`, etc.
-
-If you need more control over naming, you can provide a custom `component_namer` function that handles potential collisions in your own way.
-
-### Route Mapping
 
 By default, OpenAPI routes are mapped to MCP components based on these rules:
 
@@ -232,7 +190,6 @@ mcp = FastMCPOpenAPI(
 
 #### Route Map Shortcuts
 
-<VersionBadge version="2.5.0" />
 
 FastMCP provides several shortcut functions to create common route maps more easily:
 

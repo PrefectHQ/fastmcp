@@ -53,10 +53,6 @@ class MCPType(enum.Enum):
     EXCLUDE = "EXCLUDE"
 
 
-# Type for component naming function
-ComponentNameFn = Callable[[openapi.HTTPRoute, MCPType, str], str]
-
-
 # Keep RouteType as an alias to MCPType for backward compatibility
 class RouteType(enum.Enum):
     """
@@ -650,55 +646,6 @@ class OpenAPIResourceTemplate(ResourceTemplate):
         )
 
 
-def default_component_name_fn(
-    route: openapi.HTTPRoute, mcp_type: MCPType, default_name: str
-) -> str:
-    """
-    Default function for generating component names from routes.
-
-    This function creates simpler names than the original method:
-    - For resources and templates: Just uses the resource name without HTTP method
-    - For tools: Uses a simpler naming convention
-
-    Args:
-        route: The OpenAPI route
-        mcp_type: The component type being created
-        default_name: The original default name that would be used
-
-    Returns:
-        str: The component name to use
-    """
-    # First check for OpenAPI operationId which takes precedence
-    if route.operation_id:
-        return route.operation_id
-
-    # For path-based naming, clean up the path
-    path_parts = route.path.strip("/").split("/")
-
-    # Remove path parameters (parts with {})
-    clean_parts = []
-    for part in path_parts:
-        if part.startswith("{") and part.endswith("}"):
-            # For templates, include parameter name without braces
-            if mcp_type == MCPType.RESOURCE_TEMPLATE:
-                param_name = part[1:-1]  # Remove braces
-                clean_parts.append(param_name)
-        else:
-            clean_parts.append(part)
-
-    # Join the parts
-    resource_name = "_".join(clean_parts)
-
-    # For tools, might be useful to keep the method for clarity on what it does
-    if mcp_type == MCPType.TOOL:
-        # Only include method if it helps distinguish (POST, PUT, PATCH, DELETE)
-        # For GET we don't need the method as it's implied for resources
-        if route.method != "GET":
-            resource_name = f"{route.method.lower()}_{resource_name}"
-
-    return resource_name
-
-
 class FastMCPOpenAPI(FastMCP):
     """
     FastMCP server implementation that creates components from an OpenAPI schema.
@@ -744,7 +691,6 @@ class FastMCPOpenAPI(FastMCP):
         name: str | None = None,
         route_maps: list[RouteMap] | None = None,
         timeout: float | None = None,
-        component_namer: ComponentNameFn | None = None,
         **settings: Any,
     ):
         """
@@ -756,14 +702,12 @@ class FastMCPOpenAPI(FastMCP):
             name: Optional name for the server
             route_maps: Optional list of RouteMap objects defining route mappings
             timeout: Optional timeout (in seconds) for all requests
-            component_namer: Optional function to customize component names
             **settings: Additional settings for FastMCP
         """
         super().__init__(name=name or "OpenAPI FastMCP", **settings)
 
         self._client = client
         self._timeout = timeout
-        self._component_namer = component_namer or default_component_name_fn
 
         # Keep track of names to detect collisions
         self._used_names = {"tools": set(), "resources": set(), "templates": set()}
@@ -777,10 +721,7 @@ class FastMCPOpenAPI(FastMCP):
             route_type = _determine_route_type(route, route_maps)
 
             # Generate a default name from the route
-            default_name = self._generate_default_name(route)
-
-            # Get the component name using the namer function
-            component_name = self._component_namer(route, route_type, default_name)
+            component_name = self._generate_default_name(route, route_type)
 
             if route_type == MCPType.TOOL:
                 self._create_openapi_tool(route, component_name)
@@ -798,18 +739,39 @@ class FastMCPOpenAPI(FastMCP):
 
         logger.info(f"Created FastMCP OpenAPI server with {len(http_routes)} routes")
 
-    def _generate_default_name(self, route: openapi.HTTPRoute) -> str:
+    def _generate_default_name(
+        self, route: openapi.HTTPRoute, mcp_type: MCPType
+    ) -> str:
         """Generate a default name from the route path."""
-        # Use OpenAPI operationId if available
+        # First check for OpenAPI operationId which takes precedence
         if route.operation_id:
             return route.operation_id
 
-        # Generate a name from the path
+        # For path-based naming, clean up the path
         path_parts = route.path.strip("/").split("/")
-        path_name = "_".join(p for p in path_parts if not p.startswith("{"))
 
-        # The original default naming included the HTTP method
-        return f"{route.method.lower()}_{path_name}"
+        # Remove path parameters (parts with {})
+        clean_parts = []
+        for part in path_parts:
+            if part.startswith("{") and part.endswith("}"):
+                # For templates, include parameter name without braces
+                if mcp_type == MCPType.RESOURCE_TEMPLATE:
+                    param_name = part[1:-1]  # Remove braces
+                    clean_parts.append(param_name)
+            else:
+                clean_parts.append(part)
+
+        # Join the parts
+        resource_name = "_".join(clean_parts)
+
+        # For tools, might be useful to keep the method for clarity on what it does
+        if mcp_type == MCPType.TOOL:
+            # Only include method if it helps distinguish (POST, PUT, PATCH, DELETE)
+            # For GET we don't need the method as it's implied for resources
+            if route.method != "GET":
+                resource_name = f"{route.method.lower()}_{resource_name}"
+
+        return resource_name
 
     def _get_unique_name(
         self, name: str, component_type: Literal["tools", "resources", "templates"]
