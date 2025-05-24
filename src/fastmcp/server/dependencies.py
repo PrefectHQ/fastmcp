@@ -50,13 +50,18 @@ def get_http_headers(include_all: bool = False) -> dict[str, str]:
     else:
         exclude_headers = {"content-length"}
 
+    # ensure all lowercase!
+    # (just in case)
+    exclude_headers = {h.lower() for h in exclude_headers}
+
+    headers = {}
+
     try:
         request = get_http_request()
-        headers = {
-            name.lower(): str(value)
-            for name, value in request.headers.items()
-            if name not in exclude_headers
-        }
+        for name, value in request.headers.items():
+            lower_name = name.lower()
+            if lower_name not in exclude_headers:
+                headers[lower_name] = str(value)
         return headers
     except RuntimeError:
         return {}
