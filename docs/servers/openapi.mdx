@@ -51,13 +51,7 @@ FastMCP analyzes your API specification and automatically creates MCP components
 | `GET` without path params | `GET /stats` | **Resource** |
 | `POST`, `PUT`, `PATCH`, `DELETE`, etc. | `POST /users` | **Tool** |
 
-
-
-### Custom Route Maps
-
-<VersionBadge version="2.5.0" />
-
-FastMCP uses an ordered list of `RouteMap` objects to determine how to map OpenAPI routes to various MCP component types.
+Interally, FastMCP uses an ordered list of `RouteMap` objects to determine how to map OpenAPI routes to various MCP component types.
 
 Each `RouteMap` specifies a combination of methods, patterns, and tags, as well as a corresponding MCP component type. Each OpenAPI route is checked against each `RouteMap` in order, and the first one that matches every criteria is used to determine its converted MCP type. A special type, `EXCLUDE`, can be used to exclude routes from the MCP server entirely.
 
@@ -66,7 +60,7 @@ Each `RouteMap` specifies a combination of methods, patterns, and tags, as well 
 - **Tags**: A set of OpenAPI tags that must all be present. An empty set (`{}`) means no tag filtering, so the route matches regardless of its tags.
 - **MCP type**: What MCP component type to create (`TOOL`, `RESOURCE`, `RESOURCE_TEMPLATE`, or `EXCLUDE`)
 
-To illustrate this in practice, here are FastMCP's default route mappings as a list of `RouteMap` objects:
+To illustrate this in practice, here are FastMCP's default rules as a list of `RouteMap` objects:
 
 ```python
 from fastmcp.server.openapi import RouteMap, MCPType
