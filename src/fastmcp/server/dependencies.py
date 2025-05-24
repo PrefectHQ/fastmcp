@@ -33,3 +33,35 @@ def get_http_request() -> Request:
     if request is None:
         raise RuntimeError("No active HTTP request found.")
     return request
+
+
+def get_http_headers(include_all: bool = False) -> dict[str, str]:
+    """
+    Extract headers from the current HTTP request if available.
+
+    Never raises an exception, even if there is no active HTTP request (in which case
+    an empty dict is returned).
+
+    By default, strips problematic headers like `content-length` that cause issues if forwarded to downstream clients.
+    If `include_all` is True, all headers are returned.
+    """
+    if include_all:
+        exclude_headers = set()
+    else:
+        exclude_headers = {"content-length"}
+
+    # ensure all lowercase!
+    # (just in case)
+    exclude_headers = {h.lower() for h in exclude_headers}
+
+    headers = {}
+
+    try:
+        request = get_http_request()
+        for name, value in request.headers.items():
+            lower_name = name.lower()
+            if lower_name not in exclude_headers:
+                headers[lower_name] = str(value)
+        return headers
+    except RuntimeError:
+        return {}

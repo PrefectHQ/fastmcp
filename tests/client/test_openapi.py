@@ -185,7 +185,6 @@ class TestClientHeaders:
         Test that client headers are passed through the proxy to the remove server.
         """
         async with Client(transport=StreamableHttpTransport(proxy_server)) as client:
-            await client.ping()
             result = await client.read_resource("resource://get_headers_headers_get")
             assert isinstance(result[0], TextResourceContents)
             headers = json.loads(result[0].text)

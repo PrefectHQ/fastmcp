@@ -18,7 +18,7 @@ from pydantic.networks import AnyUrl
 
 from fastmcp.exceptions import ToolError
 from fastmcp.resources import Resource, ResourceTemplate
-from fastmcp.server.dependencies import get_http_request
+from fastmcp.server.dependencies import get_http_headers
 from fastmcp.server.server import FastMCP
 from fastmcp.tools.tool import Tool, _convert_to_content
 from fastmcp.utilities import openapi
@@ -58,25 +58,6 @@ def _slugify(text: str) -> str:
     slug = slug.strip("_")
 
     return slug
-
-
-def _get_mcp_client_headers() -> dict[str, str]:
-    """
-    Extract headers from the current MCP client HTTP request if available.
-
-    These headers will take precedence over OpenAPI-defined headers when both are present.
-
-    Returns:
-        Dictionary of header name-value pairs (lowercased names), or empty dict if no HTTP request is active.
-    """
-    try:
-        http_request = get_http_request()
-        return {
-            name.lower(): str(value) for name, value in http_request.headers.items()
-        }
-    except RuntimeError:
-        # No active HTTP request (e.g., STDIO transport), return empty dict
-        return {}
 
 
 # Type definitions for the mapping functions
@@ -423,7 +404,7 @@ class OpenAPITool(Tool):
         headers.update(openapi_headers)
 
         # Add headers from the current MCP client HTTP request (these take precedence)
-        mcp_headers = _get_mcp_client_headers()
+        mcp_headers = get_http_headers()
         headers.update(mcp_headers)
 
         # Prepare request body
@@ -574,7 +555,7 @@ class OpenAPIResource(Resource):
 
             # Prepare headers from MCP client request if available
             headers = {}
-            mcp_headers = _get_mcp_client_headers()
+            mcp_headers = get_http_headers()
             headers.update(mcp_headers)
 
             response = await self._client.request(

@@ -25,7 +25,7 @@ from pydantic import AnyUrl
 from typing_extensions import Unpack
 
 from fastmcp.server import FastMCP as FastMCPServer
-from fastmcp.server.dependencies import get_http_request
+from fastmcp.server.dependencies import get_http_headers
 from fastmcp.server.server import FastMCP
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.mcp_config import MCPConfig, infer_transport_type_from_url
@@ -34,11 +34,6 @@ if TYPE_CHECKING:
     from fastmcp.utilities.mcp_config import MCPConfig
 
 logger = get_logger(__name__)
-
-# these headers, when forwarded to the remote server, can cause issues
-EXCLUDE_HEADERS = {
-    "content-length",
-}
 
 
 class SessionKwargs(TypedDict, total=False):
@@ -138,23 +133,12 @@ class SSETransport(ClientTransport):
     async def connect_session(
         self, **session_kwargs: Unpack[SessionKwargs]
     ) -> AsyncIterator[ClientSession]:
-        client_kwargs: dict[str, Any] = {
-            "headers": self.headers,
-        }
+        client_kwargs: dict[str, Any] = {}
 
         # load headers from an active HTTP request, if available. This will only be true
         # if the client is used in a FastMCP Proxy, in which case the MCP client headers
         # need to be forwarded to the remote server.
-        try:
-            active_request = get_http_request()
-            for name, value in active_request.headers.items():
-                name = name.lower()
-                if name not in self.headers and name not in {
-                    h.lower() for h in EXCLUDE_HEADERS
-                }:
-                    client_kwargs["headers"][name] = str(value)
-        except RuntimeError:
-            client_kwargs["headers"] = self.headers
+        client_kwargs["headers"] = get_http_headers() | self.headers
 
         # sse_read_timeout has a default value set, so we can't pass None without overriding it
         # instead we simply leave the kwarg out if it's not provided
@@ -201,25 +185,12 @@ class StreamableHttpTransport(ClientTransport):
     async def connect_session(
         self, **session_kwargs: Unpack[SessionKwargs]
     ) -> AsyncIterator[ClientSession]:
-        client_kwargs: dict[str, Any] = {
-            "headers": self.headers,
-        }
+        client_kwargs: dict[str, Any] = {}
 
         # load headers from an active HTTP request, if available. This will only be true
         # if the client is used in a FastMCP Proxy, in which case the MCP client headers
         # need to be forwarded to the remote server.
-        try:
-            active_request = get_http_request()
-            for name, value in active_request.headers.items():
-                name = name.lower()
-                if name not in self.headers and name not in {
-                    h.lower() for h in EXCLUDE_HEADERS
-                }:
-                    client_kwargs["headers"][name] = str(value)
-
-        except RuntimeError:
-            client_kwargs["headers"] = self.headers
-        print(client_kwargs)
+        client_kwargs["headers"] = get_http_headers() | self.headers
 
         # sse_read_timeout has a default value set, so we can't pass None without overriding it
         # instead we simply leave the kwarg out if it's not provided
