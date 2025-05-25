@@ -148,9 +148,12 @@ Install a MCP server in the Claude desktop app.
 fastmcp install server.py
 ```
 
-<Tip>
-This command installs your server in an isolated environment. All dependencies must be explicitly specified using the `--with` and/or `--with-editable` options.
-</Tip>
+
+Note that for security reasons, Claude runs every MCP server in a completely isolated environment. Therefore, all dependencies must be explicitly specified using the `--with` and/or `--with-editable` options (following `uv` conventions) or by attaching them to your server in code via the `dependencies` parameter.
+<Warning>
+- **`uv` must be installed and available in your system PATH**. Claude Desktop runs in its own isolated environment and needs `uv` to manage dependencies.
+- **On macOS, it is recommended to install `uv` globally with Homebrew** so that Claude Desktop will detect it: `brew install uv`. Installing `uv` with other methods may not make it accessible to Claude Desktop.
+</Warning>
 
 <Warning>
 The `install` command currently only sets up servers for STDIO transport. When installed in the Claude desktop app, your server will be run using STDIO regardless of any transport configuration in your code.
