@@ -62,6 +62,8 @@ class Client:
         message_handler: Optional handler for protocol messages
         progress_handler: Optional handler for progress notifications
         timeout: Optional timeout for requests (seconds or timedelta)
+        init_timeout: Optional timeout for initial connection (seconds or 
+            timedelta)
 
     Examples:
         ```python
@@ -93,6 +95,7 @@ class Client:
         message_handler: MessageHandler | None = None,
         progress_handler: ProgressHandler | None = None,
         timeout: datetime.timedelta | float | int | None = None,
+        init_timeout: datetime.timedelta | float | int | None = 1,
     ):
         self.transport = infer_transport(transport)
         self._session: ClientSession | None = None
@@ -110,6 +113,17 @@ class Client:
 
         if isinstance(timeout, int | float):
             timeout = datetime.timedelta(seconds=timeout)
+        
+        if isinstance(init_timeout, int):
+            self._init_timeout = float(init_timeout)
+        elif isinstance(init_timeout, datetime.timedelta):
+            self._init_timeout = float(init_timeout.total_seconds())
+        elif isinstance(init_timeout, float):
+            self._init_timeout = init_timeout
+        else:
+            raise ValueError(
+                "init_timeout must be int, float or datetime.timedelta"
+            )
 
         self._session_kwargs: SessionKwargs = {
             "sampling_callback": None,
@@ -168,7 +182,7 @@ class Client:
                 self._session = session
                 # Initialize the session
                 try:
-                    with anyio.fail_after(1):
+                    with anyio.fail_after(self._init_timeout):
                         self._initialize_result = await self._session.initialize()
                     yield
                 except TimeoutError:
