@@ -58,13 +58,13 @@ class Client:
             - MCPConfig: MCP server configuration
             - dict: Transport configuration
         roots: Optional RootsList or RootsHandler for filesystem access
-        sampling_handler: Optional handler for sampling requests log_handler:
-        Optional handler for log messages message_handler: Optional handler for
-        protocol messages progress_handler: Optional handler for progress
-        notifications timeout: Optional timeout for requests (seconds or
-        timedelta) init_timeout: Optional timeout for initial connection
-            (seconds or timedelta). Set to 0 to disable. If None, uses the value
-            in the FastMCP global settings.
+        sampling_handler: Optional handler for sampling requests
+        log_handler: Optional handler for log messages
+        message_handler: Optional handler for protocol messages
+        progress_handler: Optional handler for progress notifications
+        timeout: Optional timeout for requests (seconds or timedelta)
+        init_timeout: Optional timeout for initial connection (seconds or timedelta).
+            Set to 0 to disable. If None, uses the value in the FastMCP global settings.
 
     Examples:
         ```python # Connect to FastMCP server client =
