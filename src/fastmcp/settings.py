@@ -87,6 +87,14 @@ class Settings(BaseSettings):
         ),
     ] = False
 
+    client_init_timeout: Annotated[
+        float | None,
+        Field(
+            default=1,
+            description="The timeout for the client's initialization handshake, in seconds. Set to None or 0 to disable.",
+        ),
+    ] = None
+
     @model_validator(mode="after")
     def setup_logging(self) -> Self:
         """Finalize the settings."""
