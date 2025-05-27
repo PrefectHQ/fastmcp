@@ -36,7 +36,7 @@ class Tool(BaseModel):
 
     fn: Callable[..., Any]
     name: str = Field(description="Name of the tool")
-    description: str | None = Field(description="Description of what the tool does")
+    description: str | None = Field(default=None, description="Description of what the tool does")
     parameters: dict[str, Any] = Field(description="JSON schema for tool parameters")
     tags: Annotated[set[str], BeforeValidator(_convert_set_defaults)] = Field(
         default_factory=set, description="Tags for the tool"
