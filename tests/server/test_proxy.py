@@ -31,6 +31,10 @@ def fastmcp_server():
         return f"Hello, {name}!"
 
     @server.tool()
+    def tool_without_description() -> str:
+        return "Hello?"
+
+    @server.tool()
     def add(a: int, b: int) -> int:
         """Add two numbers together."""
         return a + b
@@ -110,6 +114,11 @@ class TestTools:
         assert "greet" in tools
         assert "add" in tools
         assert "error_tool" in tools
+        assert "tool_without_description" in tools
+
+    async def test_tool_without_description(self, proxy_server):
+        tools = await proxy_server.get_tools()
+        assert tools["tool_without_description"].description is None
 
     async def test_list_tools_same_as_original(self, fastmcp_server, proxy_server):
         assert (

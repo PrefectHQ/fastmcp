@@ -148,7 +148,7 @@ class ResourceTemplate(BaseModel):
                     f"URI parameters {uri_params} must be a subset of the function arguments: {func_params}"
                 )
 
-        description = description or fn.__doc__ or ""
+        description = description or fn.__doc__
 
         if not inspect.isroutine(fn):
             fn = fn.__call__
