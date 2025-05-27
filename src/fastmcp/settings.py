@@ -90,7 +90,6 @@ class Settings(BaseSettings):
     client_init_timeout: Annotated[
         float | None,
         Field(
-            default=1,
             description="The timeout for the client's initialization handshake, in seconds. Set to None or 0 to disable.",
         ),
     ] = None
