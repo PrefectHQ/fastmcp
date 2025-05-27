@@ -432,16 +432,10 @@ class FastMCP(Generic[LifespanResultT]):
                 return await self._tool_manager.call_tool(key, arguments)
 
             # Check mounted servers to see if they have the tool
-            for prefix, server in self._mounted_servers.items():
-                try:
-                    if server.match_tool(key):
-                        tool_key = server.strip_tool_prefix(key)
-                        return await server.server._mcp_call_tool(tool_key, arguments)
-                except Exception as e:
-                    logger.warning(
-                        f"Failed to call tool from mounted server '{prefix}': {e}"
-                    )
-                    continue
+            for server in self._mounted_servers.values():
+                if server.match_tool(key):
+                    tool_key = server.strip_tool_prefix(key)
+                    return await server.server._mcp_call_tool(tool_key, arguments)
 
             raise NotFoundError(f"Unknown tool: {key}")
 
@@ -461,17 +455,10 @@ class FastMCP(Generic[LifespanResultT]):
                     )
                 ]
             else:
-                for prefix, server in self._mounted_servers.items():
-                    try:
-                        if server.match_resource(str(uri)):
-                            new_uri = server.strip_resource_prefix(str(uri))
-                            return await server.server._mcp_read_resource(new_uri)
-                    except Exception as e:
-                        logger.warning(
-                            "Failed to read resource from mounted server"
-                            f" '{prefix}': {e}"
-                        )
-                        continue
+                for server in self._mounted_servers.values():
+                    if server.match_resource(str(uri)):
+                        new_uri = server.strip_resource_prefix(str(uri))
+                        return await server.server._mcp_read_resource(new_uri)
                 else:
                     raise NotFoundError(f"Unknown resource: {uri}")
 
@@ -496,18 +483,10 @@ class FastMCP(Generic[LifespanResultT]):
                 return await self._prompt_manager.render_prompt(name, arguments)
 
             # Check mounted servers to see if they have the prompt
-            for prefix, server in self._mounted_servers.items():
-                try:
-                    if server.match_prompt(name):
-                        prompt_name = server.strip_prompt_prefix(name)
-                        return await server.server._mcp_get_prompt(
-                            prompt_name, arguments
-                        )
-                except Exception as e:
-                    logger.warning(
-                        f"Failed to get prompt from mounted server '{prefix}': {e}"
-                    )
-                    continue
+            for server in self._mounted_servers.values():
+                if server.match_prompt(name):
+                    prompt_name = server.strip_prompt_prefix(name)
+                    return await server.server._mcp_get_prompt(prompt_name, arguments)
 
             raise NotFoundError(f"Unknown prompt: {name}")
 
