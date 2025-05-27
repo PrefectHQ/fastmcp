@@ -95,7 +95,7 @@ class Client:
         message_handler: MessageHandler | None = None,
         progress_handler: ProgressHandler | None = None,
         timeout: datetime.timedelta | float | int | None = None,
-        init_timeout: datetime.timedelta | float | int | None = 1,
+        init_timeout: datetime.timedelta | float | int = 1,
     ):
         self.transport = infer_transport(transport)
         self._session: ClientSession | None = None
