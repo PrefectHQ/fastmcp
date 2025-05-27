@@ -62,7 +62,7 @@ class Client:
         message_handler: Optional handler for protocol messages
         progress_handler: Optional handler for progress notifications
         timeout: Optional timeout for requests (seconds or timedelta)
-        init_timeout: Optional timeout for initial connection (seconds or 
+        init_timeout: Optional timeout for initial connection (seconds or
             timedelta)
 
     Examples:
@@ -113,7 +113,7 @@ class Client:
 
         if isinstance(timeout, int | float):
             timeout = datetime.timedelta(seconds=timeout)
-        
+
         if isinstance(init_timeout, int):
             self._init_timeout = float(init_timeout)
         elif isinstance(init_timeout, datetime.timedelta):
@@ -121,9 +121,7 @@ class Client:
         elif isinstance(init_timeout, float):
             self._init_timeout = init_timeout
         else:
-            raise ValueError(
-                "init_timeout must be int, float or datetime.timedelta"
-            )
+            raise ValueError("init_timeout must be int, float or datetime.timedelta")
 
         self._session_kwargs: SessionKwargs = {
             "sampling_callback": None,
