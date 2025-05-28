@@ -77,7 +77,7 @@ async def safe_header_info() -> dict:
     }
 ```
 
-By default, `get_http_headers()` excludes problematic headers like `content-length`. To include all headers, use `get_http_headers(include_all=True)`.
+By default, `get_http_headers()` excludes problematic headers like `host` and `content-length`. To include all headers, use `get_http_headers(include_all=True)`.
 
 ## Important Notes
 

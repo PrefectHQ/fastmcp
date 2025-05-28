@@ -48,12 +48,23 @@ def get_http_headers(include_all: bool = False) -> dict[str, str]:
     if include_all:
         exclude_headers = set()
     else:
-        exclude_headers = {"content-length"}
-
-    # ensure all lowercase!
-    # (just in case)
-    exclude_headers = {h.lower() for h in exclude_headers}
-
+        exclude_headers = {
+            "host",
+            "content-length",
+            "connection",
+            "transfer-encoding",
+            "upgrade",
+            "te",
+            "keep-alive",
+            "expect",
+            # Proxy-related headers
+            "proxy-authenticate",
+            "proxy-authorization",
+            "proxy-connection",
+        }
+        # (just in case)
+        if not all(h.lower() == h for h in exclude_headers):
+            raise ValueError("Excluded headers must be lowercase")
     headers = {}
 
     try:

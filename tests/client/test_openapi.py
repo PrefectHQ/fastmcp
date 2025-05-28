@@ -28,7 +28,8 @@ def fastmcp_server_for_headers() -> FastMCP:
         return request.headers
 
     mcp = FastMCP.from_fastapi(
-        app, httpx_client_kwargs={"headers": {"X-SERVER": "test-abc"}}
+        app,
+        httpx_client_kwargs={"headers": {"x-server-header": "test-abc"}},
     )
 
     return mcp
@@ -172,13 +173,30 @@ class TestClientHeaders:
     async def test_client_overrides_server_headers(self, shttp_server: str):
         async with Client(
             transport=StreamableHttpTransport(
-                shttp_server, headers={"X-SERVER": "test-client"}
+                shttp_server, headers={"x-server-header": "test-client"}
             )
         ) as client:
             result = await client.read_resource("resource://get_headers_headers_get")
             assert isinstance(result[0], TextResourceContents)
             headers = json.loads(result[0].text)
-            assert headers["x-server"] == "test-client"
+            assert headers["x-server-header"] == "test-client"
+
+    async def test_client_with_excluded_header_is_ignored(self, sse_server: str):
+        async with Client(
+            transport=SSETransport(
+                sse_server,
+                headers={
+                    "x-server-header": "test-client",
+                    "host": "1.2.3.4",
+                    "not-host": "1.2.3.4",
+                },
+            )
+        ) as client:
+            result = await client.read_resource("resource://get_headers_headers_get")
+            assert isinstance(result[0], TextResourceContents)
+            headers = json.loads(result[0].text)
+            assert headers["not-host"] == "1.2.3.4"
+            assert headers["host"] == "fastapi"
 
     async def test_client_headers_proxy(self, proxy_server: str):
         """
@@ -188,4 +206,4 @@ class TestClientHeaders:
             result = await client.read_resource("resource://get_headers_headers_get")
             assert isinstance(result[0], TextResourceContents)
             headers = json.loads(result[0].text)
-            assert headers["x-server"] == "test-abc"
+            assert headers["x-server-header"] == "test-abc"
