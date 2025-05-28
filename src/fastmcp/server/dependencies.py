@@ -63,10 +63,8 @@ def get_http_headers(include_all: bool = False) -> dict[str, str]:
             "proxy-connection",
         }
         # (just in case)
-        assert all(h.lower() == h for h in exclude_headers), (
-            "Excluded headers must be lowercase"
-        )
-
+        if not all(h.lower() == h for h in exclude_headers):
+            raise ValueError("Excluded headers must be lowercase")
     headers = {}
 
     try:
