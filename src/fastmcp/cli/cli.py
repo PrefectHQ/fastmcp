@@ -50,9 +50,7 @@ def _get_npx_command():
 def _parse_env_var(env_var: str) -> tuple[str, str]:
     """Parse environment variable string in format KEY=VALUE."""
     if "=" not in env_var:
-        logger.error(
-            f"Invalid environment variable format: {env_var}. Must be KEY=VALUE"
-        )
+        logger.error("Invalid environment variable format. Must be KEY=VALUE")
         sys.exit(1)
     key, value = env_var.split("=", 1)
     return key.strip(), value.strip()
