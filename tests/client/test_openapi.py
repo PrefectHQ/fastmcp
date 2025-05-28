@@ -170,15 +170,6 @@ class TestClientHeaders:
             headers = json.loads(result[0].text)
             assert headers["x-test"] == "test-123"
 
-    # async def test_certain_client_headers_are_stripped(self, shttp_server: str):
-    #     async with Client(
-    #         transport=StreamableHttpTransport(shttp_server, headers={"host": "1.2.3.4"})
-    #     ) as client:
-    #         result = await client.read_resource("resource://get_headers_headers_get")
-    #         assert isinstance(result[0], TextResourceContents)
-    #         headers = json.loads(result[0].text)
-    #         assert "host" not in headers
-
     async def test_client_overrides_server_headers(self, shttp_server: str):
         async with Client(
             transport=StreamableHttpTransport(
