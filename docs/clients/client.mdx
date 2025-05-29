@@ -286,55 +286,22 @@ When using stdio transports, clients support a `keep_alive` feature (enabled by 
 
 When `keep_alive=False`, the client will automatically close the session when the context manager exits.
 
-<CodeGroup>
-```python keep_alive=True
+```python
 from fastmcp import Client
 
-# Client with keep_alive=True (default)
-client = Client("my_mcp_server.py")
+client = Client("my_mcp_server.py")  # keep_alive=True by default
 
 async def example():
-    # First session
-    async with client:
-        await client.ping()
-
-    # Second session - uses the same subprocess
-    async with client:
-        await client.ping()
-
-    # Manually close the session
-    await client.close()
-
-    # Third session - will start a new subprocess
-    async with client:
-        await client.ping()
-
-asyncio.run(example())
-```
-```python keep_alive=False
-from fastmcp import Client
-
-# Client with keep_alive=False
-client = Client("my_mcp_server.py", keep_alive=False)
-
-async def example():
-    # First session
     async with client:
         await client.ping()
     
-    # Second session - will start a new subprocess
     async with client:
-        await client.ping()
-
-    # Third session - will start a new subprocess
-    async with client:
-        await client.ping()
-
-asyncio.run(example())
+        await client.ping()  # Same subprocess as above
 ```
-</CodeGroup>
 
-
+<Note>
+For detailed examples and configuration options, see [Session Management in Transports](/clients/transports#session-management).
+</Note>
 
 #### Timeouts
 
