@@ -194,6 +194,7 @@ class Client(Generic[ClientTransportT]):
             raise RuntimeError(
                 "Client is not connected. Use the 'async with client:' context manager first."
             )
+
         return self._session
 
     @property
@@ -231,6 +232,8 @@ class Client(Generic[ClientTransportT]):
                     with anyio.fail_after(self._init_timeout):
                         self._initialize_result = await self._session.initialize()
                     yield
+                except anyio.ClosedResourceError:
+                    raise RuntimeError("Server session was closed unexpectedly")
                 except TimeoutError:
                     raise RuntimeError("Failed to initialize server session")
                 finally:
@@ -262,6 +265,11 @@ class Client(Generic[ClientTransportT]):
                     await self._exit_stack.__aexit__(exc_type, exc_val, exc_tb)
                 finally:
                     self._exit_stack = None
+
+    async def close(self):
+        await self.transport.close()
+        self._session = None
+        self._initialize_result = None
 
     # --- MCP Client Methods ---
 

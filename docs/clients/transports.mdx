@@ -160,6 +160,63 @@ client = Client(transport)
 
 These transports manage an MCP server running as a subprocess, communicating with it via standard input (stdin) and standard output (stdout). This is the standard mechanism used by clients like Claude Desktop.
 
+### Session Management
+
+All stdio transports support a `keep_alive` parameter (default: `True`) that controls session persistence across multiple client context managers:
+
+- **`keep_alive=True` (default)**: The subprocess and session are maintained between client context exits and re-entries. This improves performance when making multiple separate connections to the same server.
+- **`keep_alive=False`**: A new subprocess is started for each client context, ensuring complete isolation between sessions.
+
+When `keep_alive=True`, you can manually close the session using `await client.close()` if needed. This will terminate the subprocess and require a new one to be started on the next connection.
+
+<CodeGroup>
+```python keep_alive=True
+from fastmcp import Client
+
+# Client with keep_alive=True (default)
+client = Client("my_mcp_server.py")
+
+async def example():
+    # First session
+    async with client:
+        await client.ping()
+
+    # Second session - uses the same subprocess
+    async with client:
+        await client.ping()
+
+    # Manually close the session
+    await client.close()
+
+    # Third session - will start a new subprocess
+    async with client:
+        await client.ping()
+
+asyncio.run(example())
+```
+```python keep_alive=False
+from fastmcp import Client
+
+# Client with keep_alive=False
+client = Client("my_mcp_server.py", keep_alive=False)
+
+async def example():
+    # First session
+    async with client:
+        await client.ping()
+    
+    # Second session - will start a new subprocess
+    async with client:
+        await client.ping()
+
+    # Third session - will start a new subprocess
+    async with client:
+        await client.ping()
+
+asyncio.run(example())
+```
+</CodeGroup>
+
 ### Python Stdio
 
 - **Class:** `fastmcp.client.transports.PythonStdioTransport`
@@ -218,7 +275,7 @@ client = Client(node_server_script)
 # Option 2: Explicit transport
 transport = NodeStdioTransport(
     script_path=node_server_script,
-    node_cmd="node" # Optional: specify path to Node executable
+    node_cmd="node", # Optional: specify path to Node executable
 )
 client = Client(transport)
 

@@ -1,9 +1,11 @@
 import abc
+import asyncio
 import contextlib
 import datetime
 import os
 import shutil
 import sys
+import warnings
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypedDict, TypeVar, cast, overload
@@ -86,11 +88,21 @@ class ClientTransport(abc.ABC):
         # Basic representation for subclasses
         return f"<{self.__class__.__name__}>"
 
+    async def close(self):
+        """Close the transport."""
+        pass
+
 
 class WSTransport(ClientTransport):
     """Transport implementation that connects to an MCP server via WebSockets."""
 
     def __init__(self, url: str | AnyUrl):
+        # we never really used this transport, so it can be removed at any time
+        warnings.warn(
+            "WSTransport is a deprecated MCP transport and will be removed in a future version. Use StreamableHttpTransport instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         if isinstance(url, AnyUrl):
             url = str(url)
         if not isinstance(url, str) or not url.startswith("ws"):
@@ -227,6 +239,7 @@ class StdioTransport(ClientTransport):
         args: list[str],
         env: dict[str, str] | None = None,
         cwd: str | None = None,
+        keep_alive: bool | None = None,
     ):
         """
         Initialize a Stdio transport.
@@ -236,25 +249,90 @@ class StdioTransport(ClientTransport):
             args: The arguments to pass to the command
             env: Environment variables to set for the subprocess
             cwd: Current working directory for the subprocess
+            keep_alive: Whether to keep the subprocess alive between connections.
+                       Defaults to True. When True, the subprocess remains active
+                       after the connection context exits, allowing reuse in
+                       subsequent connections.
         """
         self.command = command
         self.args = args
         self.env = env
         self.cwd = cwd
+        if keep_alive is None:
+            keep_alive = True
+        self.keep_alive = keep_alive
+
+        self._session: ClientSession | None = None
+        self._connect_task: asyncio.Task | None = None
+        self._ready_event = asyncio.Event()
+        self._stop_event = asyncio.Event()
 
     @contextlib.asynccontextmanager
     async def connect_session(
         self, **session_kwargs: Unpack[SessionKwargs]
     ) -> AsyncIterator[ClientSession]:
-        server_params = StdioServerParameters(
-            command=self.command, args=self.args, env=self.env, cwd=self.cwd
-        )
-        async with stdio_client(server_params) as transport:
-            read_stream, write_stream = transport
-            async with ClientSession(
-                read_stream, write_stream, **session_kwargs
-            ) as session:
-                yield session
+        try:
+            await self.connect(**session_kwargs)
+            assert self._session is not None
+            yield self._session
+        finally:
+            if not self.keep_alive:
+                await self.disconnect()
+            else:
+                logger.debug("Stdio transport has keep_alive=True, not disconnecting")
+
+    async def connect(
+        self, **session_kwargs: Unpack[SessionKwargs]
+    ) -> ClientSession | None:
+        if self._connect_task is not None:
+            return
+
+        async def _connect_task():
+            async with contextlib.AsyncExitStack() as stack:
+                try:
+                    server_params = StdioServerParameters(
+                        command=self.command, args=self.args, env=self.env, cwd=self.cwd
+                    )
+                    transport = await stack.enter_async_context(
+                        stdio_client(server_params)
+                    )
+                    read_stream, write_stream = transport
+                    self._session = await stack.enter_async_context(
+                        ClientSession(read_stream, write_stream, **session_kwargs)
+                    )
+
+                    logger.debug("Stdio transport connected")
+                    self._ready_event.set()
+
+                    # Wait until disconnect is requested (stop_event is set)
+                    await self._stop_event.wait()
+                finally:
+                    # Clean up client on exit
+                    self._session = None
+                    logger.debug("Stdio transport disconnected")
+
+        # start the connection task
+        self._connect_task = asyncio.create_task(_connect_task())
+        # wait for the client to be ready before returning
+        await self._ready_event.wait()
+
+    async def disconnect(self):
+        if self._connect_task is None:
+            return
+
+        # signal the connection task to stop
+        self._stop_event.set()
+
+        # wait for the connection task to finish cleanly
+        await self._connect_task
+
+        # reset variables and events for potential future reconnects
+        self._connect_task = None
+        self._stop_event = asyncio.Event()
+        self._ready_event = asyncio.Event()
+
+    async def close(self):
+        await self.disconnect()
 
     def __repr__(self) -> str:
         return (
@@ -272,6 +350,7 @@ class PythonStdioTransport(StdioTransport):
         env: dict[str, str] | None = None,
         cwd: str | None = None,
         python_cmd: str = sys.executable,
+        keep_alive: bool | None = None,
     ):
         """
         Initialize a Python transport.
@@ -282,6 +361,10 @@ class PythonStdioTransport(StdioTransport):
             env: Environment variables to set for the subprocess
             cwd: Current working directory for the subprocess
             python_cmd: Python command to use (default: "python")
+            keep_alive: Whether to keep the subprocess alive between connections.
+                       Defaults to True. When True, the subprocess remains active
+                       after the connection context exits, allowing reuse in
+                       subsequent connections.
         """
         script_path = Path(script_path).resolve()
         if not script_path.is_file():
@@ -293,7 +376,13 @@ class PythonStdioTransport(StdioTransport):
         if args:
             full_args.extend(args)
 
-        super().__init__(command=python_cmd, args=full_args, env=env, cwd=cwd)
+        super().__init__(
+            command=python_cmd,
+            args=full_args,
+            env=env,
+            cwd=cwd,
+            keep_alive=keep_alive,
+        )
         self.script_path = script_path
 
 
@@ -306,6 +395,7 @@ class FastMCPStdioTransport(StdioTransport):
         args: list[str] | None = None,
         env: dict[str, str] | None = None,
         cwd: str | None = None,
+        keep_alive: bool | None = None,
     ):
         script_path = Path(script_path).resolve()
         if not script_path.is_file():
@@ -314,7 +404,11 @@ class FastMCPStdioTransport(StdioTransport):
             raise ValueError(f"Not a Python script: {script_path}")
 
         super().__init__(
-            command="fastmcp", args=["run", str(script_path)], env=env, cwd=cwd
+            command="fastmcp",
+            args=["run", str(script_path)],
+            env=env,
+            cwd=cwd,
+            keep_alive=keep_alive,
         )
         self.script_path = script_path
 
@@ -329,6 +423,7 @@ class NodeStdioTransport(StdioTransport):
         env: dict[str, str] | None = None,
         cwd: str | None = None,
         node_cmd: str = "node",
+        keep_alive: bool | None = None,
     ):
         """
         Initialize a Node transport.
@@ -339,6 +434,10 @@ class NodeStdioTransport(StdioTransport):
             env: Environment variables to set for the subprocess
             cwd: Current working directory for the subprocess
             node_cmd: Node.js command to use (default: "node")
+            keep_alive: Whether to keep the subprocess alive between connections.
+                       Defaults to True. When True, the subprocess remains active
+                       after the connection context exits, allowing reuse in
+                       subsequent connections.
         """
         script_path = Path(script_path).resolve()
         if not script_path.is_file():
@@ -350,7 +449,9 @@ class NodeStdioTransport(StdioTransport):
         if args:
             full_args.extend(args)
 
-        super().__init__(command=node_cmd, args=full_args, env=env, cwd=cwd)
+        super().__init__(
+            command=node_cmd, args=full_args, env=env, cwd=cwd, keep_alive=keep_alive
+        )
         self.script_path = script_path
 
 
@@ -366,6 +467,7 @@ class UvxStdioTransport(StdioTransport):
         with_packages: list[str] | None = None,
         from_package: str | None = None,
         env_vars: dict[str, str] | None = None,
+        keep_alive: bool | None = None,
     ):
         """
         Initialize a Uvx transport.
@@ -378,6 +480,10 @@ class UvxStdioTransport(StdioTransport):
             with_packages: Additional packages to include
             from_package: Package to install the tool from
             env_vars: Additional environment variables
+            keep_alive: Whether to keep the subprocess alive between connections.
+                       Defaults to True. When True, the subprocess remains active
+                       after the connection context exits, allowing reuse in
+                       subsequent connections.
         """
         # Basic validation
         if project_directory and not Path(project_directory).exists():
@@ -405,7 +511,13 @@ class UvxStdioTransport(StdioTransport):
             env = os.environ.copy()
             env.update(env_vars)
 
-        super().__init__(command="uvx", args=uvx_args, env=env, cwd=project_directory)
+        super().__init__(
+            command="uvx",
+            args=uvx_args,
+            env=env,
+            cwd=project_directory,
+            keep_alive=keep_alive,
+        )
         self.tool_name = tool_name
 
 
@@ -419,6 +531,7 @@ class NpxStdioTransport(StdioTransport):
         project_directory: str | None = None,
         env_vars: dict[str, str] | None = None,
         use_package_lock: bool = True,
+        keep_alive: bool | None = None,
     ):
         """
         Initialize an Npx transport.
@@ -429,6 +542,10 @@ class NpxStdioTransport(StdioTransport):
             project_directory: Project directory with package.json
             env_vars: Additional environment variables
             use_package_lock: Whether to use package-lock.json (--prefer-offline)
+            keep_alive: Whether to keep the subprocess alive between connections.
+                       Defaults to True. When True, the subprocess remains active
+                       after the connection context exits, allowing reuse in
+                       subsequent connections.
         """
         # verify npx is installed
         if shutil.which("npx") is None:
@@ -456,7 +573,13 @@ class NpxStdioTransport(StdioTransport):
             env = os.environ.copy()
             env.update(env_vars)
 
-        super().__init__(command="npx", args=npx_args, env=env, cwd=project_directory)
+        super().__init__(
+            command="npx",
+            args=npx_args,
+            env=env,
+            cwd=project_directory,
+            keep_alive=keep_alive,
+        )
         self.package = package
 
 
