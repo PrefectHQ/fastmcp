@@ -18,18 +18,6 @@ The FastMCP Client architecture separates the protocol logic (`Client`) from the
 - **`Client`**: Handles sending MCP requests (like `tools/call`, `resources/read`), receiving responses, and managing callbacks.
 - **`Transport`**: Responsible for establishing and maintaining the connection to the server (e.g., via WebSockets, SSE, Stdio, or in-memory).
 
-```python
-from fastmcp import Client, FastMCP
-from fastmcp.client import (
-    RootsHandler,
-    RootsList,
-    LogHandler,
-    MessageHandler,
-    SamplingHandler,
-    ProgressHandler  # For handling progress notifications
-)
-```
-
 ### Transports
 
 Clients must be initialized with a `transport`. You can either provide an already instantiated transport object, or provide a transport source and let FastMCP attempt to infer the correct transport to use.
@@ -282,7 +270,7 @@ These methods are especially useful for debugging or when you need to access met
 
 ### Additional Features
 
-#### Pinging the server
+#### Pinging the Server
 
 The client can be used to ping the server to verify connectivity.
 
@@ -291,6 +279,62 @@ async with client:
     await client.ping()
     print("Server is reachable")
 ```
+
+#### Session Management
+
+When using stdio transports, clients support a `keep_alive` feature (enabled by default) that maintains subprocess sessions between connection contexts. You can manually control this behavior using the client's `close()` method.
+
+When `keep_alive=False`, the client will automatically close the session when the context manager exits.
+
+<CodeGroup>
+```python keep_alive=True
+from fastmcp import Client
+
+# Client with keep_alive=True (default)
+client = Client("my_mcp_server.py")
+
+async def example():
+    # First session
+    async with client:
+        await client.ping()
+
+    # Second session - uses the same subprocess
+    async with client:
+        await client.ping()
+
+    # Manually close the session
+    await client.close()
+
+    # Third session - will start a new subprocess
+    async with client:
+        await client.ping()
+
+asyncio.run(example())
+```
+```python keep_alive=False
+from fastmcp import Client
+
+# Client with keep_alive=False
+client = Client("my_mcp_server.py", keep_alive=False)
+
+async def example():
+    # First session
+    async with client:
+        await client.ping()
+    
+    # Second session - will start a new subprocess
+    async with client:
+        await client.ping()
+
+    # Third session - will start a new subprocess
+    async with client:
+        await client.ping()
+
+asyncio.run(example())
+```
+</CodeGroup>
+
+
 
 #### Timeouts
 
