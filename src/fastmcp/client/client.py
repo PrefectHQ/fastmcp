@@ -1,7 +1,7 @@
 import datetime
 from contextlib import AsyncExitStack, asynccontextmanager
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Generic, cast, overload
 
 import anyio
 import mcp.types
@@ -28,7 +28,18 @@ from fastmcp.server import FastMCP
 from fastmcp.utilities.exceptions import get_catch_handlers
 from fastmcp.utilities.mcp_config import MCPConfig
 
-from .transports import ClientTransport, SessionKwargs, infer_transport
+from .transports import (
+    ClientTransportT,
+    FastMCP1Server,
+    FastMCPTransport,
+    MCPConfigTransport,
+    NodeStdioTransport,
+    PythonStdioTransport,
+    SessionKwargs,
+    SSETransport,
+    StreamableHttpTransport,
+    infer_transport,
+)
 
 __all__ = [
     "Client",
@@ -41,7 +52,7 @@ __all__ = [
 ]
 
 
-class Client:
+class Client(Generic[ClientTransportT]):
     """
     MCP client that delegates connection management to a Transport instance.
 
@@ -78,9 +89,47 @@ class Client:
         ```
     """
 
+    @overload
+    def __new__(
+        cls,
+        transport: ClientTransportT,
+        **kwargs: Any,
+    ) -> "Client[ClientTransportT]": ...
+
+    @overload
+    def __new__(
+        cls, transport: AnyUrl, **kwargs
+    ) -> "Client[SSETransport|StreamableHttpTransport]": ...
+
+    @overload
+    def __new__(
+        cls, transport: FastMCP | FastMCP1Server, **kwargs
+    ) -> "Client[FastMCPTransport]": ...
+
+    @overload
+    def __new__(
+        cls, transport: Path, **kwargs
+    ) -> "Client[PythonStdioTransport|NodeStdioTransport]": ...
+
+    @overload
+    def __new__(
+        cls, transport: MCPConfig | dict[str, Any], **kwargs
+    ) -> "Client[MCPConfigTransport]": ...
+
+    @overload
+    def __new__(
+        cls, transport: str, **kwargs
+    ) -> "Client[PythonStdioTransport|NodeStdioTransport|SSETransport|StreamableHttpTransport]": ...
+
+    def __new__(cls, transport, **kwargs) -> "Client":
+        instance = super().__new__(cls)
+        return instance
+
+    transport: ClientTransportT
+
     def __init__(
         self,
-        transport: ClientTransport
+        transport: ClientTransportT
         | FastMCP
         | AnyUrl
         | Path
@@ -96,7 +145,7 @@ class Client:
         timeout: datetime.timedelta | float | int | None = None,
         init_timeout: datetime.timedelta | float | int | None = None,
     ):
-        self.transport = infer_transport(transport)
+        self.transport = infer_transport(transport)  # type: ignore
         self._session: ClientSession | None = None
         self._exit_stack: AsyncExitStack | None = None
         self._nesting_counter: int = 0

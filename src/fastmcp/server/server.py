@@ -62,7 +62,7 @@ from fastmcp.utilities.mcp_config import MCPConfig
 
 if TYPE_CHECKING:
     from fastmcp.client import Client
-    from fastmcp.client.transports import ClientTransport
+    from fastmcp.client.transports import ClientTransport, ClientTransportT
     from fastmcp.server.openapi import ComponentFn as OpenAPIComponentFn
     from fastmcp.server.openapi import FastMCPOpenAPI, RouteMap
     from fastmcp.server.openapi import RouteMapFn as OpenAPIRouteMapFn
@@ -1288,7 +1288,7 @@ class FastMCP(Generic[LifespanResultT]):
     @classmethod
     def as_proxy(
         cls,
-        backend: Client
+        backend: Client[ClientTransportT]
         | ClientTransport
         | FastMCP[Any]
         | AnyUrl
@@ -1316,7 +1316,9 @@ class FastMCP(Generic[LifespanResultT]):
         return FastMCPProxy(client=client, **settings)
 
     @classmethod
-    def from_client(cls, client: Client, **settings: Any) -> FastMCPProxy:
+    def from_client(
+        cls, client: Client[ClientTransportT], **settings: Any
+    ) -> FastMCPProxy:
         """
         Create a FastMCP proxy server from a FastMCP client.
         """
