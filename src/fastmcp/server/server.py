@@ -827,7 +827,7 @@ class FastMCP(Generic[LifespanResultT]):
         """
         host = host or self.settings.host
         port = port or self.settings.port
-        default_log_level_to_use = log_level or self.settings.log_level.lower()
+        default_log_level_to_use = (log_level or self.settings.log_level).lower()
 
         app = self.http_app(path=path, transport=transport, middleware=middleware)
 
