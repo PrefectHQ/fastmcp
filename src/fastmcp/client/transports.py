@@ -6,7 +6,7 @@ import shutil
 import sys
 from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, TypedDict, cast
+from typing import TYPE_CHECKING, Any, TypedDict, TypeVar, cast, overload
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.session import (
@@ -34,6 +34,9 @@ if TYPE_CHECKING:
     from fastmcp.utilities.mcp_config import MCPConfig
 
 logger = get_logger(__name__)
+
+# TypeVar for preserving specific ClientTransport subclass types
+ClientTransportT = TypeVar("ClientTransportT", bound="ClientTransport")
 
 
 class SessionKwargs(TypedDict, total=False):
@@ -573,6 +576,44 @@ class MCPConfigTransport(ClientTransport):
 
     def __repr__(self) -> str:
         return f"<MCPConfig(config='{self.config}')>"
+
+
+@overload
+def infer_transport(transport: ClientTransportT) -> ClientTransportT: ...
+
+
+@overload
+def infer_transport(transport: FastMCPServer) -> FastMCPTransport: ...
+
+
+@overload
+def infer_transport(transport: FastMCP1Server) -> FastMCPTransport: ...
+
+
+@overload
+def infer_transport(transport: MCPConfig) -> MCPConfigTransport: ...
+
+
+@overload
+def infer_transport(transport: dict[str, Any]) -> MCPConfigTransport: ...
+
+
+@overload
+def infer_transport(
+    transport: AnyUrl,
+) -> SSETransport | StreamableHttpTransport: ...
+
+
+@overload
+def infer_transport(
+    transport: str,
+) -> (
+    PythonStdioTransport | NodeStdioTransport | SSETransport | StreamableHttpTransport
+): ...
+
+
+@overload
+def infer_transport(transport: Path) -> PythonStdioTransport | NodeStdioTransport: ...
 
 
 def infer_transport(
