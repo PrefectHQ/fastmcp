@@ -125,8 +125,6 @@ class Client(Generic[ClientTransportT]):
         instance = super().__new__(cls)
         return instance
 
-    transport: ClientTransportT
-
     def __init__(
         self,
         transport: ClientTransportT
@@ -145,7 +143,7 @@ class Client(Generic[ClientTransportT]):
         timeout: datetime.timedelta | float | int | None = None,
         init_timeout: datetime.timedelta | float | int | None = None,
     ):
-        self.transport = infer_transport(transport)  # type: ignore
+        self.transport = cast(ClientTransportT, infer_transport(transport))
         self._session: ClientSession | None = None
         self._exit_stack: AsyncExitStack | None = None
         self._nesting_counter: int = 0
