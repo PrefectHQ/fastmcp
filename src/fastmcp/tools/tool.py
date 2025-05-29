@@ -76,6 +76,18 @@ class Tool(BaseModel):
             if param.kind == inspect.Parameter.VAR_KEYWORD:
                 raise ValueError("Functions with **kwargs are not supported as tools")
 
+        if exclude_args:
+            for arg_name in exclude_args:
+                if arg_name not in sig.parameters:
+                    raise ValueError(
+                        f"Parameter '{arg_name}' in exclude_args does not exist in function."
+                    )
+                param = sig.parameters[arg_name]
+                if param.default == inspect.Parameter.empty:
+                    raise ValueError(
+                        f"Parameter '{arg_name}' in exclude_args must have a default value."
+                    )
+
         func_name = name or getattr(fn, "__name__", None) or fn.__class__.__name__
 
         if func_name == "<lambda>":

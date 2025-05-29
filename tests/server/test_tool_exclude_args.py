@@ -1,5 +1,6 @@
 from typing import Any
 
+import pytest
 from mcp.types import TextContent
 
 from fastmcp import Client, FastMCP
@@ -22,6 +23,21 @@ async def test_tool_exclude_args_in_tool_manager():
     assert tools[0].exclude_args is not None
     for args in tools[0].exclude_args:
         assert args not in tools[0].parameters
+
+
+async def test_tool_exclude_args_without_default_value_raises_error():
+    """Test that excluding args without default values raises ValueError"""
+    mcp = FastMCP("Test Server")
+
+    with pytest.raises(ValueError):
+
+        @mcp.tool(exclude_args=["state"])
+        def echo(message: str, state: dict[str, Any] | None) -> str:
+            """Echo back the message provided."""
+            if state:
+                # State was read
+                pass
+            return message
 
 
 async def test_add_tool_method_exclude_args():
