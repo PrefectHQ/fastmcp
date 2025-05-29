@@ -268,6 +268,8 @@ class Client(Generic[ClientTransportT]):
 
     async def close(self):
         await self.transport.close()
+        self._session = None
+        self._initialize_result = None
 
     # --- MCP Client Methods ---
 

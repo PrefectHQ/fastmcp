@@ -121,9 +121,7 @@ class TestKeepAlive:
         client = Client(transport=PythonStdioTransport(script_path=stdio_script))
         assert client.transport.keep_alive is True
 
-        with pytest.raises(
-            RuntimeError, match="Server session was closed unexpectedly"
-        ):
-            async with client:
-                await client.close()
+        async with client:
+            await client.close()
+            with pytest.raises(RuntimeError, match="Client is not connected"):
                 await client.call_tool("pid")
