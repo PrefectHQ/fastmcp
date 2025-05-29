@@ -3,7 +3,7 @@ from typing import Annotated
 import pytest
 
 from fastmcp import Context
-from fastmcp.exceptions import NotFoundError
+from fastmcp.exceptions import NotFoundError, PromptError
 from fastmcp.prompts import Prompt
 from fastmcp.prompts.prompt import PromptMessage, TextContent
 from fastmcp.prompts.prompt_manager import PromptManager
@@ -141,6 +141,8 @@ class TestPromptManager:
         assert prompts["fn1"] == prompt1
         assert prompts["fn2"] == prompt2
 
+
+class TestRenderPrompt:
     async def test_render_prompt(self):
         """Test rendering a prompt."""
 
@@ -177,6 +179,48 @@ class TestPromptManager:
             )
         ]
 
+    async def test_render_prompt_callable_object(self):
+        """Test rendering a prompt with a callable object."""
+
+        class MyPrompt:
+            """A callable object that can be used as a prompt."""
+
+            def __call__(self, name: str) -> str:
+                """ignore this"""
+                return f"Hello, {name}!"
+
+        manager = PromptManager()
+        prompt = Prompt.from_function(MyPrompt())
+        manager.add_prompt(prompt)
+        result = await manager.render_prompt("MyPrompt", arguments={"name": "World"})
+        assert result.description == "A callable object that can be used as a prompt."
+        assert result.messages == [
+            PromptMessage(
+                role="user", content=TextContent(type="text", text="Hello, World!")
+            )
+        ]
+
+    async def test_render_prompt_callable_object_async(self):
+        """Test rendering a prompt with a callable object."""
+
+        class MyPrompt:
+            """A callable object that can be used as a prompt."""
+
+            async def __call__(self, name: str) -> str:
+                """ignore this"""
+                return f"Hello, {name}!"
+
+        manager = PromptManager()
+        prompt = Prompt.from_function(MyPrompt())
+        manager.add_prompt(prompt)
+        result = await manager.render_prompt("MyPrompt", arguments={"name": "World"})
+        assert result.description == "A callable object that can be used as a prompt."
+        assert result.messages == [
+            PromptMessage(
+                role="user", content=TextContent(type="text", text="Hello, World!")
+            )
+        ]
+
     async def test_render_unknown_prompt(self):
         """Test rendering a non-existent prompt."""
         manager = PromptManager()
@@ -192,7 +236,7 @@ class TestPromptManager:
         manager = PromptManager()
         prompt = Prompt.from_function(fn)
         manager.add_prompt(prompt)
-        with pytest.raises(ValueError, match="Missing required arguments"):
+        with pytest.raises(PromptError, match="Missing required arguments"):
             await manager.render_prompt("fn")
 
     async def test_prompt_with_varargs_not_allowed(self):

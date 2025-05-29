@@ -18,11 +18,11 @@ from fastmcp.client import Client
 from fastmcp.exceptions import ToolError
 from fastmcp.server.openapi import (
     FastMCPOpenAPI,
+    MCPType,
     OpenAPIResource,
     OpenAPIResourceTemplate,
     OpenAPITool,
     RouteMap,
-    RouteType,
 )
 
 
@@ -208,7 +208,7 @@ class TestTools:
             },
         )
         assert tools[1].model_dump() == dict(
-            name="update_user_name_users__user_id__name_patch",
+            name="update_user_name_users",
             annotations=None,
             description=IsStr(
                 regex=r"^Update a user's name\..*$", regex_flags=re.DOTALL
@@ -248,9 +248,7 @@ class TestTools:
 
         # Check that the user was created via MCP
         async with Client(fastmcp_openapi_server) as client:
-            user_response = await client.read_resource(
-                "resource://openapi/get_user_users__user_id__get/4"
-            )
+            user_response = await client.read_resource("resource://get_user_users/4")
             assert isinstance(user_response[0], TextResourceContents)
             response_text = user_response[0].text
             user = json.loads(response_text)
@@ -264,7 +262,7 @@ class TestTools:
         """
         async with Client(fastmcp_openapi_server) as client:
             tool_response = await client.call_tool(
-                "update_user_name_users__user_id__name_patch",
+                "update_user_name_users",
                 {"user_id": 1, "name": "XYZ"},
             )
 
@@ -282,9 +280,7 @@ class TestTools:
 
         # Check that the user was updated via MCP
         async with Client(fastmcp_openapi_server) as client:
-            user_response = await client.read_resource(
-                "resource://openapi/get_user_users__user_id__get/1"
-            )
+            user_response = await client.read_resource("resource://get_user_users/1")
             assert isinstance(user_response[0], TextResourceContents)
             response_text = user_response[0].text
             user = json.loads(response_text)
@@ -304,7 +300,7 @@ class TestTools:
             openapi_spec=openapi_spec,
             client=api_client,
             route_maps=[
-                RouteMap(methods=["GET"], pattern=r".*", route_type=RouteType.TOOL)
+                RouteMap(methods=["GET"], pattern=r".*", mcp_type=MCPType.TOOL)
             ],
         )
         async with Client(mcp_server) as client:
@@ -325,7 +321,7 @@ class TestResources:
         async with Client(fastmcp_openapi_server) as client:
             resources = await client.list_resources()
         assert len(resources) == 4
-        assert resources[0].uri == AnyUrl("resource://openapi/get_users_users_get")
+        assert resources[0].uri == AnyUrl("resource://get_users_users_get")
         assert resources[0].name == "get_users_users_get"
 
     async def test_get_resource(
@@ -343,7 +339,7 @@ class TestResources:
         )
         async with Client(fastmcp_openapi_server) as client:
             resource_response = await client.read_resource(
-                "resource://openapi/get_users_users_get"
+                "resource://get_users_users_get"
             )
             assert isinstance(resource_response[0], TextResourceContents)
             response_text = resource_response[0].text
@@ -360,7 +356,7 @@ class TestResources:
         """Test reading a resource that returns bytes."""
         async with Client(fastmcp_openapi_server) as client:
             resource_response = await client.read_resource(
-                "resource://openapi/ping_bytes_ping_bytes_get"
+                "resource://ping_bytes_ping_bytes_get"
             )
             assert isinstance(resource_response[0], BlobResourceContents)
             assert base64.b64decode(resource_response[0].blob) == b"pong"
@@ -372,9 +368,7 @@ class TestResources:
     ):
         """Test reading a resource that returns a string."""
         async with Client(fastmcp_openapi_server) as client:
-            resource_response = await client.read_resource(
-                "resource://openapi/ping_ping_get"
-            )
+            resource_response = await client.read_resource("resource://ping_ping_get")
             assert isinstance(resource_response[0], TextResourceContents)
             assert resource_response[0].text == "pong"
 
@@ -389,18 +383,14 @@ class TestResourceTemplates:
         async with Client(fastmcp_openapi_server) as client:
             resource_templates = await client.list_resource_templates()
         assert len(resource_templates) == 2
-        assert resource_templates[0].name == "get_user_users__user_id__get"
+        assert resource_templates[0].name == "get_user_users"
         assert (
-            resource_templates[0].uriTemplate
-            == r"resource://openapi/get_user_users__user_id__get/{user_id}"
+            resource_templates[0].uriTemplate == r"resource://get_user_users/{user_id}"
         )
-        assert (
-            resource_templates[1].name
-            == "get_user_active_state_users__user_id___is_active__get"
-        )
+        assert resource_templates[1].name == "get_user_active_state_users"
         assert (
             resource_templates[1].uriTemplate
-            == r"resource://openapi/get_user_active_state_users__user_id___is_active__get/{is_active}/{user_id}"
+            == r"resource://get_user_active_state_users/{is_active}/{user_id}"
         )
 
     async def test_get_resource_template(
@@ -415,7 +405,7 @@ class TestResourceTemplates:
         user_id = 2
         async with Client(fastmcp_openapi_server) as client:
             resource_response = await client.read_resource(
-                f"resource://openapi/get_user_users__user_id__get/{user_id}"
+                f"resource://get_user_users/{user_id}"
             )
             assert isinstance(resource_response[0], TextResourceContents)
             response_text = resource_response[0].text
@@ -438,7 +428,7 @@ class TestResourceTemplates:
         is_active = True
         async with Client(fastmcp_openapi_server) as client:
             resource_response = await client.read_resource(
-                f"resource://openapi/get_user_active_state_users__user_id___is_active__get/{is_active}/{user_id}"
+                f"resource://get_user_active_state_users/{is_active}/{user_id}"
             )
             assert isinstance(resource_response[0], TextResourceContents)
             response_text = resource_response[0].text
@@ -474,11 +464,7 @@ class TestTagTransfer:
             (t for t in tools if t.name == "create_user_users_post"), None
         )
         update_user_tool = next(
-            (
-                t
-                for t in tools
-                if t.name == "update_user_name_users__user_id__name_patch"
-            ),
+            (t for t in tools if t.name == "update_user_name_users"),
             None,
         )
 
@@ -526,7 +512,7 @@ class TestTagTransfer:
 
         # Find the get_user template
         get_user_template = next(
-            (t for t in templates if t.name == "get_user_users__user_id__get"), None
+            (t for t in templates if t.name == "get_user_users"), None
         )
 
         assert get_user_template is not None
@@ -547,7 +533,7 @@ class TestTagTransfer:
 
         # Find the get_user template
         get_user_template = next(
-            (t for t in templates if t.name == "get_user_users__user_id__get"), None
+            (t for t in templates if t.name == "get_user_users"), None
         )
 
         assert get_user_template is not None
@@ -555,7 +541,7 @@ class TestTagTransfer:
         # Manually create a resource from template
         params = {"user_id": 1}
         resource = await get_user_template.create_resource(
-            "resource://openapi/get_user_users__user_id__get/1", params
+            "resource://get_user_users/1", params
         )
 
         # Verify tags are preserved from template to resource
@@ -672,7 +658,7 @@ class TestOpenAPI30Compatibility:
         async with Client(openapi_30_server) as client:
             resources = await client.list_resources()
         assert len(resources) == 1
-        assert resources[0].uri == AnyUrl("resource://openapi/listProducts")
+        assert resources[0].uri == AnyUrl("resource://listProducts")
 
     async def test_resource_template_discovery(self, openapi_30_server):
         """Test that resource templates are correctly discovered from an OpenAPI 3.0 spec."""
@@ -680,7 +666,7 @@ class TestOpenAPI30Compatibility:
             templates = await client.list_resource_templates()
         assert len(templates) == 1
         assert templates[0].name == "getProduct"
-        assert templates[0].uriTemplate == r"resource://openapi/getProduct/{product_id}"
+        assert templates[0].uriTemplate == r"resource://getProduct/{product_id}"
 
     async def test_tool_discovery(self, openapi_30_server):
         """Test that tools are correctly discovered from an OpenAPI 3.0 spec."""
@@ -694,9 +680,7 @@ class TestOpenAPI30Compatibility:
     async def test_resource_access(self, openapi_30_server):
         """Test reading a resource from an OpenAPI 3.0 server."""
         async with Client(openapi_30_server) as client:
-            resource_response = await client.read_resource(
-                "resource://openapi/listProducts"
-            )
+            resource_response = await client.read_resource("resource://listProducts")
             assert isinstance(resource_response[0], TextResourceContents)
             response_text = resource_response[0].text
             content = json.loads(response_text)
@@ -707,9 +691,7 @@ class TestOpenAPI30Compatibility:
     async def test_resource_template_access(self, openapi_30_server):
         """Test reading a resource from template from an OpenAPI 3.0 server."""
         async with Client(openapi_30_server) as client:
-            resource_response = await client.read_resource(
-                "resource://openapi/getProduct/p1"
-            )
+            resource_response = await client.read_resource("resource://getProduct/p1")
             assert isinstance(resource_response[0], TextResourceContents)
             response_text = resource_response[0].text
             content = json.loads(response_text)
@@ -852,7 +834,7 @@ class TestOpenAPI31Compatibility:
         async with Client(openapi_31_server) as client:
             resources = await client.list_resources()
         assert len(resources) == 1
-        assert resources[0].uri == AnyUrl("resource://openapi/listOrders")
+        assert resources[0].uri == AnyUrl("resource://listOrders")
 
     async def test_resource_template_discovery(self, openapi_31_server):
         """Test that resource templates are correctly discovered from an OpenAPI 3.1 spec."""
@@ -860,7 +842,7 @@ class TestOpenAPI31Compatibility:
             templates = await client.list_resource_templates()
         assert len(templates) == 1
         assert templates[0].name == "getOrder"
-        assert templates[0].uriTemplate == r"resource://openapi/getOrder/{order_id}"
+        assert templates[0].uriTemplate == r"resource://getOrder/{order_id}"
 
     async def test_tool_discovery(self, openapi_31_server):
         """Test that tools are correctly discovered from an OpenAPI 3.1 spec."""
@@ -874,9 +856,7 @@ class TestOpenAPI31Compatibility:
     async def test_resource_access(self, openapi_31_server):
         """Test reading a resource from an OpenAPI 3.1 server."""
         async with Client(openapi_31_server) as client:
-            resource_response = await client.read_resource(
-                "resource://openapi/listOrders"
-            )
+            resource_response = await client.read_resource("resource://listOrders")
             assert isinstance(resource_response[0], TextResourceContents)
             response_text = resource_response[0].text
             content = json.loads(response_text)
@@ -887,9 +867,7 @@ class TestOpenAPI31Compatibility:
     async def test_resource_template_access(self, openapi_31_server):
         """Test reading a resource from template from an OpenAPI 3.1 server."""
         async with Client(openapi_31_server) as client:
-            resource_response = await client.read_resource(
-                "resource://openapi/getOrder/o1"
-            )
+            resource_response = await client.read_resource("resource://getOrder/o1")
             assert isinstance(resource_response[0], TextResourceContents)
             response_text = resource_response[0].text
             content = json.loads(response_text)
@@ -927,31 +905,9 @@ class TestMountFastMCP:
         assert len(resources) == 4  # Updated to account for new search endpoint
         # We're checking the key used by mcp to store the resource
         # The prefixed URI is used as the key, but the resource's original uri is preserved
-        prefixed_uri = "fastapi+resource://openapi/get_users_users_get"
+        prefixed_uri = "resource://fastapi/get_users_users_get"
         resource = mcp._resource_manager.get_resources().get(prefixed_uri)
         assert resource is not None
-
-        # Check that templates are available with prefixed URIs
-        async with Client(mcp) as client:
-            templates = await client.list_resource_templates()
-        assert len(templates) == 2
-        assert templates[0].name == "get_user_users__user_id__get"
-        prefixed_template_uri = (
-            r"fastapi+resource://openapi/get_user_users__user_id__get/{user_id}"
-        )
-        template = mcp._resource_manager.get_templates().get(prefixed_template_uri)
-        assert template is not None
-
-        # Check that tools are available with prefixed names
-        async with Client(mcp) as client:
-            tools = await client.list_tools()
-        assert len(tools) == 2
-        assert tools[0].name == "fastapi_create_user_users_post"
-        assert tools[1].name == "fastapi_update_user_name_users__user_id__name_patch"
-
-        async with Client(mcp) as client:
-            prompts = await client.list_prompts()
-        assert len(prompts) == 0
 
 
 async def test_empty_query_parameters_not_sent(
@@ -978,9 +934,7 @@ async def test_empty_query_parameters_not_sent(
     mcp_server = FastMCPOpenAPI(
         openapi_spec=openapi_spec,
         client=api_client,
-        route_maps=[
-            RouteMap(methods=["GET"], pattern=r".*", route_type=RouteType.TOOL)
-        ],
+        route_maps=[RouteMap(methods=["GET"], pattern=r".*", mcp_type=MCPType.TOOL)],
     )
 
     # Call the search tool with mixed parameter values
@@ -1031,7 +985,7 @@ async def test_none_path_parameters_rejected(
         # get_user has a required path parameter user_id
         with pytest.raises(ToolError, match="Missing required path parameters"):
             await client.call_tool(
-                "update_user_name_users__user_id__name_patch",
+                "update_user_name_users",
                 {
                     "user_id": None,  # This should cause an error
                     "name": "New Name",
@@ -1521,17 +1475,15 @@ class TestFastAPIDescriptionPropagation:
         # Create custom route mappings
         route_maps = [
             # Map GET /items to Resource
-            RouteMap(
-                methods=["GET"], pattern=r"^/items$", route_type=RouteType.RESOURCE
-            ),
+            RouteMap(methods=["GET"], pattern=r"^/items$", mcp_type=MCPType.RESOURCE),
             # Map GET /items/{item_id} to ResourceTemplate
             RouteMap(
                 methods=["GET"],
                 pattern=r"^/items/\{.*\}$",
-                route_type=RouteType.RESOURCE_TEMPLATE,
+                mcp_type=MCPType.RESOURCE_TEMPLATE,
             ),
             # Map POST /items to Tool
-            RouteMap(methods=["POST"], pattern=r"^/items$", route_type=RouteType.TOOL),
+            RouteMap(methods=["POST"], pattern=r"^/items$", mcp_type=MCPType.TOOL),
         ]
 
         # Create FastMCP server with the OpenAPI spec and custom route mappings
@@ -1596,9 +1548,7 @@ class TestFastAPIDescriptionPropagation:
     async def test_template_includes_function_docstring(self, fastapi_server):
         """Test that a ResourceTemplate includes the function docstring."""
         templates = list(fastapi_server._resource_manager.get_templates().values())
-        get_template = next(
-            (t for t in templates if "items__item_id__get" in t.name), None
-        )
+        get_template = next((t for t in templates if "get_item_items" in t.name), None)
 
         assert get_template is not None, "GET /items/{item_id} template wasn't created"
         description = get_template.description or ""
@@ -1613,9 +1563,7 @@ class TestFastAPIDescriptionPropagation:
         are not properly propagated to the OpenAPI schema. The parameters appear but without the description.
         """
         templates = list(fastapi_server._resource_manager.get_templates().values())
-        get_template = next(
-            (t for t in templates if "items__item_id__get" in t.name), None
-        )
+        get_template = next((t for t in templates if "get_item_items" in t.name), None)
 
         assert get_template is not None, "GET /items/{item_id} template wasn't created"
         description = get_template.description or ""
@@ -1635,9 +1583,7 @@ class TestFastAPIDescriptionPropagation:
         are not properly propagated to the OpenAPI schema. The parameters appear but without the description.
         """
         templates = list(fastapi_server._resource_manager.get_templates().values())
-        get_template = next(
-            (t for t in templates if "items__item_id__get" in t.name), None
-        )
+        get_template = next((t for t in templates if "get_item_items" in t.name), None)
 
         assert get_template is not None, "GET /items/{item_id} template wasn't created"
         description = get_template.description or ""
@@ -1653,9 +1599,7 @@ class TestFastAPIDescriptionPropagation:
     async def test_template_parameter_schema_includes_description(self, fastapi_server):
         """Test that a ResourceTemplate's parameter schema includes parameter descriptions."""
         templates = list(fastapi_server._resource_manager.get_templates().values())
-        get_template = next(
-            (t for t in templates if "items__item_id__get" in t.name), None
-        )
+        get_template = next((t for t in templates if "get_item_items" in t.name), None)
 
         assert get_template is not None, "GET /items/{item_id} template wasn't created"
         assert "properties" in get_template.parameters, (
@@ -1727,7 +1671,7 @@ class TestFastAPIDescriptionPropagation:
         async with Client(fastapi_server) as client:
             templates = await client.list_resource_templates()
             get_template = next(
-                (t for t in templates if "items__item_id__get" in t.name), None
+                (t for t in templates if "get_item_items" in t.name), None
             )
 
             assert get_template is not None, (
@@ -1857,9 +1801,7 @@ class TestEnumHandling:
         tools = server._tool_manager.list_tools()
 
         # Find the read_item tool
-        read_item_tool = next(
-            (t for t in tools if t.name == "read_item_items__item_id__post"), None
-        )
+        read_item_tool = next((t for t in tools if t.name == "read_item_items"), None)
 
         # Verify the tool exists
         assert read_item_tool is not None, "read_item tool wasn't created"
@@ -1890,3 +1832,569 @@ class TestEnumHandling:
         assert "enum" in enum_def
         assert enum_def["enum"] == ["foo", "bar", "baz"]
         assert enum_def["type"] == "string"
+
+
+class TestRouteMapWildcard:
+    """Tests for wildcard RouteMap methods functionality."""
+
+    @pytest.fixture
+    def basic_openapi_spec(self) -> dict:
+        """Create a minimal OpenAPI spec with different HTTP methods."""
+        return {
+            "openapi": "3.1.0",
+            "info": {"title": "Test API", "version": "1.0.0"},
+            "paths": {
+                "/users": {
+                    "get": {
+                        "operationId": "getUsers",
+                        "responses": {"200": {"description": "Success"}},
+                    },
+                    "post": {
+                        "operationId": "createUser",
+                        "responses": {"201": {"description": "Created"}},
+                    },
+                },
+                "/posts": {
+                    "get": {
+                        "operationId": "getPosts",
+                        "responses": {"200": {"description": "Success"}},
+                    },
+                    "post": {
+                        "operationId": "createPost",
+                        "responses": {"201": {"description": "Created"}},
+                    },
+                },
+            },
+        }
+
+    @pytest.fixture
+    async def mock_basic_client(self) -> httpx.AsyncClient:
+        """Create a simple mock client."""
+
+        async def _responder(request):
+            return httpx.Response(200, json={"status": "ok"})
+
+        transport = httpx.MockTransport(_responder)
+        return httpx.AsyncClient(transport=transport, base_url="http://test")
+
+    async def test_wildcard_matches_all_methods(
+        self, basic_openapi_spec, mock_basic_client
+    ):
+        """Test that a RouteMap with methods='*' matches all HTTP methods."""
+        # Create a single route map with wildcard method
+        route_maps = [RouteMap(methods="*", pattern=r".*", mcp_type=MCPType.TOOL)]
+
+        mcp = FastMCPOpenAPI(
+            openapi_spec=basic_openapi_spec,
+            client=mock_basic_client,
+            route_maps=route_maps,
+        )
+
+        # All operations should be mapped to tools
+        tools = mcp._tool_manager.list_tools()
+        tool_names = {tool.name for tool in tools}
+
+        # Check that all 4 operations became tools
+        expected_tools = {"getUsers", "createUser", "getPosts", "createPost"}
+        assert tool_names == expected_tools
+
+
+class TestRouteMapTags:
+    """Tests for RouteMap tags functionality."""
+
+    @pytest.fixture
+    def tagged_openapi_spec(self) -> dict:
+        """Create an OpenAPI spec with various tags for testing."""
+        return {
+            "openapi": "3.1.0",
+            "info": {"title": "Tagged API", "version": "1.0.0"},
+            "paths": {
+                "/users": {
+                    "get": {
+                        "operationId": "getUsers",
+                        "tags": ["users", "public"],
+                        "responses": {"200": {"description": "Success"}},
+                    },
+                    "post": {
+                        "operationId": "createUser",
+                        "tags": ["users", "admin"],
+                        "responses": {"201": {"description": "Created"}},
+                    },
+                },
+                "/admin/stats": {
+                    "get": {
+                        "operationId": "getAdminStats",
+                        "tags": ["admin", "internal"],
+                        "responses": {"200": {"description": "Success"}},
+                    }
+                },
+                "/health": {
+                    "get": {
+                        "operationId": "getHealth",
+                        "tags": ["public"],
+                        "responses": {"200": {"description": "Success"}},
+                    }
+                },
+                "/metrics": {
+                    "get": {
+                        "operationId": "getMetrics",
+                        "responses": {"200": {"description": "Success"}},
+                    }
+                },
+            },
+        }
+
+    @pytest.fixture
+    async def mock_client(self) -> httpx.AsyncClient:
+        """Create a simple mock client."""
+
+        async def _responder(request):
+            return httpx.Response(200, json={"status": "ok"})
+
+        transport = httpx.MockTransport(_responder)
+        return httpx.AsyncClient(transport=transport, base_url="http://test")
+
+    async def test_tags_as_tools(self, tagged_openapi_spec, mock_client):
+        """Test that routes with specific tags are converted to tools."""
+        # Convert routes with "admin" tag to tools
+        route_maps = [
+            RouteMap(methods="*", pattern=r".*", mcp_type=MCPType.TOOL, tags={"admin"}),
+            RouteMap(methods=["GET"], pattern=r".*", mcp_type=MCPType.RESOURCE),
+        ]
+
+        server = FastMCPOpenAPI(
+            openapi_spec=tagged_openapi_spec,
+            client=mock_client,
+            route_maps=route_maps,
+        )
+
+        # Check that admin-tagged routes are tools
+        tools = server._tool_manager.get_tools()
+        tool_names = {t.name for t in tools.values()}
+
+        resources = server._resource_manager.get_resources()
+        resource_names = {r.name for r in resources.values()}
+
+        # Routes with "admin" tag should be tools
+        assert "createUser" in tool_names
+        assert "getAdminStats" in tool_names
+
+        # Routes without "admin" tag should be resources
+        assert "getUsers" in resource_names
+        assert "getHealth" in resource_names
+        assert "getMetrics" in resource_names
+
+    async def test_exclude_tags(self, tagged_openapi_spec, mock_client):
+        """Test that routes with specific tags are excluded."""
+        # Exclude routes with "internal" tag
+        route_maps = [
+            RouteMap(
+                methods="*", pattern=r".*", mcp_type=MCPType.EXCLUDE, tags={"internal"}
+            ),
+            RouteMap(methods=["GET"], pattern=r".*", mcp_type=MCPType.RESOURCE),
+            RouteMap(methods=["POST"], pattern=r".*", mcp_type=MCPType.TOOL),
+        ]
+
+        server = FastMCPOpenAPI(
+            openapi_spec=tagged_openapi_spec,
+            client=mock_client,
+            route_maps=route_maps,
+        )
+
+        # Check that internal-tagged routes are excluded
+        resources = server._resource_manager.get_resources()
+        resource_names = {r.name for r in resources.values()}
+
+        tools = server._tool_manager.get_tools()
+        tool_names = {t.name for t in tools.values()}
+
+        # Internal-tagged route should be excluded
+        assert "getAdminStats" not in resource_names
+        assert "getAdminStats" not in tool_names
+
+        # Other routes should still be present
+        assert "getUsers" in resource_names
+        assert "getHealth" in resource_names
+        assert "getMetrics" in resource_names
+        assert "createUser" in tool_names
+
+    async def test_multiple_tags_and_condition(self, tagged_openapi_spec, mock_client):
+        """Test that routes must have ALL specified tags (AND condition)."""
+        # Routes must have BOTH "users" AND "admin" tags
+        route_maps = [
+            RouteMap(
+                methods="*",
+                pattern=r".*",
+                mcp_type=MCPType.TOOL,
+                tags={"users", "admin"},
+            ),
+            RouteMap(methods=["GET"], pattern=r".*", mcp_type=MCPType.RESOURCE),
+        ]
+
+        server = FastMCPOpenAPI(
+            openapi_spec=tagged_openapi_spec,
+            client=mock_client,
+            route_maps=route_maps,
+        )
+
+        tools = server._tool_manager.get_tools()
+        tool_names = {t.name for t in tools.values()}
+
+        resources = server._resource_manager.get_resources()
+        resource_names = {r.name for r in resources.values()}
+
+        # Only createUser has both "users" AND "admin" tags
+        assert "createUser" in tool_names
+
+        # Other routes should be resources
+        assert "getUsers" in resource_names  # has "users" but not "admin"
+        assert "getAdminStats" in resource_names  # has "admin" but not "users"
+        assert "getHealth" in resource_names
+        assert "getMetrics" in resource_names
+
+    async def test_pattern_and_tags_combination(self, tagged_openapi_spec, mock_client):
+        """Test that both pattern and tags must be satisfied."""
+        # Routes matching pattern AND having specific tags
+        route_maps = [
+            RouteMap(
+                methods="*",
+                pattern=r".*/admin/.*",
+                mcp_type=MCPType.TOOL,
+                tags={"admin"},
+            ),
+            RouteMap(methods=["GET"], pattern=r".*", mcp_type=MCPType.RESOURCE),
+            RouteMap(methods=["POST"], pattern=r".*", mcp_type=MCPType.TOOL),
+        ]
+
+        server = FastMCPOpenAPI(
+            openapi_spec=tagged_openapi_spec,
+            client=mock_client,
+            route_maps=route_maps,
+        )
+
+        tools = server._tool_manager.get_tools()
+        tool_names = {t.name for t in tools.values()}
+
+        resources = server._resource_manager.get_resources()
+        resource_names = {r.name for r in resources.values()}
+
+        # Only getAdminStats matches both /admin/ pattern AND "admin" tag
+        assert "getAdminStats" in tool_names
+
+        # createUser has "admin" tag but doesn't match pattern, so it becomes a tool via POST rule
+        assert "createUser" in tool_names
+
+        # Other routes should be resources (GET)
+        assert "getUsers" in resource_names
+        assert "getHealth" in resource_names
+        assert "getMetrics" in resource_names
+
+    async def test_empty_tags_ignored(self, tagged_openapi_spec, mock_client):
+        """Test that empty tags set is ignored (matches all routes)."""
+        # Empty tags should match all routes
+        route_maps = [
+            RouteMap(methods="*", pattern=r".*", mcp_type=MCPType.TOOL, tags=set()),
+        ]
+
+        server = FastMCPOpenAPI(
+            openapi_spec=tagged_openapi_spec,
+            client=mock_client,
+            route_maps=route_maps,
+        )
+
+        tools = server._tool_manager.get_tools()
+        tool_names = {t.name for t in tools.values()}
+
+        # All routes should be tools since empty tags matches everything
+        expected_tools = {
+            "getUsers",
+            "createUser",
+            "getAdminStats",
+            "getHealth",
+            "getMetrics",
+        }
+        assert tool_names == expected_tools
+
+
+class TestMCPNames:
+    """Tests for the mcp_names dictionary functionality."""
+
+    @pytest.fixture
+    def mcp_names_openapi_spec(self) -> dict:
+        """OpenAPI spec with various operationIds for testing naming strategies."""
+        return {
+            "openapi": "3.1.0",
+            "info": {"title": "MCP Names Test API", "version": "1.0.0"},
+            "paths": {
+                "/users": {
+                    "get": {
+                        "operationId": "list_users__with_pagination",
+                        "summary": "Get All Users",
+                        "responses": {"200": {"description": "Success"}},
+                    },
+                    "post": {
+                        "operationId": "create_user_admin__special_permissions",
+                        "summary": "Create New User",
+                        "requestBody": {
+                            "required": True,
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {"name": {"type": "string"}},
+                                        "required": ["name"],
+                                    }
+                                }
+                            },
+                        },
+                        "responses": {"201": {"description": "Created"}},
+                    },
+                },
+                "/users/{id}": {
+                    "get": {
+                        "operationId": "get_user_by_id__admin_only",
+                        "summary": "Fetch Single User Profile",
+                        "parameters": [
+                            {
+                                "name": "id",
+                                "in": "path",
+                                "required": True,
+                                "schema": {"type": "integer"},
+                            }
+                        ],
+                        "responses": {"200": {"description": "Success"}},
+                    }
+                },
+                "/very-long-endpoint-name": {
+                    "get": {
+                        "operationId": "this_is_a_very_long_operation_id_that_exceeds_fifty_six_characters_and_should_be_truncated",
+                        "summary": "This Is A Very Long Summary That Should Also Be Truncated When Used As Name",
+                        "responses": {"200": {"description": "Success"}},
+                    }
+                },
+                "/special": {
+                    "get": {
+                        "operationId": "special-chars@and#spaces in$operation%id",
+                        "summary": "Special Chars & Spaces In Summary!",
+                        "responses": {"200": {"description": "Success"}},
+                    }
+                },
+            },
+        }
+
+    @pytest.fixture
+    async def mock_client(self) -> httpx.AsyncClient:
+        """Mock client for testing."""
+
+        async def _responder(request):
+            return httpx.Response(200, json={"status": "ok"})
+
+        transport = httpx.MockTransport(_responder)
+        return httpx.AsyncClient(transport=transport, base_url="http://test")
+
+    async def test_mcp_names_custom_mapping(self, mcp_names_openapi_spec, mock_client):
+        """Test that mcp_names dictionary provides custom names for components."""
+        mcp_names = {
+            "list_users__with_pagination": "user_list",
+            "create_user_admin__special_permissions": "admin_create_user",
+            "get_user_by_id__admin_only": "user_detail",
+        }
+
+        server = FastMCPOpenAPI(
+            openapi_spec=mcp_names_openapi_spec,
+            client=mock_client,
+            mcp_names=mcp_names,
+        )
+
+        # Check tools use custom names
+        tools = server._tool_manager.list_tools()
+        tool_names = {tool.name for tool in tools}
+        assert "admin_create_user" in tool_names
+
+        # Check resource templates use custom names
+        templates = list(server._resource_manager.get_templates().values())
+        template_names = {template.name for template in templates}
+        assert "user_detail" in template_names
+
+        # Check resources use custom names
+        resources = list(server._resource_manager.get_resources().values())
+        resource_names = {resource.name for resource in resources}
+        assert "user_list" in resource_names
+
+    async def test_mcp_names_fallback_to_operation_id_short(
+        self, mcp_names_openapi_spec, mock_client
+    ):
+        """Test fallback to operationId up to double underscore when not in mcp_names."""
+        # Only provide mapping for one operationId
+        mcp_names = {
+            "list_users__with_pagination": "custom_user_list",
+        }
+
+        server = FastMCPOpenAPI(
+            openapi_spec=mcp_names_openapi_spec,
+            client=mock_client,
+            mcp_names=mcp_names,
+        )
+
+        tools = server._tool_manager.list_tools()
+        tool_names = {tool.name for tool in tools}
+
+        templates = list(server._resource_manager.get_templates().values())
+        template_names = {template.name for template in templates}
+
+        resources = list(server._resource_manager.get_resources().values())
+        resource_names = {resource.name for resource in resources}
+
+        # Custom mapped name should be used
+        assert "custom_user_list" in resource_names
+
+        # Unmapped operationIds should use short version (up to __)
+        assert "create_user_admin" in tool_names
+        assert "get_user_by_id" in template_names
+
+    async def test_names_are_slugified(self, mcp_names_openapi_spec, mock_client):
+        """Test that names are properly slugified (spaces, special chars removed)."""
+        server = FastMCPOpenAPI(
+            openapi_spec=mcp_names_openapi_spec,
+            client=mock_client,
+        )
+
+        resources = list(server._resource_manager.get_resources().values())
+        resource_names = {
+            resource.name for resource in resources if resource.name is not None
+        }
+
+        # Special chars and spaces should be slugified
+        slugified_name = next(
+            (name for name in resource_names if "special" in name), None
+        )
+        assert slugified_name is not None
+        # Should not contain special characters or spaces
+        assert "@" not in slugified_name
+        assert "#" not in slugified_name
+        assert "$" not in slugified_name
+        assert "%" not in slugified_name
+        assert " " not in slugified_name
+
+    async def test_names_are_truncated_to_56_chars(
+        self, mcp_names_openapi_spec, mock_client
+    ):
+        """Test that names are truncated to 56 characters maximum."""
+        server = FastMCPOpenAPI(
+            openapi_spec=mcp_names_openapi_spec,
+            client=mock_client,
+        )
+
+        # Check all component types
+        all_names = []
+
+        tools = server._tool_manager.list_tools()
+        all_names.extend(tool.name for tool in tools)
+
+        resources = list(server._resource_manager.get_resources().values())
+        all_names.extend(resource.name for resource in resources)
+
+        templates = list(server._resource_manager.get_templates().values())
+        all_names.extend(template.name for template in templates)
+
+        # All names should be 56 characters or less
+        for name in all_names:
+            assert len(name) <= 56, (
+                f"Name '{name}' exceeds 56 characters (length: {len(name)})"
+            )
+
+        # Verify that the long operationId was actually truncated
+        long_name = next((name for name in all_names if len(name) > 50), None)
+        assert long_name is not None, "Expected to find a truncated name for testing"
+
+    async def test_mcp_names_with_from_openapi_classmethod(
+        self, mcp_names_openapi_spec, mock_client
+    ):
+        """Test mcp_names works with FastMCP.from_openapi() classmethod."""
+        mcp_names = {
+            "list_users__with_pagination": "openapi_user_list",
+        }
+
+        server = FastMCP.from_openapi(
+            openapi_spec=mcp_names_openapi_spec,
+            client=mock_client,
+            mcp_names=mcp_names,
+        )
+
+        resources = list(server._resource_manager.get_resources().values())
+        resource_names = {resource.name for resource in resources}
+        assert "openapi_user_list" in resource_names
+
+    async def test_mcp_names_with_from_fastapi_classmethod(self):
+        """Test mcp_names works with FastMCP.from_fastapi() classmethod."""
+        from fastapi import FastAPI
+        from pydantic import BaseModel
+
+        app = FastAPI(title="FastAPI MCP Names Test")
+
+        class User(BaseModel):
+            name: str
+
+        @app.get("/users", operation_id="list_users__with_filters")
+        async def get_users() -> list[User]:
+            return [User(name="test")]
+
+        @app.post("/users", operation_id="create_user__admin_required")
+        async def create_user(user: User) -> User:
+            return user
+
+        mcp_names = {
+            "list_users__with_filters": "fastapi_user_list",
+            "create_user__admin_required": "fastapi_create_user",
+        }
+
+        server = FastMCP.from_fastapi(
+            app=app,
+            mcp_names=mcp_names,
+        )
+
+        tools = server._tool_manager.list_tools()
+        tool_names = {tool.name for tool in tools}
+
+        resources = list(server._resource_manager.get_resources().values())
+        resource_names = {resource.name for resource in resources}
+
+        assert "fastapi_create_user" in tool_names
+        assert "fastapi_user_list" in resource_names
+
+    async def test_mcp_names_custom_names_are_also_truncated(
+        self, mcp_names_openapi_spec, mock_client
+    ):
+        """Test that custom names in mcp_names are also truncated to 56 characters."""
+        # Provide a custom name that's longer than 56 characters
+        very_long_custom_name = "this_is_a_very_long_custom_name_that_exceeds_fifty_six_characters_and_should_be_truncated"
+
+        mcp_names = {
+            "list_users__with_pagination": very_long_custom_name,
+        }
+
+        server = FastMCPOpenAPI(
+            openapi_spec=mcp_names_openapi_spec,
+            client=mock_client,
+            mcp_names=mcp_names,
+        )
+
+        resources = list(server._resource_manager.get_resources().values())
+        resource_names = {
+            resource.name for resource in resources if resource.name is not None
+        }
+
+        # Find the resource that should have the custom name
+        truncated_name = next(
+            (
+                name
+                for name in resource_names
+                if "this_is_a_very_long_custom_name" in name
+            ),
+            None,
+        )
+        assert truncated_name is not None
+        assert len(truncated_name) <= 56
+        assert (
+            len(truncated_name) == 56
+        )  # Should be exactly 56 since original was longer

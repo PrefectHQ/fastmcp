@@ -36,7 +36,9 @@ class Tool(BaseModel):
 
     fn: Callable[..., Any]
     name: str = Field(description="Name of the tool")
-    description: str = Field(description="Description of what the tool does")
+    description: str | None = Field(
+        default=None, description="Description of what the tool does"
+    )
     parameters: dict[str, Any] = Field(description="JSON schema for tool parameters")
     tags: Annotated[set[str], BeforeValidator(_convert_set_defaults)] = Field(
         default_factory=set, description="Tags for the tool"
@@ -69,12 +71,16 @@ class Tool(BaseModel):
             if param.kind == inspect.Parameter.VAR_KEYWORD:
                 raise ValueError("Functions with **kwargs are not supported as tools")
 
-        func_name = name or fn.__name__
+        func_name = name or getattr(fn, "__name__", None) or fn.__class__.__name__
 
         if func_name == "<lambda>":
             raise ValueError("You must provide a name for lambda functions")
 
-        func_doc = description or fn.__doc__ or ""
+        func_doc = description or fn.__doc__
+
+        # if the fn is a callable class, we need to get the __call__ method from here out
+        if not inspect.isroutine(fn):
+            fn = fn.__call__
 
         type_adapter = get_cached_typeadapter(fn)
         schema = type_adapter.json_schema()

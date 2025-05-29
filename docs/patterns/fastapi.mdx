@@ -8,18 +8,17 @@ import { VersionBadge } from '/snippets/version-badge.mdx'
 
 <VersionBadge version="2.0.0" />
 
+<Note>
+**Documentation Moved**: The comprehensive FastAPI integration documentation has been moved to the [OpenAPI Integration](/patterns/openapi#fastapi-integration) page, where it's covered alongside all other OpenAPI features including route mapping and tags support.
+</Note>
 
-FastMCP can automatically convert FastAPI applications into MCP servers.
+## Quick Start
 
-<Tip>
-FastMCP does *not* include FastAPI as a dependency; you must install it separately to run these examples.
-</Tip>
+FastMCP can automatically convert FastAPI applications into MCP servers:
 
-
-```python {2, 22, 25}
+```python
 from fastapi import FastAPI
 from fastmcp import FastMCP
-
 
 # A FastAPI app
 app = FastAPI()
@@ -36,7 +35,6 @@ def get_item(item_id: int):
 def create_item(name: str):
     return {"id": 3, "name": name}
 
-
 # Create an MCP server from your FastAPI app
 mcp = FastMCP.from_fastapi(app=app)
 
@@ -44,101 +42,6 @@ if __name__ == "__main__":
     mcp.run()  # Start the MCP server
 ```
 
-## Configuration Options
-
-### Timeout
-
-You can set a timeout for all API requests:
-
-```python
-# Set a 5 second timeout for all requests
-mcp = FastMCP.from_fastapi(app=app, timeout=5.0)
-```
-
-This timeout is applied to all requests made by tools, resources, and resource templates.
-
-## Route Mapping
-
-By default, FastMCP will map FastAPI routes to MCP components according to the following rules:
-
-| FastAPI Route Type | FastAPI Example | MCP Component | Notes |
-|--------------------|--------------|---------|-------|
-| GET without path params | `@app.get("/stats")` | Resource | Simple resources for fetching data |
-| GET with path params | `@app.get("/users/{id}")` | Resource Template | Path parameters become template parameters |
-| POST, PUT, DELETE, etc. | `@app.post("/users")` | Tool | Operations that modify data |
-
-For more details on route mapping or custom mapping rules, see the [OpenAPI integration documentation](/patterns/openapi#route-mapping); FastMCP uses the same mapping rules for both FastAPI and OpenAPI integrations.
-
-## Complete Example
-
-Here's a more detailed example with a data model:
-
-```python [expandable]
-import asyncio
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
-from fastmcp import FastMCP, Client
-
-# Define your Pydantic model
-class Item(BaseModel):
-    name: str
-    price: float
-
-# Create your FastAPI app
-app = FastAPI()
-items = {}  # In-memory database
-
-@app.get("/items")
-def list_items():
-    """List all items"""
-    return list(items.values())
-
-@app.get("/items/{item_id}")
-def get_item(item_id: int):
-    """Get item by ID"""
-    if item_id not in items:
-        raise HTTPException(404, "Item not found")
-    return items[item_id]
-
-@app.post("/items")
-def create_item(item: Item):
-    """Create a new item"""
-    item_id = len(items) + 1
-    items[item_id] = {"id": item_id, **item.model_dump()}
-    return items[item_id]
-
-# Test your MCP server with a client
-async def check_mcp(mcp: FastMCP):
-    # List the components that were created
-    tools = await mcp.get_tools()
-    resources = await mcp.get_resources()
-    templates = await mcp.get_resource_templates()
-    
-    print(
-        f"{len(tools)} Tool(s): {', '.join([t.name for t in tools.values()])}"
-    )
-    print(
-        f"{len(resources)} Resource(s): {', '.join([r.name for r in resources.values()])}"
-    )
-    print(
-        f"{len(templates)} Resource Template(s): {', '.join([t.name for t in templates.values()])}"
-    )
-    
-    return mcp
-
-if __name__ == "__main__":
-    # Create MCP server from FastAPI app
-    mcp = FastMCP.from_fastapi(app=app)
-    
-    asyncio.run(check_mcp(mcp))
-    
-    # In a real scenario, you would run the server:
-    mcp.run()
-```
-
-## Benefits
-
-- **Leverage existing FastAPI apps** - No need to rewrite your API logic
-- **Schema reuse** - FastAPI's Pydantic models and validation are inherited
-- **Full feature support** - Works with FastAPI's authentication, dependencies, etc.
-- **ASGI transport** - Direct communication without additional HTTP overhead
+<Tip>
+For complete documentation including tag-based routing, route mapping configuration, timeout settings, authentication examples, and advanced configuration options, see the comprehensive [OpenAPI Integration documentation](/patterns/openapi#fastapi-integration).
+</Tip> 

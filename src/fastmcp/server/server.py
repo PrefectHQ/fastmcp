@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime
+import re
 import warnings
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import (
@@ -11,11 +12,11 @@ from contextlib import (
     asynccontextmanager,
 )
 from functools import partial
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Generic, Literal
 
 import anyio
 import httpx
-import pydantic
 import uvicorn
 from mcp.server.auth.provider import OAuthAuthorizationServerProvider
 from mcp.server.lowlevel.helper_types import ReadResourceContents
@@ -57,14 +58,21 @@ from fastmcp.tools.tool import Tool
 from fastmcp.utilities.cache import TimedCache
 from fastmcp.utilities.decorators import DecoratedFunction
 from fastmcp.utilities.logging import get_logger
+from fastmcp.utilities.mcp_config import MCPConfig
 
 if TYPE_CHECKING:
     from fastmcp.client import Client
-    from fastmcp.server.openapi import FastMCPOpenAPI
+    from fastmcp.client.transports import ClientTransport, ClientTransportT
+    from fastmcp.server.openapi import ComponentFn as OpenAPIComponentFn
+    from fastmcp.server.openapi import FastMCPOpenAPI, RouteMap
+    from fastmcp.server.openapi import RouteMapFn as OpenAPIRouteMapFn
     from fastmcp.server.proxy import FastMCPProxy
 logger = get_logger(__name__)
 
 DuplicateBehavior = Literal["warn", "error", "replace", "ignore"]
+
+# Compiled URI parsing regex to split a URI into protocol and path components
+URI_PATTERN = re.compile(r"^([^:]+://)(.*?)$")
 
 
 @asynccontextmanager
@@ -118,6 +126,8 @@ class FastMCP(Generic[LifespanResultT]):
         on_duplicate_tools: DuplicateBehavior | None = None,
         on_duplicate_resources: DuplicateBehavior | None = None,
         on_duplicate_prompts: DuplicateBehavior | None = None,
+        resource_prefix_format: Literal["protocol", "path"] | None = None,
+        mask_error_details: bool | None = None,
         **settings: Any,
     ):
         if settings:
@@ -132,6 +142,18 @@ class FastMCP(Generic[LifespanResultT]):
             )
         self.settings = fastmcp.settings.ServerSettings(**settings)
 
+        # If mask_error_details is provided, override the settings value
+        if mask_error_details is not None:
+            self.settings.mask_error_details = mask_error_details
+
+        self.resource_prefix_format: Literal["protocol", "path"]
+        if resource_prefix_format is None:
+            self.resource_prefix_format = (
+                fastmcp.settings.settings.resource_prefix_format
+            )
+        else:
+            self.resource_prefix_format = resource_prefix_format
+
         self.tags: set[str] = tags or set()
         self.dependencies = dependencies
         self._cache = TimedCache(
@@ -142,11 +164,16 @@ class FastMCP(Generic[LifespanResultT]):
         self._tool_manager = ToolManager(
             duplicate_behavior=on_duplicate_tools,
             serializer=tool_serializer,
+            mask_error_details=self.settings.mask_error_details,
         )
         self._resource_manager = ResourceManager(
-            duplicate_behavior=on_duplicate_resources
+            duplicate_behavior=on_duplicate_resources,
+            mask_error_details=self.settings.mask_error_details,
         )
-        self._prompt_manager = PromptManager(duplicate_behavior=on_duplicate_prompts)
+        self._prompt_manager = PromptManager(
+            duplicate_behavior=on_duplicate_prompts,
+            mask_error_details=self.settings.mask_error_details,
+        )
 
         if lifespan is None:
             self._has_lifespan = False
@@ -213,7 +240,6 @@ class FastMCP(Generic[LifespanResultT]):
         Args:
             transport: Transport protocol to use ("stdio", "sse", or "streamable-http")
         """
-        logger.info(f'Starting server "{self.name}"...')
 
         anyio.run(partial(self.run_async, transport, **transport_kwargs))
 
@@ -231,9 +257,15 @@ class FastMCP(Generic[LifespanResultT]):
         """Get all registered tools, indexed by registered key."""
         if (tools := self._cache.get("tools")) is self._cache.NOT_FOUND:
             tools: dict[str, Tool] = {}
-            for server in self._mounted_servers.values():
-                server_tools = await server.get_tools()
-                tools.update(server_tools)
+            for prefix, server in self._mounted_servers.items():
+                try:
+                    server_tools = await server.get_tools()
+                    tools.update(server_tools)
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to get tools from mounted server '{prefix}': {e}"
+                    )
+                    continue
             tools.update(self._tool_manager.get_tools())
             self._cache.set("tools", tools)
         return tools
@@ -242,9 +274,15 @@ class FastMCP(Generic[LifespanResultT]):
         """Get all registered resources, indexed by registered key."""
         if (resources := self._cache.get("resources")) is self._cache.NOT_FOUND:
             resources: dict[str, Resource] = {}
-            for server in self._mounted_servers.values():
-                server_resources = await server.get_resources()
-                resources.update(server_resources)
+            for prefix, server in self._mounted_servers.items():
+                try:
+                    server_resources = await server.get_resources()
+                    resources.update(server_resources)
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to get resources from mounted server '{prefix}': {e}"
+                    )
+                    continue
             resources.update(self._resource_manager.get_resources())
             self._cache.set("resources", resources)
         return resources
@@ -255,9 +293,16 @@ class FastMCP(Generic[LifespanResultT]):
             templates := self._cache.get("resource_templates")
         ) is self._cache.NOT_FOUND:
             templates: dict[str, ResourceTemplate] = {}
-            for server in self._mounted_servers.values():
-                server_templates = await server.get_resource_templates()
-                templates.update(server_templates)
+            for prefix, server in self._mounted_servers.items():
+                try:
+                    server_templates = await server.get_resource_templates()
+                    templates.update(server_templates)
+                except Exception as e:
+                    logger.warning(
+                        "Failed to get resource templates from mounted server "
+                        f"'{prefix}': {e}"
+                    )
+                    continue
             templates.update(self._resource_manager.get_templates())
             self._cache.set("resource_templates", templates)
         return templates
@@ -268,9 +313,15 @@ class FastMCP(Generic[LifespanResultT]):
         """
         if (prompts := self._cache.get("prompts")) is self._cache.NOT_FOUND:
             prompts: dict[str, Prompt] = {}
-            for server in self._mounted_servers.values():
-                server_prompts = await server.get_prompts()
-                prompts.update(server_prompts)
+            for prefix, server in self._mounted_servers.items():
+                try:
+                    server_prompts = await server.get_prompts()
+                    prompts.update(server_prompts)
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to get prompts from mounted server '{prefix}': {e}"
+                    )
+                    continue
             prompts.update(self._prompt_manager.get_prompts())
             self._cache.set("prompts", prompts)
         return prompts
@@ -363,21 +414,30 @@ class FastMCP(Generic[LifespanResultT]):
     async def _mcp_call_tool(
         self, key: str, arguments: dict[str, Any]
     ) -> list[TextContent | ImageContent | EmbeddedResource]:
-        """Call a tool by name with arguments."""
+        """Handle MCP 'callTool' requests.
 
+        Args:
+            key: The name of the tool to call
+            arguments: Arguments to pass to the tool
+
+        Returns:
+            List of MCP Content objects containing the tool results
+        """
+        logger.debug("Call tool: %s with %s", key, arguments)
+
+        # Create and use context for the entire call
         with fastmcp.server.context.Context(fastmcp=self):
+            # Get tool, checking first from our tools, then from the mounted servers
             if self._tool_manager.has_tool(key):
-                result = await self._tool_manager.call_tool(key, arguments)
+                return await self._tool_manager.call_tool(key, arguments)
 
-            else:
-                for server in self._mounted_servers.values():
-                    if server.match_tool(key):
-                        new_key = server.strip_tool_prefix(key)
-                        result = await server.server._mcp_call_tool(new_key, arguments)
-                        break
-                else:
-                    raise NotFoundError(f"Unknown tool: {key}")
-            return result
+            # Check mounted servers to see if they have the tool
+            for server in self._mounted_servers.values():
+                if server.match_tool(key):
+                    tool_key = server.strip_tool_prefix(key)
+                    return await server.server._mcp_call_tool(tool_key, arguments)
+
+            raise NotFoundError(f"Unknown tool: {key}")
 
     async def _mcp_read_resource(self, uri: AnyUrl | str) -> list[ReadResourceContents]:
         """
@@ -405,24 +465,30 @@ class FastMCP(Generic[LifespanResultT]):
     async def _mcp_get_prompt(
         self, name: str, arguments: dict[str, Any] | None = None
     ) -> GetPromptResult:
-        """
-        Get a prompt by name with arguments, in the format expected by the low-level
-        MCP server.
+        """Handle MCP 'getPrompt' requests.
 
+        Args:
+            name: The name of the prompt to render
+            arguments: Arguments to pass to the prompt
+
+        Returns:
+            GetPromptResult containing the rendered prompt messages
         """
+        logger.debug("Get prompt: %s with %s", name, arguments)
+
+        # Create and use context for the entire call
         with fastmcp.server.context.Context(fastmcp=self):
+            # Get prompt, checking first from our prompts, then from the mounted servers
             if self._prompt_manager.has_prompt(name):
-                prompt_result = await self._prompt_manager.render_prompt(
-                    name, arguments=arguments or {}
-                )
-                return prompt_result
-            else:
-                for server in self._mounted_servers.values():
-                    if server.match_prompt(name):
-                        new_key = server.strip_prompt_prefix(name)
-                        return await server.server._mcp_get_prompt(new_key, arguments)
-                else:
-                    raise NotFoundError(f"Unknown prompt: {name}")
+                return await self._prompt_manager.render_prompt(name, arguments)
+
+            # Check mounted servers to see if they have the prompt
+            for server in self._mounted_servers.values():
+                if server.match_prompt(name):
+                    prompt_name = server.strip_prompt_prefix(name)
+                    return await server.server._mcp_get_prompt(prompt_name, arguments)
+
+            raise NotFoundError(f"Unknown prompt: {name}")
 
     def add_tool(
         self,
@@ -730,6 +796,7 @@ class FastMCP(Generic[LifespanResultT]):
     async def run_stdio_async(self) -> None:
         """Run the server using stdio transport."""
         async with stdio_server() as (read_stream, write_stream):
+            logger.info(f"Starting MCP server {self.name!r} with transport 'stdio'")
             await self._mcp_server.run(
                 read_stream,
                 write_stream,
@@ -758,21 +825,29 @@ class FastMCP(Generic[LifespanResultT]):
             path: Path for the endpoint (defaults to settings.streamable_http_path or settings.sse_path)
             uvicorn_config: Additional configuration for the Uvicorn server
         """
-        uvicorn_config = uvicorn_config or {}
-        uvicorn_config.setdefault("timeout_graceful_shutdown", 0)
-        # lifespan is required for streamable http
-        uvicorn_config["lifespan"] = "on"
+        host = host or self.settings.host
+        port = port or self.settings.port
+        default_log_level_to_use = (log_level or self.settings.log_level).lower()
 
         app = self.http_app(path=path, transport=transport, middleware=middleware)
 
-        config = uvicorn.Config(
-            app,
-            host=host or self.settings.host,
-            port=port or self.settings.port,
-            log_level=log_level or self.settings.log_level.lower(),
-            **uvicorn_config,
-        )
+        _uvicorn_config_from_user = uvicorn_config or {}
+
+        config_kwargs: dict[str, Any] = {
+            "timeout_graceful_shutdown": 0,
+            "lifespan": "on",
+        }
+        config_kwargs.update(_uvicorn_config_from_user)
+
+        if "log_config" not in config_kwargs and "log_level" not in config_kwargs:
+            config_kwargs["log_level"] = default_log_level_to_use
+
+        config = uvicorn.Config(app, host=host, port=port, **config_kwargs)
         server = uvicorn.Server(config)
+        path = app.state.path.lstrip("/")  # type: ignore
+        logger.info(
+            f"Starting MCP server {self.name!r} with transport {transport!r} on http://{host}:{port}/{path}"
+        )
         await server.serve()
 
     async def run_sse_async(
@@ -831,7 +906,6 @@ class FastMCP(Generic[LifespanResultT]):
             auth_server_provider=self._auth_server_provider,
             auth_settings=self.settings.auth,
             debug=self.settings.debug,
-            routes=self._additional_http_routes,
             middleware=middleware,
         )
 
@@ -882,7 +956,6 @@ class FastMCP(Generic[LifespanResultT]):
                 json_response=self.settings.json_response,
                 stateless_http=self.settings.stateless_http,
                 debug=self.settings.debug,
-                routes=self._additional_http_routes,
                 middleware=middleware,
             )
         elif transport == "sse":
@@ -893,7 +966,6 @@ class FastMCP(Generic[LifespanResultT]):
                 auth_server_provider=self._auth_server_provider,
                 auth_settings=self.settings.auth,
                 debug=self.settings.debug,
-                routes=self._additional_http_routes,
                 middleware=middleware,
             )
 
@@ -925,10 +997,11 @@ class FastMCP(Generic[LifespanResultT]):
         self,
         prefix: str,
         server: FastMCP[LifespanResultT],
+        as_proxy: bool | None = None,
+        *,
         tool_separator: str | None = None,
         resource_separator: str | None = None,
         prompt_separator: str | None = None,
-        as_proxy: bool | None = None,
     ) -> None:
         """Mount another FastMCP server on this server with the given prefix.
 
@@ -939,15 +1012,15 @@ class FastMCP(Generic[LifespanResultT]):
         through the parent.
 
         When a server is mounted:
-        - Tools from the mounted server are accessible with prefixed names using the tool_separator.
+        - Tools from the mounted server are accessible with prefixed names.
           Example: If server has a tool named "get_weather", it will be available as "prefix_get_weather".
-        - Resources are accessible with prefixed URIs using the resource_separator.
+        - Resources are accessible with prefixed URIs.
           Example: If server has a resource with URI "weather://forecast", it will be available as
-          "prefix+weather://forecast".
-        - Templates are accessible with prefixed URI templates using the resource_separator.
+          "weather://prefix/forecast".
+        - Templates are accessible with prefixed URI templates.
           Example: If server has a template with URI "weather://location/{id}", it will be available
-          as "prefix+weather://location/{id}".
-        - Prompts are accessible with prefixed names using the prompt_separator.
+          as "weather://prefix/location/{id}".
+        - Prompts are accessible with prefixed names.
           Example: If server has a prompt named "weather_prompt", it will be available as
           "prefix_weather_prompt".
 
@@ -965,16 +1038,43 @@ class FastMCP(Generic[LifespanResultT]):
         Args:
             prefix: Prefix to use for the mounted server's objects.
             server: The FastMCP server to mount.
-            tool_separator: Separator character for tool names (defaults to "_").
-            resource_separator: Separator character for resource URIs (defaults to "+").
-            prompt_separator: Separator character for prompt names (defaults to "_").
             as_proxy: Whether to treat the mounted server as a proxy. If None (default),
                 automatically determined based on whether the server has a custom lifespan
                 (True if it has a custom lifespan, False otherwise).
+            tool_separator: Deprecated. Separator character for tool names.
+            resource_separator: Deprecated. Separator character for resource URIs.
+            prompt_separator: Deprecated. Separator character for prompt names.
         """
         from fastmcp import Client
         from fastmcp.client.transports import FastMCPTransport
         from fastmcp.server.proxy import FastMCPProxy
+
+        if tool_separator is not None:
+            # Deprecated since 2.4.0
+            warnings.warn(
+                "The tool_separator parameter is deprecated and will be removed in a future version. "
+                "Tools are now prefixed using 'prefix_toolname' format.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+
+        if resource_separator is not None:
+            # Deprecated since 2.4.0
+            warnings.warn(
+                "The resource_separator parameter is deprecated and ignored. "
+                "Resource prefixes are now added using the protocol://prefix/path format.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+
+        if prompt_separator is not None:
+            # Deprecated since 2.4.0
+            warnings.warn(
+                "The prompt_separator parameter is deprecated and will be removed in a future version. "
+                "Prompts are now prefixed using 'prefix_promptname' format.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
 
         # if as_proxy is not specified and the server has a custom lifespan,
         # we should treat it as a proxy
@@ -987,9 +1087,6 @@ class FastMCP(Generic[LifespanResultT]):
         mounted_server = MountedServer(
             server=server,
             prefix=prefix,
-            tool_separator=tool_separator,
-            resource_separator=resource_separator,
-            prompt_separator=prompt_separator,
         )
         self._mounted_servers[prefix] = mounted_server
         self._cache.clear()
@@ -1015,115 +1112,224 @@ class FastMCP(Generic[LifespanResultT]):
         future changes to the imported server will not be reflected in the
         importing server. Server-level configurations and lifespans are not imported.
 
-        When a server is mounted: - The tools are imported with prefixed names
-        using the tool_separator
+        When a server is imported:
+        - The tools are imported with prefixed names
           Example: If server has a tool named "get_weather", it will be
-          available as "weatherget_weather"
-        - The resources are imported with prefixed URIs using the
-          resource_separator Example: If server has a resource with URI
-          "weather://forecast", it will be available as
-          "weather+weather://forecast"
-        - The templates are imported with prefixed URI templates using the
-          resource_separator Example: If server has a template with URI
-          "weather://location/{id}", it will be available as
-          "weather+weather://location/{id}"
-        - The prompts are imported with prefixed names using the
-          prompt_separator Example: If server has a prompt named
-          "weather_prompt", it will be available as "weather_weather_prompt"
-        - The mounted server's lifespan will be executed when the parent
-          server's lifespan runs, ensuring that any setup needed by the mounted
-          server is performed
+          available as "prefix_get_weather"
+        - The resources are imported with prefixed URIs using the new format
+          Example: If server has a resource with URI "weather://forecast", it will
+          be available as "weather://prefix/forecast"
+        - The templates are imported with prefixed URI templates using the new format
+          Example: If server has a template with URI "weather://location/{id}", it will
+          be available as "weather://prefix/location/{id}"
+        - The prompts are imported with prefixed names
+          Example: If server has a prompt named "weather_prompt", it will be available as
+          "prefix_weather_prompt"
 
         Args:
-            prefix: The prefix to use for the mounted server server: The FastMCP
-            server to mount tool_separator: Separator for tool names (defaults
-            to "_") resource_separator: Separator for resource URIs (defaults to
-            "+") prompt_separator: Separator for prompt names (defaults to "_")
+            prefix: The prefix to use for the imported server
+            server: The FastMCP server to import
+            tool_separator: Deprecated. Separator for tool names.
+            resource_separator: Deprecated and ignored. Prefix is now
+              applied using the protocol://prefix/path format
+            prompt_separator: Deprecated. Separator for prompt names.
         """
-        if tool_separator is None:
-            tool_separator = "_"
-        if resource_separator is None:
-            resource_separator = "+"
-        if prompt_separator is None:
-            prompt_separator = "_"
+        if tool_separator is not None:
+            # Deprecated since 2.4.0
+            warnings.warn(
+                "The tool_separator parameter is deprecated and will be removed in a future version. "
+                "Tools are now prefixed using 'prefix_toolname' format.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+
+        if resource_separator is not None:
+            # Deprecated since 2.4.0
+            warnings.warn(
+                "The resource_separator parameter is deprecated and ignored. "
+                "Resource prefixes are now added using the protocol://prefix/path format.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+
+        if prompt_separator is not None:
+            # Deprecated since 2.4.0
+            warnings.warn(
+                "The prompt_separator parameter is deprecated and will be removed in a future version. "
+                "Prompts are now prefixed using 'prefix_promptname' format.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
 
         # Import tools from the mounted server
-        tool_prefix = f"{prefix}{tool_separator}"
+        tool_prefix = f"{prefix}_"
         for key, tool in (await server.get_tools()).items():
             self._tool_manager.add_tool(tool, key=f"{tool_prefix}{key}")
 
         # Import resources and templates from the mounted server
-        resource_prefix = f"{prefix}{resource_separator}"
-        _validate_resource_prefix(resource_prefix)
         for key, resource in (await server.get_resources()).items():
-            self._resource_manager.add_resource(resource, key=f"{resource_prefix}{key}")
+            prefixed_key = add_resource_prefix(key, prefix, self.resource_prefix_format)
+            self._resource_manager.add_resource(resource, key=prefixed_key)
+
         for key, template in (await server.get_resource_templates()).items():
-            self._resource_manager.add_template(template, key=f"{resource_prefix}{key}")
+            prefixed_key = add_resource_prefix(key, prefix, self.resource_prefix_format)
+            self._resource_manager.add_template(template, key=prefixed_key)
 
         # Import prompts from the mounted server
-        prompt_prefix = f"{prefix}{prompt_separator}"
+        prompt_prefix = f"{prefix}_"
         for key, prompt in (await server.get_prompts()).items():
             self._prompt_manager.add_prompt(prompt, key=f"{prompt_prefix}{key}")
 
         logger.info(f"Imported server {server.name} with prefix '{prefix}'")
         logger.debug(f"Imported tools with prefix '{tool_prefix}'")
-        logger.debug(f"Imported resources with prefix '{resource_prefix}'")
-        logger.debug(f"Imported templates with prefix '{resource_prefix}'")
+        logger.debug(f"Imported resources and templates with prefix '{prefix}/'")
         logger.debug(f"Imported prompts with prefix '{prompt_prefix}'")
 
         self._cache.clear()
 
     @classmethod
     def from_openapi(
-        cls, openapi_spec: dict[str, Any], client: httpx.AsyncClient, **settings: Any
+        cls,
+        openapi_spec: dict[str, Any],
+        client: httpx.AsyncClient,
+        route_maps: list[RouteMap] | None = None,
+        route_map_fn: OpenAPIRouteMapFn | None = None,
+        mcp_component_fn: OpenAPIComponentFn | None = None,
+        mcp_names: dict[str, str] | None = None,
+        all_routes_as_tools: bool = False,
+        **settings: Any,
     ) -> FastMCPOpenAPI:
         """
         Create a FastMCP server from an OpenAPI specification.
         """
-        from .openapi import FastMCPOpenAPI
+        from .openapi import FastMCPOpenAPI, MCPType, RouteMap
 
-        return FastMCPOpenAPI(openapi_spec=openapi_spec, client=client, **settings)
+        # Deprecated since 2.5.0
+        if all_routes_as_tools:
+            warnings.warn(
+                "The 'all_routes_as_tools' parameter is deprecated and will be removed in a future version. "
+                'Use \'route_maps=[RouteMap(methods="*", pattern=r".*", mcp_type=MCPType.TOOL)]\' instead.',
+                DeprecationWarning,
+                stacklevel=2,
+            )
+
+        if all_routes_as_tools and route_maps:
+            raise ValueError("Cannot specify both all_routes_as_tools and route_maps")
+
+        elif all_routes_as_tools:
+            route_maps = [RouteMap(methods="*", pattern=r".*", mcp_type=MCPType.TOOL)]
+
+        return FastMCPOpenAPI(
+            openapi_spec=openapi_spec,
+            client=client,
+            route_maps=route_maps,
+            route_map_fn=route_map_fn,
+            mcp_component_fn=mcp_component_fn,
+            mcp_names=mcp_names,
+            **settings,
+        )
 
     @classmethod
     def from_fastapi(
-        cls, app: Any, name: str | None = None, **settings: Any
+        cls,
+        app: Any,
+        name: str | None = None,
+        route_maps: list[RouteMap] | None = None,
+        route_map_fn: OpenAPIRouteMapFn | None = None,
+        mcp_component_fn: OpenAPIComponentFn | None = None,
+        mcp_names: dict[str, str] | None = None,
+        all_routes_as_tools: bool = False,
+        httpx_client_kwargs: dict[str, Any] | None = None,
+        **settings: Any,
     ) -> FastMCPOpenAPI:
         """
         Create a FastMCP server from a FastAPI application.
         """
 
-        from .openapi import FastMCPOpenAPI
+        from .openapi import FastMCPOpenAPI, MCPType, RouteMap
+
+        # Deprecated since 2.5.0
+        if all_routes_as_tools:
+            warnings.warn(
+                "The 'all_routes_as_tools' parameter is deprecated and will be removed in a future version. "
+                'Use \'route_maps=[RouteMap(methods="*", pattern=r".*", mcp_type=MCPType.TOOL)]\' instead.',
+                DeprecationWarning,
+                stacklevel=2,
+            )
+
+        if all_routes_as_tools and route_maps:
+            raise ValueError("Cannot specify both all_routes_as_tools and route_maps")
+
+        elif all_routes_as_tools:
+            route_maps = [RouteMap(methods="*", pattern=r".*", mcp_type=MCPType.TOOL)]
+
+        if httpx_client_kwargs is None:
+            httpx_client_kwargs = {}
+        httpx_client_kwargs.setdefault("base_url", "http://fastapi")
 
         client = httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://fastapi"
+            transport=httpx.ASGITransport(app=app),
+            **httpx_client_kwargs,
         )
 
         name = name or app.title
 
         return FastMCPOpenAPI(
-            openapi_spec=app.openapi(), client=client, name=name, **settings
+            openapi_spec=app.openapi(),
+            client=client,
+            name=name,
+            route_maps=route_maps,
+            route_map_fn=route_map_fn,
+            mcp_component_fn=mcp_component_fn,
+            mcp_names=mcp_names,
+            **settings,
         )
 
     @classmethod
-    def from_client(cls, client: Client, **settings: Any) -> FastMCPProxy:
+    def as_proxy(
+        cls,
+        backend: Client[ClientTransportT]
+        | ClientTransport
+        | FastMCP[Any]
+        | AnyUrl
+        | Path
+        | MCPConfig
+        | dict[str, Any]
+        | str,
+        **settings: Any,
+    ) -> FastMCPProxy:
+        """Create a FastMCP proxy server for the given backend.
+
+        The ``backend`` argument can be either an existing :class:`~fastmcp.client.Client`
+        instance or any value accepted as the ``transport`` argument of
+        :class:`~fastmcp.client.Client`. This mirrors the convenience of the
+        ``Client`` constructor.
         """
-        Create a FastMCP proxy server from a FastMCP client.
-        """
+        from fastmcp.client.client import Client
         from fastmcp.server.proxy import FastMCPProxy
+
+        if isinstance(backend, Client):
+            client = backend
+        else:
+            client = Client(backend)
 
         return FastMCPProxy(client=client, **settings)
 
-
-def _validate_resource_prefix(prefix: str) -> None:
-    valid_resource = "resource://path/to/resource"
-    test_case = f"{prefix}{valid_resource}"
-    try:
-        AnyUrl(test_case)
-    except pydantic.ValidationError as e:
-        raise ValueError(
-            "Resource prefix or separator would result in an "
-            f"invalid resource URI (test case was {test_case!r}): {e}"
+    @classmethod
+    def from_client(
+        cls, client: Client[ClientTransportT], **settings: Any
+    ) -> FastMCPProxy:
+        """
+        Create a FastMCP proxy server from a FastMCP client.
+        """
+        # Deprecated since 2.3.5
+        warnings.warn(
+            "FastMCP.from_client() is deprecated; use FastMCP.as_proxy() instead.",
+            DeprecationWarning,
+            stacklevel=2,
         )
+
+        return cls.as_proxy(client, **settings)
 
 
 class MountedServer:
@@ -1131,67 +1337,214 @@ class MountedServer:
         self,
         prefix: str,
         server: FastMCP[LifespanResultT],
-        tool_separator: str | None = None,
-        resource_separator: str | None = None,
-        prompt_separator: str | None = None,
     ):
-        if tool_separator is None:
-            tool_separator = "_"
-        if resource_separator is None:
-            resource_separator = "+"
-        if prompt_separator is None:
-            prompt_separator = "_"
-
-        _validate_resource_prefix(f"{prefix}{resource_separator}")
-
         self.server = server
         self.prefix = prefix
-        self.tool_separator = tool_separator
-        self.resource_separator = resource_separator
-        self.prompt_separator = prompt_separator
 
     async def get_tools(self) -> dict[str, Tool]:
         tools = await self.server.get_tools()
-        return {
-            f"{self.prefix}{self.tool_separator}{key}": tool
-            for key, tool in tools.items()
-        }
+        return {f"{self.prefix}_{key}": tool for key, tool in tools.items()}
 
     async def get_resources(self) -> dict[str, Resource]:
         resources = await self.server.get_resources()
         return {
-            f"{self.prefix}{self.resource_separator}{key}": resource
+            add_resource_prefix(
+                key, self.prefix, self.server.resource_prefix_format
+            ): resource
             for key, resource in resources.items()
         }
 
     async def get_resource_templates(self) -> dict[str, ResourceTemplate]:
         templates = await self.server.get_resource_templates()
         return {
-            f"{self.prefix}{self.resource_separator}{key}": template
+            add_resource_prefix(
+                key, self.prefix, self.server.resource_prefix_format
+            ): template
             for key, template in templates.items()
         }
 
     async def get_prompts(self) -> dict[str, Prompt]:
         prompts = await self.server.get_prompts()
-        return {
-            f"{self.prefix}{self.prompt_separator}{key}": prompt
-            for key, prompt in prompts.items()
-        }
+        return {f"{self.prefix}_{key}": prompt for key, prompt in prompts.items()}
 
     def match_tool(self, key: str) -> bool:
-        return key.startswith(f"{self.prefix}{self.tool_separator}")
+        return key.startswith(f"{self.prefix}_")
 
     def strip_tool_prefix(self, key: str) -> str:
-        return key.removeprefix(f"{self.prefix}{self.tool_separator}")
+        return key.removeprefix(f"{self.prefix}_")
 
     def match_resource(self, key: str) -> bool:
-        return key.startswith(f"{self.prefix}{self.resource_separator}")
+        return has_resource_prefix(key, self.prefix, self.server.resource_prefix_format)
 
     def strip_resource_prefix(self, key: str) -> str:
-        return key.removeprefix(f"{self.prefix}{self.resource_separator}")
+        return remove_resource_prefix(
+            key, self.prefix, self.server.resource_prefix_format
+        )
 
     def match_prompt(self, key: str) -> bool:
-        return key.startswith(f"{self.prefix}{self.prompt_separator}")
+        return key.startswith(f"{self.prefix}_")
 
     def strip_prompt_prefix(self, key: str) -> str:
-        return key.removeprefix(f"{self.prefix}{self.prompt_separator}")
+        return key.removeprefix(f"{self.prefix}_")
+
+
+def add_resource_prefix(
+    uri: str, prefix: str, prefix_format: Literal["protocol", "path"] | None = None
+) -> str:
+    """Add a prefix to a resource URI.
+
+    Args:
+        uri: The original resource URI
+        prefix: The prefix to add
+
+    Returns:
+        The resource URI with the prefix added
+
+    Examples:
+        >>> add_resource_prefix("resource://path/to/resource", "prefix")
+        "resource://prefix/path/to/resource"  # with new style
+        >>> add_resource_prefix("resource://path/to/resource", "prefix")
+        "prefix+resource://path/to/resource"  # with legacy style
+        >>> add_resource_prefix("resource:///absolute/path", "prefix")
+        "resource://prefix//absolute/path"  # with new style
+
+    Raises:
+        ValueError: If the URI doesn't match the expected protocol://path format
+    """
+    if not prefix:
+        return uri
+
+    # Get the server settings to check for legacy format preference
+
+    if prefix_format is None:
+        prefix_format = fastmcp.settings.settings.resource_prefix_format
+
+    if prefix_format == "protocol":
+        # Legacy style: prefix+protocol://path
+        return f"{prefix}+{uri}"
+    elif prefix_format == "path":
+        # New style: protocol://prefix/path
+        # Split the URI into protocol and path
+        match = URI_PATTERN.match(uri)
+        if not match:
+            raise ValueError(
+                f"Invalid URI format: {uri}. Expected protocol://path format."
+            )
+
+        protocol, path = match.groups()
+
+        # Add the prefix to the path
+        return f"{protocol}{prefix}/{path}"
+    else:
+        raise ValueError(f"Invalid prefix format: {prefix_format}")
+
+
+def remove_resource_prefix(
+    uri: str, prefix: str, prefix_format: Literal["protocol", "path"] | None = None
+) -> str:
+    """Remove a prefix from a resource URI.
+
+    Args:
+        uri: The resource URI with a prefix
+        prefix: The prefix to remove
+        prefix_format: The format of the prefix to remove
+    Returns:
+        The resource URI with the prefix removed
+
+    Examples:
+        >>> remove_resource_prefix("resource://prefix/path/to/resource", "prefix")
+        "resource://path/to/resource"  # with new style
+        >>> remove_resource_prefix("prefix+resource://path/to/resource", "prefix")
+        "resource://path/to/resource"  # with legacy style
+        >>> remove_resource_prefix("resource://prefix//absolute/path", "prefix")
+        "resource:///absolute/path"  # with new style
+
+    Raises:
+        ValueError: If the URI doesn't match the expected protocol://path format
+    """
+    if not prefix:
+        return uri
+
+    if prefix_format is None:
+        prefix_format = fastmcp.settings.settings.resource_prefix_format
+
+    if prefix_format == "protocol":
+        # Legacy style: prefix+protocol://path
+        legacy_prefix = f"{prefix}+"
+        if uri.startswith(legacy_prefix):
+            return uri[len(legacy_prefix) :]
+        return uri
+    elif prefix_format == "path":
+        # New style: protocol://prefix/path
+        # Split the URI into protocol and path
+        match = URI_PATTERN.match(uri)
+        if not match:
+            raise ValueError(
+                f"Invalid URI format: {uri}. Expected protocol://path format."
+            )
+
+        protocol, path = match.groups()
+
+        # Check if the path starts with the prefix followed by a /
+        prefix_pattern = f"^{re.escape(prefix)}/(.*?)$"
+        path_match = re.match(prefix_pattern, path)
+        if not path_match:
+            return uri
+
+        # Return the URI without the prefix
+        return f"{protocol}{path_match.group(1)}"
+    else:
+        raise ValueError(f"Invalid prefix format: {prefix_format}")
+
+
+def has_resource_prefix(
+    uri: str, prefix: str, prefix_format: Literal["protocol", "path"] | None = None
+) -> bool:
+    """Check if a resource URI has a specific prefix.
+
+    Args:
+        uri: The resource URI to check
+        prefix: The prefix to look for
+
+    Returns:
+        True if the URI has the specified prefix, False otherwise
+
+    Examples:
+        >>> has_resource_prefix("resource://prefix/path/to/resource", "prefix")
+        True  # with new style
+        >>> has_resource_prefix("prefix+resource://path/to/resource", "prefix")
+        True  # with legacy style
+        >>> has_resource_prefix("resource://other/path/to/resource", "prefix")
+        False
+
+    Raises:
+        ValueError: If the URI doesn't match the expected protocol://path format
+    """
+    if not prefix:
+        return False
+
+    # Get the server settings to check for legacy format preference
+
+    if prefix_format is None:
+        prefix_format = fastmcp.settings.settings.resource_prefix_format
+
+    if prefix_format == "protocol":
+        # Legacy style: prefix+protocol://path
+        legacy_prefix = f"{prefix}+"
+        return uri.startswith(legacy_prefix)
+    elif prefix_format == "path":
+        # New style: protocol://prefix/path
+        # Split the URI into protocol and path
+        match = URI_PATTERN.match(uri)
+        if not match:
+            raise ValueError(
+                f"Invalid URI format: {uri}. Expected protocol://path format."
+            )
+
+        _, path = match.groups()
+
+        # Check if the path starts with the prefix followed by a /
+        prefix_pattern = f"^{re.escape(prefix)}/"
+        return bool(re.match(prefix_pattern, path))
+    else:
+        raise ValueError(f"Invalid prefix format: {prefix_format}")

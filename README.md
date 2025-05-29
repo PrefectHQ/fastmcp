@@ -15,11 +15,11 @@
 > [!NOTE]
 > #### FastMCP 2.0 & The Official MCP SDK
 >
-> Recognize the `FastMCP` name? You might have seen the version that was contributed to the [official MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk), which was based on **FastMCP 1.0**.
+> FastMCP is the standard framework for building MCP servers and clients. FastMCP 1.0 was incorporated into the [official MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk).
 >
-> **Welcome to FastMCP 2.0!** This is the actively developed successor, and it significantly expands on 1.0 by introducing powerful client capabilities, server proxying & composition, OpenAPI/FastAPI integration, and more advanced features.
+> **This is FastMCP 2.0,** the actively maintained version that significantly expands on 1.0's basic server-building capabilities by introducing full client support, server composition, OpenAPI/FastAPI integration, remote server proxying, built-in testing tools, and more.
 >
-> FastMCP 2.0 is the recommended path for building modern, powerful MCP applications. Ready to upgrade or get started? Follow the [installation instructions](https://gofastmcp.com/getting-started/installation), which include specific steps for upgrading from the official MCP SDK.
+> FastMCP 2.0 is the complete toolkit for modern AI applications. Ready to upgrade or get started? Follow the [installation instructions](https://gofastmcp.com/getting-started/installation), which include specific steps for upgrading from the official MCP SDK.
 
 ---
 
@@ -253,6 +253,29 @@ async def main():
         # ... use the client
 ```
 
+FastMCP also supports connecting to multiple servers through a single unified client using the standard MCP configuration format:
+
+```python
+from fastmcp import Client
+
+# Standard MCP configuration with multiple servers
+config = {
+    "mcpServers": {
+        "weather": {"url": "https://weather-api.example.com/mcp"},
+        "assistant": {"command": "python", "args": ["./assistant_server.py"]}
+    }
+}
+
+# Create a client that connects to all servers
+client = Client(config)
+
+async def main():
+    async with client:
+        # Access tools and resources with server prefixes
+        forecast = await client.call_tool("weather_get_forecast", {"city": "London"})
+        answer = await client.call_tool("assistant_answer_question", {"query": "What is MCP?"})
+```
+
 Learn more in the [**Client Documentation**](https://gofastmcp.com/clients/client) and [**Transports Documentation**](https://gofastmcp.com/clients/transports).
 
 ## Advanced Features
@@ -261,7 +284,7 @@ FastMCP introduces powerful ways to structure and deploy your MCP applications.
 
 ### Proxy Servers
 
-Create a FastMCP server that acts as an intermediary for another local or remote MCP server using `FastMCP.from_client()`. This is especially useful for bridging transports (e.g., remote SSE to local Stdio) or adding a layer of logic to a server you don't control.
+Create a FastMCP server that acts as an intermediary for another local or remote MCP server using `FastMCP.as_proxy()`. This is especially useful for bridging transports (e.g., remote SSE to local Stdio) or adding a layer of logic to a server you don't control.
 
 Learn more in the [**Proxying Documentation**](https://gofastmcp.com/patterns/proxy).
 

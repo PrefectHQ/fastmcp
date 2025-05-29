@@ -17,6 +17,7 @@ from typer import Context, Exit
 
 import fastmcp
 from fastmcp.cli import claude
+from fastmcp.cli import run as run_module
 from fastmcp.utilities.logging import get_logger
 
 logger = get_logger("cli")
@@ -49,16 +50,14 @@ def _get_npx_command():
 def _parse_env_var(env_var: str) -> tuple[str, str]:
     """Parse environment variable string in format KEY=VALUE."""
     if "=" not in env_var:
-        logger.error(
-            f"Invalid environment variable format: {env_var}. Must be KEY=VALUE"
-        )
+        logger.error("Invalid environment variable format. Must be KEY=VALUE")
         sys.exit(1)
     key, value = env_var.split("=", 1)
     return key.strip(), value.strip()
 
 
 def _build_uv_command(
-    file_spec: str,
+    server_spec: str,
     with_editable: Path | None = None,
     with_packages: list[str] | None = None,
 ) -> list[str]:
@@ -76,104 +75,8 @@ def _build_uv_command(
                 cmd.extend(["--with", pkg])
 
     # Add mcp run command
-    cmd.extend(["fastmcp", "run", file_spec])
+    cmd.extend(["fastmcp", "run", server_spec])
     return cmd
-
-
-def _parse_file_path(file_spec: str) -> tuple[Path, str | None]:
-    """Parse a file path that may include a server object specification.
-
-    Args:
-        file_spec: Path to file, optionally with :object suffix
-
-    Returns:
-        Tuple of (file_path, server_object)
-    """
-    # First check if we have a Windows path (e.g., C:\...)
-    has_windows_drive = len(file_spec) > 1 and file_spec[1] == ":"
-
-    # Split on the last colon, but only if it's not part of the Windows drive letter
-    # and there's actually another colon in the string after the drive letter
-    if ":" in (file_spec[2:] if has_windows_drive else file_spec):
-        file_str, server_object = file_spec.rsplit(":", 1)
-    else:
-        file_str, server_object = file_spec, None
-
-    # Resolve the file path
-    file_path = Path(file_str).expanduser().resolve()
-    if not file_path.exists():
-        logger.error(f"File not found: {file_path}")
-        sys.exit(1)
-    if not file_path.is_file():
-        logger.error(f"Not a file: {file_path}")
-        sys.exit(1)
-
-    return file_path, server_object
-
-
-def _import_server(file: Path, server_object: str | None = None):
-    """Import a MCP server from a file.
-
-    Args:
-        file: Path to the file
-        server_object: Optional object name in format "module:object" or just "object"
-
-    Returns:
-        The server object
-    """
-    # Add parent directory to Python path so imports can be resolved
-    file_dir = str(file.parent)
-    if file_dir not in sys.path:
-        sys.path.insert(0, file_dir)
-
-    # Import the module
-    spec = importlib.util.spec_from_file_location("server_module", file)
-    if not spec or not spec.loader:
-        logger.error("Could not load module", extra={"file": str(file)})
-        sys.exit(1)
-
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-
-    # If no object specified, try common server names
-    if not server_object:
-        # Look for the most common server object names
-        for name in ["mcp", "server", "app"]:
-            if hasattr(module, name):
-                return getattr(module, name)
-
-        logger.error(
-            f"No server object found in {file}. Please either:\n"
-            "1. Use a standard variable name (mcp, server, or app)\n"
-            "2. Specify the object name with file:object syntax",
-            extra={"file": str(file)},
-        )
-        sys.exit(1)
-
-    # Handle module:object syntax
-    if ":" in server_object:
-        module_name, object_name = server_object.split(":", 1)
-        try:
-            server_module = importlib.import_module(module_name)
-            server = getattr(server_module, object_name, None)
-        except ImportError:
-            logger.error(
-                f"Could not import module '{module_name}'",
-                extra={"file": str(file)},
-            )
-            sys.exit(1)
-    else:
-        # Just object name
-        server = getattr(module, server_object, None)
-
-    if server is None:
-        logger.error(
-            f"Server object '{server_object}' not found",
-            extra={"file": str(file)},
-        )
-        sys.exit(1)
-
-    return server
 
 
 @app.command()
@@ -201,7 +104,7 @@ def version(ctx: Context):
 
 @app.command()
 def dev(
-    file_spec: str = typer.Argument(
+    server_spec: str = typer.Argument(
         ...,
         help="Python file to run, optionally with :object suffix",
     ),
@@ -246,7 +149,7 @@ def dev(
     ] = None,
 ) -> None:
     """Run a MCP server with the MCP Inspector."""
-    file, server_object = _parse_file_path(file_spec)
+    file, server_object = run_module.parse_file_path(server_spec)
 
     logger.debug(
         "Starting dev server",
@@ -262,7 +165,7 @@ def dev(
 
     try:
         # Import server to get dependencies
-        server = _import_server(file, server_object)
+        server = run_module.import_server(file, server_object)
         if hasattr(server, "dependencies") and server.dependencies is not None:
             with_packages = list(set(with_packages + server.dependencies))
 
@@ -285,7 +188,7 @@ def dev(
         if inspector_version:
             inspector_cmd += f"@{inspector_version}"
 
-        uv_cmd = _build_uv_command(file_spec, with_editable, with_packages)
+        uv_cmd = _build_uv_command(server_spec, with_editable, with_packages)
 
         # Run the MCP Inspector command with shell=True on Windows
         shell = sys.platform == "win32"
@@ -318,9 +221,9 @@ def dev(
 
 @app.command()
 def run(
-    file_spec: str = typer.Argument(
+    server_spec: str = typer.Argument(
         ...,
-        help="Python file to run, optionally with :object suffix",
+        help="Python file, object specification (file:obj), or URL",
     ),
     transport: Annotated[
         str | None,
@@ -354,22 +257,20 @@ def run(
         ),
     ] = None,
 ) -> None:
-    """Run a MCP server.
+    """Run a MCP server or connect to a remote one.
 
-    The server can be specified in two ways:
-    1. Module approach: server.py - runs the module directly, expecting a server.run() call.\n
-    2. Import approach: server.py:app - imports and runs the specified server object.\n\n
+    The server can be specified in three ways:
+    1. Module approach: server.py - runs the module directly, looking for an object named mcp/server/app.\n
+    2. Import approach: server.py:app - imports and runs the specified server object.\n
+    3. URL approach: http://server-url - connects to a remote server and creates a proxy.\n\n
 
     Note: This command runs the server directly. You are responsible for ensuring
     all dependencies are available.
     """
-    file, server_object = _parse_file_path(file_spec)
-
     logger.debug(
-        "Running server",
+        "Running server or client",
         extra={
-            "file": str(file),
-            "server_object": server_object,
+            "server_spec": server_spec,
             "transport": transport,
             "host": host,
             "port": port,
@@ -378,29 +279,18 @@ def run(
     )
 
     try:
-        # Import and get server object
-        server = _import_server(file, server_object)
-
-        logger.info(f'Found server "{server.name}" in {file}')
-
-        # Run the server
-        kwargs = {}
-        if transport:
-            kwargs["transport"] = transport
-        if host:
-            kwargs["host"] = host
-        if port:
-            kwargs["port"] = port
-        if log_level:
-            kwargs["log_level"] = log_level
-
-        server.run(**kwargs)
-
+        run_module.run_command(
+            server_spec=server_spec,
+            transport=transport,
+            host=host,
+            port=port,
+            log_level=log_level,
+        )
     except Exception as e:
         logger.error(
-            f"Failed to run server: {e}",
+            f"Failed to run: {e}",
             extra={
-                "file": str(file),
+                "server_spec": server_spec,
                 "error": str(e),
             },
         )
@@ -409,7 +299,7 @@ def run(
 
 @app.command()
 def install(
-    file_spec: str = typer.Argument(
+    server_spec: str = typer.Argument(
         ...,
         help="Python file to run, optionally with :object suffix",
     ),
@@ -466,7 +356,7 @@ def install(
     Environment variables are preserved once added and only updated if new values
     are explicitly provided.
     """
-    file, server_object = _parse_file_path(file_spec)
+    file, server_object = run_module.parse_file_path(server_spec)
 
     logger.debug(
         "Installing server",
@@ -489,7 +379,7 @@ def install(
     server = None
     if not name:
         try:
-            server = _import_server(file, server_object)
+            server = run_module.import_server(file, server_object)
             name = server.name
         except (ImportError, ModuleNotFoundError) as e:
             logger.debug(
@@ -526,7 +416,7 @@ def install(
             env_dict[key] = value
 
     if claude.update_claude_config(
-        file_spec,
+        server_spec,
         name,
         with_editable=with_editable,
         with_packages=with_packages,

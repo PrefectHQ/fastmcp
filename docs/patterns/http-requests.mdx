@@ -23,7 +23,7 @@ from fastmcp import FastMCP
 from fastmcp.server.dependencies import get_http_request
 from starlette.requests import Request
 
-mcp = FastMCP(name="HTTPRequestDemo")
+mcp = FastMCP(name="HTTP Request Demo")
 
 @mcp.tool()
 async def user_agent_info() -> dict:
@@ -48,32 +48,40 @@ This approach works anywhere within a request's execution flow, not just within 
 2. You're calling nested functions that need HTTP request data
 3. You're working with middleware or other request processing code
 
-## Important Notes
+## Accessing HTTP Headers Only
 
-- HTTP requests are only available when FastMCP is running as part of a web application
-- Accessing the HTTP request outside of a web request context will raise a `RuntimeError`
-- The `get_http_request()` function returns a standard [Starlette Request](https://www.starlette.io/requests/) object
+If you only need request headers and want to avoid potential errors, you can use the `get_http_headers()` helper:
 
-## Common Use Cases
+```python {2}
+from fastmcp import FastMCP
+from fastmcp.server.dependencies import get_http_headers
 
-### Accessing Request Headers
-
-```python
-from fastmcp.server.dependencies import get_http_request
+mcp = FastMCP(name="Headers Demo")
 
 @mcp.tool()
-async def get_auth_info() -> dict:
-    """Get authentication information from request headers."""
-    request = get_http_request()
+async def safe_header_info() -> dict:
+    """Safely get header information without raising errors."""
+    # Get headers (returns empty dict if no request context)
+    headers = get_http_headers()
     
     # Get authorization header
-    auth_header = request.headers.get("authorization", "")
-    
-    # Check for Bearer token
+    auth_header = headers.get("authorization", "")
     is_bearer = auth_header.startswith("Bearer ")
     
     return {
+        "user_agent": headers.get("user-agent", "Unknown"),
+        "content_type": headers.get("content-type", "Unknown"),
         "has_auth": bool(auth_header),
-        "auth_type": "Bearer" if is_bearer else "Other" if auth_header else "None"
+        "auth_type": "Bearer" if is_bearer else "Other" if auth_header else "None",
+        "headers_count": len(headers)
     }
 ```
+
+By default, `get_http_headers()` excludes problematic headers like `host` and `content-length`. To include all headers, use `get_http_headers(include_all=True)`.
+
+## Important Notes
+
+- HTTP requests are only available when FastMCP is running as part of a web application
+- Accessing the HTTP request with `get_http_request()` outside of a web request context will raise a `RuntimeError`
+- The `get_http_headers()` function **never raises errors** - it returns an empty dict when no request context is available
+- The `get_http_request()` function returns a standard [Starlette Request](https://www.starlette.io/requests/) object

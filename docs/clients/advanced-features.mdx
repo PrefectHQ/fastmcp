@@ -1,0 +1,152 @@
+---
+title: Advanced Features
+sidebarTitle: Advanced Features
+description: Learn about the advanced features of the FastMCP Client.
+icon: stars
+---
+
+import { VersionBadge } from '/snippets/version-badge.mdx'
+
+In addition to basic server interaction, FastMCP clients can also handle more advanced features and server interaction patterns. The `Client` constructor accepts additional configuration to handle these server requests.
+
+<Tip>
+To enable many of these features, you must provide an appropriate handler or callback function. For example. In most cases, if you do not provide a handler, FastMCP's default handler will emit a `DEBUG` level log.
+</Tip>
+
+## Logging and Notifications
+
+<VersionBadge version="2.0.0" />
+MCP servers can emit logs to clients. To process these logs, you can provide a `log_handler` to the client.
+
+The `log_handler` must be an async function that accepts a single argument, which is an instance of `fastmcp.client.logging.LogMessage`. This has attributes like `level`, `logger`, and `data`.
+
+```python {2, 12}
+from fastmcp import Client
+from fastmcp.client.logging import LogMessage
+
+async def log_handler(message: LogMessage):
+    level = message.level.upper()
+    logger = message.logger or 'default'
+    data = message.data
+    print(f"[Server Log - {level}] {logger}: {data}")
+
+client_with_logging = Client(
+    ...,
+    log_handler=log_handler,
+)
+```
+## Progress Monitoring
+
+<VersionBadge version="2.3.5" />
+
+MCP servers can report progress during long-running operations. The client can set a progress handler to receive and process these updates.
+
+```python {2, 13}
+from fastmcp import Client
+from fastmcp.client.progress import ProgressHandler
+
+async def my_progress_handler(
+    progress: float, 
+    total: float | None, 
+    message: str | None
+) -> None:
+    print(f"Progress: {progress} / {total} ({message})")
+
+client = Client(
+    ...,
+    progress_handler=my_progress_handler
+)
+```
+
+By default, FastMCP uses a handler that logs progress updates at the debug level. This default handler properly handles cases where `total` or `message` might be None.
+
+You can override the progress handler for specific tool calls:
+
+```python
+# Client uses the default debug logger for progress
+client = Client(...)
+
+async with client:
+    # Use default progress handler (debug logging)
+    result1 = await client.call_tool("long_task", {"param": "value"})
+    
+    # Override with custom progress handler just for this call
+    result2 = await client.call_tool(
+        "another_task", 
+        {"param": "value"}, 
+        progress_handler=my_progress_handler
+    )
+```
+
+A typical progress update includes:
+- Current progress value (e.g., 2 of 5 steps completed)
+- Total expected value (may be None)
+- Status message (may be None)
+
+## LLM Sampling
+
+<VersionBadge version="2.0.0" />
+
+MCP Servers can request LLM completions from clients. The client can provide a `sampling_handler` to handle these requests. The sampling handler receives a list of messages and other parameters from the server, and should return a string completion.
+
+The following example uses the `marvin` library to generate a completion:
+
+```python {8-17, 21}
+import marvin
+from fastmcp import Client
+from fastmcp.client.sampling import (
+    SamplingMessage,
+    SamplingParams,
+    RequestContext,
+)
+
+async def sampling_handler(
+    messages: list[SamplingMessage],
+    params: SamplingParams,
+    context: RequestContext
+) -> str:
+    return await marvin.say_async(
+        message=[m.content.text for m in messages],
+        instructions=params.systemPrompt,
+    )
+
+client = Client(
+    ...,
+    sampling_handler=sampling_handler,
+)
+```
+
+
+## Roots
+
+<VersionBadge version="2.0.0" />
+
+Roots are a way for clients to inform servers about the resources they have access to or certain boundaries on their access. The server can use this information to adjust behavior or provide more accurate responses.
+
+Servers can request roots from clients, and clients can notify servers when their roots change.
+
+To set the roots when creating a client, users can either provide a list of roots (which can be a list of strings) or an async function that returns a list of roots.
+
+<CodeGroup>
+```python Static Roots {5}
+from fastmcp import Client
+
+client = Client(
+    ..., 
+    roots=["/path/to/root1", "/path/to/root2"],
+)
+```
+```python Dynamic Roots Callback {4-6, 10}
+from fastmcp import Client
+from fastmcp.client.roots import RequestContext
+
+async def roots_callback(context: RequestContext) -> list[str]:
+    print(f"Server requested roots (Request ID: {context.request_id})")
+    return ["/path/to/root1", "/path/to/root2"]
+
+client = Client(
+    ..., 
+    roots=roots_callback,
+)
+```
+</CodeGroup>

@@ -99,7 +99,8 @@ class TestFileResource:
             await resource.read()
 
     @pytest.mark.skipif(
-        os.name == "nt", reason="File permissions behave differently on Windows"
+        os.name == "nt" or (hasattr(os, "getuid") and os.getuid() == 0),
+        reason="File permissions behave differently on Windows or when running as root",
     )
     async def test_permission_error(self, temp_file: Path):
         """Test reading a file without permissions."""

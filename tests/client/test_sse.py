@@ -136,11 +136,11 @@ async def test_nested_sse_server_resolves_correctly():
             assert result is True
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="Timeout tests are flaky on Windows. Timeouts *are* supported but the tests are unreliable.",
+)
 class TestTimeout:
-    @pytest.mark.skipif(
-        sys.platform == "win32",
-        reason="This test is flaky on Windows. Sometimes the client timeout is respected and sometimes it is not.",
-    )
     async def test_timeout(self, sse_server: str):
         with pytest.raises(
             McpError,
@@ -167,10 +167,6 @@ class TestTimeout:
             with pytest.raises(McpError, match="Timed out"):
                 await client.call_tool("sleep", {"seconds": 0.1}, timeout=0.01)
 
-    @pytest.mark.skipif(
-        sys.platform == "win32",
-        reason="This test is flaky on Windows. Sometimes the client timeout is respected and sometimes it is not.",
-    )
     async def test_timeout_client_timeout_does_not_override_tool_call_timeout_if_lower(
         self, sse_server: str
     ):

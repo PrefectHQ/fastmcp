@@ -9,8 +9,8 @@ class LogHandler:
     def __init__(self):
         self.logs: list[LogMessage] = []
 
-    async def handle_log(self, params: LogMessage) -> None:
-        self.logs.append(params)
+    async def handle_log(self, message: LogMessage) -> None:
+        self.logs.append(message)
 
 
 @pytest.fixture

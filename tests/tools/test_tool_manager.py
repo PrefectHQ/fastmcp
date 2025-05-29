@@ -71,6 +71,44 @@ class TestAddTools:
         assert "age" in tool.parameters["$defs"]["UserInput"]["properties"]
         assert "flag" in tool.parameters["properties"]
 
+    def test_callable_object(self):
+        class Adder:
+            """Adds two numbers."""
+
+            def __call__(self, x: int, y: int) -> int:
+                """ignore this"""
+                return x + y
+
+        manager = ToolManager()
+        manager.add_tool_from_fn(Adder())
+
+        tool = manager.get_tool("Adder")
+        assert tool is not None
+        assert tool.name == "Adder"
+        assert tool.description == "Adds two numbers."
+        assert len(tool.parameters["properties"]) == 2
+        assert tool.parameters["properties"]["x"]["type"] == "integer"
+        assert tool.parameters["properties"]["y"]["type"] == "integer"
+
+    def test_async_callable_object(self):
+        class Adder:
+            """Adds two numbers."""
+
+            async def __call__(self, x: int, y: int) -> int:
+                """ignore this"""
+                return x + y
+
+        manager = ToolManager()
+        manager.add_tool_from_fn(Adder())
+
+        tool = manager.get_tool("Adder")
+        assert tool is not None
+        assert tool.name == "Adder"
+        assert tool.description == "Adds two numbers."
+        assert len(tool.parameters["properties"]) == 2
+        assert tool.parameters["properties"]["x"]["type"] == "integer"
+        assert tool.parameters["properties"]["y"]["type"] == "integer"
+
     async def test_tool_with_image_return(self):
         def image_tool(data: bytes) -> Image:
             return Image(data=data)
@@ -302,6 +340,40 @@ class TestCallTools:
         assert isinstance(result[0], TextContent)
         assert result[0].text == "10"
         assert json.loads(result[0].text) == 10
+
+    async def test_call_tool_callable_object(self):
+        class Adder:
+            """Adds two numbers."""
+
+            def __call__(self, x: int, y: int) -> int:
+                """ignore this"""
+                return x + y
+
+        manager = ToolManager()
+        manager.add_tool_from_fn(Adder())
+        result = await manager.call_tool("Adder", {"x": 1, "y": 2})
+        assert isinstance(result, list)
+        assert len(result) == 1
+        assert isinstance(result[0], TextContent)
+        assert result[0].text == "3"
+        assert json.loads(result[0].text) == 3
+
+    async def test_call_tool_callable_object_async(self):
+        class Adder:
+            """Adds two numbers."""
+
+            async def __call__(self, x: int, y: int) -> int:
+                """ignore this"""
+                return x + y
+
+        manager = ToolManager()
+        manager.add_tool_from_fn(Adder())
+        result = await manager.call_tool("Adder", {"x": 1, "y": 2})
+        assert isinstance(result, list)
+        assert len(result) == 1
+        assert isinstance(result[0], TextContent)
+        assert result[0].text == "3"
+        assert json.loads(result[0].text) == 3
 
     async def test_call_tool_with_default_args(self):
         def add(a: int, b: int = 1) -> int:
@@ -778,8 +850,8 @@ class TestToolErrorHandling:
         with pytest.raises(ToolError, match="Specific tool error"):
             await manager.call_tool("error_tool", {"x": 42})
 
-    async def test_exception_converted_to_tool_error(self):
-        """Test that other exceptions are converted to ToolError."""
+    async def test_exception_converted_to_tool_error_with_details(self):
+        """Test that other exceptions include details by default."""
         manager = ToolManager()
 
         def buggy_tool(x: int) -> int:
@@ -791,7 +863,24 @@ class TestToolErrorHandling:
         with pytest.raises(ToolError) as excinfo:
             await manager.call_tool("buggy_tool", {"x": 42})
 
-        # Exception message should contain the tool name but not the internal details
+        # Exception message should include the tool name and the internal details
+        assert "Error calling tool 'buggy_tool'" in str(excinfo.value)
+        assert "Internal error details" in str(excinfo.value)
+
+    async def test_exception_converted_to_masked_tool_error(self):
+        """Test that other exceptions are masked when enabled."""
+        manager = ToolManager(mask_error_details=True)
+
+        def buggy_tool(x: int) -> int:
+            """Tool that raises a ValueError."""
+            raise ValueError("Internal error details")
+
+        manager.add_tool_from_fn(buggy_tool)
+
+        with pytest.raises(ToolError) as excinfo:
+            await manager.call_tool("buggy_tool", {"x": 42})
+
+        # Exception message should only contain the tool name, not the internal details
         assert "Error calling tool 'buggy_tool'" in str(excinfo.value)
         assert "Internal error details" not in str(excinfo.value)
 
@@ -808,9 +897,26 @@ class TestToolErrorHandling:
         with pytest.raises(ToolError, match="Async tool error"):
             await manager.call_tool("async_error_tool", {"x": 42})
 
-    async def test_async_exception_converted_to_tool_error(self):
-        """Test that other exceptions from async tools are converted to ToolError."""
+    async def test_async_exception_converted_to_tool_error_with_details(self):
+        """Test that other exceptions from async tools include details by default."""
         manager = ToolManager()
+
+        async def async_buggy_tool(x: int) -> int:
+            """Async tool that raises a ValueError."""
+            raise ValueError("Internal async error details")
+
+        manager.add_tool_from_fn(async_buggy_tool)
+
+        with pytest.raises(ToolError) as excinfo:
+            await manager.call_tool("async_buggy_tool", {"x": 42})
+
+        # Exception message should include the tool name and the internal details
+        assert "Error calling tool 'async_buggy_tool'" in str(excinfo.value)
+        assert "Internal async error details" in str(excinfo.value)
+
+    async def test_async_exception_converted_to_masked_tool_error(self):
+        """Test that other exceptions from async tools are masked when enabled."""
+        manager = ToolManager(mask_error_details=True)
 
         async def async_buggy_tool(x: int) -> int:
             """Async tool that raises a ValueError."""

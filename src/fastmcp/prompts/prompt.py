@@ -12,6 +12,7 @@ from mcp.types import Prompt as MCPPrompt
 from mcp.types import PromptArgument as MCPPromptArgument
 from pydantic import BaseModel, BeforeValidator, Field, TypeAdapter, validate_call
 
+from fastmcp.exceptions import PromptError
 from fastmcp.server.dependencies import get_context
 from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.logging import get_logger
@@ -96,7 +97,7 @@ class Prompt(BaseModel):
         """
         from fastmcp.server.context import Context
 
-        func_name = name or fn.__name__
+        func_name = name or getattr(fn, "__name__", None) or fn.__class__.__name__
 
         if func_name == "<lambda>":
             raise ValueError("You must provide a name for lambda functions")
@@ -107,6 +108,12 @@ class Prompt(BaseModel):
                 raise ValueError("Functions with *args are not supported as prompts")
             if param.kind == inspect.Parameter.VAR_KEYWORD:
                 raise ValueError("Functions with **kwargs are not supported as prompts")
+
+        description = description or fn.__doc__
+
+        # if the fn is a callable class, we need to get the __call__ method from here out
+        if not inspect.isroutine(fn):
+            fn = fn.__call__
 
         type_adapter = get_cached_typeadapter(fn)
         parameters = type_adapter.json_schema()
@@ -138,7 +145,7 @@ class Prompt(BaseModel):
 
         return cls(
             name=func_name,
-            description=description or fn.__doc__,
+            description=description,
             arguments=arguments,
             fn=fn,
             tags=tags or set(),
@@ -199,12 +206,12 @@ class Prompt(BaseModel):
                             )
                         )
                 except Exception:
-                    raise ValueError("Could not convert prompt result to message.")
+                    raise PromptError("Could not convert prompt result to message.")
 
             return messages
         except Exception as e:
             logger.exception(f"Error rendering prompt {self.name}: {e}")
-            raise ValueError(f"Error rendering prompt {self.name}.")
+            raise PromptError(f"Error rendering prompt {self.name}.")
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Prompt):

@@ -35,6 +35,10 @@ The choice of importing or mounting depends on your use case and requirements.
 
 FastMCP supports [MCP proxying](/patterns/proxy), which allows you to mirror a local or remote server in a local FastMCP instance. Proxies are fully compatible with both importing and mounting.
 
+<VersionBadge version="2.4.0" />
+
+You can also create proxies from configuration dictionaries that follow the MCPConfig schema, which is useful for quickly connecting to one or more remote servers. See the [Proxy Servers documentation](/servers/proxy#configuration-based-proxies) for details on configuration-based proxying. Note that MCPConfig follows an emerging standard and its format may evolve over time.
+
 ## Importing (Static Composition)
 
 The `import_server()` method copies all components (tools, resources, templates, prompts) from one `FastMCP` instance (the *subserver*) into another (the *main server*). A `prefix` is added to avoid naming conflicts.
@@ -65,7 +69,7 @@ async def setup():
 
 # Result: main_mcp now contains prefixed components:
 # - Tool: "weather_get_forecast"
-# - Resource: "weather+data://cities/supported" 
+# - Resource: "data://weather/cities/supported" 
 
 if __name__ == "__main__":
     asyncio.run(setup())
@@ -78,11 +82,11 @@ When you call `await main_mcp.import_server(prefix, subserver)`:
 
 1.  **Tools**: All tools from `subserver` are added to `main_mcp` with names prefixed using `{prefix}_`.
     -   `subserver.tool(name="my_tool")` becomes `main_mcp.tool(name="{prefix}_my_tool")`.
-2.  **Resources**: All resources are added with URIs prefixed using `{prefix}+`.
-    -   `subserver.resource(uri="data://info")` becomes `main_mcp.resource(uri="{prefix}+data://info")`.
+2.  **Resources**: All resources are added with URIs prefixed in the format `protocol://{prefix}/path`.
+    -   `subserver.resource(uri="data://info")` becomes `main_mcp.resource(uri="data://{prefix}/info")`.
 3.  **Resource Templates**: Templates are prefixed similarly to resources.
-    -   `subserver.resource(uri="data://{id}")` becomes `main_mcp.resource(uri="{prefix}+data://{id}")`.
-4.  **Prompts**: All prompts are added with names prefixed like tools.
+    -   `subserver.resource(uri="data://{id}")` becomes `main_mcp.resource(uri="data://{prefix}/{id}")`.
+4.  **Prompts**: All prompts are added with names prefixed using `{prefix}_`.
     -   `subserver.prompt(name="my_prompt")` becomes `main_mcp.prompt(name="{prefix}_my_prompt")`.
 
 Note that `import_server` performs a **one-time copy** of components. Changes made to the `subserver` *after* importing **will not** be reflected in `main_mcp`. The `subserver`'s `lifespan` context is also **not** executed by the main server.
@@ -167,46 +171,69 @@ FastMCP automatically uses proxy mounting when the mounted server has a custom l
 
 #### Interaction with Proxy Servers
 
-When using `FastMCP.from_client()` to create a proxy server, mounting that server will always use proxy mounting:
+When using `FastMCP.as_proxy()` to create a proxy server, mounting that server will always use proxy mounting:
 
 ```python
 # Create a proxy for a remote server
-remote_proxy = FastMCP.from_client(Client("http://example.com/mcp"))
+remote_proxy = FastMCP.as_proxy(Client("http://example.com/mcp"))
 
 # Mount the proxy (always uses proxy mounting)
 main_server.mount("remote", remote_proxy)
 ```
 
-## Customizing Separators
 
-Both `import_server()` and `mount()` allow you to customize the separators used for prefixing components. The defaults are `_` for tools and prompts, and `+` for resources.
 
-<CodeGroup>
+## Resource Prefix Formats
 
-```python import_server
-await main_mcp.import_server(
-    prefix="api",
-    app=some_subserver,
-    tool_separator="_",       # Tool name becomes: "api_sub_tool_name"
-    resource_separator="+",   # Resource URI becomes: "api+data://sub_resource"
-    prompt_separator="_"      # Prompt name becomes: "api_sub_prompt_name"
-)
+<VersionBadge version="2.4.0" />
+
+When mounting or importing servers, resource URIs are usually prefixed to avoid naming conflicts. FastMCP supports two different formats for resource prefixes:
+
+### Path Format (Default)
+
+In path format, prefixes are added to the path component of the URI:
+
+```
+resource://prefix/path/to/resource
 ```
 
-```python mount
-main_mcp.mount(
-    prefix="api",
-    app=some_subserver,
-    tool_separator="_",       # Tool name becomes: "api_sub_tool_name"
-    resource_separator="+",   # Resource URI becomes: "api+data://sub_resource"
-    prompt_separator="_"      # Prompt name becomes: "api_sub_prompt_name"
-)
-```
-</CodeGroup>
-<Warning>
-Be cautious when choosing separators. Some MCP clients (like Claude Desktop) might have restrictions on characters allowed in tool names (e.g., `/` might not be supported). The defaults (`_` for names, `+` for URIs) are generally safe.
-</Warning>
+This is the default format since FastMCP 2.4. This format is recommended because it avoids issues with URI protocol restrictions (like underscores not being allowed in protocol names).
 
-<Tip>
-To "cleanly" import or mount a server, set the prefix and all separators to `""` (empty string). This is generally unecessary but could save a couple tokens at the risk of a name collision!
-</Tip>
+### Protocol Format (Legacy)
+
+In protocol format, prefixes are added as part of the protocol:
+
+```
+prefix+resource://path/to/resource
+```
+
+This was the default format in FastMCP before 2.4. While still supported, it's not recommended for new code as it can cause problems with prefix names that aren't valid in URI protocols.
+
+### Configuring the Prefix Format
+
+You can configure the prefix format globally in code:
+
+```python
+import fastmcp
+fastmcp.settings.settings.resource_prefix_format = "protocol" 
+```
+
+Or via environment variable:
+
+```bash
+FASTMCP_RESOURCE_PREFIX_FORMAT=protocol
+```
+
+Or per-server:
+
+```python
+from fastmcp import FastMCP
+
+# Create a server that uses legacy protocol format
+server = FastMCP("LegacyServer", resource_prefix_format="protocol")
+
+# Create a server that uses new path format
+server = FastMCP("NewServer", resource_prefix_format="path")
+```
+
+When mounting or importing servers, the prefix format of the parent server is used.

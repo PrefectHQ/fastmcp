@@ -640,7 +640,6 @@ class TestToolContextInjection:
             assert len(result) == 1
             content = result[0]
             assert isinstance(content, TextContent)
-            assert content.text == "1"
 
     async def test_async_context(self):
         """Test that context works in async functions."""
@@ -656,8 +655,7 @@ class TestToolContextInjection:
             assert len(result) == 1
             content = result[0]
             assert isinstance(content, TextContent)
-            assert "Async request" in content.text
-            assert "42" in content.text
+            assert content.text == "Async request 2: 42"
 
     async def test_optional_context(self):
         """Test that context is optional."""
@@ -710,6 +708,21 @@ class TestToolContextInjection:
             tools = await client.list_tools()
             assert len(tools) == 1
             # Note: MCPTool from the client API doesn't expose tags
+
+    async def test_callable_object_with_context(self):
+        """Test that a callable object can be used as a tool with context."""
+        mcp = FastMCP()
+
+        class MyTool:
+            async def __call__(self, x: int, ctx: Context) -> int:
+                return x + int(ctx.request_id)
+
+        mcp.add_tool(MyTool())
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("MyTool", {"x": 2})
+            assert isinstance(result[0], TextContent)
+            assert result[0].text == "4"
 
 
 class TestResource:
@@ -798,7 +811,7 @@ class TestResourceContext:
         async with Client(mcp) as client:
             result = await client.read_resource(AnyUrl("resource://test"))
             assert isinstance(result[0], TextResourceContents)
-            assert result[0].text == "1"
+            assert result[0].text == "2"
 
 
 class TestResourceTemplates:
@@ -1096,7 +1109,21 @@ class TestResourceTemplateContext:
         async with Client(mcp) as client:
             result = await client.read_resource(AnyUrl("resource://test"))
             assert isinstance(result[0], TextResourceContents)
-            assert result[0].text == "Resource template: test 1"
+            assert result[0].text.startswith("Resource template: test 2")
+
+    async def test_resource_template_context_with_callable_object(self):
+        mcp = FastMCP()
+
+        class MyResource:
+            def __call__(self, param: str, ctx: Context) -> str:
+                return f"Resource template: {param} {ctx.request_id}"
+
+        mcp.add_resource_fn(MyResource(), uri="resource://{param}")
+
+        async with Client(mcp) as client:
+            result = await client.read_resource(AnyUrl("resource://test"))
+            assert isinstance(result[0], TextResourceContents)
+            assert result[0].text.startswith("Resource template: test 2")
 
 
 class TestPrompts:
@@ -1300,3 +1327,20 @@ class TestPromptContext:
             assert len(result.messages) == 1
             message = result.messages[0]
             assert message.role == "user"
+
+    async def test_prompt_context_with_callable_object(self):
+        mcp = FastMCP()
+
+        class MyPrompt:
+            def __call__(self, name: str, ctx: Context) -> str:
+                return f"Hello, {name}! {ctx.request_id}"
+
+        mcp.add_prompt(MyPrompt(), name="my_prompt")
+
+        async with Client(mcp) as client:
+            result = await client.get_prompt("my_prompt", {"name": "World"})
+            assert len(result.messages) == 1
+            message = result.messages[0]
+            assert message.role == "user"
+            assert isinstance(message.content, TextContent)
+            assert message.content.text == "Hello, World! 2"

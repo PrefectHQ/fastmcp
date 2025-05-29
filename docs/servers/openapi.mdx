@@ -1,0 +1,463 @@
+---
+title: OpenAPI Integration
+sidebarTitle: OpenAPI Integration
+description: Generate MCP servers from OpenAPI specs and FastAPI apps
+icon: code-branch
+---
+import { VersionBadge } from '/snippets/version-badge.mdx'
+
+<VersionBadge version="2.0.0" />
+
+FastMCP can automatically generate an MCP server from an OpenAPI specification or FastAPI app. Instead of manually creating tools and resources, you provide an OpenAPI spec and FastMCP intelligently converts your API endpoints into the appropriate MCP components.
+
+## Quick Start
+
+To convert an OpenAPI specification to an MCP server, you can use the `FastMCP.from_openapi` class method. This method takes an OpenAPI specification and an async HTTPX client that can be used to make requests to the API, and returns an MCP server.
+
+Here's an example:
+```python {11-15}
+import httpx
+from fastmcp import FastMCP
+
+# Create an HTTP client for your API
+client = httpx.AsyncClient(base_url="https://api.example.com")
+
+# Load your OpenAPI spec 
+openapi_spec = httpx.get("https://api.example.com/openapi.json").json()
+
+# Create the MCP server
+mcp = FastMCP.from_openapi(
+    openapi_spec=openapi_spec,
+    client=client,
+    name="My API Server"
+)
+
+if __name__ == "__main__":
+    mcp.run()
+```
+
+That's it! Your entire API is now available as an MCP server. Clients can discover and interact with your API endpoints through the MCP protocol, with full schema validation and type safety.
+
+
+## Route Mapping
+
+
+
+FastMCP analyzes your API specification and automatically creates MCP components based on HTTP semantics and REST conventions. By default, the following rules are used to determine what MCP component to create for each route:
+
+| OpenAPI Route | Example | MCP Component | 
+|---------------|---------|---------------|
+| `GET` with path params | `GET /users/{id}` | **Resource Template** |
+| `GET` without path params | `GET /stats` | **Resource** |
+| `POST`, `PUT`, `PATCH`, `DELETE`, etc. | `POST /users` | **Tool** |
+
+Interally, FastMCP uses an ordered list of `RouteMap` objects to determine how to map OpenAPI routes to various MCP component types.
+
+Each `RouteMap` specifies a combination of methods, patterns, and tags, as well as a corresponding MCP component type. Each OpenAPI route is checked against each `RouteMap` in order, and the first one that matches every criteria is used to determine its converted MCP type. A special type, `EXCLUDE`, can be used to exclude routes from the MCP server entirely.
+
+- **Methods**: HTTP methods to match (e.g. `["GET", "POST"]` or `"*"` for all)
+- **Pattern**: Regex pattern to match the route path (e.g. `r"^/users/.*"` or `r".*"` for all)
+- **Tags**: A set of OpenAPI tags that must all be present. An empty set (`{}`) means no tag filtering, so the route matches regardless of its tags.
+- **MCP type**: What MCP component type to create (`TOOL`, `RESOURCE`, `RESOURCE_TEMPLATE`, or `EXCLUDE`)
+
+To illustrate this in practice, here are FastMCP's default rules as a list of `RouteMap` objects:
+
+```python
+from fastmcp.server.openapi import RouteMap, MCPType
+
+DEFAULT_ROUTE_MAPPINGS = [
+
+    # GET with path parameters → ResourceTemplate
+    RouteMap(
+        methods=["GET"], 
+        pattern=r".*\{.*\}.*", 
+        mcp_type=MCPType.RESOURCE_TEMPLATE
+    ),
+
+    # GET without path parameters → Resource
+    RouteMap(
+        methods=["GET"], 
+        pattern=r".*", 
+        mcp_type=MCPType.RESOURCE
+    ),
+
+    # All other methods → Tool
+    RouteMap(
+        methods=["*"], 
+        pattern=r".*", 
+        mcp_type=MCPType.TOOL
+    ),
+]
+```
+
+### Custom Route Maps
+
+When creating your FastMCP server, you can customize routing behavior by providing your own list of `RouteMap` objects. Your custom maps are processed before the default route maps, and routes will be assigned to the first matching custom map.
+
+For example, the following simple rule will treat every OpenAPI route as a tool:
+
+```python {7}
+from fastmcp import FastMCP
+from fastmcp.server.openapi import RouteMap, MCPType
+
+mcp = FastMCP.from_openapi(
+    ...,
+    route_maps=[
+        RouteMap(mcp_type=MCPType.TOOL),
+    ],
+)
+```
+
+Here is a more complete example that uses custom route maps to convert all `GET` endpoints under `/analytics/` to tools while excluding all admin endpoints and all routes tagged "internal". All other routes will be handled by the default rules:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.openapi import RouteMap, MCPType
+
+mcp = FastMCP.from_openapi(
+    ...,
+    route_maps=[
+
+        # Analytics `GET` endpoints are tools
+        RouteMap(
+            methods=["GET"], 
+            pattern=r"^/analytics/.*", 
+            mcp_type=MCPType.TOOL,
+        ),
+
+        # Exclude all admin endpoints
+        RouteMap(
+            pattern=r"^/admin/.*", 
+            mcp_type=MCPType.EXCLUDE,
+        ),
+
+        # Exclude all routes tagged "internal"
+        RouteMap(
+            tags={"internal"},
+            mcp_type=MCPType.EXCLUDE,
+        ),
+    ],
+)
+```
+
+<Tip>
+The default route maps are always applied after your custom maps, so you do not have to create route maps for every possible route.
+</Tip>
+
+### Excluding Routes
+
+To exclude routes from the MCP server, use a route map to assign them to `MCPType.EXCLUDE`. 
+
+You can use this to remove sensitive or internal routes by targeting them specifically:
+
+```python {7,8}
+from fastmcp import FastMCP
+from fastmcp.server.openapi import RouteMap, MCPType
+
+mcp = FastMCP.from_openapi(
+    ...,
+    route_maps=[
+        RouteMap(pattern=r"^/admin/.*", mcp_type=MCPType.EXCLUDE),
+        RouteMap(tags={"internal"}, mcp_type=MCPType.EXCLUDE),
+    ],
+)
+```
+
+Or you can use a catch-all rule to exclude everything that your maps don't handle explicitly:
+```python {10}
+from fastmcp import FastMCP
+from fastmcp.server.openapi import RouteMap, MCPType
+
+mcp = FastMCP.from_openapi(
+    ...,
+    route_maps=[
+        # custom mapping logic goes here
+        ...,
+        # exclude all remaining routes
+        RouteMap(mcp_type=MCPType.EXCLUDE),
+    ],
+)
+```
+
+<Tip>
+Using a catch-all exclusion rule will prevent the default route mappings from being applied, since it will match every remaining route. This is useful if you want to explicitly allow-list certain routes.
+</Tip>
+
+
+### Advanced Route Mapping
+
+<VersionBadge version="2.5.0" />
+
+For advanced use cases that require more complex logic, you can provide a `route_map_fn` callable. After the route map logic is applied, this function is called on each matched route and its assigned MCP component type. It can optionally return a different component type to override the mapped assignment. If it returns `None`, the assigned type is used.
+
+In addition to more precise targeting of methods, patterns, and tags, this function can access any additional OpenAPI metadata about the route.
+
+<Tip>
+The `route_map_fn` **is** called on routes that matched `MCPType.EXCLUDE` in your custom maps, giving you an opportunity to override the exclusion.
+</Tip>
+
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.openapi import RouteMap, MCPType, HTTPRoute
+
+def custom_route_mapper(route: HTTPRoute, mcp_type: MCPType) -> MCPType | None:
+    """Advanced route type mapping."""
+    # Convert all admin routes to tools regardless of HTTP method
+    if "/admin/" in route.path:
+        return MCPType.TOOL
+
+    elif "internal" in route.tags:
+        return MCPType.EXCLUDE
+    
+    # Convert user detail routes to templates even if they're POST
+    elif route.path.startswith("/users/") and route.method == "POST":
+        return MCPType.RESOURCE_TEMPLATE
+    
+    # Use defaults for all other routes
+    return None
+
+mcp = FastMCP.from_openapi(
+    ...,
+    route_map_fn=custom_route_mapper,
+)
+```
+
+## Customizing MCP Components
+
+
+
+### Component Names
+
+<VersionBadge version="2.5.0" />
+
+FastMCP automatically generates names for MCP components based on the OpenAPI specification. By default, it uses the `operationId` from your OpenAPI spec, up to the first double underscore (`__`).
+
+All component names are automatically:
+- **Slugified**: Spaces and special characters are converted to underscores or removed
+- **Truncated**: Limited to 56 characters maximum to ensure compatibility
+- **Unique**: If multiple components have the same name, a number is automatically appended to make them unique
+
+For more control over component names, you can provide an `mcp_names` dictionary that maps `operationId` values to your desired names. The `operationId` must be exactly as it appears in the OpenAPI spec. The provided name will always be slugified and truncated.
+
+```python {5-9}
+from fastmcp import FastMCP
+
+mcp = FastMCP.from_openapi(
+    ...
+    mcp_names={
+        "list_users__with_pagination": "user_list",
+        "create_user__admin_required": "create_user", 
+        "get_user_details__admin_required": "user_detail",
+    }
+)
+```
+
+Any `operationId` not found in `mcp_names` will use the default strategy (operationId up to the first `__`).
+
+
+### Advanced Customization
+<VersionBadge version="2.5.0" />
+
+By default, FastMCP creates MCP components using a variety of metadata from the OpenAPI spec, such as incorporating the OpenAPI description into the MCP component description.
+
+At times you may want to modify those MCP components in a variety of ways, such as adding LLM-specific instructions or tags. For fine-grained customization, you can provide a `mcp_component_fn` when creating the MCP server. After each MCP component has been created, this function is called on it and has the opportunity to modify it in-place.
+
+<Tip>
+Your `mcp_component_fn` is expected to modify the component in-place, not to return a new component. The result of the function is ignored.
+</Tip>
+
+```python {27}
+from fastmcp import FastMCP
+from fastmcp.server.openapi import (
+    HTTPRoute, 
+    OpenAPITool, 
+    OpenAPIResource, 
+    OpenAPIResourceTemplate,
+)
+
+def customize_components(
+    route: HTTPRoute, 
+    component: OpenAPITool | OpenAPIResource | OpenAPIResourceTemplate,
+) -> None:
+    
+    # Add custom tags to all components
+    component.tags.add("openapi")
+    
+    # Customize based on component type
+    if isinstance(component, OpenAPITool):
+        component.description = f"🔧 {component.description} (via API)"
+    
+    if isinstance(component, OpenAPIResource):
+        component.description = f"📊 {component.description}"
+        component.tags.add("data")
+
+mcp = FastMCP.from_openapi(
+    ...,
+    mcp_component_fn=customize_components,
+)
+```
+## Request Parameter Handling
+
+FastMCP intelligently handles different types of parameters in OpenAPI requests:
+
+### Query Parameters
+
+By default, FastMCP only includes query parameters that have non-empty values. Parameters with `None` values or empty strings are automatically filtered out.
+
+```python
+# When calling this tool...
+await client.call_tool("search_products", {
+    "category": "electronics",  # ✅ Included
+    "min_price": 100,           # ✅ Included  
+    "max_price": None,          # ❌ Excluded
+    "brand": "",                # ❌ Excluded
+})
+
+# The HTTP request will be: GET /products?category=electronics&min_price=100
+```
+
+### Path Parameters
+
+Path parameters are typically required by REST APIs. FastMCP:
+- Filters out `None` values
+- Validates that all required path parameters are provided
+- Raises clear errors for missing required parameters
+
+```python
+# ✅ This works
+await client.call_tool("get_user", {"user_id": 123})
+
+# ❌ This raises: "Missing required path parameters: {'user_id'}"
+await client.call_tool("get_user", {"user_id": None})
+```
+
+### Array Parameters
+
+FastMCP handles array parameters according to OpenAPI specifications:
+
+- **Query arrays**: Serialized based on the `explode` parameter (default: `True`)
+- **Path arrays**: Serialized as comma-separated values (OpenAPI 'simple' style)
+
+```python
+# Query array with explode=true (default)
+# ?tags=red&tags=blue&tags=green
+
+# Query array with explode=false  
+# ?tags=red,blue,green
+
+# Path array (always comma-separated)
+# /items/red,blue,green
+```
+
+### Headers
+
+Header parameters are automatically converted to strings and included in the HTTP request.
+
+## Auth
+
+If your API requires authentication, configure it on the HTTP client before creating the MCP server:
+
+```python
+import httpx
+from fastmcp import FastMCP
+
+# Bearer token authentication
+api_client = httpx.AsyncClient(
+    base_url="https://api.example.com",
+    headers={"Authorization": "Bearer YOUR_TOKEN"}
+)
+
+# Create MCP server with authenticated client
+mcp = FastMCP.from_openapi(..., client=api_client)
+```
+## Timeouts
+
+Set a timeout for all API requests:
+
+```python
+mcp = FastMCP.from_openapi(
+    openapi_spec=spec, 
+    client=api_client,
+    timeout=30.0  # 30 second timeout for all requests
+)
+```
+
+
+## FastAPI Integration
+
+<VersionBadge version="2.0.0" />
+
+FastMCP can directly convert FastAPI applications into MCP servers by extracting their OpenAPI specifications:
+
+<Tip>
+FastMCP does *not* include FastAPI as a dependency; you must install it separately to use this integration.
+</Tip>
+
+```python
+from fastapi import FastAPI
+from fastmcp import FastMCP
+
+# Your FastAPI app
+app = FastAPI(title="My API", version="1.0.0")
+
+@app.get("/items", tags=["items"], operation_id="list_items")
+def list_items():
+    return [{"id": 1, "name": "Item 1"}, {"id": 2, "name": "Item 2"}]
+
+@app.get("/items/{item_id}", tags=["items", "detail"], operation_id="get_item")
+def get_item(item_id: int):
+    return {"id": item_id, "name": f"Item {item_id}"}
+
+@app.post("/items", tags=["items", "create"], operation_id="create_item")
+def create_item(name: str):
+    return {"id": 3, "name": name}
+
+# Convert FastAPI app to MCP server
+mcp = FastMCP.from_fastapi(app=app)
+
+if __name__ == "__main__":
+    mcp.run()  # Run as MCP server
+```
+
+Note that operation ids are optional, but are used to create component names. You can also provide custom names, just like with OpenAPI specs.
+
+<Warning>
+FastMCP servers are not FastAPI apps, even when created from one. To learn how to deploy them as an ASGI app, see the [ASGI Integration](/deployment/asgi) documentation.
+</Warning>
+
+
+
+### FastAPI Configuration
+
+All OpenAPI integration features work with FastAPI apps:
+
+```python
+from fastmcp.server.openapi import RouteMap, MCPType
+
+# Custom route mapping with FastAPI
+mcp = FastMCP.from_fastapi(
+    app=app,
+    name="My Custom Server",
+    timeout=5.0,
+    mcp_names={"operationId": "friendly_name"},  # Custom component names
+    route_maps=[
+        # Admin endpoints become tools
+        RouteMap(methods="*", pattern=r"^/admin/.*", mcp_type=MCPType.TOOL),
+        # Internal endpoints are excluded
+        RouteMap(methods="*", pattern=r".*", mcp_type=MCPType.EXCLUDE, tags={"internal"}),
+    ],
+    route_map_fn=my_route_mapper,
+    mcp_component_fn=my_component_customizer,
+    mcp_names={
+        "get_user_details_users__user_id__get": "get_user_details",
+    }
+)
+```
+
+### FastAPI Benefits
+
+- **Zero code duplication**: Reuse existing FastAPI endpoints
+- **Schema inheritance**: Pydantic models and validation are preserved  
+- **ASGI transport**: Direct in-memory communication (no HTTP overhead)
+- **Full FastAPI features**: Dependencies, middleware, authentication all work

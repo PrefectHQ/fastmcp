@@ -10,6 +10,12 @@ from pydantic import Field
 
 from fastmcp import Client, FastMCP
 from fastmcp.exceptions import NotFoundError
+from fastmcp.server.server import (
+    MountedServer,
+    add_resource_prefix,
+    has_resource_prefix,
+    remove_resource_prefix,
+)
 
 
 class TestCreateServer:
@@ -754,3 +760,287 @@ class TestPromptDecorator:
         assert len(prompts_dict) == 1
         prompt = prompts_dict["sample_prompt"]
         assert prompt.tags == {"example", "test-tag"}
+
+
+class TestResourcePrefixHelpers:
+    @pytest.mark.parametrize(
+        "uri,prefix,expected",
+        [
+            # Normal paths
+            (
+                "resource://path/to/resource",
+                "prefix",
+                "resource://prefix/path/to/resource",
+            ),
+            # Absolute paths (with triple slash)
+            ("resource:///absolute/path", "prefix", "resource://prefix//absolute/path"),
+            # Empty prefix should return the original URI
+            ("resource://path/to/resource", "", "resource://path/to/resource"),
+            # Different protocols
+            ("file://path/to/file", "prefix", "file://prefix/path/to/file"),
+            ("http://example.com/path", "prefix", "http://prefix/example.com/path"),
+            # Prefixes with special characters
+            (
+                "resource://path/to/resource",
+                "pre.fix",
+                "resource://pre.fix/path/to/resource",
+            ),
+            (
+                "resource://path/to/resource",
+                "pre/fix",
+                "resource://pre/fix/path/to/resource",
+            ),
+            # Empty paths
+            ("resource://", "prefix", "resource://prefix/"),
+        ],
+    )
+    def test_add_resource_prefix(self, uri, prefix, expected):
+        """Test that add_resource_prefix correctly adds prefixes to URIs."""
+        result = add_resource_prefix(uri, prefix)
+        assert result == expected
+
+    @pytest.mark.parametrize(
+        "invalid_uri",
+        [
+            "not-a-uri",
+            "resource:no-slashes",
+            "missing-protocol",
+            "http:/missing-slash",
+        ],
+    )
+    def test_add_resource_prefix_invalid_uri(self, invalid_uri):
+        """Test that add_resource_prefix raises ValueError for invalid URIs."""
+        with pytest.raises(ValueError, match="Invalid URI format"):
+            add_resource_prefix(invalid_uri, "prefix")
+
+    @pytest.mark.parametrize(
+        "uri,prefix,expected",
+        [
+            # Normal paths
+            (
+                "resource://prefix/path/to/resource",
+                "prefix",
+                "resource://path/to/resource",
+            ),
+            # Absolute paths (with triple slash)
+            ("resource://prefix//absolute/path", "prefix", "resource:///absolute/path"),
+            # URI without the expected prefix should return the original URI
+            (
+                "resource://other/path/to/resource",
+                "prefix",
+                "resource://other/path/to/resource",
+            ),
+            # Empty prefix should return the original URI
+            ("resource://path/to/resource", "", "resource://path/to/resource"),
+            # Different protocols
+            ("file://prefix/path/to/file", "prefix", "file://path/to/file"),
+            # Prefixes with special characters (that need escaping in regex)
+            (
+                "resource://pre.fix/path/to/resource",
+                "pre.fix",
+                "resource://path/to/resource",
+            ),
+            (
+                "resource://pre/fix/path/to/resource",
+                "pre/fix",
+                "resource://path/to/resource",
+            ),
+            # Empty paths
+            ("resource://prefix/", "prefix", "resource://"),
+        ],
+    )
+    def test_remove_resource_prefix(self, uri, prefix, expected):
+        """Test that remove_resource_prefix correctly removes prefixes from URIs."""
+        result = remove_resource_prefix(uri, prefix)
+        assert result == expected
+
+    @pytest.mark.parametrize(
+        "invalid_uri",
+        [
+            "not-a-uri",
+            "resource:no-slashes",
+            "missing-protocol",
+            "http:/missing-slash",
+        ],
+    )
+    def test_remove_resource_prefix_invalid_uri(self, invalid_uri):
+        """Test that remove_resource_prefix raises ValueError for invalid URIs."""
+        with pytest.raises(ValueError, match="Invalid URI format"):
+            remove_resource_prefix(invalid_uri, "prefix")
+
+    @pytest.mark.parametrize(
+        "uri,prefix,expected",
+        [
+            # URI with prefix
+            ("resource://prefix/path/to/resource", "prefix", True),
+            # URI with another prefix
+            ("resource://other/path/to/resource", "prefix", False),
+            # URI with prefix as a substring but not at path start
+            ("resource://path/prefix/resource", "prefix", False),
+            # Empty prefix
+            ("resource://path/to/resource", "", False),
+            # Different protocols
+            ("file://prefix/path/to/file", "prefix", True),
+            # Prefix with special characters
+            ("resource://pre.fix/path/to/resource", "pre.fix", True),
+            # Empty paths
+            ("resource://prefix/", "prefix", True),
+        ],
+    )
+    def test_has_resource_prefix(self, uri, prefix, expected):
+        """Test that has_resource_prefix correctly identifies prefixes in URIs."""
+        result = has_resource_prefix(uri, prefix)
+        assert result == expected
+
+    @pytest.mark.parametrize(
+        "invalid_uri",
+        [
+            "not-a-uri",
+            "resource:no-slashes",
+            "missing-protocol",
+            "http:/missing-slash",
+        ],
+    )
+    def test_has_resource_prefix_invalid_uri(self, invalid_uri):
+        """Test that has_resource_prefix raises ValueError for invalid URIs."""
+        with pytest.raises(ValueError, match="Invalid URI format"):
+            has_resource_prefix(invalid_uri, "prefix")
+
+
+class TestResourcePrefixMounting:
+    """Test resource prefixing in mounted servers."""
+
+    async def test_mounted_server_resource_prefixing(self):
+        """Test that resources in mounted servers use the correct prefix format."""
+        # Create a server with resources
+        server = FastMCP(name="ResourceServer")
+
+        @server.resource("resource://test-resource")
+        def get_resource():
+            return "Resource content"
+
+        @server.resource("resource:///absolute/path")
+        def get_absolute_resource():
+            return "Absolute resource content"
+
+        @server.resource("resource://{param}/template")
+        def get_template_resource(param: str):
+            return f"Template resource with {param}"
+
+        # Create a main server and mount the resource server
+        main_server = FastMCP(name="MainServer")
+        main_server.mount("prefix", server)
+
+        # Check that the resources are mounted with the correct prefixes
+        resources = await main_server.get_resources()
+        templates = await main_server.get_resource_templates()
+
+        assert "resource://prefix/test-resource" in resources
+        assert "resource://prefix//absolute/path" in resources
+        assert "resource://prefix/{param}/template" in templates
+
+        # Test that prefixed resources can be accessed
+        async with Client(main_server) as client:
+            # Regular resource
+            result = await client.read_resource("resource://prefix/test-resource")
+            assert isinstance(result[0], TextResourceContents)
+            assert result[0].text == "Resource content"
+
+            # Absolute path resource
+            result = await client.read_resource("resource://prefix//absolute/path")
+            assert isinstance(result[0], TextResourceContents)
+            assert result[0].text == "Absolute resource content"
+
+            # Template resource
+            result = await client.read_resource(
+                "resource://prefix/param-value/template"
+            )
+            assert isinstance(result[0], TextResourceContents)
+            assert result[0].text == "Template resource with param-value"
+
+    @pytest.mark.parametrize(
+        "uri,prefix,expected_match,expected_strip",
+        [
+            # Regular resource
+            (
+                "resource://prefix/path/to/resource",
+                "prefix",
+                True,
+                "resource://path/to/resource",
+            ),
+            # Absolute path
+            (
+                "resource://prefix//absolute/path",
+                "prefix",
+                True,
+                "resource:///absolute/path",
+            ),
+            # Non-matching prefix
+            (
+                "resource://other/path/to/resource",
+                "prefix",
+                False,
+                "resource://other/path/to/resource",
+            ),
+            # Different protocol
+            ("http://prefix/example.com", "prefix", True, "http://example.com"),
+        ],
+    )
+    async def test_mounted_server_matching_and_stripping(
+        self, uri, prefix, expected_match, expected_strip
+    ):
+        """Test that MountedServer correctly matches and strips resource prefixes."""
+        # Create a basic server to mount
+        server = FastMCP()
+        mounted = MountedServer(prefix=prefix, server=server)
+
+        # Test matching
+        assert mounted.match_resource(uri) == expected_match
+
+        # Test stripping
+        assert mounted.strip_resource_prefix(uri) == expected_strip
+
+    async def test_import_server_with_new_prefix_format(self):
+        """Test that import_server correctly uses the new prefix format."""
+        # Create a server with resources
+        source_server = FastMCP(name="SourceServer")
+
+        @source_server.resource("resource://test-resource")
+        def get_resource():
+            return "Resource content"
+
+        @source_server.resource("resource:///absolute/path")
+        def get_absolute_resource():
+            return "Absolute resource content"
+
+        @source_server.resource("resource://{param}/template")
+        def get_template_resource(param: str):
+            return f"Template resource with {param}"
+
+        # Create target server and import the source server
+        target_server = FastMCP(name="TargetServer")
+        await target_server.import_server("imported", source_server)
+
+        # Check that the resources were imported with the correct prefixes
+        resources = await target_server.get_resources()
+        templates = await target_server.get_resource_templates()
+
+        assert "resource://imported/test-resource" in resources
+        assert "resource://imported//absolute/path" in resources
+        assert "resource://imported/{param}/template" in templates
+
+        # Verify we can access the resources
+        async with Client(target_server) as client:
+            result = await client.read_resource("resource://imported/test-resource")
+            assert isinstance(result[0], TextResourceContents)
+            assert result[0].text == "Resource content"
+
+            result = await client.read_resource("resource://imported//absolute/path")
+            assert isinstance(result[0], TextResourceContents)
+            assert result[0].text == "Absolute resource content"
+
+            result = await client.read_resource(
+                "resource://imported/param-value/template"
+            )
+            assert isinstance(result[0], TextResourceContents)
+            assert result[0].text == "Template resource with param-value"

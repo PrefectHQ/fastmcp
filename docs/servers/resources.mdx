@@ -408,12 +408,20 @@ Templates provide a powerful way to expose parameterized data access points foll
 
 ## Error Handling
 
-<VersionBadge version="2.3.4" />
+<VersionBadge version="2.4.1" />
 
 If your resource function encounters an error, you can raise a standard Python exception (`ValueError`, `TypeError`, `FileNotFoundError`, custom exceptions, etc.) or a FastMCP `ResourceError`.
 
-For security reasons, most exceptions are wrapped in a generic `ResourceError` before being sent to the client, with internal error details masked. However, if you raise a `ResourceError` directly, its contents **are** included in the response. This allows you to provide informative error messages to the client on an opt-in basis.
+By default, all exceptions (including their details) are logged and converted into an MCP error response to be sent back to the client LLM. This helps the LLM understand failures and react appropriately.
 
+If you want to mask internal error details for security reasons, you can:
+
+1. Use the `mask_error_details=True` parameter when creating your `FastMCP` instance:
+```python
+mcp = FastMCP(name="SecureServer", mask_error_details=True)
+```
+
+2. Or use `ResourceError` to explicitly control what error information is sent to clients:
 ```python
 from fastmcp import FastMCP
 from fastmcp.exceptions import ResourceError
@@ -423,13 +431,14 @@ mcp = FastMCP(name="DataServer")
 @mcp.resource("resource://safe-error")
 def fail_with_details() -> str:
     """This resource provides detailed error information."""
-    # ResourceError contents are sent back to clients
+    # ResourceError contents are always sent back to clients,
+    # regardless of mask_error_details setting
     raise ResourceError("Unable to retrieve data: file not found")
 
 @mcp.resource("resource://masked-error")
 def fail_with_masked_details() -> str:
-    """This resource masks internal error details."""
-    # Other exceptions are converted to ResourceError with generic message
+    """This resource masks internal error details when mask_error_details=True."""
+    # This message would be masked if mask_error_details=True
     raise ValueError("Sensitive internal file path: /etc/secrets.conf")
 
 @mcp.resource("data://{id}")
@@ -442,7 +451,7 @@ def get_data_by_id(id: str) -> dict:
     return {"id": id, "value": "data"}
 ```
 
-This error handling pattern applies to both regular resources and resource templates.
+When `mask_error_details=True`, only error messages from `ResourceError` will include details, other exceptions will be converted to a generic message.
 
 ## Server Behavior
 
