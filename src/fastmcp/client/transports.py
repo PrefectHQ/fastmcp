@@ -101,6 +101,7 @@ class WSTransport(ClientTransport):
         warnings.warn(
             "WSTransport is a deprecated MCP transport and will be removed in a future version. Use StreamableHttpTransport instead.",
             DeprecationWarning,
+            stacklevel=2,
         )
         if isinstance(url, AnyUrl):
             url = str(url)
@@ -248,6 +249,10 @@ class StdioTransport(ClientTransport):
             args: The arguments to pass to the command
             env: Environment variables to set for the subprocess
             cwd: Current working directory for the subprocess
+            keep_alive: Whether to keep the subprocess alive between connections.
+                       Defaults to True. When True, the subprocess remains active
+                       after the connection context exits, allowing reuse in
+                       subsequent connections.
         """
         self.command = command
         self.args = args
@@ -356,6 +361,10 @@ class PythonStdioTransport(StdioTransport):
             env: Environment variables to set for the subprocess
             cwd: Current working directory for the subprocess
             python_cmd: Python command to use (default: "python")
+            keep_alive: Whether to keep the subprocess alive between connections.
+                       Defaults to True. When True, the subprocess remains active
+                       after the connection context exits, allowing reuse in
+                       subsequent connections.
         """
         script_path = Path(script_path).resolve()
         if not script_path.is_file():
@@ -425,6 +434,10 @@ class NodeStdioTransport(StdioTransport):
             env: Environment variables to set for the subprocess
             cwd: Current working directory for the subprocess
             node_cmd: Node.js command to use (default: "node")
+            keep_alive: Whether to keep the subprocess alive between connections.
+                       Defaults to True. When True, the subprocess remains active
+                       after the connection context exits, allowing reuse in
+                       subsequent connections.
         """
         script_path = Path(script_path).resolve()
         if not script_path.is_file():
@@ -467,6 +480,10 @@ class UvxStdioTransport(StdioTransport):
             with_packages: Additional packages to include
             from_package: Package to install the tool from
             env_vars: Additional environment variables
+            keep_alive: Whether to keep the subprocess alive between connections.
+                       Defaults to True. When True, the subprocess remains active
+                       after the connection context exits, allowing reuse in
+                       subsequent connections.
         """
         # Basic validation
         if project_directory and not Path(project_directory).exists():
@@ -525,6 +542,10 @@ class NpxStdioTransport(StdioTransport):
             project_directory: Project directory with package.json
             env_vars: Additional environment variables
             use_package_lock: Whether to use package-lock.json (--prefer-offline)
+            keep_alive: Whether to keep the subprocess alive between connections.
+                       Defaults to True. When True, the subprocess remains active
+                       after the connection context exits, allowing reuse in
+                       subsequent connections.
         """
         # verify npx is installed
         if shutil.which("npx") is None:
