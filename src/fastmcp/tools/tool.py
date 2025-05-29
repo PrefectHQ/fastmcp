@@ -46,6 +46,10 @@ class Tool(BaseModel):
     annotations: ToolAnnotations | None = Field(
         None, description="Additional annotations about the tool"
     )
+    exclude_args: list[str] | None = Field(
+        None,
+        description="Arguments to exclude from the tool schema, such as State, Memory, or Credential",
+    )
     serializer: Callable[[Any], str] | None = Field(
         None, description="Optional custom serializer for tool results"
     )
@@ -58,6 +62,7 @@ class Tool(BaseModel):
         description: str | None = None,
         tags: set[str] | None = None,
         annotations: ToolAnnotations | None = None,
+        exclude_args: list[str] | None = None,
         serializer: Callable[[Any], str] | None = None,
     ) -> Tool:
         """Create a Tool from a function."""
@@ -86,10 +91,14 @@ class Tool(BaseModel):
         schema = type_adapter.json_schema()
 
         context_kwarg = find_kwarg_by_type(fn, kwarg_type=Context)
+        temp_prune_params: list[str] = []
         if context_kwarg:
-            prune_params = [context_kwarg]
-        else:
-            prune_params = None
+            temp_prune_params.append(context_kwarg)
+        if exclude_args:
+            temp_prune_params.extend(exclude_args)
+        prune_params: list[str] | None = (
+            None if not temp_prune_params else temp_prune_params
+        )
 
         schema = compress_schema(schema, prune_params=prune_params)
 
@@ -100,6 +109,7 @@ class Tool(BaseModel):
             parameters=schema,
             tags=tags or set(),
             annotations=annotations,
+            exclude_args=exclude_args,
             serializer=serializer,
         )
 

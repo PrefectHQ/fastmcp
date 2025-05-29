@@ -497,6 +497,7 @@ class FastMCP(Generic[LifespanResultT]):
         description: str | None = None,
         tags: set[str] | None = None,
         annotations: ToolAnnotations | dict[str, Any] | None = None,
+        exclude_args: list[str] | None = None,
     ) -> None:
         """Add a tool to the server.
 
@@ -519,6 +520,7 @@ class FastMCP(Generic[LifespanResultT]):
             description=description,
             tags=tags,
             annotations=annotations,
+            exclude_args=exclude_args,
         )
         self._cache.clear()
 
@@ -540,6 +542,7 @@ class FastMCP(Generic[LifespanResultT]):
         description: str | None = None,
         tags: set[str] | None = None,
         annotations: ToolAnnotations | dict[str, Any] | None = None,
+        exclude_args: list[str] | None = None,
     ) -> Callable[[AnyFunction], AnyFunction]:
         """Decorator to register a tool.
 
@@ -583,6 +586,7 @@ class FastMCP(Generic[LifespanResultT]):
                 description=description,
                 tags=tags,
                 annotations=annotations,
+                exclude_args=exclude_args,
             )
             return fn
 

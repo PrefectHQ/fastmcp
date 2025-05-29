@@ -226,6 +226,7 @@ class OpenAPITool(Tool):
         tags: set[str] = set(),
         timeout: float | None = None,
         annotations: ToolAnnotations | None = None,
+        exclude_args: list[str] | None = None,
         serializer: Callable[[Any], str] | None = None,
     ):
         super().__init__(
@@ -235,6 +236,7 @@ class OpenAPITool(Tool):
             fn=self._execute_request,  # We'll use an instance method instead of a global function
             tags=tags,
             annotations=annotations,
+            exclude_args=exclude_args,
             serializer=serializer,
         )
         self._client = client
