@@ -4,7 +4,6 @@ import inspect
 from pathlib import Path
 from typing import Annotated, Literal
 
-from mcp.server.auth.settings import AuthSettings
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing_extensions import Self
@@ -170,8 +169,6 @@ class ServerSettings(BaseSettings):
 
     # cache settings (for checking mounted servers)
     cache_expiration_seconds: float = 0
-
-    auth: AuthSettings | None = None
 
     # StreamableHTTP settings
     json_response: bool = False
