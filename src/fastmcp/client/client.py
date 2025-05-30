@@ -1,9 +1,10 @@
 import datetime
 from contextlib import AsyncExitStack, asynccontextmanager
 from pathlib import Path
-from typing import Any, Generic, cast, overload
+from typing import Any, Generic, Literal, cast, overload
 
 import anyio
+import httpx
 import mcp.types
 from exceptiongroup import catch
 from mcp import ClientSession
@@ -144,8 +145,11 @@ class Client(Generic[ClientTransportT]):
         progress_handler: ProgressHandler | None = None,
         timeout: datetime.timedelta | float | int | None = None,
         init_timeout: datetime.timedelta | float | int | None = None,
+        auth: httpx.Auth | Literal["oauth"] | str | None = None,
     ):
         self.transport = cast(ClientTransportT, infer_transport(transport))
+        if auth is not None:
+            self.transport._set_auth(auth)
         self._session: ClientSession | None = None
         self._exit_stack: AsyncExitStack | None = None
         self._nesting_counter: int = 0

@@ -2,15 +2,12 @@ from __future__ import annotations as _annotations
 
 import inspect
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Literal
+from typing import Annotated, Literal
 
 from mcp.server.auth.settings import AuthSettings
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing_extensions import Self
-
-if TYPE_CHECKING:
-    pass
 
 LOG_LEVEL = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 

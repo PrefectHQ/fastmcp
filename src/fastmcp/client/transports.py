@@ -5,21 +5,29 @@ import datetime
 import os
 import shutil
 import sys
+import warnings
 from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, TypedDict, TypeVar, cast, overload
+from typing import TYPE_CHECKING, Any, Literal, TypedDict, TypeVar, cast, overload
 
+import httpx
 from mcp import ClientSession, StdioServerParameters
+from mcp.client.session import (
+    ListRootsFnT,
+    LoggingFnT,
+    MessageHandlerFnT,
+    SamplingFnT,
+)
+from mcp.client.sse import sse_client
 from mcp.client.stdio import stdio_client
+from mcp.client.streamable_http import streamablehttp_client
 from mcp.client.websocket import websocket_client
 from mcp.server.fastmcp import FastMCP as FastMCP1Server
 from mcp.shared.memory import create_connected_server_and_client_session
 from pydantic import AnyUrl
 from typing_extensions import Unpack
 
-from fastmcp.client.client import ClientTransport, SessionKwargs
-from fastmcp.client.sse import SSETransport
-from fastmcp.client.streamable_http import StreamableHttpTransport
+from fastmcp.client.auth import OAuth
 from fastmcp.server import FastMCP as FastMCPServer
 from fastmcp.server.dependencies import get_http_headers
 from fastmcp.server.server import FastMCP
@@ -101,6 +109,10 @@ class ClientTransport(abc.ABC):
         """Close the transport."""
         pass
 
+    def _set_auth(self, auth: httpx.Auth | Literal["oauth"] | str | None):
+        if auth is not None:
+            raise ValueError("This transport does not support auth")
+
 
 class WSTransport(ClientTransport):
     """Transport implementation that connects to an MCP server via WebSockets."""
@@ -140,6 +152,7 @@ class SSETransport(ClientTransport):
         self,
         url: str | AnyUrl,
         headers: dict[str, str] | None = None,
+        auth: httpx.Auth | Literal["oauth"] | str | None = None,
         sse_read_timeout: datetime.timedelta | float | int | None = None,
     ):
         if isinstance(url, AnyUrl):
@@ -148,10 +161,19 @@ class SSETransport(ClientTransport):
             raise ValueError("Invalid HTTP/S URL provided for SSE.")
         self.url = url
         self.headers = headers or {}
+        self._set_auth(auth)
 
         if isinstance(sse_read_timeout, int | float):
             sse_read_timeout = datetime.timedelta(seconds=sse_read_timeout)
         self.sse_read_timeout = sse_read_timeout
+
+    def _set_auth(self, auth: httpx.Auth | Literal["oauth"] | str | None):
+        if auth == "oauth":
+            auth = OAuth(self.url)
+        elif isinstance(auth, str):
+            self.headers["Authorization"] = auth
+            auth = None
+        self.auth = auth
 
     @contextlib.asynccontextmanager
     async def connect_session(
@@ -174,7 +196,7 @@ class SSETransport(ClientTransport):
             )
             client_kwargs["timeout"] = read_timeout_seconds.total_seconds()
 
-        async with sse_client(self.url, **client_kwargs) as transport:
+        async with sse_client(self.url, auth=self.auth, **client_kwargs) as transport:
             read_stream, write_stream = transport
             async with ClientSession(
                 read_stream, write_stream, **session_kwargs
@@ -192,6 +214,7 @@ class StreamableHttpTransport(ClientTransport):
         self,
         url: str | AnyUrl,
         headers: dict[str, str] | None = None,
+        auth: httpx.Auth | Literal["oauth"] | str | None = None,
         sse_read_timeout: datetime.timedelta | float | int | None = None,
     ):
         if isinstance(url, AnyUrl):
@@ -200,10 +223,19 @@ class StreamableHttpTransport(ClientTransport):
             raise ValueError("Invalid HTTP/S URL provided for Streamable HTTP.")
         self.url = url
         self.headers = headers or {}
+        self._set_auth(auth)
 
         if isinstance(sse_read_timeout, int | float):
             sse_read_timeout = datetime.timedelta(seconds=sse_read_timeout)
         self.sse_read_timeout = sse_read_timeout
+
+    def _set_auth(self, auth: httpx.Auth | Literal["oauth"] | str | None):
+        if auth == "oauth":
+            auth = OAuth(self.url)
+        elif isinstance(auth, str):
+            self.headers["Authorization"] = auth
+            auth = None
+        self.auth = auth
 
     @contextlib.asynccontextmanager
     async def connect_session(
@@ -223,7 +255,9 @@ class StreamableHttpTransport(ClientTransport):
         if session_kwargs.get("read_timeout_seconds", None) is not None:
             client_kwargs["timeout"] = session_kwargs.get("read_timeout_seconds")
 
-        async with streamablehttp_client(self.url, **client_kwargs) as transport:
+        async with streamablehttp_client(
+            self.url, auth=self.auth, **client_kwargs
+        ) as transport:
             read_stream, write_stream, _ = transport
             async with ClientSession(
                 read_stream, write_stream, **session_kwargs

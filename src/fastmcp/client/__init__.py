@@ -11,6 +11,7 @@ from .transports import (
     FastMCPTransport,
     StreamableHttpTransport,
 )
+from .auth import OAuth
 
 __all__ = [
     "Client",
@@ -24,4 +25,5 @@ __all__ = [
     "NpxStdioTransport",
     "FastMCPTransport",
     "StreamableHttpTransport",
+    "OAuth",
 ]
