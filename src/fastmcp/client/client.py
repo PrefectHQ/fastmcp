@@ -44,7 +44,6 @@ from .transports import (
 
 __all__ = [
     "Client",
-    "ClientTransport",
     "SessionKwargs",
     "RootsHandler",
     "RootsList",

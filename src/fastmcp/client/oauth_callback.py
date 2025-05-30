@@ -221,7 +221,7 @@ def create_oauth_callback_server(
 
             return HTMLResponse(
                 create_callback_html(
-                    f"OAuth Error: {error}<br>{error_desc}", is_success=False
+                    f"FastMCP OAuth Error: {error}<br>{error_desc}", is_success=False
                 ),
                 status_code=400,
             )
@@ -235,7 +235,8 @@ def create_oauth_callback_server(
 
             return HTMLResponse(
                 create_callback_html(
-                    "OAuth Error: No authorization code received", is_success=False
+                    "FastMCP OAuth Error: No authorization code received",
+                    is_success=False,
                 ),
                 status_code=400,
             )
@@ -245,7 +246,7 @@ def create_oauth_callback_server(
             response_future.set_result((auth_code, state))
 
         return HTMLResponse(
-            create_callback_html("OAuth login complete!", server_url=server_url)
+            create_callback_html("FastMCP OAuth login complete!", server_url=server_url)
         )
 
     app = Starlette(routes=[Route(callback_path, callback_handler)])

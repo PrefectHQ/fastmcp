@@ -1,24 +1,29 @@
 from __future__ import annotations
 
 import asyncio
+import datetime
 import json
 import webbrowser
 from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import urljoin, urlparse
 
+import anyio
 import httpx
 from mcp.client.auth import OAuthClientProvider as _MCPOAuthClientProvider
 from mcp.client.auth import TokenStorage
 from mcp.shared.auth import (
     OAuthClientInformationFull,
     OAuthClientMetadata,
-    OAuthToken,
 )
 from mcp.shared.auth import (
     OAuthMetadata as _MCPServerOAuthMetadata,
 )
-from pydantic import AnyHttpUrl, ValidationError
+from mcp.shared.auth import (
+    OAuthToken as _MCPOAuthToken,
+)
+from pydantic import AnyHttpUrl, ValidationError, model_validator
+from typing_extensions import Self
 
 from fastmcp.client.oauth_callback import (
     create_oauth_callback_server,
@@ -30,6 +35,21 @@ from fastmcp.utilities.logging import get_logger
 __all__ = ["OAuth"]
 
 logger = get_logger(__name__)
+
+
+class OAuthToken(_MCPOAuthToken):
+    """
+    OAuth token that stores expiration as a datetime object
+    """
+
+    expires_at: datetime.datetime | None = None
+
+    @model_validator(mode="after")
+    def set_expires_at(self) -> Self:
+        if self.expires_in is not None and self.expires_at is None:
+            now = datetime.datetime.now(datetime.timezone.utc)
+            self.expires_at = now + datetime.timedelta(seconds=self.expires_in)
+        return self
 
 
 # Flexible OAuth models for real-world compatibility
@@ -149,17 +169,24 @@ class FileTokenStorage(TokenStorage):
     async def get_tokens(self) -> OAuthToken | None:
         """Load tokens from file storage."""
         path = self._get_file_path("tokens")
+
         try:
-            data = json.loads(path.read_text())
-            return OAuthToken.model_validate(data)
+            tokens = OAuthToken.model_validate_json(path.read_text())
+            now = datetime.datetime.now(datetime.timezone.utc)
+            if tokens.expires_at is not None and tokens.expires_at <= now:
+                logger.debug(f"Token expired for {self.get_base_url(self.server_url)}")
+                return None
+            return tokens
         except (FileNotFoundError, json.JSONDecodeError, ValidationError) as e:
             logger.debug(
                 f"Could not load tokens for {self.get_base_url(self.server_url)}: {e}"
             )
             return None
 
-    async def set_tokens(self, tokens: OAuthToken) -> None:
+    async def set_tokens(self, tokens: _MCPOAuthToken) -> None:
         """Save tokens to file storage."""
+        # Convert to custom model with expiration datetime
+        tokens = OAuthToken.model_validate(tokens)
         path = self._get_file_path("tokens")
         path.write_text(tokens.model_dump_json(indent=2))
         logger.debug(f"Saved tokens for {self.get_base_url(self.server_url)}")
@@ -168,8 +195,7 @@ class FileTokenStorage(TokenStorage):
         """Load client information from file storage."""
         path = self._get_file_path("client_info")
         try:
-            data = json.loads(path.read_text())
-            return OAuthClientInformationFull.model_validate(data)
+            return OAuthClientInformationFull.model_validate_json(path.read_text())
         except (FileNotFoundError, json.JSONDecodeError, ValidationError) as e:
             logger.debug(
                 f"Could not load client info for {self.get_base_url(self.server_url)}: {e}"
@@ -190,59 +216,8 @@ class FileTokenStorage(TokenStorage):
             path.unlink(missing_ok=True)
         logger.info(f"Cleared OAuth cache for {self.get_base_url(self.server_url)}")
 
-    def has_valid_token(self) -> bool:
-        """Check if there's a valid non-expired token (synchronous check)."""
-        path = self._get_file_path("tokens")
-        try:
-            data = json.loads(path.read_text())
-            token = OAuthToken.model_validate(data)
-
-            # Check if token has expiration info
-            if not token.expires_in:
-                return True  # Assume valid if no expiration
-
-            # We need to check when the token was saved vs current time
-            # For simplicity, we'll assume the token is fresh enough for now
-            # A more robust implementation would store the timestamp when saved
-            return True
-
-        except (FileNotFoundError, json.JSONDecodeError, ValidationError):
-            return False
-
     @classmethod
-    def list_cached_servers(cls, cache_dir: Path | None = None) -> list[str]:
-        """List all servers with cached data."""
-        cache_dir = cache_dir or fastmcp_global_settings.home / "oauth-mcp-client-cache"
-        if not cache_dir.exists():
-            return []
-
-        servers = set()
-        for file in cache_dir.glob("*_tokens.json"):
-            # Extract server info from filename
-            key_part = file.stem.replace("_tokens", "")
-            # Attempt to reconstruct URL (best effort)
-            if "_" in key_part:
-                try:
-                    # Handle common patterns like "https_example_com_8080"
-                    parts = key_part.split("_")
-                    if len(parts) >= 3:
-                        scheme = parts[0]
-                        host_parts = parts[1:-1] if parts[-1].isdigit() else parts[1:]
-                        port = parts[-1] if parts[-1].isdigit() else None
-
-                        host = ".".join(host_parts)
-                        url = f"{scheme}://{host}"
-                        if port:
-                            url += f":{port}"
-                        servers.add(url)
-                except Exception:
-                    # If reconstruction fails, at least show the key
-                    servers.add(key_part)
-
-        return sorted(list(servers))
-
-    @classmethod
-    def clear_all_cache(cls, cache_dir: Path | None = None) -> None:
+    def clear_all(cls, cache_dir: Path | None = None) -> None:
         """Clear all cached data for all servers."""
         cache_dir = cache_dir or fastmcp_global_settings.home / "oauth-mcp-client-cache"
         if not cache_dir.exists():
@@ -388,7 +363,6 @@ def OAuth(
         )
 
         # Run server until response is received with timeout logic
-        import anyio
 
         async with anyio.create_task_group() as tg:
             tg.start_soon(server.serve)
