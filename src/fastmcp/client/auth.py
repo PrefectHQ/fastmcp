@@ -2,13 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import json
-import socket
 import webbrowser
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Any, Literal
 from urllib.parse import urljoin, urlparse
 
-import anyio
 import httpx
 from mcp.client.auth import OAuthClientProvider as _MCPOAuthClientProvider
 from mcp.client.auth import TokenStorage
@@ -21,11 +19,11 @@ from mcp.shared.auth import (
     OAuthMetadata as _MCPServerOAuthMetadata,
 )
 from pydantic import AnyHttpUrl, ValidationError
-from starlette.applications import Starlette
-from starlette.responses import PlainTextResponse
-from starlette.routing import Route
-from uvicorn import Config, Server
 
+from fastmcp.client.oauth_callback import (
+    create_oauth_callback_server,
+    find_available_port,
+)
 from fastmcp.settings import settings as fastmcp_global_settings
 from fastmcp.utilities.logging import get_logger
 
@@ -186,11 +184,8 @@ class FileTokenStorage(TokenStorage):
 
     def clear_cache(self) -> None:
         """Clear all cached data for this server."""
-        # Use explicit literals to satisfy type checker
-        for file_type in [
-            cast(Literal["client_info", "tokens"], "client_info"),
-            cast(Literal["client_info", "tokens"], "tokens"),
-        ]:
+        file_types: list[Literal["client_info", "tokens"]] = ["client_info", "tokens"]
+        for file_type in file_types:
             path = self._get_file_path(file_type)
             path.unlink(missing_ok=True)
         logger.info(f"Cleared OAuth cache for {self.get_base_url(self.server_url)}")
@@ -253,93 +248,11 @@ class FileTokenStorage(TokenStorage):
         if not cache_dir.exists():
             return
 
-        # Use explicit literals to satisfy type checker
-        for file_type in [
-            cast(Literal["client_info", "tokens"], "client_info"),
-            cast(Literal["client_info", "tokens"], "tokens"),
-        ]:
+        file_types: list[Literal["client_info", "tokens"]] = ["client_info", "tokens"]
+        for file_type in file_types:
             for file in cache_dir.glob(f"*_{file_type}.json"):
                 file.unlink(missing_ok=True)
         logger.info("Cleared all OAuth client cache data.")
-
-
-def find_available_port() -> int:
-    """Find an available port by letting the OS assign one."""
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
-
-
-async def _get_redirect_callback(
-    port: int, path: str = "/callback", timeout: float = 300.0
-) -> tuple[str, str | None]:
-    """
-    Start a temporary server to handle OAuth redirect and return auth code and state.
-
-    Returns:
-        Tuple of (authorization_code, state)
-    """
-    response_future = asyncio.get_running_loop().create_future()
-
-    async def callback_handler(request):
-        if not response_future.done():
-            query_params = dict(request.query_params)
-            auth_code = query_params.get("code")
-            state = query_params.get("state")
-            error = query_params.get("error")
-
-            if error:
-                error_desc = query_params.get("error_description", "Unknown error")
-                response_future.set_exception(
-                    RuntimeError(f"OAuth error: {error} - {error_desc}")
-                )
-                return PlainTextResponse(
-                    f"❌ OAuth Error: {error}\n{error_desc}\nYou can close this tab.",
-                    status_code=400,
-                )
-
-            if not auth_code:
-                response_future.set_exception(
-                    RuntimeError("OAuth callback missing authorization code")
-                )
-                return PlainTextResponse(
-                    "❌ OAuth Error: No authorization code received.\nYou can close this tab.",
-                    status_code=400,
-                )
-
-            response_future.set_result((auth_code, state))
-            return PlainTextResponse(
-                "✅ FastMCP OAuth login complete!\nYou can close this tab now."
-            )
-
-        return PlainTextResponse("Callback already processed. You can close this tab.")
-
-    server = Server(
-        Config(
-            app=Starlette(routes=[Route(path, callback_handler)]),
-            host="127.0.0.1",
-            port=port,
-            lifespan="off",
-            log_level="warning",
-        )
-    )
-
-    async with anyio.create_task_group() as tg:
-        tg.start_soon(server.serve)
-        logger.info(
-            f"🎧 OAuth callback server started on http://127.0.0.1:{port}{path}"
-        )
-
-        try:
-            with anyio.fail_after(timeout):
-                auth_code, state = await response_future
-                return auth_code, state
-        except TimeoutError:
-            raise TimeoutError(f"OAuth callback timed out after {timeout} seconds")
-        finally:
-            server.should_exit = True
-            await asyncio.sleep(0.1)  # Allow server to shutdown gracefully
-            tg.cancel_scope.cancel()
 
 
 async def discover_oauth_metadata(
@@ -417,12 +330,16 @@ def OAuth(
     """
     Create an OAuthClientProvider for an MCP server.
 
+    This is intended to be provided to the `auth` parameter of an
+    httpx.AsyncClient (or appropriate FastMCP client/transport instance)
+
     Args:
-        mcp_endpoint_url: Full URL to the MCP endpoint (e.g., "http://host/mcp/sse")
-        scopes: OAuth scopes to request. Can be a space-separated string or a list of strings.
-        client_name: Name for this client during registration
-        token_storage_cache_dir: Directory for FileTokenStorage
-        additional_client_metadata: Extra fields for OAuthClientMetadata
+        mcp_endpoint_url: Full URL to the MCP endpoint (e.g.,
+        "http://host/mcp/sse") scopes: OAuth scopes to request. Can be a
+        space-separated string or a list of strings. client_name: Name for this
+        client during registration token_storage_cache_dir: Directory for
+        FileTokenStorage additional_client_metadata: Extra fields for
+        OAuthClientMetadata
 
     Returns:
         OAuthClientProvider
@@ -460,7 +377,35 @@ def OAuth(
 
     async def callback_handler() -> tuple[str, str | None]:
         """Handle OAuth callback and return (auth_code, state)."""
-        return await _get_redirect_callback(port=redirect_port)
+        # Create a future to capture the OAuth response
+        response_future = asyncio.get_running_loop().create_future()
+
+        # Create server with the future
+        server = create_oauth_callback_server(
+            port=redirect_port,
+            server_url=server_base_url,
+            response_future=response_future,
+        )
+
+        # Run server until response is received with timeout logic
+        import anyio
+
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(server.serve)
+            logger.info(
+                f"🎧 OAuth callback server started on http://127.0.0.1:{redirect_port}"
+            )
+
+            try:
+                with anyio.fail_after(300.0):  # 5 minute timeout
+                    auth_code, state = await response_future
+                    return auth_code, state
+            except TimeoutError:
+                raise TimeoutError("OAuth callback timed out after 300 seconds")
+            finally:
+                server.should_exit = True
+                await asyncio.sleep(0.1)  # Allow server to shutdown gracefully
+                tg.cancel_scope.cancel()
 
     # Create OAuth provider
     oauth_provider = OAuthClientProvider(
