@@ -3,6 +3,7 @@ from typing import Any
 
 import mcp.types
 import pytest
+from anyio import create_task_group
 from dirty_equals import Contains
 from mcp import McpError
 
@@ -242,3 +243,26 @@ class TestPrompts:
         assert result.messages[0].role == "user"
         assert isinstance(result.messages[0].content, mcp.types.TextContent)
         assert result.messages[0].content.text == "Welcome to FastMCP, Alice!"
+
+
+async def test_proxy_handles_multiple_concurrent_tasks_correctly(
+    proxy_server: FastMCPProxy,
+):
+    results = {}
+
+    async def get_and_store(name, coro):
+        results[name] = await coro()
+
+    async with create_task_group() as tg:
+        tg.start_soon(get_and_store, "prompts", proxy_server.get_prompts)
+        tg.start_soon(get_and_store, "resources", proxy_server.get_resources)
+        tg.start_soon(get_and_store, "tools", proxy_server.get_tools)
+
+    assert list(results) == Contains("resources", "prompts", "tools")
+    assert list(results["prompts"]) == Contains("welcome")
+    assert [r.name for r in results["resources"].values()] == Contains(
+        "data://users", "resource://wave"
+    )
+    assert list(results["tools"]) == Contains(
+        "greet", "add", "error_tool", "tool_without_description"
+    )
