@@ -197,13 +197,11 @@ def _convert_to_content(
             else:
                 other_content.append(item)
 
-        if len(other_content) == 1:
+        if other_content:
             other_content = _convert_to_content(
-                other_content[0], serializer=serializer, _process_as_single_item=True
-            )
-        elif len(other_content) > 1:
-            other_content = _convert_to_content(
-                other_content, serializer=serializer, _process_as_single_item=True
+                other_content[0] if len(other_content) == 1 else other_content,
+                serializer=serializer,
+                _process_as_single_item=True,
             )
 
         return other_content + mcp_types

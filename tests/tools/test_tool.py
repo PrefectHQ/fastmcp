@@ -1,6 +1,6 @@
 import pytest
 from mcp.types import EmbeddedResource, ImageContent, TextContent, TextResourceContents
-from pydantic import AnyUrl, BaseModel
+from pydantic import AnyUrl
 
 from fastmcp import FastMCP, Image
 from fastmcp.client import Client
@@ -520,7 +520,7 @@ class TestConvertResultToContent:
         assert image_item.data == "ZmFrZWltYWdlZGF0YQ=="
 
     def test_list_of_mixed_types_list(self):
-        """Test that a list of mixed types is converted correctly."""
+        """Test that a list of mixed types, including a list as one of the elements, is converted correctly."""
         content1 = TextContent(type="text", text="hello")
         image_obj = Image(data=b"fakeimagedata")
         basic_data = [{"a": 1}, {"b": 2}]
