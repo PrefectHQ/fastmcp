@@ -2,6 +2,7 @@ import asyncio
 import logging
 from unittest.mock import AsyncMock, Mock, patch
 
+import anyio
 import pytest
 
 from fastmcp.server.server import FastMCP
@@ -27,7 +28,7 @@ async def test_uvicorn_logging_default_level(
     """Tests that FastMCP passes log_level to uvicorn.Config if no log_config is given."""
     mock_server_instance = AsyncMock()
     mock_uvicorn_server_constructor.return_value = mock_server_instance
-    serve_finished_event = asyncio.Event()
+    serve_finished_event = anyio.Event()
     mock_server_instance.serve.side_effect = serve_finished_event.wait
 
     test_log_level = "warning"
@@ -63,7 +64,7 @@ async def test_uvicorn_logging_with_custom_log_config(
     """Tests that FastMCP passes log_config to uvicorn.Config and not log_level."""
     mock_server_instance = AsyncMock()
     mock_uvicorn_server_constructor.return_value = mock_server_instance
-    serve_finished_event = asyncio.Event()
+    serve_finished_event = anyio.Event()
     mock_server_instance.serve.side_effect = serve_finished_event.wait
 
     sample_log_config = {
@@ -123,7 +124,7 @@ async def test_uvicorn_logging_custom_log_config_overrides_log_level_param(
     """Tests log_config precedence if log_level is also passed to run_http_async."""
     mock_server_instance = AsyncMock()
     mock_uvicorn_server_constructor.return_value = mock_server_instance
-    serve_finished_event = asyncio.Event()
+    serve_finished_event = anyio.Event()
     mock_server_instance.serve.side_effect = serve_finished_event.wait
 
     sample_log_config = {

@@ -196,8 +196,8 @@ class Client(Generic[ClientTransportT]):
         self._nesting_counter: int = 0
         self._context_lock = anyio.Lock()
         self._session_task: asyncio.Task | None = None
-        self._ready_event = asyncio.Event()
-        self._stop_event = asyncio.Event()
+        self._ready_event = anyio.Event()
+        self._stop_event = anyio.Event()
 
     @property
     def session(self) -> ClientSession:

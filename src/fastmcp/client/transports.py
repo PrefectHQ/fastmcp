@@ -18,6 +18,7 @@ from typing import (
     overload,
 )
 
+import anyio
 import httpx
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.session import (
@@ -327,8 +328,8 @@ class StdioTransport(ClientTransport):
 
         self._session: ClientSession | None = None
         self._connect_task: asyncio.Task | None = None
-        self._ready_event = asyncio.Event()
-        self._stop_event = asyncio.Event()
+        self._ready_event = anyio.Event()
+        self._stop_event = anyio.Event()
 
     @contextlib.asynccontextmanager
     async def connect_session(
@@ -391,8 +392,8 @@ class StdioTransport(ClientTransport):
 
         # reset variables and events for potential future reconnects
         self._connect_task = None
-        self._stop_event = asyncio.Event()
-        self._ready_event = asyncio.Event()
+        self._stop_event = anyio.Event()
+        self._ready_event = anyio.Event()
 
     async def close(self):
         await self.disconnect()
