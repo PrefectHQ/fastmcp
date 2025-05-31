@@ -1,3 +1,4 @@
+import asyncio
 import datetime
 from contextlib import AsyncExitStack, asynccontextmanager
 from pathlib import Path
@@ -152,6 +153,10 @@ class Client(Generic[ClientTransportT]):
         self._session: ClientSession | None = None
         self._exit_stack: AsyncExitStack | None = None
         self._nesting_counter: int = 0
+        self._context_lock = anyio.Lock()
+        self._session_task: asyncio.Task | None = None
+        self._ready_event = asyncio.Event()
+        self._stop_event = asyncio.Event()
         self._initialize_result: mcp.types.InitializeResult | None = None
 
         if log_handler is None:
@@ -191,6 +196,7 @@ class Client(Generic[ClientTransportT]):
             self._session_kwargs["sampling_callback"] = create_sampling_callback(
                 sampling_handler
             )
+        # self._session_manager = self._context_manager()
 
     @property
     def session(self) -> ClientSession:
@@ -242,34 +248,45 @@ class Client(Generic[ClientTransportT]):
                 except TimeoutError:
                     raise RuntimeError("Failed to initialize server session")
                 finally:
-                    self._exit_stack = None
                     self._session = None
                     self._initialize_result = None
 
     async def __aenter__(self):
-        if self._nesting_counter == 0:
-            # Create exit stack to manage both context managers
-            stack = AsyncExitStack()
-            await stack.__aenter__()
-
-            await stack.enter_async_context(self._context_manager())
-
-            self._exit_stack = stack
-
-        self._nesting_counter += 1
-
+        async with self._context_lock:
+            need_to_start = self._session_task is None or self._session_task.done()
+            if need_to_start:
+                self._stop_event = anyio.Event()
+                self._ready_event = anyio.Event()
+                self._session_task = asyncio.create_task(self._session_runner())
+            await self._ready_event.wait()
+            self._nesting_counter += 1
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        self._nesting_counter -= 1
+        async with self._context_lock:
+            self._nesting_counter -= 1
+            if self._nesting_counter != 0:
+                return
+            self._stop_event.set()
+            runner_task = self._session_task
+            self._session_task = None
+        if runner_task:
+            await runner_task
+        # Reset for future reconnects
+        self._stop_event = anyio.Event()
+        self._ready_event = anyio.Event()
 
-        if self._nesting_counter == 0:
-            # Exit the stack which will handle cleaning up the session
-            if self._exit_stack is not None:
-                try:
-                    await self._exit_stack.__aexit__(exc_type, exc_val, exc_tb)
-                finally:
-                    self._exit_stack = None
+    async def _session_runner(self):
+        async with AsyncExitStack() as stack:
+            try:
+                await stack.enter_async_context(self._context_manager())
+                # Session/context is now ready
+                self._ready_event.set()
+                # Wait until disconnect/stop is requested
+                await self._stop_event.wait()
+            finally:
+                # On exit, ensure ready event is set (idempotent)
+                self._ready_event.set()
 
     async def close(self):
         await self.transport.close()
