@@ -150,13 +150,6 @@ class Client(Generic[ClientTransportT]):
         self.transport = cast(ClientTransportT, infer_transport(transport))
         if auth is not None:
             self.transport._set_auth(auth)
-        self._session: ClientSession | None = None
-        self._exit_stack: AsyncExitStack | None = None
-        self._nesting_counter: int = 0
-        self._context_lock = anyio.Lock()
-        self._session_task: asyncio.Task | None = None
-        self._ready_event = asyncio.Event()
-        self._stop_event = asyncio.Event()
         self._initialize_result: mcp.types.InitializeResult | None = None
 
         if log_handler is None:
@@ -196,7 +189,15 @@ class Client(Generic[ClientTransportT]):
             self._session_kwargs["sampling_callback"] = create_sampling_callback(
                 sampling_handler
             )
-        # self._session_manager = self._context_manager()
+
+        # session context management
+        self._session: ClientSession | None = None
+        self._exit_stack: AsyncExitStack | None = None
+        self._nesting_counter: int = 0
+        self._context_lock = anyio.Lock()
+        self._session_task: asyncio.Task | None = None
+        self._ready_event = asyncio.Event()
+        self._stop_event = asyncio.Event()
 
     @property
     def session(self) -> ClientSession:
@@ -252,6 +253,14 @@ class Client(Generic[ClientTransportT]):
                     self._initialize_result = None
 
     async def __aenter__(self):
+        await self._connect()
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        await self._disconnect()
+
+    async def _connect(self):
+        # ensure only one session is running at a time to avoid race conditions
         async with self._context_lock:
             need_to_start = self._session_task is None or self._session_task.done()
             if need_to_start:
@@ -262,19 +271,37 @@ class Client(Generic[ClientTransportT]):
             self._nesting_counter += 1
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def _disconnect(self, force: bool = False):
+        # ensure only one session is running at a time to avoid race conditions
         async with self._context_lock:
-            self._nesting_counter -= 1
-            if self._nesting_counter != 0:
+            # if we are forcing a disconnect, reset the nesting counter
+            if force:
+                self._nesting_counter = 0
+
+            # otherwise decrement to check if we are done nesting
+            else:
+                self._nesting_counter = max(0, self._nesting_counter - 1)
+
+            # if we are still nested, return
+            if self._nesting_counter > 0:
+                return
+
+            # stop the active seesion
+            if self._session_task is None:
                 return
             self._stop_event.set()
             runner_task = self._session_task
             self._session_task = None
+
+        # wait for the session to finish
         if runner_task:
             await runner_task
+
         # Reset for future reconnects
         self._stop_event = anyio.Event()
         self._ready_event = anyio.Event()
+        self._session = None
+        self._initialize_result = None
 
     async def _session_runner(self):
         async with AsyncExitStack() as stack:
@@ -289,9 +316,8 @@ class Client(Generic[ClientTransportT]):
                 self._ready_event.set()
 
     async def close(self):
+        await self._disconnect(force=True)
         await self.transport.close()
-        self._session = None
-        self._initialize_result = None
 
     # --- MCP Client Methods ---
 
