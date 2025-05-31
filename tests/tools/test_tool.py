@@ -1,11 +1,11 @@
 import pytest
-from mcp.types import ImageContent, TextContent
-from pydantic import BaseModel
+from mcp.types import EmbeddedResource, ImageContent, TextContent, TextResourceContents
+from pydantic import AnyUrl, BaseModel
 
 from fastmcp import FastMCP, Image
 from fastmcp.client import Client
 from fastmcp.exceptions import ToolError
-from fastmcp.tools.tool import Tool
+from fastmcp.tools.tool import Tool, _convert_to_content
 from fastmcp.utilities.tests import temporary_settings
 
 
@@ -182,6 +182,32 @@ class TestToolFromFunction:
     async def test_classmethod(self):
         class MyClass:
             x: int = 10
+
+            @classmethod
+            def call(cls, x: int, y: int) -> int:
+                """Add two numbers."""
+                return x + y
+
+        tool = Tool.from_function(MyClass.call)
+        assert tool.name == "call"
+        assert tool.description == "Add two numbers."
+        assert "x" in tool.parameters["properties"]
+        assert "y" in tool.parameters["properties"]
+
+    async def test_tool_serializer(self):
+        """Test that a tool's serializer is used to serialize the result."""
+
+        def custom_serializer(data) -> str:
+            return f"Custom serializer: {data}"
+
+        def process_list(items: list[int]) -> int:
+            return sum(items)
+
+        tool = Tool.from_function(process_list, serializer=custom_serializer)
+
+        result = await tool.run(arguments={"items": [1, 2, 3, 4, 5]})
+        assert isinstance(result[0], TextContent)
+        assert result[0].text == "Custom serializer: 15"
 
 
 class TestLegacyToolJsonParsing:
@@ -378,3 +404,182 @@ class TestLegacyToolJsonParsing:
             result = await client.call_tool("process_tuple", {"items": '["1", "two"]'})
             assert isinstance(result[0], TextContent)
             assert result[0].text == "4"
+
+
+class TestConvertResultToContent:
+    """Tests for the _convert_to_content helper function."""
+
+    def test_none_result(self):
+        """Test that None results in an empty list."""
+        result = _convert_to_content(None)
+        assert isinstance(result, list)
+        assert len(result) == 0
+
+    def test_text_content_result(self):
+        """Test that TextContent is returned as a list containing itself."""
+        content = TextContent(type="text", text="hello")
+        result = _convert_to_content(content)
+        assert isinstance(result, list)
+        assert len(result) == 1
+        assert result[0] is content
+
+    def test_image_content_result(self):
+        """Test that ImageContent is returned as a list containing itself."""
+        content = ImageContent(type="image", data="fakeimagedata", mimeType="image/png")
+        result = _convert_to_content(content)
+        assert isinstance(result, list)
+        assert len(result) == 1
+        assert result[0] is content
+
+    def test_embedded_resource_result(self):
+        """Test that EmbeddedResource is returned as a list containing itself."""
+        content = EmbeddedResource(
+            type="resource",
+            resource=TextResourceContents(
+                uri=AnyUrl("resource://test"),
+                mimeType="text/plain",
+                text="resource content",
+            ),
+        )
+        result = _convert_to_content(content)
+        assert isinstance(result, list)
+        assert len(result) == 1
+        assert result[0] is content
+
+    def test_image_object_result(self):
+        """Test that an Image object is converted to ImageContent."""
+        image_obj = Image(data=b"fakeimagedata")
+        
+        result = _convert_to_content(image_obj)
+
+        assert isinstance(result, list)
+        assert len(result) == 1
+        assert isinstance(result[0], ImageContent)
+        assert result[0].data == "ZmFrZWltYWdlZGF0YQ=="
+
+    def test_basic_type_result(self):
+        """Test that a basic type is converted to TextContent."""
+        result = _convert_to_content(123)
+        assert isinstance(result, list)
+        assert len(result) == 1
+        assert isinstance(result[0], TextContent)
+        assert result[0].text == "123"
+
+        result = _convert_to_content("hello")
+        assert isinstance(result, list)
+        assert len(result) == 1
+        assert isinstance(result[0], TextContent)
+        assert result[0].text == "hello"
+
+        result = _convert_to_content({"a": 1, "b": 2})
+        assert isinstance(result, list)
+        assert len(result) == 1
+        assert isinstance(result[0], TextContent)
+        assert result[0].text == '{\n  "a": 1,\n  "b": 2\n}'
+
+    def test_list_of_basic_types(self):
+        """Test that a list of basic types is converted to a single TextContent."""
+        result = _convert_to_content([1, "two", {"c": 3}])
+        assert isinstance(result, list)
+        assert len(result) == 1
+        assert isinstance(result[0], TextContent)
+        assert result[0].text == '[\n  1,\n  "two",\n  {\n    "c": 3\n  }\n]'
+
+    def test_list_of_mcp_types(self):
+        """Test that a list of MCP types is returned as a list of those types."""
+        content1 = TextContent(type="text", text="hello")
+        content2 = ImageContent(
+            type="image", data="fakeimagedata2", mimeType="image/png"
+        )
+        result = _convert_to_content([content1, content2])
+        assert isinstance(result, list)
+        assert len(result) == 2
+        assert result[0] is content1
+        assert result[1] is content2
+
+    def test_list_of_mixed_types(self):
+        """Test that a list of mixed types is converted correctly."""
+        content1 = TextContent(type="text", text="hello")
+        image_obj = Image(data=b"fakeimagedata")
+        basic_data = {"a": 1}
+        result = _convert_to_content([content1, image_obj, basic_data])
+
+        assert isinstance(result, list)
+        assert len(result) == 3 
+
+        text_content_count = sum(isinstance(item, TextContent) for item in result)
+        image_content_count = sum(isinstance(item, ImageContent) for item in result)
+
+        assert text_content_count == 2
+        assert image_content_count == 1
+
+        text_item = next(item for item in result if isinstance(item, TextContent))
+        assert text_item.text == '{\n  "a": 1\n}'
+
+        image_item = next(item for item in result if isinstance(item, ImageContent))
+        assert image_item.data == "ZmFrZWltYWdlZGF0YQ=="
+
+    def test_empty_list(self):
+        """Test that an empty list results in an empty list."""
+        result = _convert_to_content([])
+        assert isinstance(result, list)
+        assert len(result) == 0
+
+    def test_empty_dict(self):
+        """Test that an empty dictionary is converted to TextContent."""
+        result = _convert_to_content({})
+        assert isinstance(result, list)
+        assert len(result) == 1
+        assert isinstance(result[0], TextContent)
+        assert result[0].text == "{}"
+
+    def test_with_custom_serializer(self):
+        """Test that a custom serializer is used for non-MCP types."""
+
+        def custom_serializer(data):
+            return f"Serialized: {data}"
+
+        result = _convert_to_content({"a": 1}, serializer=custom_serializer)
+        assert isinstance(result, list)
+        assert len(result) == 1
+        assert isinstance(result[0], TextContent)
+        assert result[0].text == "Serialized: {'a': 1}"
+
+    def test_custom_serializer_error_fallback(self, caplog):
+        """Test that if a custom serializer fails, it falls back to the default."""
+        import logging
+
+        def custom_serializer_that_fails(data):
+            raise ValueError("Serialization failed")
+
+        with caplog.at_level(logging.WARNING):
+            result = _convert_to_content(
+                {"a": 1}, serializer=custom_serializer_that_fails
+            )
+
+        assert isinstance(result, list)
+        assert len(result) == 1
+        assert isinstance(result[0], TextContent)
+        # Should fall back to default serializer (pydantic_core.to_json)
+        assert result[0].text == '{\n  "a": 1\n}'
+        assert "Error serializing tool result" in caplog.text
+
+    def test_process_as_single_item_flag(self):
+        """Test that _process_as_single_item forces list to be treated as one item."""
+
+        result = _convert_to_content([1, "two", {"c": 3}], _process_as_single_item=True)
+        assert isinstance(result, list)
+        assert len(result) == 1
+        assert isinstance(result[0], TextContent)
+        assert result[0].text == '[\n  1,\n  "two",\n  {\n    "c": 3\n  }\n]'
+
+        content1 = TextContent(type="text", text="hello")
+        result = _convert_to_content([1, content1], _process_as_single_item=True)
+        assert isinstance(result, list)
+        assert len(result) == 1
+        assert isinstance(result[0], TextContent)
+
+        assert result[0].text == '[\n  1,\n  {\n    "type": "text",\n    "text": "hello",\n    "annotations": null\n  }\n]'
+
+
+
