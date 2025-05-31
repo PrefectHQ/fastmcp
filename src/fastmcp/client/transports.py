@@ -6,9 +6,17 @@ import os
 import shutil
 import sys
 import warnings
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, TypedDict, TypeVar, cast, overload
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Literal,
+    TypedDict,
+    TypeVar,
+    cast,
+    overload,
+)
 
 import httpx
 from mcp import ClientSession, StdioServerParameters
@@ -154,6 +162,7 @@ class SSETransport(ClientTransport):
         headers: dict[str, str] | None = None,
         auth: httpx.Auth | Literal["oauth"] | str | None = None,
         sse_read_timeout: datetime.timedelta | float | int | None = None,
+        httpx_client_factory: Callable[[], httpx.AsyncClient] | None = None,
     ):
         if isinstance(url, AnyUrl):
             url = str(url)
@@ -162,6 +171,7 @@ class SSETransport(ClientTransport):
         self.url = url
         self.headers = headers or {}
         self._set_auth(auth)
+        self.httpx_client_factory = httpx_client_factory
 
         if isinstance(sse_read_timeout, int | float):
             sse_read_timeout = datetime.timedelta(seconds=sse_read_timeout)
@@ -196,6 +206,9 @@ class SSETransport(ClientTransport):
             )
             client_kwargs["timeout"] = read_timeout_seconds.total_seconds()
 
+        if self.httpx_client_factory is not None:
+            client_kwargs["httpx_client_factory"] = self.httpx_client_factory
+
         async with sse_client(self.url, auth=self.auth, **client_kwargs) as transport:
             read_stream, write_stream = transport
             async with ClientSession(
@@ -216,6 +229,7 @@ class StreamableHttpTransport(ClientTransport):
         headers: dict[str, str] | None = None,
         auth: httpx.Auth | Literal["oauth"] | str | None = None,
         sse_read_timeout: datetime.timedelta | float | int | None = None,
+        httpx_client_factory: Callable[[], httpx.AsyncClient] | None = None,
     ):
         if isinstance(url, AnyUrl):
             url = str(url)
@@ -224,6 +238,7 @@ class StreamableHttpTransport(ClientTransport):
         self.url = url
         self.headers = headers or {}
         self._set_auth(auth)
+        self.httpx_client_factory = httpx_client_factory
 
         if isinstance(sse_read_timeout, int | float):
             sse_read_timeout = datetime.timedelta(seconds=sse_read_timeout)
@@ -255,8 +270,13 @@ class StreamableHttpTransport(ClientTransport):
         if session_kwargs.get("read_timeout_seconds", None) is not None:
             client_kwargs["timeout"] = session_kwargs.get("read_timeout_seconds")
 
+        if self.httpx_client_factory is not None:
+            client_kwargs["httpx_client_factory"] = self.httpx_client_factory
+
         async with streamablehttp_client(
-            self.url, auth=self.auth, **client_kwargs
+            self.url,
+            auth=self.auth,
+            **client_kwargs,
         ) as transport:
             read_stream, write_stream, _ = transport
             async with ClientSession(
