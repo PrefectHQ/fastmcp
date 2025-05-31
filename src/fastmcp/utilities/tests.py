@@ -94,7 +94,7 @@ def run_server_in_process(
     proc.start()
 
     # Wait for server to be running
-    max_attempts = 100
+    max_attempts = 10
     attempt = 0
     while attempt < max_attempts and proc.is_alive():
         try:
@@ -102,7 +102,10 @@ def run_server_in_process(
                 s.connect((host, port))
                 break
         except ConnectionRefusedError:
-            time.sleep(0.01)
+            if attempt < 3:
+                time.sleep(0.01)
+            else:
+                time.sleep(0.1)
             attempt += 1
     else:
         raise RuntimeError(f"Server failed to start after {max_attempts} attempts")
