@@ -18,7 +18,6 @@ from typing import TYPE_CHECKING, Any, Generic, Literal
 import anyio
 import httpx
 import uvicorn
-from mcp.server.auth.provider import OAuthAuthorizationServerProvider
 from mcp.server.lowlevel.helper_types import ReadResourceContents
 from mcp.server.lowlevel.server import LifespanResultT, NotificationOptions
 from mcp.server.lowlevel.server import Server as MCPServer
@@ -48,6 +47,7 @@ from fastmcp.prompts import Prompt, PromptManager
 from fastmcp.prompts.prompt import PromptResult
 from fastmcp.resources import Resource, ResourceManager
 from fastmcp.resources.template import ResourceTemplate
+from fastmcp.server.auth.auth import OAuthProvider
 from fastmcp.server.http import (
     StarletteWithLifespan,
     create_sse_app,
@@ -110,8 +110,7 @@ class FastMCP(Generic[LifespanResultT]):
         self,
         name: str | None = None,
         instructions: str | None = None,
-        auth_server_provider: OAuthAuthorizationServerProvider[Any, Any, Any]
-        | None = None,
+        auth: OAuthProvider | None = None,
         lifespan: (
             Callable[
                 [FastMCP[LifespanResultT]],
@@ -186,13 +185,7 @@ class FastMCP(Generic[LifespanResultT]):
             lifespan=_lifespan_wrapper(self, lifespan),
         )
 
-        if (self.settings.auth is not None) != (auth_server_provider is not None):
-            # TODO: after we support separate authorization servers (see
-            raise ValueError(
-                "settings.auth must be specified if and only if auth_server_provider "
-                "is specified"
-            )
-        self._auth_server_provider = auth_server_provider
+        self.auth = auth
 
         # Set up MCP protocol handlers
         self._setup_handlers()
@@ -903,8 +896,7 @@ class FastMCP(Generic[LifespanResultT]):
             server=self,
             message_path=message_path or self.settings.message_path,
             sse_path=path or self.settings.sse_path,
-            auth_server_provider=self._auth_server_provider,
-            auth_settings=self.settings.auth,
+            auth=self.auth,
             debug=self.settings.debug,
             middleware=middleware,
         )
@@ -951,8 +943,7 @@ class FastMCP(Generic[LifespanResultT]):
                 server=self,
                 streamable_http_path=path or self.settings.streamable_http_path,
                 event_store=None,
-                auth_server_provider=self._auth_server_provider,
-                auth_settings=self.settings.auth,
+                auth=self.auth,
                 json_response=self.settings.json_response,
                 stateless_http=self.settings.stateless_http,
                 debug=self.settings.debug,
@@ -963,8 +954,7 @@ class FastMCP(Generic[LifespanResultT]):
                 server=self,
                 message_path=self.settings.message_path,
                 sse_path=path or self.settings.sse_path,
-                auth_server_provider=self._auth_server_provider,
-                auth_settings=self.settings.auth,
+                auth=self.auth,
                 debug=self.settings.debug,
                 middleware=middleware,
             )
