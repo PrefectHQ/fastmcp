@@ -25,8 +25,7 @@ from fastmcp.server.auth.auth import (
 # Default expiration times (in seconds)
 DEFAULT_AUTH_CODE_EXPIRY_SECONDS = 5 * 60  # 5 minutes
 DEFAULT_ACCESS_TOKEN_EXPIRY_SECONDS = 60 * 60  # 1 hour
-# Refresh tokens often have longer or no expiry; let's make them non-expiring for simplicity
-DEFAULT_REFRESH_TOKEN_EXPIRY_SECONDS = None
+DEFAULT_REFRESH_TOKEN_EXPIRY_SECONDS = None  # No expiry
 
 
 class InMemoryOAuthProvider(OAuthProvider):

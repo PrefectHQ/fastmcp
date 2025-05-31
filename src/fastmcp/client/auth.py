@@ -186,7 +186,7 @@ class FileTokenStorage(TokenStorage):
     async def set_tokens(self, tokens: _MCPOAuthToken) -> None:
         """Save tokens to file storage."""
         # Convert to custom model with expiration datetime
-        tokens = OAuthToken.model_validate(tokens)
+        tokens = OAuthToken.model_validate(tokens.model_dump())
         path = self._get_file_path("tokens")
         path.write_text(tokens.model_dump_json(indent=2))
         logger.debug(f"Saved tokens for {self.get_base_url(self.server_url)}")
@@ -266,7 +266,7 @@ async def discover_oauth_metadata(
 
 
 async def check_if_auth_required(
-    mcp_endpoint_url: str, httpx_kwargs: dict[str, Any] | None = None
+    mcp_url: str, httpx_kwargs: dict[str, Any] | None = None
 ) -> bool:
     """
     Check if the MCP endpoint requires authentication by making a test request.
@@ -277,7 +277,7 @@ async def check_if_auth_required(
     async with httpx.AsyncClient(**(httpx_kwargs or {})) as client:
         try:
             # Try a simple request to the endpoint
-            response = await client.get(mcp_endpoint_url, timeout=5.0)
+            response = await client.get(mcp_url, timeout=5.0)
 
             # If we get 401/403, auth is likely required
             if response.status_code in (401, 403):
@@ -296,7 +296,7 @@ async def check_if_auth_required(
 
 
 def OAuth(
-    mcp_endpoint_url: str,
+    mcp_url: str,
     scopes: str | list[str] | None = None,
     client_name: str = "FastMCP Client",
     token_storage_cache_dir: Path | None = None,
@@ -309,17 +309,18 @@ def OAuth(
     httpx.AsyncClient (or appropriate FastMCP client/transport instance)
 
     Args:
-        mcp_endpoint_url: Full URL to the MCP endpoint (e.g.,
-        "http://host/mcp/sse") scopes: OAuth scopes to request. Can be a
-        space-separated string or a list of strings. client_name: Name for this
-        client during registration token_storage_cache_dir: Directory for
-        FileTokenStorage additional_client_metadata: Extra fields for
-        OAuthClientMetadata
+        mcp_url: Full URL to the MCP endpoint (e.g.,
+        "http://host/mcp/sse")
+        scopes: OAuth scopes to request. Can be a
+        space-separated string or a list of strings.
+        client_name: Name for this client during registration
+        token_storage_cache_dir: Directory for FileTokenStorage
+        additional_client_metadata: Extra fields for OAuthClientMetadata
 
     Returns:
         OAuthClientProvider
     """
-    parsed_url = urlparse(mcp_endpoint_url)
+    parsed_url = urlparse(mcp_url)
     server_base_url = f"{parsed_url.scheme}://{parsed_url.netloc}"
 
     # Setup OAuth client
@@ -347,7 +348,7 @@ def OAuth(
     # Define OAuth handlers
     async def redirect_handler(authorization_url: str) -> None:
         """Open browser for authorization."""
-        logger.info(f"Opening browser for OAuth authorization: {authorization_url}")
+        logger.info(f"OAuth authorization URL: {authorization_url}")
         webbrowser.open(authorization_url)
 
     async def callback_handler() -> tuple[str, str | None]:
@@ -363,19 +364,19 @@ def OAuth(
         )
 
         # Run server until response is received with timeout logic
-
         async with anyio.create_task_group() as tg:
             tg.start_soon(server.serve)
             logger.info(
                 f"🎧 OAuth callback server started on http://127.0.0.1:{redirect_port}"
             )
 
+            TIMEOUT = 300.0  # 5 minute timeout
             try:
-                with anyio.fail_after(300.0):  # 5 minute timeout
+                with anyio.fail_after(TIMEOUT):
                     auth_code, state = await response_future
                     return auth_code, state
             except TimeoutError:
-                raise TimeoutError("OAuth callback timed out after 300 seconds")
+                raise TimeoutError(f"OAuth callback timed out after {TIMEOUT} seconds")
             finally:
                 server.should_exit = True
                 await asyncio.sleep(0.1)  # Allow server to shutdown gracefully

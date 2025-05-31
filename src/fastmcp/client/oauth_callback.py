@@ -9,8 +9,10 @@ from __future__ import annotations
 
 import asyncio
 import socket
+from dataclasses import dataclass
 
 from starlette.applications import Starlette
+from starlette.requests import Request
 from starlette.responses import HTMLResponse
 from starlette.routing import Route
 from uvicorn import Config, Server
@@ -184,6 +186,21 @@ def find_available_port() -> int:
         return s.getsockname()[1]
 
 
+@dataclass
+class CallbackResponse:
+    code: str | None = None
+    state: str | None = None
+    error: str | None = None
+    error_description: str | None = None
+
+    @classmethod
+    def from_dict(cls, data: dict[str, str]) -> CallbackResponse:
+        return cls(**{k: v for k, v in data.items() if k in cls.__annotations__})
+
+    def to_dict(self) -> dict[str, str]:
+        return {k: v for k, v in self.__dict__.items() if v is not None}
+
+
 def create_oauth_callback_server(
     port: int,
     callback_path: str = "/callback",
@@ -203,30 +220,31 @@ def create_oauth_callback_server(
         Configured uvicorn Server instance (not yet running)
     """
 
-    async def callback_handler(request):
+    async def callback_handler(request: Request):
         """Handle OAuth callback requests with proper HTML responses."""
         query_params = dict(request.query_params)
-        auth_code = query_params.get("code")
-        state = query_params.get("state")
-        error = query_params.get("error")
+        callback_response = CallbackResponse.from_dict(query_params)
 
-        if error:
-            error_desc = query_params.get("error_description", "Unknown error")
+        if callback_response.error:
+            error_desc = callback_response.error_description or "Unknown error"
 
             # Resolve future with exception if provided
             if response_future and not response_future.done():
                 response_future.set_exception(
-                    RuntimeError(f"OAuth error: {error} - {error_desc}")
+                    RuntimeError(
+                        f"OAuth error: {callback_response.error} - {error_desc}"
+                    )
                 )
 
             return HTMLResponse(
                 create_callback_html(
-                    f"FastMCP OAuth Error: {error}<br>{error_desc}", is_success=False
+                    f"FastMCP OAuth Error: {callback_response.error}<br>{error_desc}",
+                    is_success=False,
                 ),
                 status_code=400,
             )
 
-        if not auth_code:
+        if not callback_response.code:
             # Resolve future with exception if provided
             if response_future and not response_future.done():
                 response_future.set_exception(
@@ -243,7 +261,9 @@ def create_oauth_callback_server(
 
         # Success case
         if response_future and not response_future.done():
-            response_future.set_result((auth_code, state))
+            response_future.set_result(
+                (callback_response.code, callback_response.state)
+            )
 
         return HTMLResponse(
             create_callback_html("FastMCP OAuth login complete!", server_url=server_url)
