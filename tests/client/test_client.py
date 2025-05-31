@@ -342,6 +342,52 @@ async def test_client_nested_context_manager(fastmcp_server):
     assert client._session is None
 
 
+async def test_concurrent_client_context_managers():
+    """
+    Test that concurrent client usage doesn't cause cross-task cancel scope issues.
+    https://github.com/jlowin/fastmcp/pull/643
+    """
+    # Create a simple server
+    server = FastMCP("Test Server")
+
+    @server.tool()
+    def echo(text: str) -> str:
+        """Echo tool"""
+        return text
+
+    # Create client
+    client = Client(server)
+
+    # Track results
+    results = {}
+    errors = []
+
+    async def use_client(task_id: str, delay: float = 0):
+        """Use the client with a small delay to ensure overlap"""
+        try:
+            async with client:
+                # Add a small delay to ensure contexts overlap
+                await asyncio.sleep(delay)
+                # Make an actual call to exercise the session
+                tools = await client.list_tools()
+                results[task_id] = len(tools)
+        except Exception as e:
+            errors.append((task_id, str(e)))
+
+    # Run multiple tasks concurrently
+    # The key is having them enter and exit the context at different times
+    await asyncio.gather(
+        use_client("task1", 0.0),
+        use_client("task2", 0.01),  # Slight delay to ensure overlap
+        use_client("task3", 0.02),
+        return_exceptions=False,
+    )
+
+    assert len(errors) == 0, f"Errors occurred: {errors}"
+    assert len(results) == 3
+    assert all(count == 1 for count in results.values())  # All should see 1 tool
+
+
 async def test_resource_template(fastmcp_server):
     """Test using a resource template with InMemoryClient."""
     client = Client(transport=FastMCPTransport(fastmcp_server))
