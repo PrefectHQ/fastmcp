@@ -449,7 +449,7 @@ class TestConvertResultToContent:
     def test_image_object_result(self):
         """Test that an Image object is converted to ImageContent."""
         image_obj = Image(data=b"fakeimagedata")
-        
+
         result = _convert_to_content(image_obj)
 
         assert isinstance(result, list)
@@ -505,7 +505,7 @@ class TestConvertResultToContent:
         result = _convert_to_content([content1, image_obj, basic_data])
 
         assert isinstance(result, list)
-        assert len(result) == 3 
+        assert len(result) == 3
 
         text_content_count = sum(isinstance(item, TextContent) for item in result)
         image_content_count = sum(isinstance(item, ImageContent) for item in result)
@@ -515,6 +515,28 @@ class TestConvertResultToContent:
 
         text_item = next(item for item in result if isinstance(item, TextContent))
         assert text_item.text == '{\n  "a": 1\n}'
+
+        image_item = next(item for item in result if isinstance(item, ImageContent))
+        assert image_item.data == "ZmFrZWltYWdlZGF0YQ=="
+
+    def test_list_of_mixed_types_list(self):
+        """Test that a list of mixed types is converted correctly."""
+        content1 = TextContent(type="text", text="hello")
+        image_obj = Image(data=b"fakeimagedata")
+        basic_data = [{"a": 1}, {"b": 2}]
+        result = _convert_to_content([content1, image_obj, basic_data])
+
+        assert isinstance(result, list)
+        assert len(result) == 3
+
+        text_content_count = sum(isinstance(item, TextContent) for item in result)
+        image_content_count = sum(isinstance(item, ImageContent) for item in result)
+
+        assert text_content_count == 2
+        assert image_content_count == 1
+
+        text_item = next(item for item in result if isinstance(item, TextContent))
+        assert text_item.text == '[\n  {\n    "a": 1\n  },\n  {\n    "b": 2\n  }\n]'
 
         image_item = next(item for item in result if isinstance(item, ImageContent))
         assert image_item.data == "ZmFrZWltYWdlZGF0YQ=="
@@ -579,7 +601,7 @@ class TestConvertResultToContent:
         assert len(result) == 1
         assert isinstance(result[0], TextContent)
 
-        assert result[0].text == '[\n  1,\n  {\n    "type": "text",\n    "text": "hello",\n    "annotations": null\n  }\n]'
-
-
-
+        assert (
+            result[0].text
+            == '[\n  1,\n  {\n    "type": "text",\n    "text": "hello",\n    "annotations": null\n  }\n]'
+        )
