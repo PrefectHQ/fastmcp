@@ -9,6 +9,7 @@ from fastmcp import Client, FastMCP
 from fastmcp.client.auth import BearerAuth
 from fastmcp.server.auth.providers.bearer import (
     BearerAuthProvider,
+    JWKData,
     JWKSData,
     RSAKeyPair,
 )
@@ -126,8 +127,8 @@ class TestBearerTokenJWKS:
         from authlib.jose import JsonWebKey
 
         # Create JWK from the RSA public key
-        jwk = JsonWebKey.import_key(rsa_key_pair.public_key)
-        jwk_data = jwk.as_dict()
+        jwk = JsonWebKey.import_key(rsa_key_pair.public_key)  # type: ignore
+        jwk_data: JWKData = jwk.as_dict()  # type: ignore
         jwk_data["kid"] = "test-key-1"
         jwk_data["alg"] = "RS256"
 
