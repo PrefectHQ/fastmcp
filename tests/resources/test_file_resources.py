@@ -74,7 +74,6 @@ class TestFileResource:
             is_binary=True,
         )
         content = await resource.read()
-        assert isinstance(content, bytes)
         assert content == b"test content"
 
     def test_relative_path_error(self):

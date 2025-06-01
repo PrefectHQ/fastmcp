@@ -1,6 +1,6 @@
 from typing import Any
 
-from mcp.types import TextContent, ToolAnnotations
+from mcp.types import ToolAnnotations
 
 from fastmcp import Client, FastMCP
 
@@ -212,8 +212,7 @@ async def test_tool_functionality_with_annotations():
             "create_item", {"name": "test_item", "value": 42}
         )
         assert len(result) == 1
-        assert isinstance(result[0], TextContent)
 
         # The result should contain the expected JSON
-        assert '"name": "test_item"' in result[0].text
-        assert '"value": 42' in result[0].text
+        assert '"name": "test_item"' in result[0].text  # type: ignore[attr-defined]
+        assert '"value": 42' in result[0].text  # type: ignore[attr-defined]

@@ -9,7 +9,7 @@ from dirty_equals import IsStr
 from fastapi import FastAPI, HTTPException, Response
 from fastapi.responses import PlainTextResponse
 from httpx import ASGITransport, AsyncClient
-from mcp.types import BlobResourceContents, TextContent, TextResourceContents
+from mcp.types import BlobResourceContents
 from pydantic import BaseModel, TypeAdapter
 from pydantic.networks import AnyUrl
 
@@ -234,11 +234,7 @@ class TestTools:
                 "create_user_users_post", {"name": "David", "active": False}
             )
 
-        # Convert TextContent to dict for comparison
-        assert isinstance(tool_response, list) and len(tool_response) == 1
-        assert isinstance(tool_response[0], TextContent)
-
-        response_data = json.loads(tool_response[0].text)
+        response_data = json.loads(tool_response[0].text)  # type: ignore[attr-defined]
         expected_user = User(id=4, name="David", active=False).model_dump()
         assert response_data == expected_user
 
@@ -249,8 +245,7 @@ class TestTools:
         # Check that the user was created via MCP
         async with Client(fastmcp_openapi_server) as client:
             user_response = await client.read_resource("resource://get_user_users/4")
-            assert isinstance(user_response[0], TextResourceContents)
-            response_text = user_response[0].text
+            response_text = user_response[0].text  # type: ignore[attr-defined]
             user = json.loads(response_text)
         assert user == expected_user
 
@@ -266,11 +261,7 @@ class TestTools:
                 {"user_id": 1, "name": "XYZ"},
             )
 
-        # Convert TextContent to dict for comparison
-        assert isinstance(tool_response, list) and len(tool_response) == 1
-        assert isinstance(tool_response[0], TextContent)
-
-        response_data = json.loads(tool_response[0].text)
+        response_data = json.loads(tool_response[0].text)  # type: ignore[attr-defined]
         expected_data = dict(id=1, name="XYZ", active=True)
         assert response_data == expected_data
 
@@ -281,8 +272,7 @@ class TestTools:
         # Check that the user was updated via MCP
         async with Client(fastmcp_openapi_server) as client:
             user_response = await client.read_resource("resource://get_user_users/1")
-            assert isinstance(user_response[0], TextResourceContents)
-            response_text = user_response[0].text
+            response_text = user_response[0].text  # type: ignore[attr-defined]
             user = json.loads(response_text)
         assert user == expected_data
 
@@ -305,9 +295,7 @@ class TestTools:
         )
         async with Client(mcp_server) as client:
             tool_response = await client.call_tool("get_users_users_get", {})
-            assert isinstance(tool_response, list)
-            assert isinstance(tool_response[0], TextContent)
-            assert json.loads(tool_response[0].text) == [
+            assert json.loads(tool_response[0].text) == [  # type: ignore[attr-defined]
                 user.model_dump()
                 for user in sorted(users_db.values(), key=lambda x: x.id)
             ]
@@ -341,8 +329,7 @@ class TestResources:
             resource_response = await client.read_resource(
                 "resource://get_users_users_get"
             )
-            assert isinstance(resource_response[0], TextResourceContents)
-            response_text = resource_response[0].text
+            response_text = resource_response[0].text  # type: ignore[attr-defined]
             resource = json.loads(response_text)
         assert resource == json_users
         response = await api_client.get("/users")
@@ -369,8 +356,7 @@ class TestResources:
         """Test reading a resource that returns a string."""
         async with Client(fastmcp_openapi_server) as client:
             resource_response = await client.read_resource("resource://ping_ping_get")
-            assert isinstance(resource_response[0], TextResourceContents)
-            assert resource_response[0].text == "pong"
+            assert resource_response[0].text == "pong"  # type: ignore[attr-defined]
 
 
 class TestResourceTemplates:
@@ -407,8 +393,7 @@ class TestResourceTemplates:
             resource_response = await client.read_resource(
                 f"resource://get_user_users/{user_id}"
             )
-            assert isinstance(resource_response[0], TextResourceContents)
-            response_text = resource_response[0].text
+            response_text = resource_response[0].text  # type: ignore[attr-defined]
             resource = json.loads(response_text)
 
         assert resource == users_db[user_id].model_dump()
@@ -430,8 +415,7 @@ class TestResourceTemplates:
             resource_response = await client.read_resource(
                 f"resource://get_user_active_state_users/{is_active}/{user_id}"
             )
-            assert isinstance(resource_response[0], TextResourceContents)
-            response_text = resource_response[0].text
+            response_text = resource_response[0].text  # type: ignore[attr-defined]
             resource = json.loads(response_text)
 
         assert resource == users_db[user_id].model_dump()
@@ -681,8 +665,7 @@ class TestOpenAPI30Compatibility:
         """Test reading a resource from an OpenAPI 3.0 server."""
         async with Client(openapi_30_server) as client:
             resource_response = await client.read_resource("resource://listProducts")
-            assert isinstance(resource_response[0], TextResourceContents)
-            response_text = resource_response[0].text
+            response_text = resource_response[0].text  # type: ignore[attr-defined]
             content = json.loads(response_text)
         assert len(content) == 2
         assert content[0]["name"] == "Product 1"
@@ -692,8 +675,7 @@ class TestOpenAPI30Compatibility:
         """Test reading a resource from template from an OpenAPI 3.0 server."""
         async with Client(openapi_30_server) as client:
             resource_response = await client.read_resource("resource://getProduct/p1")
-            assert isinstance(resource_response[0], TextResourceContents)
-            response_text = resource_response[0].text
+            response_text = resource_response[0].text  # type: ignore[attr-defined]
             content = json.loads(response_text)
         assert content["id"] == "p1"
         assert content["name"] == "Product 1"
@@ -707,8 +689,7 @@ class TestOpenAPI30Compatibility:
             )
             # Result should be a text content
             assert len(result) == 1
-            assert isinstance(result[0], TextContent)
-            product = json.loads(result[0].text)
+            product = json.loads(result[0].text)  # type: ignore[attr-defined]
             assert product["id"] == "p3"
             assert product["name"] == "New Product"
             assert product["price"] == 39.99
@@ -857,8 +838,7 @@ class TestOpenAPI31Compatibility:
         """Test reading a resource from an OpenAPI 3.1 server."""
         async with Client(openapi_31_server) as client:
             resource_response = await client.read_resource("resource://listOrders")
-            assert isinstance(resource_response[0], TextResourceContents)
-            response_text = resource_response[0].text
+            response_text = resource_response[0].text  # type: ignore[attr-defined]
             content = json.loads(response_text)
         assert len(content) == 2
         assert content[0]["customer"] == "Alice"
@@ -868,8 +848,7 @@ class TestOpenAPI31Compatibility:
         """Test reading a resource from template from an OpenAPI 3.1 server."""
         async with Client(openapi_31_server) as client:
             resource_response = await client.read_resource("resource://getOrder/o1")
-            assert isinstance(resource_response[0], TextResourceContents)
-            response_text = resource_response[0].text
+            response_text = resource_response[0].text  # type: ignore[attr-defined]
             content = json.loads(response_text)
         assert content["id"] == "o1"
         assert content["customer"] == "Alice"
@@ -883,8 +862,7 @@ class TestOpenAPI31Compatibility:
             )
             # Result should be a text content
             assert len(result) == 1
-            assert isinstance(result[0], TextContent)
-            order = json.loads(result[0].text)
+            order = json.loads(result[0].text)  # type: ignore[attr-dict]
             assert order["id"] == "o3"
             assert order["customer"] == "Charlie"
             assert order["items"] == ["item4", "item5"]

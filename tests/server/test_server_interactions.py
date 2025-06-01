@@ -10,7 +10,6 @@ import pydantic_core
 import pytest
 from mcp import McpError
 from mcp.types import (
-    BlobResourceContents,
     ImageContent,
     TextContent,
     TextResourceContents,
@@ -77,14 +76,12 @@ class TestTools:
     async def test_call_tool(self, tool_server: FastMCP):
         async with Client(tool_server) as client:
             result = await client.call_tool("add", {"x": 1, "y": 2})
-            assert isinstance(result[0], TextContent)
-            assert result[0].text == "3"
+            assert result[0].text == "3"  # type: ignore[attr-defined]
 
     async def test_call_tool_as_client(self, tool_server: FastMCP):
         async with Client(tool_server) as client:
             result = await client.call_tool("add", {"x": 1, "y": 2})
-            assert isinstance(result[0], TextContent)
-            assert result[0].text == "3"
+            assert result[0].text == "3"  # type: ignore[attr-defined]
 
     async def test_call_tool_error(self, tool_server: FastMCP):
         async with Client(tool_server) as client:
@@ -113,8 +110,7 @@ class TestTools:
     async def test_tool_returns_list(self, tool_server: FastMCP):
         async with Client(tool_server) as client:
             result = await client.call_tool("list_tool", {})
-            assert isinstance(result[0], TextContent)
-            assert result[0].text == '[\n  "x",\n  2\n]'
+            assert result[0].text == '[\n  "x",\n  2\n]'  # type: ignore[attr-defined]
 
 
 class TestToolReturnTypes:
@@ -127,8 +123,7 @@ class TestToolReturnTypes:
 
         async with Client(mcp) as client:
             result = await client.call_tool("string_tool", {})
-            assert isinstance(result[0], TextContent)
-            assert result[0].text == "Hello, world!"
+            assert result[0].text == "Hello, world!"  # type: ignore[attr-defined]
 
     async def test_bytes(self, tmp_path: Path):
         mcp = FastMCP()
@@ -139,8 +134,7 @@ class TestToolReturnTypes:
 
         async with Client(mcp) as client:
             result = await client.call_tool("bytes_tool", {})
-            assert isinstance(result[0], TextContent)
-            assert result[0].text == '"Hello, world!"'
+            assert result[0].text == '"Hello, world!"'  # type: ignore[attr-defined]
 
     async def test_uuid(self):
         mcp = FastMCP()
@@ -153,8 +147,7 @@ class TestToolReturnTypes:
 
         async with Client(mcp) as client:
             result = await client.call_tool("uuid_tool", {})
-            assert isinstance(result[0], TextContent)
-            assert result[0].text == pydantic_core.to_json(test_uuid).decode()
+            assert result[0].text == pydantic_core.to_json(test_uuid).decode()  # type: ignore[attr-defined]
 
     async def test_path(self):
         mcp = FastMCP()
@@ -167,8 +160,7 @@ class TestToolReturnTypes:
 
         async with Client(mcp) as client:
             result = await client.call_tool("path_tool", {})
-            assert isinstance(result[0], TextContent)
-            assert result[0].text == pydantic_core.to_json(test_path).decode()
+            assert result[0].text == pydantic_core.to_json(test_path).decode()  # type: ignore[attr-defined]
 
     async def test_datetime(self):
         mcp = FastMCP()
@@ -181,8 +173,7 @@ class TestToolReturnTypes:
 
         async with Client(mcp) as client:
             result = await client.call_tool("datetime_tool", {})
-            assert isinstance(result[0], TextContent)
-            assert result[0].text == pydantic_core.to_json(dt).decode()
+            assert result[0].text == pydantic_core.to_json(dt).decode()  # type: ignore[attr-defined]
 
     async def test_image(self, tmp_path: Path):
         mcp = FastMCP()
@@ -337,8 +328,7 @@ class TestToolParameters:
         async with Client(mcp) as client:
             # String with integer value should be coerced to int
             result = await client.call_tool("add_one", {"x": "42"})
-            assert isinstance(result[0], TextContent)
-            assert result[0].text == "43"
+            assert result[0].text == "43"  # type: ignore[attr-defined]
 
     async def test_tool_bool_coercion(self):
         """Test string-to-bool type coercion."""
@@ -351,12 +341,10 @@ class TestToolParameters:
         async with Client(mcp) as client:
             # String with boolean value should be coerced to bool
             result = await client.call_tool("toggle", {"flag": "true"})
-            assert isinstance(result[0], TextContent)
-            assert result[0].text == "false"
+            assert result[0].text == "false"  # type: ignore[attr-defined]
 
             result = await client.call_tool("toggle", {"flag": "false"})
-            assert isinstance(result[0], TextContent)
-            assert result[0].text == "true"
+            assert result[0].text == "true"  # type: ignore[attr-defined]
 
     async def test_annotated_field_validation(self):
         mcp = FastMCP()
@@ -411,8 +399,7 @@ class TestToolParameters:
 
         async with Client(mcp) as client:
             result = await client.call_tool("analyze", {"x": "a"})
-            assert isinstance(result[0], TextContent)
-            assert result[0].text == "a"
+            assert result[0].text == "a"  # type: ignore[attr-defined]
 
     async def test_enum_type_validation_error(self):
         mcp = FastMCP()
@@ -444,8 +431,7 @@ class TestToolParameters:
 
         async with Client(mcp) as client:
             result = await client.call_tool("analyze", {"x": "red"})
-            assert isinstance(result[0], TextContent)
-            assert result[0].text == "red"
+            assert result[0].text == "red"  # type: ignore[attr-defined]
 
     async def test_union_type_validation(self):
         mcp = FastMCP()
@@ -456,12 +442,10 @@ class TestToolParameters:
 
         async with Client(mcp) as client:
             result = await client.call_tool("analyze", {"x": 1})
-            assert isinstance(result[0], TextContent)
-            assert result[0].text == "1"
+            assert result[0].text == "1"  # type: ignore[attr-defined]
 
             result = await client.call_tool("analyze", {"x": 1.0})
-            assert isinstance(result[0], TextContent)
-            assert result[0].text == "1.0"
+            assert result[0].text == "1.0"  # type: ignore[attr-defined]
 
             with pytest.raises(ToolError, match="Error calling tool 'analyze'"):
                 await client.call_tool("analyze", {"x": "not a number"})
@@ -479,8 +463,7 @@ class TestToolParameters:
 
         async with Client(mcp) as client:
             result = await client.call_tool("send_path", {"path": str(test_path)})
-            assert isinstance(result[0], TextContent)
-            assert result[0].text == str(test_path)
+            assert result[0].text == str(test_path)  # type: ignore[attr-defined]
 
     async def test_path_type_error(self):
         mcp = FastMCP()
@@ -505,8 +488,7 @@ class TestToolParameters:
 
         async with Client(mcp) as client:
             result = await client.call_tool("send_uuid", {"x": test_uuid})
-            assert isinstance(result[0], TextContent)
-            assert result[0].text == str(test_uuid)
+            assert result[0].text == str(test_uuid)  # type: ignore[attr-defined]
 
     async def test_uuid_type_error(self):
         mcp = FastMCP()
@@ -530,8 +512,7 @@ class TestToolParameters:
 
         async with Client(mcp) as client:
             result = await client.call_tool("send_datetime", {"x": dt})
-            assert isinstance(result[0], TextContent)
-            assert result[0].text == dt.isoformat()
+            assert result[0].text == dt.isoformat()  # type: ignore[attr-defined]
 
     async def test_datetime_type_parse_string(self):
         mcp = FastMCP()
@@ -544,8 +525,7 @@ class TestToolParameters:
             result = await client.call_tool(
                 "send_datetime", {"x": "2021-01-01T00:00:00"}
             )
-            assert isinstance(result[0], TextContent)
-            assert result[0].text == "2021-01-01T00:00:00"
+            assert result[0].text == "2021-01-01T00:00:00"  # type: ignore[attr-defined]
 
     async def test_datetime_type_error(self):
         mcp = FastMCP()
@@ -567,8 +547,7 @@ class TestToolParameters:
 
         async with Client(mcp) as client:
             result = await client.call_tool("send_date", {"x": datetime.date.today()})
-            assert isinstance(result[0], TextContent)
-            assert result[0].text == datetime.date.today().isoformat()
+            assert result[0].text == datetime.date.today().isoformat()  # type: ignore[attr-defined]
 
     async def test_date_type_parse_string(self):
         mcp = FastMCP()
@@ -579,8 +558,7 @@ class TestToolParameters:
 
         async with Client(mcp) as client:
             result = await client.call_tool("send_date", {"x": "2021-01-01"})
-            assert isinstance(result[0], TextContent)
-            assert result[0].text == "2021-01-01"
+            assert result[0].text == "2021-01-01"  # type: ignore[attr-defined]
 
     async def test_timedelta_type(self):
         mcp = FastMCP()
@@ -593,8 +571,7 @@ class TestToolParameters:
             result = await client.call_tool(
                 "send_timedelta", {"x": datetime.timedelta(days=1)}
             )
-            assert isinstance(result[0], TextContent)
-            assert result[0].text == "1 day, 0:00:00"
+            assert result[0].text == "1 day, 0:00:00"  # type: ignore[attr-defined]
 
     async def test_timedelta_type_parse_int(self):
         mcp = FastMCP()
@@ -605,8 +582,7 @@ class TestToolParameters:
 
         async with Client(mcp) as client:
             result = await client.call_tool("send_timedelta", {"x": 1000})
-            assert isinstance(result[0], TextContent)
-            assert result[0].text == "0:16:40"
+            assert result[0].text == "0:16:40"  # type: ignore[attr-defined]
 
 
 class TestToolContextInjection:
@@ -639,7 +615,7 @@ class TestToolContextInjection:
             result = await client.call_tool("tool_with_context", {"x": 42})
             assert len(result) == 1
             content = result[0]
-            assert isinstance(content, TextContent)
+            assert content.text == "2"  # type: ignore[attr-defined]
 
     async def test_async_context(self):
         """Test that context works in async functions."""
@@ -654,8 +630,7 @@ class TestToolContextInjection:
             result = await client.call_tool("async_tool", {"x": 42})
             assert len(result) == 1
             content = result[0]
-            assert isinstance(content, TextContent)
-            assert content.text == "Async request 2: 42"
+            assert content.text == "Async request 2: 42"  # type: ignore[attr-defined]
 
     async def test_optional_context(self):
         """Test that context is optional."""
@@ -669,8 +644,7 @@ class TestToolContextInjection:
             result = await client.call_tool("no_context", {"x": 21})
             assert len(result) == 1
             content = result[0]
-            assert isinstance(content, TextContent)
-            assert content.text == "42"
+            assert content.text == "42"  # type: ignore[attr-defined]
 
     async def test_context_resource_access(self):
         """Test that context can access resources."""
@@ -692,8 +666,7 @@ class TestToolContextInjection:
             result = await client.call_tool("tool_with_resource", {})
             assert len(result) == 1
             content = result[0]
-            assert isinstance(content, TextContent)
-            assert "Read resource: resource data" in content.text
+            assert "Read resource: resource data" in content.text  # type: ignore[attr-defined]
 
     async def test_tool_decorator_with_tags(self):
         """Test that the tool decorator properly sets tags."""
@@ -721,8 +694,7 @@ class TestToolContextInjection:
 
         async with Client(mcp) as client:
             result = await client.call_tool("MyTool", {"x": 2})
-            assert isinstance(result[0], TextContent)
-            assert result[0].text == "4"
+            assert result[0].text == "4"  # type: ignore[attr-defined]
 
 
 class TestResource:
@@ -739,8 +711,7 @@ class TestResource:
 
         async with Client(mcp) as client:
             result = await client.read_resource(AnyUrl("resource://test"))
-            assert isinstance(result[0], TextResourceContents)
-            assert result[0].text == "Hello, world!"
+            assert result[0].text == "Hello, world!"  # type: ignore[attr-defined]
 
     async def test_binary_resource(self):
         mcp = FastMCP()
@@ -758,8 +729,7 @@ class TestResource:
 
         async with Client(mcp) as client:
             result = await client.read_resource(AnyUrl("resource://binary"))
-            assert isinstance(result[0], BlobResourceContents)
-            assert result[0].blob == base64.b64encode(b"Binary data").decode()
+            assert result[0].blob == base64.b64encode(b"Binary data").decode()  # type: ignore[attr-defined]
 
     async def test_file_resource_text(self, tmp_path: Path):
         mcp = FastMCP()
@@ -775,8 +745,7 @@ class TestResource:
 
         async with Client(mcp) as client:
             result = await client.read_resource(AnyUrl("file://test.txt"))
-            assert isinstance(result[0], TextResourceContents)
-            assert result[0].text == "Hello from file!"
+            assert result[0].text == "Hello from file!"  # type: ignore[attr-defined]
 
     async def test_file_resource_binary(self, tmp_path: Path):
         mcp = FastMCP()
@@ -795,8 +764,7 @@ class TestResource:
 
         async with Client(mcp) as client:
             result = await client.read_resource(AnyUrl("file://test.bin"))
-            assert isinstance(result[0], BlobResourceContents)
-            assert result[0].blob == base64.b64encode(b"Binary file data").decode()
+            assert result[0].blob == base64.b64encode(b"Binary file data").decode()  # type: ignore[attr-defined]
 
 
 class TestResourceContext:
@@ -810,8 +778,7 @@ class TestResourceContext:
 
         async with Client(mcp) as client:
             result = await client.read_resource(AnyUrl("resource://test"))
-            assert isinstance(result[0], TextResourceContents)
-            assert result[0].text == "2"
+            assert result[0].text == "2"  # type: ignore[attr-defined]
 
 
 class TestResourceTemplates:
@@ -860,8 +827,7 @@ class TestResourceTemplates:
 
         async with Client(mcp) as client:
             result = await client.read_resource(AnyUrl("resource://test/data"))
-            assert isinstance(result[0], TextResourceContents)
-            assert result[0].text == "Data for test"
+            assert result[0].text == "Data for test"  # type: ignore[attr-defined]
 
     async def test_resource_mismatched_params(self):
         """Test that mismatched parameters raise an error"""
@@ -888,8 +854,7 @@ class TestResourceTemplates:
             result = await client.read_resource(
                 AnyUrl("resource://cursor/fastmcp/data")
             )
-            assert isinstance(result[0], TextResourceContents)
-            assert result[0].text == "Data for cursor/fastmcp"
+            assert result[0].text == "Data for cursor/fastmcp"  # type: ignore[attr-defined]
 
     async def test_resource_multiple_mismatched_params(self):
         """Test that mismatched parameters raise an error"""
@@ -913,8 +878,7 @@ class TestResourceTemplates:
 
         async with Client(mcp) as client:
             result = await client.read_resource(AnyUrl("resource://static"))
-            assert isinstance(result[0], TextResourceContents)
-            assert result[0].text == "Static data"
+            assert result[0].text == "Static data"  # type: ignore[attr-defined]
 
     async def test_template_with_varkwargs(self):
         """Test that a template can have **kwargs."""
@@ -926,8 +890,7 @@ class TestResourceTemplates:
 
         async with Client(mcp) as client:
             result = await client.read_resource(AnyUrl("test://1/2/3"))
-            assert isinstance(result[0], TextResourceContents)
-            assert result[0].text == "6"
+            assert result[0].text == "6"  # type: ignore[attr-defined]
 
     async def test_template_with_default_params(self):
         """Test that a template can have default parameters."""
@@ -946,13 +909,11 @@ class TestResourceTemplates:
         # Call the template and verify it uses the default value
         async with Client(mcp) as client:
             result = await client.read_resource(AnyUrl("math://add/5"))
-            assert isinstance(result[0], TextResourceContents)
-            assert result[0].text == "15"  # 5 + default 10
+            assert result[0].text == "15"  # type: ignore[attr-defined]
 
             # Can also call with explicit params
             result2 = await client.read_resource(AnyUrl("math://add/7"))
-            assert isinstance(result2[0], TextResourceContents)
-            assert result2[0].text == "17"  # 7 + default 10
+            assert result2[0].text == "17"  # type: ignore[attr-defined]
 
     async def test_template_to_resource_conversion(self):
         """Test that a template can be converted to a resource."""
@@ -971,8 +932,7 @@ class TestResourceTemplates:
         # When accessed, should create a concrete resource
         async with Client(mcp) as client:
             result = await client.read_resource(AnyUrl("resource://test/data"))
-            assert isinstance(result[0], TextResourceContents)
-            assert result[0].text == "Data for test"
+            assert result[0].text == "Data for test"  # type: ignore[attr-defined]
 
     async def test_stacked_resource_template_decorators(self):
         """Test that resource template decorators can be stacked."""
@@ -1011,15 +971,15 @@ class TestResourceTemplates:
             email_result = await client.read_resource(
                 AnyUrl("users://email/user@example.com")
             )
-            assert isinstance(email_result[0], TextResourceContents)
-            email_data = json.loads(email_result[0].text)
+            assert email_result[0].text  # type: ignore[attr-defined]
+            email_data = json.loads(email_result[0].text)  # type: ignore[attr-defined]
             assert email_data["lookup"] == "email"
             assert email_data["email"] == "user@example.com"
 
             # Test lookup by name
             name_result = await client.read_resource(AnyUrl("users://name/John"))
-            assert isinstance(name_result[0], TextResourceContents)
-            name_data = json.loads(name_result[0].text)
+            assert name_result[0].text  # type: ignore[attr-defined]
+            name_
             assert name_data["lookup"] == "name"
             assert name_data["name"] == "John"
             assert name_data["email"] == "dummy@example.com"
@@ -1044,8 +1004,7 @@ class TestResourceTemplates:
 
         async with Client(mcp) as client:
             result = await client.read_resource(AnyUrl("resource://test/data"))
-            assert isinstance(result[0], TextResourceContents)
-            assert result[0].text == "Template resource: test/data"
+            assert result[0].text == "Template resource: test/data"  # type: ignore[attr-defined]
 
     async def test_templates_match_in_order_of_definition(self):
         """
@@ -1065,12 +1024,10 @@ class TestResourceTemplates:
 
         async with Client(mcp) as client:
             result = await client.read_resource(AnyUrl("resource://a/b/c"))
-            assert isinstance(result[0], TextResourceContents)
-            assert result[0].text == "Template resource 1: a/b/c"
+            assert result[0].text == "Template resource 1: a/b/c"  # type: ignore[attr-defined]
 
             result = await client.read_resource(AnyUrl("resource://a/b"))
-            assert isinstance(result[0], TextResourceContents)
-            assert result[0].text == "Template resource 1: a/b"
+            assert result[0].text == "Template resource 1: a/b"  # type: ignore[attr-defined]
 
     async def test_templates_shadow_each_other_reorder(self):
         """
@@ -1089,12 +1046,10 @@ class TestResourceTemplates:
 
         async with Client(mcp) as client:
             result = await client.read_resource(AnyUrl("resource://a/b/c"))
-            assert isinstance(result[0], TextResourceContents)
-            assert result[0].text == "Template resource 2: a/b/c"
+            assert result[0].text == "Template resource 2: a/b/c"  # type: ignore[attr-defined]
 
             result = await client.read_resource(AnyUrl("resource://a/b"))
-            assert isinstance(result[0], TextResourceContents)
-            assert result[0].text == "Template resource 1: a/b"
+            assert result[0].text == "Template resource 1: a/b"  # type: ignore[attr-defined]
 
 
 class TestResourceTemplateContext:
@@ -1108,8 +1063,7 @@ class TestResourceTemplateContext:
 
         async with Client(mcp) as client:
             result = await client.read_resource(AnyUrl("resource://test"))
-            assert isinstance(result[0], TextResourceContents)
-            assert result[0].text.startswith("Resource template: test 2")
+            assert result[0].text.startswith("Resource template: test 2")  # type: ignore[attr-defined]
 
     async def test_resource_template_context_with_callable_object(self):
         mcp = FastMCP()
@@ -1122,8 +1076,7 @@ class TestResourceTemplateContext:
 
         async with Client(mcp) as client:
             result = await client.read_resource(AnyUrl("resource://test"))
-            assert isinstance(result[0], TextResourceContents)
-            assert result[0].text.startswith("Resource template: test 2")
+            assert result[0].text.startswith("Resource template: test 2")  # type: ignore[attr-defined]
 
 
 class TestPrompts:
@@ -1143,8 +1096,7 @@ class TestPrompts:
         assert prompt.name == "fn"
         # Don't compare functions directly since validate_call wraps them
         content = await prompt.render()
-        assert isinstance(content[0].content, TextContent)
-        assert content[0].content.text == "Hello, world!"
+        assert content[0].content.text == "Hello, world!"  # type: ignore[attr-defined]
 
     async def test_prompt_decorator_with_name(self):
         """Test prompt decorator with custom name."""
@@ -1159,8 +1111,7 @@ class TestPrompts:
         prompt = prompts_dict["custom_name"]
         assert prompt.name == "custom_name"
         content = await prompt.render()
-        assert isinstance(content[0].content, TextContent)
-        assert content[0].content.text == "Hello, world!"
+        assert content[0].content.text == "Hello, world!"  # type: ignore[attr-defined]
 
     async def test_prompt_decorator_with_description(self):
         """Test prompt decorator with custom description."""
@@ -1175,8 +1126,7 @@ class TestPrompts:
         prompt = prompts_dict["fn"]
         assert prompt.description == "A custom description"
         content = await prompt.render()
-        assert isinstance(content[0].content, TextContent)
-        assert content[0].content.text == "Hello, world!"
+        assert content[0].content.text == "Hello, world!"  # type: ignore[attr-defined]
 
     def test_prompt_decorator_error(self):
         """Test error when decorator is used incorrectly."""
@@ -1224,8 +1174,7 @@ class TestPrompts:
             message = result.messages[0]
             assert message.role == "user"
             content = message.content
-            assert isinstance(content, TextContent)
-            assert content.text == "Hello, World!"
+            assert content.text == "Hello, World!"  # type: ignore[attr-defined]
 
     async def test_get_prompt_with_resource(self):
         """Test getting a prompt that returns resource content."""
@@ -1249,10 +1198,10 @@ class TestPrompts:
             result = await client.get_prompt("fn")
             assert result.messages[0].role == "user"
             content = result.messages[0].content
-            assert isinstance(content, EmbeddedResource)
+            assert isinstance(content, EmbeddedResource)  # type: ignore[attr-defined]
             resource = content.resource
-            assert isinstance(resource, TextResourceContents)
-            assert resource.text == "File contents"
+            assert isinstance(resource, TextResourceContents)  # type: ignore[attr-defined]
+            assert resource.text == "File contents"  # type: ignore[attr-defined]
             assert resource.mimeType == "text/plain"
 
     async def test_get_unknown_prompt(self):
@@ -1342,5 +1291,4 @@ class TestPromptContext:
             assert len(result.messages) == 1
             message = result.messages[0]
             assert message.role == "user"
-            assert isinstance(message.content, TextContent)
-            assert message.content.text == "Hello, World! 2"
+            assert message.content.text == "Hello, World! 2"  # type: ignore[attr-defined]

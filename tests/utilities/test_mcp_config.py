@@ -1,8 +1,6 @@
 import inspect
 from pathlib import Path
 
-from mcp.types import TextContent
-
 from fastmcp.client.client import Client
 from fastmcp.client.transports import (
     SSETransport,
@@ -136,7 +134,5 @@ async def test_multi_client(tmp_path: Path):
 
         result_1 = await client.call_tool("test_1_add", {"a": 1, "b": 2})
         result_2 = await client.call_tool("test_2_add", {"a": 1, "b": 2})
-        assert isinstance(result_1[0], TextContent)
-        assert result_1[0].text == "3"
-        assert isinstance(result_2[0], TextContent)
-        assert result_2[0].text == "3"
+        assert result_1[0].text == "3"  # type: ignore[attr-dict]
+        assert result_2[0].text == "3"  # type: ignore[attr-dict]

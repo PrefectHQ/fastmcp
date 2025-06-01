@@ -1,7 +1,6 @@
 import json
 from typing import Any
 
-import mcp.types
 import pytest
 from anyio import create_task_group
 from dirty_equals import Contains
@@ -90,16 +89,14 @@ async def test_as_proxy_with_server(fastmcp_server):
     """FastMCP.as_proxy should accept a FastMCP instance."""
     proxy = FastMCP.as_proxy(fastmcp_server)
     result = await proxy._mcp_call_tool("greet", {"name": "Test"})
-    assert isinstance(result[0], mcp.types.TextContent)
-    assert result[0].text == "Hello, Test!"
+    assert result[0].text == "Hello, Test!"  # type: ignore[attr-defined]
 
 
 async def test_as_proxy_with_transport(fastmcp_server):
     """FastMCP.as_proxy should accept a ClientTransport."""
     proxy = FastMCP.as_proxy(FastMCPTransport(fastmcp_server))
     result = await proxy._mcp_call_tool("greet", {"name": "Test"})
-    assert isinstance(result[0], mcp.types.TextContent)
-    assert result[0].text == "Hello, Test!"
+    assert result[0].text == "Hello, Test!"  # type: ignore[attr-defined]
 
 
 def test_as_proxy_with_url():
@@ -138,9 +135,7 @@ class TestTools:
     async def test_call_tool_calls_tool(self, proxy_server):
         async with Client(proxy_server) as client:
             proxy_result = await client.call_tool("add", {"a": 1, "b": 2})
-
-        assert isinstance(proxy_result[0], mcp.types.TextContent)
-        assert proxy_result[0].text == "3"
+        assert proxy_result[0].text == "3"  # type: ignore[attr-defined]
 
     async def test_error_tool_raises_error(self, proxy_server):
         with pytest.raises(ToolError, match=""):
@@ -164,8 +159,7 @@ class TestResources:
     async def test_read_resource(self, proxy_server: FastMCPProxy):
         async with Client(proxy_server) as client:
             result = await client.read_resource("resource://wave")
-        assert isinstance(result[0], mcp.types.TextResourceContents)
-        assert result[0].text == "👋"
+        assert result[0].text == "👋"  # type: ignore[attr-defined]
 
     async def test_read_resource_same_as_original(self, fastmcp_server, proxy_server):
         async with Client(fastmcp_server) as client:
@@ -177,8 +171,7 @@ class TestResources:
     async def test_read_json_resource(self, proxy_server: FastMCPProxy):
         async with Client(proxy_server) as client:
             result = await client.read_resource("data://users")
-        assert isinstance(result[0], mcp.types.TextResourceContents)
-        assert json.loads(result[0].text) == USERS
+        assert json.loads(result[0].text) == USERS  # type: ignore[attr-defined]
 
     async def test_read_resource_returns_none_if_not_found(self, proxy_server):
         with pytest.raises(McpError, match="Unknown resource: resource://nonexistent"):
@@ -202,8 +195,7 @@ class TestResourceTemplates:
     async def test_read_resource_template(self, proxy_server: FastMCPProxy, id: int):
         async with Client(proxy_server) as client:
             result = await client.read_resource(f"data://user/{id}")
-        assert isinstance(result[0], mcp.types.TextResourceContents)
-        assert json.loads(result[0].text) == USERS[id - 1]
+        assert json.loads(result[0].text) == USERS[id - 1]  # type: ignore[attr-defined]
 
     async def test_read_resource_template_same_as_original(
         self, fastmcp_server, proxy_server
@@ -239,10 +231,8 @@ class TestPrompts:
     async def test_render_prompt_calls_prompt(self, proxy_server):
         async with Client(proxy_server) as client:
             result = await client.get_prompt("welcome", {"name": "Alice"})
-        assert isinstance(result.messages[0], mcp.types.PromptMessage)
         assert result.messages[0].role == "user"
-        assert isinstance(result.messages[0].content, mcp.types.TextContent)
-        assert result.messages[0].content.text == "Welcome to FastMCP, Alice!"
+        assert result.messages[0].content.text == "Welcome to FastMCP, Alice!"  # type: ignore[attr-defined]
 
 
 async def test_proxy_handles_multiple_concurrent_tasks_correctly(

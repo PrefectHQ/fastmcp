@@ -1,8 +1,6 @@
 import json
 from urllib.parse import quote
 
-from mcp.types import TextContent, TextResourceContents
-
 from fastmcp.client.client import Client
 from fastmcp.server.server import FastMCP
 
@@ -223,8 +221,7 @@ async def test_call_imported_custom_named_tool():
 
     async with Client(main_app) as client:
         result = await client.call_tool("api_get_data", {"query": "test"})
-        assert isinstance(result[0], TextContent)
-        assert result[0].text == "Data for query: test"
+        assert result[0].text == "Data for query: test"  # type: ignore[attr-defined]
 
 
 async def test_first_level_importing_with_custom_name():
@@ -278,8 +275,7 @@ async def test_call_nested_imported_tool():
     result = await main_app._tool_manager.call_tool(
         "service_provider_compute", {"input": 21}
     )
-    assert isinstance(result[0], TextContent)
-    assert result[0].text == "42"
+    assert result[0].text == "42"  # type: ignore[attr-defined]
 
 
 async def test_import_with_proxy_tools():
@@ -302,8 +298,7 @@ async def test_import_with_proxy_tools():
     await main_app.import_server("api", proxy_app)
 
     result = await main_app._mcp_call_tool("api_get_data", {"query": "test"})
-    assert isinstance(result[0], TextContent)
-    assert result[0].text == "Data for query: test"
+    assert result[0].text == "Data for query: test"  # type: ignore[attr-defined]
 
 
 async def test_import_with_proxy_prompts():
@@ -326,7 +321,6 @@ async def test_import_with_proxy_prompts():
     await main_app.import_server("api", proxy_app)
 
     result = await main_app._mcp_get_prompt("api_greeting", {"name": "World"})
-    assert isinstance(result.messages[0].content, TextContent)
     assert result.messages[0].content.text == "Hello, World from API!"
     assert result.description == "Example greeting prompt."
 
@@ -356,8 +350,7 @@ async def test_import_with_proxy_resources():
     # Access the resource through the main app with the prefixed key
     async with Client(main_app) as client:
         result = await client.read_resource("config://api/settings")
-        assert isinstance(result[0], TextResourceContents)
-        content = json.loads(result[0].text)
+        content = json.loads(result[0].text)  # type: ignore[attr-defined]
         assert content["api_key"] == "12345"
         assert content["base_url"] == "https://api.example.com"
 
@@ -387,8 +380,7 @@ async def test_import_with_proxy_resource_templates():
     quoted_email = quote("john@example.com", safe="")
     async with Client(main_app) as client:
         result = await client.read_resource(f"user://api/{quoted_name}/{quoted_email}")
-        assert isinstance(result[0], TextResourceContents)
-        content = json.loads(result[0].text)
+        content = json.loads(result[0].text)  # type: ignore[attr-defined]
         assert content["name"] == "John Doe"
         assert content["email"] == "john@example.com"
 

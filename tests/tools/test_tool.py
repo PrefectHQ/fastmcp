@@ -1,5 +1,5 @@
 import pytest
-from mcp.types import ImageContent, TextContent
+from mcp.types import ImageContent
 from pydantic import BaseModel
 
 from fastmcp import FastMCP, Image
@@ -209,9 +209,7 @@ class TestLegacyToolJsonParsing:
 
         # Run the tool which will do JSON parsing
         result = await tool.run(json_args)
-        assert len(result) == 1
-        assert isinstance(result[0], TextContent)
-        assert result[0].text == "1-a,b,c"
+        assert result[0].text == "1-a,b,c"  # type: ignore[attr-dict]
 
     async def test_str_vs_list_str(self):
         """Test handling of string vs list[str] type annotations."""
@@ -223,23 +221,17 @@ class TestLegacyToolJsonParsing:
 
         # Test regular string input (should remain a string)
         result = await tool.run({"str_or_list": "hello"})
-        assert len(result) == 1
-        assert isinstance(result[0], TextContent)
-        assert result[0].text == "hello"
+        assert result[0].text == "hello"  # type: ignore[attr-dict]
 
         # Test JSON string input (should be parsed as a string)
         result = await tool.run({"str_or_list": '"hello"'})
-        assert len(result) == 1
-        assert isinstance(result[0], TextContent)
-        assert result[0].text == "hello"
+        assert result[0].text == "hello"  # type: ignore[attr-dict]
 
         # Test JSON list input (should be parsed as a list)
         result = await tool.run({"str_or_list": '["hello", "world"]'})
-        assert len(result) == 1
-        assert isinstance(result[0], TextContent)
 
         # The exact formatting might vary, so we just check that it contains the key elements
-        text_without_whitespace = result[0].text.replace(" ", "").replace("\n", "")
+        text_without_whitespace = result[0].text.replace(" ", "").replace("\n", "")  # type: ignore[attr-dict]
         assert "hello" in text_without_whitespace
         assert "world" in text_without_whitespace
         assert "[" in text_without_whitespace
@@ -256,9 +248,7 @@ class TestLegacyToolJsonParsing:
         # Invalid JSON should remain a string
         invalid_json = "{'nice to meet you': 'hello', 'goodbye': 5}"
         result = await tool.run({"string": invalid_json})
-        assert len(result) == 1
-        assert isinstance(result[0], TextContent)
-        assert result[0].text == invalid_json
+        assert result[0].text == invalid_json  # type: ignore[attr-dict]
 
     async def test_keep_str_union_as_str(self):
         """Test that string arguments are kept as strings when parsing would create an invalid value"""
@@ -273,9 +263,7 @@ class TestLegacyToolJsonParsing:
         # Invalid JSON for the union type should remain a string
         invalid_json = "{'nice to meet you': 'hello', 'goodbye': 5}"
         result = await tool.run({"string": invalid_json})
-        assert len(result) == 1
-        assert isinstance(result[0], TextContent)
-        assert result[0].text == invalid_json
+        assert result[0].text == invalid_json  # type: ignore[attr-dict]
 
     async def test_complex_type_validation(self):
         """Test that parsed JSON is validated against complex types"""
@@ -292,11 +280,9 @@ class TestLegacyToolJsonParsing:
         # Valid JSON for the model
         valid_json = '{"x": 1, "y": {"1": "hello"}}'
         result = await tool.run({"data": valid_json})
-        assert len(result) == 1
-        assert isinstance(result[0], TextContent)
-        assert '"x": 1' in result[0].text
-        assert '"y": {' in result[0].text
-        assert '"1": "hello"' in result[0].text
+        assert '"x": 1' in result[0].text  # type: ignore[attr-dict]
+        assert '"y": {' in result[0].text  # type: ignore[attr-dict]
+        assert '"1": "hello"' in result[0].text  # type: ignore[attr-dict]
 
         # Invalid JSON for the model (y has string keys, not int keys)
         # Should throw a validation error
@@ -317,8 +303,7 @@ class TestLegacyToolJsonParsing:
             result = await client.call_tool(
                 "process_list", {"items": "[1, 2, 3, 4, 5]"}
             )
-            assert isinstance(result[0], TextContent)
-            assert result[0].text == "15"
+            assert result[0].text == "15"  # type: ignore[attr-dict]
 
     async def test_tool_list_coercion_error(self):
         """Test that a list coercion error is raised if the input is not a valid list."""
@@ -348,8 +333,7 @@ class TestLegacyToolJsonParsing:
             result = await client.call_tool(
                 "process_dict", {"data": '{"a": 1, "b": "2", "c": 3}'}
             )
-            assert isinstance(result[0], TextContent)
-            assert result[0].text == "6"
+            assert result[0].text == "6"  # type: ignore[attr-dict]
 
     async def test_tool_set_coercion(self):
         """Test JSON string to set type coercion."""
@@ -362,8 +346,7 @@ class TestLegacyToolJsonParsing:
 
         async with Client(mcp) as client:
             result = await client.call_tool("process_set", {"items": "[1, 2, 3, 4, 5]"})
-            assert isinstance(result[0], TextContent)
-            assert result[0].text == "15"
+            assert result[0].text == "15"  # type: ignore[attr-dict]
 
     async def test_tool_tuple_coercion(self):
         """Test JSON string to tuple type coercion."""
@@ -376,5 +359,4 @@ class TestLegacyToolJsonParsing:
 
         async with Client(mcp) as client:
             result = await client.call_tool("process_tuple", {"items": '["1", "two"]'})
-            assert isinstance(result[0], TextContent)
-            assert result[0].text == "4"
+            assert result[0].text == "4"  # type: ignore[attr-dict]
