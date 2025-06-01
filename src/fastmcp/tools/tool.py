@@ -102,15 +102,12 @@ class Tool(BaseModel):
         type_adapter = get_cached_typeadapter(fn)
         schema = type_adapter.json_schema()
 
+        prune_params: list[str] = []
         context_kwarg = find_kwarg_by_type(fn, kwarg_type=Context)
-        temp_prune_params: list[str] = []
         if context_kwarg:
-            temp_prune_params.append(context_kwarg)
+            prune_params.append(context_kwarg)
         if exclude_args:
-            temp_prune_params.extend(exclude_args)
-        prune_params: list[str] | None = (
-            None if not temp_prune_params else temp_prune_params
-        )
+            prune_params.extend(exclude_args)
 
         schema = compress_schema(schema, prune_params=prune_params)
 
