@@ -1,25 +1,3 @@
-"""
-Simple JWT Bearer Token validation for hosted MCP servers.
-
-Uses RS256 (asymmetric) where your control plane signs with a private key
-and hosted MCP servers validate with the corresponding public key.
-
-Example usage:
-# Static public key
-provider = BearerAuthProvider(
-    public_key='''-----BEGIN PUBLIC KEY-----
-    MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA...
-    -----END PUBLIC KEY-----''',
-    issuer="https://auth.yourservice.com"
-)
-
-# Or JWKS URI (recommended for production - allows key rotation)
-provider = Bear(
-    jwks_uri="https://auth.yourservice.com/.well-known/jwks.json",
-    issuer="https://auth.yourservice.com"
-)
-"""
-
 import time
 from dataclasses import dataclass
 from typing import Any, TypedDict
@@ -165,7 +143,6 @@ class RSAKeyPair:
             payload,
             key=self.private_key.get_secret_value(),
         )
-
         return token_bytes.decode("utf-8")
 
 
@@ -174,25 +151,28 @@ class BearerAuthProvider(OAuthProvider):
     Simple JWT Bearer Token validator for hosted MCP servers.
     Uses RS256 asymmetric encryption. Supports either static public key
     or JWKS URI for key rotation.
+
+    Note that this provider DOES NOT permit client registration or revocation, or any OAuth flows.
+    It is intended to be used with a control plane that manages clients and tokens.
     """
 
     def __init__(
         self,
-        issuer: str | None = None,
         public_key: str | None = None,
         jwks_uri: str | None = None,
+        issuer: str | None = None,
         audience: str | None = None,
         required_scopes: list[str] | None = None,
     ):
         """
-        Initialize the provider.
+        Initialize the provider. Either public_key or jwks_uri must be provided.
 
         Args:
-            issuer: Expected issuer claim (your control plane)
             public_key: RSA public key in PEM format (for static key)
             jwks_uri: URI to fetch keys from (for key rotation)
+            issuer: Expected issuer claim (optional)
             audience: Expected audience claim (optional)
-            required_scopes: List of required scopes for access
+            required_scopes: List of required scopes for access (optional)
         """
         if not (public_key or jwks_uri):
             raise ValueError("Either public_key or jwks_uri must be provided")

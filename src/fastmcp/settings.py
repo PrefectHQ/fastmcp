@@ -5,7 +5,10 @@ from pathlib import Path
 from typing import Annotated, Literal
 
 from pydantic import Field, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import (
+    BaseSettings,
+    SettingsConfigDict,
+)
 from typing_extensions import Self
 
 LOG_LEVEL = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
@@ -175,6 +178,9 @@ class ServerSettings(BaseSettings):
     stateless_http: bool = (
         False  # If True, uses true stateless mode (new transport per request)
     )
+
+    # Auth settings
+    auth_provider: Literal["bearer_env"] | None = None
 
 
 settings = Settings()

@@ -39,7 +39,7 @@ class OAuthProvider(
         if isinstance(service_documentation_url, str):
             service_documentation_url = AnyHttpUrl(service_documentation_url)
 
-        self.settings = AuthSettings(
+        self.auth_settings = AuthSettings(
             issuer_url=issuer_url,
             service_documentation_url=service_documentation_url,
             client_registration_options=client_registration_options,

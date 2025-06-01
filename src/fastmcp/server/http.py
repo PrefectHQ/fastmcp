@@ -91,15 +91,15 @@ def setup_auth_middleware_and_routes(
         Middleware(AuthContextMiddleware),
     ]
 
-    required_scopes = auth.settings.required_scopes or []
+    required_scopes = auth.auth_settings.required_scopes or []
 
     auth_routes.extend(
         create_auth_routes(
             provider=auth,
-            issuer_url=auth.settings.issuer_url,
-            service_documentation_url=auth.settings.service_documentation_url,
-            client_registration_options=auth.settings.client_registration_options,
-            revocation_options=auth.settings.revocation_options,
+            issuer_url=auth.auth_settings.issuer_url,
+            service_documentation_url=auth.auth_settings.service_documentation_url,
+            client_registration_options=auth.auth_settings.client_registration_options,
+            revocation_options=auth.auth_settings.revocation_options,
         )
     )
 
