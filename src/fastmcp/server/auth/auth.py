@@ -5,7 +5,6 @@ from mcp.server.auth.provider import (
     RefreshToken,
 )
 from mcp.server.auth.settings import (
-    AuthSettings,
     ClientRegistrationOptions,
     RevocationOptions,
 )
@@ -39,10 +38,8 @@ class OAuthProvider(
         if isinstance(service_documentation_url, str):
             service_documentation_url = AnyHttpUrl(service_documentation_url)
 
-        self.auth_settings = AuthSettings(
-            issuer_url=issuer_url,
-            service_documentation_url=service_documentation_url,
-            client_registration_options=client_registration_options,
-            revocation_options=revocation_options,
-            required_scopes=required_scopes,
-        )
+        self.issuer_url = issuer_url
+        self.service_documentation_url = service_documentation_url
+        self.client_registration_options = client_registration_options
+        self.revocation_options = revocation_options
+        self.required_scopes = required_scopes

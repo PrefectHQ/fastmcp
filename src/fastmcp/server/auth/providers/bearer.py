@@ -295,7 +295,8 @@ class BearerAuthProvider(OAuthProvider):
             if exp and exp < time.time():
                 return None
 
-            # Validate issuer
+            # Validate issuer - note we use issuer instead of issuer_url here because
+            # issuer is optional, allowing users to make this check optional
             if self.issuer:
                 if claims.get("iss") != self.issuer:
                     return None
