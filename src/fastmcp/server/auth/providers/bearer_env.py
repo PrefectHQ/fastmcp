@@ -1,15 +1,10 @@
-from enum import Enum
-
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from fastmcp.server.auth.providers.bearer import BearerAuthProvider
 
 
-class NotSet(Enum):
-    sentinel = 0
-
-
-NOTSET = NotSet.sentinel
+class NotSet:
+    pass
 
 
 class EnvBearerAuthProviderSettings(BaseSettings):
@@ -35,11 +30,11 @@ class EnvBearerAuthProvider(BearerAuthProvider):
 
     def __init__(
         self,
-        public_key: str | None | NotSet = NOTSET,
-        jwks_uri: str | None | NotSet = NOTSET,
-        issuer: str | None | NotSet = NOTSET,
-        audience: str | None | NotSet = NOTSET,
-        required_scopes: list[str] | None | NotSet = NOTSET,
+        public_key: str | None | type[NotSet] = NotSet,
+        jwks_uri: str | None | type[NotSet] = NotSet,
+        issuer: str | None | type[NotSet] = NotSet,
+        audience: str | None | type[NotSet] = NotSet,
+        required_scopes: list[str] | None | type[NotSet] = NotSet,
     ):
         kwargs = {
             "public_key": public_key,
@@ -49,6 +44,6 @@ class EnvBearerAuthProvider(BearerAuthProvider):
             "required_scopes": required_scopes,
         }
         settings = EnvBearerAuthProviderSettings(
-            **{k: v for k, v in kwargs.items() if v is not NOTSET}
+            **{k: v for k, v in kwargs.items() if v is not NotSet}
         )
         super().__init__(**settings.model_dump())

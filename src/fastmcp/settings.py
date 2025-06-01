@@ -180,7 +180,23 @@ class ServerSettings(BaseSettings):
     )
 
     # Auth settings
-    auth_provider: Literal["bearer_env"] | None = None
+    default_auth_provider: Annotated[
+        Literal["bearer_env"] | None,
+        Field(
+            description=inspect.cleandoc(
+                """
+                Configure the authentication provider. This setting is intended only to
+                be used for remote confirugation of providers that fully support
+                environment variable configuration.
+
+                If None, no automatic configuration will take place.
+
+                This setting is *always* overriden by any auth provider passed to the
+                FastMCP constructor.
+                """
+            ),
+        ),
+    ] = None
 
 
 settings = Settings()

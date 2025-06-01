@@ -187,7 +187,7 @@ class FastMCP(Generic[LifespanResultT]):
             lifespan=_lifespan_wrapper(self, lifespan),
         )
 
-        if auth is None and self.settings.auth_provider == "bearer_env":
+        if auth is None and self.settings.default_auth_provider == "bearer_env":
             auth = EnvBearerAuthProvider()
         self.auth = auth
 
