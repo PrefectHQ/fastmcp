@@ -48,7 +48,6 @@
                     "servers/fastmcp",
                     {
                         "group": "Core Components",
-                        "hidden": false,
                         "icon": "toolbox",
                         "pages": [
                             "servers/tools",
