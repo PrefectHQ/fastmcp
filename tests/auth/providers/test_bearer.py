@@ -32,7 +32,7 @@ def bearer_provider(rsa_key_pair: RSAKeyPair) -> BearerAuthProvider:
     )
 
 
-def run_mcp_server(public_key: str, host: str, port: int, **kwargs) -> str:
+def run_mcp_server(public_key: str, host: str, port: int, **kwargs) -> None:
     mcp = FastMCP(
         auth=BearerAuthProvider(
             issuer="https://test.example.com",
@@ -65,7 +65,7 @@ class TestRSAKeyPair:
 
         # Check that keys are in PEM format
         private_pem = key_pair.private_key.get_secret_value()
-        public_pem = key_pair.public_key.get_secret_value()
+        public_pem = key_pair.public_key
 
         assert "-----BEGIN PRIVATE KEY-----" in private_pem
         assert "-----END PRIVATE KEY-----" in private_pem
