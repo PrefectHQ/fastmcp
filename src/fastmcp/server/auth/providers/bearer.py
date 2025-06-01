@@ -6,7 +6,7 @@ and hosted MCP servers validate with the corresponding public key.
 
 Example usage:
 # Static public key
-provider = BearerTokenValidatorProvider(
+provider = BearerAuthProvider(
     public_key='''-----BEGIN PUBLIC KEY-----
     MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA...
     -----END PUBLIC KEY-----''',
@@ -14,7 +14,7 @@ provider = BearerTokenValidatorProvider(
 )
 
 # Or JWKS URI (recommended for production - allows key rotation)
-provider = BearerTokenValidatorProvider(
+provider = Bear(
     jwks_uri="https://auth.yourservice.com/.well-known/jwks.json",
     issuer="https://auth.yourservice.com"
 )
@@ -22,7 +22,7 @@ provider = BearerTokenValidatorProvider(
 
 import time
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, TypedDict
 
 import httpx
 from authlib.jose import JsonWebKey, JsonWebToken
@@ -46,6 +46,25 @@ from fastmcp.server.auth.auth import (
     OAuthProvider,
     RevocationOptions,
 )
+
+
+class JWKData(TypedDict, total=False):
+    """JSON Web Key data structure."""
+
+    kty: str  # Key type (e.g., "RSA") - required
+    kid: str  # Key ID (optional but recommended)
+    use: str  # Usage (e.g., "sig")
+    alg: str  # Algorithm (e.g., "RS256")
+    n: str  # Modulus (for RSA keys)
+    e: str  # Exponent (for RSA keys)
+    x5c: list[str]  # X.509 certificate chain (for JWKs)
+    x5t: str  # X.509 certificate thumbprint (for JWKs)
+
+
+class JWKSData(TypedDict):
+    """JSON Web Key Set data structure."""
+
+    keys: list[JWKData]
 
 
 @dataclass(frozen=True, kw_only=True, repr=False)
@@ -96,6 +115,7 @@ class RSAKeyPair:
         scopes: list[str] | None = None,
         expires_in_seconds: int = 3600,
         additional_claims: dict[str, Any] | None = None,
+        kid: str | None = None,
     ) -> str:
         """
         Generate a test JWT token for testing purposes.
@@ -108,6 +128,7 @@ class RSAKeyPair:
             scopes: List of scopes to include
             expires_in_seconds: Token expiration time in seconds
             additional_claims: Any additional claims to include
+            kid: Key ID for JWKS lookup (optional)
 
         Returns:
             Signed JWT token string
@@ -135,6 +156,8 @@ class RSAKeyPair:
 
         # Create header
         header = {"alg": "RS256"}
+        if kid:
+            header["kid"] = kid
 
         # Sign and return token
         token_bytes = jwt.encode(
@@ -209,27 +232,25 @@ class BearerAuthProvider(OAuthProvider):
             header = json.loads(base64.urlsafe_b64decode(header_b64))
             kid = header.get("kid")
 
-            if not kid:
-                raise ValueError("Token missing key ID (kid)")
-
             return await self._get_jwks_key(kid)
 
         except Exception as e:
             raise ValueError(f"Failed to extract key ID from token: {e}")
 
-    async def _get_jwks_key(self, kid: str) -> str:
+    async def _get_jwks_key(self, kid: str | None) -> str:
         """Fetch key from JWKS with simple caching."""
         if not self.jwks_uri:
             raise ValueError("JWKS URI not configured")
 
         current_time = time.time()
 
-        # Check cache
-        if (
-            current_time - self._jwks_cache_time < self._cache_ttl
-            and kid in self._jwks_cache
-        ):
-            return self._jwks_cache[kid]
+        # Check cache first
+        if current_time - self._jwks_cache_time < self._cache_ttl:
+            if kid and kid in self._jwks_cache:
+                return self._jwks_cache[kid]
+            elif not kid and len(self._jwks_cache) == 1:
+                # If no kid but only one key cached, use it
+                return next(iter(self._jwks_cache.values()))
 
         # Fetch JWKS
         try:
@@ -242,16 +263,32 @@ class BearerAuthProvider(OAuthProvider):
             self._jwks_cache = {}
             for key_data in jwks_data.get("keys", []):
                 key_kid = key_data.get("kid")
+                jwk = JsonWebKey.import_key(key_data)
+                public_key = jwk.get_public_key()
+
                 if key_kid:
-                    jwk = JsonWebKey.import_key(key_data)
-                    self._jwks_cache[key_kid] = jwk.get_public_key()
+                    self._jwks_cache[key_kid] = public_key
+                else:
+                    # Key without kid - use a default identifier
+                    self._jwks_cache["_default"] = public_key
 
             self._jwks_cache_time = current_time
 
-            if kid not in self._jwks_cache:
-                raise ValueError(f"Key ID '{kid}' not found in JWKS")
-
-            return self._jwks_cache[kid]
+            # Select the appropriate key
+            if kid:
+                if kid not in self._jwks_cache:
+                    raise ValueError(f"Key ID '{kid}' not found in JWKS")
+                return self._jwks_cache[kid]
+            else:
+                # No kid in token - only allow if there's exactly one key
+                if len(self._jwks_cache) == 1:
+                    return next(iter(self._jwks_cache.values()))
+                elif len(self._jwks_cache) > 1:
+                    raise ValueError(
+                        "Multiple keys in JWKS but no key ID (kid) in token"
+                    )
+                else:
+                    raise ValueError("No keys found in JWKS")
 
         except Exception as e:
             raise ValueError(f"Failed to fetch JWKS: {e}")
