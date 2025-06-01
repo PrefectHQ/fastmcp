@@ -16,7 +16,6 @@ from fastmcp.client.transports import (
     infer_transport,
 )
 from fastmcp.exceptions import ResourceError, ToolError
-from fastmcp.prompts.prompt import TextContent
 from fastmcp.server.server import FastMCP
 
 
@@ -201,8 +200,7 @@ async def test_get_prompt(fastmcp_server):
         result = await client.get_prompt("welcome", {"name": "Developer"})
 
         # The result should contain our welcome message
-        assert isinstance(result.messages[0].content, TextContent)
-        assert result.messages[0].content.text == "Welcome to FastMCP, Developer!"
+        assert result.messages[0].content.text == "Welcome to FastMCP, Developer!"  # type: ignore[attr-defined]
         assert result.description == "Example greeting prompt."
 
 
@@ -214,8 +212,7 @@ async def test_get_prompt_mcp(fastmcp_server):
         result = await client.get_prompt_mcp("welcome", {"name": "Developer"})
 
         # The result should contain our welcome message
-        assert isinstance(result.messages[0].content, TextContent)
-        assert result.messages[0].content.text == "Welcome to FastMCP, Developer!"
+        assert result.messages[0].content.text == "Welcome to FastMCP, Developer!"  # type: ignore[attr-defined]
         assert result.description == "Example greeting prompt."
 
 
@@ -522,9 +519,8 @@ class TestErrorHandling:
         async with client:
             result = await client.call_tool_mcp("error_tool", {})
             assert result.isError
-            assert isinstance(result.content[0], TextContent)
-            assert "test error" in result.content[0].text
-            assert "abc" in result.content[0].text
+            assert "test error" in result.content[0].text  # type: ignore[attr-defined]
+            assert "abc" in result.content[0].text  # type: ignore[attr-defined]
 
     async def test_general_tool_exceptions_are_masked_when_enabled(self):
         mcp = FastMCP("TestServer", mask_error_details=True)
@@ -538,9 +534,8 @@ class TestErrorHandling:
         async with client:
             result = await client.call_tool_mcp("error_tool", {})
             assert result.isError
-            assert isinstance(result.content[0], TextContent)
-            assert "test error" not in result.content[0].text
-            assert "abc" not in result.content[0].text
+            assert "test error" not in result.content[0].text  # type: ignore[attr-defined]
+            assert "abc" not in result.content[0].text  # type: ignore[attr-defined]
 
     async def test_specific_tool_errors_are_sent_to_client(self):
         mcp = FastMCP("TestServer")
@@ -554,9 +549,8 @@ class TestErrorHandling:
         async with client:
             result = await client.call_tool_mcp("custom_error_tool", {})
             assert result.isError
-            assert isinstance(result.content[0], TextContent)
-            assert "test error" in result.content[0].text
-            assert "abc" in result.content[0].text
+            assert "test error" in result.content[0].text  # type: ignore[attr-defined]
+            assert "abc" in result.content[0].text  # type: ignore[attr-defined]
 
     async def test_general_resource_exceptions_are_not_masked_by_default(self):
         mcp = FastMCP("TestServer")

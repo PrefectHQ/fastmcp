@@ -1,7 +1,6 @@
 import inspect
 
 import pytest
-from mcp.types import TextContent
 
 from fastmcp import Client
 from fastmcp.client.transports import PythonStdioTransport, StdioTransport
@@ -49,13 +48,11 @@ class TestKeepAlive:
 
         async with client:
             result1 = await client.call_tool("pid")
-            assert isinstance(result1[0], TextContent)
-            pid1 = int(result1[0].text)
+            pid1 = int(result1[0].text)  # type: ignore[attr-defined]
 
         async with client:
             result2 = await client.call_tool("pid")
-            assert isinstance(result2[0], TextContent)
-            pid2 = int(result2[0].text)
+            pid2 = int(result2[0].text)  # type: ignore[attr-defined]
 
         assert pid1 == pid2
 
@@ -69,13 +66,11 @@ class TestKeepAlive:
 
         async with client:
             result1 = await client.call_tool("pid")
-            assert isinstance(result1[0], TextContent)
-            pid1 = int(result1[0].text)
+            pid1 = int(result1[0].text)  # type: ignore[attr-defined]
 
         async with client:
             result2 = await client.call_tool("pid")
-            assert isinstance(result2[0], TextContent)
-            pid2 = int(result2[0].text)
+            pid2 = int(result2[0].text)  # type: ignore[attr-defined]
 
         assert pid1 != pid2
 
@@ -85,15 +80,13 @@ class TestKeepAlive:
 
         async with client:
             result1 = await client.call_tool("pid")
-            assert isinstance(result1[0], TextContent)
-            pid1 = int(result1[0].text)
+            pid1 = int(result1[0].text)  # type: ignore[attr-defined]
 
         await client.close()
 
         async with client:
             result2 = await client.call_tool("pid")
-            assert isinstance(result2[0], TextContent)
-            pid2 = int(result2[0].text)
+            pid2 = int(result2[0].text)  # type: ignore[attr-defined]
 
         assert pid1 != pid2
 
@@ -103,17 +96,14 @@ class TestKeepAlive:
 
         async with client:
             result1 = await client.call_tool("pid")
-            assert isinstance(result1[0], TextContent)
-            pid1 = int(result1[0].text)
+            pid1 = int(result1[0].text)  # type: ignore[attr-defined]
 
             async with client:
                 result2 = await client.call_tool("pid")
-                assert isinstance(result2[0], TextContent)
-                pid2 = int(result2[0].text)
+                pid2 = int(result2[0].text)  # type: ignore[attr-defined]
 
             result3 = await client.call_tool("pid")
-            assert isinstance(result3[0], TextContent)
-            pid3 = int(result3[0].text)
+            pid3 = int(result3[0].text)  # type: ignore[attr-defined]
 
         assert pid1 == pid2 == pid3
 

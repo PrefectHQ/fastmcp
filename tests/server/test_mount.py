@@ -3,8 +3,6 @@ import sys
 from contextlib import asynccontextmanager
 
 import pytest
-from mcp.server.lowlevel.helper_types import ReadResourceContents
-from mcp.types import TextContent, TextResourceContents
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
@@ -36,8 +34,7 @@ class TestBasicMount:
 
         async with Client(main_app) as client:
             result = await client.call_tool("sub_sub_tool", {})
-            assert isinstance(result[0], TextContent)
-            assert result[0].text == "This is from the sub app"
+            assert result[0].text == "This is from the sub app"  # type: ignore[attr-defined]
 
     async def test_mount_with_custom_separator(self):
         """Test mounting with a custom tool separator (deprecated but still supported)."""
@@ -57,8 +54,7 @@ class TestBasicMount:
 
         # Call the tool
         result = await main_app._mcp_call_tool("sub_greet", {"name": "World"})
-        assert isinstance(result[0], TextContent)
-        assert result[0].text == "Hello, World!"
+        assert result[0].text == "Hello, World!"  # type: ignore[attr-defined]
 
     async def test_mount_invalid_resource_prefix(self):
         main_app = FastMCP("MainApp")
@@ -147,12 +143,10 @@ class TestMultipleServerMount:
 
         # Call tools from both mounted servers
         result1 = await main_app._mcp_call_tool("weather_get_forecast", {})
-        assert isinstance(result1[0], TextContent)
-        assert result1[0].text == "Weather forecast"
+        assert result1[0].text == "Weather forecast"  # type: ignore[attr-defined]
 
         result2 = await main_app._mcp_call_tool("news_get_headlines", {})
-        assert isinstance(result2[0], TextContent)
-        assert result2[0].text == "News headlines"
+        assert result2[0].text == "News headlines"  # type: ignore[attr-defined]
 
     async def test_mount_same_prefix(self):
         """Test that mounting with the same prefix replaces the previous mount."""
@@ -227,8 +221,7 @@ class TestMultipleServerMount:
 
             # Test calling a tool
             result = await client.call_tool("working_working_tool", {})
-            assert isinstance(result[0], TextContent)
-            assert result[0].text == "Working tool"
+            assert result[0].text == "Working tool"  # type: ignore[attr-defined]
 
             # Test resources
             resources = await client.list_resources()
@@ -284,8 +277,7 @@ class TestDynamicChanges:
 
         # Call the dynamically added tool
         result = await main_app._mcp_call_tool("sub_dynamic_tool", {})
-        assert isinstance(result[0], TextContent)
-        assert result[0].text == "Added after mounting"
+        assert result[0].text == "Added after mounting"  # type: ignore[attr-defined]
 
     async def test_removing_tool_after_mounting(self):
         """Test that tools removed from mounted servers are no longer accessible."""
@@ -335,8 +327,7 @@ class TestResourcesAndTemplates:
         # Check that resource can be accessed
         async with Client(main_app) as client:
             result = await client.read_resource("data://data/users")
-            assert isinstance(result[0], TextResourceContents)
-            assert json.loads(result[0].text) == ["user1", "user2"]
+            assert json.loads(result[0].text) == ["user1", "user2"]  # type: ignore[attr-defined]
 
     async def test_mount_with_resource_templates(self):
         """Test mounting a server with resource templates."""
@@ -357,8 +348,7 @@ class TestResourcesAndTemplates:
         # Check template instantiation
         async with Client(main_app) as client:
             result = await client.read_resource("users://api/123/profile")
-            assert isinstance(result[0], TextResourceContents)
-            profile = json.loads(result[0].text)
+            profile = json.loads(result[0].text)  # type: ignore
             assert profile["id"] == "123"
             assert profile["name"] == "User 123"
 
@@ -382,8 +372,7 @@ class TestResourcesAndTemplates:
         # Check access to the resource
         async with Client(main_app) as client:
             result = await client.read_resource("data://data/config")
-            assert isinstance(result[0], TextResourceContents)
-            config = json.loads(result[0].text)
+            config = json.loads(result[0].text)  # type: ignore[attr-defined]
             assert config["version"] == "1.0"
 
 
@@ -461,8 +450,7 @@ class TestProxyServer:
 
         # Call the tool
         result = await main_app._mcp_call_tool("proxy_get_data", {"query": "test"})
-        assert isinstance(result[0], TextContent)
-        assert result[0].text == "Data for test"
+        assert result[0].text == "Data for test"  # type: ignore[attr-defined]
 
     async def test_dynamically_adding_to_proxied_server(self):
         """Test that changes to the original server are reflected in the mounted proxy."""
@@ -489,8 +477,7 @@ class TestProxyServer:
 
         # Call the tool
         result = await main_app._mcp_call_tool("proxy_dynamic_data", {})
-        assert isinstance(result[0], TextContent)
-        assert result[0].text == "Dynamic data"
+        assert result[0].text == "Dynamic data"  # type: ignore[attr-defined]
 
     async def test_proxy_server_with_resources(self):
         """Test mounting a proxy server with resources."""
@@ -512,8 +499,7 @@ class TestProxyServer:
 
         # Resource should be accessible through main app
         result = await main_app._mcp_read_resource("config://proxy/settings")
-        assert isinstance(result[0], ReadResourceContents)
-        config = json.loads(result[0].content)
+        config = json.loads(result[0].content)  # type: ignore[attr-defined]
         assert config["api_key"] == "12345"
 
     async def test_proxy_server_with_prompts(self):
