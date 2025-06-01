@@ -67,6 +67,26 @@ def run_server(host: str, port: int, **kwargs) -> None:
     fastmcp_server().run(host=host, port=port, **kwargs)
 
 
+def run_nested_server(host: str, port: int) -> None:
+    mcp_app = fastmcp_server().http_app(path="/final/mcp")
+
+    mount = Starlette(routes=[Mount("/nest-inner", app=mcp_app)])
+    mount2 = Starlette(
+        routes=[Mount("/nest-outer", app=mount)],
+        lifespan=mcp_app.lifespan,
+    )
+    server = uvicorn.Server(
+        config=uvicorn.Config(
+            app=mount2,
+            host=host,
+            port=port,
+            log_level="error",
+            lifespan="on",
+        )
+    )
+    server.run()
+
+
 @pytest.fixture(scope="module")
 def streamable_http_server() -> Generator[str, None, None]:
     with run_server_in_process(run_server, transport="streamable-http") as url:
@@ -93,26 +113,6 @@ async def test_http_headers(streamable_http_server: str):
         json_result = json.loads(raw_result[0].text)  # type: ignore[attr-defined]
         assert "x-demo-header" in json_result
         assert json_result["x-demo-header"] == "ABC"
-
-
-def run_nested_server(host: str, port: int) -> None:
-    mcp_app = fastmcp_server().http_app(path="/final/mcp")
-
-    mount = Starlette(routes=[Mount("/nest-inner", app=mcp_app)])
-    mount2 = Starlette(
-        routes=[Mount("/nest-outer", app=mount)],
-        lifespan=mcp_app.lifespan,
-    )
-    server = uvicorn.Server(
-        config=uvicorn.Config(
-            app=mount2,
-            host=host,
-            port=port,
-            log_level="error",
-            lifespan="on",
-        )
-    )
-    server.run()
 
 
 async def test_nested_streamable_http_server_resolves_correctly():
