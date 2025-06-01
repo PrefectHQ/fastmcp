@@ -1,11 +1,9 @@
-import sys
 from collections.abc import Generator
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
 import httpx
 import pytest
-import uvicorn
 
 import fastmcp.client.auth  # Import module, not the function directly
 from fastmcp.client import Client
@@ -39,30 +37,13 @@ def fastmcp_server(issuer_url: str):
     return server
 
 
-def run_server(host: str, port: int, transport: str | None = None) -> None:
-    try:
-        # Configure OAuth provider with the actual server URL
-        issuer_url = f"http://{host}:{port}"
-        app = fastmcp_server(issuer_url).http_app()
-        server = uvicorn.Server(
-            config=uvicorn.Config(
-                app=app,
-                host=host,
-                port=port,
-                log_level="error",
-                lifespan="on",
-            )
-        )
-        server.run()
-    except Exception as e:
-        print(f"Server error: {e}")
-        sys.exit(1)
-    sys.exit(0)
+def run_server(host: str, port: int, **kwargs) -> None:
+    fastmcp_server(f"http://{host}:{port}").run(host=host, port=port, **kwargs)
 
 
 @pytest.fixture(scope="module")
 def streamable_http_server() -> Generator[str, None, None]:
-    with run_server_in_process(run_server) as url:
+    with run_server_in_process(run_server, transport="streamable-http") as url:
         yield f"{url}/mcp"
 
 

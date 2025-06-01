@@ -72,14 +72,21 @@ def _run_server(mcp_server: FastMCP, transport: Literal["sse"], port: int) -> No
 
 @contextmanager
 def run_server_in_process(
-    server_fn: Callable[..., None], *args
+    server_fn: Callable[..., None],
+    *args,
+    provide_host_and_port: bool = True,
+    **kwargs,
 ) -> Generator[str, None, None]:
     """
-    Context manager that runs a Starlette app in a separate process and returns the
-    server URL. When the context manager is exited, the server process is killed.
+    Context manager that runs a FastMCP server in a separate process and
+    returns the server URL. When the context manager is exited, the server process is killed.
 
     Args:
-        app: The Starlette app to run.
+        server_fn: The function that runs a FastMCP server. FastMCP servers are
+            not pickleable, so we need a function that creates and runs one.
+        *args: Arguments to pass to the server function.
+        provide_host_and_port: Whether to provide the host and port to the server function as kwargs.
+        **kwargs: Keyword arguments to pass to the server function.
 
     Returns:
         The server URL.
@@ -87,8 +94,11 @@ def run_server_in_process(
     host = "127.0.0.1"
     port = find_available_port()
 
+    if provide_host_and_port:
+        kwargs |= {"host": host, "port": port}
+
     proc = multiprocessing.Process(
-        target=server_fn, args=(host, port, *args), daemon=True
+        target=server_fn, args=args, kwargs=kwargs, daemon=True
     )
     proc.start()
 

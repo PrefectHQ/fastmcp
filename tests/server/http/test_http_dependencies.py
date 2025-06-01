@@ -1,9 +1,7 @@
 import json
-import sys
 from collections.abc import Generator
 
 import pytest
-import uvicorn
 
 from fastmcp.client import Client
 from fastmcp.client.transports import SSETransport, StreamableHttpTransport
@@ -40,53 +38,19 @@ def fastmcp_server():
     return server
 
 
-def run_shttp_server(host: str, port: int) -> None:
-    try:
-        app = fastmcp_server().http_app(transport="streamable-http")
-        server = uvicorn.Server(
-            config=uvicorn.Config(
-                app=app,
-                host=host,
-                port=port,
-                log_level="error",
-                lifespan="on",
-            )
-        )
-        server.run()
-    except Exception as e:
-        print(f"Server error: {e}")
-        sys.exit(1)
-    sys.exit(0)
-
-
-def run_sse_server(host: str, port: int) -> None:
-    try:
-        app = fastmcp_server().http_app(transport="sse")
-        server = uvicorn.Server(
-            config=uvicorn.Config(
-                app=app,
-                host=host,
-                port=port,
-                log_level="error",
-                lifespan="on",
-            )
-        )
-        server.run()
-    except Exception as e:
-        print(f"Server error: {e}")
-        sys.exit(1)
-    sys.exit(0)
+def run_server(host: str, port: int, **kwargs) -> None:
+    fastmcp_server().run(host=host, port=port, **kwargs)
 
 
 @pytest.fixture(autouse=True, scope="module")
 def shttp_server() -> Generator[str, None, None]:
-    with run_server_in_process(run_shttp_server) as url:
+    with run_server_in_process(run_server, transport="streamable-http") as url:
         yield f"{url}/mcp"
 
 
 @pytest.fixture(autouse=True, scope="module")
 def sse_server() -> Generator[str, None, None]:
-    with run_server_in_process(run_sse_server) as url:
+    with run_server_in_process(run_server, transport="sse") as url:
         yield f"{url}/sse"
 
 
