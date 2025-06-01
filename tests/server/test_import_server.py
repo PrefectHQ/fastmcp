@@ -321,7 +321,7 @@ async def test_import_with_proxy_prompts():
     await main_app.import_server("api", proxy_app)
 
     result = await main_app._mcp_get_prompt("api_greeting", {"name": "World"})
-    assert result.messages[0].content.text == "Hello, World from API!"
+    assert result.messages[0].content.text == "Hello, World from API!"  # type: ignore[attr-defined]
     assert result.description == "Example greeting prompt."
 
 

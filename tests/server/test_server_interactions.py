@@ -979,7 +979,7 @@ class TestResourceTemplates:
             # Test lookup by name
             name_result = await client.read_resource(AnyUrl("users://name/John"))
             assert name_result[0].text  # type: ignore[attr-defined]
-            name_
+            name_data = json.loads(name_result[0].text)  # type: ignore[attr-defined]
             assert name_data["lookup"] == "name"
             assert name_data["name"] == "John"
             assert name_data["email"] == "dummy@example.com"
