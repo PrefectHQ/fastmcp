@@ -35,7 +35,7 @@ The `FastMCP` constructor accepts several arguments:
 *   `instructions`: (Optional) Description of how to interact with this server. These instructions help clients understand the server's purpose and available functionality.
 *   `lifespan`: (Optional) An async context manager function for server startup and shutdown logic.
 *   `tags`: (Optional) A set of strings to tag the server itself.
-*   `tools`: (Optional) A list of tools to add to the server. In some cases, providing tools as a list of functions may be more convenient than using the `@mcp.tool` decorator.
+*   `tools`: (Optional) A list of tools (or functions to convert to tools) to add to the server. In some cases, providing tools programmatically may be more convenient than using the `@mcp.tool` decorator.
 *   `**settings`: Keyword arguments corresponding to additional `ServerSettings` configuration
 
 ## Components
