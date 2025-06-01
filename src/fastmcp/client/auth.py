@@ -25,9 +25,9 @@ from pydantic import AnyHttpUrl, ValidationError
 
 from fastmcp.client.oauth_callback import (
     create_oauth_callback_server,
-    find_available_port,
 )
 from fastmcp.settings import settings as fastmcp_global_settings
+from fastmcp.utilities.http import find_available_port
 from fastmcp.utilities.logging import get_logger
 
 __all__ = ["OAuth"]

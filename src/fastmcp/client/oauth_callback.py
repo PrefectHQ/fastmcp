@@ -8,7 +8,6 @@ and display styled responses to users.
 from __future__ import annotations
 
 import asyncio
-import socket
 from dataclasses import dataclass
 
 from starlette.applications import Starlette
@@ -17,6 +16,7 @@ from starlette.responses import HTMLResponse
 from starlette.routing import Route
 from uvicorn import Config, Server
 
+from fastmcp.utilities.http import find_available_port
 from fastmcp.utilities.logging import get_logger
 
 logger = get_logger(__name__)
@@ -177,13 +177,6 @@ def create_callback_html(
     </body>
     </html>
     """
-
-
-def find_available_port() -> int:
-    """Find an available port by letting the OS assign one."""
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
 
 
 @dataclass
