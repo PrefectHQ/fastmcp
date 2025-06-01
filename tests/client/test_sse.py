@@ -6,7 +6,6 @@ from collections.abc import Generator
 import pytest
 import uvicorn
 from mcp import McpError
-from mcp.types import TextResourceContents
 from starlette.applications import Starlette
 from starlette.routing import Mount
 
@@ -64,22 +63,13 @@ def fastmcp_server():
     return server
 
 
-def run_server(host: str, port: int, path: str | None = None) -> None:
-    try:
-        app = fastmcp_server().http_app(transport="sse", path=path)
-        server = uvicorn.Server(
-            config=uvicorn.Config(app=app, host=host, port=port, log_level="error")
-        )
-        server.run()
-    except Exception as e:
-        print(f"Server error: {e}")
-        sys.exit(1)
-    sys.exit(0)
+def run_server(host: str, port: int, **kwargs) -> None:
+    fastmcp_server().run(host=host, port=port, **kwargs)
 
 
 @pytest.fixture(autouse=True, scope="module")
 def sse_server() -> Generator[str, None, None]:
-    with run_server_in_process(run_server) as url:
+    with run_server_in_process(run_server, transport="sse") as url:
         yield f"{url}/sse"
 
 
@@ -96,29 +86,23 @@ async def test_http_headers(sse_server: str):
         transport=SSETransport(sse_server, headers={"X-DEMO-HEADER": "ABC"})
     ) as client:
         raw_result = await client.read_resource("request://headers")
-        assert isinstance(raw_result[0], TextResourceContents)
-        json_result = json.loads(raw_result[0].text)
+        json_result = json.loads(raw_result[0].text)  # type: ignore[attr-defined]
         assert "x-demo-header" in json_result
         assert json_result["x-demo-header"] == "ABC"
 
 
 def run_nested_server(host: str, port: int) -> None:
-    try:
-        app = fastmcp_server().sse_app(path="/mcp/sse", message_path="/mcp/messages")
-        mount = Starlette(routes=[Mount("/nest-inner", app=app)])
-        mount2 = Starlette(routes=[Mount("/nest-outer", app=mount)])
-        server = uvicorn.Server(
-            config=uvicorn.Config(app=mount2, host=host, port=port, log_level="error")
-        )
-        server.run()
-    except Exception as e:
-        print(f"Server error: {e}")
-        sys.exit(1)
-    sys.exit(0)
+    app = fastmcp_server().sse_app(path="/mcp/sse", message_path="/mcp/messages")
+    mount = Starlette(routes=[Mount("/nest-inner", app=app)])
+    mount2 = Starlette(routes=[Mount("/nest-outer", app=mount)])
+    server = uvicorn.Server(
+        config=uvicorn.Config(app=mount2, host=host, port=port, log_level="error")
+    )
+    server.run()
 
 
 async def test_run_server_on_path():
-    with run_server_in_process(run_server, "/help") as url:
+    with run_server_in_process(run_server, transport="sse", path="/help") as url:
         async with Client(transport=SSETransport(f"{url}/help")) as client:
             result = await client.ping()
             assert result is True

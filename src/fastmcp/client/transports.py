@@ -6,10 +6,20 @@ import os
 import shutil
 import sys
 import warnings
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, TypedDict, TypeVar, cast, overload
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Literal,
+    TypedDict,
+    TypeVar,
+    cast,
+    overload,
+)
 
+import anyio
+import httpx
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.session import (
     ListRootsFnT,
@@ -26,7 +36,7 @@ from mcp.shared.memory import create_connected_server_and_client_session
 from pydantic import AnyUrl
 from typing_extensions import Unpack
 
-from fastmcp.server import FastMCP as FastMCPServer
+from fastmcp.client.auth import OAuth
 from fastmcp.server.dependencies import get_http_headers
 from fastmcp.server.server import FastMCP
 from fastmcp.utilities.logging import get_logger
@@ -39,6 +49,20 @@ logger = get_logger(__name__)
 
 # TypeVar for preserving specific ClientTransport subclass types
 ClientTransportT = TypeVar("ClientTransportT", bound="ClientTransport")
+
+__all__ = [
+    "ClientTransport",
+    "SSETransport",
+    "StreamableHttpTransport",
+    "StdioTransport",
+    "PythonStdioTransport",
+    "FastMCPStdioTransport",
+    "NodeStdioTransport",
+    "UvxStdioTransport",
+    "NpxStdioTransport",
+    "FastMCPTransport",
+    "infer_transport",
+]
 
 
 class SessionKwargs(TypedDict, total=False):
@@ -92,6 +116,10 @@ class ClientTransport(abc.ABC):
         """Close the transport."""
         pass
 
+    def _set_auth(self, auth: httpx.Auth | Literal["oauth"] | str | None):
+        if auth is not None:
+            raise ValueError("This transport does not support auth")
+
 
 class WSTransport(ClientTransport):
     """Transport implementation that connects to an MCP server via WebSockets."""
@@ -131,7 +159,9 @@ class SSETransport(ClientTransport):
         self,
         url: str | AnyUrl,
         headers: dict[str, str] | None = None,
+        auth: httpx.Auth | Literal["oauth"] | str | None = None,
         sse_read_timeout: datetime.timedelta | float | int | None = None,
+        httpx_client_factory: Callable[[], httpx.AsyncClient] | None = None,
     ):
         if isinstance(url, AnyUrl):
             url = str(url)
@@ -139,10 +169,20 @@ class SSETransport(ClientTransport):
             raise ValueError("Invalid HTTP/S URL provided for SSE.")
         self.url = url
         self.headers = headers or {}
+        self._set_auth(auth)
+        self.httpx_client_factory = httpx_client_factory
 
         if isinstance(sse_read_timeout, int | float):
             sse_read_timeout = datetime.timedelta(seconds=sse_read_timeout)
         self.sse_read_timeout = sse_read_timeout
+
+    def _set_auth(self, auth: httpx.Auth | Literal["oauth"] | str | None):
+        if auth == "oauth":
+            auth = OAuth(self.url)
+        elif isinstance(auth, str):
+            self.headers["Authorization"] = auth
+            auth = None
+        self.auth = auth
 
     @contextlib.asynccontextmanager
     async def connect_session(
@@ -165,7 +205,10 @@ class SSETransport(ClientTransport):
             )
             client_kwargs["timeout"] = read_timeout_seconds.total_seconds()
 
-        async with sse_client(self.url, **client_kwargs) as transport:
+        if self.httpx_client_factory is not None:
+            client_kwargs["httpx_client_factory"] = self.httpx_client_factory
+
+        async with sse_client(self.url, auth=self.auth, **client_kwargs) as transport:
             read_stream, write_stream = transport
             async with ClientSession(
                 read_stream, write_stream, **session_kwargs
@@ -183,7 +226,9 @@ class StreamableHttpTransport(ClientTransport):
         self,
         url: str | AnyUrl,
         headers: dict[str, str] | None = None,
+        auth: httpx.Auth | Literal["oauth"] | str | None = None,
         sse_read_timeout: datetime.timedelta | float | int | None = None,
+        httpx_client_factory: Callable[[], httpx.AsyncClient] | None = None,
     ):
         if isinstance(url, AnyUrl):
             url = str(url)
@@ -191,10 +236,20 @@ class StreamableHttpTransport(ClientTransport):
             raise ValueError("Invalid HTTP/S URL provided for Streamable HTTP.")
         self.url = url
         self.headers = headers or {}
+        self._set_auth(auth)
+        self.httpx_client_factory = httpx_client_factory
 
         if isinstance(sse_read_timeout, int | float):
             sse_read_timeout = datetime.timedelta(seconds=sse_read_timeout)
         self.sse_read_timeout = sse_read_timeout
+
+    def _set_auth(self, auth: httpx.Auth | Literal["oauth"] | str | None):
+        if auth == "oauth":
+            auth = OAuth(self.url)
+        elif isinstance(auth, str):
+            self.headers["Authorization"] = auth
+            auth = None
+        self.auth = auth
 
     @contextlib.asynccontextmanager
     async def connect_session(
@@ -214,7 +269,14 @@ class StreamableHttpTransport(ClientTransport):
         if session_kwargs.get("read_timeout_seconds", None) is not None:
             client_kwargs["timeout"] = session_kwargs.get("read_timeout_seconds")
 
-        async with streamablehttp_client(self.url, **client_kwargs) as transport:
+        if self.httpx_client_factory is not None:
+            client_kwargs["httpx_client_factory"] = self.httpx_client_factory
+
+        async with streamablehttp_client(
+            self.url,
+            auth=self.auth,
+            **client_kwargs,
+        ) as transport:
             read_stream, write_stream, _ = transport
             async with ClientSession(
                 read_stream, write_stream, **session_kwargs
@@ -264,8 +326,8 @@ class StdioTransport(ClientTransport):
 
         self._session: ClientSession | None = None
         self._connect_task: asyncio.Task | None = None
-        self._ready_event = asyncio.Event()
-        self._stop_event = asyncio.Event()
+        self._ready_event = anyio.Event()
+        self._stop_event = anyio.Event()
 
     @contextlib.asynccontextmanager
     async def connect_session(
@@ -328,8 +390,8 @@ class StdioTransport(ClientTransport):
 
         # reset variables and events for potential future reconnects
         self._connect_task = None
-        self._stop_event = asyncio.Event()
-        self._ready_event = asyncio.Event()
+        self._stop_event = anyio.Event()
+        self._ready_event = anyio.Event()
 
     async def close(self):
         await self.disconnect()
@@ -592,7 +654,7 @@ class FastMCPTransport(ClientTransport):
     tests or scenarios where client and server run in the same runtime.
     """
 
-    def __init__(self, mcp: FastMCPServer | FastMCP1Server):
+    def __init__(self, mcp: FastMCP | FastMCP1Server):
         """Initialize a FastMCPTransport from a FastMCP server instance."""
 
         # Accept both FastMCP 2.x and FastMCP 1.0 servers. Both expose a
@@ -706,7 +768,7 @@ def infer_transport(transport: ClientTransportT) -> ClientTransportT: ...
 
 
 @overload
-def infer_transport(transport: FastMCPServer) -> FastMCPTransport: ...
+def infer_transport(transport: FastMCP) -> FastMCPTransport: ...
 
 
 @overload
@@ -741,7 +803,7 @@ def infer_transport(transport: Path) -> PythonStdioTransport | NodeStdioTranspor
 
 def infer_transport(
     transport: ClientTransport
-    | FastMCPServer
+    | FastMCP
     | FastMCP1Server
     | AnyUrl
     | Path
@@ -758,7 +820,7 @@ def infer_transport(
 
     The function supports these input types:
     - ClientTransport: Used directly without modification
-    - FastMCPServer or FastMCP1Server: Creates an in-memory FastMCPTransport
+    - FastMCP or FastMCP1Server: Creates an in-memory FastMCPTransport
     - Path or str (file path): Creates PythonStdioTransport (.py) or NodeStdioTransport (.js)
     - AnyUrl or str (URL): Creates StreamableHttpTransport (default) or SSETransport (for /sse endpoints)
     - MCPConfig or dict: Creates MCPConfigTransport, potentially connecting to multiple servers
@@ -796,7 +858,7 @@ def infer_transport(
         return transport
 
     # the transport is a FastMCP server (2.x or 1.0)
-    elif isinstance(transport, FastMCPServer | FastMCP1Server):
+    elif isinstance(transport, FastMCP | FastMCP1Server):
         inferred_transport = FastMCPTransport(mcp=transport)
 
     # the transport is a path to a script

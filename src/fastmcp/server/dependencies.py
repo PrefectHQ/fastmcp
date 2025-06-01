@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, ParamSpec, TypeVar
 
+from mcp.server.auth.middleware.auth_context import get_access_token
+from mcp.server.auth.provider import AccessToken
 from starlette.requests import Request
 
 if TYPE_CHECKING:
@@ -9,6 +11,14 @@ if TYPE_CHECKING:
 
 P = ParamSpec("P")
 R = TypeVar("R")
+
+__all__ = [
+    "get_context",
+    "get_http_request",
+    "get_http_headers",
+    "get_access_token",
+    "AccessToken",
+]
 
 
 # --- Context ---

@@ -1,9 +1,11 @@
+import asyncio
 import datetime
 from contextlib import AsyncExitStack, asynccontextmanager
 from pathlib import Path
-from typing import Any, Generic, cast, overload
+from typing import Any, Generic, Literal, cast, overload
 
 import anyio
+import httpx
 import mcp.types
 from exceptiongroup import catch
 from mcp import ClientSession
@@ -43,6 +45,7 @@ from .transports import (
 
 __all__ = [
     "Client",
+    "SessionKwargs",
     "RootsHandler",
     "RootsList",
     "LogHandler",
@@ -142,11 +145,11 @@ class Client(Generic[ClientTransportT]):
         progress_handler: ProgressHandler | None = None,
         timeout: datetime.timedelta | float | int | None = None,
         init_timeout: datetime.timedelta | float | int | None = None,
+        auth: httpx.Auth | Literal["oauth"] | str | None = None,
     ):
         self.transport = cast(ClientTransportT, infer_transport(transport))
-        self._session: ClientSession | None = None
-        self._exit_stack: AsyncExitStack | None = None
-        self._nesting_counter: int = 0
+        if auth is not None:
+            self.transport._set_auth(auth)
         self._initialize_result: mcp.types.InitializeResult | None = None
 
         if log_handler is None:
@@ -186,6 +189,15 @@ class Client(Generic[ClientTransportT]):
             self._session_kwargs["sampling_callback"] = create_sampling_callback(
                 sampling_handler
             )
+
+        # session context management
+        self._session: ClientSession | None = None
+        self._exit_stack: AsyncExitStack | None = None
+        self._nesting_counter: int = 0
+        self._context_lock = anyio.Lock()
+        self._session_task: asyncio.Task | None = None
+        self._ready_event = anyio.Event()
+        self._stop_event = anyio.Event()
 
     @property
     def session(self) -> ClientSession:
@@ -237,39 +249,75 @@ class Client(Generic[ClientTransportT]):
                 except TimeoutError:
                     raise RuntimeError("Failed to initialize server session")
                 finally:
-                    self._exit_stack = None
                     self._session = None
                     self._initialize_result = None
 
     async def __aenter__(self):
-        if self._nesting_counter == 0:
-            # Create exit stack to manage both context managers
-            stack = AsyncExitStack()
-            await stack.__aenter__()
-
-            await stack.enter_async_context(self._context_manager())
-
-            self._exit_stack = stack
-
-        self._nesting_counter += 1
-
+        await self._connect()
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        self._nesting_counter -= 1
+        await self._disconnect()
 
-        if self._nesting_counter == 0:
-            # Exit the stack which will handle cleaning up the session
-            if self._exit_stack is not None:
-                try:
-                    await self._exit_stack.__aexit__(exc_type, exc_val, exc_tb)
-                finally:
-                    self._exit_stack = None
+    async def _connect(self):
+        # ensure only one session is running at a time to avoid race conditions
+        async with self._context_lock:
+            need_to_start = self._session_task is None or self._session_task.done()
+            if need_to_start:
+                self._stop_event = anyio.Event()
+                self._ready_event = anyio.Event()
+                self._session_task = asyncio.create_task(self._session_runner())
+            await self._ready_event.wait()
+            self._nesting_counter += 1
+        return self
 
-    async def close(self):
-        await self.transport.close()
+    async def _disconnect(self, force: bool = False):
+        # ensure only one session is running at a time to avoid race conditions
+        async with self._context_lock:
+            # if we are forcing a disconnect, reset the nesting counter
+            if force:
+                self._nesting_counter = 0
+
+            # otherwise decrement to check if we are done nesting
+            else:
+                self._nesting_counter = max(0, self._nesting_counter - 1)
+
+            # if we are still nested, return
+            if self._nesting_counter > 0:
+                return
+
+            # stop the active seesion
+            if self._session_task is None:
+                return
+            self._stop_event.set()
+            runner_task = self._session_task
+            self._session_task = None
+
+        # wait for the session to finish
+        if runner_task:
+            await runner_task
+
+        # Reset for future reconnects
+        self._stop_event = anyio.Event()
+        self._ready_event = anyio.Event()
         self._session = None
         self._initialize_result = None
+
+    async def _session_runner(self):
+        async with AsyncExitStack() as stack:
+            try:
+                await stack.enter_async_context(self._context_manager())
+                # Session/context is now ready
+                self._ready_event.set()
+                # Wait until disconnect/stop is requested
+                await self._stop_event.wait()
+            finally:
+                # On exit, ensure ready event is set (idempotent)
+                self._ready_event.set()
+
+    async def close(self):
+        await self._disconnect(force=True)
+        await self.transport.close()
 
     # --- MCP Client Methods ---
 

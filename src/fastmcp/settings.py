@@ -1,15 +1,15 @@
 from __future__ import annotations as _annotations
 
 import inspect
-from typing import TYPE_CHECKING, Annotated, Literal
+from pathlib import Path
+from typing import Annotated, Literal
 
-from mcp.server.auth.settings import AuthSettings
 from pydantic import Field, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import (
+    BaseSettings,
+    SettingsConfigDict,
+)
 from typing_extensions import Self
-
-if TYPE_CHECKING:
-    pass
 
 LOG_LEVEL = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 
@@ -26,6 +26,8 @@ class Settings(BaseSettings):
         env_nested_delimiter="__",
         nested_model_default_partial_update=True,
     )
+
+    home: Path = Path.home() / ".fastmcp"
 
     test_mode: bool = False
     log_level: LOG_LEVEL = "INFO"
@@ -171,13 +173,30 @@ class ServerSettings(BaseSettings):
     # cache settings (for checking mounted servers)
     cache_expiration_seconds: float = 0
 
-    auth: AuthSettings | None = None
-
     # StreamableHTTP settings
     json_response: bool = False
     stateless_http: bool = (
         False  # If True, uses true stateless mode (new transport per request)
     )
+
+    # Auth settings
+    default_auth_provider: Annotated[
+        Literal["bearer_env"] | None,
+        Field(
+            description=inspect.cleandoc(
+                """
+                Configure the authentication provider. This setting is intended only to
+                be used for remote confirugation of providers that fully support
+                environment variable configuration.
+
+                If None, no automatic configuration will take place.
+
+                This setting is *always* overriden by any auth provider passed to the
+                FastMCP constructor.
+                """
+            ),
+        ),
+    ] = None
 
 
 settings = Settings()

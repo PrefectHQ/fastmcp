@@ -6,7 +6,6 @@ from collections.abc import Generator
 import pytest
 import uvicorn
 from mcp import McpError
-from mcp.types import TextResourceContents
 from starlette.applications import Starlette
 from starlette.routing import Mount
 
@@ -64,28 +63,33 @@ def fastmcp_server():
     return server
 
 
-def run_server(host: str, port: int) -> None:
-    try:
-        app = fastmcp_server().http_app()
-        server = uvicorn.Server(
-            config=uvicorn.Config(
-                app=app,
-                host=host,
-                port=port,
-                log_level="error",
-                lifespan="on",
-            )
+def run_server(host: str, port: int, **kwargs) -> None:
+    fastmcp_server().run(host=host, port=port, **kwargs)
+
+
+def run_nested_server(host: str, port: int) -> None:
+    mcp_app = fastmcp_server().http_app(path="/final/mcp")
+
+    mount = Starlette(routes=[Mount("/nest-inner", app=mcp_app)])
+    mount2 = Starlette(
+        routes=[Mount("/nest-outer", app=mount)],
+        lifespan=mcp_app.lifespan,
+    )
+    server = uvicorn.Server(
+        config=uvicorn.Config(
+            app=mount2,
+            host=host,
+            port=port,
+            log_level="error",
+            lifespan="on",
         )
-        server.run()
-    except Exception as e:
-        print(f"Server error: {e}")
-        sys.exit(1)
-    sys.exit(0)
+    )
+    server.run()
 
 
 @pytest.fixture(scope="module")
 def streamable_http_server() -> Generator[str, None, None]:
-    with run_server_in_process(run_server) as url:
+    with run_server_in_process(run_server, transport="streamable-http") as url:
         yield f"{url}/mcp"
 
 
@@ -106,35 +110,9 @@ async def test_http_headers(streamable_http_server: str):
         )
     ) as client:
         raw_result = await client.read_resource("request://headers")
-        assert isinstance(raw_result[0], TextResourceContents)
-        json_result = json.loads(raw_result[0].text)
+        json_result = json.loads(raw_result[0].text)  # type: ignore[attr-defined]
         assert "x-demo-header" in json_result
         assert json_result["x-demo-header"] == "ABC"
-
-
-def run_nested_server(host: str, port: int) -> None:
-    try:
-        mcp_app = fastmcp_server().http_app(path="/final/mcp")
-
-        mount = Starlette(routes=[Mount("/nest-inner", app=mcp_app)])
-        mount2 = Starlette(
-            routes=[Mount("/nest-outer", app=mount)],
-            lifespan=mcp_app.lifespan,
-        )
-        server = uvicorn.Server(
-            config=uvicorn.Config(
-                app=mount2,
-                host=host,
-                port=port,
-                log_level="error",
-                lifespan="on",
-            )
-        )
-        server.run()
-    except Exception as e:
-        print(f"Server error: {e}")
-        sys.exit(1)
-    sys.exit(0)
 
 
 async def test_nested_streamable_http_server_resolves_correctly():
