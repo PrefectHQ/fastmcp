@@ -23,6 +23,16 @@ class OAuthProvider(
         revocation_options: RevocationOptions | None = None,
         required_scopes: list[str] | None = None,
     ):
+        """
+        Initialize the OAuth provider.
+
+        Args:
+            issuer_url: The URL of the OAuth issuer.
+            service_documentation_url: The URL of the service documentation.
+            client_registration_options: The client registration options.
+            revocation_options: The revocation options.
+            required_scopes: Scopes that are required for all requests.
+        """
         super().__init__()
         if isinstance(issuer_url, str):
             issuer_url = AnyHttpUrl(issuer_url)

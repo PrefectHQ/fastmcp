@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any, Literal
 import uvicorn
 
 from fastmcp.settings import settings
+from fastmcp.utilities.http import find_available_port
 
 if TYPE_CHECKING:
     from fastmcp.server.server import FastMCP
@@ -84,9 +85,7 @@ def run_server_in_process(
         The server URL.
     """
     host = "127.0.0.1"
-    with socket.socket() as s:
-        s.bind((host, 0))
-        port = s.getsockname()[1]
+    port = find_available_port()
 
     proc = multiprocessing.Process(
         target=server_fn, args=(host, port, *args), daemon=True
