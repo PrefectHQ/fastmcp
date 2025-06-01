@@ -12,6 +12,7 @@ from fastmcp.server.server import (
     has_resource_prefix,
     remove_resource_prefix,
 )
+from fastmcp.tools.tool import Tool
 
 
 class TestCreateServer:
@@ -92,6 +93,24 @@ class TestTools:
 
         with pytest.raises(NotFoundError, match="Unknown tool: adder"):
             await mcp._mcp_call_tool("adder", {"a": 1, "b": 2})
+
+    async def test_add_tool_at_init(self):
+        def f(x: int) -> int:
+            return x + 1
+
+        def g(x: int) -> int:
+            """add two to a number"""
+            return x + 2
+
+        g_tool = Tool.from_function(g, name="g-tool")
+
+        mcp = FastMCP(tools=[f, g_tool])
+
+        tools = await mcp.get_tools()
+        assert len(tools) == 2
+        assert tools["f"].name == "f"
+        assert tools["g-tool"].name == "g-tool"
+        assert tools["g-tool"].description == "add two to a number"
 
 
 class TestToolDecorator:

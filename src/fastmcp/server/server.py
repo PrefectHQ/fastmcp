@@ -127,6 +127,7 @@ class FastMCP(Generic[LifespanResultT]):
         on_duplicate_prompts: DuplicateBehavior | None = None,
         resource_prefix_format: Literal["protocol", "path"] | None = None,
         mask_error_details: bool | None = None,
+        tools: list[Tool | Callable[..., Any]] | None = None,
         **settings: Any,
     ):
         if settings:
@@ -186,6 +187,13 @@ class FastMCP(Generic[LifespanResultT]):
         )
 
         self.auth = auth
+
+        if tools:
+            for tool in tools:
+                if isinstance(tool, Tool):
+                    self._tool_manager.add_tool(tool)
+                else:
+                    self.add_tool(tool)
 
         # Set up MCP protocol handlers
         self._setup_handlers()
