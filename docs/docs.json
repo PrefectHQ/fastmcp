@@ -46,10 +46,17 @@
                 "group": "Servers",
                 "pages": [
                     "servers/fastmcp",
-                    "servers/tools",
-                    "servers/resources",
-                    "servers/prompts",
-                    "servers/context",
+                    {
+                        "group": "Core Components",
+                        "hidden": false,
+                        "icon": "toolbox",
+                        "pages": [
+                            "servers/tools",
+                            "servers/resources",
+                            "servers/prompts",
+                            "servers/context"
+                        ]
+                    },
                     "servers/openapi",
                     "servers/proxy",
                     "servers/composition"
