@@ -9,7 +9,7 @@ import fastmcp.client.auth  # Import module, not the function directly
 from fastmcp.client import Client
 from fastmcp.client.transports import StreamableHttpTransport
 from fastmcp.server.auth.auth import ClientRegistrationOptions
-from fastmcp.server.auth.in_memory_provider import InMemoryOAuthProvider as InMemory
+from fastmcp.server.auth.providers.in_memory import InMemoryOAuthProvider
 from fastmcp.server.server import FastMCP
 from fastmcp.utilities.tests import run_server_in_process
 
@@ -18,7 +18,7 @@ def fastmcp_server(issuer_url: str):
     """Create a FastMCP server with OAuth authentication."""
     server = FastMCP(
         "TestServer",
-        auth=InMemory(
+        auth=InMemoryOAuthProvider(
             issuer_url=issuer_url,
             client_registration_options=ClientRegistrationOptions(enabled=True),
         ),

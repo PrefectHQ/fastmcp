@@ -45,6 +45,7 @@ dev = [
     "ipython>=8.12.3",
     "pdbpp>=0.10.3",
     "pre-commit",
+    "pyinstrument>=5.0.2",
     "pyright>=1.1.389",
     "pytest>=8.3.3",
     "pytest-asyncio>=0.23.5",
