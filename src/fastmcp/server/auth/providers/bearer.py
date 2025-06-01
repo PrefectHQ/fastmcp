@@ -177,7 +177,7 @@ class BearerAuthProvider(OAuthProvider):
             raise ValueError("Provide either public_key or jwks_uri, not both")
 
         super().__init__(
-            issuer_url=issuer or "http://fastmcp.example.com",
+            issuer_url=issuer or "https://fastmcp.example.com",
             client_registration_options=ClientRegistrationOptions(enabled=False),
             revocation_options=RevocationOptions(enabled=False),
             required_scopes=required_scopes,

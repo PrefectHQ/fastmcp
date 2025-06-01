@@ -1,4 +1,5 @@
 from collections.abc import Generator
+from typing import Any
 
 import httpx
 import pytest
@@ -32,11 +33,17 @@ def bearer_provider(rsa_key_pair: RSAKeyPair) -> BearerAuthProvider:
     )
 
 
-def run_mcp_server(public_key: str, host: str, port: int, **kwargs) -> None:
+def run_mcp_server(
+    public_key: str,
+    host: str,
+    port: int,
+    auth_kwargs: dict[str, Any] | None = None,
+    run_kwargs: dict[str, Any] | None = None,
+) -> None:
     mcp = FastMCP(
         auth=BearerAuthProvider(
-            issuer="https://test.example.com",
             public_key=public_key,
+            **auth_kwargs or {},
         )
     )
 
@@ -44,13 +51,15 @@ def run_mcp_server(public_key: str, host: str, port: int, **kwargs) -> None:
     def add(a: int, b: int) -> int:
         return a + b
 
-    mcp.run(host=host, port=port, **kwargs)
+    mcp.run(host=host, port=port, **run_kwargs or {})
 
 
 @pytest.fixture(scope="module")
 def mcp_server_url(rsa_key_pair: RSAKeyPair) -> Generator[str]:
     with run_server_in_process(
-        run_mcp_server, public_key=rsa_key_pair.public_key, transport="streamable-http"
+        run_mcp_server,
+        public_key=rsa_key_pair.public_key,
+        run_kwargs=dict(transport="streamable-http"),
     ) as url:
         yield f"{url}/mcp"
 
@@ -75,7 +84,8 @@ class TestRSAKeyPair:
     def test_create_basic_token(self, rsa_key_pair: RSAKeyPair):
         """Test basic token creation."""
         token = rsa_key_pair.create_token(
-            subject="test-user", issuer="https://test.example.com"
+            subject="test-user",
+            issuer="https://test.example.com",
         )
 
         assert isinstance(token, str)
@@ -359,8 +369,38 @@ class TestFastMCPBearerAuth:
     async def test_unauthorized_access(self, mcp_server_url: str):
         with pytest.raises(httpx.HTTPStatusError, match="401"):
             async with Client(mcp_server_url) as client:
-                await client.ping()
+                tools = await client.list_tools()  # noqa: F841
+        assert "tools" not in locals()
 
     async def test_authorized_access(self, mcp_server_url: str, bearer_token):
         async with Client(mcp_server_url, auth=BearerAuth(bearer_token)) as client:
-            await client.ping()
+            tools = await client.list_tools()  # noqa: F841
+        assert tools
+
+    async def test_invalid_token_raises_401(self, mcp_server_url: str):
+        with pytest.raises(httpx.HTTPStatusError, match="401"):
+            async with Client(mcp_server_url, auth=BearerAuth("invalid")) as client:
+                tools = await client.list_tools()  # noqa: F841
+        assert "tools" not in locals()
+
+    async def test_expired_token(self, mcp_server_url: str, rsa_key_pair: RSAKeyPair):
+        token = rsa_key_pair.create_token(
+            subject="test-user",
+            issuer="https://test.example.com",
+            audience="https://api.example.com",
+            expires_in_seconds=-3600,
+        )
+
+        with pytest.raises(httpx.HTTPStatusError, match="401"):
+            async with Client(mcp_server_url, auth=BearerAuth(token)) as client:
+                tools = await client.list_tools()  # noqa: F841
+        assert "tools" not in locals()
+
+    async def test_token_with_bad_signature(self, mcp_server_url: str):
+        rsa_key_pair = RSAKeyPair.generate()
+        token = rsa_key_pair.create_token()
+
+        with pytest.raises(httpx.HTTPStatusError, match="401"):
+            async with Client(mcp_server_url, auth=BearerAuth(token)) as client:
+                tools = await client.list_tools()  # noqa: F841
+        assert "tools" not in locals()
