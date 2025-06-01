@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import uvicorn
 
+import fastmcp
 from fastmcp.settings import settings
 from fastmcp.utilities.http import find_available_port
 
@@ -72,14 +73,19 @@ def _run_server(mcp_server: FastMCP, transport: Literal["sse"], port: int) -> No
 
 @contextmanager
 def run_server_in_process(
-    server_fn: Callable[..., None], *args
+    server_fn: FastMCP | Callable[..., None],
+    *args,
+    provide_host_and_port: bool = True,
+    **kwargs,
 ) -> Generator[str, None, None]:
     """
-    Context manager that runs a Starlette app in a separate process and returns the
-    server URL. When the context manager is exited, the server process is killed.
+    Context manager that runs a FastMCP server (or a function that runs a FastMCP server) in a separate process and
+    returns the server URL. When the context manager is exited, the server process is killed.
 
     Args:
-        app: The Starlette app to run.
+        server_fn: The FastMCP server to run, or a function that runs a FastMCP
+            server. If a FastMCP server is provided, its .run() method is called
+            with the provided arguments and keyword arguments.
 
     Returns:
         The server URL.
@@ -87,8 +93,14 @@ def run_server_in_process(
     host = "127.0.0.1"
     port = find_available_port()
 
+    if isinstance(server_fn, fastmcp.FastMCP):
+        server_fn = server_fn.run
+
+    if provide_host_and_port:
+        kwargs |= {"host": host, "port": port}
+
     proc = multiprocessing.Process(
-        target=server_fn, args=(host, port, *args), daemon=True
+        target=server_fn, args=args, kwargs=kwargs, daemon=True
     )
     proc.start()
 
