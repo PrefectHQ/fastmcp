@@ -10,7 +10,6 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import uvicorn
 
-import fastmcp
 from fastmcp.settings import settings
 from fastmcp.utilities.http import find_available_port
 
@@ -73,28 +72,27 @@ def _run_server(mcp_server: FastMCP, transport: Literal["sse"], port: int) -> No
 
 @contextmanager
 def run_server_in_process(
-    server_fn: FastMCP | Callable[..., None],
+    server_fn: Callable[..., None],
     *args,
     provide_host_and_port: bool = True,
     **kwargs,
 ) -> Generator[str, None, None]:
     """
-    Context manager that runs a FastMCP server (or a function that runs a FastMCP server) in a separate process and
+    Context manager that runs a FastMCP server in a separate process and
     returns the server URL. When the context manager is exited, the server process is killed.
 
     Args:
-        server_fn: The FastMCP server to run, or a function that runs a FastMCP
-            server. If a FastMCP server is provided, its .run() method is called
-            with the provided arguments and keyword arguments.
+        server_fn: The function that runs a FastMCP server. FastMCP servers are
+            not pickleable, so we need a function that creates and runs one.
+        *args: Arguments to pass to the server function.
+        provide_host_and_port: Whether to provide the host and port to the server function as kwargs.
+        **kwargs: Keyword arguments to pass to the server function.
 
     Returns:
         The server URL.
     """
     host = "127.0.0.1"
     port = find_available_port()
-
-    if isinstance(server_fn, fastmcp.FastMCP):
-        server_fn = server_fn.run
 
     if provide_host_and_port:
         kwargs |= {"host": host, "port": port}
