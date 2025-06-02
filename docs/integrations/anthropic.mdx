@@ -1,21 +1,20 @@
 ---
 title: Anthropic
 sidebarTitle: Anthropic
-description: Integrate FastMCP servers with the Anthropic Messages API
+description: Access FastMCP servers from the Anthropic Messages API
 icon: message-smile
 ---
 
 import { VersionBadge } from "/snippets/version-badge.mdx"
 
-Anthropic's Claude supports MCP servers through the MCP connector feature in the Messages API, allowing you to extend AI capabilities with custom tools from remote MCP servers.
+Anthropic supports MCP servers through the [MCP connector](https://docs.anthropic.com/en/docs/agents-and-tools/mcp-connector) feature in the Messages API, allowing you to extend AI capabilities with custom tools from remote MCP servers.
 
 ## Messages API
 
-Anthropic's [Messages API](https://docs.anthropic.com/en/api/messages) supports [MCP servers](https://docs.anthropic.com/en/docs/agents-and-tools/mcp-connector) as remote tool sources through the MCP connector feature.
-
+Anthropic's [Messages API](https://docs.anthropic.com/en/api/messages) supports MCP servers as remote tool sources. This tutorial will show you how to create a FastMCP server and deploy it to a public URL, then how to call it from the Messages API.
 
 <Tip>
-Currently, the MCP connector only accesses **tools** from MCP servers—it queries the `list_tools` endpoint and exposes those functions to Claude. Other MCP features like resources and prompts are not currently supported.
+Currently, the MCP connector only accesses **tools** from MCP servers—it queries the `list_tools` endpoint and exposes those functions to Claude. Other MCP features like resources and prompts are not currently supported. You can read more about the MCP connector in the [Anthropic documentation](https://docs.anthropic.com/en/docs/agents-and-tools/mcp-connector).
 </Tip>
 
 ### Create a Server
@@ -67,9 +66,9 @@ To use the Messages API with MCP servers, you'll need to install the Anthropic P
 pip install anthropic
 ```
 
-Here is an example of how to call your server from Python. Note that you'll need to replace `https://your-server-url.com` with the actual URL of your server. In addition, we use `/sse` as the endpoint because we deployed an SSE server with the default path; you may need to use a different endpoint if you customized your server's deployment.
+Here is an example of how to call your server from Python. Note that you'll need to replace `https://your-server-url.com` with the actual URL of your server. In addition, we use `/sse` as the endpoint because we deployed an SSE server with the default path; you may need to use a different endpoint if you customized your server's deployment. **At this time you must also include the `extra_headers` parameter with the `anthropic-beta` header.**
 
-```python {4, 12-19}
+```python {5, 13-22}
 import anthropic
 from rich import print
 
@@ -191,7 +190,7 @@ Error code: 400 - {
 
 To authenticate the client, you can pass the token using the `authorization_token` parameter in your MCP server configuration:
 
-```python {7, 17}
+```python {8, 21}
 import anthropic
 from rich import print
 
