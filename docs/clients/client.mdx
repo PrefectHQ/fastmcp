@@ -345,7 +345,7 @@ For consistent behavior across all transports, we recommend explicitly setting t
 
 #### Error Handling
 
-When a `call_tool` request results in an error on the server (e.g., the tool function raised an exception), the `client.call_tool()` method will raise a `fastmcp.client.ClientError`.
+When a `call_tool` request results in an error on the server (e.g., the tool function raised an exception), the `client.call_tool()` method will raise a `fastmcp.exceptions.ClientError`.
 
 ```python
 async def safe_call_tool():
