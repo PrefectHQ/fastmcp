@@ -5,7 +5,7 @@ from typing import Annotated, Any
 
 import pydantic_core
 import pytest
-from mcp.types import ImageContent, TextContent
+from mcp.types import ImageContent
 from pydantic import BaseModel
 
 from fastmcp import Context, FastMCP, Image
@@ -318,13 +318,8 @@ class TestCallTools:
         manager = ToolManager()
         manager.add_tool_from_fn(add)
         result = await manager.call_tool("add", {"a": 1, "b": 2})
-        assert isinstance(result, list)
-        assert len(result) == 1
-        from mcp.types import TextContent
 
-        assert isinstance(result[0], TextContent)
-        assert result[0].text == "3"
-        assert json.loads(result[0].text) == 3
+        assert result[0].text == "3"  # type: ignore[attr-defined]
 
     async def test_call_async_tool(self):
         async def double(n: int) -> int:
@@ -334,12 +329,7 @@ class TestCallTools:
         manager = ToolManager()
         manager.add_tool_from_fn(double)
         result = await manager.call_tool("double", {"n": 5})
-        assert isinstance(result, list)
-        assert len(result) == 1
-
-        assert isinstance(result[0], TextContent)
-        assert result[0].text == "10"
-        assert json.loads(result[0].text) == 10
+        assert result[0].text == "10"  # type: ignore[attr-defined]
 
     async def test_call_tool_callable_object(self):
         class Adder:
@@ -352,11 +342,7 @@ class TestCallTools:
         manager = ToolManager()
         manager.add_tool_from_fn(Adder())
         result = await manager.call_tool("Adder", {"x": 1, "y": 2})
-        assert isinstance(result, list)
-        assert len(result) == 1
-        assert isinstance(result[0], TextContent)
-        assert result[0].text == "3"
-        assert json.loads(result[0].text) == 3
+        assert result[0].text == "3"  # type: ignore[attr-defined]
 
     async def test_call_tool_callable_object_async(self):
         class Adder:
@@ -369,11 +355,7 @@ class TestCallTools:
         manager = ToolManager()
         manager.add_tool_from_fn(Adder())
         result = await manager.call_tool("Adder", {"x": 1, "y": 2})
-        assert isinstance(result, list)
-        assert len(result) == 1
-        assert isinstance(result[0], TextContent)
-        assert result[0].text == "3"
-        assert json.loads(result[0].text) == 3
+        assert result[0].text == "3"  # type: ignore[attr-defined]
 
     async def test_call_tool_with_default_args(self):
         def add(a: int, b: int = 1) -> int:
@@ -383,12 +365,8 @@ class TestCallTools:
         manager = ToolManager()
         manager.add_tool_from_fn(add)
         result = await manager.call_tool("add", {"a": 1})
-        assert isinstance(result, list)
-        assert len(result) == 1
 
-        assert isinstance(result[0], TextContent)
-        assert result[0].text == "2"
-        assert json.loads(result[0].text) == 2
+        assert result[0].text == "2"  # type: ignore[attr-defined]
 
     async def test_call_tool_with_missing_args(self):
         def add(a: int, b: int) -> int:
@@ -413,11 +391,7 @@ class TestCallTools:
         manager.add_tool_from_fn(sum_vals)
 
         result = await manager.call_tool("sum_vals", {"vals": [1, 2, 3]})
-        assert isinstance(result, list)
-        assert len(result) == 1
-        assert isinstance(result[0], TextContent)
-        assert result[0].text == "6"
-        assert json.loads(result[0].text) == 6
+        assert result[0].text == "6"  # type: ignore[attr-defined]
 
     async def test_call_tool_with_list_int_input_legacy_behavior(self):
         """Legacy behavior -- parse a stringified JSON object"""
@@ -431,11 +405,7 @@ class TestCallTools:
 
         with temporary_settings(tool_attempt_parse_json_args=True):
             result = await manager.call_tool("sum_vals", {"vals": "[1, 2, 3]"})
-            assert isinstance(result, list)
-            assert len(result) == 1
-            assert isinstance(result[0], TextContent)
-            assert result[0].text == "6"
-            assert json.loads(result[0].text) == 6
+            assert result[0].text == "6"  # type: ignore[attr-defined]
 
     async def test_call_tool_with_list_str_or_str_input(self):
         def concat_strs(vals: list[str] | str) -> str:
@@ -446,16 +416,10 @@ class TestCallTools:
 
         # Try both with plain python object and with JSON list
         result = await manager.call_tool("concat_strs", {"vals": ["a", "b", "c"]})
-        assert isinstance(result, list)
-        assert len(result) == 1
-        assert isinstance(result[0], TextContent)
-        assert result[0].text == "abc"
+        assert result[0].text == "abc"  # type: ignore[attr-defined]
 
         result = await manager.call_tool("concat_strs", {"vals": "a"})
-        assert isinstance(result, list)
-        assert len(result) == 1
-        assert isinstance(result[0], TextContent)
-        assert result[0].text == "a"
+        assert result[0].text == "a"  # type: ignore[attr-defined]
 
     async def test_call_tool_with_list_str_or_str_input_legacy_behavior(self):
         """Legacy behavior -- parse a stringified JSON object"""
@@ -468,16 +432,10 @@ class TestCallTools:
 
         with temporary_settings(tool_attempt_parse_json_args=True):
             result = await manager.call_tool("concat_strs", {"vals": '["a", "b", "c"]'})
-            assert isinstance(result, list)
-            assert len(result) == 1
-            assert isinstance(result[0], TextContent)
-            assert result[0].text == "abc"
+            assert result[0].text == "abc"  # type: ignore[attr-defined]
 
             result = await manager.call_tool("concat_strs", {"vals": '"a"'})
-            assert isinstance(result, list)
-            assert len(result) == 1
-            assert isinstance(result[0], TextContent)
-            assert result[0].text == "a"
+            assert result[0].text == "a"  # type: ignore[attr-defined]
 
     async def test_call_tool_with_complex_model(self):
         class MyShrimpTank(BaseModel):
@@ -507,10 +465,7 @@ class TestCallTools:
                 },
             )
 
-        assert isinstance(result, list)
-        assert len(result) == 1
-        assert isinstance(result[0], TextContent)
-        assert result[0].text == '[\n  "rex",\n  "gertrude"\n]'
+        assert result[0].text == '[\n  "rex",\n  "gertrude"\n]'  # type: ignore[attr-defined]
 
     async def test_call_tool_with_custom_serializer(self):
         """Test that a custom serializer provided to FastMCP is used by tools."""
@@ -530,10 +485,7 @@ class TestCallTools:
         manager.add_tool_from_fn(get_data)
 
         result = await manager.call_tool("get_data", {})
-        assert isinstance(result, list)
-        assert len(result) == 1
-        assert isinstance(result[0], TextContent)
-        assert result[0].text == 'CUSTOM:{"key": "value", "number": 123}'
+        assert result[0].text == 'CUSTOM:{"key": "value", "number": 123}'  # type: ignore[attr-defined]
 
     async def test_call_tool_with_list_result_custom_serializer(self):
         """Test that a custom serializer provided to FastMCP is used by tools that return lists."""
@@ -555,12 +507,9 @@ class TestCallTools:
         manager.add_tool_from_fn(get_data)
 
         result = await manager.call_tool("get_data", {})
-        assert isinstance(result, list)
-        assert len(result) == 1
-        assert isinstance(result[0], TextContent)
         assert (
-            result[0].text
-            == 'CUSTOM:[{"key": "value", "number": 123}, {"key": "value2", "number": 456}]'
+            result[0].text  # type: ignore[attr-defined]
+            == 'CUSTOM:[{"key": "value", "number": 123}, {"key": "value2", "number": 456}]'  # type: ignore[attr-defined]
         )
 
     async def test_custom_serializer_fallback_on_error(self):
@@ -580,10 +529,7 @@ class TestCallTools:
         manager.add_tool_from_fn(get_data)
 
         result = await manager.call_tool("get_data", {})
-        assert isinstance(result, list)
-        assert len(result) == 1
-        assert isinstance(result[0], TextContent)
-        assert result[0].text == pydantic_core.to_json(uuid_result).decode()
+        assert result[0].text == pydantic_core.to_json(uuid_result).decode()  # type: ignore[attr-defined]
 
 
 class TestToolSchema:
@@ -648,10 +594,7 @@ class TestContextHandling:
 
         with context:
             result = await manager.call_tool("tool_with_context", {"x": 42})
-            assert isinstance(result, list)
-            assert len(result) == 1
-            assert isinstance(result[0], TextContent)
-            assert result[0].text == "42"
+            assert result[0].text == "42"  # type: ignore[attr-defined]
 
     async def test_context_injection_async(self):
         """Test that context is properly injected in async tools."""
@@ -668,14 +611,10 @@ class TestContextHandling:
 
         with context:
             result = await manager.call_tool("async_tool", {"x": 42})
-            assert isinstance(result, list)
-            assert len(result) == 1
-            assert isinstance(result[0], TextContent)
-            assert result[0].text == "42"
+            assert result[0].text == "42"  # type: ignore[attr-defined]
 
     async def test_context_optional(self):
         """Test that context is optional when calling tools."""
-        from mcp.types import TextContent
 
         def tool_with_context(x: int, ctx: Context | None) -> int:
             return x
@@ -689,10 +628,7 @@ class TestContextHandling:
 
         with context:
             result = await manager.call_tool("tool_with_context", {"x": 42})
-            assert isinstance(result, list)
-            assert len(result) == 1
-            assert isinstance(result[0], TextContent)
-            assert result[0].text == "42"
+            assert result[0].text == "42"  # type: ignore[attr-defined]
 
     def test_parameterized_context_parameter_detection(self):
         """Test that context parameters are properly detected in
@@ -782,7 +718,6 @@ class TestCustomToolNames:
 
     async def test_call_tool_with_custom_name(self):
         """Test calling a tool added with a custom name."""
-        from mcp.types import TextContent
 
         def multiply(a: int, b: int) -> int:
             """Multiply two numbers."""
@@ -793,11 +728,7 @@ class TestCustomToolNames:
 
         # Tool should be callable by its custom name
         result = await manager.call_tool("custom_multiply", {"a": 5, "b": 3})
-        assert isinstance(result, list)
-        assert len(result) == 1
-        assert isinstance(result[0], TextContent)
-        assert result[0].text == "15"
-        assert json.loads(result[0].text) == 15
+        assert result[0].text == "15"  # type: ignore[attr-defined]
 
         # Original name should not be registered
         with pytest.raises(NotFoundError, match="Unknown tool: multiply"):

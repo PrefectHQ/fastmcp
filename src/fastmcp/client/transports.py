@@ -18,6 +18,7 @@ from typing import (
     overload,
 )
 
+import anyio
 import httpx
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.session import (
@@ -35,8 +36,7 @@ from mcp.shared.memory import create_connected_server_and_client_session
 from pydantic import AnyUrl
 from typing_extensions import Unpack
 
-from fastmcp.client.auth import OAuth
-from fastmcp.server import FastMCP as FastMCPServer
+from fastmcp.client.auth.oauth import OAuth
 from fastmcp.server.dependencies import get_http_headers
 from fastmcp.server.server import FastMCP
 from fastmcp.utilities.logging import get_logger
@@ -54,7 +54,6 @@ __all__ = [
     "ClientTransport",
     "SSETransport",
     "StreamableHttpTransport",
-    "FastMCPServer",
     "StdioTransport",
     "PythonStdioTransport",
     "FastMCPStdioTransport",
@@ -327,8 +326,8 @@ class StdioTransport(ClientTransport):
 
         self._session: ClientSession | None = None
         self._connect_task: asyncio.Task | None = None
-        self._ready_event = asyncio.Event()
-        self._stop_event = asyncio.Event()
+        self._ready_event = anyio.Event()
+        self._stop_event = anyio.Event()
 
     @contextlib.asynccontextmanager
     async def connect_session(
@@ -391,8 +390,8 @@ class StdioTransport(ClientTransport):
 
         # reset variables and events for potential future reconnects
         self._connect_task = None
-        self._stop_event = asyncio.Event()
-        self._ready_event = asyncio.Event()
+        self._stop_event = anyio.Event()
+        self._ready_event = anyio.Event()
 
     async def close(self):
         await self.disconnect()
@@ -655,7 +654,7 @@ class FastMCPTransport(ClientTransport):
     tests or scenarios where client and server run in the same runtime.
     """
 
-    def __init__(self, mcp: FastMCPServer | FastMCP1Server):
+    def __init__(self, mcp: FastMCP | FastMCP1Server):
         """Initialize a FastMCPTransport from a FastMCP server instance."""
 
         # Accept both FastMCP 2.x and FastMCP 1.0 servers. Both expose a
@@ -769,7 +768,7 @@ def infer_transport(transport: ClientTransportT) -> ClientTransportT: ...
 
 
 @overload
-def infer_transport(transport: FastMCPServer) -> FastMCPTransport: ...
+def infer_transport(transport: FastMCP) -> FastMCPTransport: ...
 
 
 @overload
@@ -804,7 +803,7 @@ def infer_transport(transport: Path) -> PythonStdioTransport | NodeStdioTranspor
 
 def infer_transport(
     transport: ClientTransport
-    | FastMCPServer
+    | FastMCP
     | FastMCP1Server
     | AnyUrl
     | Path
@@ -821,7 +820,7 @@ def infer_transport(
 
     The function supports these input types:
     - ClientTransport: Used directly without modification
-    - FastMCPServer or FastMCP1Server: Creates an in-memory FastMCPTransport
+    - FastMCP or FastMCP1Server: Creates an in-memory FastMCPTransport
     - Path or str (file path): Creates PythonStdioTransport (.py) or NodeStdioTransport (.js)
     - AnyUrl or str (URL): Creates StreamableHttpTransport (default) or SSETransport (for /sse endpoints)
     - MCPConfig or dict: Creates MCPConfigTransport, potentially connecting to multiple servers
@@ -859,7 +858,7 @@ def infer_transport(
         return transport
 
     # the transport is a FastMCP server (2.x or 1.0)
-    elif isinstance(transport, FastMCPServer | FastMCP1Server):
+    elif isinstance(transport, FastMCP | FastMCP1Server):
         inferred_transport = FastMCPTransport(mcp=transport)
 
     # the transport is a path to a script

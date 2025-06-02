@@ -48,6 +48,7 @@ from fastmcp.prompts.prompt import PromptResult
 from fastmcp.resources import Resource, ResourceManager
 from fastmcp.resources.template import ResourceTemplate
 from fastmcp.server.auth.auth import OAuthProvider
+from fastmcp.server.auth.providers.bearer_env import EnvBearerAuthProvider
 from fastmcp.server.http import (
     StarletteWithLifespan,
     create_sse_app,
@@ -127,6 +128,7 @@ class FastMCP(Generic[LifespanResultT]):
         on_duplicate_prompts: DuplicateBehavior | None = None,
         resource_prefix_format: Literal["protocol", "path"] | None = None,
         mask_error_details: bool | None = None,
+        tools: list[Tool | Callable[..., Any]] | None = None,
         **settings: Any,
     ):
         if settings:
@@ -185,7 +187,16 @@ class FastMCP(Generic[LifespanResultT]):
             lifespan=_lifespan_wrapper(self, lifespan),
         )
 
+        if auth is None and self.settings.default_auth_provider == "bearer_env":
+            auth = EnvBearerAuthProvider()
         self.auth = auth
+
+        if tools:
+            for tool in tools:
+                if isinstance(tool, Tool):
+                    self._tool_manager.add_tool(tool)
+                else:
+                    self.add_tool(tool)
 
         # Set up MCP protocol handlers
         self._setup_handlers()
@@ -490,6 +501,7 @@ class FastMCP(Generic[LifespanResultT]):
         description: str | None = None,
         tags: set[str] | None = None,
         annotations: ToolAnnotations | dict[str, Any] | None = None,
+        exclude_args: list[str] | None = None,
     ) -> None:
         """Add a tool to the server.
 
@@ -512,6 +524,7 @@ class FastMCP(Generic[LifespanResultT]):
             description=description,
             tags=tags,
             annotations=annotations,
+            exclude_args=exclude_args,
         )
         self._cache.clear()
 
@@ -533,6 +546,7 @@ class FastMCP(Generic[LifespanResultT]):
         description: str | None = None,
         tags: set[str] | None = None,
         annotations: ToolAnnotations | dict[str, Any] | None = None,
+        exclude_args: list[str] | None = None,
     ) -> Callable[[AnyFunction], AnyFunction]:
         """Decorator to register a tool.
 
@@ -576,6 +590,7 @@ class FastMCP(Generic[LifespanResultT]):
                 description=description,
                 tags=tags,
                 annotations=annotations,
+                exclude_args=exclude_args,
             )
             return fn
 

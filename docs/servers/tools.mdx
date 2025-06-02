@@ -158,7 +158,7 @@ While FastMCP infers the name and description from your function, you can overri
 @mcp.tool(
     name="find_products",           # Custom tool name for the LLM
     description="Search the product catalog with optional category filtering.", # Custom description
-    tags={"catalog", "search"}      # Optional tags for organization/filtering
+    tags={"catalog", "search"},      # Optional tags for organization/filtering
 )
 def search_products_implementation(query: str, category: str | None = None) -> list[dict]:
     """Internal function description (ignored if description is provided above)."""
@@ -171,6 +171,25 @@ def search_products_implementation(query: str, category: str | None = None) -> l
 - **`description`**: Provides the description exposed via MCP. If set, the function's docstring is ignored for this purpose.
 - **`tags`**: A set of strings used to categorize the tool. Clients *might* use tags to filter or group available tools.
 
+
+- **`exclude_args`**:  
+    <VersionBadge version="2.6.0" /> 
+    A list of argument names to exclude from the tool schema shown to the LLM. This is useful for arguments that are injected at runtime (such as `state`, `user_id`, or credentials) and should not be exposed to the LLM or client. Only arguments with default values can be excluded; attempting to exclude a required argument will raise an error.
+  
+
+    Example:
+
+    ```python
+    @mcp.tool(
+        name="get_user_details",
+        exclude_args=["user_id"]
+    )
+    def get_user_details(user_id: str = None) -> str:
+        # user_id will be injected by the server, not provided by the LLM
+        ...
+    ```
+
+    With this configuration, `user_id` will not appear in the tool's parameter schema, but can still be set by the server or framework at runtime.
 
 ### Async Tools
 

@@ -46,22 +46,34 @@
                 "group": "Servers",
                 "pages": [
                     "servers/fastmcp",
-                    "servers/tools",
-                    "servers/resources",
-                    "servers/prompts",
-                    "servers/context",
+                    {
+                        "group": "Core Components",
+                        "icon": "toolbox",
+                        "pages": [
+                            "servers/tools",
+                            "servers/resources",
+                            "servers/prompts",
+                            "servers/context"
+                        ]
+                    },
+                    {
+                        "group": "Authentication",
+                        "icon": "shield-check",
+                        "pages": [
+                            "servers/auth/bearer"
+                        ]
+                    },
                     "servers/openapi",
                     "servers/proxy",
-                    "servers/composition"
-                ]
-            },
-            {
-                "group": "Deployment",
-                "pages": [
-                    "deployment/running-server",
-                    "deployment/asgi",
-                    "deployment/authentication",
-                    "deployment/cli"
+                    "servers/composition",
+                    {
+                        "group": "Deployment",
+                        "pages": [
+                            "deployment/running-server",
+                            "deployment/asgi",
+                            "deployment/cli"
+                        ]
+                    }
                 ]
             },
             {
@@ -69,6 +81,14 @@
                 "pages": [
                     "clients/client",
                     "clients/transports",
+                    {
+                        "group": "Authentication",
+                        "icon": "user-shield",
+                        "pages": [
+                            "clients/auth/bearer",
+                            "clients/auth/oauth"
+                        ]
+                    },
                     "clients/advanced-features"
                 ]
             },

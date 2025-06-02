@@ -1,17 +1,15 @@
-import sys
 from collections.abc import Generator
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
 import httpx
 import pytest
-import uvicorn
 
-import fastmcp.client.auth  # Import module, not the function directly
+import fastmcp.client.auth.oauth  # Import module, not the function directly
 from fastmcp.client import Client
 from fastmcp.client.transports import StreamableHttpTransport
 from fastmcp.server.auth.auth import ClientRegistrationOptions
-from fastmcp.server.auth.in_memory_provider import InMemoryOAuthProvider
+from fastmcp.server.auth.providers.in_memory import InMemoryOAuthProvider
 from fastmcp.server.server import FastMCP
 from fastmcp.utilities.tests import run_server_in_process
 
@@ -39,30 +37,13 @@ def fastmcp_server(issuer_url: str):
     return server
 
 
-def run_server(host: str, port: int, transport: str | None = None) -> None:
-    try:
-        # Configure OAuth provider with the actual server URL
-        issuer_url = f"http://{host}:{port}"
-        app = fastmcp_server(issuer_url).http_app()
-        server = uvicorn.Server(
-            config=uvicorn.Config(
-                app=app,
-                host=host,
-                port=port,
-                log_level="error",
-                lifespan="on",
-            )
-        )
-        server.run()
-    except Exception as e:
-        print(f"Server error: {e}")
-        sys.exit(1)
-    sys.exit(0)
+def run_server(host: str, port: int, **kwargs) -> None:
+    fastmcp_server(f"http://{host}:{port}").run(host=host, port=port, **kwargs)
 
 
 @pytest.fixture(scope="module")
 def streamable_http_server() -> Generator[str, None, None]:
-    with run_server_in_process(run_server) as url:
+    with run_server_in_process(run_server, transport="streamable-http") as url:
         yield f"{url}/mcp"
 
 
@@ -212,10 +193,10 @@ def client_with_headless_oauth(
             raise ValueError("mcp_url is required")
         return HeadlessOAuthProvider(mcp_url)
 
-    with patch("fastmcp.client.auth.OAuth", side_effect=headless_oauth):
+    with patch("fastmcp.client.auth.oauth.OAuth", side_effect=headless_oauth):
         client = Client(
             transport=StreamableHttpTransport(streamable_http_server),
-            auth=fastmcp.client.auth.OAuth(mcp_url=streamable_http_server),
+            auth=fastmcp.client.auth.oauth.OAuth(mcp_url=streamable_http_server),
         )
         yield client
 

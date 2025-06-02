@@ -66,6 +66,7 @@ class ToolManager:
         description: str | None = None,
         tags: set[str] | None = None,
         annotations: ToolAnnotations | None = None,
+        exclude_args: list[str] | None = None,
     ) -> Tool:
         """Add a tool to the server."""
         tool = Tool.from_function(
@@ -75,6 +76,7 @@ class ToolManager:
             tags=tags,
             annotations=annotations,
             serializer=self._serializer,
+            exclude_args=exclude_args,
         )
         return self.add_tool(tool)
 

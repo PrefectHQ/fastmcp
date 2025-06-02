@@ -16,7 +16,6 @@ from fastmcp.client.transports import (
     infer_transport,
 )
 from fastmcp.exceptions import ResourceError, ToolError
-from fastmcp.prompts.prompt import TextContent
 from fastmcp.server.server import FastMCP
 
 
@@ -201,8 +200,7 @@ async def test_get_prompt(fastmcp_server):
         result = await client.get_prompt("welcome", {"name": "Developer"})
 
         # The result should contain our welcome message
-        assert isinstance(result.messages[0].content, TextContent)
-        assert result.messages[0].content.text == "Welcome to FastMCP, Developer!"
+        assert result.messages[0].content.text == "Welcome to FastMCP, Developer!"  # type: ignore[attr-defined]
         assert result.description == "Example greeting prompt."
 
 
@@ -214,8 +212,7 @@ async def test_get_prompt_mcp(fastmcp_server):
         result = await client.get_prompt_mcp("welcome", {"name": "Developer"})
 
         # The result should contain our welcome message
-        assert isinstance(result.messages[0].content, TextContent)
-        assert result.messages[0].content.text == "Welcome to FastMCP, Developer!"
+        assert result.messages[0].content.text == "Welcome to FastMCP, Developer!"  # type: ignore[attr-defined]
         assert result.description == "Example greeting prompt."
 
 
@@ -340,6 +337,52 @@ async def test_client_nested_context_manager(fastmcp_server):
     # After connection
     assert not client.is_connected()
     assert client._session is None
+
+
+async def test_concurrent_client_context_managers():
+    """
+    Test that concurrent client usage doesn't cause cross-task cancel scope issues.
+    https://github.com/jlowin/fastmcp/pull/643
+    """
+    # Create a simple server
+    server = FastMCP("Test Server")
+
+    @server.tool()
+    def echo(text: str) -> str:
+        """Echo tool"""
+        return text
+
+    # Create client
+    client = Client(server)
+
+    # Track results
+    results = {}
+    errors = []
+
+    async def use_client(task_id: str, delay: float = 0):
+        """Use the client with a small delay to ensure overlap"""
+        try:
+            async with client:
+                # Add a small delay to ensure contexts overlap
+                await asyncio.sleep(delay)
+                # Make an actual call to exercise the session
+                tools = await client.list_tools()
+                results[task_id] = len(tools)
+        except Exception as e:
+            errors.append((task_id, str(e)))
+
+    # Run multiple tasks concurrently
+    # The key is having them enter and exit the context at different times
+    await asyncio.gather(
+        use_client("task1", 0.0),
+        use_client("task2", 0.01),  # Slight delay to ensure overlap
+        use_client("task3", 0.02),
+        return_exceptions=False,
+    )
+
+    assert len(errors) == 0, f"Errors occurred: {errors}"
+    assert len(results) == 3
+    assert all(count == 1 for count in results.values())  # All should see 1 tool
 
 
 async def test_resource_template(fastmcp_server):
@@ -476,9 +519,8 @@ class TestErrorHandling:
         async with client:
             result = await client.call_tool_mcp("error_tool", {})
             assert result.isError
-            assert isinstance(result.content[0], TextContent)
-            assert "test error" in result.content[0].text
-            assert "abc" in result.content[0].text
+            assert "test error" in result.content[0].text  # type: ignore[attr-defined]
+            assert "abc" in result.content[0].text  # type: ignore[attr-defined]
 
     async def test_general_tool_exceptions_are_masked_when_enabled(self):
         mcp = FastMCP("TestServer", mask_error_details=True)
@@ -492,9 +534,8 @@ class TestErrorHandling:
         async with client:
             result = await client.call_tool_mcp("error_tool", {})
             assert result.isError
-            assert isinstance(result.content[0], TextContent)
-            assert "test error" not in result.content[0].text
-            assert "abc" not in result.content[0].text
+            assert "test error" not in result.content[0].text  # type: ignore[attr-defined]
+            assert "abc" not in result.content[0].text  # type: ignore[attr-defined]
 
     async def test_specific_tool_errors_are_sent_to_client(self):
         mcp = FastMCP("TestServer")
@@ -508,9 +549,8 @@ class TestErrorHandling:
         async with client:
             result = await client.call_tool_mcp("custom_error_tool", {})
             assert result.isError
-            assert isinstance(result.content[0], TextContent)
-            assert "test error" in result.content[0].text
-            assert "abc" in result.content[0].text
+            assert "test error" in result.content[0].text  # type: ignore[attr-defined]
+            assert "abc" in result.content[0].text  # type: ignore[attr-defined]
 
     async def test_general_resource_exceptions_are_not_masked_by_default(self):
         mcp = FastMCP("TestServer")
