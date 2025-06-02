@@ -68,7 +68,7 @@
                     "servers/composition",
                     {
                         "group": "Deployment",
-                        "icon": "network-wired",
+                        "icon": "upload",
                         "pages": [
                             "deployment/running-server",
                             "deployment/asgi",
