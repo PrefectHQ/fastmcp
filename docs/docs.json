@@ -71,8 +71,7 @@
                         "icon": "upload",
                         "pages": [
                             "deployment/running-server",
-                            "deployment/asgi",
-                            "deployment/cli"
+                            "deployment/asgi"
                         ]
                     }
                 ]
@@ -96,6 +95,8 @@
             {
                 "group": "Integrations",
                 "pages": [
+                    "integrations/anthropic",
+                    "integrations/claude-desktop",
                     "integrations/openai",
                     "integrations/contrib"
                 ]
@@ -105,7 +106,8 @@
                 "pages": [
                     "patterns/decorating-methods",
                     "patterns/http-requests",
-                    "patterns/testing"
+                    "patterns/testing",
+                    "patterns/cli"
                 ]
             }
         ]

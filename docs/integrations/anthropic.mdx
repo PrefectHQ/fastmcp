@@ -1,26 +1,21 @@
 ---
-title: OpenAI
-sidebarTitle: OpenAI
-description: Access FastMCP servers from the OpenAI API
+title: Anthropic
+sidebarTitle: Anthropic
+description: Access FastMCP servers from the Anthropic Messages API
 icon: message-smile
 ---
 
 import { VersionBadge } from "/snippets/version-badge.mdx"
 
-OpenAI recently announced support for MCP servers in the Responses API. Note that at this time, MCP is not supported in ChatGPT.
+Anthropic supports MCP servers through the [MCP connector](https://docs.anthropic.com/en/docs/agents-and-tools/mcp-connector) feature in the Messages API, allowing you to extend AI capabilities with custom tools from remote MCP servers.
 
-## MCP in the Responses API
+## Messages API
 
-OpenAI's [Responses API](https://platform.openai.com/docs/api-reference/responses) supports [MCP servers](https://platform.openai.com/docs/guides/tools-remote-mcp) as remote tool sources, allowing you to extend AI capabilities with custom functions.
-
-<Note>
-The Responses API is a distinct API from OpenAI's Completions API, Assistants API, or ChatGPT. At this time, only the Responses API supports MCP.
-</Note>
+Anthropic's [Messages API](https://docs.anthropic.com/en/api/messages) supports MCP servers as remote tool sources. This tutorial will show you how to create a FastMCP server and deploy it to a public URL, then how to call it from the Messages API.
 
 <Tip>
-Currently, the Responses API only accesses **tools** from MCP servers—it queries the `list_tools` endpoint and exposes those functions to the AI agent. Other MCP features like resources and prompts are not currently supported.
+Currently, the MCP connector only accesses **tools** from MCP servers—it queries the `list_tools` endpoint and exposes those functions to Claude. Other MCP features like resources and prompts are not currently supported. You can read more about the MCP connector in the [Anthropic documentation](https://docs.anthropic.com/en/docs/agents-and-tools/mcp-connector).
 </Tip>
-
 
 ### Create a Server
 
@@ -43,7 +38,7 @@ if __name__ == "__main__":
 
 ### Deploy the Server
 
-Your server must be deployed to a public URL in order for OpenAI to access it.
+Your server must be deployed to a public URL in order for Anthropic to access it. The MCP connector supports both SSE and Streamable HTTP transports.
 
 For development, you can use tools like `ngrok` to temporarily expose a locally-running server to the internet. We'll do that for this example (you may need to install `ngrok` and create a free account), but you can use any other method to deploy your server.
 
@@ -65,48 +60,58 @@ This exposes your unauthenticated server to the internet. Only run this command 
 
 ### Call the Server
 
-To use the Responses API, you'll need to install the OpenAI Python SDK (not included with FastMCP):
+To use the Messages API with MCP servers, you'll need to install the Anthropic Python SDK (not included with FastMCP):
 
 ```bash
-pip install openai
+pip install anthropic
 ```
 
-Here is an example of how to call your server from Python. Note that you'll need to replace `https://your-server-url.com` with the actual URL of your server. In addition, we use `/sse` as the endpoint because we deployed an SSE server with the default path; you may need to use a different endpoint if you customized your server's deployment.
+Here is an example of how to call your server from Python. Note that you'll need to replace `https://your-server-url.com` with the actual URL of your server. In addition, we use `/sse` as the endpoint because we deployed an SSE server with the default path; you may need to use a different endpoint if you customized your server's deployment. **At this time you must also include the `extra_headers` parameter with the `anthropic-beta` header.**
 
-```python {4, 11-16}
-from openai import OpenAI
+```python {5, 13-22}
+import anthropic
+from rich import print
 
 # Your server URL (replace with your actual URL)
 url = 'https://your-server-url.com'
 
-client = OpenAI()
+client = anthropic.Anthropic()
 
-resp = client.responses.create(
-    model="gpt-4.1",
-    tools=[
+response = client.beta.messages.create(
+    model="claude-sonnet-4-20250514",
+    max_tokens=1000,
+    messages=[{"role": "user", "content": "Roll a few dice!"}],
+    mcp_servers=[
         {
-            "type": "mcp",
-            "server_label": "dice_server",
-            "server_url": f"{url}/sse",
-            "require_approval": "never",
-        },
+            "type": "url",
+            "url": f"{url}/sse",
+            "name": "dice-server",
+        }
     ],
-    input="Roll a few dice!",
+    extra_headers={
+        "anthropic-beta": "mcp-client-2025-04-04"
+    }
 )
 
-print(resp.output_text)
+print(response.content)
 ```
+
 If you run this code, you'll see something like the following output:
 
 ```text
-You rolled 3 dice and got the following results: 6, 4, and 2!
+I'll roll some dice for you! Let me use the dice rolling tool.
+
+I rolled 3 dice and got: 4, 2, 6
+
+The results were 4, 2, and 6. Would you like me to roll again or roll a different number of dice?
 ```
+
 
 ### Authentication
 
 <VersionBadge version="2.6.0" />
 
-The Responses API can include headers to authenticate the request, which means you don't have to worry about your server being publicly accessible.
+The MCP connector supports OAuth authentication through authorization tokens, which means you can secure your server while still allowing Anthropic to access it.
 
 #### Server Authentication
 
@@ -171,26 +176,23 @@ if __name__ == "__main__":
 
 #### Client Authentication
 
-If you try to call the authenticated server with the same OpenAI code we wrote earlier, you'll get an error like this:
+If you try to call the authenticated server with the same Anthropic code we wrote earlier, you'll get an error indicating that the server rejected the request because it's not authenticated.
 
 ```python
-pythonAPIStatusError: Error code: 424 - {
+Error code: 400 - {
+    "type": "error", 
     "error": {
-        "message": "Error retrieving tool list from MCP server: 'dice_server'. Http status code: 401 (Unauthorized)",
-        "type": "external_connector_error",
-        "param": "tools",
-        "code": "http_error"
-    }
+        "type": "invalid_request_error", 
+        "message": "MCP server 'dice-server' requires authentication. Please provide an authorization_token.",
+    },
 }
 ```
 
-As expected, the server is rejecting the request because it's not authenticated.
+To authenticate the client, you can pass the token using the `authorization_token` parameter in your MCP server configuration:
 
-To authenticate the client, you can pass the token in the `Authorization` header with the `Bearer` scheme:
-
-
-```python {4, 7, 19-21} [expandable]
-from openai import OpenAI
+```python {8, 21}
+import anthropic
+from rich import print
 
 # Your server URL (replace with your actual URL)
 url = 'https://your-server-url.com'
@@ -198,25 +200,26 @@ url = 'https://your-server-url.com'
 # Your access token (replace with your actual token)
 access_token = 'your-access-token'
 
-client = OpenAI()
+client = anthropic.Anthropic()
 
-resp = client.responses.create(
-    model="gpt-4.1",
-    tools=[
+response = client.beta.messages.create(
+    model="claude-sonnet-4-20250514",
+    max_tokens=1000,
+    messages=[{"role": "user", "content": "Roll a few dice!"}],
+    mcp_servers=[
         {
-            "type": "mcp",
-            "server_label": "dice_server",
-            "server_url": f"{url}/sse",
-            "require_approval": "never",
-            "headers": {
-                "Authorization": f"Bearer {access_token}"
-            }
-        },
+            "type": "url",
+            "url": f"{url}/sse",
+            "name": "dice-server",
+            "authorization_token": access_token
+        }
     ],
-    input="Roll a few dice!",
+    extra_headers={
+        "anthropic-beta": "mcp-client-2025-04-04"
+    }
 )
 
-print(resp.output_text)
+print(response.content)
 ```
 
 You should now see the dice roll results in the output.
