@@ -1,6 +1,6 @@
 import pytest
 from mcp.types import EmbeddedResource, ImageContent, TextContent, TextResourceContents
-from pydantic import AnyUrl
+from pydantic import AnyUrl, BaseModel
 
 from fastmcp import FastMCP, Image
 from fastmcp.client import Client
