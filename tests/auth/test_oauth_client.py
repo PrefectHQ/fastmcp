@@ -5,7 +5,7 @@ from urllib.parse import parse_qs, urlparse
 import httpx
 import pytest
 
-import fastmcp.client.auth  # Import module, not the function directly
+import fastmcp.client.auth.oauth  # Import module, not the function directly
 from fastmcp.client import Client
 from fastmcp.client.transports import StreamableHttpTransport
 from fastmcp.server.auth.auth import ClientRegistrationOptions
@@ -196,7 +196,7 @@ def client_with_headless_oauth(
     with patch("fastmcp.client.auth.OAuth", side_effect=headless_oauth):
         client = Client(
             transport=StreamableHttpTransport(streamable_http_server),
-            auth=fastmcp.client.auth.OAuth(mcp_url=streamable_http_server),
+            auth=fastmcp.client.auth.oauth.OAuth(mcp_url=streamable_http_server),
         )
         yield client
 

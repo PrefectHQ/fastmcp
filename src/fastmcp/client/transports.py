@@ -36,7 +36,7 @@ from mcp.shared.memory import create_connected_server_and_client_session
 from pydantic import AnyUrl
 from typing_extensions import Unpack
 
-from fastmcp.client.auth import OAuth
+from fastmcp.client.auth.oauth import OAuth
 from fastmcp.server.dependencies import get_http_headers
 from fastmcp.server.server import FastMCP
 from fastmcp.utilities.logging import get_logger
