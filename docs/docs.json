@@ -68,6 +68,7 @@
                     "servers/composition",
                     {
                         "group": "Deployment",
+                        "icon": "network-wired",
                         "pages": [
                             "deployment/running-server",
                             "deployment/asgi",
@@ -93,17 +94,19 @@
                 ]
             },
             {
+                "group": "Integrations",
+                "pages": [
+                    "integrations/openai",
+                    "integrations/contrib"
+                ]
+            },
+            {
                 "group": "Patterns",
                 "pages": [
                     "patterns/decorating-methods",
                     "patterns/http-requests",
-                    "patterns/contrib",
                     "patterns/testing"
                 ]
-            },
-            {
-                "group": "Deployment",
-                "pages": []
             }
         ]
     },
