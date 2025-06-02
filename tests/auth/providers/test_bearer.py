@@ -6,7 +6,7 @@ import pytest
 from pytest_httpx import HTTPXMock
 
 from fastmcp import Client, FastMCP
-from fastmcp.client.auth import BearerAuth
+from fastmcp.client.auth.bearer import BearerAuth
 from fastmcp.server.auth.providers.bearer import (
     BearerAuthProvider,
     JWKData,
