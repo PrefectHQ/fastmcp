@@ -193,7 +193,7 @@ def client_with_headless_oauth(
             raise ValueError("mcp_url is required")
         return HeadlessOAuthProvider(mcp_url)
 
-    with patch("fastmcp.client.auth.OAuth", side_effect=headless_oauth):
+    with patch("fastmcp.client.auth.oauth.OAuth", side_effect=headless_oauth):
         client = Client(
             transport=StreamableHttpTransport(streamable_http_server),
             auth=fastmcp.client.auth.oauth.OAuth(mcp_url=streamable_http_server),
