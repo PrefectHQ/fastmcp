@@ -12,14 +12,14 @@
 <a href="https://trendshift.io/repositories/13266" target="_blank"><img src="https://trendshift.io/api/badge/repositories/13266" alt="jlowin%2Ffastmcp | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
 </div>
 
-> [!NOTE]
-> #### FastMCP 2.0 & The Official MCP SDK
+> [!Note]
+> #### Beyond the Protocol
+> 
+> FastMCP is the standard framework for working with the Model Context Protocol. FastMCP 1.0 was incorporated into the [official low-level Python SDK](https://github.com/modelcontextprotocol/python-sdk), and FastMCP 2.0 *(this project)* provides a complete toolkit for working with the MCP ecosystem.
 >
-> FastMCP is the standard framework for building MCP servers and clients. FastMCP 1.0 was incorporated into the [official MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk).
+> FastMCP has a comprehensive set of features that go far beyond the core MCP specification, all in service of providing **the simplest path to production**. These include client support, server composition, auth, automatic generation from OpenAPI specs, remote server proxying, built-in testing tools, integrations, and more.
 >
-> **This is FastMCP 2.0,** the actively maintained version that significantly expands on 1.0's basic server-building capabilities by introducing full client support, server composition, OpenAPI/FastAPI integration, remote server proxying, built-in testing tools, and more.
->
-> FastMCP 2.0 is the complete toolkit for modern AI applications. Ready to upgrade or get started? Follow the [installation instructions](https://gofastmcp.com/getting-started/installation), which include specific steps for upgrading from the official MCP SDK.
+> Ready to upgrade or get started? Follow the [installation instructions](/getting-started/installation), which include specific steps for upgrading from the official MCP SDK.
 
 ---
 
