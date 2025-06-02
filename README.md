@@ -86,20 +86,20 @@ There are two ways to access the LLM-friendly documentation:
 
 ## What is MCP?
 
-The [Model Context Protocol (MCP)](https://modelcontextprotocol.io) lets you build servers that expose data and functionality to LLM applications in a secure, standardized way. Think of it like a web API, but specifically designed for LLM interactions. MCP servers can:
+The [Model Context Protocol (MCP)](https://modelcontextprotocol.io) lets you build servers that expose data and functionality to LLM applications in a secure, standardized way. It is often described as "the USB-C port for AI", providing a uniform way to connect LLMs to resources they can use. It may be easier to think of it as an API, but specifically designed for LLM interactions. MCP servers can:
 
-- Expose data through **Resources** (similar to `GET` requests; load info into context)
-- Provide functionality through **Tools** (similar to `POST`/`PUT` requests; execute actions)
-- Define interaction patterns through **Prompts** (reusable templates)
+- Expose data through **Resources** (think of these sort of like GET endpoints; they are used to load information into the LLM's context)
+- Provide functionality through **Tools** (sort of like POST endpoints; they are used to execute code or otherwise produce a side effect)
+- Define interaction patterns through **Prompts** (reusable templates for LLM interactions)
 - And more!
 
-FastMCP provides a high-level, Pythonic interface for building and interacting with these servers.
+FastMCP provides a high-level, Pythonic interface for building, managing, and interacting with these servers.
 
 ## Why FastMCP?
 
 The MCP protocol is powerful but implementing it involves a lot of boilerplate - server setup, protocol handlers, content types, error management. FastMCP handles all the complex protocol details and server management, so you can focus on building great tools. It's designed to be high-level and Pythonic; in most cases, decorating a function is all you need.
 
-While the core server concepts of FastMCP 1.0 laid the groundwork and were contributed to the official MCP SDK, **FastMCP 2.0 (this project) is the actively developed successor**, adding significant enhancements and entirely new capabilities like a powerful **client library**, server **proxying**, **composition** patterns, **OpenAPI/FastAPI integration**, and much more.
+FastMCP 2.0 has evolved into a comprehensive platform that goes far beyond basic protocol implementation. While 1.0 provided server-building capabilities (and is now part of the official MCP SDK), 2.0 offers a complete ecosystem including client libraries, authentication systems, deployment tools, integrations with major AI platforms, testing frameworks, and production-ready infrastructure patterns.
 
 FastMCP aims to be:
 
@@ -109,7 +109,7 @@ FastMCP aims to be:
 
 🐍 **Pythonic:** Feels natural to Python developers
 
-🔍 **Complete:** FastMCP aims to provide a full implementation of the core MCP specification for both servers and clients
+🔍 **Complete:** A comprehensive platform for all MCP use cases, from dev to prod
 
 ## Installation
 
