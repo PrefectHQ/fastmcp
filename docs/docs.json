@@ -1,5 +1,9 @@
 {
     "$schema": "https://mintlify.com/docs.json",
+    "appearance": {
+        "default": "system",
+        "strict": false
+    },
     "background": {
         "color": {
             "dark": "#222831",
@@ -13,6 +17,10 @@
         "primary": "#2d00f7"
     },
     "description": "The fast, Pythonic way to build MCP servers and clients.",
+    "favicon": {
+        "dark": "/assets/favicon.ico",
+        "light": "/assets/favicon.ico"
+    },
     "footer": {
         "socials": {
             "bluesky": "https://bsky.app/profile/jlowin.dev",
@@ -122,5 +130,8 @@
             "source": "/patterns/composition"
         }
     ],
+    "search": {
+        "prompt": "Search the docs..."
+    },
     "theme": "mint"
 }
