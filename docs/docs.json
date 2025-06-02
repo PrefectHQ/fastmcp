@@ -97,6 +97,7 @@
                 "group": "Integrations",
                 "pages": [
                     "integrations/openai",
+                    "integrations/anthropic",
                     "integrations/contrib"
                 ]
             },
