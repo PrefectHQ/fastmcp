@@ -131,16 +131,6 @@ class FastMCP(Generic[LifespanResultT]):
         tools: list[Tool | Callable[..., Any]] | None = None,
         **settings: Any,
     ):
-        if settings:
-            # TODO: remove settings. Deprecated since 2.3.4
-            warnings.warn(
-                "Passing runtime and transport-specific settings as kwargs "
-                "to the FastMCP constructor is deprecated (as of 2.3.4), "
-                "including most transport settings. If possible, provide settings when calling "
-                "run() instead.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
         self.settings = fastmcp.settings.ServerSettings(**settings)
 
         # If mask_error_details is provided, override the settings value

@@ -1,5 +1,9 @@
 {
     "$schema": "https://mintlify.com/docs.json",
+    "appearance": {
+        "default": "system",
+        "strict": false
+    },
     "background": {
         "color": {
             "dark": "#222831",
@@ -13,6 +17,10 @@
         "primary": "#2d00f7"
     },
     "description": "The fast, Pythonic way to build MCP servers and clients.",
+    "favicon": {
+        "dark": "/assets/favicon.ico",
+        "light": "/assets/favicon.ico"
+    },
     "footer": {
         "socials": {
             "bluesky": "https://bsky.app/profile/jlowin.dev",
@@ -68,10 +76,10 @@
                     "servers/composition",
                     {
                         "group": "Deployment",
+                        "icon": "upload",
                         "pages": [
                             "deployment/running-server",
-                            "deployment/asgi",
-                            "deployment/cli"
+                            "deployment/asgi"
                         ]
                     }
                 ]
@@ -93,17 +101,22 @@
                 ]
             },
             {
+                "group": "Integrations",
+                "pages": [
+                    "integrations/anthropic",
+                    "integrations/claude-desktop",
+                    "integrations/openai",
+                    "integrations/contrib"
+                ]
+            },
+            {
                 "group": "Patterns",
                 "pages": [
                     "patterns/decorating-methods",
                     "patterns/http-requests",
-                    "patterns/contrib",
-                    "patterns/testing"
+                    "patterns/testing",
+                    "patterns/cli"
                 ]
-            },
-            {
-                "group": "Deployment",
-                "pages": []
             }
         ]
     },
@@ -117,5 +130,8 @@
             "source": "/patterns/composition"
         }
     ],
+    "search": {
+        "prompt": "Search the docs..."
+    },
     "theme": "mint"
 }

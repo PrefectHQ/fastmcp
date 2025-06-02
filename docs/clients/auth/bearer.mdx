@@ -30,23 +30,25 @@ The most straightforward way to use a pre-existing Bearer token is to provide it
 If you're using a string token, do not include the `Bearer` prefix. FastMCP will add it for you.
 </Tip>
 
-```python {4}
+```python {5}
 from fastmcp import Client
 
 async with Client(
-    "https://fastmcp.cloud/mcp", auth="<your-token>"
+    "https://fastmcp.cloud/mcp", 
+    auth="<your-token>",
 ) as client:
     await client.ping()
 ```
 
 You can also supply a Bearer token to a transport instance, such as `StreamableHttpTransport` or `SSETransport`:
 
-```python {5}
+```python {6}
 from fastmcp import Client
 from fastmcp.client.transports import StreamableHttpTransport
 
 transport = StreamableHttpTransport(
-    "http://fastmcp.cloud/mcp", auth="<your-token>"
+    "http://fastmcp.cloud/mcp", 
+    auth="<your-token>",
 )
 
 async with Client(transport) as client:
@@ -57,12 +59,13 @@ async with Client(transport) as client:
 
 If you prefer to be more explicit and not rely on FastMCP to transform your string token, you can use the `BearerAuth` class yourself, which implements the `httpx.Auth` interface.
 
-```python {5}
+```python {6}
 from fastmcp import Client
 from fastmcp.client.auth import BearerAuth
 
 async with Client(
-    "https://fastmcp.cloud/mcp", auth=BearerAuth(token="<your-token>")
+    "https://fastmcp.cloud/mcp", 
+    auth=BearerAuth(token="<your-token>"),
 ) as client:
     await client.ping()
 ```
@@ -71,11 +74,12 @@ async with Client(
 
 If the MCP server expects a custom header or token scheme, you can manually set the client's `headers` instead of using the `auth` parameter:
 
-```python {4}
+```python {5}
 from fastmcp import Client
 
 async with Client(
-    "https://fastmcp.cloud/mcp", headers={"X-API-Key": "<your-token>"}
+    "https://fastmcp.cloud/mcp", 
+    headers={"X-API-Key": "<your-token>"},
 ) as client:
     await client.ping()
 ```
