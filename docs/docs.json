@@ -106,6 +106,7 @@
                     "integrations/anthropic",
                     "integrations/claude-desktop",
                     "integrations/openai",
+                    "integrations/gemini",
                     "integrations/contrib"
                 ]
             },
