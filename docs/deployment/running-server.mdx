@@ -63,13 +63,11 @@ See the [CLI documentation](/patterns/cli) for detailed information about all av
 
 ### Passing Arguments to Servers
 
-<VersionBadge version="2.6.2" />
-
-When servers accept command line arguments (using argparse, click, or other libraries), you can pass them using the `--server-arg` option:
+When servers accept command line arguments (using argparse, click, or other libraries), you can pass them after `--`:
 
 ```bash
-fastmcp run config_server.py --server-arg="--config" --server-arg="config.json"
-fastmcp run database_server.py --server-arg="--database-path" --server-arg="/tmp/db.sqlite"
+fastmcp run config_server.py -- --config config.json
+fastmcp run database_server.py -- --database-path /tmp/db.sqlite --debug
 ```
 
 This is useful for servers that need configuration files, database paths, API keys, or other runtime options.

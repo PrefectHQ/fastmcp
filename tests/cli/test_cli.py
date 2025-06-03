@@ -411,7 +411,7 @@ class TestRunCommand:
             )
 
     def test_run_command_with_server_args(self, temp_python_file):
-        """Test run command with server arguments."""
+        """Test run command with server arguments using -- pattern."""
         with (
             patch("fastmcp.cli.run.run_command") as mock_run_command,
         ):
@@ -420,9 +420,8 @@ class TestRunCommand:
                 [
                     "run",
                     str(temp_python_file),
-                    "--server-arg",
+                    "--",
                     "--config",
-                    "--server-arg",
                     "config.json",
                 ],
             )
