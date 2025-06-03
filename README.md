@@ -74,6 +74,7 @@ There are two ways to access the LLM-friendly documentation:
   - [Proxy Servers](#proxy-servers)
   - [Composing MCP Servers](#composing-mcp-servers)
   - [OpenAPI \& FastAPI Generation](#openapi--fastapi-generation)
+  - [Authentication \& Security](#authentication--security)
 - [Running Your Server](#running-your-server)
 - [Contributing](#contributing)
   - [Prerequisites](#prerequisites)
@@ -127,7 +128,7 @@ These are the building blocks for creating MCP servers and clients with FastMCP.
 
 ### The `FastMCP` Server
 
-The central object representing your MCP application. It holds your tools, resources, and prompts, manages connections, and can be configured with settings like [authentication providers](https://gofastmcp.com/servers/fastmcp#authentication).
+The central object representing your MCP application. It holds your tools, resources, and prompts, manages connections, and can be configured with settings like authentication.
 
 ```python
 from fastmcp import FastMCP
@@ -299,6 +300,16 @@ Learn more in the [**Composition Documentation**](https://gofastmcp.com/patterns
 Automatically generate FastMCP servers from existing OpenAPI specifications (`FastMCP.from_openapi()`) or FastAPI applications (`FastMCP.from_fastapi()`), instantly bringing your web APIs to the MCP ecosystem.
 
 Learn more: [**OpenAPI Integration**](https://gofastmcp.com/patterns/openapi) | [**FastAPI Integration**](https://gofastmcp.com/patterns/fastapi).
+
+### Authentication & Security
+
+FastMCP provides built-in authentication support to secure both your MCP servers and clients in production environments. Protect your server endpoints from unauthorized access and authenticate your clients against secured MCP servers using industry-standard protocols.
+
+- **Server Protection**: Secure your FastMCP server endpoints with configurable authentication providers
+- **Client Authentication**: Connect to authenticated MCP servers with automatic credential management
+- **Production Ready**: Support for common authentication patterns used in enterprise environments
+
+Learn more in the **Authentication Documentation** for [servers](https://gofastmcp.com/servers/auth) and [clients](https://gofastmcp.com/clients/auth).
 
 ## Running Your Server
 

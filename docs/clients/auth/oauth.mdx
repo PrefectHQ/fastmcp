@@ -1,7 +1,7 @@
 ---
 title: OAuth Authentication
 sidebarTitle: OAuth
-description: Authenticate your FastMCP client with servers using the OAuth 2.0 Authorization Code Grant, including user interaction via a web browser.
+description: Authenticate your FastMCP client via OAuth 2.1.
 icon: window
 ---
 
@@ -13,7 +13,7 @@ import { VersionBadge } from "/snippets/version-badge.mdx"
 OAuth authentication is only relevant for HTTP-based transports and requires user interaction via a web browser.
 </Tip>
 
-When your FastMCP client needs to access an MCP server protected by OAuth 2.0, and the process requires user interaction (like logging in and granting consent), you should use the Authorization Code Flow. FastMCP provides the `fastmcp.client.auth.OAuth` helper to simplify this entire process.
+When your FastMCP client needs to access an MCP server protected by OAuth 2.1, and the process requires user interaction (like logging in and granting consent), you should use the Authorization Code Flow. FastMCP provides the `fastmcp.client.auth.OAuth` helper to simplify this entire process.
 
 This flow is common for user-facing applications where the application acts on behalf of the user.
 
@@ -35,7 +35,7 @@ async with Client("https://fastmcp.cloud/mcp", auth="oauth") as client:
 
 ### `OAuth` Helper
 
-To fully configure the OAuth flow, use the `OAuth` helper and pass it to the `auth` parameter of the `Client` or transport instance. `OAuth` manages the complexities of the OAuth 2.0 Authorization Code Grant with PKCE (Proof Key for Code Exchange) for enhanced security, and implements the full `httpx.Auth` interface.
+To fully configure the OAuth flow, use the `OAuth` helper and pass it to the `auth` parameter of the `Client` or transport instance. `OAuth` manages the complexities of the OAuth 2.1 Authorization Code Grant with PKCE (Proof Key for Code Exchange) for enhanced security, and implements the full `httpx.Auth` interface.
 
 ```python {2, 4, 6}
 from fastmcp import Client

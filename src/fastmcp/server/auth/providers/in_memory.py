@@ -1,8 +1,3 @@
-"""
-This is a simple in-memory OAuth provider for testing purposes.
-It simulates the OAuth 2.0 flow locally without external calls.
-"""
-
 import secrets
 import time
 
@@ -36,7 +31,7 @@ DEFAULT_REFRESH_TOKEN_EXPIRY_SECONDS = None  # No expiry
 class InMemoryOAuthProvider(OAuthProvider):
     """
     An in-memory OAuth provider for testing purposes.
-    It simulates the OAuth 2.0 flow locally without external calls.
+    It simulates the OAuth 2.1 flow locally without external calls.
     """
 
     def __init__(
