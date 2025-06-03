@@ -93,8 +93,8 @@
                         "group": "Authentication",
                         "icon": "user-shield",
                         "pages": [
-                            "clients/auth/bearer",
-                            "clients/auth/oauth"
+                            "clients/auth/oauth",
+                            "clients/auth/bearer"
                         ]
                     },
                     "clients/advanced-features"

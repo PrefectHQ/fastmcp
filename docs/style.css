@@ -17,16 +17,18 @@ h6 code:not(pre code) {
   display: inline-block;
   align-items: center;
   gap: 0.3em;
-  padding: 0.2em 0.8em;
-  font-size: 1.1em;
-  font-weight: 400;
-
+  font-size: 1em;
+  margin-top: 0px;
+  margin-bottom: 0px;
+  padding-top: 6px;
+  padding-bottom: 6px;
+  padding-left: 20px;
+  padding-right: 20px;
   font-family: "Inter", sans-serif;
-  letter-spacing: 0.025em;
   color: #ff5400;
-  background: #ffeee6;
-  border: 1px solid rgb(255, 84, 0, 0.5);
-  border-radius: 6px;
+  background: #fef2f2;
+  border: 1px solid rgba(220, 38, 38, 0.3);
+  border-radius: 12px;
   box-shadow: none;
   vertical-align: middle;
   position: relative;
@@ -44,7 +46,7 @@ h6 code:not(pre code) {
 }
 
 .dark .version-badge {
-  color: #fff;
-  background: #312e81;
-  border: 1.5px solid #a78bfa;
+  color: #f1f5f9;
+  background: #334155;
+  border: 1px solid #64748b;
 }

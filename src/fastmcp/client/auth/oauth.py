@@ -68,9 +68,6 @@ class ServerOAuthMetadata(_MCPServerOAuthMetadata):
 class OAuthClientProvider(_MCPOAuthClientProvider):
     """
     OAuth client provider with more flexible OAuth metadata discovery.
-
-    This subclass handles real-world OAuth servers that may not conform
-    strictly to the MCP OAuth specification but are still valid OAuth 2.0 servers.
     """
 
     async def _discover_oauth_metadata(
