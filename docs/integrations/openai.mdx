@@ -1,7 +1,7 @@
 ---
 title: OpenAI
 sidebarTitle: OpenAI
-description: Access FastMCP servers from the OpenAI API
+description: Call FastMCP servers from the OpenAI API
 icon: message-smile
 ---
 
@@ -9,7 +9,7 @@ import { VersionBadge } from "/snippets/version-badge.mdx"
 
 OpenAI recently announced support for MCP servers in the Responses API. Note that at this time, MCP is not supported in ChatGPT.
 
-## MCP in the Responses API
+## Responses API
 
 OpenAI's [Responses API](https://platform.openai.com/docs/api-reference/responses) supports [MCP servers](https://platform.openai.com/docs/guides/tools-remote-mcp) as remote tool sources, allowing you to extend AI capabilities with custom functions.
 
@@ -69,6 +69,12 @@ To use the Responses API, you'll need to install the OpenAI Python SDK (not incl
 
 ```bash
 pip install openai
+```
+
+You'll also need to authenticate with OpenAI. You can do this by setting the `OPENAI_API_KEY` environment variable. Consult the OpenAI SDK documentation for more information.
+
+```bash
+export OPENAI_API_KEY="your-api-key"
 ```
 
 Here is an example of how to call your server from Python. Note that you'll need to replace `https://your-server-url.com` with the actual URL of your server. In addition, we use `/sse` as the endpoint because we deployed an SSE server with the default path; you may need to use a different endpoint if you customized your server's deployment.

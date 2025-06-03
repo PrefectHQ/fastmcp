@@ -12,7 +12,10 @@ auth = BearerAuthProvider(
     audience="dice-server",
 )
 
-mcp = FastMCP(name="Dice Roller", auth=auth)
+mcp = FastMCP(
+    name="Dice Roller",
+    # auth=auth,
+)
 
 
 @mcp.tool()
@@ -23,4 +26,5 @@ def roll_dice(n_dice: int) -> list[int]:
 
 if __name__ == "__main__":
     print(f"\n---\n\n🔑 Dice Roller access token:\n\n{access_token}\n\n---\n")
-    mcp.run(transport="sse", port=8000)
+    # mcp.run(transport="sse", port=8000)
+    mcp.run()
