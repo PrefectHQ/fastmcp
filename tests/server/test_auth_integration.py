@@ -342,7 +342,7 @@ async def tokens(test_client, registered_client, auth_code, pkce_challenge, requ
 
 class TestAuthEndpoints:
     async def test_metadata_endpoint(self, test_client: httpx.AsyncClient):
-        """Test the OAuth 2.0 metadata endpoint."""
+        """Test the OAuth 2.1 metadata endpoint."""
         print("Sending request to metadata endpoint")
         response = await test_client.get("/.well-known/oauth-authorization-server")
         print(f"Got response: {response.status_code}")

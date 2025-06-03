@@ -135,7 +135,7 @@ For detailed information on each transport, how to configure them (host, port, p
 
 FastMCP supports composing multiple servers together using `import_server` (static copy) and `mount` (live link). This allows you to organize large applications into modular components or reuse existing servers.
 
-See the [Server Composition](/patterns/composition) guide for full details, best practices, and examples.
+See the [Server Composition](/servers/composition) guide for full details, best practices, and examples.
 
 ```python
 # Example: Importing a subserver
@@ -159,7 +159,7 @@ main.mount("sub", sub)
 
 FastMCP can act as a proxy for any MCP server (local or remote) using `FastMCP.as_proxy`, letting you bridge transports or add a frontend to existing servers. For example, you can expose a remote SSE server locally via stdio, or vice versa.
 
-See the [Proxying Servers](/patterns/proxy) guide for details and advanced usage.
+See the [Proxying Servers](/servers/proxy) guide for details and advanced usage.
 
 ```python
 from fastmcp import FastMCP, Client
@@ -232,29 +232,3 @@ This customization is useful when you want to:
 <Tip>
 If the serializer function raises an exception, the tool will fall back to the default JSON serialization to avoid breaking the server.
 </Tip>
-
-## Authentication
-
-<VersionBadge version="2.2.7" />
-
-FastMCP supports OAuth 2.0 authentication, allowing servers to protect their tools and resources. This is configured by providing an `auth_server_provider` and `auth` settings during `FastMCP` initialization.
-
-```python
-from fastmcp import FastMCP
-from mcp.server.auth.settings import AuthSettings #, ... other auth imports
-# from your_auth_implementation import MyOAuthServerProvider # Placeholder
-
-# Create a server with authentication (conceptual example)
-# mcp = FastMCP(
-#     name="SecureApp",
-#     auth_server_provider=MyOAuthServerProvider(),
-#     auth=AuthSettings(
-#         issuer_url="https://myapp.com",
-#         # ... other OAuth settings ...
-#         required_scopes=["myscope"],
-#     ),
-# )
-```
-Due to the low-level nature of the current MCP SDK's auth provider interface, detailed implementation is beyond a quick example. Refer to the [MCP SDK documentation](https://modelcontextprotocol.io/specification/2025-03-26/basic/authorization) for specifics on implementing an `OAuthAuthorizationServerProvider`. FastMCP integrates with this by passing the provider and settings to the underlying MCP server.
-
-A dedicated [Authentication guide](/deployment/authentication) will cover this in more detail once higher-level abstractions are available in FastMCP.
