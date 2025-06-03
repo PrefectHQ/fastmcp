@@ -409,3 +409,28 @@ class TestRunCommand:
             mock_server.run.assert_called_once_with(
                 transport="sse", host="0.0.0.0", port=8080, log_level="DEBUG"
             )
+
+    def test_run_command_with_server_args(self, temp_python_file):
+        """Test run command with server arguments using -- pattern."""
+        with (
+            patch("fastmcp.cli.run.run_command") as mock_run_command,
+        ):
+            result = runner.invoke(
+                cli.app,
+                [
+                    "run",
+                    str(temp_python_file),
+                    "--",
+                    "--config",
+                    "config.json",
+                ],
+            )
+            assert result.exit_code == 0
+            mock_run_command.assert_called_once_with(
+                server_spec=str(temp_python_file),
+                transport=None,
+                host=None,
+                port=None,
+                log_level=None,
+                server_args=["--config", "config.json"],
+            )

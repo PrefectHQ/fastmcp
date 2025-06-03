@@ -61,6 +61,17 @@ fastmcp dev server.py
 
 See the [CLI documentation](/patterns/cli) for detailed information about all available commands and options.
 
+### Passing Arguments to Servers
+
+When servers accept command line arguments (using argparse, click, or other libraries), you can pass them after `--`:
+
+```bash
+fastmcp run config_server.py -- --config config.json
+fastmcp run database_server.py -- --database-path /tmp/db.sqlite --debug
+```
+
+This is useful for servers that need configuration files, database paths, API keys, or other runtime options.
+
 ## Transport Options
 
 Below is a comparison of available transport options to help you choose the right one for your needs:

@@ -219,8 +219,9 @@ def dev(
         sys.exit(1)
 
 
-@app.command()
+@app.command(context_settings={"allow_extra_args": True})
 def run(
+    ctx: typer.Context,
     server_spec: str = typer.Argument(
         ...,
         help="Python file, object specification (file:obj), or URL",
@@ -266,7 +267,12 @@ def run(
 
     Note: This command runs the server directly. You are responsible for ensuring
     all dependencies are available.
+
+    Server arguments can be passed after -- :
+    fastmcp run server.py -- --config config.json --debug
     """
+    server_args = ctx.args  # extra args after --
+
     logger.debug(
         "Running server or client",
         extra={
@@ -275,6 +281,7 @@ def run(
             "host": host,
             "port": port,
             "log_level": log_level,
+            "server_args": server_args,
         },
     )
 
@@ -285,6 +292,7 @@ def run(
             host=host,
             port=port,
             log_level=log_level,
+            server_args=server_args,
         )
     except Exception as e:
         logger.error(
