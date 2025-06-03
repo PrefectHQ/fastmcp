@@ -2,8 +2,7 @@
 Simple example showing FastMCP server with command line argument support.
 
 Usage:
-    fastmcp run examples/config_server.py --server-arg="--name" --server-arg="MyServer"
-    fastmcp run examples/config_server.py --server-arg="--debug"
+    fastmcp run examples/config_server.py -- --name MyServer --debug
 """
 
 import argparse
