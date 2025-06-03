@@ -260,3 +260,39 @@ class TestRunCommand:
             mock_server.run.assert_called_once_with(
                 transport="sse", host="0.0.0.0", port=8080, log_level="DEBUG"
             )
+
+
+class TestImportServerWithArgs:
+    """Tests for the import_server_with_args function."""
+
+    def test_import_server_with_args_no_args(self, temp_python_file):
+        """Test importing server without arguments."""
+        with patch("fastmcp.cli.run.import_server") as mock_import:
+            mock_server = MagicMock()
+            mock_import.return_value = mock_server
+
+            result = fastmcp.cli.run.import_server_with_args(
+                temp_python_file, None, None
+            )
+
+            assert result == mock_server
+            mock_import.assert_called_once_with(temp_python_file, None)
+
+    def test_import_server_with_args_with_args(self, temp_python_file):
+        """Test importing server with arguments."""
+        import sys
+
+        with patch("fastmcp.cli.run.import_server") as mock_import:
+            mock_server = MagicMock()
+            mock_import.return_value = mock_server
+
+            original_argv = sys.argv[:]
+
+            result = fastmcp.cli.run.import_server_with_args(
+                temp_python_file, "custom_server", ["--config", "test.json", "--debug"]
+            )
+
+            assert result == mock_server
+            mock_import.assert_called_once_with(temp_python_file, "custom_server")
+            # Verify sys.argv was restored
+            assert sys.argv == original_argv

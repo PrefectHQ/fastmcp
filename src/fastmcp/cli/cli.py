@@ -256,6 +256,13 @@ def run(
             help="Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)",
         ),
     ] = None,
+    server_args: Annotated[
+        list[str],
+        typer.Option(
+            "--server-arg",
+            help="Additional arguments to pass to the server",
+        ),
+    ] = [],
 ) -> None:
     """Run a MCP server or connect to a remote one.
 
@@ -266,6 +273,9 @@ def run(
 
     Note: This command runs the server directly. You are responsible for ensuring
     all dependencies are available.
+
+    Server arguments can be passed using --server-arg:
+    fastmcp run server.py --server-arg="--config" --server-arg="config.json"
     """
     logger.debug(
         "Running server or client",
@@ -275,6 +285,7 @@ def run(
             "host": host,
             "port": port,
             "log_level": log_level,
+            "server_args": server_args,
         },
     )
 
@@ -285,6 +296,7 @@ def run(
             host=host,
             port=port,
             log_level=log_level,
+            server_args=server_args,
         )
     except Exception as e:
         logger.error(
