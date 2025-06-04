@@ -12,6 +12,72 @@ h6 code:not(pre code) {
   background-color: rgba(247, 37, 133, 0.09);
 }
 
+/* Banner styling -- improve readability with better contrast */
+#banner {
+  background: #f1f5f9 !important;
+  color: #1e293b !important;
+  font-size: 0.95rem !important;
+  font-weight: 600 !important;
+  padding-top: 12px !important;
+  padding-bottom: 12px !important;
+  position: relative !important;
+  overflow: hidden !important;
+}
+
+#banner::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    rgba(6, 182, 212, 0.25) 0%,
+    rgba(6, 182, 212, 0.05) 25%,
+    rgba(6, 182, 212, 0.35) 50%,
+    rgba(6, 182, 212, 0.08) 75%,
+    rgba(6, 182, 212, 0.28) 100%
+  );
+  background-size: 300% 100%;
+  animation: colorWave 14s ease-in-out infinite alternate;
+}
+
+.dark #banner {
+  background: #475569 !important;
+  color: #f1f5f9 !important;
+}
+
+.dark #banner::before {
+  background: linear-gradient(
+    90deg,
+    rgba(247, 37, 133, 0.35) 0%,
+    rgba(247, 37, 133, 0.08) 25%,
+    rgba(247, 37, 133, 0.45) 50%,
+    rgba(247, 37, 133, 0.12) 75%,
+    rgba(247, 37, 133, 0.38) 100%
+  );
+  background-size: 300% 100%;
+}
+
+@keyframes colorWave {
+  0% {
+    background-position: 0% 0%;
+  }
+  100% {
+    background-position: 100% 0%;
+  }
+}
+
+#banner * {
+  color: #1e293b !important;
+  margin: 0 !important;
+}
+
+.dark #banner * {
+  color: #f1f5f9 !important;
+}
+
 /* Version badge -- display a badge with the current version of the documentation */
 .version-badge {
   display: inline-block;

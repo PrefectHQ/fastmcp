@@ -11,10 +11,21 @@
         },
         "decoration": "windows"
     },
+    "banner": {
+        "content": "[Join the waitlist](https://fastmcp.cloud) for FastMCP Cloud!"
+    },
     "colors": {
         "dark": "#f72585",
         "light": "#4cc9f0",
         "primary": "#2d00f7"
+    },
+    "contextual": {
+        "options": [
+            "copy",
+            "view",
+            "chatgpt",
+            "claude"
+        ]
     },
     "description": "The fast, Pythonic way to build MCP servers and clients.",
     "favicon": {
