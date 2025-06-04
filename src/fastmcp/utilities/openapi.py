@@ -872,6 +872,50 @@ def format_description_with_responses(
     return "\n".join(desc_parts)
 
 
+def _replace_ref_with_defs(
+    info: dict[str, Any], description: str | None = None
+) -> dict[str, Any]:
+    """
+    Replace openapi $ref with jsonschema $defs
+
+    Examples:
+    - {"type": "object", "properties": {"$ref": "#/components/schemas/..."}}
+    - {"$ref": "#/components/schemas/..."}
+    - {"items": {"$ref": "#/components/schemas/..."}}
+    - {"anyOf": [{"$ref": "#/components/schemas/..."}]}
+    - {"allOf": [{"$ref": "#/components/schemas/..."}]}
+    - {"oneOf": [{"$ref": "#/components/schemas/..."}]}
+
+    Args:
+        info: dict[str, Any]
+        description: str | None
+
+    Returns:
+        dict[str, Any]
+    """
+    schema = info.copy()
+    if ref_path := schema.get("$ref"):
+        if ref_path.startswith("#/components/schemas/"):
+            schema_name = ref_path.split("/")[-1]
+            schema["$ref"] = f"#/$defs/{schema_name}"
+    elif properties := schema.get("properties"):
+        if "$ref" in properties:
+            schema["properties"] = _replace_ref_with_defs(properties)
+        else:
+            schema["properties"] = {
+                prop_name: _replace_ref_with_defs(prop_schema)
+                for prop_name, prop_schema in properties.items()
+            }
+    elif item_schema := schema.get("items"):
+        schema["items"] = _replace_ref_with_defs(item_schema)
+    for section in ["anyOf", "allOf", "oneOf"]:
+        for i, item in enumerate(schema.get(section, [])):
+            schema[section][i] = _replace_ref_with_defs(item)
+    if info.get("description", description) and not schema.get("description"):
+        schema["description"] = description
+    return schema
+
+
 def _combine_schemas(route: HTTPRoute) -> dict[str, Any]:
     """
     Combines parameter and request body schemas into a single schema.
@@ -889,38 +933,18 @@ def _combine_schemas(route: HTTPRoute) -> dict[str, Any]:
     for param in route.parameters:
         if param.required:
             required.append(param.name)
-
-        # Copy the schema and add description if available
-        param_schema = param.schema_.copy() if isinstance(param.schema_, dict) else {}
-
-        # Convert #/components/schemas references to #/$defs references
-        if isinstance(param_schema, dict) and "$ref" in param_schema:
-            ref_path = param_schema["$ref"]
-            if ref_path.startswith("#/components/schemas/"):
-                schema_name = ref_path.split("/")[-1]
-                param_schema["$ref"] = f"#/$defs/{schema_name}"
-
-        # Also handle anyOf, allOf, oneOf references
-        for section in ["anyOf", "allOf", "oneOf"]:
-            if section in param_schema and isinstance(param_schema[section], list):
-                for i, item in enumerate(param_schema[section]):
-                    if isinstance(item, dict) and "$ref" in item:
-                        ref_path = item["$ref"]
-                        if ref_path.startswith("#/components/schemas/"):
-                            schema_name = ref_path.split("/")[-1]
-                            param_schema[section][i]["$ref"] = f"#/$defs/{schema_name}"
-
-        # Add parameter description to schema if available and not already present
-        if param.description and not param_schema.get("description"):
-            param_schema["description"] = param.description
-
-        properties[param.name] = param_schema
+        properties[param.name] = _replace_ref_with_defs(
+            param.schema_.copy(), param.description
+        )
 
     # Add request body if it exists
     if route.request_body and route.request_body.content_schema:
         # For now, just use the first content type's schema
         content_type = next(iter(route.request_body.content_schema))
-        body_schema = route.request_body.content_schema[content_type]
+        body_schema = _replace_ref_with_defs(
+            route.request_body.content_schema[content_type].copy(),
+            route.request_body.description,
+        )
         body_props = body_schema.get("properties", {})
 
         # Add request body properties
@@ -935,7 +959,6 @@ def _combine_schemas(route: HTTPRoute) -> dict[str, Any]:
         "properties": properties,
         "required": required,
     }
-
     # Add schema definitions if available
     if route.schema_definitions:
         result["$defs"] = route.schema_definitions
