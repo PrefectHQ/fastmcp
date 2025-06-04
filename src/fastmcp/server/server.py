@@ -782,23 +782,33 @@ class FastMCP(Generic[LifespanResultT]):
 
     def prompt(
         self,
+        name_or_fn: str | AnyFunction | None = None,
+        *,
         name: str | None = None,
         description: str | None = None,
         tags: set[str] | None = None,
-    ) -> Callable[[AnyFunction], AnyFunction]:
+    ) -> Callable[[AnyFunction], AnyFunction] | AnyFunction:
         """Decorator to register a prompt.
 
         Prompts can optionally request a Context object by adding a parameter with the
         Context type annotation. The context provides access to MCP capabilities like
         logging, progress reporting, and session information.
 
+        This decorator supports multiple calling patterns:
+        - @server.prompt (without parentheses)
+        - @server.prompt() (with empty parentheses)
+        - @server.prompt("custom_name") (with name as first argument)
+        - @server.prompt(name="custom_name") (with name as keyword argument)
+        - server.prompt(function, name="custom_name") (direct function call)
+
         Args:
-            name: Optional name for the prompt (defaults to function name)
+            name_or_fn: Either a function (when used as @prompt), a string name, or None
             description: Optional description of what the prompt does
             tags: Optional set of tags for categorizing the prompt
+            name: Optional name for the prompt (keyword-only, alternative to name_or_fn)
 
         Example:
-            @server.prompt()
+            @server.prompt
             def analyze_table(table_name: str) -> list[Message]:
                 schema = read_table_schema(table_name)
                 return [
@@ -819,8 +829,8 @@ class FastMCP(Generic[LifespanResultT]):
                     }
                 ]
 
-            @server.prompt()
-            async def analyze_file(path: str) -> list[Message]:
+            @server.prompt("custom_name")
+            def analyze_file(path: str) -> list[Message]:
                 content = await read_file(path)
                 return [
                     {
@@ -834,26 +844,60 @@ class FastMCP(Generic[LifespanResultT]):
                         }
                     }
                 ]
-        """
-        # Check if user passed function directly instead of calling decorator
-        if callable(name):
-            raise TypeError(
-                "The @prompt decorator was used incorrectly. "
-                "Did you forget to call it? Use @prompt() instead of @prompt"
-            )
 
-        def decorator(fn: AnyFunction) -> AnyFunction:
+            @server.prompt(name="custom_name")
+            def another_prompt(data: str) -> list[Message]:
+                return [{"role": "user", "content": data}]
+
+            # Direct function call
+            server.prompt(my_function, name="custom_name")
+        """
+        # Determine the actual name and function based on the calling pattern
+        if callable(name_or_fn):
+            # Case 1: @prompt (without parens) - function passed directly as decorator
+            # Case 2: direct call like prompt(fn, name="something")
+            fn = name_or_fn
+            prompt_name = name  # Use keyword name if provided, otherwise None
+
+            # Register the prompt immediately
             prompt = Prompt.from_function(
                 fn=fn,
-                name=name,
+                name=prompt_name,
                 description=description,
                 tags=tags,
             )
-
             self.add_prompt(prompt)
-            return DecoratedFunction(fn)
 
-        return decorator
+            # If name is provided, this is a direct call, return original function for consistency with tools
+            # If name is None, this is @prompt without parens, return DecoratedFunction for proper method handling
+            if name is not None:
+                return fn  # Direct function call
+            else:
+                return DecoratedFunction(fn)  # Decorator usage
+
+        elif isinstance(name_or_fn, str):
+            # Case 3: @prompt("custom_name") - name passed as first argument
+            if name is not None:
+                raise TypeError(
+                    "Cannot specify both a name as first argument and as keyword argument. "
+                    f"Use either @prompt('{name_or_fn}') or @prompt(name='{name}'), not both."
+                )
+            prompt_name = name_or_fn
+        elif name_or_fn is None:
+            # Case 4: @prompt() or @prompt(name="something") - use keyword name
+            prompt_name = name
+        else:
+            raise TypeError(
+                f"First argument to @prompt must be a function, string, or None, got {type(name_or_fn)}"
+            )
+
+        # Return partial for cases where we need to wait for the function
+        return partial(
+            self.prompt,
+            name=prompt_name,
+            description=description,
+            tags=tags,
+        )
 
     async def run_stdio_async(self) -> None:
         """Run the server using stdio transport."""
