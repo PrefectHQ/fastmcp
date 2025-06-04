@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime
+import inspect
 import re
 import warnings
 from collections.abc import AsyncIterator, Awaitable, Callable
@@ -44,7 +45,6 @@ import fastmcp.server
 import fastmcp.settings
 from fastmcp.exceptions import NotFoundError
 from fastmcp.prompts import Prompt, PromptManager
-from fastmcp.prompts.prompt import PromptResult
 from fastmcp.resources import Resource, ResourceManager
 from fastmcp.resources.template import ResourceTemplate
 from fastmcp.server.auth.auth import OAuthProvider
@@ -183,10 +183,9 @@ class FastMCP(Generic[LifespanResultT]):
 
         if tools:
             for tool in tools:
-                if isinstance(tool, Tool):
-                    self._tool_manager.add_tool(tool)
-                else:
-                    self.add_tool(tool)
+                if not isinstance(tool, Tool):
+                    tool = Tool.from_function(tool)
+                self.add_tool(tool)
 
         # Set up MCP protocol handlers
         self._setup_handlers()
@@ -349,18 +348,18 @@ class FastMCP(Generic[LifespanResultT]):
         """
 
         def decorator(
-            func: Callable[[Request], Awaitable[Response]],
+            fn: Callable[[Request], Awaitable[Response]],
         ) -> Callable[[Request], Awaitable[Response]]:
             self._additional_http_routes.append(
                 Route(
                     path,
-                    endpoint=func,
+                    endpoint=fn,
                     methods=methods,
                     name=name,
                     include_in_schema=include_in_schema,
                 )
             )
-            return func
+            return fn
 
         return decorator
 
@@ -484,15 +483,7 @@ class FastMCP(Generic[LifespanResultT]):
 
             raise NotFoundError(f"Unknown prompt: {name}")
 
-    def add_tool(
-        self,
-        fn: AnyFunction,
-        name: str | None = None,
-        description: str | None = None,
-        tags: set[str] | None = None,
-        annotations: ToolAnnotations | dict[str, Any] | None = None,
-        exclude_args: list[str] | None = None,
-    ) -> None:
+    def add_tool(self, tool: Tool) -> None:
         """Add a tool to the server.
 
         The tool function can optionally request a Context object by adding a parameter
@@ -505,18 +496,6 @@ class FastMCP(Generic[LifespanResultT]):
             tags: Optional set of tags for categorizing the tool
             annotations: Optional annotations about the tool's behavior
         """
-        if isinstance(annotations, dict):
-            annotations = ToolAnnotations(**annotations)
-
-        tool = Tool.from_function(
-            fn,
-            name=name,
-            description=description,
-            tags=tags,
-            annotations=annotations,
-            exclude_args=exclude_args,
-        )
-
         self._tool_manager.add_tool(tool)
         self._cache.clear()
 
@@ -574,9 +553,11 @@ class FastMCP(Generic[LifespanResultT]):
                 "The @tool decorator was used incorrectly. "
                 "Did you forget to call it? Use @tool() instead of @tool"
             )
+        if isinstance(annotations, dict):
+            annotations = ToolAnnotations(**annotations)
 
         def decorator(fn: AnyFunction) -> AnyFunction:
-            self.add_tool(
+            tool = Tool.from_function(
                 fn,
                 name=name,
                 description=description,
@@ -584,6 +565,7 @@ class FastMCP(Generic[LifespanResultT]):
                 annotations=annotations,
                 exclude_args=exclude_args,
             )
+            self.add_tool(tool)
             return fn
 
         return decorator
@@ -597,6 +579,14 @@ class FastMCP(Generic[LifespanResultT]):
 
         self._resource_manager.add_resource(resource, key=key)
         self._cache.clear()
+
+    def add_template(self, template: ResourceTemplate, key: str | None = None) -> None:
+        """Add a resource template to the server.
+
+        Args:
+            template: A ResourceTemplate instance to add
+        """
+        self._resource_manager.add_template(template, key=key)
 
     def add_resource_fn(
         self,
@@ -620,6 +610,12 @@ class FastMCP(Generic[LifespanResultT]):
             mime_type: Optional MIME type for the resource
             tags: Optional set of tags for categorizing the resource
         """
+        # deprecated since 2.7.0
+        warnings.warn(
+            "The add_resource_fn method is deprecated. Use the resource decorator instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self._resource_manager.add_resource_or_template_from_fn(
             fn=fn,
             uri=uri,
@@ -693,36 +689,54 @@ class FastMCP(Generic[LifespanResultT]):
             )
 
         def decorator(fn: AnyFunction) -> AnyFunction:
-            self.add_resource_fn(
-                fn=fn,
-                uri=uri,
-                name=name,
-                description=description,
-                mime_type=mime_type,
-                tags=tags,
+            from fastmcp.server.context import Context
+
+            # Check if this should be a template
+            has_uri_params = "{" in uri and "}" in uri
+            # check if the function has any parameters (other than injected context)
+            has_func_params = any(
+                p
+                for p in inspect.signature(fn).parameters.values()
+                if p.annotation is not Context
             )
+
+            if has_uri_params or has_func_params:
+                template = ResourceTemplate.from_function(
+                    fn=fn,
+                    uri_template=uri,
+                    name=name,
+                    description=description,
+                    mime_type=mime_type,
+                    tags=tags,
+                )
+                self.add_template(template)
+            elif not has_uri_params and not has_func_params:
+                resource = Resource.from_function(
+                    fn=fn,
+                    uri=uri,
+                    name=name,
+                    description=description,
+                    mime_type=mime_type,
+                    tags=tags,
+                )
+                self.add_resource(resource)
+            else:
+                raise ValueError(
+                    "Invalid resource or template definition due to a "
+                    "mismatch between URI parameters and function parameters."
+                )
+
             return fn
 
         return decorator
 
-    def add_prompt(
-        self,
-        fn: Callable[..., PromptResult | Awaitable[PromptResult]],
-        name: str | None = None,
-        description: str | None = None,
-        tags: set[str] | None = None,
-    ) -> None:
+    def add_prompt(self, prompt: Prompt) -> None:
         """Add a prompt to the server.
 
         Args:
             prompt: A Prompt instance to add
         """
-        self._prompt_manager.add_prompt_from_fn(
-            fn=fn,
-            name=name,
-            description=description,
-            tags=tags,
-        )
+        self._prompt_manager.add_prompt(prompt)
         self._cache.clear()
 
     def prompt(
@@ -787,9 +801,16 @@ class FastMCP(Generic[LifespanResultT]):
                 "Did you forget to call it? Use @prompt() instead of @prompt"
             )
 
-        def decorator(func: AnyFunction) -> AnyFunction:
-            self.add_prompt(func, name=name, description=description, tags=tags)
-            return DecoratedFunction(func)
+        def decorator(fn: AnyFunction) -> AnyFunction:
+            prompt = Prompt.from_function(
+                fn=fn,
+                name=name,
+                description=description,
+                tags=tags,
+            )
+
+            self.add_prompt(prompt)
+            return DecoratedFunction(fn)
 
         return decorator
 

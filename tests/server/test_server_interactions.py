@@ -19,9 +19,10 @@ from pydantic import AnyUrl, Field
 from fastmcp import Client, Context, FastMCP
 from fastmcp.client.transports import FastMCPTransport
 from fastmcp.exceptions import ToolError
-from fastmcp.prompts.prompt import EmbeddedResource, PromptMessage
+from fastmcp.prompts.prompt import EmbeddedResource, Prompt, PromptMessage
 from fastmcp.resources import FileResource
 from fastmcp.resources.resource import FunctionResource
+from fastmcp.tools.tool import Tool
 from fastmcp.utilities.types import Image
 
 
@@ -691,7 +692,7 @@ class TestToolContextInjection:
             async def __call__(self, x: int, ctx: Context) -> int:
                 return x + int(ctx.request_id)
 
-        mcp.add_tool(MyTool())
+        mcp.add_tool(Tool.from_function(MyTool(), name="MyTool"))
 
         async with Client(mcp) as client:
             result = await client.call_tool("MyTool", {"x": 2})
@@ -1285,7 +1286,7 @@ class TestPromptContext:
             def __call__(self, name: str, ctx: Context) -> str:
                 return f"Hello, {name}! {ctx.request_id}"
 
-        mcp.add_prompt(MyPrompt(), name="my_prompt")
+        mcp.add_prompt(Prompt.from_function(MyPrompt(), name="my_prompt"))  # noqa: F821
 
         async with Client(mcp) as client:
             result = await client.get_prompt("my_prompt", {"name": "World"})

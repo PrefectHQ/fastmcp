@@ -1,7 +1,6 @@
-"""Prompt management functionality."""
-
 from __future__ import annotations as _annotations
 
+import warnings
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
@@ -57,6 +56,11 @@ class PromptManager:
         tags: set[str] | None = None,
     ) -> FunctionPrompt:
         """Create a prompt from a function."""
+        # deprecated in 2.7.0
+        warnings.warn(
+            "PromptManager.add_prompt_from_fn() is deprecated. Use Prompt.from_function() and call add_prompt() instead.",
+            DeprecationWarning,
+        )
         prompt = FunctionPrompt.from_function(
             fn, name=name, description=description, tags=tags
         )

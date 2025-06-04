@@ -6,6 +6,7 @@ from pydantic import Field
 
 from fastmcp import Client, FastMCP
 from fastmcp.exceptions import NotFoundError
+from fastmcp.prompts.prompt import Prompt
 from fastmcp.server.server import (
     MountedServer,
     add_resource_prefix,
@@ -13,6 +14,7 @@ from fastmcp.server.server import (
     remove_resource_prefix,
 )
 from fastmcp.tools import FunctionTool
+from fastmcp.tools.tool import Tool
 
 
 class TestCreateServer:
@@ -173,7 +175,7 @@ class TestToolDecorator:
                 return self.x + y
 
         obj = MyClass(10)
-        mcp.add_tool(obj.add)
+        mcp.add_tool(Tool.from_function(obj.add))
         result = await mcp._mcp_call_tool("add", {"y": 2})
         assert result[0].text == "12"  # type: ignore[attr-defined]
 
@@ -187,7 +189,7 @@ class TestToolDecorator:
             def add(cls, y: int) -> int:
                 return cls.x + y
 
-        mcp.add_tool(MyClass.add)
+        mcp.add_tool(Tool.from_function(MyClass.add))
         result = await mcp._mcp_call_tool("add", {"y": 2})
         assert result[0].text == "12"  # type: ignore[attr-defined]
 
@@ -223,7 +225,7 @@ class TestToolDecorator:
             async def add(cls, y: int) -> int:
                 return cls.x + y
 
-        mcp.add_tool(MyClass.add)
+        mcp.add_tool(Tool.from_function(MyClass.add))
         result = await mcp._mcp_call_tool("add", {"y": 2})
         assert result[0].text == "12"  # type: ignore[attr-defined]
 
@@ -235,7 +237,7 @@ class TestToolDecorator:
             async def add(x: int, y: int) -> int:
                 return x + y
 
-        mcp.add_tool(MyClass.add)
+        mcp.add_tool(Tool.from_function(MyClass.add))
         result = await mcp._mcp_call_tool("add", {"x": 1, "y": 2})
         assert result[0].text == "3"  # type: ignore[attr-defined]
 
@@ -260,7 +262,7 @@ class TestToolDecorator:
             """Multiply two numbers."""
             return a * b
 
-        mcp.add_tool(multiply, name="custom_multiply")
+        mcp.add_tool(Tool.from_function(multiply, name="custom_multiply"))
 
         # Check that the tool is registered with the custom name
         tools = await mcp.get_tools()
@@ -386,6 +388,7 @@ class TestResourceDecorator:
                 return f"{self.prefix} Hello, world!"
 
         obj = MyClass("My prefix:")
+
         mcp.add_resource_fn(
             obj.get_data, uri="resource://data", name="instance-resource"
         )
@@ -678,7 +681,7 @@ class TestPromptDecorator:
                 return f"{self.prefix} Hello, world!"
 
         obj = MyClass("My prefix:")
-        mcp.add_prompt(obj.test_prompt, name="test_prompt")
+        mcp.add_prompt(Prompt.from_function(obj.test_prompt, name="test_prompt"))
 
         async with Client(mcp) as client:
             result = await client.get_prompt("test_prompt")
@@ -696,7 +699,7 @@ class TestPromptDecorator:
             def test_prompt(cls) -> str:
                 return f"{cls.prefix} Hello, world!"
 
-        mcp.add_prompt(MyClass.test_prompt, name="test_prompt")
+        mcp.add_prompt(Prompt.from_function(MyClass.test_prompt, name="test_prompt"))
 
         async with Client(mcp) as client:
             result = await client.get_prompt("test_prompt")

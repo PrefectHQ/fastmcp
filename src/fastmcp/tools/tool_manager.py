@@ -1,5 +1,6 @@
 from __future__ import annotations as _annotations
 
+import warnings
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
@@ -69,6 +70,11 @@ class ToolManager:
         exclude_args: list[str] | None = None,
     ) -> Tool:
         """Add a tool to the server."""
+        # deprecated in 2.7.0
+        warnings.warn(
+            "ToolManager.add_tool_from_fn() is deprecated. Use Tool.from_function() and call add_tool() instead.",
+            DeprecationWarning,
+        )
         tool = Tool.from_function(
             fn,
             name=name,
