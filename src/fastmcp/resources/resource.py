@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING, Annotated, Any
 from mcp.types import Resource as MCPResource
 from pydantic import (
     AnyUrl,
-    BaseModel,
     BeforeValidator,
     ConfigDict,
     Field,
@@ -17,13 +16,13 @@ from pydantic import (
     field_validator,
 )
 
-from fastmcp.utilities.types import _convert_set_defaults
+from fastmcp.utilities.types import FastMCPBaseModel, _convert_set_defaults
 
 if TYPE_CHECKING:
     pass
 
 
-class Resource(BaseModel, abc.ABC):
+class Resource(FastMCPBaseModel, abc.ABC):
     """Base class for all resources."""
 
     model_config = ConfigDict(validate_default=True)

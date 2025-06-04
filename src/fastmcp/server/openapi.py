@@ -233,7 +233,6 @@ class OpenAPITool(Tool):
             name=name,
             description=description,
             parameters=parameters,
-            fn=self._execute_request,  # We'll use an instance method instead of a global function
             tags=tags,
             annotations=annotations,
             exclude_args=exclude_args,
@@ -247,9 +246,10 @@ class OpenAPITool(Tool):
         """Custom representation to prevent recursion errors when printing."""
         return f"OpenAPITool(name={self.name!r}, method={self._route.method}, path={self._route.path})"
 
-    async def _execute_request(self, *args, **kwargs):
+    async def run(
+        self, arguments: dict[str, Any]
+    ) -> list[TextContent | ImageContent | EmbeddedResource]:
         """Execute the HTTP request based on the route configuration."""
-        context = kwargs.get("context")
 
         # Prepare URL
         path = self._route.path
@@ -258,11 +258,11 @@ class OpenAPITool(Tool):
         # Path parameters should never be None as they're typically required
         # but we'll handle that case anyway
         path_params = {
-            p.name: kwargs.get(p.name)
+            p.name: arguments.get(p.name)
             for p in self._route.parameters
             if p.location == "path"
-            and p.name in kwargs
-            and kwargs.get(p.name) is not None
+            and p.name in arguments
+            and arguments.get(p.name) is not None
         }
 
         # Ensure all path parameters are provided
@@ -340,11 +340,11 @@ class OpenAPITool(Tool):
         for p in self._route.parameters:
             if (
                 p.location == "query"
-                and p.name in kwargs
-                and kwargs.get(p.name) is not None
-                and kwargs.get(p.name) != ""
+                and p.name in arguments
+                and arguments.get(p.name) is not None
+                and arguments.get(p.name) != ""
             ):
-                param_value = kwargs.get(p.name)
+                param_value = arguments.get(p.name)
 
                 # Format array query parameters as comma-separated strings
                 # following OpenAPI form style (default for query parameters)
@@ -399,10 +399,10 @@ class OpenAPITool(Tool):
         for p in self._route.parameters:
             if (
                 p.location == "header"
-                and p.name in kwargs
-                and kwargs[p.name] is not None
+                and p.name in arguments
+                and arguments[p.name] is not None
             ):
-                openapi_headers[p.name.lower()] = str(kwargs[p.name])
+                openapi_headers[p.name.lower()] = str(arguments[p.name])
         headers.update(openapi_headers)
 
         # Add headers from the current MCP client HTTP request (these take precedence)
@@ -420,20 +420,12 @@ class OpenAPITool(Tool):
             }
             body_params = {
                 k: v
-                for k, v in kwargs.items()
+                for k, v in arguments.items()
                 if k not in path_query_header_params and k != "context"
             }
 
             if body_params:
                 json_data = body_params
-
-        # Log the request details if a context is available
-        if context:
-            try:
-                await context.info(f"Making {self._route.method} request to {path}")
-            except (ValueError, AttributeError):
-                # Silently continue if context logging is not available
-                pass
 
         # Execute the request
         try:
@@ -451,10 +443,11 @@ class OpenAPITool(Tool):
 
             # Try to parse as JSON first
             try:
-                return response.json()
+                result = response.json()
             except (json.JSONDecodeError, ValueError):
                 # Return text content if not JSON
-                return response.text
+                result = response.text
+            return _convert_to_content(result)
 
         except httpx.HTTPStatusError as e:
             # Handle HTTP errors (4xx, 5xx)
@@ -473,13 +466,6 @@ class OpenAPITool(Tool):
         except httpx.RequestError as e:
             # Handle request errors (connection, timeout, etc.)
             raise ValueError(f"Request error: {str(e)}")
-
-    async def run(
-        self, arguments: dict[str, Any]
-    ) -> list[TextContent | ImageContent | EmbeddedResource]:
-        """Run the tool with arguments and optional context."""
-        response = await self._execute_request(**arguments)
-        return _convert_to_content(response)
 
 
 class OpenAPIResource(Resource):

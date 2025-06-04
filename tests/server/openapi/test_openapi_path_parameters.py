@@ -128,7 +128,7 @@ async def test_array_path_parameter_handling(mock_client):
     )
 
     # Test with a single value
-    await tool._execute_request(days=["monday"])
+    await tool.run({"days": ["monday"]})
 
     # Check that the path parameter is formatted correctly
     # This is where the bug is: it should be '/select/monday' not '/select/[\'monday\']'
@@ -143,7 +143,7 @@ async def test_array_path_parameter_handling(mock_client):
     mock_client.request.reset_mock()
 
     # Test with multiple values
-    await tool._execute_request(days=["monday", "tuesday"])
+    await tool.run({"days": ["monday", "tuesday"]})
 
     # Check that the path parameter is formatted correctly
     # It should be '/select/monday,tuesday' not '/select/[\'monday\', \'tuesday\']'
@@ -234,7 +234,7 @@ async def test_complex_nested_array_path_parameter(mock_client):
     ]
 
     # Execute the request with complex filters
-    await tool._execute_request(filters=complex_filters)
+    await tool.run({"filters": complex_filters})
 
     # The complex object should be properly serialized in the URL
     # For path parameters, this would typically need a custom serialization strategy
@@ -359,7 +359,7 @@ async def test_array_query_parameter_format(mock_client):
     )
 
     # Test with a single value
-    await tool._execute_request(days=["monday"])
+    await tool.run({"days": ["monday"]})
 
     # Check that the query parameter is formatted correctly
     mock_client.request.assert_called_with(
@@ -373,7 +373,7 @@ async def test_array_query_parameter_format(mock_client):
     mock_client.request.reset_mock()
 
     # Test with multiple values
-    await tool._execute_request(days=["monday", "tuesday"])
+    await tool.run({"days": ["monday", "tuesday"]})
 
     # Check that the query parameter is formatted correctly
     # It should be 'days=monday,tuesday' not 'days=["monday","tuesday"]'
@@ -429,7 +429,7 @@ async def test_array_query_parameter_exploded_format(mock_client):
     )
 
     # Test with a single value
-    await tool._execute_request(days=["monday"])
+    await tool.run({"days": ["monday"]})
 
     # Check that the query parameter is formatted correctly
     mock_client.request.assert_called_with(
@@ -443,7 +443,7 @@ async def test_array_query_parameter_exploded_format(mock_client):
     mock_client.request.reset_mock()
 
     # Test with multiple values
-    await tool._execute_request(days=["monday", "tuesday"])
+    await tool.run({"days": ["monday", "tuesday"]})
 
     # Check that the query parameter is formatted correctly
     # It should be passed as an array, which httpx will serialize as days=monday&days=tuesday

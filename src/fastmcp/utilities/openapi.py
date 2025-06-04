@@ -25,6 +25,7 @@ from openapi_pydantic.v3.v3_0 import Schema as Schema_30
 from pydantic import BaseModel, Field, ValidationError
 
 from fastmcp.utilities.json_schema import compress_schema
+from fastmcp.utilities.types import FastMCPBaseModel
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +39,7 @@ ParameterLocation = Literal["path", "query", "header", "cookie"]
 JsonSchema = dict[str, Any]
 
 
-class ParameterInfo(BaseModel):
+class ParameterInfo(FastMCPBaseModel):
     """Represents a single parameter for an HTTP operation in our IR."""
 
     name: str
@@ -48,7 +49,7 @@ class ParameterInfo(BaseModel):
     description: str | None = None
 
 
-class RequestBodyInfo(BaseModel):
+class RequestBodyInfo(FastMCPBaseModel):
     """Represents the request body for an HTTP operation in our IR."""
 
     required: bool = False
@@ -58,7 +59,7 @@ class RequestBodyInfo(BaseModel):
     description: str | None = None
 
 
-class ResponseInfo(BaseModel):
+class ResponseInfo(FastMCPBaseModel):
     """Represents response information in our IR."""
 
     description: str | None = None
@@ -66,7 +67,7 @@ class ResponseInfo(BaseModel):
     content_schema: dict[str, JsonSchema] = Field(default_factory=dict)
 
 
-class HTTPRoute(BaseModel):
+class HTTPRoute(FastMCPBaseModel):
     """Intermediate Representation for a single OpenAPI operation."""
 
     path: str

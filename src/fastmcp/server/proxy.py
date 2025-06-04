@@ -48,7 +48,6 @@ class ProxyTool(Tool):
             name=tool.name,
             description=tool.description,
             parameters=tool.inputSchema,
-            fn=_proxy_passthrough,
         )
 
     async def run(
@@ -69,6 +68,9 @@ class ProxyTool(Tool):
 
 
 class ProxyResource(Resource):
+    _client: Client
+    _value: str | bytes | None = None
+
     def __init__(self, client: Client, *, _value: str | bytes | None = None, **kwargs):
         super().__init__(**kwargs)
         self._client = client
@@ -146,7 +148,6 @@ class ProxyTemplate(ResourceTemplate):
             name=self.name,
             description=self.description,
             mime_type=result[0].mimeType,
-            contents=result,
             _value=value,
         )
 

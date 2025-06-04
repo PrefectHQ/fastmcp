@@ -3,6 +3,7 @@ from urllib.parse import quote
 
 from fastmcp.client.client import Client
 from fastmcp.server.server import FastMCP
+from fastmcp.tools.tool import FunctionTool
 
 
 async def test_import_basic_functionality():
@@ -27,6 +28,7 @@ async def test_import_basic_functionality():
     tool = main_app._tool_manager.get_tool("sub_sub_tool")
     assert tool is not None
     assert tool.name == "sub_tool"
+    assert isinstance(tool, FunctionTool)
     assert callable(tool.fn)
 
 
@@ -205,6 +207,7 @@ async def test_tool_custom_name_preserved_when_imported():
     assert tool is not None
 
     # Check that the function name is preserved
+    assert isinstance(tool, FunctionTool)
     assert tool.fn.__name__ == "fetch_data"
 
 
@@ -238,6 +241,7 @@ async def test_first_level_importing_with_custom_name():
     # Tool is accessible in the service app with the first prefix
     tool = service_app._tool_manager.get_tool("provider_compute")
     assert tool is not None
+    assert isinstance(tool, FunctionTool)
     assert tool.fn.__name__ == "calculate_value"
 
 

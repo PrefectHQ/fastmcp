@@ -2,19 +2,22 @@ from __future__ import annotations
 
 import inspect
 import json
+import warnings
+from abc import ABC, abstractmethod
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Annotated, Any
 
 import pydantic_core
 from mcp.types import EmbeddedResource, ImageContent, TextContent, ToolAnnotations
 from mcp.types import Tool as MCPTool
-from pydantic import BaseModel, BeforeValidator, Field
+from pydantic import BeforeValidator, Field
 
 import fastmcp
 from fastmcp.server.dependencies import get_context
 from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import (
+    FastMCPBaseModel,
     Image,
     _convert_set_defaults,
     find_kwarg_by_type,
@@ -31,10 +34,9 @@ def default_serializer(data: Any) -> str:
     return pydantic_core.to_json(data, fallback=str, indent=2).decode()
 
 
-class Tool(BaseModel):
+class Tool(FastMCPBaseModel, ABC):
     """Internal tool registration info."""
 
-    fn: Callable[..., Any]
     name: str = Field(description="Name of the tool")
     description: str | None = Field(
         default=None, description="Description of what the tool does"
@@ -54,6 +56,39 @@ class Tool(BaseModel):
         None, description="Optional custom serializer for tool results"
     )
 
+    def to_mcp_tool(self, **overrides: Any) -> MCPTool:
+        kwargs = {
+            "name": self.name,
+            "description": self.description,
+            "inputSchema": self.parameters,
+            "annotations": self.annotations,
+        }
+        return MCPTool(**kwargs | overrides)
+
+    @staticmethod
+    def from_function(fn: Callable[..., Any], **overrides: Any) -> FunctionTool:
+        # deprecated in 2.6.2
+        warnings.warn(
+            "Tool.from_function() is deprecated. Use FunctionTool.from_function() instead."
+        )
+        return FunctionTool.from_function(fn, **overrides)
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Tool):
+            return False
+        return self.model_dump() == other.model_dump()
+
+    @abstractmethod
+    async def run(
+        self, arguments: dict[str, Any]
+    ) -> list[TextContent | ImageContent | EmbeddedResource]:
+        """Run the tool with arguments."""
+        raise NotImplementedError("Subclasses must implement run()")
+
+
+class FunctionTool(Tool):
+    fn: Callable[..., Any]
+
     @classmethod
     def from_function(
         cls,
@@ -64,7 +99,7 @@ class Tool(BaseModel):
         annotations: ToolAnnotations | None = None,
         exclude_args: list[str] | None = None,
         serializer: Callable[[Any], str] | None = None,
-    ) -> Tool:
+    ) -> FunctionTool:
         """Create a Tool from a function."""
         from fastmcp.server.context import Context
 
@@ -169,20 +204,6 @@ class Tool(BaseModel):
             result = await result
 
         return _convert_to_content(result, serializer=self.serializer)
-
-    def to_mcp_tool(self, **overrides: Any) -> MCPTool:
-        kwargs = {
-            "name": self.name,
-            "description": self.description,
-            "inputSchema": self.parameters,
-            "annotations": self.annotations,
-        }
-        return MCPTool(**kwargs | overrides)
-
-    def __eq__(self, other: object) -> bool:
-        if not isinstance(other, Tool):
-            return False
-        return self.model_dump() == other.model_dump()
 
 
 def _convert_to_content(

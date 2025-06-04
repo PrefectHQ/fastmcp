@@ -3,7 +3,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Literal
 from urllib.parse import urlparse
 
-from pydantic import AnyUrl, BaseModel, Field
+from pydantic import AnyUrl, Field
+
+from fastmcp.utilities.types import FastMCPBaseModel
 
 if TYPE_CHECKING:
     from fastmcp.client.transports import (
@@ -32,7 +34,7 @@ def infer_transport_type_from_url(
         return "streamable-http"
 
 
-class StdioMCPServer(BaseModel):
+class StdioMCPServer(FastMCPBaseModel):
     command: str
     args: list[str] = Field(default_factory=list)
     env: dict[str, Any] = Field(default_factory=dict)
@@ -50,7 +52,7 @@ class StdioMCPServer(BaseModel):
         )
 
 
-class RemoteMCPServer(BaseModel):
+class RemoteMCPServer(FastMCPBaseModel):
     url: str
     headers: dict[str, str] = Field(default_factory=dict)
     transport: Literal["streamable-http", "sse", "http"] | None = None
@@ -69,7 +71,7 @@ class RemoteMCPServer(BaseModel):
             return StreamableHttpTransport(self.url, headers=self.headers)
 
 
-class MCPConfig(BaseModel):
+class MCPConfig(FastMCPBaseModel):
     mcpServers: dict[str, StdioMCPServer | RemoteMCPServer]
 
     @classmethod
