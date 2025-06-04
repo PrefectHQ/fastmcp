@@ -2,24 +2,18 @@
 
 from __future__ import annotations
 
-import inspect
 import json
-from collections.abc import Callable
 from pathlib import Path
-from typing import Any
 
 import anyio
 import anyio.to_thread
 import httpx
 import pydantic.json
-import pydantic_core
 from pydantic import Field, ValidationInfo
 
 from fastmcp.exceptions import ResourceError
 from fastmcp.resources.resource import Resource
-from fastmcp.server.dependencies import get_context
 from fastmcp.utilities.logging import get_logger
-from fastmcp.utilities.types import find_kwarg_by_type
 
 logger = get_logger(__name__)
 
@@ -42,44 +36,6 @@ class BinaryResource(Resource):
     async def read(self) -> bytes:
         """Read the binary content."""
         return self.data
-
-
-class FunctionResource(Resource):
-    """A resource that defers data loading by wrapping a function.
-
-    The function is only called when the resource is read, allowing for lazy loading
-    of potentially expensive data. This is particularly useful when listing resources,
-    as the function won't be called until the resource is actually accessed.
-
-    The function can return:
-    - str for text content (default)
-    - bytes for binary content
-    - other types will be converted to JSON
-    """
-
-    fn: Callable[[], Any]
-
-    async def read(self) -> str | bytes:
-        """Read the resource by calling the wrapped function."""
-        from fastmcp.server.context import Context
-
-        kwargs = {}
-        context_kwarg = find_kwarg_by_type(self.fn, kwarg_type=Context)
-        if context_kwarg is not None:
-            kwargs[context_kwarg] = get_context()
-
-        result = self.fn(**kwargs)
-        if inspect.iscoroutinefunction(self.fn):
-            result = await result
-
-        if isinstance(result, Resource):
-            return await result.read()
-        elif isinstance(result, bytes):
-            return result
-        elif isinstance(result, str):
-            return result
-        else:
-            return pydantic_core.to_json(result, fallback=str, indent=2).decode()
 
 
 class FileResource(Resource):
