@@ -942,7 +942,8 @@ def _combine_schemas(route: HTTPRoute) -> dict[str, Any]:
         # For now, just use the first content type's schema
         content_type = next(iter(route.request_body.content_schema))
         body_schema = _replace_ref_with_defs(
-            route.request_body.content_schema[content_type].copy()
+            route.request_body.content_schema[content_type].copy(),
+            route.request_body.description,
         )
         body_props = body_schema.get("properties", {})
 
