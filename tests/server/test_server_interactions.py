@@ -20,7 +20,8 @@ from fastmcp import Client, Context, FastMCP
 from fastmcp.client.transports import FastMCPTransport
 from fastmcp.exceptions import ToolError
 from fastmcp.prompts.prompt import EmbeddedResource, PromptMessage
-from fastmcp.resources import FileResource, FunctionResource
+from fastmcp.resources import FileResource
+from fastmcp.resources.resource import FunctionResource
 from fastmcp.utilities.types import Image
 
 

@@ -7,10 +7,10 @@ from pydantic import AnyUrl, FileUrl
 from fastmcp.exceptions import NotFoundError, ResourceError
 from fastmcp.resources import (
     FileResource,
-    FunctionResource,
     ResourceManager,
     ResourceTemplate,
 )
+from fastmcp.resources.resource import FunctionResource
 
 
 @pytest.fixture

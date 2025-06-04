@@ -7,7 +7,6 @@ from typing import Any
 from pydantic import AnyUrl
 
 from fastmcp.exceptions import NotFoundError, ResourceError
-from fastmcp.resources import FunctionResource
 from fastmcp.resources.resource import Resource
 from fastmcp.resources.template import (
     ResourceTemplate,
@@ -121,13 +120,13 @@ class ResourceManager:
             The added resource. If a resource with the same URI already exists,
             returns the existing resource.
         """
-        resource = FunctionResource(
+        resource = Resource.from_function(
             fn=fn,
-            uri=AnyUrl(uri),
+            uri=uri,
             name=name,
             description=description,
-            mime_type=mime_type or "text/plain",
-            tags=tags or set(),
+            mime_type=mime_type,
+            tags=tags,
         )
         return self.add_resource(resource)
 

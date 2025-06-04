@@ -10,14 +10,13 @@ from urllib.parse import unquote
 
 from mcp.types import ResourceTemplate as MCPResourceTemplate
 from pydantic import (
-    AnyUrl,
     BeforeValidator,
     Field,
     field_validator,
     validate_call,
 )
 
-from fastmcp.resources.types import FunctionResource, Resource
+from fastmcp.resources.types import Resource
 from fastmcp.server.dependencies import get_context
 from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.types import (
@@ -189,12 +188,12 @@ class ResourceTemplate(FastMCPBaseModel):
                 result = await result
             return result
 
-        return FunctionResource(
-            uri=AnyUrl(uri),  # Explicitly convert to AnyUrl
+        return Resource.from_function(
+            fn=resource_read_fn,
+            uri=uri,
             name=self.name,
             description=self.description,
             mime_type=self.mime_type,
-            fn=resource_read_fn,
             tags=self.tags,
         )
 

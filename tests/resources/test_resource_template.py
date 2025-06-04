@@ -5,7 +5,8 @@ import pytest
 from pydantic import BaseModel
 
 from fastmcp import Context
-from fastmcp.resources import FunctionResource, ResourceTemplate
+from fastmcp.resources import ResourceTemplate
+from fastmcp.resources.resource import FunctionResource
 from fastmcp.resources.template import match_uri_template
 
 
