@@ -634,9 +634,9 @@ class TestContextHandling:
                 {"x": 42},
             )
 
-        assert isinstance(resource, FunctionResource)
-        content = await resource.read()
-        assert content == "42"
+            assert isinstance(resource, FunctionResource)
+            content = await resource.read()
+            assert content == "42"
 
     async def test_context_optional(self):
         """Test that context is optional when creating resources."""
@@ -662,6 +662,6 @@ class TestContextHandling:
                 {"x": 42},
             )
 
-        assert isinstance(resource, FunctionResource)
-        content = await resource.read()
-        assert content == "42"
+            assert isinstance(resource, FunctionResource)
+            content = await resource.read()
+            assert content == "42"

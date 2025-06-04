@@ -93,8 +93,9 @@ class Resource(FastMCPBaseModel, abc.ABC):
         pass
 
     def __eq__(self, other: object) -> bool:
-        if not isinstance(other, Resource):
+        if type(self) is not type(other):
             return False
+        assert isinstance(other, type(self))
         return self.model_dump() == other.model_dump()
 
     def to_mcp_resource(self, **overrides: Any) -> MCPResource:

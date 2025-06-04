@@ -86,8 +86,9 @@ class Tool(FastMCPBaseModel, ABC):
         )
 
     def __eq__(self, other: object) -> bool:
-        if not isinstance(other, Tool):
+        if type(self) is not type(other):
             return False
+        assert isinstance(other, type(self))
         return self.model_dump() == other.model_dump()
 
     @abstractmethod
