@@ -6,7 +6,10 @@ import pytest
 from fastapi import Body, FastAPI, Path, Query
 from pydantic import BaseModel, Field
 
-from fastmcp.utilities.openapi import parse_openapi_to_http_routes
+from fastmcp.utilities.openapi import (
+    _combine_schemas,
+    parse_openapi_to_http_routes,
+)
 
 # --- Test Data: Static OpenAPI Schema Dictionaries --- #
 
@@ -1023,6 +1026,9 @@ def test_openapi_30_reference_resolution(openapi_30_with_references):
     # or it still has a $ref field
     assert "properties" in category or "$ref" in category
 
+    combined_schema = _combine_schemas(route)
+    assert "#/$defs/" in combined_schema["properties"]["category"]["$ref"]
+
 
 def test_openapi_31_reference_resolution(openapi_31_with_references):
     """Test that references are correctly resolved in OpenAPI 3.1 schemas."""
@@ -1056,6 +1062,9 @@ def test_openapi_31_reference_resolution(openapi_31_with_references):
     # Either it's directly resolved with properties
     # or it still has a $ref field
     assert "properties" in category or "$ref" in category
+
+    combined_schema = _combine_schemas(route)
+    assert "#/$defs/" in combined_schema["properties"]["category"]["$ref"]
 
 
 def test_consistent_output_across_versions(
