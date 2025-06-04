@@ -1105,65 +1105,101 @@ def test_consistent_output_across_versions(
     assert set(schema_30.keys()) == set(schema_31.keys())
 
 
-def test_replace_ref_with_defs():
-    ref_type = {
-        "$ref": "#/components/schemas/RefFoo",
-    }
-    object_type = {
-        "type": "object",
-        "properties": {"$ref": "#/components/schemas/ObjectFoo"},
-    }
-    array_type = {"type": "array", "items": {"$ref": "#/components/schemas/ArrayFoo"}}
-    any_of_type = {
-        "anyOf": [
-            {"$ref": "#/components/schemas/AnyOfFoo"},
-            {"$ref": "#/components/schemas/AnyOfBar"},
-        ]
-    }
-    all_of_type = {
-        "allOf": [
-            {"$ref": "#/components/schemas/AllOfFoo"},
-            {"$ref": "#/components/schemas/AllOfBar"},
-        ]
-    }
-    one_of_type = {
-        "oneOf": [
-            {"$ref": "#/components/schemas/OneOfFoo"},
-            {"$ref": "#/components/schemas/OneOfBar"},
-        ]
-    }
-    nested_type = {
-        "type": "object",
-        "properties": {
-            "pets": {
-                "oneOf": [
-                    {"$ref": "#/components/schemas/Cat"},
-                    {"$ref": "#/components/schemas/Dog"},
+class TestReplaceRefWithDefs:
+    @pytest.fixture(scope="class")
+    def schemas(self):
+        """Provide test schemas for _replace_ref_with_defs function."""
+        return {
+            "ref_type": {
+                "$ref": "#/components/schemas/RefFoo",
+            },
+            "object_type": {
+                "type": "object",
+                "properties": {"$ref": "#/components/schemas/ObjectFoo"},
+            },
+            "array_type": {
+                "type": "array",
+                "items": {"$ref": "#/components/schemas/ArrayFoo"},
+            },
+            "any_of_type": {
+                "anyOf": [
+                    {"$ref": "#/components/schemas/AnyOfFoo"},
+                    {"$ref": "#/components/schemas/AnyOfBar"},
                 ]
             },
-        },
-    }
-    assert _replace_ref_with_defs(object_type) == {
-        "type": "object",
-        "properties": {"$ref": "#/$defs/ObjectFoo"},
-    }
-    assert _replace_ref_with_defs(ref_type) == {"$ref": "#/$defs/RefFoo"}
-    assert _replace_ref_with_defs(array_type) == {
-        "type": "array",
-        "items": {"$ref": "#/$defs/ArrayFoo"},
-    }
-    assert _replace_ref_with_defs(any_of_type) == {
-        "anyOf": [{"$ref": "#/$defs/AnyOfFoo"}, {"$ref": "#/$defs/AnyOfBar"}]
-    }
-    assert _replace_ref_with_defs(all_of_type) == {
-        "allOf": [{"$ref": "#/$defs/AllOfFoo"}, {"$ref": "#/$defs/AllOfBar"}]
-    }
-    assert _replace_ref_with_defs(one_of_type) == {
-        "oneOf": [{"$ref": "#/$defs/OneOfFoo"}, {"$ref": "#/$defs/OneOfBar"}]
-    }
-    assert _replace_ref_with_defs(nested_type) == {
-        "type": "object",
-        "properties": {
-            "pets": {"oneOf": [{"$ref": "#/$defs/Cat"}, {"$ref": "#/$defs/Dog"}]}
-        },
-    }
+            "all_of_type": {
+                "allOf": [
+                    {"$ref": "#/components/schemas/AllOfFoo"},
+                    {"$ref": "#/components/schemas/AllOfBar"},
+                ]
+            },
+            "one_of_type": {
+                "oneOf": [
+                    {"$ref": "#/components/schemas/OneOfFoo"},
+                    {"$ref": "#/components/schemas/OneOfBar"},
+                ]
+            },
+            "nested_type": {
+                "type": "object",
+                "properties": {
+                    "pets": {
+                        "oneOf": [
+                            {"$ref": "#/components/schemas/Cat"},
+                            {"$ref": "#/components/schemas/Dog"},
+                        ]
+                    },
+                },
+            },
+        }
+
+    def test_replace_direct_ref(self, schemas):
+        """Test replacing direct $ref references."""
+        result = _replace_ref_with_defs(schemas["ref_type"])
+        assert result == {"$ref": "#/$defs/RefFoo"}
+
+    def test_replace_object_property_ref(self, schemas):
+        """Test replacing $ref in object properties."""
+        result = _replace_ref_with_defs(schemas["object_type"])
+        assert result == {
+            "type": "object",
+            "properties": {"$ref": "#/$defs/ObjectFoo"},
+        }
+
+    def test_replace_array_items_ref(self, schemas):
+        """Test replacing $ref in array items."""
+        result = _replace_ref_with_defs(schemas["array_type"])
+        assert result == {
+            "type": "array",
+            "items": {"$ref": "#/$defs/ArrayFoo"},
+        }
+
+    def test_replace_any_of_refs(self, schemas):
+        """Test replacing $ref in anyOf schemas."""
+        result = _replace_ref_with_defs(schemas["any_of_type"])
+        assert result == {
+            "anyOf": [{"$ref": "#/$defs/AnyOfFoo"}, {"$ref": "#/$defs/AnyOfBar"}]
+        }
+
+    def test_replace_all_of_refs(self, schemas):
+        """Test replacing $ref in allOf schemas."""
+        result = _replace_ref_with_defs(schemas["all_of_type"])
+        assert result == {
+            "allOf": [{"$ref": "#/$defs/AllOfFoo"}, {"$ref": "#/$defs/AllOfBar"}]
+        }
+
+    def test_replace_one_of_refs(self, schemas):
+        """Test replacing $ref in oneOf schemas."""
+        result = _replace_ref_with_defs(schemas["one_of_type"])
+        assert result == {
+            "oneOf": [{"$ref": "#/$defs/OneOfFoo"}, {"$ref": "#/$defs/OneOfBar"}]
+        }
+
+    def test_replace_nested_refs(self, schemas):
+        """Test replacing $ref in deeply nested schema structures."""
+        result = _replace_ref_with_defs(schemas["nested_type"])
+        assert result == {
+            "type": "object",
+            "properties": {
+                "pets": {"oneOf": [{"$ref": "#/$defs/Cat"}, {"$ref": "#/$defs/Dog"}]}
+            },
+        }
