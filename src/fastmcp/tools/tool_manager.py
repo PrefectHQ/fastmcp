@@ -73,6 +73,7 @@ class ToolManager:
         warnings.warn(
             "ToolManager.add_tool_from_fn() is deprecated. Use Tool.from_function() and call add_tool() instead.",
             DeprecationWarning,
+            stacklevel=2,
         )
         tool = Tool.from_function(
             fn,
