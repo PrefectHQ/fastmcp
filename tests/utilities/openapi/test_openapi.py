@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 from fastmcp.utilities.openapi import (
     _combine_schemas,
+    _replace_ref_with_defs,
     parse_openapi_to_http_routes,
 )
 
@@ -1102,3 +1103,67 @@ def test_consistent_output_across_versions(
         "properties"
     ]
     assert set(schema_30.keys()) == set(schema_31.keys())
+
+
+def test_replace_ref_with_defs():
+    ref_type = {
+        "$ref": "#/components/schemas/RefFoo",
+    }
+    object_type = {
+        "type": "object",
+        "properties": {"$ref": "#/components/schemas/ObjectFoo"},
+    }
+    array_type = {"type": "array", "items": {"$ref": "#/components/schemas/ArrayFoo"}}
+    any_of_type = {
+        "anyOf": [
+            {"$ref": "#/components/schemas/AnyOfFoo"},
+            {"$ref": "#/components/schemas/AnyOfBar"},
+        ]
+    }
+    all_of_type = {
+        "allOf": [
+            {"$ref": "#/components/schemas/AllOfFoo"},
+            {"$ref": "#/components/schemas/AllOfBar"},
+        ]
+    }
+    one_of_type = {
+        "oneOf": [
+            {"$ref": "#/components/schemas/OneOfFoo"},
+            {"$ref": "#/components/schemas/OneOfBar"},
+        ]
+    }
+    nested_type = {
+        "type": "object",
+        "properties": {
+            "pets": {
+                "oneOf": [
+                    {"$ref": "#/components/schemas/Cat"},
+                    {"$ref": "#/components/schemas/Dog"},
+                ]
+            },
+        },
+    }
+    assert _replace_ref_with_defs(object_type) == {
+        "type": "object",
+        "properties": {"$ref": "#/$defs/ObjectFoo"},
+    }
+    assert _replace_ref_with_defs(ref_type) == {"$ref": "#/$defs/RefFoo"}
+    assert _replace_ref_with_defs(array_type) == {
+        "type": "array",
+        "items": {"$ref": "#/$defs/ArrayFoo"},
+    }
+    assert _replace_ref_with_defs(any_of_type) == {
+        "anyOf": [{"$ref": "#/$defs/AnyOfFoo"}, {"$ref": "#/$defs/AnyOfBar"}]
+    }
+    assert _replace_ref_with_defs(all_of_type) == {
+        "allOf": [{"$ref": "#/$defs/AllOfFoo"}, {"$ref": "#/$defs/AllOfBar"}]
+    }
+    assert _replace_ref_with_defs(one_of_type) == {
+        "oneOf": [{"$ref": "#/$defs/OneOfFoo"}, {"$ref": "#/$defs/OneOfBar"}]
+    }
+    assert _replace_ref_with_defs(nested_type) == {
+        "type": "object",
+        "properties": {
+            "pets": {"oneOf": [{"$ref": "#/$defs/Cat"}, {"$ref": "#/$defs/Dog"}]}
+        },
+    }

@@ -894,13 +894,18 @@ def _replace_ref_with_defs(
         dict[str, Any]
     """
     schema = info.copy()
-    if properties := schema.get("properties"):
-        for prop_name, prop_schema in properties.items():
-            properties[prop_name] = _replace_ref_with_defs(prop_schema)
-    elif ref_path := schema.get("$ref"):
+    if ref_path := schema.get("$ref"):
         if ref_path.startswith("#/components/schemas/"):
             schema_name = ref_path.split("/")[-1]
             schema["$ref"] = f"#/$defs/{schema_name}"
+    elif properties := schema.get("properties"):
+        if "$ref" in properties:
+            schema["properties"] = _replace_ref_with_defs(properties)
+        else:
+            schema["properties"] = {
+                prop_name: _replace_ref_with_defs(prop_schema)
+                for prop_name, prop_schema in properties.items()
+            }
     elif item_schema := schema.get("items"):
         schema["items"] = _replace_ref_with_defs(item_schema)
     for section in ["anyOf", "allOf", "oneOf"]:
