@@ -513,53 +513,69 @@ class FastMCP(Generic[LifespanResultT]):
 
     def tool(
         self,
+        name_or_fn: str | AnyFunction | None = None,
+        *,
         name: str | None = None,
         description: str | None = None,
         tags: set[str] | None = None,
         annotations: ToolAnnotations | dict[str, Any] | None = None,
         exclude_args: list[str] | None = None,
-    ) -> Callable[[AnyFunction], AnyFunction]:
+    ) -> Callable[[AnyFunction], AnyFunction] | AnyFunction:
         """Decorator to register a tool.
 
         Tools can optionally request a Context object by adding a parameter with the
         Context type annotation. The context provides access to MCP capabilities like
         logging, progress reporting, and resource access.
 
+        This decorator supports multiple calling patterns:
+        - @server.tool (without parentheses)
+        - @server.tool() (with empty parentheses)
+        - @server.tool("custom_name") (with name as first argument)
+        - @server.tool(name="custom_name") (with name as keyword argument)
+        - server.tool(function, name="custom_name") (direct function call)
+
         Args:
-            name: Optional name for the tool (defaults to function name)
+            name_or_fn: Either a function (when used as @tool), a string name, or None
             description: Optional description of what the tool does
             tags: Optional set of tags for categorizing the tool
             annotations: Optional annotations about the tool's behavior
+            exclude_args: Optional list of argument names to exclude from the tool schema
+            name: Optional name for the tool (keyword-only, alternative to name_or_fn)
 
         Example:
-            @server.tool()
+            @server.tool
             def my_tool(x: int) -> str:
                 return str(x)
 
             @server.tool()
-            def tool_with_context(x: int, ctx: Context) -> str:
-                ctx.info(f"Processing {x}")
+            def my_tool(x: int) -> str:
                 return str(x)
 
-            @server.tool()
-            async def async_tool(x: int, context: Context) -> str:
-                await context.report_progress(50, 100)
+            @server.tool("custom_name")
+            def my_tool(x: int) -> str:
                 return str(x)
+
+            @server.tool(name="custom_name")
+            def my_tool(x: int) -> str:
+                return str(x)
+
+            # Direct function call
+            server.tool(my_function, name="custom_name")
         """
-
-        # Check if user passed function directly instead of calling decorator
-        if callable(name):
-            raise TypeError(
-                "The @tool decorator was used incorrectly. "
-                "Did you forget to call it? Use @tool() instead of @tool"
-            )
         if isinstance(annotations, dict):
             annotations = ToolAnnotations(**annotations)
 
-        def decorator(fn: AnyFunction) -> AnyFunction:
+        # Determine the actual name and function based on the calling pattern
+        if callable(name_or_fn):
+            # Case 1: @tool (without parens) - function passed directly
+            # Case 2: direct call like tool(fn, name="something")
+            fn = name_or_fn
+            tool_name = name  # Use keyword name if provided, otherwise None
+
+            # Register the tool immediately and return the function
             tool = Tool.from_function(
                 fn,
-                name=name,
+                name=tool_name,
                 description=description,
                 tags=tags,
                 annotations=annotations,
@@ -569,7 +585,31 @@ class FastMCP(Generic[LifespanResultT]):
             self.add_tool(tool)
             return fn
 
-        return decorator
+        elif isinstance(name_or_fn, str):
+            # Case 3: @tool("custom_name") - name passed as first argument
+            if name is not None:
+                raise TypeError(
+                    "Cannot specify both a name as first argument and as keyword argument. "
+                    f"Use either @tool('{name_or_fn}') or @tool(name='{name}'), not both."
+                )
+            tool_name = name_or_fn
+        elif name_or_fn is None:
+            # Case 4: @tool() or @tool(name="something") - use keyword name
+            tool_name = name
+        else:
+            raise TypeError(
+                f"First argument to @tool must be a function, string, or None, got {type(name_or_fn)}"
+            )
+
+        # Return partial for cases where we need to wait for the function
+        return partial(
+            self.tool,
+            name=tool_name,
+            description=description,
+            tags=tags,
+            annotations=annotations,
+            exclude_args=exclude_args,
+        )
 
     def add_resource(self, resource: Resource, key: str | None = None) -> None:
         """Add a resource to the server.
