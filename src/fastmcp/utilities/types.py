@@ -9,9 +9,15 @@ from types import UnionType
 from typing import Annotated, TypeVar, Union, get_args, get_origin
 
 from mcp.types import ImageContent
-from pydantic import TypeAdapter
+from pydantic import BaseModel, ConfigDict, TypeAdapter
 
 T = TypeVar("T")
+
+
+class FastMCPBaseModel(BaseModel):
+    """Base model for FastMCP models."""
+
+    model_config = ConfigDict(extra="forbid")
 
 
 @lru_cache(maxsize=5000)

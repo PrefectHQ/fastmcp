@@ -11,7 +11,6 @@ from urllib.parse import unquote
 from mcp.types import ResourceTemplate as MCPResourceTemplate
 from pydantic import (
     AnyUrl,
-    BaseModel,
     BeforeValidator,
     Field,
     field_validator,
@@ -22,6 +21,7 @@ from fastmcp.resources.types import FunctionResource, Resource
 from fastmcp.server.dependencies import get_context
 from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.types import (
+    FastMCPBaseModel,
     _convert_set_defaults,
     find_kwarg_by_type,
     get_cached_typeadapter,
@@ -52,12 +52,7 @@ def match_uri_template(uri: str, uri_template: str) -> dict[str, str] | None:
     return None
 
 
-class MyModel(BaseModel):
-    key: str
-    value: int
-
-
-class ResourceTemplate(BaseModel):
+class ResourceTemplate(FastMCPBaseModel):
     """A template for dynamically creating resources."""
 
     uri_template: str = Field(

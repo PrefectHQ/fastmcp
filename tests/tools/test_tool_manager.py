@@ -10,8 +10,7 @@ from pydantic import BaseModel
 
 from fastmcp import Context, FastMCP, Image
 from fastmcp.exceptions import NotFoundError, ToolError
-from fastmcp.tools import ToolManager
-from fastmcp.tools.tool import Tool
+from fastmcp.tools import FunctionTool, ToolManager
 from fastmcp.utilities.tests import temporary_settings
 
 
@@ -212,6 +211,7 @@ class TestAddTools:
         # Should have replaced with the new function
         tool = manager.get_tool("test_tool")
         assert tool is not None
+        assert isinstance(tool, FunctionTool)
         assert tool.fn.__name__ == "replacement_fn"
 
     def test_ignore_duplicate_tools(self):
@@ -230,8 +230,10 @@ class TestAddTools:
         # Should keep the original
         tool = manager.get_tool("test_tool")
         assert tool is not None
+        assert isinstance(tool, FunctionTool)
         assert tool.fn.__name__ == "original_fn"
         # Result should be the original tool
+        assert isinstance(result, FunctionTool)
         assert result.fn.__name__ == "original_fn"
 
 
@@ -566,7 +568,7 @@ class TestContextHandling:
 
     def test_context_parameter_detection(self):
         """Test that context parameters are properly detected in
-        Tool.from_function()."""
+        FunctionTool.from_function()."""
 
         def tool_with_context(x: int, ctx: Context) -> str:
             return str(x)
@@ -632,7 +634,7 @@ class TestContextHandling:
 
     def test_parameterized_context_parameter_detection(self):
         """Test that context parameters are properly detected in
-        Tool.from_function()."""
+        FunctionTool.from_function()."""
 
         def tool_with_context(x: int, ctx: Context) -> str:
             return str(x)
@@ -649,7 +651,7 @@ class TestContextHandling:
 
     def test_parameterized_union_context_parameter_detection(self):
         """Test that context parameters are properly detected in
-        Tool.from_function()."""
+        FunctionTool.from_function()."""
 
         def tool_with_context(x: int, ctx: Context | None) -> str:
             return str(x)
@@ -691,6 +693,7 @@ class TestCustomToolNames:
         # The tool is stored under the custom name and its .name is also set to custom_name
         assert manager.get_tool("custom_name") is not None
         assert tool.name == "custom_name"
+        assert isinstance(tool, FunctionTool)
         assert tool.fn.__name__ == "original_fn"
         # The tool should not be accessible via its original function name
         with pytest.raises(NotFoundError, match="Unknown tool: original_fn"):
@@ -703,7 +706,7 @@ class TestCustomToolNames:
             return x + 1
 
         # Create a tool with a specific name
-        tool = Tool.from_function(fn, name="my_tool")
+        tool = FunctionTool.from_function(fn, name="my_tool")
         manager = ToolManager()
         # Store it under a different name
         manager.add_tool(tool, key="proxy_tool")
@@ -762,6 +765,7 @@ class TestCustomToolNames:
         assert stored_tool.name == "test_tool"
 
         # But the function is different
+        assert isinstance(stored_tool, FunctionTool)
         assert stored_tool.fn.__name__ == "replacement_fn"
 
 

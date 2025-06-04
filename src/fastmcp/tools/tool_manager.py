@@ -7,7 +7,7 @@ from mcp.types import EmbeddedResource, ImageContent, TextContent, ToolAnnotatio
 
 from fastmcp.exceptions import NotFoundError, ToolError
 from fastmcp.settings import DuplicateBehavior
-from fastmcp.tools.tool import Tool
+from fastmcp.tools.tool import FunctionTool, Tool
 from fastmcp.utilities.logging import get_logger
 
 if TYPE_CHECKING:
@@ -69,7 +69,7 @@ class ToolManager:
         exclude_args: list[str] | None = None,
     ) -> Tool:
         """Add a tool to the server."""
-        tool = Tool.from_function(
+        tool = FunctionTool.from_function(
             fn,
             name=name,
             description=description,

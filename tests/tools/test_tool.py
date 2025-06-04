@@ -5,7 +5,7 @@ from pydantic import AnyUrl, BaseModel
 from fastmcp import FastMCP, Image
 from fastmcp.client import Client
 from fastmcp.exceptions import ToolError
-from fastmcp.tools.tool import Tool, _convert_to_content
+from fastmcp.tools.tool import FunctionTool, _convert_to_content
 from fastmcp.utilities.tests import temporary_settings
 
 
@@ -17,7 +17,7 @@ class TestToolFromFunction:
             """Add two numbers."""
             return a + b
 
-        tool = Tool.from_function(add)
+        tool = FunctionTool.from_function(add)
 
         assert tool.name == "add"
         assert tool.description == "Add two numbers."
@@ -32,7 +32,7 @@ class TestToolFromFunction:
             """Fetch data from URL."""
             return f"Data from {url}"
 
-        tool = Tool.from_function(fetch_data)
+        tool = FunctionTool.from_function(fetch_data)
 
         assert tool.name == "fetch_data"
         assert tool.description == "Fetch data from URL."
@@ -46,7 +46,7 @@ class TestToolFromFunction:
                 """ignore this"""
                 return x + y
 
-        tool = Tool.from_function(Adder())
+        tool = FunctionTool.from_function(Adder())
         assert tool.name == "Adder"
         assert tool.description == "Adds two numbers."
         assert len(tool.parameters["properties"]) == 2
@@ -61,7 +61,7 @@ class TestToolFromFunction:
                 """ignore this"""
                 return x + y
 
-        tool = Tool.from_function(Adder())
+        tool = FunctionTool.from_function(Adder())
         assert tool.name == "Adder"
         assert tool.description == "Adds two numbers."
         assert len(tool.parameters["properties"]) == 2
@@ -79,7 +79,7 @@ class TestToolFromFunction:
             """Create a new user."""
             return {"id": 1, **user.model_dump()}
 
-        tool = Tool.from_function(create_user)
+        tool = FunctionTool.from_function(create_user)
 
         assert tool.name == "create_user"
         assert tool.description == "Create a new user."
@@ -91,7 +91,7 @@ class TestToolFromFunction:
         def image_tool(data: bytes) -> Image:
             return Image(data=data)
 
-        tool = Tool.from_function(image_tool)
+        tool = FunctionTool.from_function(image_tool)
 
         result = await tool.run({"data": "test.png"})
         assert tool.parameters["properties"]["data"]["type"] == "string"
@@ -99,24 +99,24 @@ class TestToolFromFunction:
 
     def test_non_callable_fn(self):
         with pytest.raises(TypeError, match="not a callable object"):
-            Tool.from_function(1)  # type: ignore
+            FunctionTool.from_function(1)  # type: ignore
 
     def test_lambda(self):
-        tool = Tool.from_function(lambda x: x, name="my_tool")
+        tool = FunctionTool.from_function(lambda x: x, name="my_tool")
         assert tool.name == "my_tool"
 
     def test_lambda_with_no_name(self):
         with pytest.raises(
             ValueError, match="You must provide a name for lambda functions"
         ):
-            Tool.from_function(lambda x: x)
+            FunctionTool.from_function(lambda x: x)
 
     def test_private_arguments(self):
         def add(_a: int, _b: int) -> int:
             """Add two numbers."""
             return _a + _b
 
-        tool = Tool.from_function(add)
+        tool = FunctionTool.from_function(add)
         assert tool.parameters["properties"]["_a"]["type"] == "integer"
         assert tool.parameters["properties"]["_b"]["type"] == "integer"
 
@@ -128,7 +128,7 @@ class TestToolFromFunction:
         with pytest.raises(
             ValueError, match=r"Functions with \*args are not supported as tools"
         ):
-            Tool.from_function(func)
+            FunctionTool.from_function(func)
 
     def test_tool_with_varkwargs_not_allowed(self):
         def func(a: int, b: int, **kwargs: int) -> int:
@@ -138,7 +138,7 @@ class TestToolFromFunction:
         with pytest.raises(
             ValueError, match=r"Functions with \*\*kwargs are not supported as tools"
         ):
-            Tool.from_function(func)
+            FunctionTool.from_function(func)
 
     async def test_instance_method(self):
         class MyClass:
@@ -148,7 +148,7 @@ class TestToolFromFunction:
 
         obj = MyClass()
 
-        tool = Tool.from_function(obj.add)
+        tool = FunctionTool.from_function(obj.add)
         assert tool.name == "add"
         assert tool.description == "Add two numbers."
         assert "self" not in tool.parameters["properties"]
@@ -164,7 +164,7 @@ class TestToolFromFunction:
         with pytest.raises(
             ValueError, match=r"Functions with \*args are not supported as tools"
         ):
-            Tool.from_function(obj.add)
+            FunctionTool.from_function(obj.add)
 
     async def test_instance_method_with_varkwargs_not_allowed(self):
         class MyClass:
@@ -177,7 +177,7 @@ class TestToolFromFunction:
         with pytest.raises(
             ValueError, match=r"Functions with \*\*kwargs are not supported as tools"
         ):
-            Tool.from_function(obj.add)
+            FunctionTool.from_function(obj.add)
 
     async def test_classmethod(self):
         class MyClass:
@@ -188,7 +188,7 @@ class TestToolFromFunction:
                 """Add two numbers."""
                 return x + y
 
-        tool = Tool.from_function(MyClass.call)
+        tool = FunctionTool.from_function(MyClass.call)
         assert tool.name == "call"
         assert tool.description == "Add two numbers."
         assert "x" in tool.parameters["properties"]
@@ -203,7 +203,7 @@ class TestToolFromFunction:
         def process_list(items: list[int]) -> int:
             return sum(items)
 
-        tool = Tool.from_function(process_list, serializer=custom_serializer)
+        tool = FunctionTool.from_function(process_list, serializer=custom_serializer)
 
         result = await tool.run(arguments={"items": [1, 2, 3, 4, 5]})
         assert isinstance(result[0], TextContent)
@@ -225,7 +225,7 @@ class TestLegacyToolJsonParsing:
             return f"{x}-{','.join(y)}"
 
         # Create a tool to use its JSON pre-parsing logic
-        tool = Tool.from_function(simple_func)
+        tool = FunctionTool.from_function(simple_func)
 
         # Prepare arguments where some are JSON strings
         json_args = {
@@ -243,7 +243,7 @@ class TestLegacyToolJsonParsing:
         def func_with_str_types(str_or_list: str | list[str]) -> str | list[str]:
             return str_or_list
 
-        tool = Tool.from_function(func_with_str_types)
+        tool = FunctionTool.from_function(func_with_str_types)
 
         # Test regular string input (should remain a string)
         result = await tool.run({"str_or_list": "hello"})
@@ -269,7 +269,7 @@ class TestLegacyToolJsonParsing:
         def func_with_str_types(string: str) -> str:
             return string
 
-        tool = Tool.from_function(func_with_str_types)
+        tool = FunctionTool.from_function(func_with_str_types)
 
         # Invalid JSON should remain a string
         invalid_json = "{'nice to meet you': 'hello', 'goodbye': 5}"
@@ -284,7 +284,7 @@ class TestLegacyToolJsonParsing:
         ) -> str | dict[int, str] | None:
             return string
 
-        tool = Tool.from_function(func_with_str_types)
+        tool = FunctionTool.from_function(func_with_str_types)
 
         # Invalid JSON for the union type should remain a string
         invalid_json = "{'nice to meet you': 'hello', 'goodbye': 5}"
@@ -301,7 +301,7 @@ class TestLegacyToolJsonParsing:
         def func_with_complex_type(data: SomeModel) -> SomeModel:
             return data
 
-        tool = Tool.from_function(func_with_complex_type)
+        tool = FunctionTool.from_function(func_with_complex_type)
 
         # Valid JSON for the model
         valid_json = '{"x": 1, "y": {"1": "hello"}}'

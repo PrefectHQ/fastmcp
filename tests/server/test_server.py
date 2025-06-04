@@ -12,7 +12,7 @@ from fastmcp.server.server import (
     has_resource_prefix,
     remove_resource_prefix,
 )
-from fastmcp.tools.tool import Tool
+from fastmcp.tools import FunctionTool
 
 
 class TestCreateServer:
@@ -102,7 +102,7 @@ class TestTools:
             """add two to a number"""
             return x + 2
 
-        g_tool = Tool.from_function(g, name="g-tool")
+        g_tool = FunctionTool.from_function(g, name="g-tool")
 
         mcp = FastMCP(tools=[f, g_tool])
 
