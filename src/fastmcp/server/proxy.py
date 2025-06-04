@@ -32,10 +32,6 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
-def _proxy_passthrough():
-    pass
-
-
 class ProxyTool(Tool):
     def __init__(self, client: Client, **kwargs):
         super().__init__(**kwargs)
@@ -116,7 +112,6 @@ class ProxyTemplate(ResourceTemplate):
             uri_template=template.uriTemplate,
             name=template.name,
             description=template.description,
-            fn=_proxy_passthrough,
             parameters={},
         )
 

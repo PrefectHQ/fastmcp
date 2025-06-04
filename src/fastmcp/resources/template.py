@@ -65,10 +65,27 @@ class ResourceTemplate(FastMCPBaseModel):
     mime_type: str = Field(
         default="text/plain", description="MIME type of the resource content"
     )
-    fn: Callable[..., Any]
     parameters: dict[str, Any] = Field(
         description="JSON schema for function parameters"
     )
+
+    @staticmethod
+    def from_function(
+        fn: Callable[..., Any],
+        uri_template: str,
+        name: str | None = None,
+        description: str | None = None,
+        mime_type: str | None = None,
+        tags: set[str] | None = None,
+    ) -> FunctionResourceTemplate:
+        return FunctionResourceTemplate.from_function(
+            fn=fn,
+            uri_template=uri_template,
+            name=name,
+            description=description,
+            mime_type=mime_type,
+            tags=tags,
+        )
 
     @field_validator("mime_type", mode="before")
     @classmethod
@@ -77,6 +94,70 @@ class ResourceTemplate(FastMCPBaseModel):
         if mime_type:
             return mime_type
         return "text/plain"
+
+    def matches(self, uri: str) -> dict[str, Any] | None:
+        """Check if URI matches template and extract parameters."""
+        return match_uri_template(uri, self.uri_template)
+
+    async def read(self, arguments: dict[str, Any]) -> str | bytes:
+        """Read the resource content."""
+        raise NotImplementedError(
+            "Subclasses must implement read() or override create_resource()"
+        )
+
+    async def create_resource(self, uri: str, params: dict[str, Any]) -> Resource:
+        """Create a resource from the template with the given parameters."""
+
+        async def resource_read_fn() -> str | bytes:
+            # Call function and check if result is a coroutine
+            result = await self.read(arguments=params)
+            return result
+
+        return Resource.from_function(
+            fn=resource_read_fn,
+            uri=uri,
+            name=self.name,
+            description=self.description,
+            mime_type=self.mime_type,
+            tags=self.tags,
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if type(self) is not type(other):
+            return False
+        assert isinstance(other, type(self))
+        return self.model_dump() == other.model_dump()
+
+    def to_mcp_template(self, **overrides: Any) -> MCPResourceTemplate:
+        """Convert the resource template to an MCPResourceTemplate."""
+        kwargs = {
+            "uriTemplate": self.uri_template,
+            "name": self.name,
+            "description": self.description,
+            "mimeType": self.mime_type,
+        }
+        return MCPResourceTemplate(**kwargs | overrides)
+
+
+class FunctionResourceTemplate(ResourceTemplate):
+    """A template for dynamically creating resources."""
+
+    fn: Callable[..., Any]
+
+    async def read(self, arguments: dict[str, Any]) -> str | bytes:
+        """Read the resource content."""
+        from fastmcp.server.context import Context
+
+        # Add context to parameters if needed
+        kwargs = arguments.copy()
+        context_kwarg = find_kwarg_by_type(self.fn, kwarg_type=Context)
+        if context_kwarg and context_kwarg not in kwargs:
+            kwargs[context_kwarg] = get_context()
+
+        result = self.fn(**kwargs)
+        if inspect.iscoroutine(result):
+            result = await result
+        return result
 
     @classmethod
     def from_function(
@@ -87,7 +168,7 @@ class ResourceTemplate(FastMCPBaseModel):
         description: str | None = None,
         mime_type: str | None = None,
         tags: set[str] | None = None,
-    ) -> ResourceTemplate:
+    ) -> FunctionResourceTemplate:
         """Create a template from a function."""
         from fastmcp.server.context import Context
 
@@ -166,48 +247,3 @@ class ResourceTemplate(FastMCPBaseModel):
             parameters=parameters,
             tags=tags or set(),
         )
-
-    def matches(self, uri: str) -> dict[str, Any] | None:
-        """Check if URI matches template and extract parameters."""
-        return match_uri_template(uri, self.uri_template)
-
-    async def create_resource(self, uri: str, params: dict[str, Any]) -> Resource:
-        """Create a resource from the template with the given parameters."""
-        from fastmcp.server.context import Context
-
-        # Add context to parameters if needed
-        kwargs = params.copy()
-        context_kwarg = find_kwarg_by_type(self.fn, kwarg_type=Context)
-        if context_kwarg and context_kwarg not in kwargs:
-            kwargs[context_kwarg] = get_context()
-
-        async def resource_read_fn() -> str | bytes:
-            # Call function and check if result is a coroutine
-            result = self.fn(**kwargs)
-            if inspect.iscoroutine(result):
-                result = await result
-            return result
-
-        return Resource.from_function(
-            fn=resource_read_fn,
-            uri=uri,
-            name=self.name,
-            description=self.description,
-            mime_type=self.mime_type,
-            tags=self.tags,
-        )
-
-    def __eq__(self, other: object) -> bool:
-        if not isinstance(other, ResourceTemplate):
-            return False
-        return self.model_dump() == other.model_dump()
-
-    def to_mcp_template(self, **overrides: Any) -> MCPResourceTemplate:
-        """Convert the resource template to an MCPResourceTemplate."""
-        kwargs = {
-            "uriTemplate": self.uri_template,
-            "name": self.name,
-            "description": self.description,
-            "mimeType": self.mime_type,
-        }
-        return MCPResourceTemplate(**kwargs | overrides)

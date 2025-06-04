@@ -605,7 +605,6 @@ class OpenAPIResourceTemplate(ResourceTemplate):
             uri_template=uri_template,
             name=name,
             description=description,
-            fn=lambda **kwargs: None,
             parameters=parameters,
             tags=tags,
         )
