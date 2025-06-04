@@ -7,6 +7,7 @@ from pydantic import Field
 from fastmcp import Client, FastMCP
 from fastmcp.exceptions import NotFoundError
 from fastmcp.prompts.prompt import Prompt
+from fastmcp.resources import Resource, ResourceTemplate
 from fastmcp.server.server import (
     MountedServer,
     add_resource_prefix,
@@ -389,8 +390,10 @@ class TestResourceDecorator:
 
         obj = MyClass("My prefix:")
 
-        mcp.add_resource_fn(
-            obj.get_data, uri="resource://data", name="instance-resource"
+        mcp.add_resource(
+            Resource.from_function(
+                obj.get_data, uri="resource://data", name="instance-resource"
+            )
         )
 
         async with Client(mcp) as client:
@@ -407,8 +410,10 @@ class TestResourceDecorator:
             def get_data(cls) -> str:
                 return f"{cls.prefix} Hello, world!"
 
-        mcp.add_resource_fn(
-            MyClass.get_data, uri="resource://data", name="class-resource"
+        mcp.add_resource(
+            Resource.from_function(
+                MyClass.get_data, uri="resource://data", name="class-resource"
+            )
         )
 
         async with Client(mcp) as client:
@@ -508,9 +513,12 @@ class TestTemplateDecorator:
                 return f"{self.prefix} Data for {name}"
 
         obj = MyClass("My prefix:")
-        mcp.add_resource_fn(
-            obj.get_data, uri="resource://{name}/data", name="instance-template"
+        template = ResourceTemplate.from_function(
+            obj.get_data,
+            uri_template="resource://{name}/data",
+            name="instance-template",
         )
+        mcp.add_template(template)
 
         async with Client(mcp) as client:
             result = await client.read_resource("resource://test/data")
@@ -526,11 +534,12 @@ class TestTemplateDecorator:
             def get_data(cls, name: str) -> str:
                 return f"{cls.prefix} Data for {name}"
 
-        mcp.add_resource_fn(
+        template = ResourceTemplate.from_function(
             MyClass.get_data,
-            uri="resource://{name}/data",
+            uri_template="resource://{name}/data",
             name="class-template",
         )
+        mcp.add_template(template)
 
         async with Client(mcp) as client:
             result = await client.read_resource("resource://test/data")

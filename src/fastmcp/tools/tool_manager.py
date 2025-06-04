@@ -23,11 +23,9 @@ class ToolManager:
     def __init__(
         self,
         duplicate_behavior: DuplicateBehavior | None = None,
-        serializer: Callable[[Any], str] | None = None,
         mask_error_details: bool = False,
     ):
         self._tools: dict[str, Tool] = {}
-        self._serializer = serializer
         self.mask_error_details = mask_error_details
 
         # Default to "warn" if None is provided
@@ -67,6 +65,7 @@ class ToolManager:
         description: str | None = None,
         tags: set[str] | None = None,
         annotations: ToolAnnotations | None = None,
+        serializer: Callable[[Any], str] | None = None,
         exclude_args: list[str] | None = None,
     ) -> Tool:
         """Add a tool to the server."""
@@ -81,8 +80,8 @@ class ToolManager:
             description=description,
             tags=tags,
             annotations=annotations,
-            serializer=self._serializer,
             exclude_args=exclude_args,
+            serializer=serializer,
         )
         return self.add_tool(tool)
 

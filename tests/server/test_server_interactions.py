@@ -20,7 +20,7 @@ from fastmcp import Client, Context, FastMCP
 from fastmcp.client.transports import FastMCPTransport
 from fastmcp.exceptions import ToolError
 from fastmcp.prompts.prompt import EmbeddedResource, Prompt, PromptMessage
-from fastmcp.resources import FileResource
+from fastmcp.resources import FileResource, ResourceTemplate
 from fastmcp.resources.resource import FunctionResource
 from fastmcp.tools.tool import Tool
 from fastmcp.utilities.types import Image
@@ -1074,7 +1074,10 @@ class TestResourceTemplateContext:
             def __call__(self, param: str, ctx: Context) -> str:
                 return f"Resource template: {param} {ctx.request_id}"
 
-        mcp.add_resource_fn(MyResource(), uri="resource://{param}")
+        template = ResourceTemplate.from_function(
+            MyResource(), uri_template="resource://{param}"
+        )
+        mcp.add_template(template)
 
         async with Client(mcp) as client:
             result = await client.read_resource(AnyUrl("resource://test"))

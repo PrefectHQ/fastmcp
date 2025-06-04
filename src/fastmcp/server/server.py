@@ -154,7 +154,6 @@ class FastMCP(Generic[LifespanResultT]):
         self._additional_http_routes: list[BaseRoute] = []
         self._tool_manager = ToolManager(
             duplicate_behavior=on_duplicate_tools,
-            serializer=tool_serializer,
             mask_error_details=self.settings.mask_error_details,
         )
         self._resource_manager = ResourceManager(
@@ -165,6 +164,7 @@ class FastMCP(Generic[LifespanResultT]):
             duplicate_behavior=on_duplicate_prompts,
             mask_error_details=self.settings.mask_error_details,
         )
+        self._tool_serializer = tool_serializer
 
         if lifespan is None:
             self._has_lifespan = False
@@ -184,7 +184,7 @@ class FastMCP(Generic[LifespanResultT]):
         if tools:
             for tool in tools:
                 if not isinstance(tool, Tool):
-                    tool = Tool.from_function(tool)
+                    tool = Tool.from_function(tool, serializer=self._tool_serializer)
                 self.add_tool(tool)
 
         # Set up MCP protocol handlers
@@ -564,6 +564,7 @@ class FastMCP(Generic[LifespanResultT]):
                 tags=tags,
                 annotations=annotations,
                 exclude_args=exclude_args,
+                serializer=self._tool_serializer,
             )
             self.add_tool(tool)
             return fn
