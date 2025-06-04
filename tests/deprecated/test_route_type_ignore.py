@@ -12,6 +12,9 @@ from fastmcp.server.openapi import (
     RouteType,
 )
 
+# reset deprecation warnings for this module
+pytestmark = pytest.mark.filterwarnings("default::DeprecationWarning")
+
 
 def test_route_type_ignore_deprecation_warning():
     """Test that using RouteType.IGNORE emits a deprecation warning."""
