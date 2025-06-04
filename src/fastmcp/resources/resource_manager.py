@@ -1,6 +1,7 @@
 """Resource manager functionality."""
 
 import inspect
+import warnings
 from collections.abc import Callable
 from typing import Any
 
@@ -120,6 +121,11 @@ class ResourceManager:
             The added resource. If a resource with the same URI already exists,
             returns the existing resource.
         """
+        # deprecated in 2.7.0
+        warnings.warn(
+            "add_resource_from_fn is deprecated. Use Resource.from_function() and call add_resource() instead.",
+            DeprecationWarning,
+        )
         resource = Resource.from_function(
             fn=fn,
             uri=uri,
@@ -171,7 +177,11 @@ class ResourceManager:
         tags: set[str] | None = None,
     ) -> ResourceTemplate:
         """Create a template from a function."""
-
+        # deprecated in 2.7.0
+        warnings.warn(
+            "add_template_from_fn is deprecated. Use ResourceTemplate.from_function() and call add_template() instead.",
+            DeprecationWarning,
+        )
         template = ResourceTemplate.from_function(
             fn,
             uri_template=uri_template,

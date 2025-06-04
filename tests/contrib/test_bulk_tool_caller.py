@@ -9,6 +9,7 @@ from fastmcp.contrib.bulk_tool_caller.bulk_tool_caller import (
     CallToolRequest,
     CallToolRequestResult,
 )
+from fastmcp.tools.tool import Tool
 
 ContentType = TextContent | ImageContent | EmbeddedResource
 
@@ -68,9 +69,9 @@ def no_return_tool_result_factory(arg1: str) -> CallToolRequestResult:
 def live_server_with_tool() -> FastMCP:
     """Fixture to create a FastMCP server instance with the echo_tool registered."""
     server = FastMCP()
-    server.add_tool(echo_tool)
-    server.add_tool(error_tool)
-    server.add_tool(no_return_tool)
+    server.add_tool(Tool.from_function(echo_tool))
+    server.add_tool(Tool.from_function(error_tool))
+    server.add_tool(Tool.from_function(no_return_tool))
     return server
 
 

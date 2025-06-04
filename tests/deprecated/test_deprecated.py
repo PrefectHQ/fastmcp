@@ -1,5 +1,3 @@
-"""Tests for deprecated functionality."""
-
 import warnings
 from unittest.mock import AsyncMock, patch
 
@@ -7,6 +5,9 @@ import pytest
 from starlette.applications import Starlette
 
 from fastmcp import Client, FastMCP
+
+# reset deprecation warnings for this module
+pytestmark = pytest.mark.filterwarnings("default::DeprecationWarning")
 
 
 def test_sse_app_deprecation_warning():

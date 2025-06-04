@@ -1,5 +1,7 @@
 """Tests for legacy resource prefix behavior."""
 
+import pytest
+
 from fastmcp import Client, FastMCP
 from fastmcp.server.server import (
     add_resource_prefix,
@@ -7,6 +9,9 @@ from fastmcp.server.server import (
     remove_resource_prefix,
 )
 from fastmcp.utilities.tests import temporary_settings
+
+# reset deprecation warnings for this module
+pytestmark = pytest.mark.filterwarnings("default::DeprecationWarning")
 
 
 class TestLegacyResourcePrefixes:

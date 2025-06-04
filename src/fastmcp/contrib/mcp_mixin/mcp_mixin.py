@@ -3,6 +3,10 @@
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
+from fastmcp.prompts.prompt import Prompt
+from fastmcp.resources.resource import Resource
+from fastmcp.tools.tool import Tool
+
 if TYPE_CHECKING:
     from fastmcp.server import FastMCP
 
@@ -128,7 +132,8 @@ class MCPMixin:
                 registration_info["name"] = (
                     f"{prefix}{separator}{registration_info['name']}"
                 )
-            mcp_server.add_tool(fn=method, **registration_info)
+            tool = Tool.from_function(fn=method, **registration_info)
+            mcp_server.add_tool(tool)
 
     def register_resources(
         self,
@@ -156,7 +161,8 @@ class MCPMixin:
                 registration_info["uri"] = (
                     f"{prefix}{separator}{registration_info['uri']}"
                 )
-            mcp_server.add_resource_fn(fn=method, **registration_info)
+            resource = Resource.from_function(fn=method, **registration_info)
+            mcp_server.add_resource(resource)
 
     def register_prompts(
         self,
@@ -180,7 +186,8 @@ class MCPMixin:
                 registration_info["name"] = (
                     f"{prefix}{separator}{registration_info['name']}"
                 )
-            mcp_server.add_prompt(fn=method, **registration_info)
+            prompt = Prompt.from_function(fn=method, **registration_info)
+            mcp_server.add_prompt(prompt)
 
     def register_all(
         self,

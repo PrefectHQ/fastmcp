@@ -1,5 +1,6 @@
 from __future__ import annotations as _annotations
 
+import warnings
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
@@ -22,11 +23,9 @@ class ToolManager:
     def __init__(
         self,
         duplicate_behavior: DuplicateBehavior | None = None,
-        serializer: Callable[[Any], str] | None = None,
         mask_error_details: bool = False,
     ):
         self._tools: dict[str, Tool] = {}
-        self._serializer = serializer
         self.mask_error_details = mask_error_details
 
         # Default to "warn" if None is provided
@@ -66,17 +65,23 @@ class ToolManager:
         description: str | None = None,
         tags: set[str] | None = None,
         annotations: ToolAnnotations | None = None,
+        serializer: Callable[[Any], str] | None = None,
         exclude_args: list[str] | None = None,
     ) -> Tool:
         """Add a tool to the server."""
+        # deprecated in 2.7.0
+        warnings.warn(
+            "ToolManager.add_tool_from_fn() is deprecated. Use Tool.from_function() and call add_tool() instead.",
+            DeprecationWarning,
+        )
         tool = Tool.from_function(
             fn,
             name=name,
             description=description,
             tags=tags,
             annotations=annotations,
-            serializer=self._serializer,
             exclude_args=exclude_args,
+            serializer=serializer,
         )
         return self.add_tool(tool)
 

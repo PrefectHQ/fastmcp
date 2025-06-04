@@ -47,4 +47,4 @@ jobs:
         run: uv sync --locked
 
       - name: Run tests
-        run: uv run pytest tests
+        run: uv run pytest tests -n auto

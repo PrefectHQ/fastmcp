@@ -3,7 +3,7 @@ from urllib.parse import quote
 
 from fastmcp.client.client import Client
 from fastmcp.server.server import FastMCP
-from fastmcp.tools.tool import FunctionTool
+from fastmcp.tools.tool import FunctionTool, Tool
 
 
 async def test_import_basic_functionality():
@@ -199,7 +199,7 @@ async def test_tool_custom_name_preserved_when_imported():
     def fetch_data(query: str) -> str:
         return f"Data for query: {query}"
 
-    api_app.add_tool(fetch_data, name="get_data")
+    api_app.add_tool(Tool.from_function(fetch_data, name="get_data"))
     await main_app.import_server("api", api_app)
 
     # Check that the tool is accessible by its prefixed name
@@ -219,7 +219,7 @@ async def test_call_imported_custom_named_tool():
     def fetch_data(query: str) -> str:
         return f"Data for query: {query}"
 
-    api_app.add_tool(fetch_data, name="get_data")
+    api_app.add_tool(Tool.from_function(fetch_data, name="get_data"))
     await main_app.import_server("api", api_app)
 
     async with Client(main_app) as client:
@@ -235,7 +235,7 @@ async def test_first_level_importing_with_custom_name():
     def calculate_value(input: int) -> int:
         return input * 2
 
-    provider_app.add_tool(calculate_value, name="compute")
+    provider_app.add_tool(Tool.from_function(calculate_value, name="compute"))
     await service_app.import_server("provider", provider_app)
 
     # Tool is accessible in the service app with the first prefix
@@ -254,7 +254,7 @@ async def test_nested_importing_preserves_prefixes():
     def calculate_value(input: int) -> int:
         return input * 2
 
-    provider_app.add_tool(calculate_value, name="compute")
+    provider_app.add_tool(Tool.from_function(calculate_value, name="compute"))
     await service_app.import_server("provider", provider_app)
     await main_app.import_server("service", service_app)
 
@@ -272,7 +272,7 @@ async def test_call_nested_imported_tool():
     def calculate_value(input: int) -> int:
         return input * 2
 
-    provider_app.add_tool(calculate_value, name="compute")
+    provider_app.add_tool(Tool.from_function(calculate_value, name="compute"))
     await service_app.import_server("provider", provider_app)
     await main_app.import_server("service", service_app)
 

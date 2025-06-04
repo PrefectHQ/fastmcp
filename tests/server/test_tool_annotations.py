@@ -3,6 +3,7 @@ from typing import Any
 from mcp.types import ToolAnnotations
 
 from fastmcp import Client, FastMCP
+from fastmcp.tools.tool import Tool
 
 
 async def test_tool_annotations_in_tool_manager():
@@ -169,7 +170,7 @@ async def test_add_tool_method_annotations():
         """Create a new item."""
         return {"name": name, "value": value}
 
-    mcp.add_tool(
+    tool = Tool.from_function(
         create_item,
         name="create_item",
         annotations=ToolAnnotations(
@@ -178,6 +179,8 @@ async def test_add_tool_method_annotations():
             destructiveHint=False,
         ),
     )
+
+    mcp.add_tool(tool)
 
     # Check internal tool objects directly
     tools = mcp._tool_manager.list_tools()
@@ -196,7 +199,7 @@ async def test_tool_functionality_with_annotations():
         """Create a new item."""
         return {"name": name, "value": value}
 
-    mcp.add_tool(
+    tool = Tool.from_function(
         create_item,
         name="create_item",
         annotations=ToolAnnotations(
@@ -205,6 +208,7 @@ async def test_tool_functionality_with_annotations():
             destructiveHint=False,
         ),
     )
+    mcp.add_tool(tool)
 
     # Use the tool to verify functionality is preserved
     async with Client(mcp) as client:

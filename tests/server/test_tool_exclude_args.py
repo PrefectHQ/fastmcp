@@ -4,6 +4,7 @@ import pytest
 from mcp.types import TextContent
 
 from fastmcp import Client, FastMCP
+from fastmcp.tools.tool import Tool
 
 
 async def test_tool_exclude_args_in_tool_manager():
@@ -53,7 +54,12 @@ async def test_add_tool_method_exclude_args():
             pass
         return {"name": name, "value": value}
 
-    mcp.add_tool(create_item, name="create_item", exclude_args=["state"])
+    tool = Tool.from_function(
+        create_item,
+        name="create_item",
+        exclude_args=["state"],
+    )
+    mcp.add_tool(tool)
 
     # Check internal tool objects directly
     tools = mcp._tool_manager.list_tools()
@@ -77,7 +83,12 @@ async def test_tool_functionality_with_exclude_args():
             pass
         return {"name": name, "value": value}
 
-    mcp.add_tool(create_item, name="create_item", exclude_args=["state"])
+    tool = Tool.from_function(
+        create_item,
+        name="create_item",
+        exclude_args=["state"],
+    )
+    mcp.add_tool(tool)
 
     # Use the tool to verify functionality is preserved
     async with Client(mcp) as client:
