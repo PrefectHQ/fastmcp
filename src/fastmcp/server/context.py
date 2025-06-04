@@ -49,7 +49,7 @@ class Context:
     To use context in a tool function, add a parameter with the Context type annotation:
 
     ```python
-    @server.tool()
+    @server.tool
     def my_tool(x: int, ctx: Context) -> str:
         # Log messages to the client
         ctx.info(f"Processing {x}")

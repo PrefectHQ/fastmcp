@@ -14,7 +14,7 @@ def custom_dict_serializer(data: Any) -> str:
 server = FastMCP(name="CustomSerializerExample", tool_serializer=custom_dict_serializer)
 
 
-@server.tool()
+@server.tool
 def get_example_data() -> dict:
     """Returns some example data."""
     return {"name": "Test", "value": 123, "status": True}

@@ -15,7 +15,7 @@ from fastmcp.client.sampling import RequestContext, SamplingMessage, SamplingPar
 mcp = FastMCP("Sampling Example")
 
 
-@mcp.tool()
+@mcp.tool
 async def example_tool(prompt: str, context: Context) -> str:
     """Sample a completion from the LLM."""
     response = await context.sample(

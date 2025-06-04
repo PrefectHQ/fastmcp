@@ -11,17 +11,17 @@ from fastmcp.client.sampling import RequestContext, SamplingMessage, SamplingPar
 def fastmcp_server():
     mcp = FastMCP()
 
-    @mcp.tool()
+    @mcp.tool
     async def simple_sample(message: str, context: Context) -> str:
         result = await context.sample("Hello, world!")
         return cast(TextContent, result).text
 
-    @mcp.tool()
+    @mcp.tool
     async def sample_with_system_prompt(message: str, context: Context) -> str:
         result = await context.sample("Hello, world!", system_prompt="You love FastMCP")
         return cast(TextContent, result).text
 
-    @mcp.tool()
+    @mcp.tool
     async def sample_with_messages(message: str, context: Context) -> str:
         result = await context.sample(
             [

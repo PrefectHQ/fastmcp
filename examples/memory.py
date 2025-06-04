@@ -279,7 +279,7 @@ async def display_memory_tree(deps: Deps) -> str:
     return result
 
 
-@mcp.tool()
+@mcp.tool
 async def remember(
     contents: list[str] = Field(
         description="List of observations or memories to store"
@@ -294,7 +294,7 @@ async def remember(
         await deps.pool.close()
 
 
-@mcp.tool()
+@mcp.tool
 async def read_profile() -> str:
     deps = Deps(openai=AsyncOpenAI(), pool=await get_db_pool())
     profile = await display_memory_tree(deps)

@@ -57,7 +57,7 @@ class TestTools:
 
         mcp = FastMCP()
 
-        @mcp.tool()
+        @mcp.tool
         def fn(x: int) -> int:
             return x + 1
 
@@ -126,21 +126,29 @@ class TestToolDecorator:
     async def test_tool_decorator(self):
         mcp = FastMCP()
 
-        @mcp.tool()
+        @mcp.tool
         def add(x: int, y: int) -> int:
             return x + y
 
         result = await mcp._mcp_call_tool("add", {"x": 1, "y": 2})
         assert result[0].text == "3"  # type: ignore[attr-defined]
 
-    async def test_tool_decorator_incorrect_usage(self):
+    async def test_tool_decorator_without_parentheses(self):
+        """Test that @tool decorator works without parentheses."""
         mcp = FastMCP()
 
-        with pytest.raises(TypeError, match="The @tool decorator was used incorrectly"):
+        # Test the @tool syntax without parentheses
+        @mcp.tool
+        def add(x: int, y: int) -> int:
+            return x + y
 
-            @mcp.tool  # Missing parentheses #type: ignore
-            def add(x: int, y: int) -> int:
-                return x + y
+        # Verify the tool was registered correctly
+        tools = await mcp.get_tools()
+        assert "add" in tools
+
+        # Verify it can be called
+        result = await mcp._mcp_call_tool("add", {"x": 1, "y": 2})
+        assert result[0].text == "3"  # type: ignore[attr-defined]
 
     async def test_tool_decorator_with_name(self):
         mcp = FastMCP()
@@ -171,7 +179,7 @@ class TestToolDecorator:
             def __init__(self, x: int):
                 self.x = x
 
-            @mcp.tool()
+            @mcp.tool
             def add(self, y: int) -> int:
                 return self.x + y
 
@@ -199,7 +207,7 @@ class TestToolDecorator:
 
         class MyClass:
             @staticmethod
-            @mcp.tool()
+            @mcp.tool
             def add(x: int, y: int) -> int:
                 return x + y
 
@@ -209,7 +217,7 @@ class TestToolDecorator:
     async def test_tool_decorator_async_function(self):
         mcp = FastMCP()
 
-        @mcp.tool()
+        @mcp.tool
         async def add(x: int, y: int) -> int:
             return x + y
 
@@ -280,7 +288,7 @@ class TestToolDecorator:
         """Test that tools with annotated arguments work correctly."""
         mcp = FastMCP()
 
-        @mcp.tool()
+        @mcp.tool
         def add(
             x: Annotated[int, Field(description="x is an int")],
             y: Annotated[str, Field(description="y is not an int")],
@@ -295,7 +303,7 @@ class TestToolDecorator:
         """Test that tools with annotated arguments work correctly."""
         mcp = FastMCP()
 
-        @mcp.tool()
+        @mcp.tool
         def add(
             x: int = Field(description="x is an int"),
             y: str = Field(description="y is not an int"),
@@ -305,6 +313,59 @@ class TestToolDecorator:
         tool = (await mcp.get_tools())["add"]
         assert tool.parameters["properties"]["x"]["description"] == "x is an int"
         assert tool.parameters["properties"]["y"]["description"] == "y is not an int"
+
+    async def test_tool_direct_function_call(self):
+        """Test that tools can be registered via direct function call."""
+        mcp = FastMCP()
+
+        def standalone_function(x: int, y: int) -> int:
+            """A standalone function to be registered."""
+            return x + y
+
+        # Register it directly using the new syntax
+        result_fn = mcp.tool(standalone_function, name="direct_call_tool")
+
+        # The function should be returned unchanged
+        assert result_fn is standalone_function
+
+        # Verify the tool was registered correctly
+        tools = await mcp.get_tools()
+        assert "direct_call_tool" in tools
+
+        # Verify it can be called
+        result = await mcp._mcp_call_tool("direct_call_tool", {"x": 5, "y": 3})
+        assert result[0].text == "8"  # type: ignore[attr-defined]
+
+    async def test_tool_decorator_with_string_name(self):
+        """Test that @tool("custom_name") syntax works correctly."""
+        mcp = FastMCP()
+
+        @mcp.tool("string_named_tool")
+        def my_function(x: int) -> str:
+            """A function with a string name."""
+            return f"Result: {x}"
+
+        # Verify the tool was registered with the custom name
+        tools = await mcp.get_tools()
+        assert "string_named_tool" in tools
+        assert "my_function" not in tools  # Original name should not be registered
+
+        # Verify it can be called
+        result = await mcp._mcp_call_tool("string_named_tool", {"x": 42})
+        assert result[0].text == "Result: 42"  # type: ignore[attr-defined]
+
+    async def test_tool_decorator_conflicting_names_error(self):
+        """Test that providing both positional and keyword name raises an error."""
+        mcp = FastMCP()
+
+        with pytest.raises(
+            TypeError,
+            match="Cannot specify both a name as first argument and as keyword argument",
+        ):
+
+            @mcp.tool("positional_name", name="keyword_name")
+            def my_function(x: int) -> str:
+                return f"Result: {x}"
 
 
 class TestResourceDecorator:

@@ -21,18 +21,18 @@ def fastmcp_server():
     server = FastMCP("TestServer")
 
     # Add a tool
-    @server.tool()
+    @server.tool
     def greet(name: str) -> str:
         """Greet someone by name."""
         return f"Hello, {name}!"
 
     # Add a second tool
-    @server.tool()
+    @server.tool
     def add(a: int, b: int) -> int:
         """Add two numbers together."""
         return a + b
 
-    @server.tool()
+    @server.tool
     async def sleep(seconds: float) -> str:
         """Sleep for a given number of seconds."""
         await asyncio.sleep(seconds)

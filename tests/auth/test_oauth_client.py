@@ -24,7 +24,7 @@ def fastmcp_server(issuer_url: str):
         ),
     )
 
-    @server.tool()
+    @server.tool
     def add(a: int, b: int) -> int:
         """Add two numbers together."""
         return a + b

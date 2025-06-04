@@ -8,7 +8,7 @@ from fastmcp import FastMCP
 mcp = FastMCP("Echo Server")
 
 
-@mcp.tool()
+@mcp.tool
 def echo(text: str) -> str:
     """Echo the input text"""
     return text

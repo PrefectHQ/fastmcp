@@ -9,7 +9,7 @@ from fastmcp import Client, Context, FastMCP
 def fastmcp_server():
     mcp = FastMCP()
 
-    @mcp.tool()
+    @mcp.tool
     async def list_roots(context: Context) -> list[str]:
         roots = await context.list_roots()
         return [str(r.uri) for r in roots]

@@ -20,7 +20,7 @@ def test_mount_tool_separator_deprecation_warning():
         main_app.mount("sub", sub_app, tool_separator="-")
 
     # Verify the separator is ignored and the default is used
-    @sub_app.tool()
+    @sub_app.tool
     def test_tool():
         return "test"
 

@@ -320,7 +320,7 @@ class TestLegacyToolJsonParsing:
         """Test JSON string to collection type coercion."""
         mcp = FastMCP()
 
-        @mcp.tool()
+        @mcp.tool
         def process_list(items: list[int]) -> int:
             return sum(items)
 
@@ -335,7 +335,7 @@ class TestLegacyToolJsonParsing:
         """Test that a list coercion error is raised if the input is not a valid list."""
         mcp = FastMCP()
 
-        @mcp.tool()
+        @mcp.tool
         def process_list(items: list[int]) -> int:
             return sum(items)
 
@@ -350,7 +350,7 @@ class TestLegacyToolJsonParsing:
         """Test JSON string to dict type coercion."""
         mcp = FastMCP()
 
-        @mcp.tool()
+        @mcp.tool
         def process_dict(data: dict[str, int]) -> int:
             return sum(data.values())
 
@@ -365,7 +365,7 @@ class TestLegacyToolJsonParsing:
         """Test JSON string to set type coercion."""
         mcp = FastMCP()
 
-        @mcp.tool()
+        @mcp.tool
         def process_set(items: set[int]) -> int:
             assert isinstance(items, set)
             return sum(items)
@@ -378,7 +378,7 @@ class TestLegacyToolJsonParsing:
         """Test JSON string to tuple type coercion."""
         mcp = FastMCP()
 
-        @mcp.tool()
+        @mcp.tool
         def process_tuple(items: tuple[int, str]) -> int:
             assert isinstance(items, tuple)
             return items[0] + len(items[1])

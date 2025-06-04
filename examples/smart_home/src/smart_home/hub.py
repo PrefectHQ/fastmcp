@@ -16,7 +16,7 @@ hub_mcp.mount("hue", lights_mcp)
 
 
 # Add a status check for the hub
-@hub_mcp.tool()
+@hub_mcp.tool
 def hub_status() -> str:
     """Checks the status of the main hub and connections."""
     try:

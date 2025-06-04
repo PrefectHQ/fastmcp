@@ -25,18 +25,18 @@ def fastmcp_server():
     server = FastMCP("TestServer")
 
     # Add a tool
-    @server.tool()
+    @server.tool
     def greet(name: str) -> str:
         """Greet someone by name."""
         return f"Hello, {name}!"
 
     # Add a second tool
-    @server.tool()
+    @server.tool
     def add(a: int, b: int) -> int:
         """Add two numbers together."""
         return a + b
 
-    @server.tool()
+    @server.tool
     async def sleep(seconds: float) -> str:
         """Sleep for a given number of seconds."""
         await asyncio.sleep(seconds)
@@ -347,7 +347,7 @@ async def test_concurrent_client_context_managers():
     # Create a simple server
     server = FastMCP("Test Server")
 
-    @server.tool()
+    @server.tool
     def echo(text: str) -> str:
         """Echo tool"""
         return text
@@ -510,7 +510,7 @@ class TestErrorHandling:
     async def test_general_tool_exceptions_are_not_masked_by_default(self):
         mcp = FastMCP("TestServer")
 
-        @mcp.tool()
+        @mcp.tool
         def error_tool():
             raise ValueError("This is a test error (abc)")
 
@@ -525,7 +525,7 @@ class TestErrorHandling:
     async def test_general_tool_exceptions_are_masked_when_enabled(self):
         mcp = FastMCP("TestServer", mask_error_details=True)
 
-        @mcp.tool()
+        @mcp.tool
         def error_tool():
             raise ValueError("This is a test error (abc)")
 
@@ -540,7 +540,7 @@ class TestErrorHandling:
     async def test_specific_tool_errors_are_sent_to_client(self):
         mcp = FastMCP("TestServer")
 
-        @mcp.tool()
+        @mcp.tool
         def custom_error_tool():
             raise ToolError("This is a test error (abc)")
 

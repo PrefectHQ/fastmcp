@@ -20,7 +20,7 @@ class ShrimpTank(BaseModel):
     shrimp: list[Shrimp]
 
 
-@mcp.tool()
+@mcp.tool
 def name_shrimp(
     tank: ShrimpTank,
     # You can use pydantic Field in function signatures for validation.

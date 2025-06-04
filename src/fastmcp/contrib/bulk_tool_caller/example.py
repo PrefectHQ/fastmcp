@@ -6,7 +6,7 @@ from fastmcp.contrib.bulk_tool_caller import BulkToolCaller
 mcp = FastMCP()
 
 
-@mcp.tool()
+@mcp.tool
 def echo_tool(text: str) -> str:
     """Echo the input text"""
     return text

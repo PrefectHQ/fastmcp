@@ -17,7 +17,7 @@ class TestKeepAlive:
 
             mcp = FastMCP()
 
-            @mcp.tool()
+            @mcp.tool
             def pid() -> int:
                 """Gets PID of server"""
                 return os.getpid()

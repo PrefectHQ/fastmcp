@@ -43,7 +43,7 @@ lights_mcp = FastMCP(
 )
 
 
-@lights_mcp.tool()
+@lights_mcp.tool
 def read_all_lights() -> list[str]:
     """Lists the names of all available Hue lights using phue2."""
     if not (bridge := _get_bridge()):
@@ -59,7 +59,7 @@ def read_all_lights() -> list[str]:
 # --- Tools ---
 
 
-@lights_mcp.tool()
+@lights_mcp.tool
 def toggle_light(light_name: str, state: bool) -> dict[str, Any]:
     """Turns a specific light on (true) or off (false) using phue2."""
     if not (bridge := _get_bridge()):
@@ -76,7 +76,7 @@ def toggle_light(light_name: str, state: bool) -> dict[str, Any]:
         return handle_phue_error(light_name, "toggle_light", e)
 
 
-@lights_mcp.tool()
+@lights_mcp.tool
 def set_brightness(light_name: str, brightness: int) -> dict[str, Any]:
     """Sets the brightness of a specific light (0-254) using phue2."""
     if not (bridge := _get_bridge()):
@@ -100,7 +100,7 @@ def set_brightness(light_name: str, brightness: int) -> dict[str, Any]:
         return handle_phue_error(light_name, "set_brightness", e)
 
 
-@lights_mcp.tool()
+@lights_mcp.tool
 def list_groups() -> list[str]:
     """Lists the names of all available Hue light groups."""
     if not (bridge := _get_bridge()):
@@ -113,7 +113,7 @@ def list_groups() -> list[str]:
         return [f"Error listing groups: {e}"]
 
 
-@lights_mcp.tool()
+@lights_mcp.tool
 def list_scenes() -> dict[str, list[str]] | list[str]:
     """Lists Hue scenes, grouped by the light group they belong to.
 
@@ -154,7 +154,7 @@ def list_scenes() -> dict[str, list[str]] | list[str]:
         return [f"Error listing scenes by group: {e}"]
 
 
-@lights_mcp.tool()
+@lights_mcp.tool
 def activate_scene(group_name: str, scene_name: str) -> dict[str, Any]:
     """Activates a specific scene within a specified light group, verifying the scene belongs to the group."""
     if not (bridge := _get_bridge()):
@@ -215,7 +215,7 @@ def activate_scene(group_name: str, scene_name: str) -> dict[str, Any]:
         return handle_phue_error(f"{group_name}/{scene_name}", "activate_scene", e)
 
 
-@lights_mcp.tool()
+@lights_mcp.tool
 def set_light_attributes(light_name: str, attributes: HueAttributes) -> dict[str, Any]:
     """Sets multiple attributes (e.g., hue, sat, bri, ct, xy, transitiontime) for a specific light."""
     if not (bridge := _get_bridge()):
@@ -242,7 +242,7 @@ def set_light_attributes(light_name: str, attributes: HueAttributes) -> dict[str
         return handle_phue_error(light_name, "set_light_attributes", e)
 
 
-@lights_mcp.tool()
+@lights_mcp.tool
 def set_group_attributes(group_name: str, attributes: HueAttributes) -> dict[str, Any]:
     """Sets multiple attributes for all lights within a specific group."""
     if not (bridge := _get_bridge()):
@@ -267,7 +267,7 @@ def set_group_attributes(group_name: str, attributes: HueAttributes) -> dict[str
         return handle_phue_error(group_name, "set_group_attributes", e)
 
 
-@lights_mcp.tool()
+@lights_mcp.tool
 def list_lights_by_group() -> dict[str, list[str]] | list[str]:
     """Lists Hue lights, grouped by the room/group they belong to.
 
