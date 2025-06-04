@@ -153,6 +153,8 @@ class ProxyTemplate(ResourceTemplate):
 
 
 class ProxyPrompt(Prompt):
+    _client: Client
+
     def __init__(self, client: Client, **kwargs):
         super().__init__(**kwargs)
         self._client = client
@@ -164,7 +166,6 @@ class ProxyPrompt(Prompt):
             name=prompt.name,
             description=prompt.description,
             arguments=[a.model_dump() for a in prompt.arguments or []],
-            fn=_proxy_passthrough,
         )
 
     async def render(self, arguments: dict[str, Any]) -> list[PromptMessage]:

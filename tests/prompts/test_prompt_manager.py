@@ -5,7 +5,7 @@ import pytest
 from fastmcp import Context
 from fastmcp.exceptions import NotFoundError, PromptError
 from fastmcp.prompts import Prompt
-from fastmcp.prompts.prompt import PromptMessage, TextContent
+from fastmcp.prompts.prompt import FunctionPrompt, PromptMessage, TextContent
 from fastmcp.prompts.prompt_manager import PromptManager
 
 
@@ -97,6 +97,7 @@ class TestPromptManager:
         # Should have replaced with the new prompt
         prompt = manager.get_prompt("test_prompt")
         assert prompt is not None
+        assert isinstance(prompt, FunctionPrompt)
         assert prompt.fn.__name__ == "replacement_fn"
 
     def test_ignore_duplicate_prompts(self):
@@ -118,8 +119,10 @@ class TestPromptManager:
         # Should keep the original
         prompt = manager.get_prompt("test_prompt")
         assert prompt is not None
+        assert isinstance(prompt, FunctionPrompt)
         assert prompt.fn.__name__ == "original_fn"
         # Result should be the original prompt
+        assert isinstance(result, FunctionPrompt)
         assert result.fn.__name__ == "original_fn"
 
     def test_get_prompts(self):

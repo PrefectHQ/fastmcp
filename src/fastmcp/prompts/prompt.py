@@ -3,6 +3,7 @@
 from __future__ import annotations as _annotations
 
 import inspect
+from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable, Sequence
 from typing import TYPE_CHECKING, Annotated, Any
 
@@ -10,13 +11,14 @@ import pydantic_core
 from mcp.types import EmbeddedResource, ImageContent, PromptMessage, Role, TextContent
 from mcp.types import Prompt as MCPPrompt
 from mcp.types import PromptArgument as MCPPromptArgument
-from pydantic import BaseModel, BeforeValidator, Field, TypeAdapter, validate_call
+from pydantic import BeforeValidator, Field, TypeAdapter, validate_call
 
 from fastmcp.exceptions import PromptError
 from fastmcp.server.dependencies import get_context
 from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import (
+    FastMCPBaseModel,
     _convert_set_defaults,
     find_kwarg_by_type,
     get_cached_typeadapter,
@@ -52,7 +54,7 @@ SyncPromptResult = (
 PromptResult = SyncPromptResult | Awaitable[SyncPromptResult]
 
 
-class PromptArgument(BaseModel):
+class PromptArgument(FastMCPBaseModel):
     """An argument that can be passed to a prompt."""
 
     name: str = Field(description="Name of the argument")
@@ -64,7 +66,7 @@ class PromptArgument(BaseModel):
     )
 
 
-class Prompt(BaseModel):
+class Prompt(FastMCPBaseModel, ABC):
     """A prompt template that can be rendered with parameters."""
 
     name: str = Field(description="Name of the prompt")
@@ -77,6 +79,61 @@ class Prompt(BaseModel):
     arguments: list[PromptArgument] | None = Field(
         None, description="Arguments that can be passed to the prompt"
     )
+
+    def __eq__(self, other: object) -> bool:
+        if type(self) is not type(other):
+            return False
+        assert isinstance(other, type(self))
+        return self.model_dump() == other.model_dump()
+
+    def to_mcp_prompt(self, **overrides: Any) -> MCPPrompt:
+        """Convert the prompt to an MCP prompt."""
+        arguments = [
+            MCPPromptArgument(
+                name=arg.name,
+                description=arg.description,
+                required=arg.required,
+            )
+            for arg in self.arguments or []
+        ]
+        kwargs = {
+            "name": self.name,
+            "description": self.description,
+            "arguments": arguments,
+        }
+        return MCPPrompt(**kwargs | overrides)
+
+    @staticmethod
+    def from_function(
+        fn: Callable[..., PromptResult | Awaitable[PromptResult]],
+        name: str | None = None,
+        description: str | None = None,
+        tags: set[str] | None = None,
+    ) -> FunctionPrompt:
+        """Create a Prompt from a function.
+
+        The function can return:
+        - A string (converted to a message)
+        - A Message object
+        - A dict (converted to a message)
+        - A sequence of any of the above
+        """
+        return FunctionPrompt.from_function(
+            fn=fn, name=name, description=description, tags=tags
+        )
+
+    @abstractmethod
+    async def render(
+        self,
+        arguments: dict[str, Any] | None = None,
+    ) -> list[PromptMessage]:
+        """Render the prompt with arguments."""
+        raise NotImplementedError("Prompt.render() must be implemented by subclasses")
+
+
+class FunctionPrompt(Prompt):
+    """A prompt that is a function."""
+
     fn: Callable[..., PromptResult | Awaitable[PromptResult]]
 
     @classmethod
@@ -86,7 +143,7 @@ class Prompt(BaseModel):
         name: str | None = None,
         description: str | None = None,
         tags: set[str] | None = None,
-    ) -> Prompt:
+    ) -> FunctionPrompt:
         """Create a Prompt from a function.
 
         The function can return:
@@ -147,8 +204,8 @@ class Prompt(BaseModel):
             name=func_name,
             description=description,
             arguments=arguments,
-            fn=fn,
             tags=tags or set(),
+            fn=fn,
         )
 
     async def render(
@@ -212,25 +269,3 @@ class Prompt(BaseModel):
         except Exception as e:
             logger.exception(f"Error rendering prompt {self.name}: {e}")
             raise PromptError(f"Error rendering prompt {self.name}.")
-
-    def __eq__(self, other: object) -> bool:
-        if not isinstance(other, Prompt):
-            return False
-        return self.model_dump() == other.model_dump()
-
-    def to_mcp_prompt(self, **overrides: Any) -> MCPPrompt:
-        """Convert the prompt to an MCP prompt."""
-        arguments = [
-            MCPPromptArgument(
-                name=arg.name,
-                description=arg.description,
-                required=arg.required,
-            )
-            for arg in self.arguments or []
-        ]
-        kwargs = {
-            "name": self.name,
-            "description": self.description,
-            "arguments": arguments,
-        }
-        return MCPPrompt(**kwargs | overrides)

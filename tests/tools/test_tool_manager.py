@@ -568,7 +568,7 @@ class TestContextHandling:
 
     def test_context_parameter_detection(self):
         """Test that context parameters are properly detected in
-        FunctionTool.from_function()."""
+        Tool.from_function()."""
 
         def tool_with_context(x: int, ctx: Context) -> str:
             return str(x)
@@ -634,7 +634,7 @@ class TestContextHandling:
 
     def test_parameterized_context_parameter_detection(self):
         """Test that context parameters are properly detected in
-        FunctionTool.from_function()."""
+        Tool.from_function()."""
 
         def tool_with_context(x: int, ctx: Context) -> str:
             return str(x)
@@ -651,7 +651,7 @@ class TestContextHandling:
 
     def test_parameterized_union_context_parameter_detection(self):
         """Test that context parameters are properly detected in
-        FunctionTool.from_function()."""
+        Tool.from_function()."""
 
         def tool_with_context(x: int, ctx: Context | None) -> str:
             return str(x)

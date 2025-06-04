@@ -55,7 +55,7 @@ from fastmcp.server.http import (
     create_streamable_http_app,
 )
 from fastmcp.tools import ToolManager
-from fastmcp.tools.tool import FunctionTool, Tool
+from fastmcp.tools.tool import Tool
 from fastmcp.utilities.cache import TimedCache
 from fastmcp.utilities.decorators import DecoratedFunction
 from fastmcp.utilities.logging import get_logger
@@ -508,7 +508,7 @@ class FastMCP(Generic[LifespanResultT]):
         if isinstance(annotations, dict):
             annotations = ToolAnnotations(**annotations)
 
-        tool = FunctionTool.from_function(
+        tool = Tool.from_function(
             fn,
             name=name,
             description=description,

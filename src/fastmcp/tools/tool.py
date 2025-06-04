@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import inspect
 import json
-import warnings
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Annotated, Any
@@ -66,12 +65,25 @@ class Tool(FastMCPBaseModel, ABC):
         return MCPTool(**kwargs | overrides)
 
     @staticmethod
-    def from_function(fn: Callable[..., Any], **overrides: Any) -> FunctionTool:
-        # deprecated in 2.6.2
-        warnings.warn(
-            "Tool.from_function() is deprecated. Use FunctionTool.from_function() instead."
+    def from_function(
+        fn: Callable[..., Any],
+        name: str | None = None,
+        description: str | None = None,
+        tags: set[str] | None = None,
+        annotations: ToolAnnotations | None = None,
+        exclude_args: list[str] | None = None,
+        serializer: Callable[[Any], str] | None = None,
+    ) -> FunctionTool:
+        """Create a Tool from a function."""
+        return FunctionTool.from_function(
+            fn=fn,
+            name=name,
+            description=description,
+            tags=tags,
+            annotations=annotations,
+            exclude_args=exclude_args,
+            serializer=serializer,
         )
-        return FunctionTool.from_function(fn, **overrides)
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Tool):

@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 from mcp import GetPromptResult
 
 from fastmcp.exceptions import NotFoundError, PromptError
-from fastmcp.prompts.prompt import Prompt, PromptResult
+from fastmcp.prompts.prompt import FunctionPrompt, Prompt, PromptResult
 from fastmcp.settings import DuplicateBehavior
 from fastmcp.utilities.logging import get_logger
 
@@ -55,10 +55,12 @@ class PromptManager:
         name: str | None = None,
         description: str | None = None,
         tags: set[str] | None = None,
-    ) -> Prompt:
+    ) -> FunctionPrompt:
         """Create a prompt from a function."""
-        prompt = Prompt.from_function(fn, name=name, description=description, tags=tags)
-        return self.add_prompt(prompt)
+        prompt = FunctionPrompt.from_function(
+            fn, name=name, description=description, tags=tags
+        )
+        return self.add_prompt(prompt)  # type: ignore
 
     def add_prompt(self, prompt: Prompt, key: str | None = None) -> Prompt:
         """Add a prompt to the manager."""
