@@ -90,7 +90,7 @@ from fastmcp import FastMCP
 # Original server
 original_server = FastMCP(name="Original")
 
-@original_server.tool
+@original_server.tool()
 def tool_a() -> str: 
     return "A"
 

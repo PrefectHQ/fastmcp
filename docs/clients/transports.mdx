@@ -359,7 +359,7 @@ import asyncio
 # 1. Create your FastMCP server instance
 server = FastMCP(name="InMemoryServer")
 
-@server.tool
+@server.tool()
 def ping(): 
     return "pong"
 
