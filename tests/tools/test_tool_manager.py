@@ -693,6 +693,7 @@ class TestCustomToolNames:
         # The tool is stored under the custom name and its .name is also set to custom_name
         assert manager.get_tool("custom_name") is not None
         assert tool.name == "custom_name"
+        assert isinstance(tool, FunctionTool)
         assert tool.fn.__name__ == "original_fn"
         # The tool should not be accessible via its original function name
         with pytest.raises(NotFoundError, match="Unknown tool: original_fn"):
@@ -764,6 +765,7 @@ class TestCustomToolNames:
         assert stored_tool.name == "test_tool"
 
         # But the function is different
+        assert isinstance(stored_tool, FunctionTool)
         assert stored_tool.fn.__name__ == "replacement_fn"
 
 
