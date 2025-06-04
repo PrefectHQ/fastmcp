@@ -659,7 +659,7 @@ class TestPromptDecorator:
     async def test_prompt_decorator(self):
         mcp = FastMCP()
 
-        @mcp.prompt()
+        @mcp.prompt
         def fn() -> str:
             return "Hello, world!"
 
@@ -671,16 +671,23 @@ class TestPromptDecorator:
         content = await prompt.render()
         assert content[0].content.text == "Hello, world!"  # type: ignore[attr-defined]
 
-    async def test_prompt_decorator_incorrect_usage(self):
+    async def test_prompt_decorator_without_parentheses(self):
         mcp = FastMCP()
 
-        with pytest.raises(
-            TypeError, match="The @prompt decorator was used incorrectly"
-        ):
+        # This should now work correctly (not raise an error)
+        @mcp.prompt  # No parentheses - this is now supported
+        def fn() -> str:
+            return "Hello, world!"
 
-            @mcp.prompt  # Missing parentheses #type: ignore
-            def fn() -> str:
-                return "Hello, world!"
+        # Verify the prompt was registered correctly
+        prompts = await mcp.get_prompts()
+        assert "fn" in prompts
+
+        # Verify it can be called
+        async with Client(mcp) as client:
+            result = await client.get_prompt("fn")
+            assert len(result.messages) == 1
+            assert result.messages[0].content.text == "Hello, world!"  # type: ignore[attr-defined]
 
     async def test_prompt_decorator_with_name(self):
         mcp = FastMCP()
@@ -713,7 +720,7 @@ class TestPromptDecorator:
     async def test_prompt_decorator_with_parameters(self):
         mcp = FastMCP()
 
-        @mcp.prompt()
+        @mcp.prompt
         def test_prompt(name: str, greeting: str = "Hello") -> str:
             return f"{greeting}, {name}!"
 
@@ -782,7 +789,7 @@ class TestPromptDecorator:
 
         class MyClass:
             @staticmethod
-            @mcp.prompt()
+            @mcp.prompt
             def test_prompt() -> str:
                 return "Static Hello, world!"
 
@@ -795,7 +802,7 @@ class TestPromptDecorator:
     async def test_prompt_decorator_async_function(self):
         mcp = FastMCP()
 
-        @mcp.prompt()
+        @mcp.prompt
         async def test_prompt() -> str:
             return "Async Hello, world!"
 
@@ -817,6 +824,63 @@ class TestPromptDecorator:
         assert len(prompts_dict) == 1
         prompt = prompts_dict["sample_prompt"]
         assert prompt.tags == {"example", "test-tag"}
+
+    async def test_prompt_decorator_with_string_name(self):
+        """Test that @prompt(\"custom_name\") syntax works correctly."""
+        mcp = FastMCP()
+
+        @mcp.prompt("string_named_prompt")
+        def my_function() -> str:
+            """A function with a string name."""
+            return "Hello from string named prompt!"
+
+        # Verify the prompt was registered with the custom name
+        prompts = await mcp.get_prompts()
+        assert "string_named_prompt" in prompts
+        assert "my_function" not in prompts  # Original name should not be registered
+
+        # Verify it can be called
+        async with Client(mcp) as client:
+            result = await client.get_prompt("string_named_prompt")
+            assert len(result.messages) == 1
+            assert result.messages[0].content.text == "Hello from string named prompt!"  # type: ignore[attr-defined]
+
+    async def test_prompt_direct_function_call(self):
+        """Test that prompts can be registered via direct function call."""
+        mcp = FastMCP()
+
+        def standalone_function() -> str:
+            """A standalone function to be registered."""
+            return "Hello from direct call!"
+
+        # Register it directly using the new syntax
+        result_fn = mcp.prompt(standalone_function, name="direct_call_prompt")
+
+        # The function should be returned unchanged
+        assert result_fn is standalone_function
+
+        # Verify the prompt was registered correctly
+        prompts = await mcp.get_prompts()
+        assert "direct_call_prompt" in prompts
+
+        # Verify it can be called
+        async with Client(mcp) as client:
+            result = await client.get_prompt("direct_call_prompt")
+            assert len(result.messages) == 1
+            assert result.messages[0].content.text == "Hello from direct call!"  # type: ignore[attr-defined]
+
+    async def test_prompt_decorator_conflicting_names_error(self):
+        """Test that providing both positional and keyword names raises an error."""
+        mcp = FastMCP()
+
+        with pytest.raises(
+            TypeError,
+            match="Cannot specify both a name as first argument and as keyword argument",
+        ):
+
+            @mcp.prompt("positional_name", name="keyword_name")
+            def my_function() -> str:
+                return "Hello, world!"
 
 
 class TestResourcePrefixHelpers:

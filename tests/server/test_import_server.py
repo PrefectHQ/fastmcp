@@ -130,7 +130,7 @@ async def test_import_with_prompts():
     assistant_app = FastMCP("AssistantApp")
 
     # Add a prompt to the assistant app
-    @assistant_app.prompt()
+    @assistant_app.prompt
     def greeting(name: str) -> str:
         return f"Hello, {name}!"
 
@@ -174,11 +174,11 @@ async def test_import_multiple_prompts():
     sql_app = FastMCP("SQLApp")
 
     # Add prompts to each app
-    @python_app.prompt()
+    @python_app.prompt
     def review_python(code: str) -> str:
         return f"Reviewing Python code:\n{code}"
 
-    @sql_app.prompt()
+    @sql_app.prompt
     def explain_sql(query: str) -> str:
         return f"Explaining SQL query:\n{query}"
 
@@ -316,7 +316,7 @@ async def test_import_with_proxy_prompts():
     main_app = FastMCP("MainApp")
     api_app = FastMCP("APIApp")
 
-    @api_app.prompt()
+    @api_app.prompt
     def greeting(name: str) -> str:
         """Example greeting prompt."""
         return f"Hello, {name} from API!"

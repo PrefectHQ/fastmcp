@@ -53,7 +53,7 @@
 
 #     # --- Prompts ---
 
-#     @server.prompt()
+#     @server.prompt
 #     def welcome(name: str) -> str:
 #         return f"Welcome to FastMCP, {name}!"
 

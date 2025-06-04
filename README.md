@@ -173,10 +173,10 @@ Learn more in the [**Resources & Templates Documentation**](https://gofastmcp.co
 
 ### Prompts
 
-Prompts define reusable message templates to guide LLM interactions. Decorate functions with `@mcp.prompt()`. Return strings or `Message` objects.
+Prompts define reusable message templates to guide LLM interactions. Decorate functions with `@mcp.prompt`. Return strings or `Message` objects.
 
 ```python
-@mcp.prompt()
+@mcp.prompt
 def summarize_request(text: str) -> str:
     """Generate a prompt asking for a summary."""
     return f"Please summarize the following text:\n\n{text}"
