@@ -87,7 +87,7 @@ See [Resources & Templates](/servers/resources) for detailed documentation.
 Prompts are reusable message templates for guiding the LLM.
 
 ```python
-@mcp.prompt()
+@mcp.prompt
 def analyze_data(data_points: list[float]) -> str:
     """Creates a prompt asking for analysis of numerical data."""
     formatted_data = ", ".join(str(point) for point in data_points)

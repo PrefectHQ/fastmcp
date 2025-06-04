@@ -53,7 +53,7 @@ def fastmcp_server():
         return {"id": user_id, "name": f"User {user_id}", "active": True}
 
     # Add a prompt
-    @server.prompt()
+    @server.prompt
     def welcome(name: str) -> str:
         """Example greeting prompt."""
         return f"Welcome to FastMCP, {name}!"

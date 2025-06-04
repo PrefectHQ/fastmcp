@@ -53,7 +53,7 @@ def test_mount_prompt_separator_deprecation_warning():
         main_app.mount("sub", sub_app, prompt_separator="-")
 
     # Verify the separator is ignored and the default is used
-    @sub_app.prompt()
+    @sub_app.prompt
     def test_prompt():
         return "test"
 

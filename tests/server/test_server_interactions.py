@@ -1091,7 +1091,7 @@ class TestPrompts:
         """Test that the prompt decorator registers prompts correctly."""
         mcp = FastMCP()
 
-        @mcp.prompt()
+        @mcp.prompt
         def fn() -> str:
             return "Hello, world!"
 
@@ -1133,20 +1133,23 @@ class TestPrompts:
         content = await prompt.render()
         assert content[0].content.text == "Hello, world!"  # type: ignore[attr-defined]
 
-    def test_prompt_decorator_error(self):
-        """Test error when decorator is used incorrectly."""
+    async def test_prompt_decorator_with_parens(self):
         mcp = FastMCP()
-        with pytest.raises(TypeError, match="decorator was used incorrectly"):
 
-            @mcp.prompt  # type: ignore
-            def fn() -> str:
-                return "Hello, world!"
+        @mcp.prompt()
+        def fn() -> str:
+            return "Hello, world!"
+
+        prompts_dict = await mcp.get_prompts()
+        assert len(prompts_dict) == 1
+        prompt = prompts_dict["fn"]
+        assert prompt.name == "fn"
 
     async def test_list_prompts(self):
         """Test listing prompts through MCP protocol."""
         mcp = FastMCP()
 
-        @mcp.prompt()
+        @mcp.prompt
         def fn(name: str, optional: str = "default") -> str:
             return f"Hello, {name}! {optional}"
 
@@ -1169,7 +1172,7 @@ class TestPrompts:
         """Test getting a prompt through MCP protocol."""
         mcp = FastMCP()
 
-        @mcp.prompt()
+        @mcp.prompt
         def fn(name: str) -> str:
             return f"Hello, {name}!"
 
@@ -1185,7 +1188,7 @@ class TestPrompts:
         """Test getting a prompt that returns resource content."""
         mcp = FastMCP()
 
-        @mcp.prompt()
+        @mcp.prompt
         def fn() -> PromptMessage:
             return PromptMessage(
                 role="user",
@@ -1220,7 +1223,7 @@ class TestPrompts:
         """Test error when required arguments are missing."""
         mcp = FastMCP()
 
-        @mcp.prompt()
+        @mcp.prompt
         def prompt_fn(name: str) -> str:
             return f"Hello, {name}!"
 
@@ -1271,7 +1274,7 @@ class TestPromptContext:
     async def test_prompt_context(self):
         mcp = FastMCP()
 
-        @mcp.prompt()
+        @mcp.prompt
         def prompt_fn(name: str, ctx: Context) -> str:
             assert isinstance(ctx, Context)
             return f"Hello, {name}! {ctx.request_id}"

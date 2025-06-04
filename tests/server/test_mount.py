@@ -194,7 +194,7 @@ class TestMultipleServerMount:
         def working_resource():
             return "Working resource"
 
-        @working_app.prompt()
+        @working_app.prompt
         def working_prompt() -> str:
             return "Working prompt"
 
@@ -384,7 +384,7 @@ class TestPrompts:
         main_app = FastMCP("MainApp")
         assistant_app = FastMCP("AssistantApp")
 
-        @assistant_app.prompt()
+        @assistant_app.prompt
         def greeting(name: str) -> str:
             return f"Hello, {name}!"
 
@@ -409,7 +409,7 @@ class TestPrompts:
         main_app.mount("assistant", assistant_app)
 
         # Add a prompt after mounting
-        @assistant_app.prompt()
+        @assistant_app.prompt
         def farewell(name: str) -> str:
             return f"Goodbye, {name}!"
 
@@ -507,7 +507,7 @@ class TestProxyServer:
         # Create original server
         original_server = FastMCP("OriginalServer")
 
-        @original_server.prompt()
+        @original_server.prompt
         def welcome(name: str) -> str:
             return f"Welcome, {name}!"
 

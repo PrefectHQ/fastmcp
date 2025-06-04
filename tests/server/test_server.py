@@ -659,7 +659,7 @@ class TestPromptDecorator:
     async def test_prompt_decorator(self):
         mcp = FastMCP()
 
-        @mcp.prompt()
+        @mcp.prompt
         def fn() -> str:
             return "Hello, world!"
 
@@ -720,7 +720,7 @@ class TestPromptDecorator:
     async def test_prompt_decorator_with_parameters(self):
         mcp = FastMCP()
 
-        @mcp.prompt()
+        @mcp.prompt
         def test_prompt(name: str, greeting: str = "Hello") -> str:
             return f"{greeting}, {name}!"
 
@@ -789,7 +789,7 @@ class TestPromptDecorator:
 
         class MyClass:
             @staticmethod
-            @mcp.prompt()
+            @mcp.prompt
             def test_prompt() -> str:
                 return "Static Hello, world!"
 
@@ -802,7 +802,7 @@ class TestPromptDecorator:
     async def test_prompt_decorator_async_function(self):
         mcp = FastMCP()
 
-        @mcp.prompt()
+        @mcp.prompt
         async def test_prompt() -> str:
             return "Async Hello, world!"
 
