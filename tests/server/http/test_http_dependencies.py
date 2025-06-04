@@ -14,7 +14,7 @@ def fastmcp_server():
     server = FastMCP()
 
     # Add a tool
-    @server.tool()
+    @server.tool
     def get_headers_tool() -> dict[str, str]:
         """Get the HTTP headers from the request."""
         request = get_http_request()

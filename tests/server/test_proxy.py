@@ -26,21 +26,21 @@ def fastmcp_server():
 
     # --- Tools ---
 
-    @server.tool()
+    @server.tool
     def greet(name: str) -> str:
         """Greet someone by name."""
         return f"Hello, {name}!"
 
-    @server.tool()
+    @server.tool
     def tool_without_description() -> str:
         return "Hello?"
 
-    @server.tool()
+    @server.tool
     def add(a: int, b: int) -> int:
         """Add two numbers together."""
         return a + b
 
-    @server.tool()
+    @server.tool
     def error_tool():
         """This tool always raises an error."""
         raise ValueError("This is a test error")

@@ -145,7 +145,7 @@ import asyncio
 main = FastMCP(name="Main")
 sub = FastMCP(name="Sub")
 
-@sub.tool()
+@sub.tool
 def hello(): 
     return "hi"
 

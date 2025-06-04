@@ -5,11 +5,11 @@ description: Properly use instance methods, class methods, and static methods wi
 icon: at
 ---
 
-FastMCP's decorator system is designed to work with functions, but you may see unexpected behavior if you try to decorate an instance or class method. This guide explains the correct approach for using methods with all FastMCP decorators (`@tool()`, `@resource()`, and `@prompt()`).
+FastMCP's decorator system is designed to work with functions, but you may see unexpected behavior if you try to decorate an instance or class method. This guide explains the correct approach for using methods with all FastMCP decorators (`@tool`, `@resource()`, and `@prompt()`).
 
 ## Why Are Methods Hard?
 
-When you apply a FastMCP decorator like `@tool()`, `@resource()`, or `@prompt()` to a method, the decorator captures the function at decoration time. For instance methods and class methods, this poses a challenge because:
+When you apply a FastMCP decorator like `@tool`, `@resource()`, or `@prompt()` to a method, the decorator captures the function at decoration time. For instance methods and class methods, this poses a challenge because:
 
 1. For instance methods: The decorator gets the unbound method before any instance exists
 2. For class methods: The decorator gets the function before it's bound to the class
@@ -28,7 +28,7 @@ from fastmcp import FastMCP
 mcp = FastMCP()
 
 class MyClass:
-    @mcp.tool()  # This won't work correctly
+    @mcp.tool  # This won't work correctly
     def add(self, x, y):
         return x + y
     
@@ -83,7 +83,7 @@ mcp = FastMCP()
 
 class MyClass:
     @classmethod
-    @mcp.tool()  # This won't work correctly
+    @mcp.tool  # This won't work correctly
     def from_string(cls, s):
         return cls(s)
 ```
@@ -122,7 +122,7 @@ mcp = FastMCP()
 
 class MyClass:
     @staticmethod
-    @mcp.tool()  # This works!
+    @mcp.tool  # This works!
     def utility(x, y):
         return x + y
     
@@ -194,7 +194,7 @@ The class automatically registers its methods during initialization, ensuring th
 While FastMCP's decorator pattern works seamlessly with regular functions and static methods, for instance methods and class methods, you should add them after creating the instance or class. This ensures that the methods are properly bound before being registered.
 
 These patterns apply to all FastMCP decorators and registration methods:
-- `@tool()` and `add_tool()`
+- `@tool()` and `add_tool`
 - `@resource()` and `add_resource_fn()`
 - `@prompt()` and `add_prompt()`
 

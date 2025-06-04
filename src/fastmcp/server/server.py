@@ -529,7 +529,7 @@ class FastMCP(Generic[LifespanResultT]):
 
         This decorator supports multiple calling patterns:
         - @server.tool (without parentheses)
-        - @server.tool() (with empty parentheses)
+        - @server.tool (with empty parentheses)
         - @server.tool("custom_name") (with name as first argument)
         - @server.tool(name="custom_name") (with name as keyword argument)
         - server.tool(function, name="custom_name") (direct function call)
@@ -547,7 +547,7 @@ class FastMCP(Generic[LifespanResultT]):
             def my_tool(x: int) -> str:
                 return str(x)
 
-            @server.tool()
+            @server.tool
             def my_tool(x: int) -> str:
                 return str(x)
 
@@ -594,7 +594,7 @@ class FastMCP(Generic[LifespanResultT]):
                 )
             tool_name = name_or_fn
         elif name_or_fn is None:
-            # Case 4: @tool() or @tool(name="something") - use keyword name
+            # Case 4: @tool or @tool(name="something") - use keyword name
             tool_name = name
         else:
             raise TypeError(

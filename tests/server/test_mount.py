@@ -21,7 +21,7 @@ class TestBasicMount:
         sub_app = FastMCP("SubApp")
 
         # Add a tool to the sub-app
-        @sub_app.tool()
+        @sub_app.tool
         def sub_tool() -> str:
             return "This is from the sub app"
 
@@ -41,7 +41,7 @@ class TestBasicMount:
         main_app = FastMCP("MainApp")
         sub_app = FastMCP("SubApp")
 
-        @sub_app.tool()
+        @sub_app.tool
         def greet(name: str) -> str:
             return f"Hello, {name}!"
 
@@ -77,7 +77,7 @@ class TestBasicMount:
         main_app = FastMCP("MainApp")
         sub_app = FastMCP("SubApp")
 
-        @sub_app.tool()
+        @sub_app.tool
         def sub_tool() -> str:
             return "This is from the sub app"
 
@@ -103,7 +103,7 @@ class TestBasicMount:
         main_app = FastMCP("MainApp")
         sub_app = FastMCP("SubApp")
 
-        @sub_app.tool()
+        @sub_app.tool
         def sub_tool() -> str:
             return "This is from the sub app"
 
@@ -124,11 +124,11 @@ class TestMultipleServerMount:
         weather_app = FastMCP("WeatherApp")
         news_app = FastMCP("NewsApp")
 
-        @weather_app.tool()
+        @weather_app.tool
         def get_forecast() -> str:
             return "Weather forecast"
 
-        @news_app.tool()
+        @news_app.tool
         def get_headlines() -> str:
             return "News headlines"
 
@@ -154,11 +154,11 @@ class TestMultipleServerMount:
         first_app = FastMCP("FirstApp")
         second_app = FastMCP("SecondApp")
 
-        @first_app.tool()
+        @first_app.tool
         def first_tool() -> str:
             return "First app tool"
 
-        @second_app.tool()
+        @second_app.tool
         def second_tool() -> str:
             return "Second app tool"
 
@@ -186,7 +186,7 @@ class TestMultipleServerMount:
         main_app = FastMCP("MainApp")
         working_app = FastMCP("WorkingApp")
 
-        @working_app.tool()
+        @working_app.tool
         def working_tool() -> str:
             return "Working tool"
 
@@ -267,7 +267,7 @@ class TestDynamicChanges:
         assert not any(key.startswith("sub_") for key in tools)
 
         # Add a tool to the sub-app after mounting
-        @sub_app.tool()
+        @sub_app.tool
         def dynamic_tool() -> str:
             return "Added after mounting"
 
@@ -284,7 +284,7 @@ class TestDynamicChanges:
         main_app = FastMCP("MainApp")
         sub_app = FastMCP("SubApp")
 
-        @sub_app.tool()
+        @sub_app.tool
         def temp_tool() -> str:
             return "Temporary tool"
 
@@ -431,7 +431,7 @@ class TestProxyServer:
         # Create original server
         original_server = FastMCP("OriginalServer")
 
-        @original_server.tool()
+        @original_server.tool
         def get_data(query: str) -> str:
             return f"Data for {query}"
 
@@ -467,7 +467,7 @@ class TestProxyServer:
         main_app.mount("proxy", proxy_server)
 
         # Add a tool to the original server
-        @original_server.tool()
+        @original_server.tool
         def dynamic_data() -> str:
             return "Dynamic data"
 
@@ -602,7 +602,7 @@ class TestAsProxyKwarg:
 
         assert len(await mcp.get_tools()) == 0
 
-        @sub.tool()
+        @sub.tool
         def hello():
             return "hi"
 
@@ -619,7 +619,7 @@ class TestAsProxyKwarg:
         mcp = FastMCP("Main")
         sub = FastMCP("Sub", lifespan=lifespan)
 
-        @sub.tool()
+        @sub.tool
         def hello():
             return "hi"
 

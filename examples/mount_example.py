@@ -16,7 +16,7 @@ from fastmcp import FastMCP
 weather_app = FastMCP("Weather App")
 
 
-@weather_app.tool()
+@weather_app.tool
 def get_weather_forecast(location: str) -> str:
     """Get the weather forecast for a location."""
     return f"Sunny skies for {location} today!"
@@ -32,7 +32,7 @@ async def weather_data():
 news_app = FastMCP("News App")
 
 
-@news_app.tool()
+@news_app.tool
 def get_news_headlines() -> list[str]:
     """Get the latest news headlines."""
     return [
@@ -58,7 +58,7 @@ app = FastMCP(
 )
 
 
-@app.tool()
+@app.tool
 def check_app_status() -> dict[str, str]:
     """Check the status of the main application."""
     return {"status": "running", "version": "1.0.0", "uptime": "3h 24m"}

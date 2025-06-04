@@ -13,7 +13,7 @@ async def test_import_basic_functionality():
     sub_app = FastMCP("SubApp")
 
     # Add a tool to the sub-app
-    @sub_app.tool()
+    @sub_app.tool
     def sub_tool() -> str:
         return "This is from the sub app"
 
@@ -40,11 +40,11 @@ async def test_import_multiple_apps():
     news_app = FastMCP("NewsApp")
 
     # Add tools to each sub-app
-    @weather_app.tool()
+    @weather_app.tool
     def get_forecast() -> str:
         return "Weather forecast"
 
-    @news_app.tool()
+    @news_app.tool
     def get_headlines() -> str:
         return "News headlines"
 
@@ -65,11 +65,11 @@ async def test_import_combines_tools():
     second_app = FastMCP("SecondApp")
 
     # Add tools to each sub-app
-    @first_app.tool()
+    @first_app.tool
     def first_tool() -> str:
         return "First app tool"
 
-    @second_app.tool()
+    @second_app.tool
     def second_tool() -> str:
         return "Second app tool"
 
@@ -294,7 +294,7 @@ async def test_import_with_proxy_tools():
     main_app = FastMCP("MainApp")
     api_app = FastMCP("APIApp")
 
-    @api_app.tool()
+    @api_app.tool
     def get_data(query: str) -> str:
         return f"Data for query: {query}"
 
