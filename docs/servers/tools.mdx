@@ -31,7 +31,7 @@ from fastmcp import FastMCP
 
 mcp = FastMCP(name="CalculatorServer")
 
-@mcp.tool
+@mcp.tool()
 def add(a: int, b: int) -> int:
     """Adds two integer numbers together."""
     return a + b
@@ -61,7 +61,7 @@ Type annotations for parameters are essential for proper tool functionality. The
 Use standard Python type annotations for parameters:
 
 ```python
-@mcp.tool
+@mcp.tool()
 def analyze_text(
     text: str,
     max_tokens: int = 100,
@@ -79,7 +79,7 @@ You can provide additional metadata about parameters using Pydantic's `Field` cl
 from typing import Annotated
 from pydantic import Field
 
-@mcp.tool
+@mcp.tool()
 def process_image(
     image_url: Annotated[str, Field(description="URL of the image to process")],
     resize: Annotated[bool, Field(description="Whether to resize the image")] = False,
@@ -97,7 +97,7 @@ def process_image(
 You can also use the Field as a default value, though the Annotated approach is preferred:
 
 ```python
-@mcp.tool
+@mcp.tool()
 def search_database(
     query: str = Field(description="Search query string"),
     limit: int = Field(10, description="Maximum number of results", ge=1, le=100)
@@ -137,7 +137,7 @@ For additional type annotations not listed here, see the [Parameter Types](#para
 FastMCP follows Python's standard function parameter conventions. Parameters without default values are required, while those with default values are optional.
 
 ```python
-@mcp.tool
+@mcp.tool()
 def search_products(
     query: str,                   # Required - no default value
     max_results: int = 10,        # Optional - has default value
@@ -197,14 +197,14 @@ FastMCP seamlessly supports both standard (`def`) and asynchronous (`async def`)
 
 ```python
 # Synchronous tool (suitable for CPU-bound or quick tasks)
-@mcp.tool
+@mcp.tool()
 def calculate_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """Calculate the distance between two coordinates."""
     # Implementation...
     return 42.5
 
 # Asynchronous tool (ideal for I/O-bound operations)
-@mcp.tool
+@mcp.tool()
 async def fetch_weather(city: str) -> dict:
     """Retrieve current weather conditions for a city."""
     # Use 'async def' for operations involving network calls, file I/O, etc.
@@ -244,7 +244,7 @@ except ImportError:
 
 mcp = FastMCP("Image Demo")
 
-@mcp.tool
+@mcp.tool()
 def generate_image(width: int, height: int, color: str) -> Image:
     """Generates a solid color image."""
     # Create image using Pillow
@@ -258,7 +258,7 @@ def generate_image(width: int, height: int, color: str) -> Image:
     # Return using FastMCP's Image helper
     return Image(data=img_bytes, format="png")
 
-@mcp.tool
+@mcp.tool()
 def do_nothing() -> None:
     """This tool performs an action but returns no data."""
     print("Performing a side effect...")
@@ -285,7 +285,7 @@ mcp = FastMCP(name="SecureServer", mask_error_details=True)
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 
-@mcp.tool
+@mcp.tool()
 def divide(a: float, b: float) -> float:
     """Divide a by b."""
 
@@ -351,7 +351,7 @@ from fastmcp import FastMCP, Context
 
 mcp = FastMCP(name="ContextDemo")
 
-@mcp.tool
+@mcp.tool()
 async def process_data(data_uri: str, ctx: Context) -> dict:
     """Process data from a resource with progress reporting."""
     await ctx.info(f"Processing data from {data_uri}")
@@ -396,7 +396,7 @@ FastMCP supports **type coercion** when possible. This means that if a client se
 The most common parameter types are Python's built-in scalar types:
 
 ```python
-@mcp.tool
+@mcp.tool()
 def process_values(
     name: str,             # Text data
     count: int,            # Integer numbers
@@ -416,7 +416,7 @@ FastMCP supports various date and time types from the `datetime` module:
 ```python
 from datetime import datetime, date, timedelta
 
-@mcp.tool
+@mcp.tool()
 def process_date_time(
     event_date: date,             # ISO format date string or date object
     event_time: datetime,         # ISO format datetime string or datetime object
@@ -440,7 +440,7 @@ def process_date_time(
 FastMCP supports all standard Python collection types:
 
 ```python
-@mcp.tool
+@mcp.tool()
 def analyze_data(
     values: list[float],           # List of numbers
     properties: dict[str, str],    # Dictionary with string keys and values
@@ -465,7 +465,7 @@ Collection types can be nested and combined to represent complex data structures
 For parameters that can accept multiple types or may be omitted:
 
 ```python
-@mcp.tool
+@mcp.tool()
 def flexible_search(
     query: str | int,              # Can be either string or integer
     filters: dict[str, str] | None = None,  # Optional dictionary
@@ -488,7 +488,7 @@ Literals constrain parameters to a specific set of values:
 ```python
 from typing import Literal
 
-@mcp.tool
+@mcp.tool()
 def sort_data(
     data: list[float],
     order: Literal["ascending", "descending"] = "ascending",
@@ -516,7 +516,7 @@ class Color(Enum):
     GREEN = "green"
     BLUE = "blue"
 
-@mcp.tool
+@mcp.tool()
 def process_image(
     image_path: str, 
     color_filter: Color = Color.RED
@@ -539,7 +539,7 @@ There are two approaches to handling binary data in tool parameters:
 #### Bytes
 
 ```python
-@mcp.tool
+@mcp.tool()
 def process_binary(data: bytes):
     """Process binary data directly.
     
@@ -563,7 +563,7 @@ FastMCP does not automatically decode base64-encoded strings for bytes parameter
 from typing import Annotated
 from pydantic import Field
 
-@mcp.tool
+@mcp.tool()
 def process_image_data(
     image_data: Annotated[str, Field(description="Base64-encoded image data")]
 ):
@@ -587,7 +587,7 @@ The `Path` type from the `pathlib` module can be used for file system paths:
 ```python
 from pathlib import Path
 
-@mcp.tool
+@mcp.tool()
 def process_file(path: Path) -> str:
     """Process a file at the given path."""
     assert isinstance(path, Path)  # Path is properly converted
@@ -603,7 +603,7 @@ The `UUID` type from the `uuid` module can be used for unique identifiers:
 ```python
 import uuid
 
-@mcp.tool
+@mcp.tool()
 def process_item(
     item_id: uuid.UUID  # String UUID or UUID object
 ) -> str:
@@ -628,7 +628,7 @@ class User(BaseModel):
     age: int | None = None
     is_active: bool = True
 
-@mcp.tool
+@mcp.tool()
 def create_user(user: User):
     """Create a new user in the system."""
     # The input is automatically validated against the User model
@@ -657,7 +657,7 @@ Note that fields can be used *outside* Pydantic models to provide metadata and v
 from typing import Annotated
 from pydantic import Field
 
-@mcp.tool
+@mcp.tool()
 def analyze_metrics(
     # Numbers with range constraints
     count: Annotated[int, Field(ge=0, le=100)],         # 0 <= count <= 100
@@ -682,7 +682,7 @@ def analyze_metrics(
 You can also use `Field` as a default value, though the `Annotated` approach is preferred:
 
 ```python
-@mcp.tool
+@mcp.tool()
 def validate_data(
     # Value constraints
     age: int = Field(ge=0, lt=120),                     # 0 <= age < 120
@@ -727,7 +727,7 @@ mcp = FastMCP(
     on_duplicate_tools="error"
 )
 
-@mcp.tool
+@mcp.tool()
 def my_tool(): return "Version 1"
 
 # This will now raise a ValueError because 'my_tool' already exists
@@ -754,7 +754,7 @@ from fastmcp import FastMCP
 
 mcp = FastMCP(name="DynamicToolServer")
 
-@mcp.tool
+@mcp.tool()
 def calculate_sum(a: int, b: int) -> int:
     """Add two numbers together."""
     return a + b

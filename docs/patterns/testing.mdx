@@ -22,7 +22,7 @@ from fastmcp import FastMCP, Client
 def mcp_server():
     server = FastMCP("TestServer")
     
-    @server.tool
+@server.tool()
     def greet(name: str) -> str:
         return f"Hello, {name}!"
         

@@ -33,13 +33,13 @@ from fastmcp.prompts.prompt import Message, PromptMessage, TextContent
 mcp = FastMCP(name="PromptServer")
 
 # Basic prompt returning a string (converted to user message automatically)
-@mcp.prompt
+@mcp.prompt()
 def ask_about_topic(topic: str) -> str:
     """Generates a user message asking for an explanation of a topic."""
     return f"Can you please explain the concept of '{topic}'?"
 
 # Prompt returning a specific message type
-@mcp.prompt
+@mcp.prompt()
 def generate_code_request(language: str, task_description: str) -> PromptMessage:
     """Generates a user message requesting code generation."""
     content = f"Write a {language} function that performs the following task: {task_description}"
@@ -69,7 +69,7 @@ FastMCP intelligently handles different return types from your prompt function:
 ```python
 from fastmcp.prompts.prompt import Message
 
-@mcp.prompt
+@mcp.prompt()
 def roleplay_scenario(character: str, situation: str) -> list[Message]:
     """Sets up a roleplaying scenario with initial messages."""
     return [
@@ -89,7 +89,7 @@ Type annotations are important for prompts. They:
 from pydantic import Field
 from typing import Literal, Optional
 
-@mcp.prompt
+@mcp.prompt()
 def generate_content_request(
     topic: str = Field(description="The main subject to cover"),
     format: Literal["blog", "email", "social"] = "blog",
@@ -111,7 +111,7 @@ def generate_content_request(
 Parameters in your function signature are considered **required** unless they have a default value.
 
 ```python
-@mcp.prompt
+@mcp.prompt()
 def data_analysis_prompt(
     data_uri: str,                        # Required - no default value
     analysis_type: str = "summary",       # Optional - has default value
@@ -154,13 +154,13 @@ FastMCP seamlessly supports both standard (`def`) and asynchronous (`async def`)
 
 ```python
 # Synchronous prompt
-@mcp.prompt
+@mcp.prompt()
 def simple_question(question: str) -> str:
     """Generates a simple question to ask the LLM."""
     return f"Question: {question}"
 
 # Asynchronous prompt
-@mcp.prompt
+@mcp.prompt()
 async def data_based_prompt(data_id: str) -> str:
     """Generates a prompt based on data that needs to be fetched."""
     # In a real scenario, you might fetch data from a database or API
@@ -183,7 +183,7 @@ from fastmcp import FastMCP, Context
 
 mcp = FastMCP(name="PromptServer")
 
-@mcp.prompt
+@mcp.prompt()
 async def generate_report_request(report_type: str, ctx: Context) -> str:
     """Generates a request for a report."""
     return f"Please create a {report_type} report. Request ID: {ctx.request_id}"
@@ -207,7 +207,7 @@ mcp = FastMCP(
     on_duplicate_prompts="error"  # Raise an error if a prompt name is duplicated
 )
 
-@mcp.prompt
+@mcp.prompt()
 def greeting(): return "Hello, how can I help you today?"
 
 # This registration attempt will raise a ValueError because

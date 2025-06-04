@@ -28,7 +28,7 @@ from fastmcp import FastMCP
 mcp = FastMCP()
 
 class MyClass:
-    @mcp.tool  # This won't work correctly
+@mcp.tool()  # This won't work correctly
     def add(self, x, y):
         return x + y
     
@@ -83,7 +83,7 @@ mcp = FastMCP()
 
 class MyClass:
     @classmethod
-    @mcp.tool  # This won't work correctly
+@mcp.tool()  # This won't work correctly
     def from_string(cls, s):
         return cls(s)
 ```
@@ -122,7 +122,7 @@ mcp = FastMCP()
 
 class MyClass:
     @staticmethod
-    @mcp.tool  # This works!
+@mcp.tool()  # This works!
     def utility(x, y):
         return x + y
     
