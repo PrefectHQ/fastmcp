@@ -62,7 +62,7 @@ def resources(mcp: FastMCP, test_dir: Path) -> FastMCP:
 
 @pytest.fixture(autouse=True)
 def tools(mcp: FastMCP, test_dir: Path) -> FastMCP:
-    @mcp.tool()
+    @mcp.tool
     def delete_file(path: str) -> bool:
         # ensure path is in test_dir
         if Path(path).resolve().parent != test_dir:

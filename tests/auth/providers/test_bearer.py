@@ -53,7 +53,7 @@ def run_mcp_server(
         )
     )
 
-    @mcp.tool()
+    @mcp.tool
     def add(a: int, b: int) -> int:
         return a + b
 

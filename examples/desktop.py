@@ -26,7 +26,7 @@ def get_greeting(name: str) -> str:
     return f"Hello, {name}!"
 
 
-@mcp.tool()
+@mcp.tool
 def add(a: int, b: int) -> int:
     """Add two numbers"""
     return a + b

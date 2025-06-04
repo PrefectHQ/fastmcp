@@ -17,11 +17,11 @@ class LogHandler:
 def fastmcp_server():
     mcp = FastMCP()
 
-    @mcp.tool()
+    @mcp.tool
     async def log(context: Context) -> None:
         await context.info(message="hello?")
 
-    @mcp.tool()
+    @mcp.tool
     async def echo_log(
         message: str,
         context: Context,

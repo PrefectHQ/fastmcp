@@ -159,7 +159,7 @@ Once authenticated, your tools, resources, or prompts can access token informati
 from fastmcp import FastMCP, Context, ToolError
 from fastmcp.server.dependencies import get_access_token, AccessToken
 
-@mcp.tool()
+@mcp.tool
 async def get_my_data(ctx: Context) -> dict:
     access_token: AccessToken = get_access_token()
     

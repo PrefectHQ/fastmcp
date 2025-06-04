@@ -519,7 +519,7 @@ class TestCallTools:
         mcp = FastMCP(tool_serializer=custom_serializer)
         manager = mcp._tool_manager
 
-        @mcp.tool()
+        @mcp.tool
         def get_data() -> dict:
             return {"key": "value", "number": 123}
 
@@ -537,7 +537,7 @@ class TestCallTools:
         mcp = FastMCP(tool_serializer=custom_serializer)
         manager = mcp._tool_manager
 
-        @mcp.tool()
+        @mcp.tool
         def get_data() -> list[dict]:
             return [
                 {"key": "value", "number": 123},
@@ -561,7 +561,7 @@ class TestCallTools:
         mcp = FastMCP(tool_serializer=custom_serializer)
         manager = mcp._tool_manager
 
-        @mcp.tool()
+        @mcp.tool
         def get_data() -> uuid.UUID:
             return uuid_result
 

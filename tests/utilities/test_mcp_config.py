@@ -102,7 +102,7 @@ async def test_multi_client(tmp_path: Path):
 
         mcp = FastMCP()
 
-        @mcp.tool()
+        @mcp.tool
         def add(a: int, b: int) -> int:
             return a + b
 

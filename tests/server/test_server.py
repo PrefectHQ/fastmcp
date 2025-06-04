@@ -57,7 +57,7 @@ class TestTools:
 
         mcp = FastMCP()
 
-        @mcp.tool()
+        @mcp.tool
         def fn(x: int) -> int:
             return x + 1
 
@@ -126,7 +126,7 @@ class TestToolDecorator:
     async def test_tool_decorator(self):
         mcp = FastMCP()
 
-        @mcp.tool()
+        @mcp.tool
         def add(x: int, y: int) -> int:
             return x + y
 
@@ -179,7 +179,7 @@ class TestToolDecorator:
             def __init__(self, x: int):
                 self.x = x
 
-            @mcp.tool()
+            @mcp.tool
             def add(self, y: int) -> int:
                 return self.x + y
 
@@ -207,7 +207,7 @@ class TestToolDecorator:
 
         class MyClass:
             @staticmethod
-            @mcp.tool()
+            @mcp.tool
             def add(x: int, y: int) -> int:
                 return x + y
 
@@ -217,7 +217,7 @@ class TestToolDecorator:
     async def test_tool_decorator_async_function(self):
         mcp = FastMCP()
 
-        @mcp.tool()
+        @mcp.tool
         async def add(x: int, y: int) -> int:
             return x + y
 
@@ -288,7 +288,7 @@ class TestToolDecorator:
         """Test that tools with annotated arguments work correctly."""
         mcp = FastMCP()
 
-        @mcp.tool()
+        @mcp.tool
         def add(
             x: Annotated[int, Field(description="x is an int")],
             y: Annotated[str, Field(description="y is not an int")],
@@ -303,7 +303,7 @@ class TestToolDecorator:
         """Test that tools with annotated arguments work correctly."""
         mcp = FastMCP()
 
-        @mcp.tool()
+        @mcp.tool
         def add(
             x: int = Field(description="x is an int"),
             y: str = Field(description="y is not an int"),

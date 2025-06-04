@@ -30,30 +30,30 @@ from fastmcp.utilities.types import Image
 def tool_server():
     mcp = FastMCP()
 
-    @mcp.tool()
+    @mcp.tool
     def add(x: int, y: int) -> int:
         return x + y
 
-    @mcp.tool()
+    @mcp.tool
     def list_tool() -> list[str | int]:
         return ["x", 2]
 
-    @mcp.tool()
+    @mcp.tool
     def error_tool() -> None:
         raise ValueError("Test error")
 
-    @mcp.tool()
+    @mcp.tool
     def image_tool(path: str) -> Image:
         return Image(path)
 
-    @mcp.tool()
+    @mcp.tool
     def mixed_content_tool() -> list[TextContent | ImageContent]:
         return [
             TextContent(type="text", text="Hello"),
             ImageContent(type="image", data="abc", mimeType="image/png"),
         ]
 
-    @mcp.tool()
+    @mcp.tool
     def mixed_list_fn(image_path: str) -> list:
         return [
             "text message",
@@ -100,7 +100,7 @@ class TestTools:
         mcp = FastMCP()
         client = Client(transport=FastMCPTransport(mcp))
 
-        @mcp.tool()
+        @mcp.tool
         def error_tool():
             raise ValueError("Test error")
 
@@ -119,7 +119,7 @@ class TestToolReturnTypes:
     async def test_string(self):
         mcp = FastMCP()
 
-        @mcp.tool()
+        @mcp.tool
         def string_tool() -> str:
             return "Hello, world!"
 
@@ -130,7 +130,7 @@ class TestToolReturnTypes:
     async def test_bytes(self, tmp_path: Path):
         mcp = FastMCP()
 
-        @mcp.tool()
+        @mcp.tool
         def bytes_tool() -> bytes:
             return b"Hello, world!"
 
@@ -143,7 +143,7 @@ class TestToolReturnTypes:
 
         test_uuid = uuid.uuid4()
 
-        @mcp.tool()
+        @mcp.tool
         def uuid_tool() -> uuid.UUID:
             return test_uuid
 
@@ -156,7 +156,7 @@ class TestToolReturnTypes:
 
         test_path = Path("/tmp/test.txt")
 
-        @mcp.tool()
+        @mcp.tool
         def path_tool() -> Path:
             return test_path
 
@@ -169,7 +169,7 @@ class TestToolReturnTypes:
 
         dt = datetime.datetime(2025, 4, 25, 1, 2, 3)
 
-        @mcp.tool()
+        @mcp.tool
         def datetime_tool() -> datetime.datetime:
             return dt
 
@@ -180,7 +180,7 @@ class TestToolReturnTypes:
     async def test_image(self, tmp_path: Path):
         mcp = FastMCP()
 
-        @mcp.tool()
+        @mcp.tool
         def image_tool(path: str) -> Image:
             return Image(path)
 
@@ -243,7 +243,7 @@ class TestToolParameters:
     async def test_parameter_descriptions_with_field_annotations(self):
         mcp = FastMCP("Test Server")
 
-        @mcp.tool()
+        @mcp.tool
         def greet(
             name: Annotated[str, Field(description="The name to greet")],
             title: Annotated[str, Field(description="Optional title", default="")],
@@ -268,7 +268,7 @@ class TestToolParameters:
     async def test_parameter_descriptions_with_field_defaults(self):
         mcp = FastMCP("Test Server")
 
-        @mcp.tool()
+        @mcp.tool
         def greet(
             name: str = Field(description="The name to greet"),
             title: str = Field(description="Optional title", default=""),
@@ -293,7 +293,7 @@ class TestToolParameters:
     async def test_tool_with_bytes_input(self):
         mcp = FastMCP()
 
-        @mcp.tool()
+        @mcp.tool
         def process_image(image: bytes) -> Image:
             return Image(data=image)
 
@@ -308,7 +308,7 @@ class TestToolParameters:
     async def test_tool_with_invalid_input(self):
         mcp = FastMCP()
 
-        @mcp.tool()
+        @mcp.tool
         def my_tool(x: int) -> int:
             return x + 1
 
@@ -323,7 +323,7 @@ class TestToolParameters:
         """Test string-to-int type coercion."""
         mcp = FastMCP()
 
-        @mcp.tool()
+        @mcp.tool
         def add_one(x: int) -> int:
             return x + 1
 
@@ -336,7 +336,7 @@ class TestToolParameters:
         """Test string-to-bool type coercion."""
         mcp = FastMCP()
 
-        @mcp.tool()
+        @mcp.tool
         def toggle(flag: bool) -> bool:
             return not flag
 
@@ -351,7 +351,7 @@ class TestToolParameters:
     async def test_annotated_field_validation(self):
         mcp = FastMCP()
 
-        @mcp.tool()
+        @mcp.tool
         def analyze(x: Annotated[int, Field(ge=1)]) -> None:
             pass
 
@@ -362,7 +362,7 @@ class TestToolParameters:
     async def test_default_field_validation(self):
         mcp = FastMCP()
 
-        @mcp.tool()
+        @mcp.tool
         def analyze(x: int = Field(ge=1)) -> None:
             pass
 
@@ -373,7 +373,7 @@ class TestToolParameters:
     async def test_default_field_is_still_required_if_no_default_specified(self):
         mcp = FastMCP()
 
-        @mcp.tool()
+        @mcp.tool
         def analyze(x: int = Field()) -> None:
             pass
 
@@ -384,7 +384,7 @@ class TestToolParameters:
     async def test_literal_type_validation_error(self):
         mcp = FastMCP()
 
-        @mcp.tool()
+        @mcp.tool
         def analyze(x: Literal["a", "b"]) -> None:
             pass
 
@@ -395,7 +395,7 @@ class TestToolParameters:
     async def test_literal_type_validation_success(self):
         mcp = FastMCP()
 
-        @mcp.tool()
+        @mcp.tool
         def analyze(x: Literal["a", "b"]) -> str:
             return x
 
@@ -411,7 +411,7 @@ class TestToolParameters:
             GREEN = "green"
             BLUE = "blue"
 
-        @mcp.tool()
+        @mcp.tool
         def analyze(x: MyEnum) -> str:
             return x.value
 
@@ -427,7 +427,7 @@ class TestToolParameters:
             GREEN = "green"
             BLUE = "blue"
 
-        @mcp.tool()
+        @mcp.tool
         def analyze(x: MyEnum) -> str:
             return x.value
 
@@ -438,7 +438,7 @@ class TestToolParameters:
     async def test_union_type_validation(self):
         mcp = FastMCP()
 
-        @mcp.tool()
+        @mcp.tool
         def analyze(x: int | float) -> str:
             return str(x)
 
@@ -455,7 +455,7 @@ class TestToolParameters:
     async def test_path_type(self):
         mcp = FastMCP()
 
-        @mcp.tool()
+        @mcp.tool
         def send_path(path: Path) -> str:
             assert isinstance(path, Path)
             return str(path)
@@ -470,7 +470,7 @@ class TestToolParameters:
     async def test_path_type_error(self):
         mcp = FastMCP()
 
-        @mcp.tool()
+        @mcp.tool
         def send_path(path: Path) -> str:
             return str(path)
 
@@ -481,7 +481,7 @@ class TestToolParameters:
     async def test_uuid_type(self):
         mcp = FastMCP()
 
-        @mcp.tool()
+        @mcp.tool
         def send_uuid(x: uuid.UUID) -> str:
             assert isinstance(x, uuid.UUID)
             return str(x)
@@ -495,7 +495,7 @@ class TestToolParameters:
     async def test_uuid_type_error(self):
         mcp = FastMCP()
 
-        @mcp.tool()
+        @mcp.tool
         def send_uuid(x: uuid.UUID) -> str:
             return str(x)
 
@@ -506,7 +506,7 @@ class TestToolParameters:
     async def test_datetime_type(self):
         mcp = FastMCP()
 
-        @mcp.tool()
+        @mcp.tool
         def send_datetime(x: datetime.datetime) -> str:
             return x.isoformat()
 
@@ -519,7 +519,7 @@ class TestToolParameters:
     async def test_datetime_type_parse_string(self):
         mcp = FastMCP()
 
-        @mcp.tool()
+        @mcp.tool
         def send_datetime(x: datetime.datetime) -> str:
             return x.isoformat()
 
@@ -532,7 +532,7 @@ class TestToolParameters:
     async def test_datetime_type_error(self):
         mcp = FastMCP()
 
-        @mcp.tool()
+        @mcp.tool
         def send_datetime(x: datetime.datetime) -> str:
             return x.isoformat()
 
@@ -543,7 +543,7 @@ class TestToolParameters:
     async def test_date_type(self):
         mcp = FastMCP()
 
-        @mcp.tool()
+        @mcp.tool
         def send_date(x: datetime.date) -> str:
             return x.isoformat()
 
@@ -554,7 +554,7 @@ class TestToolParameters:
     async def test_date_type_parse_string(self):
         mcp = FastMCP()
 
-        @mcp.tool()
+        @mcp.tool
         def send_date(x: datetime.date) -> str:
             return x.isoformat()
 
@@ -565,7 +565,7 @@ class TestToolParameters:
     async def test_timedelta_type(self):
         mcp = FastMCP()
 
-        @mcp.tool()
+        @mcp.tool
         def send_timedelta(x: datetime.timedelta) -> str:
             return str(x)
 
@@ -578,7 +578,7 @@ class TestToolParameters:
     async def test_timedelta_type_parse_int(self):
         mcp = FastMCP()
 
-        @mcp.tool()
+        @mcp.tool
         def send_timedelta(x: datetime.timedelta) -> str:
             return str(x)
 
@@ -594,7 +594,7 @@ class TestToolContextInjection:
         """Test that context parameters are properly detected."""
         mcp = FastMCP()
 
-        @mcp.tool()
+        @mcp.tool
         def tool_with_context(x: int, ctx: Context) -> str:
             return f"Request {ctx.request_id}: {x}"
 
@@ -607,7 +607,7 @@ class TestToolContextInjection:
         """Test that context is properly injected into tool calls."""
         mcp = FastMCP()
 
-        @mcp.tool()
+        @mcp.tool
         def tool_with_context(x: int, ctx: Context) -> str:
             assert isinstance(ctx, Context)
             assert ctx.request_id is not None
@@ -623,7 +623,7 @@ class TestToolContextInjection:
         """Test that context works in async functions."""
         mcp = FastMCP()
 
-        @mcp.tool()
+        @mcp.tool
         async def async_tool(x: int, ctx: Context) -> str:
             assert ctx.request_id is not None
             return f"Async request {ctx.request_id}: {x}"
@@ -638,7 +638,7 @@ class TestToolContextInjection:
         """Test that context is optional."""
         mcp = FastMCP()
 
-        @mcp.tool()
+        @mcp.tool
         def no_context(x: int) -> int:
             return x * 2
 
@@ -656,7 +656,7 @@ class TestToolContextInjection:
         def test_resource() -> str:
             return "resource data"
 
-        @mcp.tool()
+        @mcp.tool
         async def tool_with_resource(ctx: Context) -> str:
             r_iter = await ctx.read_resource("test://data")
             r_list = list(r_iter)

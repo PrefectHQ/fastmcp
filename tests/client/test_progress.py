@@ -16,7 +16,7 @@ def clear_progress_messages():
 def fastmcp_server():
     mcp = FastMCP()
 
-    @mcp.tool()
+    @mcp.tool
     async def progress_tool(context: Context) -> int:
         for i in range(3):
             await context.report_progress(

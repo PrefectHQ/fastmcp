@@ -24,7 +24,7 @@ if args.debug:
 mcp = FastMCP(server_name)
 
 
-@mcp.tool()
+@mcp.tool
 def get_status() -> dict[str, str | bool]:
     """Get the current server configuration and status."""
     return {
@@ -34,7 +34,7 @@ def get_status() -> dict[str, str | bool]:
     }
 
 
-@mcp.tool()
+@mcp.tool
 def echo_message(message: str) -> str:
     """Echo a message, with debug info if debug mode is enabled."""
     if args.debug:

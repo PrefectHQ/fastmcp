@@ -510,7 +510,7 @@ class TestErrorHandling:
     async def test_general_tool_exceptions_are_not_masked_by_default(self):
         mcp = FastMCP("TestServer")
 
-        @mcp.tool()
+        @mcp.tool
         def error_tool():
             raise ValueError("This is a test error (abc)")
 
@@ -525,7 +525,7 @@ class TestErrorHandling:
     async def test_general_tool_exceptions_are_masked_when_enabled(self):
         mcp = FastMCP("TestServer", mask_error_details=True)
 
-        @mcp.tool()
+        @mcp.tool
         def error_tool():
             raise ValueError("This is a test error (abc)")
 
@@ -540,7 +540,7 @@ class TestErrorHandling:
     async def test_specific_tool_errors_are_sent_to_client(self):
         mcp = FastMCP("TestServer")
 
-        @mcp.tool()
+        @mcp.tool
         def custom_error_tool():
             raise ToolError("This is a test error (abc)")
 
