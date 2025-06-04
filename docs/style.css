@@ -41,6 +41,7 @@ h6 code:not(pre code) {
   );
   background-size: 300% 100%;
   animation: colorWave 14s ease-in-out infinite alternate;
+  pointer-events: none;
 }
 
 .dark #banner {
