@@ -60,6 +60,7 @@ class PromptManager:
         warnings.warn(
             "PromptManager.add_prompt_from_fn() is deprecated. Use Prompt.from_function() and call add_prompt() instead.",
             DeprecationWarning,
+            stacklevel=2,
         )
         prompt = FunctionPrompt.from_function(
             fn, name=name, description=description, tags=tags

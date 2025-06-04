@@ -125,6 +125,7 @@ class ResourceManager:
         warnings.warn(
             "add_resource_from_fn is deprecated. Use Resource.from_function() and call add_resource() instead.",
             DeprecationWarning,
+            stacklevel=2,
         )
         resource = Resource.from_function(
             fn=fn,
@@ -181,6 +182,7 @@ class ResourceManager:
         warnings.warn(
             "add_template_from_fn is deprecated. Use ResourceTemplate.from_function() and call add_template() instead.",
             DeprecationWarning,
+            stacklevel=2,
         )
         template = ResourceTemplate.from_function(
             fn,
