@@ -11,7 +11,6 @@ dependencies = [
     "openapi-pydantic>=0.5.1",
     "rich>=13.9.4",
     "typer>=0.15.2",
-    "websockets>=14.0",
     "authlib>=1.5.2",
 ]
 requires-python = ">=3.10"
@@ -66,6 +65,9 @@ fastmcp = "fastmcp.cli:app"
 Homepage = "https://gofastmcp.com"
 Repository = "https://github.com/jlowin/fastmcp"
 Documentation = "https://gofastmcp.com"
+
+[project.optional-dependencies]
+websockets = ["websockets>=15.0.1"]
 
 
 [build-system]

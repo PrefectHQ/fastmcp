@@ -27,10 +27,6 @@ from mcp.client.session import (
     MessageHandlerFnT,
     SamplingFnT,
 )
-from mcp.client.sse import sse_client
-from mcp.client.stdio import stdio_client
-from mcp.client.streamable_http import streamablehttp_client
-from mcp.client.websocket import websocket_client
 from mcp.server.fastmcp import FastMCP as FastMCP1Server
 from mcp.shared.memory import create_connected_server_and_client_session
 from pydantic import AnyUrl
@@ -141,6 +137,13 @@ class WSTransport(ClientTransport):
     async def connect_session(
         self, **session_kwargs: Unpack[SessionKwargs]
     ) -> AsyncIterator[ClientSession]:
+        try:
+            from mcp.client.websocket import websocket_client
+        except ImportError:
+            raise ImportError(
+                "The websocket transport is not available. Please install fastmcp[websockets] or install the websockets package manually."
+            )
+
         async with websocket_client(self.url) as transport:
             read_stream, write_stream = transport
             async with ClientSession(
@@ -188,6 +191,8 @@ class SSETransport(ClientTransport):
     async def connect_session(
         self, **session_kwargs: Unpack[SessionKwargs]
     ) -> AsyncIterator[ClientSession]:
+        from mcp.client.sse import sse_client
+
         client_kwargs: dict[str, Any] = {}
 
         # load headers from an active HTTP request, if available. This will only be true
@@ -255,6 +260,8 @@ class StreamableHttpTransport(ClientTransport):
     async def connect_session(
         self, **session_kwargs: Unpack[SessionKwargs]
     ) -> AsyncIterator[ClientSession]:
+        from mcp.client.streamable_http import streamablehttp_client
+
         client_kwargs: dict[str, Any] = {}
 
         # load headers from an active HTTP request, if available. This will only be true
@@ -350,6 +357,8 @@ class StdioTransport(ClientTransport):
             return
 
         async def _connect_task():
+            from mcp.client.stdio import stdio_client
+
             async with contextlib.AsyncExitStack() as stack:
                 try:
                     server_params = StdioServerParameters(
