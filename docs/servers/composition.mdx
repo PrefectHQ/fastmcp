@@ -50,7 +50,7 @@ import asyncio
 # Define subservers
 weather_mcp = FastMCP(name="WeatherService")
 
-@weather_mcp.tool()
+@weather_mcp.tool
 def get_forecast(city: str) -> dict:
     """Get weather forecast."""
     return {"city": city, "forecast": "Sunny"}
@@ -102,7 +102,7 @@ from fastmcp import FastMCP, Client
 # Define subserver
 dynamic_mcp = FastMCP(name="DynamicService")
 
-@dynamic_mcp.tool()
+@dynamic_mcp.tool
 def initial_tool():
     """Initial tool demonstration."""
     return "Initial Tool Exists"
@@ -112,7 +112,7 @@ main_mcp = FastMCP(name="MainAppLive")
 main_mcp.mount("dynamic", dynamic_mcp)
 
 # Add a tool AFTER mounting - it will be accessible through main_mcp
-@dynamic_mcp.tool()
+@dynamic_mcp.tool
 def added_later():
     """Tool added after mounting."""
     return "Tool Added Dynamically!"

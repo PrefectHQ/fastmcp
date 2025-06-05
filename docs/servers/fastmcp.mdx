@@ -47,7 +47,7 @@ FastMCP servers expose several types of components to the client:
 Tools are functions that the client can call to perform actions or access external systems.
 
 ```python
-@mcp.tool()
+@mcp.tool
 def multiply(a: float, b: float) -> float:
     """Multiplies two numbers together."""
     return a * b
@@ -87,7 +87,7 @@ See [Resources & Templates](/servers/resources) for detailed documentation.
 Prompts are reusable message templates for guiding the LLM.
 
 ```python
-@mcp.prompt()
+@mcp.prompt
 def analyze_data(data_points: list[float]) -> str:
     """Creates a prompt asking for analysis of numerical data."""
     formatted_data = ", ".join(str(point) for point in data_points)
@@ -106,7 +106,7 @@ from fastmcp import FastMCP
 
 mcp = FastMCP(name="MyServer")
 
-@mcp.tool()
+@mcp.tool
 def greet(name: str) -> str:
     """Greet a user by name."""
     return f"Hello, {name}!"
@@ -145,7 +145,7 @@ import asyncio
 main = FastMCP(name="Main")
 sub = FastMCP(name="Sub")
 
-@sub.tool()
+@sub.tool
 def hello(): 
     return "hi"
 
@@ -216,7 +216,7 @@ def yaml_serializer(data):
 # Create a server with the custom serializer
 mcp = FastMCP(name="MyServer", tool_serializer=yaml_serializer)
 
-@mcp.tool()
+@mcp.tool
 def get_config():
     """Returns configuration in YAML format."""
     return {"api_key": "abc123", "debug": True, "rate_limit": 100}
