@@ -264,9 +264,9 @@ class TestToolDecorator:
         """Test that the recommended decorator order works for static methods"""
         mcp = FastMCP()
 
-                class MyClass:
+        class MyClass:
+            @mcp.tool
             @staticmethod
-            @mcp.tool  
             def add_v1(x: int, y: int) -> int:
                 return x + y
 
