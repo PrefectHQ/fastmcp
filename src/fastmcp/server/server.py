@@ -768,7 +768,7 @@ class FastMCP(Generic[LifespanResultT]):
         def decorator(fn: AnyFunction) -> Resource | ResourceTemplate:
             from fastmcp.server.context import Context
 
-            if isinstance(fn, classmethod):
+            if isinstance(fn, classmethod):  # type: ignore[reportUnnecessaryIsInstance]
                 raise ValueError(
                     inspect.cleandoc(
                         """
