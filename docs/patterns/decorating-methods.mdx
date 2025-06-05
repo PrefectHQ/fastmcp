@@ -16,11 +16,36 @@ When you apply a FastMCP decorator like `@tool`, `@resource()`, or `@prompt()` t
 
 This means directly decorating these methods doesn't work as expected. In practice, the LLM would see parameters like `self` or `cls` that it cannot provide values for.
 
+Additionally, **FastMCP decorators return objects (Tool, Resource, or Prompt instances) rather than the original function**. This means that when you decorate a method directly, the method becomes the returned object and is no longer callable by your code:
+
+<Warning>
+**Don't do this!**
+
+The method will no longer be callable from Python, and the tool won't be callable by LLMs.
+
+```python
+
+from fastmcp import FastMCP
+mcp = FastMCP()
+
+class MyClass:
+    @mcp.tool()
+    def my_method(self, x: int) -> int:
+        return x * 2
+
+obj = MyClass()
+obj.my_method(5)  # Fails - my_method is a Tool, not a function
+```
+</Warning>
+
+This is another important reason to register methods functionally after defining the class.
+
 ## Recommended Patterns
 
 ### Instance Methods
 
-**Don't do this** (it doesn't work properly):
+<Warning>
+**Don't do this!**
 
 ```python
 from fastmcp import FastMCP
@@ -28,17 +53,14 @@ from fastmcp import FastMCP
 mcp = FastMCP()
 
 class MyClass:
-@mcp.tool()  # This won't work correctly
+    @mcp.tool()  # This won't work correctly
     def add(self, x, y):
         return x + y
-    
-    @mcp.resource("resource://{param}")  # This won't work correctly
-    def get_resource(self, param: str):
-        return f"Resource data for {param}"
 ```
-
+</Warning>
 When the decorator is applied this way, it captures the unbound method. When the LLM later tries to use this component, it will see `self` as a required parameter, but it won't know what to provide for it, causing errors or unexpected behavior.
 
+<Check>
 **Do this instead**:
 
 ```python
@@ -49,21 +71,15 @@ mcp = FastMCP()
 class MyClass:
     def add(self, x, y):
         return x + y
-    
-    def get_resource(self, param: str):
-        return f"Resource data for {param}"
 
-# Create an instance first, then add the bound methods
+# Create an instance first, then register the bound methods
 obj = MyClass()
-mcp.add_tool(obj.add)
-mcp.add_resource_fn(obj.get_resource, uri="resource://{param}")  # For resources or templates
-
-# Note: FastMCP provides add_resource() for adding Resource objects directly and
-# add_resource_fn() for adding functions that generate resources or templates
+mcp.tool(obj.add)
 
 # Now you can call it without 'self' showing up as a parameter
-await mcp.call_tool('add', {'x': 1, 'y': 2})  # Returns 3
+await mcp._mcp_call_tool('add', {'x': 1, 'y': 2})  # Returns 3
 ```
+</Check>
 
 This approach works because:
 1. You first create an instance of the class (`obj`)
@@ -72,9 +88,10 @@ This approach works because:
 
 ### Class Methods
 
-Similar to instance methods, decorating class methods directly doesn't work properly:
+The behavior of decorating class methods depends on the order of decorators:
 
-**Don't do this**:
+<Warning>
+**Don't do this** (decorator order matters):
 
 ```python
 from fastmcp import FastMCP
@@ -83,13 +100,21 @@ mcp = FastMCP()
 
 class MyClass:
     @classmethod
-@mcp.tool()  # This won't work correctly
-    def from_string(cls, s):
+    @mcp.tool()  # This won't work but won't raise an error
+    def from_string_v1(cls, s):
+        return cls(s)
+    
+    @mcp.tool()
+    @classmethod  # This will raise a helpful ValueError
+    def from_string_v2(cls, s):
         return cls(s)
 ```
+</Warning>
 
-The problem here is that the FastMCP decorator is applied before the `@classmethod` decorator (Python applies decorators bottom-to-top). So it captures the function before it's transformed into a class method, leading to incorrect behavior.
+- If `@classmethod` comes first, then `@mcp.tool()`: No error is raised, but it won't work correctly
+- If `@mcp.tool()` comes first, then `@classmethod`: FastMCP will detect this and raise a helpful `ValueError` with guidance
 
+<Check>
 **Do this instead**:
 
 ```python
@@ -102,9 +127,10 @@ class MyClass:
     def from_string(cls, s):
         return cls(s)
 
-# Add the class method after the class is defined
-mcp.add_tool(MyClass.from_string)
+# Register the class method after the class is defined
+mcp.tool(MyClass.from_string)
 ```
+</Check>
 
 This works because:
 1. The `@classmethod` decorator is applied properly during class definition
@@ -113,7 +139,10 @@ This works because:
 
 ### Static Methods
 
-Unlike instance and class methods, static methods work fine with FastMCP decorators:
+Static methods "work" with FastMCP decorators, but this is not recommended because the FastMCP decorator will not return a callable method. Therefore, you should register static methods the same way as other methods.
+
+<Warning>
+**This is not recommended, though it will work.**
 
 ```python
 from fastmcp import FastMCP
@@ -121,23 +150,17 @@ from fastmcp import FastMCP
 mcp = FastMCP()
 
 class MyClass:
+    @mcp.tool()
     @staticmethod
-@mcp.tool()  # This works!
     def utility(x, y):
         return x + y
-    
-    @staticmethod
-    @mcp.resource("resource://data")  # This works too!
-    def get_data():
-        return "Static resource data"
 ```
+</Warning>
 
-This approach works because:
-1. The `@staticmethod` decorator is applied first (executed last), transforming the method into a regular function
-2. When the FastMCP decorator is applied, it's capturing what is effectively just a regular function
-3. A static method doesn't have any binding requirements - it doesn't receive a `self` or `cls` parameter
+This works because `@staticmethod` converts the method to a regular function, which the FastMCP decorator can then properly process. However, this is not recommended because the FastMCP decorator will not return a callable staticmethod. Therefore, you should register static methods the same way as other methods.
 
-Alternatively, you can use the same pattern as the other methods:
+<Check>
+**Prefer this pattern:**
 
 ```python
 from fastmcp import FastMCP
@@ -150,10 +173,9 @@ class MyClass:
         return x + y
 
 # This also works
-mcp.add_tool(MyClass.utility)
+mcp.tool(MyClass.utility)
 ```
-
-This works for the same reason - a static method is essentially just a function in a class namespace.
+</Check>
 
 ## Additional Patterns
 
@@ -169,8 +191,8 @@ mcp = FastMCP()
 class ComponentProvider:
     def __init__(self, mcp_instance):
         # Register methods
-        mcp_instance.add_tool(self.tool_method)
-        mcp_instance.add_resource_fn(self.resource_method, uri="resource://data")
+        mcp_instance.tool(self.tool_method)
+        mcp_instance.resource("resource://data")(self.resource_method)
     
     def tool_method(self, x):
         return x * 2
@@ -191,11 +213,13 @@ The class automatically registers its methods during initialization, ensuring th
 
 ## Summary
 
-While FastMCP's decorator pattern works seamlessly with regular functions and static methods, for instance methods and class methods, you should add them after creating the instance or class. This ensures that the methods are properly bound before being registered.
+The current behavior of FastMCP decorators with methods is:
 
-These patterns apply to all FastMCP decorators and registration methods:
-- `@tool()` and `add_tool`
-- `@resource()` and `add_resource_fn()`
-- `@prompt()` and `add_prompt()`
+- **Static methods**: Can be decorated directly and work perfectly with all FastMCP decorators
+- **Class methods**: Cannot be decorated directly and will raise a helpful `ValueError` with guidance
+- **Instance methods**: Should be registered after creating an instance using the decorator calls
+
+For class and instance methods, you should register them after creating the instance or class to ensure proper method binding. This ensures that the methods are properly bound before being registered.
+
 
 Understanding these patterns allows you to effectively organize your components into classes while maintaining proper method binding, giving you the benefits of object-oriented design without sacrificing the simplicity of FastMCP's decorator system.

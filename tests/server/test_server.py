@@ -205,8 +205,8 @@ class TestToolDecorator:
         mcp = FastMCP()
 
         class MyClass:
-            @staticmethod
             @mcp.tool
+            @staticmethod
             def add(x: int, y: int) -> int:
                 return x + y
 
@@ -222,6 +222,17 @@ class TestToolDecorator:
 
         result = await mcp._mcp_call_tool("add", {"x": 1, "y": 2})
         assert result[0].text == "3"  # type: ignore[attr-defined]
+
+    async def test_tool_decorator_classmethod_error(self):
+        mcp = FastMCP()
+
+        with pytest.raises(ValueError, match="To decorate a classmethod"):
+
+            class MyClass:
+                @mcp.tool
+                @classmethod
+                def add(cls, y: int) -> None:
+                    pass
 
     async def test_tool_decorator_classmethod_async_function(self):
         mcp = FastMCP()
@@ -247,6 +258,20 @@ class TestToolDecorator:
 
         mcp.add_tool(Tool.from_function(MyClass.add))
         result = await mcp._mcp_call_tool("add", {"x": 1, "y": 2})
+        assert result[0].text == "3"  # type: ignore[attr-defined]
+
+    async def test_tool_decorator_staticmethod_order(self):
+        """Test that the recommended decorator order works for static methods"""
+        mcp = FastMCP()
+
+                class MyClass:
+            @staticmethod
+            @mcp.tool  
+            def add_v1(x: int, y: int) -> int:
+                return x + y
+
+        # Test that the recommended order works
+        result = await mcp._mcp_call_tool("add_v1", {"x": 1, "y": 2})
         assert result[0].text == "3"  # type: ignore[attr-defined]
 
     async def test_tool_decorator_with_tags(self):
@@ -480,12 +505,23 @@ class TestResourceDecorator:
             result = await client.read_resource("resource://data")
             assert result[0].text == "Class prefix: Hello, world!"  # type: ignore[attr-defined]
 
+    async def test_resource_decorator_classmethod_error(self):
+        mcp = FastMCP()
+
+        with pytest.raises(ValueError, match="To decorate a classmethod"):
+
+            class MyClass:
+                @mcp.resource("resource://data")
+                @classmethod
+                def get_data(cls) -> None:
+                    pass
+
     async def test_resource_decorator_staticmethod(self):
         mcp = FastMCP()
 
         class MyClass:
-            @staticmethod
             @mcp.resource("resource://data")
+            @staticmethod
             def get_data() -> str:
                 return "Static Hello, world!"
 
@@ -503,6 +539,20 @@ class TestResourceDecorator:
         async with Client(mcp) as client:
             result = await client.read_resource("resource://data")
             assert result[0].text == "Async Hello, world!"  # type: ignore[attr-defined]
+
+    async def test_resource_decorator_staticmethod_order(self):
+        """Test that both decorator orders work for static methods"""
+        mcp = FastMCP()
+
+        class MyClass:
+            @mcp.resource("resource://data")  # type: ignore[misc]  # Type checker warns but runtime works
+            @staticmethod
+            def get_data() -> str:
+                return "Static Hello, world!"
+
+        async with Client(mcp) as client:
+            result = await client.read_resource("resource://data")
+            assert result[0].text == "Static Hello, world!"  # type: ignore[attr-defined]
 
 
 class TestTemplateDecorator:
@@ -609,8 +659,8 @@ class TestTemplateDecorator:
         mcp = FastMCP()
 
         class MyClass:
-            @staticmethod
             @mcp.resource("resource://{name}/data")
+            @staticmethod
             def get_data(name: str) -> str:
                 return f"Static Data for {name}"
 
@@ -783,12 +833,23 @@ class TestPromptDecorator:
             message = result.messages[0]
             assert message.content.text == "Class prefix: Hello, world!"  # type: ignore[attr-defined]
 
+    async def test_prompt_decorator_classmethod_error(self):
+        mcp = FastMCP()
+
+        with pytest.raises(ValueError, match="To decorate a classmethod"):
+
+            class MyClass:
+                @mcp.prompt
+                @classmethod
+                def test_prompt(cls) -> None:
+                    pass
+
     async def test_prompt_decorator_staticmethod(self):
         mcp = FastMCP()
 
         class MyClass:
-            @staticmethod
             @mcp.prompt
+            @staticmethod
             def test_prompt() -> str:
                 return "Static Hello, world!"
 
@@ -880,6 +941,22 @@ class TestPromptDecorator:
             @mcp.prompt("positional_name", name="keyword_name")
             def my_function() -> str:
                 return "Hello, world!"
+
+    async def test_prompt_decorator_staticmethod_order(self):
+        """Test that both decorator orders work for static methods"""
+        mcp = FastMCP()
+
+        class MyClass:
+            @mcp.prompt  # type: ignore[misc]  # Type checker warns but runtime works
+            @staticmethod
+            def test_prompt() -> str:
+                return "Static Hello, world!"
+
+        async with Client(mcp) as client:
+            result = await client.get_prompt("test_prompt")
+            assert len(result.messages) == 1
+            message = result.messages[0]
+            assert message.content.text == "Static Hello, world!"  # type: ignore[attr-defined]
 
 
 class TestResourcePrefixHelpers:

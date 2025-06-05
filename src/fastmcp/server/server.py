@@ -589,8 +589,20 @@ class FastMCP(Generic[LifespanResultT]):
         if isinstance(annotations, dict):
             annotations = ToolAnnotations(**annotations)
 
+        if isinstance(name_or_fn, classmethod):
+            raise ValueError(
+                inspect.cleandoc(
+                    """
+                    To decorate a classmethod, first define the method and then call
+                    tool() directly on the method instead of using it as a
+                    decorator. See https://gofastmcp.com/patterns/decorating-methods
+                    for examples and more information.
+                    """
+                )
+            )
+
         # Determine the actual name and function based on the calling pattern
-        if callable(name_or_fn):
+        if inspect.isroutine(name_or_fn):
             # Case 1: @tool (without parens) - function passed directly
             # Case 2: direct call like tool(fn, name="something")
             fn = name_or_fn
@@ -747,7 +759,7 @@ class FastMCP(Generic[LifespanResultT]):
                 return f"Weather for {city}: {data}"
         """
         # Check if user passed function directly instead of calling decorator
-        if callable(uri):
+        if inspect.isroutine(uri):
             raise TypeError(
                 "The @resource decorator was used incorrectly. "
                 "Did you forget to call it? Use @resource('uri') instead of @resource"
@@ -755,6 +767,18 @@ class FastMCP(Generic[LifespanResultT]):
 
         def decorator(fn: AnyFunction) -> Resource | ResourceTemplate:
             from fastmcp.server.context import Context
+
+            if isinstance(fn, classmethod):
+                raise ValueError(
+                    inspect.cleandoc(
+                        """
+                        To decorate a classmethod, first define the method and then call
+                        resource() directly on the method instead of using it as a
+                        decorator. See https://gofastmcp.com/patterns/decorating-methods
+                        for examples and more information.
+                        """
+                    )
+                )
 
             # Check if this should be a template
             has_uri_params = "{" in uri and "}" in uri
@@ -896,8 +920,21 @@ class FastMCP(Generic[LifespanResultT]):
             # Direct function call
             server.prompt(my_function, name="custom_name")
         """
+
+        if isinstance(name_or_fn, classmethod):
+            raise ValueError(
+                inspect.cleandoc(
+                    """
+                    To decorate a classmethod, first define the method and then call
+                    prompt() directly on the method instead of using it as a
+                    decorator. See https://gofastmcp.com/patterns/decorating-methods
+                    for examples and more information.
+                    """
+                )
+            )
+
         # Determine the actual name and function based on the calling pattern
-        if callable(name_or_fn):
+        if inspect.isroutine(name_or_fn):
             # Case 1: @prompt (without parens) - function passed directly as decorator
             # Case 2: direct call like prompt(fn, name="something")
             fn = name_or_fn
