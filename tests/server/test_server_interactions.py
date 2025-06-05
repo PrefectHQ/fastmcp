@@ -936,56 +936,6 @@ class TestResourceTemplates:
             result = await client.read_resource(AnyUrl("resource://test/data"))
             assert result[0].text == "Data for test"  # type: ignore[attr-defined]
 
-    async def test_stacked_resource_template_decorators(self):
-        """Test that resource template decorators can be stacked."""
-        mcp = FastMCP()
-
-        @mcp.resource("users://email/{email}")
-        @mcp.resource("users://name/{name}")
-        def lookup_user(name: str | None = None, email: str | None = None) -> dict:
-            if name:
-                return {
-                    "id": "123",
-                    "name": name,
-                    "email": "dummy@example.com",
-                    "lookup": "name",
-                }
-            elif email:
-                return {
-                    "id": "123",
-                    "name": "Test User",
-                    "email": email,
-                    "lookup": "email",
-                }
-            else:
-                raise ValueError("Either name or email must be provided")
-
-        # Verify both templates are registered
-        templates_dict = await mcp.get_resource_templates()
-        templates = list(templates_dict.values())
-        assert len(templates) == 2
-        template_uris = {t.uri_template for t in templates}
-        assert "users://email/{email}" in template_uris
-        assert "users://name/{name}" in template_uris
-
-        # Test lookup by email
-        async with Client(mcp) as client:
-            email_result = await client.read_resource(
-                AnyUrl("users://email/user@example.com")
-            )
-            assert email_result[0].text  # type: ignore[attr-defined]
-            email_data = json.loads(email_result[0].text)  # type: ignore[attr-defined]
-            assert email_data["lookup"] == "email"
-            assert email_data["email"] == "user@example.com"
-
-            # Test lookup by name
-            name_result = await client.read_resource(AnyUrl("users://name/John"))
-            assert name_result[0].text  # type: ignore[attr-defined]
-            name_data = json.loads(name_result[0].text)  # type: ignore[attr-defined]
-            assert name_data["lookup"] == "name"
-            assert name_data["name"] == "John"
-            assert name_data["email"] == "dummy@example.com"
-
     async def test_template_decorator_with_tags(self):
         mcp = FastMCP()
 

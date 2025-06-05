@@ -6,7 +6,7 @@ from pydantic import Field
 
 from fastmcp import Client, FastMCP
 from fastmcp.exceptions import NotFoundError
-from fastmcp.prompts.prompt import Prompt
+from fastmcp.prompts.prompt import FunctionPrompt, Prompt
 from fastmcp.resources import Resource, ResourceTemplate
 from fastmcp.server.server import (
     MountedServer,
@@ -179,7 +179,6 @@ class TestToolDecorator:
             def __init__(self, x: int):
                 self.x = x
 
-            @mcp.tool
             def add(self, y: int) -> int:
                 return self.x + y
 
@@ -326,11 +325,11 @@ class TestToolDecorator:
         result_fn = mcp.tool(standalone_function, name="direct_call_tool")
 
         # The function should be returned unchanged
-        assert result_fn is standalone_function
+        assert isinstance(result_fn, FunctionTool)
 
         # Verify the tool was registered correctly
         tools = await mcp.get_tools()
-        assert "direct_call_tool" in tools
+        assert tools["direct_call_tool"] is result_fn
 
         # Verify it can be called
         result = await mcp._mcp_call_tool("direct_call_tool", {"x": 5, "y": 3})
@@ -857,11 +856,11 @@ class TestPromptDecorator:
         result_fn = mcp.prompt(standalone_function, name="direct_call_prompt")
 
         # The function should be returned unchanged
-        assert result_fn is standalone_function
+        assert isinstance(result_fn, FunctionPrompt)
 
         # Verify the prompt was registered correctly
         prompts = await mcp.get_prompts()
-        assert "direct_call_prompt" in prompts
+        assert prompts["direct_call_prompt"] is result_fn
 
         # Verify it can be called
         async with Client(mcp) as client:

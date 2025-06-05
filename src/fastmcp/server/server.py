@@ -14,7 +14,7 @@ from contextlib import (
 )
 from functools import partial
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Generic, Literal
+from typing import TYPE_CHECKING, Any, Generic, Literal, overload
 
 import anyio
 import httpx
@@ -45,6 +45,7 @@ import fastmcp.server
 import fastmcp.settings
 from fastmcp.exceptions import NotFoundError
 from fastmcp.prompts import Prompt, PromptManager
+from fastmcp.prompts.prompt import FunctionPrompt
 from fastmcp.resources import Resource, ResourceManager
 from fastmcp.resources.template import ResourceTemplate
 from fastmcp.server.auth.auth import OAuthProvider
@@ -55,7 +56,7 @@ from fastmcp.server.http import (
     create_streamable_http_app,
 )
 from fastmcp.tools import ToolManager
-from fastmcp.tools.tool import Tool
+from fastmcp.tools.tool import FunctionTool, Tool
 from fastmcp.utilities.cache import TimedCache
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.mcp_config import MCPConfig
@@ -510,6 +511,30 @@ class FastMCP(Generic[LifespanResultT]):
         self._tool_manager.remove_tool(name)
         self._cache.clear()
 
+    @overload
+    def tool(
+        self,
+        name_or_fn: AnyFunction,
+        *,
+        name: str | None = None,
+        description: str | None = None,
+        tags: set[str] | None = None,
+        annotations: ToolAnnotations | dict[str, Any] | None = None,
+        exclude_args: list[str] | None = None,
+    ) -> FunctionTool: ...
+
+    @overload
+    def tool(
+        self,
+        name_or_fn: str | None = None,
+        *,
+        name: str | None = None,
+        description: str | None = None,
+        tags: set[str] | None = None,
+        annotations: ToolAnnotations | dict[str, Any] | None = None,
+        exclude_args: list[str] | None = None,
+    ) -> Callable[[AnyFunction], FunctionTool]: ...
+
     def tool(
         self,
         name_or_fn: str | AnyFunction | None = None,
@@ -519,7 +544,7 @@ class FastMCP(Generic[LifespanResultT]):
         tags: set[str] | None = None,
         annotations: ToolAnnotations | dict[str, Any] | None = None,
         exclude_args: list[str] | None = None,
-    ) -> Callable[[AnyFunction], AnyFunction] | AnyFunction:
+    ) -> Callable[[AnyFunction], FunctionTool] | FunctionTool:
         """Decorator to register a tool.
 
         Tools can optionally request a Context object by adding a parameter with the
@@ -571,7 +596,7 @@ class FastMCP(Generic[LifespanResultT]):
             fn = name_or_fn
             tool_name = name  # Use keyword name if provided, otherwise None
 
-            # Register the tool immediately and return the function
+            # Register the tool immediately and return the tool object
             tool = Tool.from_function(
                 fn,
                 name=tool_name,
@@ -582,7 +607,7 @@ class FastMCP(Generic[LifespanResultT]):
                 serializer=self._tool_serializer,
             )
             self.add_tool(tool)
-            return fn
+            return tool
 
         elif isinstance(name_or_fn, str):
             # Case 3: @tool("custom_name") - name passed as first argument
@@ -674,7 +699,7 @@ class FastMCP(Generic[LifespanResultT]):
         description: str | None = None,
         mime_type: str | None = None,
         tags: set[str] | None = None,
-    ) -> Callable[[AnyFunction], AnyFunction]:
+    ) -> Callable[[AnyFunction], Resource | ResourceTemplate]:
         """Decorator to register a function as a resource.
 
         The function will be called when the resource is read to generate its content.
@@ -728,7 +753,7 @@ class FastMCP(Generic[LifespanResultT]):
                 "Did you forget to call it? Use @resource('uri') instead of @resource"
             )
 
-        def decorator(fn: AnyFunction) -> AnyFunction:
+        def decorator(fn: AnyFunction) -> Resource | ResourceTemplate:
             from fastmcp.server.context import Context
 
             # Check if this should be a template
@@ -750,6 +775,7 @@ class FastMCP(Generic[LifespanResultT]):
                     tags=tags,
                 )
                 self.add_template(template)
+                return template
             elif not has_uri_params and not has_func_params:
                 resource = Resource.from_function(
                     fn=fn,
@@ -760,13 +786,12 @@ class FastMCP(Generic[LifespanResultT]):
                     tags=tags,
                 )
                 self.add_resource(resource)
+                return resource
             else:
                 raise ValueError(
                     "Invalid resource or template definition due to a "
                     "mismatch between URI parameters and function parameters."
                 )
-
-            return fn
 
         return decorator
 
@@ -779,6 +804,26 @@ class FastMCP(Generic[LifespanResultT]):
         self._prompt_manager.add_prompt(prompt)
         self._cache.clear()
 
+    @overload
+    def prompt(
+        self,
+        name_or_fn: AnyFunction,
+        *,
+        name: str | None = None,
+        description: str | None = None,
+        tags: set[str] | None = None,
+    ) -> FunctionPrompt: ...
+
+    @overload
+    def prompt(
+        self,
+        name_or_fn: str | None = None,
+        *,
+        name: str | None = None,
+        description: str | None = None,
+        tags: set[str] | None = None,
+    ) -> Callable[[AnyFunction], FunctionPrompt]: ...
+
     def prompt(
         self,
         name_or_fn: str | AnyFunction | None = None,
@@ -786,7 +831,7 @@ class FastMCP(Generic[LifespanResultT]):
         name: str | None = None,
         description: str | None = None,
         tags: set[str] | None = None,
-    ) -> Callable[[AnyFunction], AnyFunction] | AnyFunction:
+    ) -> Callable[[AnyFunction], FunctionPrompt] | FunctionPrompt:
         """Decorator to register a prompt.
 
         Prompts can optionally request a Context object by adding a parameter with the
@@ -867,7 +912,7 @@ class FastMCP(Generic[LifespanResultT]):
             )
             self.add_prompt(prompt)
 
-            return fn
+            return prompt
 
         elif isinstance(name_or_fn, str):
             # Case 3: @prompt("custom_name") - name passed as first argument
