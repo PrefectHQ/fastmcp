@@ -57,7 +57,6 @@ from fastmcp.server.http import (
 from fastmcp.tools import ToolManager
 from fastmcp.tools.tool import Tool
 from fastmcp.utilities.cache import TimedCache
-from fastmcp.utilities.decorators import DecoratedFunction
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.mcp_config import MCPConfig
 
@@ -868,12 +867,7 @@ class FastMCP(Generic[LifespanResultT]):
             )
             self.add_prompt(prompt)
 
-            # If name is provided, this is a direct call, return original function for consistency with tools
-            # If name is None, this is @prompt without parens, return DecoratedFunction for proper method handling
-            if name is not None:
-                return fn  # Direct function call
-            else:
-                return DecoratedFunction(fn)  # Decorator usage
+            return fn
 
         elif isinstance(name_or_fn, str):
             # Case 3: @prompt("custom_name") - name passed as first argument
