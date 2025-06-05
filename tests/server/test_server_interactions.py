@@ -1086,7 +1086,7 @@ class TestPrompts:
     async def test_prompt_decorator_with_parens(self):
         mcp = FastMCP()
 
-        @mcp.prompt()
+        @mcp.prompt
         def fn() -> str:
             return "Hello, world!"
 
