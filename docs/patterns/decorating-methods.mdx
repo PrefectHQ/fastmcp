@@ -9,7 +9,7 @@ FastMCP's decorator system is designed to work with functions, but you may see u
 
 ## Why Are Methods Hard?
 
-When you apply a FastMCP decorator like `@tool`, `@resource()`, or `@prompt()` to a method, the decorator captures the function at decoration time. For instance methods and class methods, this poses a challenge because:
+When you apply a FastMCP decorator like `@tool`, `@resource`, or `@prompt` to a method, the decorator captures the function at decoration time. For instance methods and class methods, this poses a challenge because:
 
 1. For instance methods: The decorator gets the unbound method before any instance exists
 2. For class methods: The decorator gets the function before it's bound to the class
@@ -29,7 +29,7 @@ from fastmcp import FastMCP
 mcp = FastMCP()
 
 class MyClass:
-    @mcp.tool()
+    @mcp.tool
     def my_method(self, x: int) -> int:
         return x * 2
 
@@ -53,7 +53,7 @@ from fastmcp import FastMCP
 mcp = FastMCP()
 
 class MyClass:
-    @mcp.tool()  # This won't work correctly
+    @mcp.tool  # This won't work correctly
     def add(self, x, y):
         return x + y
 ```
@@ -100,19 +100,19 @@ mcp = FastMCP()
 
 class MyClass:
     @classmethod
-    @mcp.tool()  # This won't work but won't raise an error
+    @mcp.tool  # This won't work but won't raise an error
     def from_string_v1(cls, s):
         return cls(s)
     
-    @mcp.tool()
+    @mcp.tool
     @classmethod  # This will raise a helpful ValueError
     def from_string_v2(cls, s):
         return cls(s)
 ```
 </Warning>
 
-- If `@classmethod` comes first, then `@mcp.tool()`: No error is raised, but it won't work correctly
-- If `@mcp.tool()` comes first, then `@classmethod`: FastMCP will detect this and raise a helpful `ValueError` with guidance
+- If `@classmethod` comes first, then `@mcp.tool`: No error is raised, but it won't work correctly
+- If `@mcp.tool` comes first, then `@classmethod`: FastMCP will detect this and raise a helpful `ValueError` with guidance
 
 <Check>
 **Do this instead**:
@@ -150,7 +150,7 @@ from fastmcp import FastMCP
 mcp = FastMCP()
 
 class MyClass:
-    @mcp.tool()
+    @mcp.tool
     @staticmethod
     def utility(x, y):
         return x + y

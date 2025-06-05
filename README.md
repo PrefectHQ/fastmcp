@@ -31,7 +31,7 @@ from fastmcp import FastMCP
 
 mcp = FastMCP("Demo 🚀")
 
-@mcp.tool()
+@mcp.tool
 def add(a: int, b: int) -> int:
     """Add two numbers"""
     return a + b
@@ -144,7 +144,7 @@ Learn more in the [**FastMCP Server Documentation**](https://gofastmcp.com/serve
 Tools allow LLMs to perform actions by executing your Python functions (sync or async). Ideal for computations, API calls, or side effects (like `POST`/`PUT`). FastMCP handles schema generation from type hints and docstrings. Tools can return various types, including text, JSON-serializable objects, and even images using the [`fastmcp.Image`](https://gofastmcp.com/servers/tools#return-values) helper.
 
 ```python
-@mcp.tool()
+@mcp.tool
 def multiply(a: float, b: float) -> float:
     """Multiplies two numbers."""
     return a * b
@@ -201,7 +201,7 @@ from fastmcp import FastMCP, Context
 
 mcp = FastMCP("My MCP Server")
 
-@mcp.tool()
+@mcp.tool
 async def process_data(uri: str, ctx: Context):
     # Log a message to the client
     await ctx.info(f"Processing {uri}...")
@@ -321,7 +321,7 @@ from fastmcp import FastMCP
 
 mcp = FastMCP("Demo 🚀")
 
-@mcp.tool()
+@mcp.tool
 def hello(name: str) -> str:
     return f"Hello, {name}!"
 

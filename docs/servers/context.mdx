@@ -41,7 +41,7 @@ from fastmcp import FastMCP, Context
 
 mcp = FastMCP(name="ContextDemo")
 
-@mcp.tool()
+@mcp.tool
 async def process_file(file_uri: str, ctx: Context) -> str:
     """Processes a file, using context for logging and resource access."""
     # Context is available as the ctx parameter
@@ -99,7 +99,7 @@ async def process_data(data: list[float]) -> dict:
     ctx = get_context()    
     await ctx.info(f"Processing {len(data)} data points")
     
-@mcp.tool()
+@mcp.tool
 async def analyze_dataset(dataset_name: str) -> dict:
     # Call utility function that uses context internally
     data = load_data(dataset_name)
@@ -118,7 +118,7 @@ async def analyze_dataset(dataset_name: str) -> dict:
 Send log messages back to the MCP client. This is useful for debugging and providing visibility into function execution during a request.
 
 ```python
-@mcp.tool()
+@mcp.tool
 async def analyze_data(data: list[float], ctx: Context) -> dict:
     """Analyze numerical data with logging."""
     await ctx.debug("Starting analysis of numerical data")
@@ -149,7 +149,7 @@ async def analyze_data(data: list[float], ctx: Context) -> dict:
 For long-running operations, notify the client about the progress. This allows clients to display progress indicators and provide a better user experience.
 
 ```python
-@mcp.tool()
+@mcp.tool
 async def process_items(items: list[str], ctx: Context) -> dict:
     """Process a list of items with progress updates."""
     total = len(items)
@@ -182,7 +182,7 @@ Progress reporting requires the client to have sent a `progressToken` in the ini
 Read data from resources registered with your FastMCP server. This allows functions to access files, configuration, or dynamically generated content.
 
 ```python
-@mcp.tool()
+@mcp.tool
 async def summarize_document(document_uri: str, ctx: Context) -> str:
     """Summarize a document by its resource URI."""
     # Read the document content
@@ -222,7 +222,7 @@ The returned content is typically accessed via `content_list[0].content` and can
 Request the client's LLM to generate text based on provided messages. This is useful when your function needs to leverage the LLM's capabilities to process data or generate responses.
 
 ```python
-@mcp.tool()
+@mcp.tool
 async def analyze_sentiment(text: str, ctx: Context) -> dict:
     """Analyze the sentiment of a text using the client's LLM."""
     # Create a sampling prompt asking for sentiment analysis
@@ -258,7 +258,7 @@ async def analyze_sentiment(text: str, ctx: Context) -> dict:
 When providing a simple string, it's treated as a user message. For more complex scenarios, you can provide a list of messages with different roles.
 
 ```python
-@mcp.tool()
+@mcp.tool
 async def generate_example(concept: str, ctx: Context) -> str:
     """Generate a Python code example for a given concept."""
     # Using a system prompt and a user message
@@ -280,7 +280,7 @@ See [Client Sampling](/clients/client#llm-sampling) for more details on how clie
 Access metadata about the current request and client.
 
 ```python
-@mcp.tool()
+@mcp.tool
 async def request_info(ctx: Context) -> dict:
     """Return information about the current request."""
     return {
@@ -300,7 +300,7 @@ async def request_info(ctx: Context) -> dict:
 #### FastMCP Server and Sessions
 
 ```python
-@mcp.tool()
+@mcp.tool
 async def advanced_tool(ctx: Context) -> str:
     """Demonstrate advanced context access."""
     # Access the FastMCP server instance
@@ -326,7 +326,7 @@ See the [HTTP Requests pattern](/patterns/http-requests) for more details.
 For web applications, you can access the underlying HTTP request:
 
 ```python
-@mcp.tool()
+@mcp.tool
 async def handle_web_request(ctx: Context) -> dict:
     """Access HTTP request information from the Starlette request."""
     request = ctx.get_http_request()
