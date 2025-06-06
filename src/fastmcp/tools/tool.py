@@ -45,14 +45,14 @@ class Tool(FastMCPBaseModel, ABC):
         default_factory=set, description="Tags for the tool"
     )
     annotations: ToolAnnotations | None = Field(
-        None, description="Additional annotations about the tool"
+        default=None, description="Additional annotations about the tool"
     )
     exclude_args: list[str] | None = Field(
-        None,
+        default=None,
         description="Arguments to exclude from the tool schema, such as State, Memory, or Credential",
     )
     serializer: Callable[[Any], str] | None = Field(
-        None, description="Optional custom serializer for tool results"
+        default=None, description="Optional custom serializer for tool results"
     )
 
     def to_mcp_tool(self, **overrides: Any) -> MCPTool:
