@@ -490,11 +490,7 @@ class FastMCP(Generic[LifespanResultT]):
         with the Context type annotation. See the @tool decorator for examples.
 
         Args:
-            fn: The function to register as a tool
-            name: Optional name for the tool (defaults to function name)
-            description: Optional description of what the tool does
-            tags: Optional set of tags for categorizing the tool
-            annotations: Optional annotations about the tool's behavior
+            tool: The Tool instance to register
         """
         self._tool_manager.add_tool(tool)
         self._cache.clear()
