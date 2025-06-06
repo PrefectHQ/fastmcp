@@ -67,7 +67,7 @@ mcp_client = Client("server.py")
 gemini_client = genai.Client()
 
 async def main():    
-    async with client:
+    async with mcp_client:
         response = await gemini_client.aio.models.generate_content(
             model="gemini-2.0-flash",
             contents="Roll 3 dice!",
