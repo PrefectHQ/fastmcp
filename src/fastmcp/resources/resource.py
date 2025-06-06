@@ -38,9 +38,9 @@ class Resource(FastMCPBaseModel, abc.ABC):
     uri: Annotated[AnyUrl, UrlConstraints(host_required=False)] = Field(
         default=..., description="URI of the resource"
     )
-    name: str | None = Field(description="Name of the resource", default=None)
+    name: str | None = Field(default=None, description="Name of the resource")
     description: str | None = Field(
-        description="Description of the resource", default=None
+        default=None, description="Description of the resource"
     )
     tags: Annotated[set[str], BeforeValidator(_convert_set_defaults)] = Field(
         default_factory=set, description="Tags for the resource"

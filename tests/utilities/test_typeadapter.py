@@ -60,7 +60,7 @@ def complex_arguments_fn(
         456,
     ],
     field_with_default_via_field_annotation_before_nondefault_arg: Annotated[
-        int, Field(1)
+        int, Field(default=1)
     ],
     unannotated,
     my_model_a: SomeInputModelA,
@@ -68,7 +68,7 @@ def complex_arguments_fn(
     my_model_b: SomeInputModelB,
     an_int_annotated_with_field_default: Annotated[
         int,
-        Field(1, description="An int with a field"),
+        Field(default=1, description="An int with a field"),
     ],
     unannotated_with_default=5,
     my_model_a_with_default: SomeInputModelA = SomeInputModelA(),  # noqa: B008
