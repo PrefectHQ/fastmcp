@@ -1,4 +1,4 @@
-"""FastmMCP CLI tools."""
+"""FastMCP CLI tools."""
 
 import importlib.metadata
 import importlib.util
