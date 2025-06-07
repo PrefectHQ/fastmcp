@@ -139,11 +139,8 @@ class FastMCP(Generic[LifespanResultT]):
         | None = None,
         **settings: Any,
     ):
-<<<<<<< Updated upstream
-=======
         if cache_expiration_seconds is not None:
             settings["cache_expiration_seconds"] = cache_expiration_seconds
->>>>>>> Stashed changes
         self.settings = fastmcp.settings.ServerSettings(
             include_tags=include_tags, exclude_tags=exclude_tags, **settings
         )
