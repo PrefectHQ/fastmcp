@@ -47,10 +47,6 @@ class Tool(FastMCPBaseModel, ABC):
     annotations: ToolAnnotations | None = Field(
         default=None, description="Additional annotations about the tool"
     )
-    exclude_args: list[str] | None = Field(
-        default=None,
-        description="Arguments to exclude from the tool schema, such as State, Memory, or Credential",
-    )
     serializer: Callable[[Any], str] | None = Field(
         default=None, description="Optional custom serializer for tool results"
     )
@@ -169,7 +165,6 @@ class FunctionTool(Tool):
             parameters=schema,
             tags=tags or set(),
             annotations=annotations,
-            exclude_args=exclude_args,
             serializer=serializer,
         )
 
