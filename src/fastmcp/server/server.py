@@ -129,9 +129,24 @@ class FastMCP(Generic[LifespanResultT]):
         resource_prefix_format: Literal["protocol", "path"] | None = None,
         mask_error_details: bool | None = None,
         tools: list[Tool | Callable[..., Any]] | None = None,
+        include_tags: set[str]
+        | set[tuple[str, ...]]
+        | set[str | tuple[str, ...]]
+        | None = None,
+        exclude_tags: set[str]
+        | set[tuple[str, ...]]
+        | set[str | tuple[str, ...]]
+        | None = None,
         **settings: Any,
     ):
-        self.settings = fastmcp.settings.ServerSettings(**settings)
+<<<<<<< Updated upstream
+=======
+        if cache_expiration_seconds is not None:
+            settings["cache_expiration_seconds"] = cache_expiration_seconds
+>>>>>>> Stashed changes
+        self.settings = fastmcp.settings.ServerSettings(
+            include_tags=include_tags, exclude_tags=exclude_tags, **settings
+        )
 
         # If mask_error_details is provided, override the settings value
         if mask_error_details is not None:
@@ -146,6 +161,7 @@ class FastMCP(Generic[LifespanResultT]):
             self.resource_prefix_format = resource_prefix_format
 
         self.tags: set[str] = tags or set()
+
         self.dependencies = dependencies
         self._cache = TimedCache(
             expiration=datetime.timedelta(seconds=cache_expiration_seconds or 0)
@@ -239,12 +255,12 @@ class FastMCP(Generic[LifespanResultT]):
     def _setup_handlers(self) -> None:
         """Set up core MCP protocol handlers."""
         self._mcp_server.list_tools()(self._mcp_list_tools)
-        self._mcp_server.call_tool()(self._mcp_call_tool)
         self._mcp_server.list_resources()(self._mcp_list_resources)
-        self._mcp_server.read_resource()(self._mcp_read_resource)
-        self._mcp_server.list_prompts()(self._mcp_list_prompts)
-        self._mcp_server.get_prompt()(self._mcp_get_prompt)
         self._mcp_server.list_resource_templates()(self._mcp_list_resource_templates)
+        self._mcp_server.list_prompts()(self._mcp_list_prompts)
+        self._mcp_server.call_tool()(self._mcp_call_tool)
+        self._mcp_server.read_resource()(self._mcp_read_resource)
+        self._mcp_server.get_prompt()(self._mcp_get_prompt)
 
     async def get_tools(self) -> dict[str, Tool]:
         """Get all registered tools, indexed by registered key."""
@@ -370,7 +386,13 @@ class FastMCP(Generic[LifespanResultT]):
 
         """
         tools = await self.get_tools()
-        return [tool.to_mcp_tool(name=key) for key, tool in tools.items()]
+
+        mcp_tools: list[MCPTool] = []
+        for key, tool in tools.items():
+            if self.should_include_component(tool):
+                mcp_tools.append(tool.to_mcp_tool(name=key))
+
+        return mcp_tools
 
     async def _mcp_list_resources(self) -> list[MCPResource]:
         """
@@ -379,9 +401,11 @@ class FastMCP(Generic[LifespanResultT]):
 
         """
         resources = await self.get_resources()
-        return [
-            resource.to_mcp_resource(uri=key) for key, resource in resources.items()
-        ]
+        mcp_resources: list[MCPResource] = []
+        for key, resource in resources.items():
+            if self.should_include_component(resource):
+                mcp_resources.append(resource.to_mcp_resource(uri=key))
+        return mcp_resources
 
     async def _mcp_list_resource_templates(self) -> list[MCPResourceTemplate]:
         """
@@ -390,10 +414,11 @@ class FastMCP(Generic[LifespanResultT]):
 
         """
         templates = await self.get_resource_templates()
-        return [
-            template.to_mcp_template(uriTemplate=key)
-            for key, template in templates.items()
-        ]
+        mcp_templates: list[MCPResourceTemplate] = []
+        for key, template in templates.items():
+            if self.should_include_component(template):
+                mcp_templates.append(template.to_mcp_template(uriTemplate=key))
+        return mcp_templates
 
     async def _mcp_list_prompts(self) -> list[MCPPrompt]:
         """
@@ -402,7 +427,11 @@ class FastMCP(Generic[LifespanResultT]):
 
         """
         prompts = await self.get_prompts()
-        return [prompt.to_mcp_prompt(name=key) for key, prompt in prompts.items()]
+        mcp_prompts: list[MCPPrompt] = []
+        for key, prompt in prompts.items():
+            if self.should_include_component(prompt):
+                mcp_prompts.append(prompt.to_mcp_prompt(name=key))
+        return mcp_prompts
 
     async def _mcp_call_tool(
         self, key: str, arguments: dict[str, Any]
@@ -422,6 +451,9 @@ class FastMCP(Generic[LifespanResultT]):
         with fastmcp.server.context.Context(fastmcp=self):
             # Get tool, checking first from our tools, then from the mounted servers
             if self._tool_manager.has_tool(key):
+                tool = self._tool_manager.get_tool(key)
+                if not self.should_include_component(tool):
+                    raise NotFoundError(f"Unknown tool: {key}")
                 return await self._tool_manager.call_tool(key, arguments)
 
             # Check mounted servers to see if they have the tool
@@ -440,6 +472,8 @@ class FastMCP(Generic[LifespanResultT]):
         with fastmcp.server.context.Context(fastmcp=self):
             if self._resource_manager.has_resource(uri):
                 resource = await self._resource_manager.get_resource(uri)
+                if not self.should_include_component(resource):
+                    raise NotFoundError(f"Unknown resource: {uri}")
                 content = await self._resource_manager.read_resource(uri)
                 return [
                     ReadResourceContents(
@@ -473,6 +507,9 @@ class FastMCP(Generic[LifespanResultT]):
         with fastmcp.server.context.Context(fastmcp=self):
             # Get prompt, checking first from our prompts, then from the mounted servers
             if self._prompt_manager.has_prompt(name):
+                prompt = self._prompt_manager.get_prompt(name)
+                if not self.should_include_component(prompt):
+                    raise NotFoundError(f"Unknown prompt: {name}")
                 return await self._prompt_manager.render_prompt(name, arguments)
 
             # Check mounted servers to see if they have the prompt
@@ -1505,6 +1542,49 @@ class FastMCP(Generic[LifespanResultT]):
         )
 
         return cls.as_proxy(client, **settings)
+
+    def should_include_component(
+        self,
+        component: Tool | Resource | ResourceTemplate | Prompt,
+    ) -> bool:
+        """
+        Given a set of tags, determine if the tags match the include and exclude tags. Returns True if it should be included; False if it should not.
+
+        Rules:
+            • If both include_tags and exclude_tags are None, return True.
+            • If exclude_tags is provided, check each exclude tag:
+                - If the exclude tag is a tuple, all tags in the tuple must be present in the input tags to exclude.
+                - If the exclude tag is a string, it must be present in the input tags to exclude.
+            • If include_tags is provided, check each include tag:
+                - If the include tag is a tuple, all tags in the tuple must be present in the input tags to include.
+                - If the include tag is a string, it must be present in the input tags to include.
+            • If include_tags is provided and none of the include tags match, return False.
+            • If include_tags is not provided, return True.
+        """
+        if self.settings.include_tags is None and self.settings.exclude_tags is None:
+            return True
+
+        if self.settings.exclude_tags is not None:
+            for etag in self.settings.exclude_tags:
+                if isinstance(etag, tuple):
+                    if all(et in component.tags for et in etag):
+                        return False
+                else:
+                    if etag in component.tags:
+                        return False
+
+        if self.settings.include_tags is not None:
+            for itag in self.settings.include_tags:
+                if isinstance(itag, tuple):
+                    if all(it in component.tags for it in itag):
+                        return True
+                else:
+                    if itag in component.tags:
+                        return True
+
+            return False
+        else:
+            return True
 
 
 class MountedServer:
