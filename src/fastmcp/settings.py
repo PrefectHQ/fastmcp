@@ -170,8 +170,8 @@ class ServerSettings(BaseSettings):
         ),
     ] = []
 
-    # cache settings (for checking mounted servers)
-    cache_expiration_seconds: float = 0
+    # cache settings (for getting attributes from servers, used to avoid repeated calls)
+    cache_expiration_seconds: float = 1
 
     # StreamableHTTP settings
     json_response: bool = False
