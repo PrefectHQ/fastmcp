@@ -112,6 +112,7 @@ from mcp.types import EmbeddedResource, ImageContent, TextContent, ToolAnnotatio
 
 from fastmcp.tools.tool import ParsedFunction, Tool
 from fastmcp.utilities.logging import get_logger
+from fastmcp.utilities.types import get_cached_typeadapter
 
 if TYPE_CHECKING:
     pass
@@ -193,6 +194,7 @@ class ArgTransform:
         name: New name for the argument. Use None to keep original name, or ... for no change.
         description: New description for the argument. Use None to remove description, or ... for no change.
         default: New default value for the argument. Use ... for no change.
+        type: New type for the argument. Use ... for no change.
         drop: If True, remove this argument from the transformed tool's schema.
 
     Examples:
@@ -205,16 +207,20 @@ class ArgTransform:
         # Add a default value (makes argument optional)
         ArgTransform(default=42)
 
+        # Change the type
+        ArgTransform(type=str)
+
         # Drop the argument entirely
         ArgTransform(drop=True)
 
         # Combine multiple transformations
-        ArgTransform(name="new_name", description="New desc", default=None)
+        ArgTransform(name="new_name", description="New desc", default=None, type=int)
     """
 
     name: str | None | EllipsisType = ...
     description: str | None | EllipsisType = ...
     default: Any | EllipsisType = ...
+    type: Any | EllipsisType = ...
     drop: bool = False
 
 
@@ -259,9 +265,18 @@ class TransformedTool(Tool):
         """
         from fastmcp.tools.tool import _convert_to_content
 
+        # Fill in missing arguments with schema defaults to ensure
+        # ArgTransform defaults take precedence over function defaults
+        filled_arguments = arguments.copy()
+        properties = self.parameters.get("properties", {})
+
+        for param_name, param_schema in properties.items():
+            if param_name not in filled_arguments and "default" in param_schema:
+                filled_arguments[param_name] = param_schema["default"]
+
         token = _current_tool.set(self)
         try:
-            result = await self.fn(**arguments)
+            result = await self.fn(**filled_arguments)
             return _convert_to_content(result, serializer=self.serializer)
         finally:
             _current_tool.reset(token)
@@ -357,51 +372,20 @@ class TransformedTool(Tool):
                         f"Function declares: {', '.join(sorted(fn_params))}"
                     )
 
-                # The function defines the final schema
-                final_schema = parsed_fn.parameters.copy()
-                # Inherit descriptions from transformed parent where possible
-                fn_props = final_schema.get("properties", {})
-                transformed_props = schema.get("properties", {})
-
-                for param_name in fn_props:
-                    if param_name in transformed_props:
-                        parent_desc = transformed_props[param_name].get("description")
-                        if parent_desc and "description" not in fn_props[param_name]:
-                            fn_props[param_name]["description"] = parent_desc
+                # ArgTransform takes precedence over function signature
+                # Start with function schema as base, then override with transformed schema
+                final_schema = cls._merge_schema_with_precedence(
+                    parsed_fn.parameters, schema
+                )
             else:
                 # With **kwargs, function can access all transformed params
-                # Function params override transformed params if they overlap
+                # ArgTransform takes precedence over function signature
                 # No validation needed - kwargs makes everything accessible
 
-                # Function accepts **kwargs, so use transformed schema as base
-                # and let function override specific parameters
-                fn_props = parsed_fn.parameters.get("properties", {})
-                fn_required = set(parsed_fn.parameters.get("required", []))
-
-                final_props = schema.get("properties", {}).copy()
-                final_required = set(schema.get("required", []))
-
-                # Override with function's parameters
-                for param_name, param_schema in fn_props.items():
-                    # Inherit description from transformed parent if function doesn't provide one
-                    if param_name in final_props and "description" not in param_schema:
-                        param_schema = param_schema.copy()
-                        param_schema["description"] = final_props[param_name].get(
-                            "description"
-                        )
-
-                    final_props[param_name] = param_schema
-
-                    if param_name in fn_required:
-                        final_required.add(param_name)
-                    else:
-                        final_required.discard(param_name)
-
-                final_schema = {
-                    "type": "object",
-                    "properties": final_props,
-                    "required": list(final_required),
-                }
+                # Start with function schema as base, then override with transformed schema
+                final_schema = cls._merge_schema_with_precedence(
+                    parsed_fn.parameters, schema
+                )
 
         # Additional validation: check for naming conflicts after transformation
         if transform_args:
@@ -578,10 +562,75 @@ class TransformedTool(Tool):
             if transform.default is not ...:
                 new_schema["default"] = transform.default
                 is_required = False
+            if transform.type is not ...:
+                # Use TypeAdapter to get proper JSON schema for the type
+                type_schema = get_cached_typeadapter(transform.type).json_schema()
+                # Update the schema with the type information from TypeAdapter
+                new_schema.update(type_schema)
 
             return new_name, new_schema, is_required  # type: ignore[return-value]
 
         raise ValueError(f"Invalid transform: {transform}")
+
+    @staticmethod
+    def _merge_schema_with_precedence(
+        base_schema: dict[str, Any], override_schema: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Merge two schemas, with the override schema taking precedence.
+
+        Args:
+            base_schema: Base schema to start with
+            override_schema: Schema that takes precedence for overlapping properties
+
+        Returns:
+            Merged schema with override taking precedence
+        """
+        merged_props = base_schema.get("properties", {}).copy()
+        merged_required = set(base_schema.get("required", []))
+
+        override_props = override_schema.get("properties", {})
+        override_required = set(override_schema.get("required", []))
+
+        # Override properties
+        for param_name, param_schema in override_props.items():
+            if param_name in merged_props:
+                # Merge the schemas, with override taking precedence
+                base_param = merged_props[param_name].copy()
+                base_param.update(param_schema)
+                merged_props[param_name] = base_param
+            else:
+                merged_props[param_name] = param_schema.copy()
+
+        # Handle required parameters - override takes complete precedence
+        # Start with override's required set
+        final_required = override_required.copy()
+
+        # For parameters not in override, inherit base requirement status
+        # but only if they don't have a default in the final merged properties
+        for param_name in merged_required:
+            if param_name not in override_props:
+                # Parameter not mentioned in override, keep base requirement status
+                final_required.add(param_name)
+            elif (
+                param_name in override_props
+                and "default" not in merged_props[param_name]
+            ):
+                # Parameter in override but no default, keep required if it was required in base
+                if param_name not in override_required:
+                    # Override doesn't specify it as required, and it has no default,
+                    # so inherit from base
+                    final_required.add(param_name)
+
+        # Remove any parameters that have defaults (they become optional)
+        for param_name, param_schema in merged_props.items():
+            if "default" in param_schema:
+                final_required.discard(param_name)
+
+        return {
+            "type": "object",
+            "properties": merged_props,
+            "required": list(final_required),
+        }
 
     @staticmethod
     def _function_has_kwargs(fn: Callable[..., Any]) -> bool:

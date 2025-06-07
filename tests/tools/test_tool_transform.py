@@ -1,9 +1,10 @@
 import re
-from typing import Annotated, Any
+from dataclasses import dataclass
+from typing import Annotated, Any, TypedDict
 
 import pytest
 from dirty_equals import IsList
-from pydantic import Field
+from pydantic import BaseModel, Field
 from rich import print  # type: ignore
 
 from fastmcp import FastMCP
@@ -386,6 +387,219 @@ async def test_chaining_transformations(add_tool):
 
     result = await tool3.run(arguments={"final_x": 5, "old_y": 3})
     assert "Chained:" in result[0].text  # type: ignore
+
+
+class MyModel(BaseModel):
+    x: int
+    y: str
+
+
+@dataclass
+class MyDataclass:
+    x: int
+    y: str
+
+
+class MyTypedDict(TypedDict):
+    x: int
+    y: str
+
+
+@pytest.mark.parametrize(
+    "py_type, json_type",
+    [
+        (int, "integer"),
+        (float, "number"),
+        (str, "string"),
+        (bool, "boolean"),
+        (list, "array"),
+        (list[int], "array"),
+        (dict, "object"),
+        (dict[str, int], "object"),
+        (MyModel, "object"),
+        (MyDataclass, "object"),
+        (MyTypedDict, "object"),
+    ],
+)
+def test_arg_transform_type_handling(add_tool, py_type, json_type):
+    """Test that ArgTransform type attribute gets applied to schema."""
+    new_tool = Tool.from_tool(
+        add_tool, transform_args={"old_x": ArgTransform(type=py_type)}
+    )
+
+    # Check that the type was changed in the schema
+    x_prop = get_property(new_tool, "old_x")
+    assert x_prop["type"] == json_type
+
+
+def test_arg_transform_annotated_types(add_tool):
+    """Test that ArgTransform works with annotated types and complex types."""
+    from typing import Annotated
+
+    from pydantic import Field
+
+    # Test with Annotated types
+    tool = Tool.from_tool(
+        add_tool,
+        transform_args={
+            "old_x": ArgTransform(
+                type=Annotated[int, Field(description="An annotated integer")]
+            )
+        },
+    )
+
+    x_prop = get_property(tool, "old_x")
+    assert x_prop["type"] == "integer"
+    # The ArgTransform description should override the annotation description
+    # (since we didn't set a description in ArgTransform, it should use the original)
+
+    # Test with Annotated string that has constraints
+    tool2 = Tool.from_tool(
+        add_tool,
+        transform_args={
+            "old_x": ArgTransform(
+                type=Annotated[str, Field(min_length=1, max_length=10)]
+            )
+        },
+    )
+
+    x_prop2 = get_property(tool2, "old_x")
+    assert x_prop2["type"] == "string"
+    assert x_prop2["minLength"] == 1
+    assert x_prop2["maxLength"] == 10
+
+
+def test_arg_transform_precedence_over_function_without_kwargs():
+    """Test that ArgTransform attributes take precedence over function signature (no **kwargs)."""
+
+    @Tool.from_function
+    def base(x: int, y: str = "default") -> str:
+        return f"{x}: {y}"
+
+    # Function signature says x: int with no default, y: str = "function_default"
+    # ArgTransform should override these
+    def custom_fn(x: str = "transform_default", y: int = 99) -> str:
+        return f"custom: {x}, {y}"
+
+    tool = Tool.from_tool(
+        base,
+        transform_fn=custom_fn,
+        transform_args={
+            "x": ArgTransform(type=str, default="transform_default"),
+            "y": ArgTransform(type=int, default=99),
+        },
+    )
+
+    # ArgTransform should take precedence
+    x_prop = get_property(tool, "x")
+    y_prop = get_property(tool, "y")
+
+    assert x_prop["type"] == "string"  # ArgTransform type wins
+    assert x_prop["default"] == "transform_default"  # ArgTransform default wins
+    assert y_prop["type"] == "integer"  # ArgTransform type wins
+    assert y_prop["default"] == 99  # ArgTransform default wins
+
+    # Neither parameter should be required due to ArgTransform defaults
+    assert "x" not in tool.parameters["required"]
+    assert "y" not in tool.parameters["required"]
+
+
+async def test_arg_transform_precedence_over_function_with_kwargs():
+    """Test that ArgTransform attributes take precedence over function signature (with **kwargs)."""
+
+    @Tool.from_function
+    def base(x: int, y: str = "base_default") -> str:
+        return f"{x}: {y}"
+
+    # Function signature has different types/defaults than ArgTransform
+    async def custom_fn(x: str = "function_default", **kwargs) -> str:
+        result = await forward(x=x, **kwargs)
+        return f"custom: {result}"
+
+    tool = Tool.from_tool(
+        base,
+        transform_fn=custom_fn,
+        transform_args={
+            "x": ArgTransform(type=int, default=42),  # Different type and default
+            "y": ArgTransform(description="ArgTransform description"),
+        },
+    )
+
+    # ArgTransform should take precedence
+    x_prop = get_property(tool, "x")
+    y_prop = get_property(tool, "y")
+
+    assert x_prop["type"] == "integer"  # ArgTransform type wins over function's str
+    assert x_prop["default"] == 42  # ArgTransform default wins over function's default
+    assert (
+        y_prop["description"] == "ArgTransform description"
+    )  # ArgTransform description
+
+    # x should not be required due to ArgTransform default
+    assert "x" not in tool.parameters["required"]
+
+    # Test it works at runtime
+    result = await tool.run(arguments={"y": "test"})
+    # Should use ArgTransform default of 42
+    assert "42: test" in result[0].text  # type: ignore
+
+
+def test_arg_transform_combined_attributes():
+    """Test that multiple ArgTransform attributes work together."""
+
+    @Tool.from_function
+    def base(param: int) -> str:
+        return str(param)
+
+    tool = Tool.from_tool(
+        base,
+        transform_args={
+            "param": ArgTransform(
+                name="renamed_param",
+                type=str,
+                description="New description",
+                default="default_value",
+            )
+        },
+    )
+
+    # Check all attributes were applied
+    assert "renamed_param" in tool.parameters["properties"]
+    assert "param" not in tool.parameters["properties"]
+
+    prop = get_property(tool, "renamed_param")
+    assert prop["type"] == "string"
+    assert prop["description"] == "New description"
+    assert prop["default"] == "default_value"
+    assert "renamed_param" not in tool.parameters["required"]  # Has default
+
+
+async def test_arg_transform_type_precedence_runtime():
+    """Test that ArgTransform type changes work correctly at runtime."""
+
+    @Tool.from_function
+    def base(x: int, y: int = 10) -> int:
+        return x + y
+
+    # Transform x to string type but keep same logic
+    async def custom_fn(x: str, y: int = 10) -> str:
+        # Convert string back to int for the original function
+        result = await forward_raw(x=int(x), y=y)
+        # Extract the text from the result
+        result_text = result[0].text
+        return f"String input '{x}' converted to result: {result_text}"
+
+    tool = Tool.from_tool(
+        base, transform_fn=custom_fn, transform_args={"x": ArgTransform(type=str)}
+    )
+
+    # Verify schema shows string type
+    assert get_property(tool, "x")["type"] == "string"
+
+    # Test it works with string input
+    result = await tool.run(arguments={"x": "5", "y": 3})
+    assert "String input '5'" in result[0].text  # type: ignore
+    assert "result: 8" in result[0].text  # type: ignore
 
 
 class TestProxy:
