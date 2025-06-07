@@ -263,6 +263,12 @@ class FastMCP(Generic[LifespanResultT]):
             self._cache.set("tools", tools)
         return tools
 
+    async def get_tool(self, key: str) -> Tool:
+        tools = await self.get_tools()
+        if key not in tools:
+            raise NotFoundError(f"Unknown tool: {key}")
+        return tools[key]
+
     async def get_resources(self) -> dict[str, Resource]:
         """Get all registered resources, indexed by registered key."""
         if (resources := self._cache.get("resources")) is self._cache.NOT_FOUND:
