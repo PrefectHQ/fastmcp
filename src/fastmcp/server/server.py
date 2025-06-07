@@ -41,6 +41,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 from starlette.routing import BaseRoute, Route
 
+import fastmcp
 import fastmcp.server
 import fastmcp.settings
 from fastmcp.exceptions import NotFoundError
@@ -131,6 +132,8 @@ class FastMCP(Generic[LifespanResultT]):
         tools: list[Tool | Callable[..., Any]] | None = None,
         **settings: Any,
     ):
+        if cache_expiration_seconds is not None:
+            settings["cache_expiration_seconds"] = cache_expiration_seconds
         self.settings = fastmcp.settings.ServerSettings(**settings)
 
         # If mask_error_details is provided, override the settings value
@@ -148,7 +151,9 @@ class FastMCP(Generic[LifespanResultT]):
         self.tags: set[str] = tags or set()
         self.dependencies = dependencies
         self._cache = TimedCache(
-            expiration=datetime.timedelta(seconds=cache_expiration_seconds or 0)
+            expiration=datetime.timedelta(
+                seconds=self.settings.cache_expiration_seconds
+            )
         )
         self._mounted_servers: dict[str, MountedServer] = {}
         self._additional_http_routes: list[BaseRoute] = []

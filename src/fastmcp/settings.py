@@ -170,7 +170,7 @@ class ServerSettings(BaseSettings):
         ),
     ] = []
 
-    # cache settings (for checking mounted servers)
+    # cache settings (for getting attributes from servers, used to avoid repeated calls)
     cache_expiration_seconds: float = 0
 
     # StreamableHTTP settings

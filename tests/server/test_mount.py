@@ -304,6 +304,19 @@ class TestDynamicChanges:
         tools = await main_app.get_tools()
         assert "sub_temp_tool" not in tools
 
+    async def test_cache_expiration(self):
+        main_app = FastMCP("MainApp", cache_expiration_seconds=2)
+        sub_app = FastMCP("SubApp")
+        tools = await main_app.get_tools()
+        assert len(tools) == 0
+
+        @sub_app.tool
+        def sub_tool():
+            return "sub_tool"
+
+        tools = await main_app.get_tools()
+        assert len(tools) == 0
+
 
 class TestResourcesAndTemplates:
     """Test mounting with resources and resource templates."""
