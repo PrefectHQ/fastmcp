@@ -865,7 +865,7 @@ class FastMCP(Generic[LifespanResultT]):
 
         This decorator supports multiple calling patterns:
         - @server.prompt (without parentheses)
-        - @server.prompt (with empty parentheses)
+        - @server.prompt() (with empty parentheses)
         - @server.prompt("custom_name") (with name as first argument)
         - @server.prompt(name="custom_name") (with name as keyword argument)
         - server.prompt(function, name="custom_name") (direct function call)
@@ -887,7 +887,7 @@ class FastMCP(Generic[LifespanResultT]):
                     }
                 ]
 
-            @server.prompt
+            @server.prompt()
             def analyze_with_context(table_name: str, ctx: Context) -> list[Message]:
                 ctx.info(f"Analyzing table {table_name}")
                 schema = read_table_schema(table_name)
