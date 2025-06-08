@@ -1,6 +1,6 @@
 ---
-title: OpenAI
-sidebarTitle: OpenAI
+title: OpenAI API + FastMCP
+sidebarTitle: OpenAI API
 description: Call FastMCP servers from the OpenAI API
 icon: message-smile
 tag: "New!"
@@ -8,14 +8,13 @@ tag: "New!"
 
 import { VersionBadge } from "/snippets/version-badge.mdx"
 
-OpenAI recently announced support for MCP servers in the Responses API. Note that at this time, MCP is not supported in ChatGPT.
 
 ## Responses API
 
 OpenAI's [Responses API](https://platform.openai.com/docs/api-reference/responses) supports [MCP servers](https://platform.openai.com/docs/guides/tools-remote-mcp) as remote tool sources, allowing you to extend AI capabilities with custom functions.
 
 <Note>
-The Responses API is a distinct API from OpenAI's Completions API, Assistants API, or ChatGPT. At this time, only the Responses API supports MCP.
+The Responses API is a distinct API from OpenAI's Completions API or Assistants API. At this time, only the Responses API supports MCP.
 </Note>
 
 <Tip>
