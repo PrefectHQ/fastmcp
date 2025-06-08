@@ -67,6 +67,7 @@ def get_http_headers(include_all: bool = False) -> dict[str, str]:
             "te",
             "keep-alive",
             "expect",
+            "accept",
             # Proxy-related headers
             "proxy-authenticate",
             "proxy-authorization",
