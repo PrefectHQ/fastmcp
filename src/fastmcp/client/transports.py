@@ -32,6 +32,7 @@ from mcp.shared.memory import create_connected_server_and_client_session
 from pydantic import AnyUrl
 from typing_extensions import Unpack
 
+from fastmcp.client.auth.bearer import BearerAuth
 from fastmcp.client.auth.oauth import OAuth
 from fastmcp.server.dependencies import get_http_headers
 from fastmcp.server.server import FastMCP
@@ -152,7 +153,7 @@ class WSTransport(ClientTransport):
                 yield session
 
     def __repr__(self) -> str:
-        return f"<WebSocket(url='{self.url}')>"
+        return f"<WebSocketTransport(url='{self.url}')>"
 
 
 class SSETransport(ClientTransport):
@@ -183,8 +184,7 @@ class SSETransport(ClientTransport):
         if auth == "oauth":
             auth = OAuth(self.url)
         elif isinstance(auth, str):
-            self.headers["Authorization"] = auth
-            auth = None
+            auth = BearerAuth(auth)
         self.auth = auth
 
     @contextlib.asynccontextmanager
@@ -221,7 +221,7 @@ class SSETransport(ClientTransport):
                 yield session
 
     def __repr__(self) -> str:
-        return f"<SSE(url='{self.url}')>"
+        return f"<SSETransport(url='{self.url}')>"
 
 
 class StreamableHttpTransport(ClientTransport):
@@ -252,8 +252,7 @@ class StreamableHttpTransport(ClientTransport):
         if auth == "oauth":
             auth = OAuth(self.url)
         elif isinstance(auth, str):
-            self.headers["Authorization"] = auth
-            auth = None
+            auth = BearerAuth(auth)
         self.auth = auth
 
     @contextlib.asynccontextmanager
@@ -291,7 +290,7 @@ class StreamableHttpTransport(ClientTransport):
                 yield session
 
     def __repr__(self) -> str:
-        return f"<StreamableHttp(url='{self.url}')>"
+        return f"<StreamableHttpTransport(url='{self.url}')>"
 
 
 class StdioTransport(ClientTransport):
@@ -683,7 +682,7 @@ class FastMCPTransport(ClientTransport):
             yield session
 
     def __repr__(self) -> str:
-        return f"<FastMCP(server='{self.server.name}')>"
+        return f"<FastMCPTransport(server='{self.server.name}')>"
 
 
 class MCPConfigTransport(ClientTransport):
@@ -769,7 +768,7 @@ class MCPConfigTransport(ClientTransport):
             yield session
 
     def __repr__(self) -> str:
-        return f"<MCPConfig(config='{self.config}')>"
+        return f"<MCPConfigTransport(config='{self.config}')>"
 
 
 @overload
