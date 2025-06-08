@@ -687,7 +687,6 @@ class FastMCPTransport(ClientTransport):
                         read_stream=client_read,
                         write_stream=client_write,
                         **session_kwargs,
-                        client_info=session_kwargs.get("client_info"),
                     ) as client_session:
                         yield client_session
                 finally:
