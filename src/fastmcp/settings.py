@@ -1,15 +1,46 @@
 from __future__ import annotations as _annotations
 
 import inspect
+import warnings
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import Field, model_validator
+from pydantic.fields import FieldInfo
 from pydantic_settings import (
     BaseSettings,
+    EnvSettingsSource,
+    PydanticBaseSettingsSource,
     SettingsConfigDict,
 )
 from typing_extensions import Self
+
+
+class ExtendedEnvSettingsSource(EnvSettingsSource):
+    def get_field_value(
+        self, field: FieldInfo, field_name: str
+    ) -> tuple[Any, str, bool]:
+        if prefixes := self.config.get("env_prefixes"):
+            for prefix in prefixes:
+                self.env_prefix = prefix
+                env_val, field_key, value_is_complex = super().get_field_value(
+                    field, field_name
+                )
+                if env_val is not None:
+                    if prefix == "FASTMCP_SERVER_":
+                        warnings.warn(
+                            "Using `FASTMCP_SERVER_` environment variables is deprecated. Use `FASTMCP_` instead.",
+                            DeprecationWarning,
+                            stacklevel=2,
+                        )
+                    return env_val, field_key, value_is_complex
+
+        return super().get_field_value(field, field_name)
+
+
+class ExtendedSettingsConfigDict(SettingsConfigDict, total=False):
+    env_prefixes: list[str] | None
+
 
 LOG_LEVEL = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 
@@ -19,13 +50,29 @@ DuplicateBehavior = Literal["warn", "error", "replace", "ignore"]
 class Settings(BaseSettings):
     """FastMCP settings."""
 
-    model_config = SettingsConfigDict(
-        env_prefix="FASTMCP_",
+    model_config = ExtendedSettingsConfigDict(
+        env_prefixes=["FASTMCP_", "FASTMCP_SERVER_"],
         env_file=".env",
         extra="ignore",
         env_nested_delimiter="__",
         nested_model_default_partial_update=True,
     )
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        return (
+            init_settings,
+            ExtendedEnvSettingsSource(settings_cls),
+            dotenv_settings,
+            file_secret_settings,
+        )
 
     home: Path = Path.home() / ".fastmcp"
 
@@ -107,27 +154,6 @@ class Settings(BaseSettings):
 
         return self
 
-
-class ServerSettings(BaseSettings):
-    """FastMCP server settings.
-
-    All settings can be configured via environment variables with the prefix FASTMCP_.
-    For example, FASTMCP_DEBUG=true will set debug=True.
-    """
-
-    model_config = SettingsConfigDict(
-        env_prefix="FASTMCP_SERVER_",
-        env_file=".env",
-        extra="ignore",
-        env_nested_delimiter="__",
-        nested_model_default_partial_update=True,
-    )
-
-    log_level: Annotated[
-        LOG_LEVEL,
-        Field(default_factory=lambda: Settings().log_level),
-    ]
-
     # HTTP settings
     host: str = "127.0.0.1"
     port: int = 8000
@@ -135,15 +161,6 @@ class ServerSettings(BaseSettings):
     message_path: str = "/messages/"
     streamable_http_path: str = "/mcp"
     debug: bool = False
-
-    # resource settings
-    on_duplicate_resources: DuplicateBehavior = "warn"
-
-    # tool settings
-    on_duplicate_tools: DuplicateBehavior = "warn"
-
-    # prompt settings
-    on_duplicate_prompts: DuplicateBehavior = "warn"
 
     # error handling
     mask_error_details: Annotated[
@@ -162,16 +179,13 @@ class ServerSettings(BaseSettings):
         ),
     ] = False
 
-    dependencies: Annotated[
+    server_dependencies: Annotated[
         list[str],
         Field(
             default_factory=list,
             description="List of dependencies to install in the server environment",
         ),
     ] = []
-
-    # cache settings (for getting attributes from servers, used to avoid repeated calls)
-    cache_expiration_seconds: float = 0
 
     # StreamableHTTP settings
     json_response: bool = False
@@ -197,6 +211,3 @@ class ServerSettings(BaseSettings):
             ),
         ),
     ] = None
-
-
-settings = Settings()

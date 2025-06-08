@@ -185,7 +185,7 @@ class FunctionTool(Tool):
         if context_kwarg and context_kwarg not in arguments:
             arguments[context_kwarg] = get_context()
 
-        if fastmcp.settings.settings.tool_attempt_parse_json_args:
+        if fastmcp.settings.tool_attempt_parse_json_args:
             # Pre-parse data from JSON in order to handle cases like `["a", "b", "c"]`
             # being passed in as JSON inside a string rather than an actual list.
             #

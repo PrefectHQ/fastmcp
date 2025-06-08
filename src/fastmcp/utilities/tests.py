@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import uvicorn
 
-from fastmcp.settings import settings
+from fastmcp import settings
 from fastmcp.utilities.http import find_available_port
 
 if TYPE_CHECKING:
@@ -32,8 +32,8 @@ def temporary_settings(**kwargs: Any):
         from fastmcp.utilities.tests import temporary_settings
 
         with temporary_settings(log_level='DEBUG'):
-            assert fastmcp.settings.settings.log_level == 'DEBUG'
-        assert fastmcp.settings.settings.log_level == 'INFO'
+            assert fastmcp.settings.log_level == 'DEBUG'
+        assert fastmcp.settings.log_level == 'INFO'
         ```
     """
     old_settings = copy.deepcopy(settings.model_dump())

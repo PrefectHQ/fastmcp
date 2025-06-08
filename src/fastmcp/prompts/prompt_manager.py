@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any
 
 from mcp import GetPromptResult
 
+from fastmcp import settings
 from fastmcp.exceptions import NotFoundError, PromptError
 from fastmcp.prompts.prompt import FunctionPrompt, Prompt, PromptResult
 from fastmcp.settings import DuplicateBehavior
@@ -23,10 +24,10 @@ class PromptManager:
     def __init__(
         self,
         duplicate_behavior: DuplicateBehavior | None = None,
-        mask_error_details: bool = False,
+        mask_error_details: bool | None = None,
     ):
         self._prompts: dict[str, Prompt] = {}
-        self.mask_error_details = mask_error_details
+        self.mask_error_details = mask_error_details or settings.mask_error_details
 
         # Default to "warn" if None is provided
         if duplicate_behavior is None:
