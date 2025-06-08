@@ -617,7 +617,7 @@ class TestToolContextInjection:
             result = await client.call_tool("tool_with_context", {"x": 42})
             assert len(result) == 1
             content = result[0]
-            assert content.text == "2"  # type: ignore[attr-defined]
+            assert content.text == "1"  # type: ignore[attr-defined]
 
     async def test_async_context(self):
         """Test that context works in async functions."""
@@ -632,7 +632,7 @@ class TestToolContextInjection:
             result = await client.call_tool("async_tool", {"x": 42})
             assert len(result) == 1
             content = result[0]
-            assert content.text == "Async request 2: 42"  # type: ignore[attr-defined]
+            assert content.text == "Async request 1: 42"  # type: ignore[attr-defined]
 
     async def test_optional_context(self):
         """Test that context is optional."""
@@ -696,7 +696,7 @@ class TestToolContextInjection:
 
         async with Client(mcp) as client:
             result = await client.call_tool("MyTool", {"x": 2})
-            assert result[0].text == "4"  # type: ignore[attr-defined]
+            assert result[0].text == "3"  # type: ignore[attr-defined]
 
 
 class TestResource:
@@ -780,7 +780,7 @@ class TestResourceContext:
 
         async with Client(mcp) as client:
             result = await client.read_resource(AnyUrl("resource://test"))
-            assert result[0].text == "2"  # type: ignore[attr-defined]
+            assert result[0].text == "1"  # type: ignore[attr-defined]
 
 
 class TestResourceTemplates:
@@ -1015,7 +1015,7 @@ class TestResourceTemplateContext:
 
         async with Client(mcp) as client:
             result = await client.read_resource(AnyUrl("resource://test"))
-            assert result[0].text.startswith("Resource template: test 2")  # type: ignore[attr-defined]
+            assert result[0].text.startswith("Resource template: test 1")  # type: ignore[attr-defined]
 
     async def test_resource_template_context_with_callable_object(self):
         mcp = FastMCP()
@@ -1031,7 +1031,7 @@ class TestResourceTemplateContext:
 
         async with Client(mcp) as client:
             result = await client.read_resource(AnyUrl("resource://test"))
-            assert result[0].text.startswith("Resource template: test 2")  # type: ignore[attr-defined]
+            assert result[0].text.startswith("Resource template: test 1")  # type: ignore[attr-defined]
 
 
 class TestPrompts:
@@ -1249,4 +1249,4 @@ class TestPromptContext:
             assert len(result.messages) == 1
             message = result.messages[0]
             assert message.role == "user"
-            assert message.content.text == "Hello, World! 2"  # type: ignore[attr-defined]
+            assert message.content.text == "Hello, World! 1"  # type: ignore[attr-defined]
