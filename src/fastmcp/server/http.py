@@ -13,6 +13,7 @@ from mcp.server.auth.middleware.bearer_auth import (
 from mcp.server.auth.routes import create_auth_routes
 from mcp.server.lowlevel.server import LifespanResultT
 from mcp.server.sse import SseServerTransport
+from mcp.server.streamable_http import EventStore
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
@@ -241,7 +242,7 @@ def create_sse_app(
 def create_streamable_http_app(
     server: FastMCP[LifespanResultT],
     streamable_http_path: str,
-    event_store: None = None,
+    event_store: EventStore | None = None,
     auth: OAuthProvider | None = None,
     json_response: bool = False,
     stateless_http: bool = False,
