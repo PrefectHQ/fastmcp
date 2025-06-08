@@ -1,6 +1,8 @@
 import inspect
 from pathlib import Path
 
+from fastmcp.client.auth.bearer import BearerAuth
+from fastmcp.client.auth.oauth import OAuthClientProvider
 from fastmcp.client.client import Client
 from fastmcp.client.transports import (
     SSETransport,
@@ -136,3 +138,60 @@ async def test_multi_client(tmp_path: Path):
         result_2 = await client.call_tool("test_2_add", {"a": 1, "b": 2})
         assert result_1[0].text == "3"  # type: ignore[attr-dict]
         assert result_2[0].text == "3"  # type: ignore[attr-dict]
+
+
+async def test_remote_config_default_no_auth():
+    config = {
+        "mcpServers": {
+            "test_server": {
+                "url": "http://localhost:8000",
+            }
+        }
+    }
+    client = Client(config)
+    assert isinstance(client.transport.transport, StreamableHttpTransport)
+    assert client.transport.transport.auth is None
+
+
+async def test_remote_config_with_auth_token():
+    config = {
+        "mcpServers": {
+            "test_server": {
+                "url": "http://localhost:8000",
+                "auth": "test_token",
+            }
+        }
+    }
+    client = Client(config)
+    assert isinstance(client.transport.transport, StreamableHttpTransport)
+    assert isinstance(client.transport.transport.auth, BearerAuth)
+    assert client.transport.transport.auth.token.get_secret_value() == "test_token"
+
+
+async def test_remote_config_sse_with_auth_token():
+    config = {
+        "mcpServers": {
+            "test_server": {
+                "url": "http://localhost:8000/sse",
+                "auth": "test_token",
+            }
+        }
+    }
+    client = Client(config)
+    assert isinstance(client.transport.transport, SSETransport)
+    assert isinstance(client.transport.transport.auth, BearerAuth)
+    assert client.transport.transport.auth.token.get_secret_value() == "test_token"
+
+
+async def test_remote_config_with_oauth_literal():
+    config = {
+        "mcpServers": {
+            "test_server": {
+                "url": "http://localhost:8000",
+                "auth": "oauth",
+            }
+        }
+    }
+    client = Client(config)
+    assert isinstance(client.transport.transport, StreamableHttpTransport)
+    assert isinstance(client.transport.transport.auth, OAuthClientProvider)
