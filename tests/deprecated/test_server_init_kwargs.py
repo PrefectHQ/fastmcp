@@ -199,7 +199,7 @@ class TestDeprecatedServerInitKwargs:
         """Test that None values for deprecated kwargs don't raise warnings."""
         with warnings.catch_warnings(record=True) as recorded_warnings:
             warnings.simplefilter("always")
-            server = FastMCP(
+            FastMCP(
                 "TestServer",
                 log_level=None,
                 debug=None,
@@ -290,10 +290,7 @@ class TestDeprecatedServerInitKwargs:
         with warnings.catch_warnings(record=True) as recorded_warnings:
             warnings.simplefilter("always")
 
-            def create_server_with_deprecated_kwargs():
-                return FastMCP("TestServer", log_level="DEBUG")
-
-            server = create_server_with_deprecated_kwargs()
+            FastMCP("TestServer", log_level="DEBUG")
 
         # Should have exactly one deprecation warning
         deprecation_warnings = [

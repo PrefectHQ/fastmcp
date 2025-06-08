@@ -114,3 +114,5 @@ extend-select = ["I", "UP"]
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401", "I001", "RUF013"]
+# allow imports not at the top of the file
+"src/fastmcp/__init__.py" = ["E402"]
