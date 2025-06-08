@@ -1,7 +1,9 @@
 import asyncio
 import sys
 from typing import cast
+from unittest.mock import AsyncMock
 
+import mcp
 import pytest
 from mcp import McpError
 from mcp.client.auth import OAuthClientProvider
@@ -273,6 +275,14 @@ async def test_client_connection(fastmcp_server):
         # Make a request to ensure connection is working
         await client.ping()
     assert not client.is_connected()
+
+
+async def test_initialize_called_once(fastmcp_server, monkeypatch):
+    mock_initialize = AsyncMock()
+    monkeypatch.setattr(mcp.ClientSession, "initialize", mock_initialize)
+    client = Client(transport=FastMCPTransport(fastmcp_server))
+    async with client:
+        assert mock_initialize.call_count == 1
 
 
 async def test_initialize_result_connected(fastmcp_server):
