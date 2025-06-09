@@ -7,6 +7,12 @@ changelog:
     - title: New Features 🎉
       labels:
         - feature
+      exclude:
+        labels:
+          - breaking change
+
+    - title: Enhancements 🔧
+      labels:
         - enhancement
       exclude:
         labels:
