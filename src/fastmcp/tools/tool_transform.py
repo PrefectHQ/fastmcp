@@ -273,16 +273,16 @@ class TransformedTool(Tool):
 
         # Fill in missing arguments with schema defaults to ensure
         # ArgTransform defaults take precedence over function defaults
-        filled_arguments = arguments.copy()
+        arguments = arguments.copy()
         properties = self.parameters.get("properties", {})
 
         for param_name, param_schema in properties.items():
-            if param_name not in filled_arguments and "default" in param_schema:
-                filled_arguments[param_name] = param_schema["default"]
+            if param_name not in arguments and "default" in param_schema:
+                arguments[param_name] = param_schema["default"]
 
         token = _current_tool.set(self)
         try:
-            result = await self.fn(**filled_arguments)
+            result = await self.fn(**arguments)
             return _convert_to_content(result, serializer=self.serializer)
         finally:
             _current_tool.reset(token)
