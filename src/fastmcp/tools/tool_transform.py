@@ -168,6 +168,11 @@ class ArgTransform:
                 "Hidden parameters cannot be required since clients cannot provide them."
             )
 
+        if self.required is False:
+            raise ValueError(
+                "Cannot specify 'required=False'. Set a default value instead."
+            )
+
 
 class TransformedTool(Tool):
     """A tool that is transformed from another tool.

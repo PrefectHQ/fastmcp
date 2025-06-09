@@ -858,23 +858,14 @@ async def test_arg_transform_required_false():
     def base_tool(required_param: int) -> str:
         return f"value: {required_param}"
 
-    # Make the required parameter optional with a default
-    new_tool = Tool.from_tool(
-        base_tool,
-        transform_args={"required_param": ArgTransform(required=False, default=99)},
-    )
-
-    # Parameter should now be optional (not in required list, has default)
-    assert "required_param" not in new_tool.parameters["required"]
-    assert new_tool.parameters["properties"]["required_param"]["default"] == 99
-
-    # Should work when parameter is not provided (uses default)
-    result = await new_tool.run(arguments={})
-    assert result[0].text == "value: 99"  # type: ignore
-
-    # Should work when parameter is provided
-    result = await new_tool.run(arguments={"required_param": 123})
-    assert result[0].text == "value: 123"  # type: ignore
+    with pytest.raises(
+        ValueError,
+        match="Cannot specify 'required=False'. Set a default value instead.",
+    ):
+        Tool.from_tool(
+            base_tool,
+            transform_args={"required_param": ArgTransform(required=False, default=99)},  # type: ignore
+        )
 
 
 async def test_arg_transform_required_with_rename():

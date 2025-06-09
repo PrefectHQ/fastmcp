@@ -101,7 +101,7 @@ class Tool(FastMCPBaseModel, ABC):
         tool: Tool,
         transform_fn: Callable[..., Any] | None = None,
         name: str | None = None,
-        transform_args: dict[str, str | ArgTransform | None] | None = None,
+        transform_args: dict[str, ArgTransform] | None = None,
         description: str | None = None,
         tags: set[str] | None = None,
         annotations: ToolAnnotations | None = None,
