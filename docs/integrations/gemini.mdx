@@ -98,7 +98,7 @@ For example, to connect to a remote, authenticated server, you can use the follo
 from fastmcp import Client
 from fastmcp.client.auth import BearerAuth
 
-client = Client(
+mcp_client = Client(
     "https://my-server.com/sse",
     auth=BearerAuth("<your-token>"),
 )
