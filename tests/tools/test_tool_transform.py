@@ -93,7 +93,7 @@ async def test_tool_drop_arg_with_none(add_tool):
 
 async def test_tool_drop_arg_with_arg_transform(add_tool):
     new_tool = Tool.from_tool(
-        add_tool, transform_args={"old_y": ArgTransform(drop=True)}
+        add_tool, transform_args={"old_y": ArgTransform(hide=True)}
     )
     assert sorted(new_tool.parameters["properties"]) == ["old_x"]
     result = await new_tool.run(arguments={"old_x": 1})
@@ -102,12 +102,99 @@ async def test_tool_drop_arg_with_arg_transform(add_tool):
 
 async def test_dropped_args_error_if_provided(add_tool):
     new_tool = Tool.from_tool(
-        add_tool, transform_args={"old_y": ArgTransform(drop=True)}
+        add_tool, transform_args={"old_y": ArgTransform(hide=True)}
     )
     with pytest.raises(
         TypeError, match="Got unexpected keyword argument\\(s\\): old_y"
     ):
         await new_tool.run(arguments={"old_x": 1, "old_y": 2})
+
+
+async def test_hidden_arg_with_constant_default(add_tool):
+    """Test that hidden argument with default value passes constant to parent."""
+    new_tool = Tool.from_tool(
+        add_tool, transform_args={"old_y": ArgTransform(hide=True, default=20)}
+    )
+    # Only old_x should be exposed
+    assert sorted(new_tool.parameters["properties"]) == ["old_x"]
+    # Should pass old_x=5 and old_y=20 to parent
+    result = await new_tool.run(arguments={"old_x": 5})
+    assert result[0].text == "25"  # type: ignore
+
+
+async def test_hidden_arg_without_default_uses_parent_default(add_tool):
+    """Test that hidden argument without default uses parent's default."""
+    new_tool = Tool.from_tool(
+        add_tool, transform_args={"old_y": ArgTransform(hide=True)}
+    )
+    # Only old_x should be exposed
+    assert sorted(new_tool.parameters["properties"]) == ["old_x"]
+    # Should pass old_x=3 and let parent use its default old_y=10
+    result = await new_tool.run(arguments={"old_x": 3})
+    assert result[0].text == "13"  # type: ignore
+
+
+async def test_mixed_hidden_args_with_custom_function(add_tool):
+    """Test custom function with both hidden constant and hidden default parameters."""
+
+    async def custom_fn(visible_x: int) -> int:
+        # This custom function should receive the transformed visible parameter
+        # and the hidden parameters should be automatically handled
+        result = await forward(visible_x=visible_x)
+        return result
+
+    new_tool = Tool.from_tool(
+        add_tool,
+        transform_fn=custom_fn,
+        transform_args={
+            "old_x": "visible_x",  # Rename and expose
+            "old_y": ArgTransform(hide=True, default=25),  # Hidden with constant
+        },
+    )
+
+    # Only visible_x should be exposed
+    assert sorted(new_tool.parameters["properties"]) == ["visible_x"]
+    # Should pass visible_x=7 as old_x=7 and old_y=25 to parent
+    result = await new_tool.run(arguments={"visible_x": 7})
+    assert result[0].text == "32"  # type: ignore
+
+
+async def test_hide_required_param_without_default_raises_error():
+    """Test that hiding a required parameter without providing default raises error."""
+
+    @Tool.from_function
+    def tool_with_required_param(required_param: int, optional_param: int = 10) -> int:
+        return required_param + optional_param
+
+    # This should raise an error because required_param has no default and we're not providing one
+    with pytest.raises(
+        ValueError,
+        match=r"Hidden parameter 'required_param' has no default value in parent tool",
+    ):
+        Tool.from_tool(
+            tool_with_required_param,
+            transform_args={"required_param": ArgTransform(hide=True)},
+        )
+
+
+async def test_hide_required_param_with_user_default_works():
+    """Test that hiding a required parameter works when user provides a default."""
+
+    @Tool.from_function
+    def tool_with_required_param(required_param: int, optional_param: int = 10) -> int:
+        return required_param + optional_param
+
+    # This should work because we're providing a default for the hidden required param
+    new_tool = Tool.from_tool(
+        tool_with_required_param,
+        transform_args={"required_param": ArgTransform(hide=True, default=5)},
+    )
+
+    # Only optional_param should be exposed
+    assert sorted(new_tool.parameters["properties"]) == ["optional_param"]
+    # Should pass required_param=5 and optional_param=20 to parent
+    result = await new_tool.run(arguments={"optional_param": 20})
+    assert result[0].text == "25"  # type: ignore
 
 
 async def test_forward_with_argument_mapping(add_tool):

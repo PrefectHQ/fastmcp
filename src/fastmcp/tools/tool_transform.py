@@ -23,7 +23,7 @@ new_tool = Tool.from_tool(
     original_tool,
     transform_args={
         "old_name": ArgTransform(name="new_name", description="Updated desc"),
-        "unwanted": ArgTransform(drop=True),
+        "hidden_param": ArgTransform(hide=True, default="constant_value"),
         "simple": "renamed"
     }
 )
@@ -73,7 +73,7 @@ new_tool = Tool.from_tool(
 - `name`: Rename the argument
 - `description`: Change the description
 - `default`: Add/change default value
-- `drop=True`: Remove the argument entirely
+- `hide=True`: Hide the argument from clients (pass constant value to parent)
 
 ## Common Patterns
 
@@ -91,10 +91,13 @@ enhanced = Tool.from_tool(
     # No transform_args = all parent args pass through unchanged
 )
 
-# Drop specific arguments
+# Hide specific arguments with constant values
 simplified = Tool.from_tool(
     complex_tool,
-    transform_args={"complex_config": None}  # Drops only this arg
+    transform_args={
+        "api_key": ArgTransform(hide=True, default="secret_key"),  # Hidden constant
+        "debug": ArgTransform(hide=True)  # Hidden, uses parent's default
+    }
 )
 ```
 """
@@ -188,14 +191,14 @@ class ArgTransform:
 
     This class allows fine-grained control over how individual arguments are transformed
     when creating a new tool from an existing one. You can rename arguments, change their
-    descriptions, add default values, or drop them entirely.
+    descriptions, add default values, or hide them from clients while passing constants.
 
     Attributes:
         name: New name for the argument. Use None to keep original name, or ... for no change.
         description: New description for the argument. Use None to remove description, or ... for no change.
         default: New default value for the argument. Use ... for no change.
         type: New type for the argument. Use ... for no change.
-        drop: If True, remove this argument from the transformed tool's schema.
+        hide: If True, hide this argument from clients but pass a constant value to parent.
 
     Examples:
         # Rename argument 'old_name' to 'new_name'
@@ -210,8 +213,11 @@ class ArgTransform:
         # Change the type
         ArgTransform(type=str)
 
-        # Drop the argument entirely
-        ArgTransform(drop=True)
+        # Hide the argument entirely from clients
+        ArgTransform(hide=True)
+
+        # Hide argument but pass a constant value to parent
+        ArgTransform(hide=True, default="constant_value")
 
         # Combine multiple transformations
         ArgTransform(name="new_name", description="New desc", default=None, type=int)
@@ -221,7 +227,7 @@ class ArgTransform:
     description: str | None | EllipsisType = ...
     default: Any | EllipsisType = ...
     type: Any | EllipsisType = ...
-    drop: bool = False
+    hide: bool = False
 
 
 class TransformedTool(Tool):
@@ -393,7 +399,7 @@ class TransformedTool(Tool):
             for old_name, transform in transform_args.items():
                 if isinstance(transform, str):
                     new_names.append(transform)
-                elif isinstance(transform, ArgTransform) and not transform.drop:
+                elif isinstance(transform, ArgTransform) and not transform.hide:
                     if transform.name is not ... and transform.name is not None:
                         new_names.append(transform.name)
                     else:
@@ -456,6 +462,7 @@ class TransformedTool(Tool):
         new_props = {}
         new_required = set()
         new_to_old = {}
+        hidden_defaults = {}  # Track hidden parameters with constant values
 
         for old_name, old_schema in parent_props.items():
             # Check if parameter is in transform_args
@@ -463,6 +470,21 @@ class TransformedTool(Tool):
                 transform = transform_args[old_name]
             else:
                 transform = ...  # Default behavior - pass through
+
+            # Handle hidden parameters with defaults
+            if isinstance(transform, ArgTransform) and transform.hide:
+                # Validate that hidden parameters without user defaults have parent defaults
+                if transform.default is ... and old_name in parent_required:
+                    raise ValueError(
+                        f"Hidden parameter '{old_name}' has no default value in parent tool "
+                        f"and no default provided in ArgTransform. Either provide a default "
+                        f"in ArgTransform or don't hide required parameters."
+                    )
+                if transform.default is not ...:
+                    # Hidden parameter with a constant value
+                    hidden_defaults[old_name] = transform.default
+                # Skip adding to schema (not exposed to clients)
+                continue
 
             transform_result = cls._apply_single_transform(
                 old_name,
@@ -509,6 +531,9 @@ class TransformedTool(Tool):
                 old_name = new_to_old.get(new_name, new_name)
                 parent_args[old_name] = value
 
+            # Add hidden defaults (constant values for hidden parameters)
+            parent_args.update(hidden_defaults)
+
             return await parent_tool.run(parent_args)
 
         return schema, _forward
@@ -548,7 +573,7 @@ class TransformedTool(Tool):
             return transform, old_schema.copy(), is_required
 
         if isinstance(transform, ArgTransform):
-            if transform.drop:
+            if transform.hide:
                 return None
 
             if transform.name is not ...:
