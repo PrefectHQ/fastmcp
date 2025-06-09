@@ -55,7 +55,7 @@ class StdioMCPServer(FastMCPBaseModel):
 class RemoteMCPServer(FastMCPBaseModel):
     url: str
     headers: dict[str, str] = Field(default_factory=dict)
-    transport: Literal["streamable-http", "sse", "http"] | None = None
+    transport: Literal["streamable-http", "sse"] | None = None
     auth: Annotated[
         str | Literal["oauth"] | None,
         Field(

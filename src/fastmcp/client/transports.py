@@ -8,7 +8,7 @@ import sys
 import warnings
 from collections.abc import AsyncIterator, Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, TypedDict, TypeVar, cast, overload
+from typing import Any, Literal, TypedDict, TypeVar, cast, overload
 
 import anyio
 import httpx
@@ -26,9 +26,6 @@ from fastmcp.server.dependencies import get_http_headers
 from fastmcp.server.server import FastMCP
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.mcp_config import MCPConfig, infer_transport_type_from_url
-
-if TYPE_CHECKING:
-    from fastmcp.utilities.mcp_config import MCPConfig
 
 logger = get_logger(__name__)
 
@@ -870,7 +867,6 @@ def infer_transport(
         transport = infer_transport(config)
         ```
     """
-    from fastmcp.utilities.mcp_config import MCPConfig
 
     # the transport is already a ClientTransport
     if isinstance(transport, ClientTransport):
