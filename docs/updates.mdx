@@ -3,11 +3,36 @@ title: "FastMCP Updates"
 sidebarTitle: "Updates"
 icon: "sparkles"
 tag: "New!"
+mode: "wide"
 ---
+<Update label="FastMCP 2.7" description="June 6, 2025">
+<Card 
+title="FastMCP 2.7: Pare Programming" href="https://github.com/jlowin/fastmcp/releases/tag/v2.7.0" 
+img="assets/updates/release-2-7.png" 
+cta="Read the release notes" 
+arrow="false" 
+>
+FastMCP 2.7 has been released!
+
+Most notably, it introduces the highly requested (and Pythonic) "naked" decorator usage:
+
+```python {3}
+mcp = FastMCP()
+
+@mcp.tool
+def add(a: int, b: int) -> int:
+    return a + b
+```
+
+In addition, decorators now return the objects they create, instead of the decorated function. This is an important usability enhancement.
+
+The bulk of the update is focused on improving the FastMCP internals, including a few breaking internal changes to private APIs. A number of functions that have clung on since 1.0 are now deprecated.
+</Card>
+</Update>
+
+
+
 <Update label="FastMCP 2.6" description="June 6, 2025">
-
-
-
 <Card 
 title="Blast Auth with FastMCP 2.6" href="https://www.jlowin.dev/blog/fastmcp-2-6" 
 img="https://www.jlowin.dev/_image?href=%2F_astro%2Fhero.Bsu8afiw.png&w=1000&h=500&f=webp" 

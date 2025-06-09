@@ -9,7 +9,7 @@ from pydantic import AnyUrl
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
-from fastmcp.client.transports import FastMCPTransport
+from fastmcp.client.transports import FastMCPTransport, StreamableHttpTransport
 from fastmcp.exceptions import ToolError
 from fastmcp.server.proxy import FastMCPProxy
 
@@ -104,7 +104,8 @@ def test_as_proxy_with_url():
     """FastMCP.as_proxy should accept a URL without connecting."""
     proxy = FastMCP.as_proxy("http://example.com/mcp")
     assert isinstance(proxy, FastMCPProxy)
-    assert repr(proxy.client.transport).startswith("<StreamableHttp(")
+    assert isinstance(proxy.client.transport, StreamableHttpTransport)
+    assert proxy.client.transport.url == "http://example.com/mcp"
 
 
 class TestTools:

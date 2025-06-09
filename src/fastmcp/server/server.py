@@ -41,6 +41,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 from starlette.routing import BaseRoute, Route
 
+import fastmcp
 import fastmcp.server
 import fastmcp.settings
 from fastmcp.exceptions import NotFoundError
@@ -131,6 +132,8 @@ class FastMCP(Generic[LifespanResultT]):
         tools: list[Tool | Callable[..., Any]] | None = None,
         **settings: Any,
     ):
+        if cache_expiration_seconds is not None:
+            settings["cache_expiration_seconds"] = cache_expiration_seconds
         self.settings = fastmcp.settings.ServerSettings(**settings)
 
         # If mask_error_details is provided, override the settings value
@@ -148,7 +151,9 @@ class FastMCP(Generic[LifespanResultT]):
         self.tags: set[str] = tags or set()
         self.dependencies = dependencies
         self._cache = TimedCache(
-            expiration=datetime.timedelta(seconds=cache_expiration_seconds or 0)
+            expiration=datetime.timedelta(
+                seconds=self.settings.cache_expiration_seconds
+            )
         )
         self._mounted_servers: dict[str, MountedServer] = {}
         self._additional_http_routes: list[BaseRoute] = []
@@ -496,11 +501,7 @@ class FastMCP(Generic[LifespanResultT]):
         with the Context type annotation. See the @tool decorator for examples.
 
         Args:
-            fn: The function to register as a tool
-            name: Optional name for the tool (defaults to function name)
-            description: Optional description of what the tool does
-            tags: Optional set of tags for categorizing the tool
-            annotations: Optional annotations about the tool's behavior
+            tool: The Tool instance to register
         """
         self._tool_manager.add_tool(tool)
         self._cache.clear()
@@ -870,7 +871,7 @@ class FastMCP(Generic[LifespanResultT]):
 
         This decorator supports multiple calling patterns:
         - @server.prompt (without parentheses)
-        - @server.prompt (with empty parentheses)
+        - @server.prompt() (with empty parentheses)
         - @server.prompt("custom_name") (with name as first argument)
         - @server.prompt(name="custom_name") (with name as keyword argument)
         - server.prompt(function, name="custom_name") (direct function call)
@@ -892,7 +893,7 @@ class FastMCP(Generic[LifespanResultT]):
                     }
                 ]
 
-            @server.prompt
+            @server.prompt()
             def analyze_with_context(table_name: str, ctx: Context) -> list[Message]:
                 ctx.info(f"Analyzing table {table_name}")
                 schema = read_table_schema(table_name)
