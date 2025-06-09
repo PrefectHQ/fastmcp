@@ -125,6 +125,7 @@
             {
                 "group": "Patterns",
                 "pages": [
+                    "patterns/tool-transformation",
                     "patterns/decorating-methods",
                     "patterns/http-requests",
                     "patterns/testing",

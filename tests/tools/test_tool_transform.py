@@ -37,35 +37,32 @@ def test_tool_from_tool_no_change(add_tool):
     assert new_tool.description == add_tool.description
 
 
-async def test_tool_change_arg_name_with_string(add_tool):
-    new_tool = Tool.from_tool(add_tool, transform_args={"old_x": "new_x"})
-
-    assert sorted(new_tool.parameters["properties"]) == ["new_x", "old_y"]
-    assert get_property(new_tool, "new_x") == get_property(add_tool, "old_x")
-    assert get_property(new_tool, "old_y") == get_property(add_tool, "old_y")
-    assert new_tool.parameters["required"] == ["new_x"]
-    result = await new_tool.run(arguments={"new_x": 1, "old_y": 2})
-    assert result[0].text == "3"  # type: ignore
-
-
 async def test_renamed_arg_description_is_maintained(add_tool):
-    new_tool = Tool.from_tool(add_tool, transform_args={"old_x": "new_x"})
-    assert get_property(new_tool, "new_x")["description"] == "old_x description"
+    new_tool = Tool.from_tool(
+        add_tool, transform_args={"old_x": ArgTransform(name="new_x")}
+    )
+    assert (
+        new_tool.parameters["properties"]["new_x"]["description"] == "old_x description"
+    )
 
 
 async def test_tool_defaults_are_maintained_on_unmapped_args(add_tool):
-    new_tool = Tool.from_tool(add_tool, transform_args={"old_x": "new_x"})
+    new_tool = Tool.from_tool(
+        add_tool, transform_args={"old_x": ArgTransform(name="new_x")}
+    )
     result = await new_tool.run(arguments={"new_x": 1})
     assert result[0].text == "11"  # type: ignore
 
 
 async def test_tool_defaults_are_maintained_on_mapped_args(add_tool):
-    new_tool = Tool.from_tool(add_tool, transform_args={"old_y": "new_y"})
+    new_tool = Tool.from_tool(
+        add_tool, transform_args={"old_y": ArgTransform(name="new_y")}
+    )
     result = await new_tool.run(arguments={"old_x": 1})
     assert result[0].text == "11"  # type: ignore
 
 
-def test_tool_change_arg_name_with_arg_transform(add_tool):
+def test_tool_change_arg_name(add_tool):
     new_tool = Tool.from_tool(
         add_tool, transform_args={"old_x": ArgTransform(name="new_x")}
     )
@@ -83,15 +80,7 @@ def test_tool_change_arg_description(add_tool):
     assert get_property(new_tool, "old_x")["description"] == "new description"
 
 
-async def test_tool_drop_arg_with_none(add_tool):
-    # drop the arg with a default value
-    new_tool = Tool.from_tool(add_tool, transform_args={"old_y": None})
-    assert sorted(new_tool.parameters["properties"]) == ["old_x"]
-    result = await new_tool.run(arguments={"old_x": 1})
-    assert result[0].text == "11"  # type: ignore
-
-
-async def test_tool_drop_arg_with_arg_transform(add_tool):
+async def test_tool_drop_arg(add_tool):
     new_tool = Tool.from_tool(
         add_tool, transform_args={"old_y": ArgTransform(hide=True)}
     )
@@ -147,7 +136,7 @@ async def test_mixed_hidden_args_with_custom_function(add_tool):
         add_tool,
         transform_fn=custom_fn,
         transform_args={
-            "old_x": "visible_x",  # Rename and expose
+            "old_x": ArgTransform(name="visible_x"),  # Rename and expose
             "old_y": ArgTransform(hide=True, default=25),  # Hidden with constant
         },
     )
@@ -206,7 +195,10 @@ async def test_forward_with_argument_mapping(add_tool):
     new_tool = Tool.from_tool(
         add_tool,
         transform_fn=custom_fn,
-        transform_args={"old_x": "new_x", "old_y": "new_y"},
+        transform_args={
+            "old_x": ArgTransform(name="new_x"),
+            "old_y": ArgTransform(name="new_y"),
+        },
     )
 
     result = await new_tool.run(arguments={"new_x": 2, "new_y": 3})
@@ -221,7 +213,10 @@ async def test_forward_with_incorrect_args_raises_error(add_tool):
     new_tool = Tool.from_tool(
         add_tool,
         transform_fn=custom_fn,
-        transform_args={"old_x": "new_x", "old_y": "new_y"},
+        transform_args={
+            "old_x": ArgTransform(name="new_x"),
+            "old_y": ArgTransform(name="new_y"),
+        },
     )
     with pytest.raises(
         TypeError, match=re.escape("Got unexpected keyword argument(s): old_x, old_y")
@@ -240,7 +235,10 @@ async def test_forward_raw_without_argument_mapping(add_tool):
     new_tool = Tool.from_tool(
         add_tool,
         transform_fn=custom_fn,
-        transform_args={"old_x": "new_x", "old_y": "new_y"},
+        transform_args={
+            "old_x": ArgTransform(name="new_x"),
+            "old_y": ArgTransform(name="new_y"),
+        },
     )
 
     result = await new_tool.run(arguments={"new_x": 2, "new_y": 3})
@@ -284,7 +282,9 @@ async def test_fn_with_kwargs_receives_transformed_arg_names(add_tool):
         return result
 
     new_tool = Tool.from_tool(
-        add_tool, transform_fn=custom_fn, transform_args={"old_x": "new_x"}
+        add_tool,
+        transform_fn=custom_fn,
+        transform_args={"old_x": ArgTransform(name="new_x")},
     )
     result = await new_tool.run(arguments={"new_x": 2, "old_y": 3})
     assert result[0].text == "5"  # type: ignore
@@ -300,7 +300,9 @@ async def test_fn_with_kwargs_handles_partial_explicit_args(add_tool):
         return result
 
     new_tool = Tool.from_tool(
-        add_tool, transform_fn=custom_fn, transform_args={"old_x": "new_x"}
+        add_tool,
+        transform_fn=custom_fn,
+        transform_args={"old_x": ArgTransform(name="new_x")},
     )
     result = await new_tool.run(
         arguments={"new_x": 3, "old_y": 7, "some_other_param": "test"}
@@ -318,7 +320,9 @@ async def test_fn_with_kwargs_mixed_mapped_and_unmapped_args(add_tool):
         return result
 
     new_tool = Tool.from_tool(
-        add_tool, transform_fn=custom_fn, transform_args={"old_x": "new_x"}
+        add_tool,
+        transform_fn=custom_fn,
+        transform_args={"old_x": ArgTransform(name="new_x")},
     )  # only map 'a'
     result = await new_tool.run(arguments={"new_x": 1, "old_y": 5})
     assert result[0].text == "6"  # type: ignore
@@ -337,7 +341,10 @@ async def test_fn_with_kwargs_dropped_args_not_in_kwargs(add_tool):
     new_tool = Tool.from_tool(
         add_tool,
         transform_fn=custom_fn,
-        transform_args={"old_x": "new_x", "old_y": None},
+        transform_args={
+            "old_x": ArgTransform(name="new_x"),
+            "old_y": ArgTransform(hide=True),
+        },
     )  # drop 'old_y'
     result = await new_tool.run(arguments={"new_x": 8})
     # 8 + 10 (default value of b in parent)
@@ -367,7 +374,9 @@ def test_transform_args_validation_unknown_arg(add_tool):
     with pytest.raises(
         ValueError, match="Unknown arguments in transform_args: unknown_param"
     ):
-        Tool.from_tool(add_tool, transform_args={"unknown_param": "new_name"})
+        Tool.from_tool(
+            add_tool, transform_args={"unknown_param": ArgTransform(name="new_name")}
+        )
 
 
 def test_transform_args_creates_duplicate_names(add_tool):
@@ -377,30 +386,19 @@ def test_transform_args_creates_duplicate_names(add_tool):
         match="Multiple arguments would be mapped to the same names: same_name",
     ):
         Tool.from_tool(
-            add_tool, transform_args={"old_x": "same_name", "old_y": "same_name"}
-        )
-
-
-def test_transform_args_creates_duplicate_names_with_arg_transform(add_tool):
-    """Test that transform_args creating duplicate parameter names raises ValueError."""
-    with pytest.raises(
-        ValueError,
-        match="Multiple arguments would be mapped to the same names: same_name",
-    ):
-        Tool.from_tool(
             add_tool,
             transform_args={
                 "old_x": ArgTransform(name="same_name"),
-                "old_y": "same_name",
+                "old_y": ArgTransform(name="same_name"),
             },
         )
 
 
 def test_function_without_kwargs_missing_params(add_tool):
-    """Test that function without **kwargs must declare all transformed params."""
+    """Test that function missing required transformed parameters raises ValueError."""
 
     def invalid_fn(new_x: int, non_existent: str) -> str:
-        return "test"
+        return f"{new_x}_{non_existent}"
 
     with pytest.raises(
         ValueError,
@@ -409,27 +407,33 @@ def test_function_without_kwargs_missing_params(add_tool):
         Tool.from_tool(
             add_tool,
             transform_fn=invalid_fn,
-            transform_args={"old_x": "new_x", "old_y": "new_y"},
+            transform_args={
+                "old_x": ArgTransform(name="new_x"),
+                "old_y": ArgTransform(name="new_y"),
+            },
         )
 
 
 def test_function_without_kwargs_can_have_extra_params(add_tool):
-    """Test that function without **kwargs can declare extra params beyond transformed ones."""
+    """Test that function can have extra parameters not in parent tool."""
 
     def valid_fn(new_x: int, new_y: int, extra_param: str = "default") -> str:
-        return f"{new_x + new_y}: {extra_param}"
+        return f"{new_x}_{new_y}_{extra_param}"
 
-    # This should work fine - function declares all required params plus an extra one
-    tool = Tool.from_tool(
+    # Should work - extra_param is fine as long as it has a default
+    new_tool = Tool.from_tool(
         add_tool,
         transform_fn=valid_fn,
-        transform_args={"old_x": "new_x", "old_y": "new_y"},
+        transform_args={
+            "old_x": ArgTransform(name="new_x"),
+            "old_y": ArgTransform(name="new_y"),
+        },
     )
 
     # The final schema should include all function parameters
-    assert "new_x" in tool.parameters["properties"]
-    assert "new_y" in tool.parameters["properties"]
-    assert "extra_param" in tool.parameters["properties"]
+    assert "new_x" in new_tool.parameters["properties"]
+    assert "new_y" in new_tool.parameters["properties"]
+    assert "extra_param" in new_tool.parameters["properties"]
 
 
 def test_function_with_kwargs_can_add_params(add_tool):
@@ -443,7 +447,10 @@ def test_function_with_kwargs_can_add_params(add_tool):
     tool = Tool.from_tool(
         add_tool,
         transform_fn=valid_fn,
-        transform_args={"old_x": "new_x", "old_y": "new_y"},
+        transform_args={
+            "old_x": ArgTransform(name="new_x"),
+            "old_y": ArgTransform(name="new_y"),
+        },
     )
 
     # extra_param is added, new_x and new_y are available
@@ -452,28 +459,27 @@ def test_function_with_kwargs_can_add_params(add_tool):
     assert "new_y" in tool.parameters["properties"]
 
 
-async def test_chaining_transformations(add_tool):
+async def test_tool_transform_chaining(add_tool):
     """Test that transformed tools can be transformed again."""
-    # First transformation
-    tool1 = Tool.from_tool(add_tool, transform_args={"old_x": "x"})
+    # First transformation: a -> x
+    tool1 = Tool.from_tool(add_tool, transform_args={"old_x": ArgTransform(name="x")})
 
-    # Second transformation on the already-transformed tool
-    tool2 = Tool.from_tool(tool1, transform_args={"x": "final_x"})
+    # Second transformation: x -> final_x, using tool1
+    tool2 = Tool.from_tool(tool1, transform_args={"x": ArgTransform(name="final_x")})
 
-    # Should work with the final names
-    result = await tool2.run(arguments={"final_x": 5, "old_y": 3})
-    assert result[0].text == "8"  # type: ignore
+    result = await tool2.run(arguments={"final_x": 5})
+    assert result[0].text == "15"  # type: ignore
 
-    # And forward() in a custom function should work
-    async def custom(final_x: int, old_y: int) -> str:
-        # forward() goes to tool1, which has 'final_x' and 'old_y' after transformation
-        result = await forward(final_x=final_x, old_y=old_y)
-        return f"Chained: {result}"
+    # Transform tool1 with custom function that handles all parameters
+    async def custom(final_x: int, **kwargs) -> str:
+        result = await forward(final_x=final_x, **kwargs)
+        return f"custom {result[0].text}"  # Extract text from content
 
-    tool3 = Tool.from_tool(tool1, transform_fn=custom, transform_args={"x": "final_x"})
-
-    result = await tool3.run(arguments={"final_x": 5, "old_y": 3})
-    assert "Chained:" in result[0].text  # type: ignore
+    tool3 = Tool.from_tool(
+        tool1, transform_fn=custom, transform_args={"x": ArgTransform(name="final_x")}
+    )
+    result = await tool3.run(arguments={"final_x": 3, "old_y": 5})
+    assert result[0].text == "custom 8"  # type: ignore
 
 
 class MyModel(BaseModel):
@@ -712,7 +718,9 @@ class TestProxy:
 
         add_tool = await proxy_server.get_tool("add")
         new_add_tool = Tool.from_tool(
-            add_tool, name="add_transformed", transform_args={"old_x": "new_x"}
+            add_tool,
+            name="add_transformed",
+            transform_args={"old_x": ArgTransform(name="new_x")},
         )
         proxy_server.add_tool(new_add_tool)
 
@@ -720,3 +728,226 @@ class TestProxy:
             # The tool should be registered with its transformed name
             result = await client.call_tool("add_transformed", {"new_x": 1, "old_y": 2})
             assert result[0].text == "3"  # type: ignore
+
+
+async def test_arg_transform_default_factory():
+    """Test ArgTransform with default_factory for hidden parameters."""
+
+    @Tool.from_function
+    def base_tool(x: int, timestamp: float) -> str:
+        return f"{x}_{timestamp}"
+
+    # Create a tool with default_factory for hidden timestamp
+    new_tool = Tool.from_tool(
+        base_tool,
+        transform_args={
+            "timestamp": ArgTransform(hide=True, default_factory=lambda: 12345.0)
+        },
+    )
+
+    # Only x should be visible since timestamp is hidden
+    assert sorted(new_tool.parameters["properties"]) == ["x"]
+
+    # Should work without providing timestamp (gets value from factory)
+    result = await new_tool.run(arguments={"x": 42})
+    assert result[0].text == "42_12345.0"  # type: ignore
+
+
+async def test_arg_transform_default_factory_called_each_time():
+    """Test that default_factory is called for each execution."""
+    call_count = 0
+
+    def counter_factory():
+        nonlocal call_count
+        call_count += 1
+        return call_count
+
+    @Tool.from_function
+    def base_tool(x: int, counter: int = 0) -> str:
+        return f"{x}_{counter}"
+
+    new_tool = Tool.from_tool(
+        base_tool,
+        transform_args={
+            "counter": ArgTransform(hide=True, default_factory=counter_factory)
+        },
+    )
+
+    # Only x should be visible since counter is hidden
+    assert sorted(new_tool.parameters["properties"]) == ["x"]
+
+    # First call
+    result1 = await new_tool.run(arguments={"x": 1})
+    assert result1[0].text == "1_1"  # type: ignore
+
+    # Second call should get a different value
+    result2 = await new_tool.run(arguments={"x": 2})
+    assert result2[0].text == "2_2"  # type: ignore
+
+
+async def test_arg_transform_hidden_with_default_factory():
+    """Test hidden parameter with default_factory."""
+
+    @Tool.from_function
+    def base_tool(x: int, request_id: str) -> str:
+        return f"{x}_{request_id}"
+
+    def make_request_id():
+        return "req_123"
+
+    new_tool = Tool.from_tool(
+        base_tool,
+        transform_args={
+            "request_id": ArgTransform(hide=True, default_factory=make_request_id)
+        },
+    )
+
+    # Only x should be visible
+    assert sorted(new_tool.parameters["properties"]) == ["x"]
+
+    # Should pass hidden request_id with factory value
+    result = await new_tool.run(arguments={"x": 42})
+    assert result[0].text == "42_req_123"  # type: ignore
+
+
+async def test_arg_transform_default_and_factory_raises_error():
+    """Test that providing both default and default_factory raises an error."""
+    with pytest.raises(
+        ValueError, match="Cannot specify both 'default' and 'default_factory'"
+    ):
+        ArgTransform(default=42, default_factory=lambda: 24)
+
+
+async def test_arg_transform_default_factory_requires_hide():
+    """Test that default_factory requires hide=True."""
+    with pytest.raises(
+        ValueError, match="default_factory can only be used with hide=True"
+    ):
+        ArgTransform(default_factory=lambda: 42)  # hide=False by default
+
+
+async def test_arg_transform_required_true():
+    """Test that required=True makes an optional parameter required."""
+
+    @Tool.from_function
+    def base_tool(optional_param: int = 42) -> str:
+        return f"value: {optional_param}"
+
+    # Make the optional parameter required
+    new_tool = Tool.from_tool(
+        base_tool, transform_args={"optional_param": ArgTransform(required=True)}
+    )
+
+    # Parameter should now be required (no default in schema)
+    assert "optional_param" in new_tool.parameters["required"]
+    assert "default" not in new_tool.parameters["properties"]["optional_param"]
+
+    # Should work when parameter is provided
+    result = await new_tool.run(arguments={"optional_param": 100})
+    assert result[0].text == "value: 100"  # type: ignore
+
+    # Should fail when parameter is not provided
+    with pytest.raises(TypeError, match="Missing required argument"):
+        await new_tool.run(arguments={})
+
+
+async def test_arg_transform_required_false():
+    """Test that required=False makes a required parameter optional with default."""
+
+    @Tool.from_function
+    def base_tool(required_param: int) -> str:
+        return f"value: {required_param}"
+
+    # Make the required parameter optional with a default
+    new_tool = Tool.from_tool(
+        base_tool,
+        transform_args={"required_param": ArgTransform(required=False, default=99)},
+    )
+
+    # Parameter should now be optional (not in required list, has default)
+    assert "required_param" not in new_tool.parameters["required"]
+    assert new_tool.parameters["properties"]["required_param"]["default"] == 99
+
+    # Should work when parameter is not provided (uses default)
+    result = await new_tool.run(arguments={})
+    assert result[0].text == "value: 99"  # type: ignore
+
+    # Should work when parameter is provided
+    result = await new_tool.run(arguments={"required_param": 123})
+    assert result[0].text == "value: 123"  # type: ignore
+
+
+async def test_arg_transform_required_with_rename():
+    """Test that required works correctly with argument renaming."""
+
+    @Tool.from_function
+    def base_tool(optional_param: int = 42) -> str:
+        return f"value: {optional_param}"
+
+    # Rename and make required
+    new_tool = Tool.from_tool(
+        base_tool,
+        transform_args={
+            "optional_param": ArgTransform(name="new_param", required=True)
+        },
+    )
+
+    # New parameter name should be required
+    assert "new_param" in new_tool.parameters["required"]
+    assert "optional_param" not in new_tool.parameters["properties"]
+    assert "new_param" in new_tool.parameters["properties"]
+    assert "default" not in new_tool.parameters["properties"]["new_param"]
+
+    # Should work with new name
+    result = await new_tool.run(arguments={"new_param": 200})
+    assert result[0].text == "value: 200"  # type: ignore
+
+
+async def test_arg_transform_required_true_with_default_raises_error():
+    """Test that required=True with default raises an error."""
+    with pytest.raises(
+        ValueError, match="Cannot specify 'required=True' with 'default'"
+    ):
+        ArgTransform(required=True, default=42)
+
+
+async def test_arg_transform_required_true_with_factory_raises_error():
+    """Test that required=True with default_factory raises an error."""
+    with pytest.raises(
+        ValueError, match="default_factory can only be used with hide=True"
+    ):
+        ArgTransform(required=True, default_factory=lambda: 42)
+
+
+async def test_arg_transform_required_no_change():
+    """Test that required=... (NotSet) leaves requirement status unchanged."""
+
+    @Tool.from_function
+    def base_tool(required_param: int, optional_param: int = 42) -> str:
+        return f"values: {required_param}, {optional_param}"
+
+    # Transform without changing required status
+    new_tool = Tool.from_tool(
+        base_tool,
+        transform_args={
+            "required_param": ArgTransform(name="req"),
+            "optional_param": ArgTransform(name="opt"),
+        },
+    )
+
+    # Required status should be unchanged
+    assert "req" in new_tool.parameters["required"]
+    assert "opt" not in new_tool.parameters["required"]
+    assert new_tool.parameters["properties"]["opt"]["default"] == 42
+
+    # Should work as expected
+    result = await new_tool.run(arguments={"req": 1})
+    assert result[0].text == "values: 1, 42"  # type: ignore
+
+
+async def test_arg_transform_hide_and_required_raises_error():
+    """Test that hide=True and required=True together raises an error."""
+    with pytest.raises(
+        ValueError, match="Cannot specify both 'hide=True' and 'required=True'"
+    ):
+        ArgTransform(hide=True, required=True)

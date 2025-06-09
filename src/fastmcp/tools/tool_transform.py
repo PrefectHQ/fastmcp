@@ -1,107 +1,3 @@
-"""# Tool Transformation
-
-Transform existing tools with modified schemas, argument mappings, and custom behavior.
-Use this for creating tool variants, adapting tools for different contexts, or adding
-custom logic while preserving the original tool's functionality.
-
-## Quick Reference
-
-### Basic Argument Renaming
-```python
-# Transform specific parent arguments (others pass through unchanged)
-new_tool = Tool.from_tool(
-    original_tool,
-    transform_args={"old_param": "new_param"}  # Only transforms this one arg
-)
-```
-
-### Complex Transformations
-```python
-from fastmcp.tools.tool_transform import ArgTransform
-
-new_tool = Tool.from_tool(
-    original_tool,
-    transform_args={
-        "old_name": ArgTransform(name="new_name", description="Updated desc"),
-        "hidden_param": ArgTransform(hide=True, default="constant_value"),
-        "simple": "renamed"
-    }
-)
-```
-
-### Custom Transform Functions
-```python
-async def my_transform(new_x: int, new_y: int) -> str:
-    # Use forward() with transformed argument names
-    result = await forward(new_x=new_x, new_y=new_y)
-    return f"Custom: {result}"
-
-new_tool = Tool.from_tool(
-    original_tool,
-    transform_fn=my_transform,
-    transform_args={"x": "new_x", "y": "new_y"}
-)
-```
-
-### Using **kwargs for Flexibility
-```python
-async def flexible_transform(**kwargs) -> str:
-    # kwargs contains all transformed arguments
-    result = await forward(**kwargs)
-    return f"Got: {kwargs}"
-
-new_tool = Tool.from_tool(
-    original_tool,
-    transform_fn=flexible_transform,
-    transform_args={"x": "input_x", "y": "input_y"}
-)
-```
-
-## Key Functions
-
-- `forward(**kwargs)`: Call parent tool with transformed argument names
-- `forward_raw(**kwargs)`: Call parent tool with original argument names
-
-## Important Notes
-
-- `transform_args` is optional - if empty/None, all parent arguments pass through unchanged
-- Only arguments listed in `transform_args` are transformed, others remain as-is
-- Functions with `**kwargs` receive both transformed and untransformed arguments
-
-## ArgTransform Options
-
-- `name`: Rename the argument
-- `description`: Change the description
-- `default`: Add/change default value
-- `hide=True`: Hide the argument from clients (pass constant value to parent)
-
-## Common Patterns
-
-```python
-# Chain transformations (partial transforms at each step)
-tool1 = Tool.from_tool(original, transform_args={"a": "x"})  # Only transforms 'a'
-tool2 = Tool.from_tool(tool1, transform_args={"x": "final"})  # Only transforms 'x'
-
-# Pure passthrough (no transform_args needed)
-enhanced = Tool.from_tool(
-    original,
-    name="enhanced_version",
-    description="Better tool",
-    tags={"v2", "enhanced"}
-    # No transform_args = all parent args pass through unchanged
-)
-
-# Hide specific arguments with constant values
-simplified = Tool.from_tool(
-    complex_tool,
-    transform_args={
-        "api_key": ArgTransform(hide=True, default="secret_key"),  # Hidden constant
-        "debug": ArgTransform(hide=True)  # Hidden, uses parent's default
-    }
-)
-```
-"""
-
 from __future__ import annotations
 
 import inspect
@@ -109,18 +5,18 @@ from collections.abc import Callable
 from contextvars import ContextVar
 from dataclasses import dataclass
 from types import EllipsisType
-from typing import TYPE_CHECKING, Any
+from typing import Any, Literal
 
 from mcp.types import EmbeddedResource, ImageContent, TextContent, ToolAnnotations
+from pydantic import ConfigDict
 
 from fastmcp.tools.tool import ParsedFunction, Tool
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import get_cached_typeadapter
 
-if TYPE_CHECKING:
-    pass
-
 logger = get_logger(__name__)
+
+NotSet = ...
 
 
 # Context variable to store current transformed tool
@@ -197,8 +93,10 @@ class ArgTransform:
         name: New name for the argument. Use None to keep original name, or ... for no change.
         description: New description for the argument. Use None to remove description, or ... for no change.
         default: New default value for the argument. Use ... for no change.
+        default_factory: Callable that returns a default value. Cannot be used with default.
         type: New type for the argument. Use ... for no change.
         hide: If True, hide this argument from clients but pass a constant value to parent.
+        required: If True, make argument required (remove default). Use ... for no change.
 
     Examples:
         # Rename argument 'old_name' to 'new_name'
@@ -210,6 +108,9 @@ class ArgTransform:
         # Add a default value (makes argument optional)
         ArgTransform(default=42)
 
+        # Add a default factory (makes argument optional)
+        ArgTransform(default_factory=lambda: time.time())
+
         # Change the type
         ArgTransform(type=str)
 
@@ -219,15 +120,53 @@ class ArgTransform:
         # Hide argument but pass a constant value to parent
         ArgTransform(hide=True, default="constant_value")
 
+        # Hide argument but pass a factory-generated value to parent
+        ArgTransform(hide=True, default_factory=lambda: uuid.uuid4().hex)
+
+        # Make an optional parameter required (removes any default)
+        ArgTransform(required=True)
+
         # Combine multiple transformations
         ArgTransform(name="new_name", description="New desc", default=None, type=int)
     """
 
-    name: str | None | EllipsisType = ...
-    description: str | None | EllipsisType = ...
-    default: Any | EllipsisType = ...
-    type: Any | EllipsisType = ...
+    name: str | EllipsisType = NotSet
+    description: str | EllipsisType = NotSet
+    default: Any | EllipsisType = NotSet
+    default_factory: Callable[[], Any] | EllipsisType = NotSet
+    type: Any | EllipsisType = NotSet
     hide: bool = False
+    required: Literal[True] | EllipsisType = NotSet
+
+    def __post_init__(self):
+        """Validate that only one of default or default_factory is provided."""
+        has_default = self.default is not NotSet
+        has_factory = self.default_factory is not NotSet
+
+        if has_default and has_factory:
+            raise ValueError(
+                "Cannot specify both 'default' and 'default_factory' in ArgTransform. "
+                "Use either 'default' for a static value or 'default_factory' for a callable."
+            )
+
+        if has_factory and not self.hide:
+            raise ValueError(
+                "default_factory can only be used with hide=True. "
+                "Visible parameters must use static 'default' values since JSON schema "
+                "cannot represent dynamic factories."
+            )
+
+        if self.required is True and (has_default or has_factory):
+            raise ValueError(
+                "Cannot specify 'required=True' with 'default' or 'default_factory'. "
+                "Required parameters cannot have defaults."
+            )
+
+        if self.hide and self.required is True:
+            raise ValueError(
+                "Cannot specify both 'hide=True' and 'required=True'. "
+                "Hidden parameters cannot be required since clients cannot provide them."
+            )
 
 
 class TransformedTool(Tool):
@@ -249,9 +188,12 @@ class TransformedTool(Tool):
             validation when forward() is called from custom functions.
     """
 
+    model_config = ConfigDict(extra="allow", arbitrary_types_allowed=True)
+
     parent_tool: Tool
     fn: Callable[..., Any]
     forwarding_fn: Callable[..., Any]  # Always present, handles arg transformation
+    transform_args: dict[str, ArgTransform]
 
     async def run(
         self, arguments: dict[str, Any]
@@ -278,7 +220,29 @@ class TransformedTool(Tool):
 
         for param_name, param_schema in properties.items():
             if param_name not in arguments and "default" in param_schema:
-                arguments[param_name] = param_schema["default"]
+                # Check if this parameter has a default_factory from transform_args
+                # We need to call the factory for each run, not use the cached schema value
+                has_factory_default = False
+                if self.transform_args:
+                    # Find the original parameter name that maps to this param_name
+                    for orig_name, transform in self.transform_args.items():
+                        transform_name = (
+                            transform.name
+                            if transform.name is not NotSet
+                            else orig_name
+                        )
+                        if (
+                            transform_name == param_name
+                            and transform.default_factory is not NotSet
+                        ):
+                            # Type check to ensure default_factory is callable
+                            if callable(transform.default_factory):
+                                arguments[param_name] = transform.default_factory()
+                                has_factory_default = True
+                                break
+
+                if not has_factory_default:
+                    arguments[param_name] = param_schema["default"]
 
         token = _current_tool.set(self)
         try:
@@ -291,11 +255,11 @@ class TransformedTool(Tool):
     def from_tool(
         cls,
         tool: Tool,
-        transform_fn: Callable[..., Any] | None = None,
         name: str | None = None,
-        transform_args: dict[str, str | ArgTransform | None] | None = None,
         description: str | None = None,
         tags: set[str] | None = None,
+        transform_fn: Callable[..., Any] | None = None,
+        transform_args: dict[str, ArgTransform] | None = None,
         annotations: ToolAnnotations | None = None,
         serializer: Callable[[Any], str] | None = None,
     ) -> TransformedTool:
@@ -338,16 +302,16 @@ class TransformedTool(Tool):
 
             Tool.from_tool(parent, transform_fn=flexible, transform_args={"a": "x"})
         """
+        transform_args = transform_args or {}
 
-        # Validate transform_args early
-        if transform_args:
-            parent_params = set(tool.parameters.get("properties", {}).keys())
-            unknown_args = set(transform_args.keys()) - parent_params
-            if unknown_args:
-                raise ValueError(
-                    f"Unknown arguments in transform_args: {', '.join(sorted(unknown_args))}. "
-                    f"Parent tool has: {', '.join(sorted(parent_params))}"
-                )
+        # Validate transform_args
+        parent_params = set(tool.parameters.get("properties", {}).keys())
+        unknown_args = set(transform_args.keys()) - parent_params
+        if unknown_args:
+            raise ValueError(
+                f"Unknown arguments in transform_args: {', '.join(sorted(unknown_args))}. "
+                f"Parent tool has: {', '.join(sorted(parent_params))}"
+            )
 
         # Always create the forwarding transform
         schema, forwarding_fn = cls._create_forwarding_transform(tool, transform_args)
@@ -397,10 +361,8 @@ class TransformedTool(Tool):
         if transform_args:
             new_names = []
             for old_name, transform in transform_args.items():
-                if isinstance(transform, str):
-                    new_names.append(transform)
-                elif isinstance(transform, ArgTransform) and not transform.hide:
-                    if transform.name is not ... and transform.name is not None:
+                if not transform.hide:
+                    if transform.name is not NotSet:
                         new_names.append(transform.name)
                     else:
                         new_names.append(old_name)
@@ -421,7 +383,7 @@ class TransformedTool(Tool):
 
         final_description = description if description is not None else tool.description
 
-        return cls(
+        transformed_tool = cls(
             fn=final_fn,
             forwarding_fn=forwarding_fn,
             parent_tool=tool,
@@ -431,13 +393,16 @@ class TransformedTool(Tool):
             tags=tags or tool.tags,
             annotations=annotations or tool.annotations,
             serializer=serializer or tool.serializer,
+            transform_args=transform_args,
         )
+
+        return transformed_tool
 
     @classmethod
     def _create_forwarding_transform(
         cls,
         parent_tool: Tool,
-        transform_args: dict[str, str | ArgTransform | None] | None,
+        transform_args: dict[str, ArgTransform] | None,
     ) -> tuple[dict[str, Any], Callable[..., Any]]:
         """Create schema and forwarding function that encapsulates all transformation logic.
 
@@ -469,20 +434,25 @@ class TransformedTool(Tool):
             if transform_args and old_name in transform_args:
                 transform = transform_args[old_name]
             else:
-                transform = ...  # Default behavior - pass through
+                # Default behavior - pass through (no transformation)
+                transform = ArgTransform()  # Default ArgTransform with no changes
 
             # Handle hidden parameters with defaults
-            if isinstance(transform, ArgTransform) and transform.hide:
+            if transform.hide:
                 # Validate that hidden parameters without user defaults have parent defaults
-                if transform.default is ... and old_name in parent_required:
+                has_user_default = (
+                    transform.default is not NotSet
+                    or transform.default_factory is not NotSet
+                )
+                if not has_user_default and old_name in parent_required:
                     raise ValueError(
                         f"Hidden parameter '{old_name}' has no default value in parent tool "
-                        f"and no default provided in ArgTransform. Either provide a default "
-                        f"in ArgTransform or don't hide required parameters."
+                        f"and no default or default_factory provided in ArgTransform. Either provide a default "
+                        f"or default_factory in ArgTransform or don't hide required parameters."
                     )
-                if transform.default is not ...:
-                    # Hidden parameter with a constant value
-                    hidden_defaults[old_name] = transform.default
+                if has_user_default:
+                    # Store info for later factory calling or direct value
+                    hidden_defaults[old_name] = transform
                 # Skip adding to schema (not exposed to clients)
                 continue
 
@@ -532,7 +502,13 @@ class TransformedTool(Tool):
                 parent_args[old_name] = value
 
             # Add hidden defaults (constant values for hidden parameters)
-            parent_args.update(hidden_defaults)
+            for old_name, transform in hidden_defaults.items():
+                if transform.default is not NotSet:
+                    parent_args[old_name] = transform.default
+                elif transform.default_factory is not NotSet:
+                    # Type check to ensure default_factory is callable
+                    if callable(transform.default_factory):
+                        parent_args[old_name] = transform.default_factory()
 
             return await parent_tool.run(parent_args)
 
@@ -542,7 +518,7 @@ class TransformedTool(Tool):
     def _apply_single_transform(
         old_name: str,
         old_schema: dict[str, Any],
-        transform: str | ArgTransform | None | EllipsisType,
+        transform: ArgTransform,
         is_required: bool,
     ) -> tuple[str, dict[str, Any], bool] | None:
         """Apply transformation to a single parameter.
@@ -553,49 +529,55 @@ class TransformedTool(Tool):
         Args:
             old_name: Original name of the parameter.
             old_schema: Original JSON schema for the parameter.
-            transform: Transformation to apply (string for rename, ArgTransform for complex,
-                      None to drop, ... to pass through unchanged).
+            transform: ArgTransform object specifying how to transform the parameter.
             is_required: Whether the original parameter was required.
 
         Returns:
             Tuple of (new_name, new_schema, new_is_required) if parameter should be kept,
             None if parameter should be dropped.
         """
-        if transform is ...:
-            # Not in transform_args - pass through
-            return old_name, old_schema.copy(), is_required
-        elif transform is None:
-            # Explicitly set to None in transform_args - drop the parameter
+        if transform.hide:
             return None
 
-        if isinstance(transform, str):
-            # Simple rename
-            return transform, old_schema.copy(), is_required
+        # Handle name transformation - ensure we always have a string
+        if transform.name is not NotSet:
+            new_name = transform.name if transform.name is not None else old_name
+        else:
+            new_name = old_name
 
-        if isinstance(transform, ArgTransform):
-            if transform.hide:
-                return None
+        # Ensure new_name is always a string
+        if not isinstance(new_name, str):
+            new_name = old_name
 
-            if transform.name is not ...:
-                new_name = transform.name or old_name  # Handle None case
+        new_schema = old_schema.copy()
+
+        # Handle description transformation
+        if transform.description is not NotSet:
+            if transform.description is None:
+                new_schema.pop("description", None)  # Remove description
             else:
-                new_name = old_name
-            new_schema = old_schema.copy()
-
-            if transform.description is not ...:
                 new_schema["description"] = transform.description
-            if transform.default is not ...:
-                new_schema["default"] = transform.default
-                is_required = False
-            if transform.type is not ...:
-                # Use TypeAdapter to get proper JSON schema for the type
-                type_schema = get_cached_typeadapter(transform.type).json_schema()
-                # Update the schema with the type information from TypeAdapter
-                new_schema.update(type_schema)
 
-            return new_name, new_schema, is_required  # type: ignore[return-value]
+        # Handle required transformation first
+        if transform.required is not NotSet:
+            is_required = bool(transform.required)
+            if transform.required is True:
+                # Remove any existing default when making required
+                new_schema.pop("default", None)
 
-        raise ValueError(f"Invalid transform: {transform}")
+        # Handle default value transformation (only if not making required)
+        if transform.default is not NotSet and transform.required is not True:
+            new_schema["default"] = transform.default
+            is_required = False
+
+        # Handle type transformation
+        if transform.type is not NotSet:
+            # Use TypeAdapter to get proper JSON schema for the type
+            type_schema = get_cached_typeadapter(transform.type).json_schema()
+            # Update the schema with the type information from TypeAdapter
+            new_schema.update(type_schema)
+
+        return new_name, new_schema, is_required
 
     @staticmethod
     def _merge_schema_with_precedence(
