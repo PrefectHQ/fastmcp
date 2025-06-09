@@ -1,11 +1,11 @@
 import re
 from dataclasses import dataclass
-from typing import Annotated, Any, TypedDict
+from typing import Annotated, Any
 
 import pytest
 from dirty_equals import IsList
 from pydantic import BaseModel, Field
-from rich import print  # type: ignore
+from typing_extensions import TypedDict
 
 from fastmcp import FastMCP
 from fastmcp.client.client import Client
