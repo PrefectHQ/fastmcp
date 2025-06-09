@@ -8,8 +8,7 @@ tag: "New!"
 <Card 
 title="FastMCP 2.7: Pare Programming" href="https://github.com/jlowin/fastmcp/releases/tag/v2.7.0" 
 img="assets/updates/release-2-7.png" 
-cta="Read the release notes" 
-arrow="false" 
+cta="Read the release notes"  
 >
 FastMCP 2.7 has been released!
 
@@ -35,11 +34,81 @@ The bulk of the update is focused on improving the FastMCP internals, including 
 <Card 
 title="Blast Auth with FastMCP 2.6" href="https://www.jlowin.dev/blog/fastmcp-2-6" 
 img="https://www.jlowin.dev/_image?href=%2F_astro%2Fhero.Bsu8afiw.png&w=1000&h=500&f=webp" 
-cta="Read more" 
-arrow="false" 
-horizontal="true">
+cta="Read more"  
+>
 FastMCP 2.6 is here!
 
 This release introduces first-class authentication for MCP servers and clients, including pragmatic Bearer token support and seamless OAuth 2.1 integration. This release aligns with how major AI platforms are adopting MCP today, making it easier than ever to securely connect your tools to real-world AI models. Dive into the update and secure your stack with minimal friction.
+</Card>
+</Update>
+
+<Update description="May 21, 2025" label="Vibe-Testing" tags={["Blog Posts"]}>
+<Card
+title="Stop Vibe-Testing Your MCP Server"
+href="https://www.jlowin.dev/blog/stop-vibe-testing-mcp-servers"
+img="https://www.jlowin.dev/_image?href=%2F_astro%2Fhero.BUPy9I9c.png&w=1000&h=500&f=webp"
+cta="Read more"
+>
+
+Your tests are bad and you should feel bad.
+
+Stop vibe-testing your MCP server through LLM guesswork. FastMCP 2.0 introduces in-memory testing for fast, deterministic, and fully Pythonic validation of your MCP logic—no network, no subprocesses, no vibes.
+
+</Card>
+</Update>
+
+
+<Update description="May 8, 2025" label="10,000 Stars" tags={["Blog Posts"]}>
+<Card
+title="Reflecting on FastMCP at 10k stars 🌟"
+href="https://www.jlowin.dev/blog/fastmcp-2-10k-stars"
+img="https://www.jlowin.dev/_image?href=%2F_astro%2Fhero.Cnvci9Q_.png&w=1000&h=500&f=webp"
+cta="Read more"
+>
+
+In just six weeks since its relaunch, FastMCP has surpassed 10,000 GitHub stars—becoming the fastest-growing OSS project in our orbit. What started as a personal itch has become the backbone of Python-based MCP servers, powering a rapidly expanding ecosystem. While the protocol itself evolves, FastMCP continues to lead with clarity, developer experience, and opinionated tooling. Here’s to what’s next.
+
+</Card>
+</Update>
+
+<Update description="May 8, 2025" label="FastMCP 2.3" tags={["Blog Posts", "Releases"]}>
+<Card
+title="Now Streaming: FastMCP 2.3"
+href="https://www.jlowin.dev/blog/fastmcp-2-3-streamable-http"
+img="https://www.jlowin.dev/_image?href=%2F_astro%2Fhero.M_hv6gEB.png&w=1000&h=500&f=webp"
+cta="Read more"
+>
+
+FastMCP 2.3 introduces full support for Streamable HTTP, a modern alternative to SSE that simplifies MCP deployments over the web. It’s efficient, reliable, and now the default HTTP transport. Just run your server with transport="streamable-http" and connect clients via a standard URL—FastMCP handles the rest. No special setup required. This release makes deploying MCP servers easier and more portable than ever.
+
+</Card>
+</Update>
+
+<Update description="April 23, 2025" label="Proxy Servers" tags={["Blog Posts", "Tutorials"]}>
+<Card
+title="MCP Proxy Servers with FastMCP 2.0"
+href="https://www.jlowin.dev/blog/fastmcp-proxy"
+img="https://www.jlowin.dev/_image?href=%2F_astro%2Frobot-hero.DpmAqgui.png&w=1000&h=500&f=webp"
+cta="Read more"
+>
+
+Even AI needs a good travel adapter 🔌
+
+
+FastMCP now supports proxying arbitrary MCP servers, letting you run a local FastMCP instance that transparently forwards requests to any remote or third-party server—regardless of transport. This enables transport bridging (e.g., stdio ⇄ SSE), simplified client configuration, and powerful gateway patterns. Proxies are fully composable with other FastMCP servers, letting you mount or import them just like local servers. Use `FastMCP.from_client()` to wrap any backend in a clean, Pythonic proxy.
+</Card>
+</Update>
+
+<Update label="FastMCP 2.0" description="April 16, 2025" tags={["Releases", "Blog Posts"]}>
+<Card
+title="Introducing FastMCP 2.0 🚀"
+href="https://www.jlowin.dev/blog/fastmcp-2"
+img="https://www.jlowin.dev/_image?href=%2F_astro%2Fhero.DpbmGNrr.png&w=1000&h=500&f=webp"
+cta="Read more"
+>
+
+This major release reimagines FastMCP as a full ecosystem platform, with powerful new features for composition, integration, and client interaction. You can now compose local and remote servers, proxy arbitrary MCP servers (with transport translation), and generate MCP servers from OpenAPI or FastAPI apps. A new client infrastructure supports advanced workflows like LLM sampling. 
+
+FastMCP 2.0 builds on the success of v1 with a cleaner, more flexible foundation—try it out today!
 </Card>
 </Update>
