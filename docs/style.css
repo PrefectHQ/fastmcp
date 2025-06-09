@@ -117,3 +117,14 @@ h6 code:not(pre code) {
   background: #334155;
   border: 1px solid #64748b;
 }
+
+/* Hide the sidebar overflow by default, but allow it to be shown on hover */
+#sidebar-content {
+  overflow-y: hidden;
+}
+
+#sidebar-content:hover,
+#sidebar-content:active,
+#sidebar-content:focus {
+  overflow-y: auto;
+}
