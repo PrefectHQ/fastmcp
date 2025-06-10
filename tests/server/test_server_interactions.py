@@ -143,13 +143,6 @@ class TestToolTags:
             tools = await client.list_tools()
             assert {t.name for t in tools} == {"tool_1"}
 
-    async def test_include_tags_tuple(self):
-        mcp = self.create_server(include_tags={("a", "b")})
-
-        async with Client(mcp) as client:
-            tools = await client.list_tools()
-            assert {t.name for t in tools} == {"tool_1"}
-
     async def test_exclude_tags_all_tools(self):
         mcp = self.create_server(exclude_tags={"a", "b"})
 
@@ -159,13 +152,6 @@ class TestToolTags:
 
     async def test_exclude_tags_some_tools(self):
         mcp = self.create_server(exclude_tags={"a", "z"})
-
-        async with Client(mcp) as client:
-            tools = await client.list_tools()
-            assert {t.name for t in tools} == {"tool_2"}
-
-    async def test_exclude_tags_tuple(self):
-        mcp = self.create_server(exclude_tags={("a", "b")})
 
         async with Client(mcp) as client:
             tools = await client.list_tools()

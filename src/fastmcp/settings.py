@@ -235,44 +235,27 @@ class Settings(BaseSettings):
     ] = None
 
     include_tags: Annotated[
-        set[str] | set[tuple[str, ...]] | set[str | tuple[str, ...]] | None,
+        set[str] | None,
         Field(
             default=None,
             description=inspect.cleandoc(
                 """
                 If provided, only components that match these tags will be
-                exposed to clients. This can be a set of tags or tuples of tags.
-                A component is considered to match if ANY of its tags match ANY
-                of the tags in the set, or if any combination of its tags match
-                ALL of the tags in any tuple in the set.
-
-                For example, if include_tags is set to {"tag1", ("tag2",
-                "tag3")}, then a component with tags {"tag1", "tag4"} or
-                {"tag2", "tag3", "tag4"} will be included, but a component with
-                tags {"tag2", "tag4"} will not be included.
+                exposed to clients. A component is considered to match if ANY of
+                its tags match ANY of the tags in the set.
                 """
             ),
         ),
     ] = None
     exclude_tags: Annotated[
-        set[str] | set[tuple[str, ...]] | set[str | tuple[str, ...]] | None,
+        set[str] | None,
         Field(
             default=None,
             description=inspect.cleandoc(
                 """
                 If provided, components that match these tags will be excluded
-                from the server. This can be a set of tags or tuples of tags.
-                This is applied after include_tags, so if a component matches
-                both include_tags and exclude_tags, it will be excluded.
-
-                A component is considered to match if ANY of its tags match ANY
-                of the tags in the set, or if any combination of its tags match
-                ALL of the tags in any tuple in the set.
-
-                For example, if exclude_tags is set to {"tag1", ("tag2",
-                "tag3")}, then a component with tags {"tag1", "tag4"} or
-                {"tag2", "tag3", "tag4"} will be excluded, but a component with
-                tags {"tag2", "tag4"} will not be excluded.
+                from the server. A component is considered to match if ANY of
+                its tags match ANY of the tags in the set.
                 """
             ),
         ),

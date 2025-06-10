@@ -131,14 +131,8 @@ class FastMCP(Generic[LifespanResultT]):
         mask_error_details: bool | None = None,
         tools: list[Tool | Callable[..., Any]] | None = None,
         dependencies: list[str] | None = None,
-        include_tags: set[str]
-        | set[tuple[str, ...]]
-        | set[str | tuple[str, ...]]
-        | None = None,
-        exclude_tags: set[str]
-        | set[tuple[str, ...]]
-        | set[str | tuple[str, ...]]
-        | None = None,
+        include_tags: set[str] | None = None,
+        exclude_tags: set[str] | None = None,
         # ---
         # ---
         # --- The following arguments are DEPRECATED ---
@@ -1681,10 +1675,8 @@ class FastMCP(Generic[LifespanResultT]):
             • If the component's enabled property is False, always return False.
             • If both include_tags and exclude_tags are None, return True.
             • If exclude_tags is provided, check each exclude tag:
-                - If the exclude tag is a tuple, all tags in the tuple must be present in the input tags to exclude.
                 - If the exclude tag is a string, it must be present in the input tags to exclude.
             • If include_tags is provided, check each include tag:
-                - If the include tag is a tuple, all tags in the tuple must be present in the input tags to include.
                 - If the include tag is a string, it must be present in the input tags to include.
             • If include_tags is provided and none of the include tags match, return False.
             • If include_tags is not provided, return True.
@@ -1696,26 +1688,16 @@ class FastMCP(Generic[LifespanResultT]):
             return True
 
         if self.exclude_tags is not None:
-            for etag in self.exclude_tags:
-                if isinstance(etag, tuple):
-                    if all(et in component.tags for et in etag):
-                        return False
-                else:
-                    if etag in component.tags:
-                        return False
+            if any(etag in component.tags for etag in self.exclude_tags):
+                return False
 
         if self.include_tags is not None:
-            for itag in self.include_tags:
-                if isinstance(itag, tuple):
-                    if all(it in component.tags for it in itag):
-                        return True
-                else:
-                    if itag in component.tags:
-                        return True
+            if any(itag in component.tags for itag in self.include_tags):
+                return True
+            else:
+                return False
 
-            return False
-        else:
-            return True
+        return True
 
 
 class MountedServer:

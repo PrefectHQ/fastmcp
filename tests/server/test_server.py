@@ -1261,20 +1261,6 @@ class TestShouldIncludeComponent:
         result = mcp._should_enable_component(tool)
         assert result is True
 
-    def test_exclude_tuple_all_present_returns_false(self):
-        """Test that when all tags in exclude tuple are present, returns False."""
-        tool = Tool(name="test_tool", tags={"tag1", "tag2", "tag3"}, parameters={})
-        mcp = FastMCP(tools=[tool], exclude_tags={("tag1", "tag2")})
-        result = mcp._should_enable_component(tool)
-        assert result is False
-
-    def test_exclude_tuple_partial_present_returns_true(self):
-        """Test that when only some tags in exclude tuple are present, returns True."""
-        tool = Tool(name="test_tool", tags={"tag1", "tag3"}, parameters={})
-        mcp = FastMCP(tools=[tool], exclude_tags={("tag1", "tag2")})
-        result = mcp._should_enable_component(tool)
-        assert result is True
-
     def test_multiple_exclude_tags_any_match_returns_false(self):
         """Test that when any exclude tag matches, returns False."""
         tool = Tool(name="test_tool", tags={"tag1", "tag2", "tag3"}, parameters={})
@@ -1297,20 +1283,6 @@ class TestShouldIncludeComponent:
         """Test that when an include string tag is not present in tags, returns False."""
         tool = Tool(name="test_tool", tags={"tag1", "tag2"}, parameters={})
         mcp = FastMCP(tools=[tool], include_tags={"include_me"})
-        result = mcp._should_enable_component(tool)
-        assert result is False
-
-    def test_include_tuple_all_present_returns_true(self):
-        """Test that when all tags in include tuple are present, returns True."""
-        tool = Tool(name="test_tool", tags={"tag1", "tag2", "tag3"}, parameters={})
-        mcp = FastMCP(tools=[tool], include_tags={("tag1", "tag2")})
-        result = mcp._should_enable_component(tool)
-        assert result is True
-
-    def test_include_tuple_partial_present_returns_false(self):
-        """Test that when only some tags in include tuple are present, returns False."""
-        tool = Tool(name="test_tool", tags={"tag1", "tag3"}, parameters={})
-        mcp = FastMCP(tools=[tool], include_tags={("tag1", "tag2")})
         result = mcp._should_enable_component(tool)
         assert result is False
 
@@ -1339,79 +1311,6 @@ class TestShouldIncludeComponent:
         result = mcp._should_enable_component(tool)
         assert result is False
 
-    def test_mixed_string_and_tuple_exclude_tags(self):
-        """Test exclude tags with both string and tuple formats."""
-        # Should be excluded because "tag1" is present
-        tool1 = Tool(
-            name="test_tool", tags={"tag1", "tag2", "tag3", "tag4"}, parameters={}
-        )
-        mcp1 = FastMCP(tools=[tool1], exclude_tags={"tag1", ("tag2", "tag3")})
-        result = mcp1._should_enable_component(tool1)
-        assert result is False
-
-        # Remove tag1, should still be excluded because both tag2 and tag3 are present
-        tool2 = Tool(name="test_tool", tags={"tag2", "tag3", "tag4"}, parameters={})
-        mcp2 = FastMCP(tools=[tool2], exclude_tags={"tag1", ("tag2", "tag3")})
-        result = mcp2._should_enable_component(tool2)
-        assert result is False
-
-        # Remove tag2, should not be excluded
-        tool3 = Tool(
-            name="test_tool", tags={"tag1_removed", "tag3", "tag4"}, parameters={}
-        )
-        mcp3 = FastMCP(tools=[tool3], exclude_tags={("tag2", "tag3")})
-        result = mcp3._should_enable_component(tool3)
-        assert result is True
-
-    def test_mixed_string_and_tuple_include_tags(self):
-        """Test include tags with both string and tuple formats."""
-        # Should be included because both tag1 and tag2 are present (tuple match)
-        tool1 = Tool(name="test_tool", tags={"tag1", "tag2"}, parameters={})
-        mcp1 = FastMCP(tools=[tool1], include_tags={"not_present", ("tag1", "tag2")})
-        result = mcp1._should_enable_component(tool1)
-        assert result is True
-
-        # Should be included because tag1 is present (string match)
-        tool2 = Tool(name="test_tool", tags={"tag1", "tag2"}, parameters={})
-        mcp2 = FastMCP(
-            tools=[tool2], include_tags={"tag1", ("not_present1", "not_present2")}
-        )
-        result = mcp2._should_enable_component(tool2)
-        assert result is True
-
-        # Should not be included because no conditions are met
-        tool3 = Tool(name="test_tool", tags={"tag1", "tag2"}, parameters={})
-        mcp3 = FastMCP(
-            tools=[tool3],
-            include_tags={"not_present", ("not_present1", "not_present2")},
-        )
-        result = mcp3._should_enable_component(tool3)
-        assert result is False
-
-    def test_complex_scenario_with_both_filters(self):
-        """Test complex scenario with both include and exclude filters."""
-        # Should be excluded despite matching include conditions
-        tool1 = Tool(
-            name="test_tool", tags={"api", "read", "admin", "sensitive"}, parameters={}
-        )
-        mcp1 = FastMCP(
-            tools=[tool1],
-            include_tags={"api", ("read", "admin")},
-            exclude_tags={"sensitive"},
-        )
-        result = mcp1._should_enable_component(tool1)
-        assert result is False
-
-        # Remove sensitive tag, should now be included
-        tool2 = Tool(name="test_tool", tags={"api", "read", "admin"}, parameters={})
-        mcp2 = FastMCP(
-            tools=[tool2],
-            include_tags={"api", ("read", "admin")},
-            exclude_tags={"sensitive"},
-        )
-        result = mcp2._should_enable_component(tool2)
-        assert result is True
-
     def test_empty_include_exclude_sets(self):
         """Test behavior with empty include/exclude sets."""
         # Empty include set means nothing matches
@@ -1439,27 +1338,3 @@ class TestShouldIncludeComponent:
         mcp2 = FastMCP(tools=[tool2], exclude_tags={"bad_tag"})
         result = mcp2._should_enable_component(tool2)
         assert result is True
-
-        # Tuple filters with empty tags
-        tool3 = Tool(name="test_tool", tags=set(), parameters={})
-        mcp3 = FastMCP(tools=[tool3], include_tags={("tag1", "tag2")})
-        result = mcp3._should_enable_component(tool3)
-        assert result is False
-
-        tool4 = Tool(name="test_tool", tags=set(), parameters={})
-        mcp4 = FastMCP(tools=[tool4], exclude_tags={("tag1", "tag2")})
-        result = mcp4._should_enable_component(tool4)
-        assert result is True
-
-    def test_single_element_tuples(self):
-        """Test behavior with single-element tuples."""
-        # Single-element tuple should behave like a string
-        tool1 = Tool(name="test_tool", tags={"tag1", "tag2"}, parameters={})
-        mcp1 = FastMCP(tools=[tool1], include_tags={("tag1",)})
-        result = mcp1._should_enable_component(tool1)
-        assert result is True
-
-        tool2 = Tool(name="test_tool", tags={"tag1", "tag2"}, parameters={})
-        mcp2 = FastMCP(tools=[tool2], exclude_tags={("tag1",)})
-        result = mcp2._should_enable_component(tool2)
-        assert result is False
