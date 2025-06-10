@@ -93,7 +93,7 @@ To modify an argument, you need to create an `ArgTransform` object. This object 
 - `type`: The new type for the argument.
 
 <Tip>
-Certain combinations of parameters are not allowed. For example, you can only use `default_factory` with `hide=True`, because dynamic defaults cannot be represented in a JSON schema for the client. You can only set required=True 
+Certain combinations of parameters are not allowed. For example, you can only use `default_factory` with `hide=True`, because dynamic defaults cannot be represented in a JSON schema for the client. You can only set required=True for arguments that do not declare a default value.
 </Tip>
 
 
@@ -182,7 +182,11 @@ Default values are especially useful in combination with hidden arguments.
 
 ### Hiding Arguments
 
-Sometimes a tool requires arguments that shouldn't be exposed to the LLM, such as API keys, configuration flags, or internal IDs. You can hide these parameters using `hide=True`. You can only hide arguments that already have a default value, or that you provide a new `default` or `default_factory` for.
+Sometimes a tool requires arguments that shouldn't be exposed to the LLM, such as API keys, configuration flags, or internal IDs. You can hide these parameters using `hide=True`. Note that you can only hide arguments that have a default value (or for which you provide a new default), because the LLM can't provide a value at call time.
+
+<Tip>
+To pass a constant value to the parent tool, combine `hide=True` with `default=<value>`.
+</Tip>
 
 ```python {19-20}
 import os
@@ -398,7 +402,7 @@ async def ensure_a_positive(a: int, **kwargs) -> int:
 
 new_tool = Tool.from_tool(
     add,
-    transform_fn=ensure_positive,
+    transform_fn=ensure_a_positive,
     transform_args={
         "x": ArgTransform(name="a"),
         "y": ArgTransform(name="b"),
