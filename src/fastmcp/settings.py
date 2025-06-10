@@ -73,12 +73,28 @@ class Settings(BaseSettings):
         dotenv_settings: PydanticBaseSettingsSource,
         file_secret_settings: PydanticBaseSettingsSource,
     ) -> tuple[PydanticBaseSettingsSource, ...]:
+        # can remove this classmethod after deprecated FASTMCP_SERVER_ prefix is
+        # removed
         return (
             init_settings,
             ExtendedEnvSettingsSource(settings_cls),
             dotenv_settings,
             file_secret_settings,
         )
+
+    @property
+    def settings(self) -> Self:
+        """
+        This property is for backwards compatibility with FastMCP < 2.8.0,
+        which accessed fastmcp.settings.settings
+        """
+        # Deprecated in 2.8.0
+        warnings.warn(
+            "Using fastmcp.settings.settings is deprecated. Use fastmcp.settings instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self
 
     home: Path = Path.home() / ".fastmcp"
 

@@ -330,3 +330,22 @@ class TestDeprecatedEnvironmentVariables:
                 os.environ[env_var_name] = original_value
             else:
                 os.environ.pop(env_var_name, None)
+
+
+class TestDeprecatedSettingsProperty:
+    """Test deprecated settings property access."""
+
+    def test_settings_property_deprecation_warning(self):
+        """Test that accessing fastmcp.settings.settings raises a deprecation warning."""
+        from fastmcp import settings
+
+        with pytest.warns(
+            DeprecationWarning,
+            match=r"Using fastmcp\.settings\.settings is deprecated\. Use fastmcp\.settings instead\.",
+        ):
+            # Access the deprecated property
+            deprecated_settings = settings.settings
+
+        # Verify it still returns the same settings object
+        assert deprecated_settings is settings
+        assert isinstance(deprecated_settings, Settings)
