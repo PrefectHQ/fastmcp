@@ -96,6 +96,9 @@ class Resource(FastMCPComponent, abc.ABC):
         }
         return MCPResource(**kwargs | overrides)
 
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}(uri={self.uri!r}, name={self.name!r}, description={self.description!r}, tags={self.tags})"
+
 
 class FunctionResource(Resource):
     """A resource that defers data loading by wrapping a function.
