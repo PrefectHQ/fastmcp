@@ -166,7 +166,7 @@ class Client(Generic[ClientTransportT]):
 
         # handle init handshake timeout
         if init_timeout is None:
-            init_timeout = fastmcp.settings.settings.client_init_timeout
+            init_timeout = fastmcp.settings.client_init_timeout
         if isinstance(init_timeout, datetime.timedelta):
             init_timeout = init_timeout.total_seconds()
         elif not init_timeout:

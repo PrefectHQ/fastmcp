@@ -43,7 +43,6 @@ from starlette.routing import BaseRoute, Route
 
 import fastmcp
 import fastmcp.server
-import fastmcp.settings
 from fastmcp.exceptions import DisabledError, NotFoundError
 from fastmcp.prompts import Prompt, PromptManager
 from fastmcp.prompts.prompt import FunctionPrompt
@@ -56,6 +55,7 @@ from fastmcp.server.http import (
     create_sse_app,
     create_streamable_http_app,
 )
+from fastmcp.settings import Settings
 from fastmcp.tools import ToolManager
 from fastmcp.tools.tool import FunctionTool, Tool
 from fastmcp.utilities.cache import TimedCache
@@ -121,7 +121,6 @@ class FastMCP(Generic[LifespanResultT]):
             | None
         ) = None,
         tags: set[str] | None = None,
-        dependencies: list[str] | None = None,
         tool_serializer: Callable[[Any], str] | None = None,
         cache_expiration_seconds: float | None = None,
         on_duplicate_tools: DuplicateBehavior | None = None,
@@ -130,44 +129,44 @@ class FastMCP(Generic[LifespanResultT]):
         resource_prefix_format: Literal["protocol", "path"] | None = None,
         mask_error_details: bool | None = None,
         tools: list[Tool | Callable[..., Any]] | None = None,
-        **settings: Any,
+        dependencies: list[str] | None = None,
+        # ---
+        # ---
+        # --- The following arguments are DEPRECATED ---
+        # ---
+        # ---
+        log_level: str | None = None,
+        debug: bool | None = None,
+        host: str | None = None,
+        port: int | None = None,
+        sse_path: str | None = None,
+        message_path: str | None = None,
+        streamable_http_path: str | None = None,
+        json_response: bool | None = None,
+        stateless_http: bool | None = None,
     ):
-        if cache_expiration_seconds is not None:
-            settings["cache_expiration_seconds"] = cache_expiration_seconds
-        self.settings = fastmcp.settings.ServerSettings(**settings)
-
-        # If mask_error_details is provided, override the settings value
-        if mask_error_details is not None:
-            self.settings.mask_error_details = mask_error_details
-
-        self.resource_prefix_format: Literal["protocol", "path"]
-        if resource_prefix_format is None:
-            self.resource_prefix_format = (
-                fastmcp.settings.settings.resource_prefix_format
-            )
-        else:
-            self.resource_prefix_format = resource_prefix_format
+        self.resource_prefix_format: Literal["protocol", "path"] = (
+            resource_prefix_format or fastmcp.settings.resource_prefix_format
+        )
 
         self.tags: set[str] = tags or set()
-        self.dependencies = dependencies
+
         self._cache = TimedCache(
-            expiration=datetime.timedelta(
-                seconds=self.settings.cache_expiration_seconds
-            )
+            expiration=datetime.timedelta(seconds=cache_expiration_seconds or 0)
         )
         self._mounted_servers: dict[str, MountedServer] = {}
         self._additional_http_routes: list[BaseRoute] = []
         self._tool_manager = ToolManager(
             duplicate_behavior=on_duplicate_tools,
-            mask_error_details=self.settings.mask_error_details,
+            mask_error_details=mask_error_details,
         )
         self._resource_manager = ResourceManager(
             duplicate_behavior=on_duplicate_resources,
-            mask_error_details=self.settings.mask_error_details,
+            mask_error_details=mask_error_details,
         )
         self._prompt_manager = PromptManager(
             duplicate_behavior=on_duplicate_prompts,
-            mask_error_details=self.settings.mask_error_details,
+            mask_error_details=mask_error_details,
         )
         self._tool_serializer = tool_serializer
 
@@ -182,7 +181,7 @@ class FastMCP(Generic[LifespanResultT]):
             lifespan=_lifespan_wrapper(self, lifespan),
         )
 
-        if auth is None and self.settings.default_auth_provider == "bearer_env":
+        if auth is None and fastmcp.settings.default_auth_provider == "bearer_env":
             auth = EnvBearerAuthProvider()
         self.auth = auth
 
@@ -194,9 +193,61 @@ class FastMCP(Generic[LifespanResultT]):
 
         # Set up MCP protocol handlers
         self._setup_handlers()
+        self.dependencies = dependencies or fastmcp.settings.server_dependencies
+
+        # handle deprecated settings
+        self._handle_deprecated_settings(
+            log_level=log_level,
+            debug=debug,
+            host=host,
+            port=port,
+            sse_path=sse_path,
+            message_path=message_path,
+            streamable_http_path=streamable_http_path,
+            json_response=json_response,
+            stateless_http=stateless_http,
+        )
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self.name!r})"
+
+    def _handle_deprecated_settings(
+        self,
+        log_level: str | None,
+        debug: bool | None,
+        host: str | None,
+        port: int | None,
+        sse_path: str | None,
+        message_path: str | None,
+        streamable_http_path: str | None,
+        json_response: bool | None,
+        stateless_http: bool | None,
+    ) -> None:
+        """Handle deprecated settings. Deprecated in 2.8.0."""
+        deprecated_settings: dict[str, Any] = {}
+
+        for name, arg in [
+            ("log_level", log_level),
+            ("debug", debug),
+            ("host", host),
+            ("port", port),
+            ("sse_path", sse_path),
+            ("message_path", message_path),
+            ("streamable_http_path", streamable_http_path),
+            ("json_response", json_response),
+            ("stateless_http", stateless_http),
+        ]:
+            if arg is not None:
+                # Deprecated in 2.8.0
+                warnings.warn(
+                    f"Providing `{name}` when creating a server is deprecated. Provide it when calling `run` or as a global setting instead.",
+                    DeprecationWarning,
+                    stacklevel=2,
+                )
+                deprecated_settings[name] = arg
+
+        combined_settings = fastmcp.settings.model_dump() | deprecated_settings
+        self._deprecated_settings = Settings(**combined_settings)
 
     @property
     def name(self) -> str:
@@ -1127,9 +1178,11 @@ class FastMCP(Generic[LifespanResultT]):
             path: Path for the endpoint (defaults to settings.streamable_http_path or settings.sse_path)
             uvicorn_config: Additional configuration for the Uvicorn server
         """
-        host = host or self.settings.host
-        port = port or self.settings.port
-        default_log_level_to_use = (log_level or self.settings.log_level).lower()
+        host = host or self._deprecated_settings.host
+        port = port or self._deprecated_settings.port
+        default_log_level_to_use = (
+            log_level or self._deprecated_settings.log_level
+        ).lower()
 
         app = self.http_app(path=path, transport=transport, middleware=middleware)
 
@@ -1203,10 +1256,10 @@ class FastMCP(Generic[LifespanResultT]):
         )
         return create_sse_app(
             server=self,
-            message_path=message_path or self.settings.message_path,
-            sse_path=path or self.settings.sse_path,
+            message_path=message_path or self._deprecated_settings.message_path,
+            sse_path=path or self._deprecated_settings.sse_path,
             auth=self.auth,
-            debug=self.settings.debug,
+            debug=self._deprecated_settings.debug,
             middleware=middleware,
         )
 
@@ -1234,6 +1287,8 @@ class FastMCP(Generic[LifespanResultT]):
         self,
         path: str | None = None,
         middleware: list[Middleware] | None = None,
+        json_response: bool | None = None,
+        stateless_http: bool | None = None,
         transport: Literal["streamable-http", "sse"] = "streamable-http",
     ) -> StarletteWithLifespan:
         """Create a Starlette app using the specified HTTP transport.
@@ -1250,21 +1305,22 @@ class FastMCP(Generic[LifespanResultT]):
         if transport == "streamable-http":
             return create_streamable_http_app(
                 server=self,
-                streamable_http_path=path or self.settings.streamable_http_path,
+                streamable_http_path=path
+                or self._deprecated_settings.streamable_http_path,
                 event_store=None,
                 auth=self.auth,
-                json_response=self.settings.json_response,
-                stateless_http=self.settings.stateless_http,
-                debug=self.settings.debug,
+                json_response=self._deprecated_settings.json_response,
+                stateless_http=self._deprecated_settings.stateless_http,
+                debug=self._deprecated_settings.debug,
                 middleware=middleware,
             )
         elif transport == "sse":
             return create_sse_app(
                 server=self,
-                message_path=self.settings.message_path,
-                sse_path=path or self.settings.sse_path,
+                message_path=self._deprecated_settings.message_path,
+                sse_path=path or self._deprecated_settings.sse_path,
                 auth=self.auth,
-                debug=self.settings.debug,
+                debug=self._deprecated_settings.debug,
                 middleware=middleware,
             )
 
@@ -1716,7 +1772,7 @@ def add_resource_prefix(
     # Get the server settings to check for legacy format preference
 
     if prefix_format is None:
-        prefix_format = fastmcp.settings.settings.resource_prefix_format
+        prefix_format = fastmcp.settings.resource_prefix_format
 
     if prefix_format == "protocol":
         # Legacy style: prefix+protocol://path
@@ -1765,7 +1821,7 @@ def remove_resource_prefix(
         return uri
 
     if prefix_format is None:
-        prefix_format = fastmcp.settings.settings.resource_prefix_format
+        prefix_format = fastmcp.settings.resource_prefix_format
 
     if prefix_format == "protocol":
         # Legacy style: prefix+protocol://path
@@ -1825,7 +1881,7 @@ def has_resource_prefix(
     # Get the server settings to check for legacy format preference
 
     if prefix_format is None:
-        prefix_format = fastmcp.settings.settings.resource_prefix_format
+        prefix_format = fastmcp.settings.resource_prefix_format
 
     if prefix_format == "protocol":
         # Legacy style: prefix+protocol://path
