@@ -74,12 +74,6 @@ class Tool(FastMCPComponent, ABC):
             serializer=serializer,
         )
 
-    def __eq__(self, other: object) -> bool:
-        if type(self) is not type(other):
-            return False
-        assert isinstance(other, type(self))
-        return self.model_dump() == other.model_dump()
-
     @abstractmethod
     async def run(
         self, arguments: dict[str, Any]

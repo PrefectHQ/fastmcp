@@ -86,12 +86,6 @@ class Resource(FastMCPComponent, abc.ABC):
         """Read the resource content."""
         pass
 
-    def __eq__(self, other: object) -> bool:
-        if type(self) is not type(other):
-            return False
-        assert isinstance(other, type(self))
-        return self.model_dump() == other.model_dump()
-
     def to_mcp_resource(self, **overrides: Any) -> MCPResource:
         """Convert the resource to an MCPResource."""
         kwargs = {
@@ -101,6 +95,9 @@ class Resource(FastMCPComponent, abc.ABC):
             "mimeType": self.mime_type,
         }
         return MCPResource(**kwargs | overrides)
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}(uri={self.uri!r}, name={self.name!r}, description={self.description!r}, tags={self.tags})"
 
 
 class FunctionResource(Resource):
