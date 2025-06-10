@@ -33,3 +33,7 @@ class ClientError(Exception):
 
 class NotFoundError(Exception):
     """Object not found."""
+
+
+class DisabledError(Exception):
+    """Object is disabled."""

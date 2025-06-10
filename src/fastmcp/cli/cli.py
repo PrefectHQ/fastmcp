@@ -18,6 +18,7 @@ from typer import Context, Exit
 import fastmcp
 from fastmcp.cli import claude
 from fastmcp.cli import run as run_module
+from fastmcp.server.server import FastMCP
 from fastmcp.utilities.logging import get_logger
 
 logger = get_logger("cli")
@@ -165,8 +166,8 @@ def dev(
 
     try:
         # Import server to get dependencies
-        server = run_module.import_server(file, server_object)
-        if hasattr(server, "dependencies") and server.dependencies is not None:
+        server: FastMCP = run_module.import_server(file, server_object)
+        if server.dependencies is not None:
             with_packages = list(set(with_packages + server.dependencies))
 
         env_vars = {}

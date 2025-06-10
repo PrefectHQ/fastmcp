@@ -145,6 +145,7 @@ class Client(Generic[ClientTransportT]):
         progress_handler: ProgressHandler | None = None,
         timeout: datetime.timedelta | float | int | None = None,
         init_timeout: datetime.timedelta | float | int | None = None,
+        client_info: mcp.types.Implementation | None = None,
         auth: httpx.Auth | Literal["oauth"] | str | None = None,
     ):
         self.transport = cast(ClientTransportT, infer_transport(transport))
@@ -165,7 +166,7 @@ class Client(Generic[ClientTransportT]):
 
         # handle init handshake timeout
         if init_timeout is None:
-            init_timeout = fastmcp.settings.settings.client_init_timeout
+            init_timeout = fastmcp.settings.client_init_timeout
         if isinstance(init_timeout, datetime.timedelta):
             init_timeout = init_timeout.total_seconds()
         elif not init_timeout:
@@ -180,6 +181,7 @@ class Client(Generic[ClientTransportT]):
             "logging_callback": create_log_callback(log_handler),
             "message_handler": message_handler,
             "read_timeout_seconds": timeout,
+            "client_info": client_info,
         }
 
         if roots is not None:

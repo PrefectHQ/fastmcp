@@ -50,17 +50,11 @@ class TestResourceValidation:
         )
         assert resource.name == "resource://my-resource"
 
-    def test_resource_name_validation(self):
-        """Test name validation."""
+    def test_provided_name_takes_precedence_over_uri(self):
+        """Test that provided name takes precedence over URI."""
 
         def dummy_func() -> str:
             return "data"
-
-        # Must provide either name or URI
-        with pytest.raises(ValueError, match="Either name or uri must be provided"):
-            FunctionResource(
-                fn=dummy_func,
-            )
 
         # Explicit name takes precedence over URI
         resource = FunctionResource(

@@ -155,16 +155,10 @@ class RouteMap:
             self.route_type = self.mcp_type
 
 
-# Default route mappings as a list, where order determines priority
+# Default route mapping: all routes become tools.
+# Users can provide custom route_maps to override this behavior.
 DEFAULT_ROUTE_MAPPINGS = [
-    # GET requests with path parameters go to ResourceTemplate
-    RouteMap(
-        methods=["GET"], pattern=r".*\{.*\}.*", mcp_type=MCPType.RESOURCE_TEMPLATE
-    ),
-    # GET requests without path parameters go to Resource
-    RouteMap(methods=["GET"], pattern=r".*", mcp_type=MCPType.RESOURCE),
-    # All other HTTP methods go to Tool
-    RouteMap(methods="*", pattern=r".*", mcp_type=MCPType.TOOL),
+    RouteMap(mcp_type=MCPType.TOOL),
 ]
 
 
@@ -226,7 +220,6 @@ class OpenAPITool(Tool):
         tags: set[str] = set(),
         timeout: float | None = None,
         annotations: ToolAnnotations | None = None,
-        exclude_args: list[str] | None = None,
         serializer: Callable[[Any], str] | None = None,
     ):
         super().__init__(
@@ -235,7 +228,6 @@ class OpenAPITool(Tool):
             parameters=parameters,
             tags=tags,
             annotations=annotations,
-            exclude_args=exclude_args,
             serializer=serializer,
         )
         self._client = client

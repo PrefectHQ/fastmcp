@@ -1,6 +1,6 @@
 ---
-title: Anthropic
-sidebarTitle: Anthropic
+title: Anthropic API + FastMCP
+sidebarTitle: Anthropic API
 description: Call FastMCP servers from the Anthropic API
 icon: message-smile
 tag: "New!"
@@ -8,9 +8,6 @@ tag: "New!"
 
 import { VersionBadge } from "/snippets/version-badge.mdx"
 
-Anthropic supports MCP servers through the [MCP connector](https://docs.anthropic.com/en/docs/agents-and-tools/mcp-connector) feature in the Messages API, allowing you to extend AI capabilities with custom tools from remote MCP servers.
-
-## Messages API
 
 Anthropic's [Messages API](https://docs.anthropic.com/en/api/messages) supports MCP servers as remote tool sources. This tutorial will show you how to create a FastMCP server and deploy it to a public URL, then how to call it from the Messages API.
 
@@ -18,7 +15,7 @@ Anthropic's [Messages API](https://docs.anthropic.com/en/api/messages) supports 
 Currently, the MCP connector only accesses **tools** from MCP servers—it queries the `list_tools` endpoint and exposes those functions to Claude. Other MCP features like resources and prompts are not currently supported. You can read more about the MCP connector in the [Anthropic documentation](https://docs.anthropic.com/en/docs/agents-and-tools/mcp-connector).
 </Tip>
 
-### Create a Server
+## Create a Server
 
 First, create a FastMCP server with the tools you want to expose. For this example, we'll create a server with a single tool that rolls dice.
 
@@ -37,7 +34,7 @@ if __name__ == "__main__":
     mcp.run(transport="sse", port=8000)
 ```
 
-### Deploy the Server
+## Deploy the Server
 
 Your server must be deployed to a public URL in order for Anthropic to access it. The MCP connector supports both SSE and Streamable HTTP transports.
 
@@ -59,7 +56,7 @@ ngrok http 8000
 This exposes your unauthenticated server to the internet. Only run this command in a safe environment if you understand the risks.
 </Warning>
 
-### Call the Server
+## Call the Server
 
 To use the Messages API with MCP servers, you'll need to install the Anthropic Python SDK (not included with FastMCP):
 
@@ -114,13 +111,13 @@ The results were 4, 2, and 6. Would you like me to roll again or roll a differen
 ```
 
 
-### Authentication
+## Authentication
 
 <VersionBadge version="2.6.0" />
 
 The MCP connector supports OAuth authentication through authorization tokens, which means you can secure your server while still allowing Anthropic to access it.
 
-#### Server Authentication
+### Server Authentication
 
 The simplest way to add authentication to the server is to use a bearer token scheme. 
 
@@ -181,7 +178,7 @@ if __name__ == "__main__":
     mcp.run(transport="sse", port=8000)
 ```
 
-#### Client Authentication
+### Client Authentication
 
 If you try to call the authenticated server with the same Anthropic code we wrote earlier, you'll get an error indicating that the server rejected the request because it's not authenticated.
 

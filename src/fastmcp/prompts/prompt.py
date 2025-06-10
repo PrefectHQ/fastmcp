@@ -5,21 +5,21 @@ from __future__ import annotations as _annotations
 import inspect
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable, Sequence
-from typing import TYPE_CHECKING, Annotated, Any
+from typing import TYPE_CHECKING, Any
 
 import pydantic_core
 from mcp.types import EmbeddedResource, ImageContent, PromptMessage, Role, TextContent
 from mcp.types import Prompt as MCPPrompt
 from mcp.types import PromptArgument as MCPPromptArgument
-from pydantic import BeforeValidator, Field, TypeAdapter, validate_call
+from pydantic import Field, TypeAdapter, validate_call
 
 from fastmcp.exceptions import PromptError
 from fastmcp.server.dependencies import get_context
+from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import (
     FastMCPBaseModel,
-    _convert_set_defaults,
     find_kwarg_by_type,
     get_cached_typeadapter,
 )
@@ -66,25 +66,12 @@ class PromptArgument(FastMCPBaseModel):
     )
 
 
-class Prompt(FastMCPBaseModel, ABC):
+class Prompt(FastMCPComponent, ABC):
     """A prompt template that can be rendered with parameters."""
 
-    name: str = Field(description="Name of the prompt")
-    description: str | None = Field(
-        default=None, description="Description of what the prompt does"
-    )
-    tags: Annotated[set[str], BeforeValidator(_convert_set_defaults)] = Field(
-        default_factory=set, description="Tags for the prompt"
-    )
     arguments: list[PromptArgument] | None = Field(
         default=None, description="Arguments that can be passed to the prompt"
     )
-
-    def __eq__(self, other: object) -> bool:
-        if type(self) is not type(other):
-            return False
-        assert isinstance(other, type(self))
-        return self.model_dump() == other.model_dump()
 
     def to_mcp_prompt(self, **overrides: Any) -> MCPPrompt:
         """Convert the prompt to an MCP prompt."""
@@ -109,6 +96,7 @@ class Prompt(FastMCPBaseModel, ABC):
         name: str | None = None,
         description: str | None = None,
         tags: set[str] | None = None,
+        enabled: bool | None = None,
     ) -> FunctionPrompt:
         """Create a Prompt from a function.
 
@@ -119,7 +107,7 @@ class Prompt(FastMCPBaseModel, ABC):
         - A sequence of any of the above
         """
         return FunctionPrompt.from_function(
-            fn=fn, name=name, description=description, tags=tags
+            fn=fn, name=name, description=description, tags=tags, enabled=enabled
         )
 
     @abstractmethod
@@ -143,6 +131,7 @@ class FunctionPrompt(Prompt):
         name: str | None = None,
         description: str | None = None,
         tags: set[str] | None = None,
+        enabled: bool | None = None,
     ) -> FunctionPrompt:
         """Create a Prompt from a function.
 
@@ -208,6 +197,7 @@ class FunctionPrompt(Prompt):
             description=description,
             arguments=arguments,
             tags=tags or set(),
+            enabled=enabled if enabled is not None else True,
             fn=fn,
         )
 

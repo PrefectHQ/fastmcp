@@ -23,10 +23,10 @@ from mcp.shared.auth import (
 )
 from pydantic import AnyHttpUrl, ValidationError
 
+from fastmcp import settings as fastmcp_global_settings
 from fastmcp.client.oauth_callback import (
     create_oauth_callback_server,
 )
-from fastmcp.settings import settings as fastmcp_global_settings
 from fastmcp.utilities.http import find_available_port
 from fastmcp.utilities.logging import get_logger
 

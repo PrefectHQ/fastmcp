@@ -43,7 +43,7 @@ def get_catch_handlers() -> Mapping[
     type[BaseException] | Iterable[type[BaseException]],
     Callable[[BaseExceptionGroup[Any]], Any],
 ]:
-    if fastmcp.settings.settings.client_raise_first_exceptiongroup_error:
+    if fastmcp.settings.client_raise_first_exceptiongroup_error:
         return _catch_handlers
     else:
         return {}

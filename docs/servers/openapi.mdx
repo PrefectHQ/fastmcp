@@ -41,17 +41,9 @@ That's it! Your entire API is now available as an MCP server. Clients can discov
 
 ## Route Mapping
 
+By default, FastMCP converts **every endpoint** in your OpenAPI specification into an MCP **Tool**. This provides a simple, predictable starting point that ensures all your API's functionality is immediately available to the vast majority of LLM clients which only support MCP tools.
 
-
-FastMCP analyzes your API specification and automatically creates MCP components based on HTTP semantics and REST conventions. By default, the following rules are used to determine what MCP component to create for each route:
-
-| OpenAPI Route | Example | MCP Component | 
-|---------------|---------|---------------|
-| `GET` with path params | `GET /users/{id}` | **Resource Template** |
-| `GET` without path params | `GET /stats` | **Resource** |
-| `POST`, `PUT`, `PATCH`, `DELETE`, etc. | `POST /users` | **Tool** |
-
-Interally, FastMCP uses an ordered list of `RouteMap` objects to determine how to map OpenAPI routes to various MCP component types.
+While this is a pragmatic default for maximum compatibility, you can easily customize this behavior. Internally, FastMCP uses an ordered list of `RouteMap` objects to determine how to map OpenAPI routes to various MCP component types.
 
 Each `RouteMap` specifies a combination of methods, patterns, and tags, as well as a corresponding MCP component type. Each OpenAPI route is checked against each `RouteMap` in order, and the first one that matches every criteria is used to determine its converted MCP type. A special type, `EXCLUDE`, can be used to exclude routes from the MCP server entirely.
 
@@ -60,33 +52,14 @@ Each `RouteMap` specifies a combination of methods, patterns, and tags, as well 
 - **Tags**: A set of OpenAPI tags that must all be present. An empty set (`{}`) means no tag filtering, so the route matches regardless of its tags.
 - **MCP type**: What MCP component type to create (`TOOL`, `RESOURCE`, `RESOURCE_TEMPLATE`, or `EXCLUDE`)
 
-To illustrate this in practice, here are FastMCP's default rules as a list of `RouteMap` objects:
+Here is FastMCP's default rule:
 
 ```python
 from fastmcp.server.openapi import RouteMap, MCPType
 
 DEFAULT_ROUTE_MAPPINGS = [
-
-    # GET with path parameters → ResourceTemplate
-    RouteMap(
-        methods=["GET"], 
-        pattern=r".*\{.*\}.*", 
-        mcp_type=MCPType.RESOURCE_TEMPLATE
-    ),
-
-    # GET without path parameters → Resource
-    RouteMap(
-        methods=["GET"], 
-        pattern=r".*", 
-        mcp_type=MCPType.RESOURCE
-    ),
-
-    # All other methods → Tool
-    RouteMap(
-        methods=["*"], 
-        pattern=r".*", 
-        mcp_type=MCPType.TOOL
-    ),
+    # All routes become tools
+    RouteMap(mcp_type=MCPType.TOOL),
 ]
 ```
 
@@ -94,19 +67,27 @@ DEFAULT_ROUTE_MAPPINGS = [
 
 When creating your FastMCP server, you can customize routing behavior by providing your own list of `RouteMap` objects. Your custom maps are processed before the default route maps, and routes will be assigned to the first matching custom map.
 
-For example, the following simple rule will treat every OpenAPI route as a tool:
+For example, prior to FastMCP 2.8.0, GET requests were automatically mapped to `Resource` and `ResourceTemplate` components based on whether they had path parameters. (This was changed solely for client compatibility reasons.) You can restore this behavior by providing custom route maps:
 
-```python {7}
+```python {2, 5-10}
 from fastmcp import FastMCP
 from fastmcp.server.openapi import RouteMap, MCPType
 
+# Restore pre-2.8.0 semantic mapping
+semantic_maps = [
+    # GET requests with path parameters become ResourceTemplates
+    RouteMap(methods=["GET"], pattern=r".*\{.*\}.*", mcp_type=MCPType.RESOURCE_TEMPLATE),
+    # All other GET requests become Resources
+    RouteMap(methods=["GET"], pattern=r".*", mcp_type=MCPType.RESOURCE),
+]
+
 mcp = FastMCP.from_openapi(
     ...,
-    route_maps=[
-        RouteMap(mcp_type=MCPType.TOOL),
-    ],
+    route_maps=semantic_maps,
 )
 ```
+
+With these maps, `GET` requests are handled semantically, and all other methods (`POST`, `PUT`, etc.) will fall through to the default rule and become `Tool`s.
 
 Here is a more complete example that uses custom route maps to convert all `GET` endpoints under `/analytics/` to tools while excluding all admin endpoints and all routes tagged "internal". All other routes will be handled by the default rules:
 
