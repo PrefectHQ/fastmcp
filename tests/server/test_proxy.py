@@ -178,7 +178,9 @@ class TestResources:
         assert json.loads(result[0].text) == USERS  # type: ignore[attr-defined]
 
     async def test_read_resource_returns_none_if_not_found(self, proxy_server):
-        with pytest.raises(McpError, match="Unknown resource: resource://nonexistent"):
+        with pytest.raises(
+            McpError, match="Unknown resource: 'resource://nonexistent'"
+        ):
             async with Client(proxy_server) as client:
                 await client.read_resource("resource://nonexistent")
 

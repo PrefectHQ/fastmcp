@@ -1220,6 +1220,93 @@ class TestPrompts:
         assert prompt.tags == {"example", "test-tag"}
 
 
+class TestPromptEnabled:
+    async def test_toggle_enabled(self):
+        mcp = FastMCP()
+
+        @mcp.prompt
+        def sample_prompt() -> str:
+            return "Hello, world!"
+
+        assert sample_prompt.enabled
+
+        prompt = await mcp.get_prompt("sample_prompt")
+        assert prompt.enabled
+
+        prompt.disable()
+
+        assert not prompt.enabled
+        assert not sample_prompt.enabled
+
+        prompt.enable()
+        assert prompt.enabled
+        assert sample_prompt.enabled
+
+    async def test_prompt_disabled_in_decorator(self):
+        mcp = FastMCP()
+
+        @mcp.prompt(enabled=False)
+        def sample_prompt() -> str:
+            return "Hello, world!"
+
+        async with Client(mcp) as client:
+            prompts = await client.list_prompts()
+            assert len(prompts) == 0
+
+    async def test_prompt_toggle_enabled(self):
+        mcp = FastMCP()
+
+        @mcp.prompt(enabled=False)
+        def sample_prompt() -> str:
+            return "Hello, world!"
+
+        sample_prompt.enable()
+
+        async with Client(mcp) as client:
+            prompts = await client.list_prompts()
+            assert len(prompts) == 1
+
+    async def test_prompt_toggle_disabled(self):
+        mcp = FastMCP()
+
+        @mcp.prompt
+        def sample_prompt() -> str:
+            return "Hello, world!"
+
+        sample_prompt.disable()
+
+        async with Client(mcp) as client:
+            prompts = await client.list_prompts()
+            assert len(prompts) == 0
+
+    async def test_get_prompt_and_disable(self):
+        mcp = FastMCP()
+
+        @mcp.prompt
+        def sample_prompt() -> str:
+            return "Hello, world!"
+
+        prompt = await mcp.get_prompt("sample_prompt")
+        assert prompt.enabled
+
+        sample_prompt.disable()
+
+        async with Client(mcp) as client:
+            result = await client.list_prompts()
+            assert len(result) == 0
+
+    async def test_cant_get_disabled_prompt(self):
+        mcp = FastMCP()
+
+        @mcp.prompt(enabled=False)
+        def sample_prompt() -> str:
+            return "Hello, world!"
+
+        with pytest.raises(McpError, match="Unknown prompt"):
+            async with Client(mcp) as client:
+                await client.get_prompt("sample_prompt")
+
+
 class TestPromptContext:
     async def test_prompt_context(self):
         mcp = FastMCP()

@@ -940,6 +940,7 @@ class FastMCP(Generic[LifespanResultT]):
         name: str | None = None,
         description: str | None = None,
         tags: set[str] | None = None,
+        enabled: bool | None = None,
     ) -> FunctionPrompt: ...
 
     @overload
@@ -950,6 +951,7 @@ class FastMCP(Generic[LifespanResultT]):
         name: str | None = None,
         description: str | None = None,
         tags: set[str] | None = None,
+        enabled: bool | None = None,
     ) -> Callable[[AnyFunction], FunctionPrompt]: ...
 
     def prompt(
@@ -959,6 +961,7 @@ class FastMCP(Generic[LifespanResultT]):
         name: str | None = None,
         description: str | None = None,
         tags: set[str] | None = None,
+        enabled: bool | None = None,
     ) -> Callable[[AnyFunction], FunctionPrompt] | FunctionPrompt:
         """Decorator to register a prompt.
 
@@ -1050,6 +1053,7 @@ class FastMCP(Generic[LifespanResultT]):
                 name=prompt_name,
                 description=description,
                 tags=tags,
+                enabled=enabled,
             )
             self.add_prompt(prompt)
 
@@ -1077,6 +1081,7 @@ class FastMCP(Generic[LifespanResultT]):
             name=prompt_name,
             description=description,
             tags=tags,
+            enabled=enabled,
         )
 
     async def run_stdio_async(self) -> None:
