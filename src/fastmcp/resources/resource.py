@@ -14,9 +14,10 @@ from pydantic import (
     ConfigDict,
     Field,
     UrlConstraints,
-    ValidationInfo,
     field_validator,
+    model_validator,
 )
+from typing_extensions import Self
 
 from fastmcp.server.dependencies import get_context
 from fastmcp.utilities.components import FastMCPComponent
@@ -36,6 +37,7 @@ class Resource(FastMCPComponent, abc.ABC):
     uri: Annotated[AnyUrl, UrlConstraints(host_required=False)] = Field(
         default=..., description="URI of the resource"
     )
+    name: str = Field(default="", description="Name of the resource")
     mime_type: str = Field(
         default="text/plain",
         description="MIME type of the resource content",
@@ -68,15 +70,16 @@ class Resource(FastMCPComponent, abc.ABC):
             return mime_type
         return "text/plain"
 
-    @field_validator("name", mode="before")
-    @classmethod
-    def set_default_name(cls, name: str | None, info: ValidationInfo) -> str:
+    @model_validator(mode="after")
+    def set_default_name(self) -> Self:
         """Set default name from URI if not provided."""
-        if name:
-            return name
-        if uri := info.data.get("uri"):
-            return str(uri)
-        raise ValueError("Either name or uri must be provided")
+        if self.name:
+            pass
+        elif self.uri:
+            self.name = str(self.uri)
+        else:
+            raise ValueError("Either name or uri must be provided")
+        return self
 
     @abc.abstractmethod
     async def read(self) -> str | bytes:
