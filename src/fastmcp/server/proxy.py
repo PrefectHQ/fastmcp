@@ -186,8 +186,10 @@ class FastMCPProxy(FastMCP):
                 else:
                     raise e
             for tool in client_tools:
-                tool_proxy = await ProxyTool.from_client(self.client, tool)
-                tools[tool_proxy.name] = tool_proxy
+                # don't overwrite tools defined in the server
+                if tool.name not in tools:
+                    tool_proxy = await ProxyTool.from_client(self.client, tool)
+                    tools[tool_proxy.name] = tool_proxy
 
         return tools
 
@@ -203,8 +205,12 @@ class FastMCPProxy(FastMCP):
                 else:
                     raise e
             for resource in client_resources:
-                resource_proxy = await ProxyResource.from_client(self.client, resource)
-                resources[str(resource_proxy.uri)] = resource_proxy
+                # don't overwrite resources defined in the server
+                if str(resource.uri) not in resources:
+                    resource_proxy = await ProxyResource.from_client(
+                        self.client, resource
+                    )
+                    resources[str(resource_proxy.uri)] = resource_proxy
 
         return resources
 
@@ -220,8 +226,12 @@ class FastMCPProxy(FastMCP):
                 else:
                     raise e
             for template in client_templates:
-                template_proxy = await ProxyTemplate.from_client(self.client, template)
-                templates[template_proxy.uri_template] = template_proxy
+                # don't overwrite templates defined in the server
+                if template.uriTemplate not in templates:
+                    template_proxy = await ProxyTemplate.from_client(
+                        self.client, template
+                    )
+                    templates[template_proxy.uri_template] = template_proxy
 
         return templates
 
@@ -237,8 +247,11 @@ class FastMCPProxy(FastMCP):
                 else:
                     raise e
             for prompt in client_prompts:
-                prompt_proxy = await ProxyPrompt.from_client(self.client, prompt)
-                prompts[prompt_proxy.name] = prompt_proxy
+                # don't overwrite prompts defined in the server
+                if prompt.name not in prompts:
+                    prompt_proxy = await ProxyPrompt.from_client(self.client, prompt)
+                    prompts[prompt_proxy.name] = prompt_proxy
+
         return prompts
 
     async def _call_tool(
