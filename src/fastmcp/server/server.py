@@ -625,6 +625,7 @@ class FastMCP(Generic[LifespanResultT]):
         tags: set[str] | None = None,
         annotations: ToolAnnotations | dict[str, Any] | None = None,
         exclude_args: list[str] | None = None,
+        enabled: bool | None = None,
     ) -> FunctionTool: ...
 
     @overload
@@ -637,6 +638,7 @@ class FastMCP(Generic[LifespanResultT]):
         tags: set[str] | None = None,
         annotations: ToolAnnotations | dict[str, Any] | None = None,
         exclude_args: list[str] | None = None,
+        enabled: bool | None = None,
     ) -> Callable[[AnyFunction], FunctionTool]: ...
 
     def tool(
@@ -648,6 +650,7 @@ class FastMCP(Generic[LifespanResultT]):
         tags: set[str] | None = None,
         annotations: ToolAnnotations | dict[str, Any] | None = None,
         exclude_args: list[str] | None = None,
+        enabled: bool | None = None,
     ) -> Callable[[AnyFunction], FunctionTool] | FunctionTool:
         """Decorator to register a tool.
 
@@ -721,6 +724,7 @@ class FastMCP(Generic[LifespanResultT]):
                 annotations=annotations,
                 exclude_args=exclude_args,
                 serializer=self._tool_serializer,
+                enabled=enabled,
             )
             self.add_tool(tool)
             return tool
@@ -749,6 +753,7 @@ class FastMCP(Generic[LifespanResultT]):
             tags=tags,
             annotations=annotations,
             exclude_args=exclude_args,
+            enabled=enabled,
         )
 
     def add_resource(self, resource: Resource, key: str | None = None) -> None:

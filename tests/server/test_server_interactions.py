@@ -699,6 +699,93 @@ class TestToolContextInjection:
             assert result[0].text == "3"  # type: ignore[attr-defined]
 
 
+class TestToolEnabled:
+    async def test_toggle_enabled(self):
+        mcp = FastMCP()
+
+        @mcp.tool
+        def sample_tool(x: int) -> int:
+            return x * 2
+
+        assert sample_tool.enabled
+
+        tool = await mcp.get_tool("sample_tool")
+        assert tool.enabled
+
+        tool.disable()
+
+        assert not tool.enabled
+        assert not sample_tool.enabled
+
+        tool.enable()
+        assert tool.enabled
+        assert sample_tool.enabled
+
+    async def test_tool_disabled_in_decorator(self):
+        mcp = FastMCP()
+
+        @mcp.tool(enabled=False)
+        def sample_tool(x: int) -> int:
+            return x * 2
+
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+            assert len(tools) == 0
+
+    async def test_tool_toggle_enabled(self):
+        mcp = FastMCP()
+
+        @mcp.tool(enabled=False)
+        def sample_tool(x: int) -> int:
+            return x * 2
+
+        sample_tool.enable()
+
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+            assert len(tools) == 1
+
+    async def test_tool_toggle_disabled(self):
+        mcp = FastMCP()
+
+        @mcp.tool
+        def sample_tool(x: int) -> int:
+            return x * 2
+
+        sample_tool.disable()
+
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+            assert len(tools) == 0
+
+    async def test_get_tool_and_disable(self):
+        mcp = FastMCP()
+
+        @mcp.tool
+        def sample_tool(x: int) -> int:
+            return x * 2
+
+        tool = await mcp.get_tool("sample_tool")
+        assert tool.enabled
+
+        sample_tool.disable()
+
+        async with Client(mcp) as client:
+            result = await client.list_tools()
+            assert len(result) == 0
+
+    async def test_cant_call_disabled_tool(self):
+        mcp = FastMCP()
+
+        @mcp.tool(enabled=False)
+        def sample_tool(x: int) -> int:
+            return x * 2
+
+        with pytest.raises(Exception, match="Unknown tool"):
+            async with Client(mcp) as client:
+                await client.call_tool("sample_tool", {"x": 5})
+
+
 class TestResource:
     async def test_text_resource(self):
         mcp = FastMCP()
