@@ -134,7 +134,9 @@
                 "anchor": "Tutorials",
                 "icon": "graduation-cap",
                 "pages": [
-                    "tutorials/create-mcp-server"
+                    "tutorials/mcp",
+                    "tutorials/create-mcp-server",
+                    "tutorials/rest-api"
                 ]
             },
             {
