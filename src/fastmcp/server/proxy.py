@@ -186,8 +186,10 @@ class FastMCPProxy(FastMCP):
                 else:
                     raise e
             for tool in client_tools:
-                tool_proxy = await ProxyTool.from_client(self.client, tool)
-                tools[tool_proxy.name] = tool_proxy
+                # don't overwrite tools defined in the server
+                if tool.name not in tools:
+                    tool_proxy = await ProxyTool.from_client(self.client, tool)
+                    tools[tool_proxy.name] = tool_proxy
 
         return tools
 
@@ -203,8 +205,12 @@ class FastMCPProxy(FastMCP):
                 else:
                     raise e
             for resource in client_resources:
-                resource_proxy = await ProxyResource.from_client(self.client, resource)
-                resources[str(resource_proxy.uri)] = resource_proxy
+                # don't overwrite resources defined in the server
+                if str(resource.uri) not in resources:
+                    resource_proxy = await ProxyResource.from_client(
+                        self.client, resource
+                    )
+                    resources[str(resource_proxy.uri)] = resource_proxy
 
         return resources
 
@@ -220,8 +226,12 @@ class FastMCPProxy(FastMCP):
                 else:
                     raise e
             for template in client_templates:
-                template_proxy = await ProxyTemplate.from_client(self.client, template)
-                templates[template_proxy.uri_template] = template_proxy
+                # don't overwrite templates defined in the server
+                if template.uriTemplate not in templates:
+                    template_proxy = await ProxyTemplate.from_client(
+                        self.client, template
+                    )
+                    templates[template_proxy.uri_template] = template_proxy
 
         return templates
 
@@ -237,24 +247,27 @@ class FastMCPProxy(FastMCP):
                 else:
                     raise e
             for prompt in client_prompts:
-                prompt_proxy = await ProxyPrompt.from_client(self.client, prompt)
-                prompts[prompt_proxy.name] = prompt_proxy
+                # don't overwrite prompts defined in the server
+                if prompt.name not in prompts:
+                    prompt_proxy = await ProxyPrompt.from_client(self.client, prompt)
+                    prompts[prompt_proxy.name] = prompt_proxy
+
         return prompts
 
-    async def _mcp_call_tool(
+    async def _call_tool(
         self, key: str, arguments: dict[str, Any]
     ) -> list[TextContent | ImageContent | EmbeddedResource]:
         try:
-            result = await super()._mcp_call_tool(key, arguments)
+            result = await super()._call_tool(key, arguments)
             return result
         except NotFoundError:
             async with self.client:
                 result = await self.client.call_tool(key, arguments)
             return result
 
-    async def _mcp_read_resource(self, uri: AnyUrl | str) -> list[ReadResourceContents]:
+    async def _read_resource(self, uri: AnyUrl | str) -> list[ReadResourceContents]:
         try:
-            result = await super()._mcp_read_resource(uri)
+            result = await super()._read_resource(uri)
             return result
         except NotFoundError:
             async with self.client:
@@ -270,11 +283,11 @@ class FastMCPProxy(FastMCP):
                 ReadResourceContents(content=content, mime_type=resource[0].mimeType)
             ]
 
-    async def _mcp_get_prompt(
+    async def _get_prompt(
         self, name: str, arguments: dict[str, Any] | None = None
     ) -> GetPromptResult:
         try:
-            result = await super()._mcp_get_prompt(name, arguments)
+            result = await super()._get_prompt(name, arguments)
             return result
         except NotFoundError:
             async with self.client:

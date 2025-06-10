@@ -41,9 +41,11 @@ class PromptManager:
 
         self.duplicate_behavior = duplicate_behavior
 
-    def get_prompt(self, key: str) -> Prompt | None:
+    def get_prompt(self, key: str) -> Prompt:
         """Get prompt by key."""
-        return self._prompts.get(key)
+        if key in self._prompts:
+            return self._prompts[key]
+        raise NotFoundError(f"Unknown prompt: {key}")
 
     def get_prompts(self) -> dict[str, Prompt]:
         """Get all registered prompts, indexed by registered key."""

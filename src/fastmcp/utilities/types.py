@@ -80,15 +80,6 @@ def find_kwarg_by_type(fn: Callable, kwarg_type: type) -> str | None:
     return None
 
 
-def _convert_set_defaults(maybe_set: set[T] | list[T] | None) -> set[T]:
-    """Convert a set or list to a set, defaulting to an empty set if None."""
-    if maybe_set is None:
-        return set()
-    if isinstance(maybe_set, set):
-        return maybe_set
-    return set(maybe_set)
-
-
 class Image:
     """Helper class for returning images from tools."""
 

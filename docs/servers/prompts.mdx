@@ -147,7 +147,32 @@ def data_analysis_prompt(
 - **`name`**: Sets the explicit prompt name exposed via MCP.
 - **`description`**: Provides the description exposed via MCP. If set, the function's docstring is ignored for this purpose.
 - **`tags`**: A set of strings used to categorize the prompt. Clients *might* use tags to filter or group available prompts.
+- **`enabled`**: A boolean to enable or disable the prompt (defaults to `True`). See [Disabling Prompts](#disabling-prompts) for more information.
+### Disabling Prompts
 
+<VersionBadge version="2.8.0" />
+
+You can control the visibility and availability of prompts by enabling or disabling them. Disabled prompts will not appear in the list of available prompts, and attempting to call a disabled prompt will result in an "Unknown prompt" error.
+
+By default, all prompts are enabled. You can disable a prompt upon creation using the `enabled` parameter in the decorator:
+
+```python
+@mcp.prompt(enabled=False)
+def experimental_prompt():
+    """This prompt is not ready for use."""
+    return "This is an experimental prompt."
+```
+
+You can also toggle a prompt's state programmatically after it has been created:
+
+```python
+@mcp.prompt
+def seasonal_prompt(): return "Happy Holidays!"
+
+# Disable and re-enable the prompt
+seasonal_prompt.disable()
+seasonal_prompt.enable()
+```
 ### Asynchronous Prompts
 
 FastMCP seamlessly supports both standard (`def`) and asynchronous (`async def`) functions as prompts.
@@ -190,6 +215,8 @@ async def generate_report_request(report_type: str, ctx: Context) -> str:
 ```
 
 For full documentation on the Context object and all its capabilities, see the [Context documentation](/servers/context).
+
+
 
 ## Server Behavior
 

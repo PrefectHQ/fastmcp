@@ -1,12 +1,16 @@
 import asyncio
 import sys
 from typing import cast
+from unittest.mock import AsyncMock
 
+import mcp
 import pytest
 from mcp import McpError
+from mcp.client.auth import OAuthClientProvider
 from pydantic import AnyUrl
 
 from fastmcp.client import Client
+from fastmcp.client.auth.bearer import BearerAuth
 from fastmcp.client.transports import (
     FastMCPTransport,
     MCPConfigTransport,
@@ -271,6 +275,14 @@ async def test_client_connection(fastmcp_server):
         # Make a request to ensure connection is working
         await client.ping()
     assert not client.is_connected()
+
+
+async def test_initialize_called_once(fastmcp_server, monkeypatch):
+    mock_initialize = AsyncMock()
+    monkeypatch.setattr(mcp.ClientSession, "initialize", mock_initialize)
+    client = Client(transport=FastMCPTransport(fastmcp_server))
+    async with client:
+        assert mock_initialize.call_count == 1
 
 
 async def test_initialize_result_connected(fastmcp_server):
@@ -810,3 +822,73 @@ class TestInferTransport:
         server = FastMCP1()
         transport = infer_transport(server)
         assert isinstance(transport, FastMCPTransport)
+
+
+class TestAuth:
+    def test_default_auth_is_none(self):
+        client = Client(transport=StreamableHttpTransport("http://localhost:8000"))
+        assert client.transport.auth is None
+
+    def test_stdio_doesnt_support_auth(self):
+        with pytest.raises(ValueError, match="This transport does not support auth"):
+            Client(transport=StdioTransport("echo", ["hello"]), auth="oauth")
+
+    def test_oauth_literal_sets_up_oauth_shttp(self):
+        client = Client(
+            transport=StreamableHttpTransport("http://localhost:8000"), auth="oauth"
+        )
+        assert isinstance(client.transport, StreamableHttpTransport)
+        assert isinstance(client.transport.auth, OAuthClientProvider)
+
+    def test_oauth_literal_pass_direct_to_transport(self):
+        client = Client(
+            transport=StreamableHttpTransport("http://localhost:8000", auth="oauth"),
+        )
+        assert isinstance(client.transport, StreamableHttpTransport)
+        assert isinstance(client.transport.auth, OAuthClientProvider)
+
+    def test_oauth_literal_sets_up_oauth_sse(self):
+        client = Client(transport=SSETransport("http://localhost:8000"), auth="oauth")
+        assert isinstance(client.transport, SSETransport)
+        assert isinstance(client.transport.auth, OAuthClientProvider)
+
+    def test_oauth_literal_pass_direct_to_transport_sse(self):
+        client = Client(transport=SSETransport("http://localhost:8000", auth="oauth"))
+        assert isinstance(client.transport, SSETransport)
+        assert isinstance(client.transport.auth, OAuthClientProvider)
+
+    def test_auth_string_sets_up_bearer_auth_shttp(self):
+        client = Client(
+            transport=StreamableHttpTransport("http://localhost:8000"),
+            auth="test_token",
+        )
+        assert isinstance(client.transport, StreamableHttpTransport)
+        assert isinstance(client.transport.auth, BearerAuth)
+        assert client.transport.auth.token.get_secret_value() == "test_token"
+
+    def test_auth_string_pass_direct_to_transport_shttp(self):
+        client = Client(
+            transport=StreamableHttpTransport(
+                "http://localhost:8000", auth="test_token"
+            ),
+        )
+        assert isinstance(client.transport, StreamableHttpTransport)
+        assert isinstance(client.transport.auth, BearerAuth)
+        assert client.transport.auth.token.get_secret_value() == "test_token"
+
+    def test_auth_string_sets_up_bearer_auth_sse(self):
+        client = Client(
+            transport=SSETransport("http://localhost:8000"),
+            auth="test_token",
+        )
+        assert isinstance(client.transport, SSETransport)
+        assert isinstance(client.transport.auth, BearerAuth)
+        assert client.transport.auth.token.get_secret_value() == "test_token"
+
+    def test_auth_string_pass_direct_to_transport_sse(self):
+        client = Client(
+            transport=SSETransport("http://localhost:8000", auth="test_token"),
+        )
+        assert isinstance(client.transport, SSETransport)
+        assert isinstance(client.transport.auth, BearerAuth)
+        assert client.transport.auth.token.get_secret_value() == "test_token"

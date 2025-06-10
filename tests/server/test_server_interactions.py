@@ -617,7 +617,7 @@ class TestToolContextInjection:
             result = await client.call_tool("tool_with_context", {"x": 42})
             assert len(result) == 1
             content = result[0]
-            assert content.text == "2"  # type: ignore[attr-defined]
+            assert content.text == "1"  # type: ignore[attr-defined]
 
     async def test_async_context(self):
         """Test that context works in async functions."""
@@ -632,7 +632,7 @@ class TestToolContextInjection:
             result = await client.call_tool("async_tool", {"x": 42})
             assert len(result) == 1
             content = result[0]
-            assert content.text == "Async request 2: 42"  # type: ignore[attr-defined]
+            assert content.text == "Async request 1: 42"  # type: ignore[attr-defined]
 
     async def test_optional_context(self):
         """Test that context is optional."""
@@ -696,7 +696,103 @@ class TestToolContextInjection:
 
         async with Client(mcp) as client:
             result = await client.call_tool("MyTool", {"x": 2})
-            assert result[0].text == "4"  # type: ignore[attr-defined]
+            assert result[0].text == "3"  # type: ignore[attr-defined]
+
+
+class TestToolEnabled:
+    async def test_toggle_enabled(self):
+        mcp = FastMCP()
+
+        @mcp.tool
+        def sample_tool(x: int) -> int:
+            return x * 2
+
+        assert sample_tool.enabled
+
+        tool = await mcp.get_tool("sample_tool")
+        assert tool.enabled
+
+        tool.disable()
+
+        assert not tool.enabled
+        assert not sample_tool.enabled
+
+        tool.enable()
+        assert tool.enabled
+        assert sample_tool.enabled
+
+    async def test_tool_disabled_in_decorator(self):
+        mcp = FastMCP()
+
+        @mcp.tool(enabled=False)
+        def sample_tool(x: int) -> int:
+            return x * 2
+
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+            assert len(tools) == 0
+
+            with pytest.raises(ToolError, match="Unknown tool"):
+                await client.call_tool("sample_tool", {"x": 5})
+
+    async def test_tool_toggle_enabled(self):
+        mcp = FastMCP()
+
+        @mcp.tool(enabled=False)
+        def sample_tool(x: int) -> int:
+            return x * 2
+
+        sample_tool.enable()
+
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+            assert len(tools) == 1
+
+    async def test_tool_toggle_disabled(self):
+        mcp = FastMCP()
+
+        @mcp.tool
+        def sample_tool(x: int) -> int:
+            return x * 2
+
+        sample_tool.disable()
+
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+            assert len(tools) == 0
+
+            with pytest.raises(ToolError, match="Unknown tool"):
+                await client.call_tool("sample_tool", {"x": 5})
+
+    async def test_get_tool_and_disable(self):
+        mcp = FastMCP()
+
+        @mcp.tool
+        def sample_tool(x: int) -> int:
+            return x * 2
+
+        tool = await mcp.get_tool("sample_tool")
+        assert tool.enabled
+
+        sample_tool.disable()
+
+        async with Client(mcp) as client:
+            result = await client.list_tools()
+            assert len(result) == 0
+
+            with pytest.raises(ToolError, match="Unknown tool"):
+                await client.call_tool("sample_tool", {"x": 5})
+
+    async def test_cant_call_disabled_tool(self):
+        mcp = FastMCP()
+
+        @mcp.tool(enabled=False)
+        def sample_tool(x: int) -> int:
+            return x * 2
+
+        with pytest.raises(Exception, match="Unknown tool"):
+            async with Client(mcp) as client:
+                await client.call_tool("sample_tool", {"x": 5})
 
 
 class TestResource:
@@ -780,7 +876,103 @@ class TestResourceContext:
 
         async with Client(mcp) as client:
             result = await client.read_resource(AnyUrl("resource://test"))
-            assert result[0].text == "2"  # type: ignore[attr-defined]
+            assert result[0].text == "1"  # type: ignore[attr-defined]
+
+
+class TestResourceEnabled:
+    async def test_toggle_enabled(self):
+        mcp = FastMCP()
+
+        @mcp.resource("resource://data")
+        def sample_resource() -> str:
+            return "Hello, world!"
+
+        assert sample_resource.enabled
+
+        resource = await mcp.get_resource("resource://data")
+        assert resource.enabled
+
+        resource.disable()
+
+        assert not resource.enabled
+        assert not sample_resource.enabled
+
+        resource.enable()
+        assert resource.enabled
+        assert sample_resource.enabled
+
+    async def test_resource_disabled_in_decorator(self):
+        mcp = FastMCP()
+
+        @mcp.resource("resource://data", enabled=False)
+        def sample_resource() -> str:
+            return "Hello, world!"
+
+        async with Client(mcp) as client:
+            resources = await client.list_resources()
+            assert len(resources) == 0
+
+            with pytest.raises(McpError, match="Unknown resource"):
+                await client.read_resource(AnyUrl("resource://data"))
+
+    async def test_resource_toggle_enabled(self):
+        mcp = FastMCP()
+
+        @mcp.resource("resource://data", enabled=False)
+        def sample_resource() -> str:
+            return "Hello, world!"
+
+        sample_resource.enable()
+
+        async with Client(mcp) as client:
+            resources = await client.list_resources()
+            assert len(resources) == 1
+
+    async def test_resource_toggle_disabled(self):
+        mcp = FastMCP()
+
+        @mcp.resource("resource://data")
+        def sample_resource() -> str:
+            return "Hello, world!"
+
+        sample_resource.disable()
+
+        async with Client(mcp) as client:
+            resources = await client.list_resources()
+            assert len(resources) == 0
+
+            with pytest.raises(McpError, match="Unknown resource"):
+                await client.read_resource(AnyUrl("resource://data"))
+
+    async def test_get_resource_and_disable(self):
+        mcp = FastMCP()
+
+        @mcp.resource("resource://data")
+        def sample_resource() -> str:
+            return "Hello, world!"
+
+        resource = await mcp.get_resource("resource://data")
+        assert resource.enabled
+
+        sample_resource.disable()
+
+        async with Client(mcp) as client:
+            result = await client.list_resources()
+            assert len(result) == 0
+
+            with pytest.raises(McpError, match="Unknown resource"):
+                await client.read_resource(AnyUrl("resource://data"))
+
+    async def test_cant_read_disabled_resource(self):
+        mcp = FastMCP()
+
+        @mcp.resource("resource://data", enabled=False)
+        def sample_resource() -> str:
+            return "Hello, world!"
+
+        with pytest.raises(McpError, match="Unknown resource"):
+            async with Client(mcp) as client:
+                await client.read_resource(AnyUrl("resource://data"))
 
 
 class TestResourceTemplates:
@@ -1015,7 +1207,7 @@ class TestResourceTemplateContext:
 
         async with Client(mcp) as client:
             result = await client.read_resource(AnyUrl("resource://test"))
-            assert result[0].text.startswith("Resource template: test 2")  # type: ignore[attr-defined]
+            assert result[0].text.startswith("Resource template: test 1")  # type: ignore[attr-defined]
 
     async def test_resource_template_context_with_callable_object(self):
         mcp = FastMCP()
@@ -1031,7 +1223,100 @@ class TestResourceTemplateContext:
 
         async with Client(mcp) as client:
             result = await client.read_resource(AnyUrl("resource://test"))
-            assert result[0].text.startswith("Resource template: test 2")  # type: ignore[attr-defined]
+            assert result[0].text.startswith("Resource template: test 1")  # type: ignore[attr-defined]
+
+
+class TestResourceTemplateEnabled:
+    async def test_toggle_enabled(self):
+        mcp = FastMCP()
+
+        @mcp.resource("resource://{param}")
+        def sample_template(param: str) -> str:
+            return f"Template: {param}"
+
+        assert sample_template.enabled
+
+        template = await mcp.get_resource_template("resource://{param}")
+        assert template.enabled
+
+        template.disable()
+
+        assert not template.enabled
+        assert not sample_template.enabled
+
+        template.enable()
+        assert template.enabled
+        assert sample_template.enabled
+
+    async def test_template_disabled_in_decorator(self):
+        mcp = FastMCP()
+
+        @mcp.resource("resource://{param}", enabled=False)
+        def sample_template(param: str) -> str:
+            return f"Template: {param}"
+
+        async with Client(mcp) as client:
+            templates = await client.list_resource_templates()
+            assert len(templates) == 0
+
+            with pytest.raises(McpError, match="Unknown resource"):
+                await client.read_resource(AnyUrl("resource://test"))
+
+    async def test_template_toggle_enabled(self):
+        mcp = FastMCP()
+
+        @mcp.resource("resource://{param}", enabled=False)
+        def sample_template(param: str) -> str:
+            return f"Template: {param}"
+
+        sample_template.enable()
+
+        async with Client(mcp) as client:
+            templates = await client.list_resource_templates()
+            assert len(templates) == 1
+
+    async def test_template_toggle_disabled(self):
+        mcp = FastMCP()
+
+        @mcp.resource("resource://{param}")
+        def sample_template(param: str) -> str:
+            return f"Template: {param}"
+
+        sample_template.disable()
+
+        async with Client(mcp) as client:
+            templates = await client.list_resource_templates()
+            assert len(templates) == 0
+
+    async def test_get_template_and_disable(self):
+        mcp = FastMCP()
+
+        @mcp.resource("resource://{param}")
+        def sample_template(param: str) -> str:
+            return f"Template: {param}"
+
+        template = await mcp.get_resource_template("resource://{param}")
+        assert template.enabled
+
+        sample_template.disable()
+
+        async with Client(mcp) as client:
+            result = await client.list_resource_templates()
+            assert len(result) == 0
+
+            with pytest.raises(McpError, match="Unknown resource"):
+                await client.read_resource(AnyUrl("resource://test"))
+
+    async def test_cant_read_disabled_template(self):
+        mcp = FastMCP()
+
+        @mcp.resource("resource://{param}", enabled=False)
+        def sample_template(param: str) -> str:
+            return f"Template: {param}"
+
+        with pytest.raises(McpError, match="Unknown resource"):
+            async with Client(mcp) as client:
+                await client.read_resource(AnyUrl("resource://test"))
 
 
 class TestPrompts:
@@ -1220,6 +1505,102 @@ class TestPrompts:
         assert prompt.tags == {"example", "test-tag"}
 
 
+class TestPromptEnabled:
+    async def test_toggle_enabled(self):
+        mcp = FastMCP()
+
+        @mcp.prompt
+        def sample_prompt() -> str:
+            return "Hello, world!"
+
+        assert sample_prompt.enabled
+
+        prompt = await mcp.get_prompt("sample_prompt")
+        assert prompt.enabled
+
+        prompt.disable()
+
+        assert not prompt.enabled
+        assert not sample_prompt.enabled
+
+        prompt.enable()
+        assert prompt.enabled
+        assert sample_prompt.enabled
+
+    async def test_prompt_disabled_in_decorator(self):
+        mcp = FastMCP()
+
+        @mcp.prompt(enabled=False)
+        def sample_prompt() -> str:
+            return "Hello, world!"
+
+        async with Client(mcp) as client:
+            prompts = await client.list_prompts()
+            assert len(prompts) == 0
+
+            with pytest.raises(McpError, match="Unknown prompt"):
+                await client.get_prompt("sample_prompt")
+
+    async def test_prompt_toggle_enabled(self):
+        mcp = FastMCP()
+
+        @mcp.prompt(enabled=False)
+        def sample_prompt() -> str:
+            return "Hello, world!"
+
+        sample_prompt.enable()
+
+        async with Client(mcp) as client:
+            prompts = await client.list_prompts()
+            assert len(prompts) == 1
+
+    async def test_prompt_toggle_disabled(self):
+        mcp = FastMCP()
+
+        @mcp.prompt
+        def sample_prompt() -> str:
+            return "Hello, world!"
+
+        sample_prompt.disable()
+
+        async with Client(mcp) as client:
+            prompts = await client.list_prompts()
+            assert len(prompts) == 0
+
+            with pytest.raises(McpError, match="Unknown prompt"):
+                await client.get_prompt("sample_prompt")
+
+    async def test_get_prompt_and_disable(self):
+        mcp = FastMCP()
+
+        @mcp.prompt
+        def sample_prompt() -> str:
+            return "Hello, world!"
+
+        prompt = await mcp.get_prompt("sample_prompt")
+        assert prompt.enabled
+
+        sample_prompt.disable()
+
+        async with Client(mcp) as client:
+            result = await client.list_prompts()
+            assert len(result) == 0
+
+            with pytest.raises(McpError, match="Unknown prompt"):
+                await client.get_prompt("sample_prompt")
+
+    async def test_cant_get_disabled_prompt(self):
+        mcp = FastMCP()
+
+        @mcp.prompt(enabled=False)
+        def sample_prompt() -> str:
+            return "Hello, world!"
+
+        with pytest.raises(McpError, match="Unknown prompt"):
+            async with Client(mcp) as client:
+                await client.get_prompt("sample_prompt")
+
+
 class TestPromptContext:
     async def test_prompt_context(self):
         mcp = FastMCP()
@@ -1249,4 +1630,4 @@ class TestPromptContext:
             assert len(result.messages) == 1
             message = result.messages[0]
             assert message.role == "user"
-            assert message.content.text == "Hello, World! 2"  # type: ignore[attr-defined]
+            assert message.content.text == "Hello, World! 1"  # type: ignore[attr-defined]

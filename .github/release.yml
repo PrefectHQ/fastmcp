@@ -7,6 +7,12 @@ changelog:
     - title: New Features 🎉
       labels:
         - feature
+      exclude:
+        labels:
+          - breaking change
+
+    - title: Enhancements 🔧
+      labels:
         - enhancement
       exclude:
         labels:
@@ -26,6 +32,10 @@ changelog:
     - title: Docs 📚
       labels:
         - documentation
+
+    - title: Dependencies 📦
+      labels:
+        - dependencies
 
     - title: Other Changes 🦾
       labels:
