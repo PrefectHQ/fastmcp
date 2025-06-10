@@ -667,11 +667,12 @@ class FastMCP(Generic[LifespanResultT]):
 
         Args:
             name_or_fn: Either a function (when used as @tool), a string name, or None
+            name: Optional name for the tool (keyword-only, alternative to name_or_fn)
             description: Optional description of what the tool does
             tags: Optional set of tags for categorizing the tool
-            annotations: Optional annotations about the tool's behavior
+            annotations: Optional annotations about the tool's behavior (e.g. {"is_async": True})
             exclude_args: Optional list of argument names to exclude from the tool schema
-            name: Optional name for the tool (keyword-only, alternative to name_or_fn)
+            enabled: Optional boolean to enable or disable the tool
 
         Example:
             @server.tool
@@ -820,6 +821,7 @@ class FastMCP(Generic[LifespanResultT]):
         description: str | None = None,
         mime_type: str | None = None,
         tags: set[str] | None = None,
+        enabled: bool | None = None,
     ) -> Callable[[AnyFunction], Resource | ResourceTemplate]:
         """Decorator to register a function as a resource.
 
@@ -842,6 +844,7 @@ class FastMCP(Generic[LifespanResultT]):
             description: Optional description of the resource
             mime_type: Optional MIME type for the resource
             tags: Optional set of tags for categorizing the resource
+            enabled: Optional boolean to enable or disable the resource
 
         Example:
             @server.resource("resource://my-resource")
@@ -906,6 +909,7 @@ class FastMCP(Generic[LifespanResultT]):
                     description=description,
                     mime_type=mime_type,
                     tags=tags,
+                    enabled=enabled,
                 )
                 self.add_template(template)
                 return template
@@ -917,6 +921,7 @@ class FastMCP(Generic[LifespanResultT]):
                     description=description,
                     mime_type=mime_type,
                     tags=tags,
+                    enabled=enabled,
                 )
                 self.add_resource(resource)
                 return resource
@@ -983,9 +988,10 @@ class FastMCP(Generic[LifespanResultT]):
 
         Args:
             name_or_fn: Either a function (when used as @prompt), a string name, or None
+            name: Optional name for the prompt (keyword-only, alternative to name_or_fn)
             description: Optional description of what the prompt does
             tags: Optional set of tags for categorizing the prompt
-            name: Optional name for the prompt (keyword-only, alternative to name_or_fn)
+            enabled: Optional boolean to enable or disable the prompt
 
         Example:
             @server.prompt

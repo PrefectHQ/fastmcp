@@ -44,7 +44,7 @@ class FastMCPComponent(FastMCPBaseModel):
         return self.model_dump() == other.model_dump()
 
     def __repr__(self) -> str:
-        return f"{self.__class__.__name__}(name={self.name!r}, description={self.description!r}, tags={self.tags})"
+        return f"{self.__class__.__name__}(name={self.name!r}, description={self.description!r}, tags={self.tags}, enabled={self.enabled})"
 
     def enable(self) -> None:
         """Enable the component."""

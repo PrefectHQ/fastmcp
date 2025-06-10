@@ -70,6 +70,7 @@ class ResourceTemplate(FastMCPComponent):
         description: str | None = None,
         mime_type: str | None = None,
         tags: set[str] | None = None,
+        enabled: bool | None = None,
     ) -> FunctionResourceTemplate:
         return FunctionResourceTemplate.from_function(
             fn=fn,
@@ -78,6 +79,7 @@ class ResourceTemplate(FastMCPComponent):
             description=description,
             mime_type=mime_type,
             tags=tags,
+            enabled=enabled,
         )
 
     @field_validator("mime_type", mode="before")
@@ -113,6 +115,7 @@ class ResourceTemplate(FastMCPComponent):
             description=self.description,
             mime_type=self.mime_type,
             tags=self.tags,
+            enabled=self.enabled,
         )
 
     def to_mcp_template(self, **overrides: Any) -> MCPResourceTemplate:
@@ -155,6 +158,7 @@ class FunctionResourceTemplate(ResourceTemplate):
         description: str | None = None,
         mime_type: str | None = None,
         tags: set[str] | None = None,
+        enabled: bool | None = None,
     ) -> FunctionResourceTemplate:
         """Create a template from a function."""
         from fastmcp.server.context import Context
@@ -237,4 +241,5 @@ class FunctionResourceTemplate(ResourceTemplate):
             fn=fn,
             parameters=parameters,
             tags=tags or set(),
+            enabled=enabled if enabled is not None else True,
         )
