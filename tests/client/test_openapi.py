@@ -6,6 +6,7 @@ from fastapi import FastAPI, Request
 
 from fastmcp import Client, FastMCP
 from fastmcp.client.transports import SSETransport, StreamableHttpTransport
+from fastmcp.server.openapi import MCPType, RouteMap
 from fastmcp.utilities.tests import run_server_in_process
 
 
@@ -27,6 +28,16 @@ def fastmcp_server_for_headers() -> FastMCP:
     mcp = FastMCP.from_fastapi(
         app,
         httpx_client_kwargs={"headers": {"x-server-header": "test-abc"}},
+        route_maps=[
+            # GET requests with path parameters go to ResourceTemplate
+            RouteMap(
+                methods=["GET"],
+                pattern=r".*\{.*\}.*",
+                mcp_type=MCPType.RESOURCE_TEMPLATE,
+            ),
+            # GET requests without path parameters go to Resource
+            RouteMap(methods=["GET"], pattern=r".*", mcp_type=MCPType.RESOURCE),
+        ],
     )
 
     return mcp
