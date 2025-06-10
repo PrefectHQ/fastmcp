@@ -96,6 +96,7 @@ class Prompt(FastMCPComponent, ABC):
         name: str | None = None,
         description: str | None = None,
         tags: set[str] | None = None,
+        enabled: bool | None = None,
     ) -> FunctionPrompt:
         """Create a Prompt from a function.
 
@@ -106,7 +107,7 @@ class Prompt(FastMCPComponent, ABC):
         - A sequence of any of the above
         """
         return FunctionPrompt.from_function(
-            fn=fn, name=name, description=description, tags=tags
+            fn=fn, name=name, description=description, tags=tags, enabled=enabled
         )
 
     @abstractmethod
@@ -130,6 +131,7 @@ class FunctionPrompt(Prompt):
         name: str | None = None,
         description: str | None = None,
         tags: set[str] | None = None,
+        enabled: bool | None = None,
     ) -> FunctionPrompt:
         """Create a Prompt from a function.
 
@@ -195,6 +197,7 @@ class FunctionPrompt(Prompt):
             description=description,
             arguments=arguments,
             tags=tags or set(),
+            enabled=enabled if enabled is not None else True,
             fn=fn,
         )
 

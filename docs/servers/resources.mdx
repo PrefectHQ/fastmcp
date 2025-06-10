@@ -94,6 +94,33 @@ def get_application_status() -> dict:
 - **`description`**: Explanation of the resource (defaults to docstring).
 - **`mime_type`**: Specifies the content type (FastMCP often infers a default like `text/plain` or `application/json`, but explicit is better for non-text types).
 - **`tags`**: A set of strings for categorization, potentially used by clients for filtering.
+- **`enabled`**: A boolean to enable or disable the resource (defaults to `True`). See [Disabling Resources](#disabling-resources) for more information.
+
+### Disabling Resources
+
+<VersionBadge version="2.8.0" />
+
+You can control the visibility and availability of resources and templates by enabling or disabling them. Disabled resources will not appear in the list of available resources or templates, and attempting to read a disabled resource will result in an "Unknown resource" error.
+
+By default, all resources are enabled. You can disable a resource upon creation using the `enabled` parameter in the decorator:
+
+```python
+@mcp.resource("data://secret", enabled=False)
+def get_secret_data():
+    """This resource is currently disabled."""
+    return "Secret data"
+```
+
+You can also toggle a resource's state programmatically after it has been created:
+
+```python
+@mcp.resource("data://config")
+def get_config(): return {"version": 1}
+
+# Disable and re-enable the resource
+get_config.disable()
+get_config.enable()
+```
 
 ### Accessing MCP Context
 

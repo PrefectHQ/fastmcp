@@ -9,6 +9,7 @@ from typing_extensions import TypedDict
 
 from fastmcp import FastMCP
 from fastmcp.client.client import Client
+from fastmcp.exceptions import ToolError
 from fastmcp.tools import Tool, forward, forward_raw
 from fastmcp.tools.tool import FunctionTool
 from fastmcp.tools.tool_transform import ArgTransform, TransformedTool
@@ -51,7 +52,7 @@ async def test_tool_defaults_are_maintained_on_unmapped_args(add_tool):
         add_tool, transform_args={"old_x": ArgTransform(name="new_x")}
     )
     result = await new_tool.run(arguments={"new_x": 1})
-    assert result[0].text == "11"  # type: ignore
+    assert result[0].text == "11"  # type: ignore[attr-defined]
 
 
 async def test_tool_defaults_are_maintained_on_mapped_args(add_tool):
@@ -59,7 +60,7 @@ async def test_tool_defaults_are_maintained_on_mapped_args(add_tool):
         add_tool, transform_args={"old_y": ArgTransform(name="new_y")}
     )
     result = await new_tool.run(arguments={"old_x": 1})
-    assert result[0].text == "11"  # type: ignore
+    assert result[0].text == "11"  # type: ignore[attr-defined]
 
 
 def test_tool_change_arg_name(add_tool):
@@ -86,7 +87,7 @@ async def test_tool_drop_arg(add_tool):
     )
     assert sorted(new_tool.parameters["properties"]) == ["old_x"]
     result = await new_tool.run(arguments={"old_x": 1})
-    assert result[0].text == "11"  # type: ignore
+    assert result[0].text == "11"  # type: ignore[attr-defined]
 
 
 async def test_dropped_args_error_if_provided(add_tool):
@@ -108,7 +109,7 @@ async def test_hidden_arg_with_constant_default(add_tool):
     assert sorted(new_tool.parameters["properties"]) == ["old_x"]
     # Should pass old_x=5 and old_y=20 to parent
     result = await new_tool.run(arguments={"old_x": 5})
-    assert result[0].text == "25"  # type: ignore
+    assert result[0].text == "25"  # type: ignore[attr-defined]
 
 
 async def test_hidden_arg_without_default_uses_parent_default(add_tool):
@@ -120,7 +121,7 @@ async def test_hidden_arg_without_default_uses_parent_default(add_tool):
     assert sorted(new_tool.parameters["properties"]) == ["old_x"]
     # Should pass old_x=3 and let parent use its default old_y=10
     result = await new_tool.run(arguments={"old_x": 3})
-    assert result[0].text == "13"  # type: ignore
+    assert result[0].text == "13"  # type: ignore[attr-defined]
 
 
 async def test_mixed_hidden_args_with_custom_function(add_tool):
@@ -145,7 +146,7 @@ async def test_mixed_hidden_args_with_custom_function(add_tool):
     assert sorted(new_tool.parameters["properties"]) == ["visible_x"]
     # Should pass visible_x=7 as old_x=7 and old_y=25 to parent
     result = await new_tool.run(arguments={"visible_x": 7})
-    assert result[0].text == "32"  # type: ignore
+    assert result[0].text == "32"  # type: ignore[attr-defined]
 
 
 async def test_hide_required_param_without_default_raises_error():
@@ -183,7 +184,7 @@ async def test_hide_required_param_with_user_default_works():
     assert sorted(new_tool.parameters["properties"]) == ["optional_param"]
     # Should pass required_param=5 and optional_param=20 to parent
     result = await new_tool.run(arguments={"optional_param": 20})
-    assert result[0].text == "25"  # type: ignore
+    assert result[0].text == "25"  # type: ignore[attr-defined]
 
 
 async def test_forward_with_argument_mapping(add_tool):
@@ -202,7 +203,7 @@ async def test_forward_with_argument_mapping(add_tool):
     )
 
     result = await new_tool.run(arguments={"new_x": 2, "new_y": 3})
-    assert result[0].text == "5"  # type: ignore
+    assert result[0].text == "5"  # type: ignore[attr-defined]
 
 
 async def test_forward_with_incorrect_args_raises_error(add_tool):
@@ -242,7 +243,7 @@ async def test_forward_raw_without_argument_mapping(add_tool):
     )
 
     result = await new_tool.run(arguments={"new_x": 2, "new_y": 3})
-    assert result[0].text == "5"  # type: ignore
+    assert result[0].text == "5"  # type: ignore[attr-defined]
 
 
 async def test_custom_fn_with_kwargs_and_no_transform_args(add_tool):
@@ -252,7 +253,7 @@ async def test_custom_fn_with_kwargs_and_no_transform_args(add_tool):
 
     new_tool = Tool.from_tool(add_tool, transform_fn=custom_fn)
     result = await new_tool.run(arguments={"extra": 1, "old_x": 2, "old_y": 3})
-    assert result[0].text == "6"  # type: ignore
+    assert result[0].text == "6"  # type: ignore[attr-defined]
     assert new_tool.parameters["required"] == IsList(
         "extra", "old_x", check_order=False
     )
@@ -269,7 +270,7 @@ async def test_fn_with_kwargs_passes_through_original_args(add_tool):
 
     new_tool = Tool.from_tool(add_tool, transform_fn=custom_fn)
     result = await new_tool.run(arguments={"new_y": 2, "old_y": 3})
-    assert result[0].text == "5"  # type: ignore
+    assert result[0].text == "5"  # type: ignore[attr-defined]
 
 
 async def test_fn_with_kwargs_receives_transformed_arg_names(add_tool):
@@ -287,7 +288,7 @@ async def test_fn_with_kwargs_receives_transformed_arg_names(add_tool):
         transform_args={"old_x": ArgTransform(name="new_x")},
     )
     result = await new_tool.run(arguments={"new_x": 2, "old_y": 3})
-    assert result[0].text == "5"  # type: ignore
+    assert result[0].text == "5"  # type: ignore[attr-defined]
 
 
 async def test_fn_with_kwargs_handles_partial_explicit_args(add_tool):
@@ -307,7 +308,7 @@ async def test_fn_with_kwargs_handles_partial_explicit_args(add_tool):
     result = await new_tool.run(
         arguments={"new_x": 3, "old_y": 7, "some_other_param": "test"}
     )
-    assert result[0].text == "10"  # type: ignore
+    assert result[0].text == "10"  # type: ignore[attr-defined]
 
 
 async def test_fn_with_kwargs_mixed_mapped_and_unmapped_args(add_tool):
@@ -325,7 +326,7 @@ async def test_fn_with_kwargs_mixed_mapped_and_unmapped_args(add_tool):
         transform_args={"old_x": ArgTransform(name="new_x")},
     )  # only map 'a'
     result = await new_tool.run(arguments={"new_x": 1, "old_y": 5})
-    assert result[0].text == "6"  # type: ignore
+    assert result[0].text == "6"  # type: ignore[attr-defined]
 
 
 async def test_fn_with_kwargs_dropped_args_not_in_kwargs(add_tool):
@@ -468,7 +469,7 @@ async def test_tool_transform_chaining(add_tool):
     tool2 = Tool.from_tool(tool1, transform_args={"x": ArgTransform(name="final_x")})
 
     result = await tool2.run(arguments={"final_x": 5})
-    assert result[0].text == "15"  # type: ignore
+    assert result[0].text == "15"  # type: ignore[attr-defined]
 
     # Transform tool1 with custom function that handles all parameters
     async def custom(final_x: int, **kwargs) -> str:
@@ -479,7 +480,7 @@ async def test_tool_transform_chaining(add_tool):
         tool1, transform_fn=custom, transform_args={"x": ArgTransform(name="final_x")}
     )
     result = await tool3.run(arguments={"final_x": 3, "old_y": 5})
-    assert result[0].text == "custom 8"  # type: ignore
+    assert result[0].text == "custom 8"  # type: ignore[attr-defined]
 
 
 class MyModel(BaseModel):
@@ -634,7 +635,7 @@ async def test_arg_transform_precedence_over_function_with_kwargs():
     # Test it works at runtime
     result = await tool.run(arguments={"y": "test"})
     # Should use ArgTransform default of 42
-    assert "42: test" in result[0].text  # type: ignore
+    assert "42: test" in result[0].text  # type: ignore[attr-defined]
 
 
 def test_arg_transform_combined_attributes():
@@ -691,8 +692,8 @@ async def test_arg_transform_type_precedence_runtime():
 
     # Test it works with string input
     result = await tool.run(arguments={"x": "5", "y": 3})
-    assert "String input '5'" in result[0].text  # type: ignore
-    assert "result: 8" in result[0].text  # type: ignore
+    assert "String input '5'" in result[0].text  # type: ignore[attr-defined]
+    assert "result: 8" in result[0].text  # type: ignore[attr-defined]
 
 
 class TestProxy:
@@ -727,7 +728,7 @@ class TestProxy:
         async with Client(proxy_server) as client:
             # The tool should be registered with its transformed name
             result = await client.call_tool("add_transformed", {"new_x": 1, "old_y": 2})
-            assert result[0].text == "3"  # type: ignore
+            assert result[0].text == "3"  # type: ignore[attr-defined]
 
 
 async def test_arg_transform_default_factory():
@@ -750,7 +751,7 @@ async def test_arg_transform_default_factory():
 
     # Should work without providing timestamp (gets value from factory)
     result = await new_tool.run(arguments={"x": 42})
-    assert result[0].text == "42_12345.0"  # type: ignore
+    assert result[0].text == "42_12345.0"  # type: ignore[attr-defined]
 
 
 async def test_arg_transform_default_factory_called_each_time():
@@ -778,11 +779,11 @@ async def test_arg_transform_default_factory_called_each_time():
 
     # First call
     result1 = await new_tool.run(arguments={"x": 1})
-    assert result1[0].text == "1_1"  # type: ignore
+    assert result1[0].text == "1_1"  # type: ignore[attr-defined]
 
     # Second call should get a different value
     result2 = await new_tool.run(arguments={"x": 2})
-    assert result2[0].text == "2_2"  # type: ignore
+    assert result2[0].text == "2_2"  # type: ignore[attr-defined]
 
 
 async def test_arg_transform_hidden_with_default_factory():
@@ -807,7 +808,7 @@ async def test_arg_transform_hidden_with_default_factory():
 
     # Should pass hidden request_id with factory value
     result = await new_tool.run(arguments={"x": 42})
-    assert result[0].text == "42_req_123"  # type: ignore
+    assert result[0].text == "42_req_123"  # type: ignore[attr-defined]
 
 
 async def test_arg_transform_default_and_factory_raises_error():
@@ -942,3 +943,47 @@ async def test_arg_transform_hide_and_required_raises_error():
         ValueError, match="Cannot specify both 'hide=True' and 'required=True'"
     ):
         ArgTransform(hide=True, required=True)
+
+
+class TestEnableDisable:
+    async def test_transform_disabled_tool(self):
+        """
+        Tests that a transformed tool can run even if the parent tool is disabled
+        """
+        mcp = FastMCP()
+
+        @mcp.tool(enabled=False)
+        def add(x: int, y: int = 10) -> int:
+            return x + y
+
+        new_add = Tool.from_tool(add, name="new_add")
+        mcp.add_tool(new_add)
+
+        assert new_add.enabled
+
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+            assert {tool.name for tool in tools} == {"new_add"}
+
+            result = await client.call_tool("new_add", {"x": 1, "y": 2})
+            assert result[0].text == "3"  # type: ignore[attr-defined]
+
+            with pytest.raises(ToolError):
+                await client.call_tool("add", {"x": 1, "y": 2})
+
+    async def test_disable_transformed_tool(self):
+        mcp = FastMCP()
+
+        @mcp.tool(enabled=False)
+        def add(x: int, y: int = 10) -> int:
+            return x + y
+
+        new_add = Tool.from_tool(add, name="new_add", enabled=False)
+        mcp.add_tool(new_add)
+
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+            assert len(tools) == 0
+
+            with pytest.raises(ToolError):
+                await client.call_tool("new_add", {"x": 1, "y": 2})

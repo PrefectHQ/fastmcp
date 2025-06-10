@@ -267,6 +267,7 @@ class TransformedTool(Tool):
         transform_args: dict[str, ArgTransform] | None = None,
         annotations: ToolAnnotations | None = None,
         serializer: Callable[[Any], str] | None = None,
+        enabled: bool | None = None,
     ) -> TransformedTool:
         """Create a transformed tool from a parent tool.
 
@@ -399,6 +400,7 @@ class TransformedTool(Tool):
             annotations=annotations or tool.annotations,
             serializer=serializer or tool.serializer,
             transform_args=transform_args,
+            enabled=enabled if enabled is not None else True,
         )
 
         return transformed_tool

@@ -62,6 +62,7 @@ class Tool(FastMCPComponent, ABC):
         annotations: ToolAnnotations | None = None,
         exclude_args: list[str] | None = None,
         serializer: Callable[[Any], str] | None = None,
+        enabled: bool | None = None,
     ) -> FunctionTool:
         """Create a Tool from a function."""
         return FunctionTool.from_function(
@@ -72,6 +73,7 @@ class Tool(FastMCPComponent, ABC):
             annotations=annotations,
             exclude_args=exclude_args,
             serializer=serializer,
+            enabled=enabled,
         )
 
     @abstractmethod
@@ -92,6 +94,7 @@ class Tool(FastMCPComponent, ABC):
         tags: set[str] | None = None,
         annotations: ToolAnnotations | None = None,
         serializer: Callable[[Any], str] | None = None,
+        enabled: bool | None = None,
     ) -> TransformedTool:
         from fastmcp.tools.tool_transform import TransformedTool
 
@@ -104,6 +107,7 @@ class Tool(FastMCPComponent, ABC):
             tags=tags,
             annotations=annotations,
             serializer=serializer,
+            enabled=enabled,
         )
 
 
@@ -120,6 +124,7 @@ class FunctionTool(Tool):
         annotations: ToolAnnotations | None = None,
         exclude_args: list[str] | None = None,
         serializer: Callable[[Any], str] | None = None,
+        enabled: bool | None = None,
     ) -> FunctionTool:
         """Create a Tool from a function."""
 
@@ -136,6 +141,7 @@ class FunctionTool(Tool):
             tags=tags or set(),
             annotations=annotations,
             serializer=serializer,
+            enabled=enabled if enabled is not None else True,
         )
 
     async def run(

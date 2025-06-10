@@ -169,27 +169,58 @@ def search_products_implementation(query: str, category: str | None = None) -> l
 
 - **`name`**: Sets the explicit tool name exposed via MCP.
 - **`description`**: Provides the description exposed via MCP. If set, the function's docstring is ignored for this purpose.
-- **`tags`**: A set of strings used to categorize the tool. Clients *might* use tags to filter or group available tools.
+- **`tags`**: A set of strings to categorize the tool. Clients *might* use tags to filter or group available tools.
+- **`enabled`**: A boolean to enable or disable the tool (defaults to `True`). See [Disabling Tools](#disabling-tools) for more information.
+- **`exclude_args`**: A list of argument names to exclude from the tool schema shown to the LLM. See [Excluding Arguments](#excluding-arguments) for more information.
 
+### Excluding Arguments
 
-- **`exclude_args`**:  
-    <VersionBadge version="2.6.0" /> 
-    A list of argument names to exclude from the tool schema shown to the LLM. This is useful for arguments that are injected at runtime (such as `state`, `user_id`, or credentials) and should not be exposed to the LLM or client. Only arguments with default values can be excluded; attempting to exclude a required argument will raise an error.
-  
+<VersionBadge version="2.6.0" /> 
 
-    Example:
+You can exclude certain arguments from the tool schema shown to the LLM. This is useful for arguments that are injected at runtime (such as `state`, `user_id`, or credentials) and should not be exposed to the LLM or client. Only arguments with default values can be excluded; attempting to exclude a required argument will raise an error.
 
-    ```python
-    @mcp.tool(
-        name="get_user_details",
-        exclude_args=["user_id"]
-    )
-    def get_user_details(user_id: str = None) -> str:
-        # user_id will be injected by the server, not provided by the LLM
-        ...
-    ```
+Example:
 
-    With this configuration, `user_id` will not appear in the tool's parameter schema, but can still be set by the server or framework at runtime.
+```python
+@mcp.tool(
+    name="get_user_details",
+    exclude_args=["user_id"]
+)
+def get_user_details(user_id: str = None) -> str:
+    # user_id will be injected by the server, not provided by the LLM
+    ...
+```
+
+With this configuration, `user_id` will not appear in the tool's parameter schema, but can still be set by the server or framework at runtime.
+
+For more complex tool transformations, see [Transforming Tools](/patterns/tool-transformation).
+
+### Disabling Tools
+
+<VersionBadge version="2.8.0" />
+
+You can control the visibility and availability of tools by enabling or disabling them. This is useful for feature flagging, maintenance, or dynamically changing the toolset available to a client. Disabled tools will not appear in the list of available tools returned by `list_tools`, and attempting to call a disabled tool will result in an "Unknown tool" error, just as if the tool did not exist.
+
+By default, all tools are enabled. You can disable a tool upon creation using the `enabled` parameter in the decorator:
+
+```python
+@mcp.tool(enabled=False)
+def maintenance_tool():
+    """This tool is currently under maintenance."""
+    return "This tool is disabled."
+```
+
+You can also toggle a tool's state programmatically after it has been created:
+
+```python
+@mcp.tool
+def dynamic_tool():
+    return "I am a dynamic tool."
+
+# Disable and re-enable the tool
+dynamic_tool.disable()
+dynamic_tool.enable()
+```
 
 ### Async Tools
 

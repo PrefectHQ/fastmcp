@@ -32,6 +32,11 @@ class FastMCPComponent(FastMCPBaseModel):
         description="Tags for the component.",
     )
 
+    enabled: bool = Field(
+        default=True,
+        description="Whether the component is enabled.",
+    )
+
     def __eq__(self, other: object) -> bool:
         if type(self) is not type(other):
             return False
@@ -39,4 +44,12 @@ class FastMCPComponent(FastMCPBaseModel):
         return self.model_dump() == other.model_dump()
 
     def __repr__(self) -> str:
-        return f"{self.__class__.__name__}(name={self.name!r}, description={self.description!r}, tags={self.tags})"
+        return f"{self.__class__.__name__}(name={self.name!r}, description={self.description!r}, tags={self.tags}, enabled={self.enabled})"
+
+    def enable(self) -> None:
+        """Enable the component."""
+        self.enabled = True
+
+    def disable(self) -> None:
+        """Disable the component."""
+        self.enabled = False

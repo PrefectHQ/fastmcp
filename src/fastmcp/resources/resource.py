@@ -52,6 +52,7 @@ class Resource(FastMCPComponent, abc.ABC):
         description: str | None = None,
         mime_type: str | None = None,
         tags: set[str] | None = None,
+        enabled: bool | None = None,
     ) -> FunctionResource:
         return FunctionResource.from_function(
             fn=fn,
@@ -60,6 +61,7 @@ class Resource(FastMCPComponent, abc.ABC):
             description=description,
             mime_type=mime_type,
             tags=tags,
+            enabled=enabled,
         )
 
     @field_validator("mime_type", mode="before")
@@ -124,6 +126,7 @@ class FunctionResource(Resource):
         description: str | None = None,
         mime_type: str | None = None,
         tags: set[str] | None = None,
+        enabled: bool | None = None,
     ) -> FunctionResource:
         """Create a FunctionResource from a function."""
         if isinstance(uri, str):
@@ -135,6 +138,7 @@ class FunctionResource(Resource):
             description=description or fn.__doc__,
             mime_type=mime_type or "text/plain",
             tags=tags or set(),
+            enabled=enabled if enabled is not None else True,
         )
 
     async def read(self) -> str | bytes:
