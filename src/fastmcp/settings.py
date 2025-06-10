@@ -15,8 +15,18 @@ from pydantic_settings import (
 )
 from typing_extensions import Self
 
+LOG_LEVEL = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+
+DuplicateBehavior = Literal["warn", "error", "replace", "ignore"]
+
 
 class ExtendedEnvSettingsSource(EnvSettingsSource):
+    """
+    A special EnvSettingsSource that allows for multiple env var prefixes to be used.
+
+    Raises a deprecation warning if the old `FASTMCP_SERVER_` prefix is used.
+    """
+
     def get_field_value(
         self, field: FieldInfo, field_name: str
     ) -> tuple[Any, str, bool]:
@@ -28,6 +38,7 @@ class ExtendedEnvSettingsSource(EnvSettingsSource):
                 )
                 if env_val is not None:
                     if prefix == "FASTMCP_SERVER_":
+                        # Deprecated in 2.8.0
                         warnings.warn(
                             "Using `FASTMCP_SERVER_` environment variables is deprecated. Use `FASTMCP_` instead.",
                             DeprecationWarning,
@@ -40,11 +51,6 @@ class ExtendedEnvSettingsSource(EnvSettingsSource):
 
 class ExtendedSettingsConfigDict(SettingsConfigDict, total=False):
     env_prefixes: list[str] | None
-
-
-LOG_LEVEL = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
-
-DuplicateBehavior = Literal["warn", "error", "replace", "ignore"]
 
 
 class Settings(BaseSettings):
