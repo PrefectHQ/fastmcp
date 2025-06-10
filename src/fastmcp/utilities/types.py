@@ -2,53 +2,22 @@
 
 import base64
 import inspect
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from functools import lru_cache
 from pathlib import Path
 from types import UnionType
 from typing import Annotated, TypeVar, Union, get_args, get_origin
 
 from mcp.types import ImageContent
-from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, TypeAdapter
+from pydantic import BaseModel, ConfigDict, TypeAdapter
 
 T = TypeVar("T")
-
-
-def _convert_set_default_none(maybe_set: set[T] | Sequence[T] | None) -> set[T]:
-    """Convert a sequence to a set, defaulting to an empty set if None."""
-    if maybe_set is None:
-        return set()
-    if isinstance(maybe_set, set):
-        return maybe_set
-    return set(maybe_set)
 
 
 class FastMCPBaseModel(BaseModel):
     """Base model for FastMCP models."""
 
     model_config = ConfigDict(extra="forbid")
-
-
-class FastMCPComponent(FastMCPBaseModel):
-    """Base class for FastMCP tools, prompts, resources, and resource templates."""
-
-    name: str = Field(
-        description="The name of the component.",
-    )
-    description: str | None = Field(
-        default=None,
-        description="The description of the component.",
-    )
-    tags: Annotated[set[str], BeforeValidator(_convert_set_default_none)] = Field(
-        default_factory=set,
-        description="Tags for the component.",
-    )
-
-    def __eq__(self, other: object) -> bool:
-        if type(self) is not type(other):
-            return False
-        assert isinstance(other, type(self))
-        return self.model_dump() == other.model_dump()
 
 
 @lru_cache(maxsize=5000)

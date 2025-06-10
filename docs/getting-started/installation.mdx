@@ -72,7 +72,7 @@ For users concerned about stability in production environments, we recommend pin
 
 Whenever possible, FastMCP will issue deprecation warnings when users attempt to use APIs that are either deprecated or destined for future removal. These warnings will be maintained for at least 1 minor version release, and may be maintained longer.
 
-Note that the "public API" includes the core functionality of the `FastMCP` server and its methods. It does not include private methods or objects that are stored as private attributes, as we do not expect users to rely on those implementation details.
+Note that the "public API" includes the public functionality of the `FastMCP` server, core FastMCP components like `Tool`, `Prompt`, `Resource`, and `ResourceTemplate`, and their respective public methods. It does not include private methods, utilities, or objects that are stored as private attributes, as we do not expect users to rely on those implementation details. 
 
 ## Installing for Development
 
