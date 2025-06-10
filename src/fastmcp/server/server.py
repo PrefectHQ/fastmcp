@@ -555,7 +555,7 @@ class FastMCP(Generic[LifespanResultT]):
         # Get tool, checking first from our tools, then from the mounted servers
         if self._tool_manager.has_tool(key):
             tool = self._tool_manager.get_tool(key)
-            if not tool.enabled:
+            if not self._should_enable_component(tool):
                 raise DisabledError(f"Tool {key!r} is disabled")
             return await self._tool_manager.call_tool(key, arguments)
 
@@ -592,7 +592,7 @@ class FastMCP(Generic[LifespanResultT]):
         """
         if self._resource_manager.has_resource(uri):
             resource = await self._resource_manager.get_resource(uri)
-            if not resource.enabled:
+            if not self._should_enable_component(resource):
                 raise DisabledError(f"Resource {str(uri)!r} is disabled")
             content = await self._resource_manager.read_resource(uri)
             return [
@@ -646,7 +646,7 @@ class FastMCP(Generic[LifespanResultT]):
         # Get prompt, checking first from our prompts, then from the mounted servers
         if self._prompt_manager.has_prompt(name):
             prompt = self._prompt_manager.get_prompt(name)
-            if not prompt.enabled:
+            if not self._should_enable_component(prompt):
                 raise DisabledError(f"Prompt {name!r} is disabled")
             return await self._prompt_manager.render_prompt(name, arguments)
 
