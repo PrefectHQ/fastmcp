@@ -1556,6 +1556,7 @@ class FastMCP(Generic[LifespanResultT]):
         """
         Create a FastMCP server from an OpenAPI specification.
         """
+        from .openapi import FastMCPOpenAPI
 
         return FastMCPOpenAPI(
             openapi_spec=openapi_spec,

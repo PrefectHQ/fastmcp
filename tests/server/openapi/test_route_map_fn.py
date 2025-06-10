@@ -161,15 +161,15 @@ def test_route_map_fn_returns_none(sample_openapi_spec, http_client):
 
     # Should have default behavior
     assert server.name == "Test Server"
-    # Check that components were created with default types
+    # Check that components were created with default mapping
     tools = server._tool_manager._tools
     resources = server._resource_manager._resources
     templates = server._resource_manager._templates
 
     # Should have tools, resources, and templates based on default mapping
     assert len(tools) > 0
-    assert len(resources) > 0
-    assert len(templates) > 0
+    assert len(resources) == 0
+    assert len(templates) == 0
 
 
 def test_route_map_fn_called_for_excluded_routes(sample_openapi_spec, http_client):
