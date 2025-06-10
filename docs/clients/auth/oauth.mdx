@@ -102,7 +102,7 @@ OAuth access tokens are automatically cached in `~/.fastmcp/oauth-mcp-client-cac
 To clear the tokens for a specific server, instantiate a `FileTokenStorage` instance and call the `clear` method:
 
 ```python
-from fastmcp.client.auth import FileTokenStorage
+from fastmcp.client.auth.oauth import FileTokenStorage
 
 storage = FileTokenStorage(server_url="https://fastmcp.cloud/mcp")
 await storage.clear()
