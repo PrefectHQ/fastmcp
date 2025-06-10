@@ -197,7 +197,7 @@ class TestTools:
 
         async with Client(proxy_server) as client:
             tools = await client.list_tools()
-            assert "greet" not in tools
+            assert not any(t.name == "greet" for t in tools)
 
 
 class TestResources:
