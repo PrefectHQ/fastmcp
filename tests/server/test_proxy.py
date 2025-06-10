@@ -140,7 +140,7 @@ class TestTools:
         assert proxy_result[0].text == "3"  # type: ignore[attr-defined]
 
     async def test_error_tool_raises_error(self, proxy_server):
-        with pytest.raises(ToolError, match=""):
+        with pytest.raises(ToolError, match="This is a test error"):
             async with Client(proxy_server) as client:
                 await client.call_tool("error_tool", {})
 

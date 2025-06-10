@@ -22,7 +22,7 @@ from pydantic import (
 from fastmcp.server.dependencies import get_context
 from fastmcp.utilities.types import (
     FastMCPBaseModel,
-    _convert_set_defaults,
+    _convert_set_default_none,
     find_kwarg_by_type,
 )
 
@@ -42,7 +42,7 @@ class Resource(FastMCPBaseModel, abc.ABC):
     description: str | None = Field(
         default=None, description="Description of the resource"
     )
-    tags: Annotated[set[str], BeforeValidator(_convert_set_defaults)] = Field(
+    tags: Annotated[set[str], BeforeValidator(_convert_set_default_none)] = Field(
         default_factory=set, description="Tags for the resource"
     )
     mime_type: str = Field(

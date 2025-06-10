@@ -5,12 +5,11 @@ from __future__ import annotations
 import inspect
 import re
 from collections.abc import Callable
-from typing import Annotated, Any
+from typing import Any
 from urllib.parse import unquote
 
 from mcp.types import ResourceTemplate as MCPResourceTemplate
 from pydantic import (
-    BeforeValidator,
     Field,
     field_validator,
     validate_call,
@@ -20,8 +19,7 @@ from fastmcp.resources.types import Resource
 from fastmcp.server.dependencies import get_context
 from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.types import (
-    FastMCPBaseModel,
-    _convert_set_defaults,
+    FastMCPComponent,
     find_kwarg_by_type,
     get_cached_typeadapter,
 )
@@ -51,16 +49,11 @@ def match_uri_template(uri: str, uri_template: str) -> dict[str, str] | None:
     return None
 
 
-class ResourceTemplate(FastMCPBaseModel):
+class ResourceTemplate(FastMCPComponent):
     """A template for dynamically creating resources."""
 
     uri_template: str = Field(
         description="URI template with parameters (e.g. weather://{city}/current)"
-    )
-    name: str = Field(description="Name of the resource")
-    description: str | None = Field(description="Description of what the resource does")
-    tags: Annotated[set[str], BeforeValidator(_convert_set_defaults)] = Field(
-        default_factory=set, description="Tags for the resource"
     )
     mime_type: str = Field(
         default="text/plain", description="MIME type of the resource content"

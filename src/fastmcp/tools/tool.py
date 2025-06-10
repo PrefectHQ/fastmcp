@@ -5,21 +5,20 @@ import json
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Annotated, Any
+from typing import TYPE_CHECKING, Any
 
 import pydantic_core
 from mcp.types import EmbeddedResource, ImageContent, TextContent, ToolAnnotations
 from mcp.types import Tool as MCPTool
-from pydantic import BeforeValidator, Field
+from pydantic import Field
 
 import fastmcp
 from fastmcp.server.dependencies import get_context
 from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import (
-    FastMCPBaseModel,
+    FastMCPComponent,
     Image,
-    _convert_set_defaults,
     find_kwarg_by_type,
     get_cached_typeadapter,
 )
@@ -34,17 +33,10 @@ def default_serializer(data: Any) -> str:
     return pydantic_core.to_json(data, fallback=str, indent=2).decode()
 
 
-class Tool(FastMCPBaseModel, ABC):
+class Tool(FastMCPComponent, ABC):
     """Internal tool registration info."""
 
-    name: str = Field(description="Name of the tool")
-    description: str | None = Field(
-        default=None, description="Description of what the tool does"
-    )
     parameters: dict[str, Any] = Field(description="JSON schema for tool parameters")
-    tags: Annotated[set[str], BeforeValidator(_convert_set_defaults)] = Field(
-        default_factory=set, description="Tags for the tool"
-    )
     annotations: ToolAnnotations | None = Field(
         default=None, description="Additional annotations about the tool"
     )
