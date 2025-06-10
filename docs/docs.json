@@ -52,84 +52,97 @@
         }
     },
     "navigation": {
-        "groups": [
+        "anchors": [
             {
-                "group": "Get Started",
-                "pages": [
-                    "getting-started/welcome",
-                    "getting-started/installation",
-                    "getting-started/quickstart",
-                    "updates"
-                ]
-            },
-            {
-                "group": "Servers",
-                "pages": [
-                    "servers/fastmcp",
+                "anchor": "Documentation",
+                "groups": [
                     {
-                        "group": "Core Components",
-                        "icon": "toolbox",
+                        "group": "Get Started",
                         "pages": [
-                            "servers/tools",
-                            "servers/resources",
-                            "servers/prompts",
-                            "servers/context"
+                            "getting-started/welcome",
+                            "getting-started/installation",
+                            "getting-started/quickstart",
+                            "updates"
                         ]
                     },
                     {
-                        "group": "Authentication",
-                        "icon": "shield-check",
+                        "group": "Servers",
                         "pages": [
-                            "servers/auth/bearer"
+                            "servers/fastmcp",
+                            {
+                                "group": "Core Components",
+                                "icon": "toolbox",
+                                "pages": [
+                                    "servers/tools",
+                                    "servers/resources",
+                                    "servers/prompts",
+                                    "servers/context"
+                                ]
+                            },
+                            {
+                                "group": "Authentication",
+                                "icon": "shield-check",
+                                "pages": [
+                                    "servers/auth/bearer"
+                                ]
+                            },
+                            "servers/openapi",
+                            "servers/proxy",
+                            "servers/composition",
+                            {
+                                "group": "Deployment",
+                                "icon": "upload",
+                                "pages": [
+                                    "deployment/running-server",
+                                    "deployment/asgi"
+                                ]
+                            }
                         ]
                     },
-                    "servers/openapi",
-                    "servers/proxy",
-                    "servers/composition",
                     {
-                        "group": "Deployment",
-                        "icon": "upload",
+                        "group": "Clients",
                         "pages": [
-                            "deployment/running-server",
-                            "deployment/asgi"
+                            "clients/client",
+                            "clients/transports",
+                            {
+                                "group": "Authentication",
+                                "icon": "user-shield",
+                                "pages": [
+                                    "clients/auth/oauth",
+                                    "clients/auth/bearer"
+                                ]
+                            },
+                            "clients/advanced-features"
+                        ]
+                    },
+                    {
+                        "group": "Integrations",
+                        "pages": [
+                            "integrations/anthropic",
+                            "integrations/claude-desktop",
+                            "integrations/openai",
+                            "integrations/gemini",
+                            "integrations/contrib"
+                        ]
+                    },
+                    {
+                        "group": "Patterns",
+                        "pages": [
+                            "patterns/tool-transformation",
+                            "patterns/decorating-methods",
+                            "patterns/http-requests",
+                            "patterns/testing",
+                            "patterns/cli"
                         ]
                     }
-                ]
+                ],
+                "icon": "book"
             },
             {
-                "group": "Clients",
+                "anchor": "Tutorials",
+                "icon": "graduation-cap",
                 "pages": [
-                    "clients/client",
-                    "clients/transports",
-                    {
-                        "group": "Authentication",
-                        "icon": "user-shield",
-                        "pages": [
-                            "clients/auth/oauth",
-                            "clients/auth/bearer"
-                        ]
-                    },
-                    "clients/advanced-features"
-                ]
-            },
-            {
-                "group": "Integrations",
-                "pages": [
-                    "integrations/anthropic",
-                    "integrations/claude-desktop",
-                    "integrations/openai",
-                    "integrations/gemini",
-                    "integrations/contrib"
-                ]
-            },
-            {
-                "group": "Patterns",
-                "pages": [
-                    "patterns/tool-transformation",
-                    "patterns/decorating-methods",
-                    "patterns/http-requests",
-                    "patterns/testing",
-                    "patterns/cli"
+                    "tutorials/create-mcp-server"
                 ]
             }
         ]
