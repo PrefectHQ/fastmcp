@@ -12,7 +12,7 @@ def test_load_bearer_env_from_env_var(monkeypatch):
     mcp = FastMCP()
     assert mcp.auth is None
 
-    monkeypatch.setenv("FASTMCP_SERVER_DEFAULT_AUTH_PROVIDER", "bearer_env")
+    monkeypatch.setenv("FASTMCP_DEFAULT_AUTH_PROVIDER", "bearer_env")
     monkeypatch.setenv("FASTMCP_AUTH_BEARER_PUBLIC_KEY", "test-public-key")
 
     with temporary_settings(**Settings().model_dump()):
@@ -24,7 +24,7 @@ def test_load_bearer_env_from_env_var_requires_public_key_or_jwks_uri(monkeypatc
     mcp = FastMCP()
     assert mcp.auth is None
 
-    monkeypatch.setenv("FASTMCP_SERVER_DEFAULT_AUTH_PROVIDER", "bearer_env")
+    monkeypatch.setenv("FASTMCP_DEFAULT_AUTH_PROVIDER", "bearer_env")
 
     with temporary_settings(**Settings().model_dump()):
         with pytest.raises(
@@ -34,7 +34,7 @@ def test_load_bearer_env_from_env_var_requires_public_key_or_jwks_uri(monkeypatc
 
 
 def test_configure_bearer_env_from_env_var(monkeypatch):
-    monkeypatch.setenv("FASTMCP_SERVER_DEFAULT_AUTH_PROVIDER", "bearer_env")
+    monkeypatch.setenv("FASTMCP_DEFAULT_AUTH_PROVIDER", "bearer_env")
     monkeypatch.setenv("FASTMCP_AUTH_BEARER_PUBLIC_KEY", "test-public-key")
     monkeypatch.setenv("FASTMCP_AUTH_BEARER_ISSUER", "http://test-issuer")
     monkeypatch.setenv("FASTMCP_AUTH_BEARER_AUDIENCE", "test-audience")
@@ -52,7 +52,7 @@ def test_configure_bearer_env_from_env_var(monkeypatch):
 
 
 def test_list_of_scopes_must_be_a_list(monkeypatch):
-    monkeypatch.setenv("FASTMCP_SERVER_DEFAULT_AUTH_PROVIDER", "bearer_env")
+    monkeypatch.setenv("FASTMCP_DEFAULT_AUTH_PROVIDER", "bearer_env")
     monkeypatch.setenv("FASTMCP_AUTH_BEARER_REQUIRED_SCOPES", "test-scope1")
 
     with temporary_settings(**Settings().model_dump()):
@@ -61,7 +61,7 @@ def test_list_of_scopes_must_be_a_list(monkeypatch):
 
 
 def test_configure_bearer_env_jwks_uri_from_env_var(monkeypatch):
-    monkeypatch.setenv("FASTMCP_SERVER_DEFAULT_AUTH_PROVIDER", "bearer_env")
+    monkeypatch.setenv("FASTMCP_DEFAULT_AUTH_PROVIDER", "bearer_env")
     monkeypatch.setenv("FASTMCP_AUTH_BEARER_JWKS_URI", "test-jwks-uri")
 
     with temporary_settings(**Settings().model_dump()):
@@ -71,7 +71,7 @@ def test_configure_bearer_env_jwks_uri_from_env_var(monkeypatch):
 
 
 def test_configure_bearer_env_public_key_and_jwks_uri_error(monkeypatch):
-    monkeypatch.setenv("FASTMCP_SERVER_DEFAULT_AUTH_PROVIDER", "bearer_env")
+    monkeypatch.setenv("FASTMCP_DEFAULT_AUTH_PROVIDER", "bearer_env")
     monkeypatch.setenv("FASTMCP_AUTH_BEARER_PUBLIC_KEY", "test-public-key")
     monkeypatch.setenv("FASTMCP_AUTH_BEARER_JWKS_URI", "test-jwks-uri")
 
@@ -81,7 +81,7 @@ def test_configure_bearer_env_public_key_and_jwks_uri_error(monkeypatch):
 
 
 def test_provided_auth_takes_precedence_over_env_vars(monkeypatch):
-    monkeypatch.setenv("FASTMCP_SERVER_DEFAULT_AUTH_PROVIDER", "bearer_env")
+    monkeypatch.setenv("FASTMCP_DEFAULT_AUTH_PROVIDER", "bearer_env")
     monkeypatch.setenv("FASTMCP_AUTH_BEARER_PUBLIC_KEY", "test-public-key")
 
     with temporary_settings(**Settings().model_dump()):
