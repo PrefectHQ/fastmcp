@@ -17,9 +17,9 @@ from pydantic import (
 
 from fastmcp.resources.types import Resource
 from fastmcp.server.dependencies import get_context
+from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.types import (
-    FastMCPComponent,
     find_kwarg_by_type,
     get_cached_typeadapter,
 )

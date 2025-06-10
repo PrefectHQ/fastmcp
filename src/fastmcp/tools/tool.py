@@ -14,10 +14,10 @@ from pydantic import Field
 
 import fastmcp
 from fastmcp.server.dependencies import get_context
+from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import (
-    FastMCPComponent,
     Image,
     find_kwarg_by_type,
     get_cached_typeadapter,

@@ -11,7 +11,6 @@ import pydantic_core
 from mcp.types import Resource as MCPResource
 from pydantic import (
     AnyUrl,
-    BeforeValidator,
     ConfigDict,
     Field,
     UrlConstraints,
@@ -20,9 +19,8 @@ from pydantic import (
 )
 
 from fastmcp.server.dependencies import get_context
+from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.types import (
-    FastMCPBaseModel,
-    _convert_set_default_none,
     find_kwarg_by_type,
 )
 
@@ -30,20 +28,13 @@ if TYPE_CHECKING:
     pass
 
 
-class Resource(FastMCPBaseModel, abc.ABC):
+class Resource(FastMCPComponent, abc.ABC):
     """Base class for all resources."""
 
     model_config = ConfigDict(validate_default=True)
 
     uri: Annotated[AnyUrl, UrlConstraints(host_required=False)] = Field(
         default=..., description="URI of the resource"
-    )
-    name: str | None = Field(default=None, description="Name of the resource")
-    description: str | None = Field(
-        default=None, description="Description of the resource"
-    )
-    tags: Annotated[set[str], BeforeValidator(_convert_set_default_none)] = Field(
-        default_factory=set, description="Tags for the resource"
     )
     mime_type: str = Field(
         default="text/plain",
