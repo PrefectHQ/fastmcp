@@ -43,7 +43,6 @@ from starlette.routing import BaseRoute, Route
 
 import fastmcp
 import fastmcp.server
-import fastmcp.settings
 from fastmcp.exceptions import DisabledError, NotFoundError
 from fastmcp.prompts import Prompt, PromptManager
 from fastmcp.prompts.prompt import FunctionPrompt
