@@ -4,6 +4,7 @@ import inspect
 import json
 from abc import ABC, abstractmethod
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Annotated, Any
 
 import pydantic_core
@@ -24,7 +25,7 @@ from fastmcp.utilities.types import (
 )
 
 if TYPE_CHECKING:
-    pass
+    from fastmcp.tools.tool_transform import ArgTransform, TransformedTool
 
 logger = get_logger(__name__)
 
@@ -46,10 +47,6 @@ class Tool(FastMCPBaseModel, ABC):
     )
     annotations: ToolAnnotations | None = Field(
         default=None, description="Additional annotations about the tool"
-    )
-    exclude_args: list[str] | None = Field(
-        default=None,
-        description="Arguments to exclude from the tool schema, such as State, Memory, or Credential",
     )
     serializer: Callable[[Any], str] | None = Field(
         default=None, description="Optional custom serializer for tool results"
@@ -98,6 +95,31 @@ class Tool(FastMCPBaseModel, ABC):
         """Run the tool with arguments."""
         raise NotImplementedError("Subclasses must implement run()")
 
+    @classmethod
+    def from_tool(
+        cls,
+        tool: Tool,
+        transform_fn: Callable[..., Any] | None = None,
+        name: str | None = None,
+        transform_args: dict[str, ArgTransform] | None = None,
+        description: str | None = None,
+        tags: set[str] | None = None,
+        annotations: ToolAnnotations | None = None,
+        serializer: Callable[[Any], str] | None = None,
+    ) -> TransformedTool:
+        from fastmcp.tools.tool_transform import TransformedTool
+
+        return TransformedTool.from_tool(
+            tool=tool,
+            transform_fn=transform_fn,
+            name=name,
+            transform_args=transform_args,
+            description=description,
+            tags=tags,
+            annotations=annotations,
+            serializer=serializer,
+        )
+
 
 class FunctionTool(Tool):
     fn: Callable[..., Any]
@@ -114,62 +136,19 @@ class FunctionTool(Tool):
         serializer: Callable[[Any], str] | None = None,
     ) -> FunctionTool:
         """Create a Tool from a function."""
-        from fastmcp.server.context import Context
 
-        # Reject functions with *args or **kwargs
-        sig = inspect.signature(fn)
-        for param in sig.parameters.values():
-            if param.kind == inspect.Parameter.VAR_POSITIONAL:
-                raise ValueError("Functions with *args are not supported as tools")
-            if param.kind == inspect.Parameter.VAR_KEYWORD:
-                raise ValueError("Functions with **kwargs are not supported as tools")
+        parsed_fn = ParsedFunction.from_function(fn, exclude_args=exclude_args)
 
-        if exclude_args:
-            for arg_name in exclude_args:
-                if arg_name not in sig.parameters:
-                    raise ValueError(
-                        f"Parameter '{arg_name}' in exclude_args does not exist in function."
-                    )
-                param = sig.parameters[arg_name]
-                if param.default == inspect.Parameter.empty:
-                    raise ValueError(
-                        f"Parameter '{arg_name}' in exclude_args must have a default value."
-                    )
-
-        func_name = name or getattr(fn, "__name__", None) or fn.__class__.__name__
-
-        if func_name == "<lambda>":
+        if name is None and parsed_fn.name == "<lambda>":
             raise ValueError("You must provide a name for lambda functions")
 
-        func_doc = description or fn.__doc__
-
-        # if the fn is a callable class, we need to get the __call__ method from here out
-        if not inspect.isroutine(fn):
-            fn = fn.__call__
-        # if the fn is a staticmethod, we need to work with the underlying function
-        if isinstance(fn, staticmethod):
-            fn = fn.__func__
-
-        type_adapter = get_cached_typeadapter(fn)
-        schema = type_adapter.json_schema()
-
-        prune_params: list[str] = []
-        context_kwarg = find_kwarg_by_type(fn, kwarg_type=Context)
-        if context_kwarg:
-            prune_params.append(context_kwarg)
-        if exclude_args:
-            prune_params.extend(exclude_args)
-
-        schema = compress_schema(schema, prune_params=prune_params)
-
         return cls(
-            fn=fn,
-            name=func_name,
-            description=func_doc,
-            parameters=schema,
+            fn=parsed_fn.fn,
+            name=name or parsed_fn.name,
+            description=description or parsed_fn.description,
+            parameters=parsed_fn.parameters,
             tags=tags or set(),
             annotations=annotations,
-            exclude_args=exclude_args,
             serializer=serializer,
         )
 
@@ -220,6 +199,76 @@ class FunctionTool(Tool):
             result = await result
 
         return _convert_to_content(result, serializer=self.serializer)
+
+
+@dataclass
+class ParsedFunction:
+    fn: Callable[..., Any]
+    name: str
+    description: str | None
+    parameters: dict[str, Any]
+
+    @classmethod
+    def from_function(
+        cls,
+        fn: Callable[..., Any],
+        exclude_args: list[str] | None = None,
+        validate: bool = True,
+    ) -> ParsedFunction:
+        from fastmcp.server.context import Context
+
+        if validate:
+            sig = inspect.signature(fn)
+            # Reject functions with *args or **kwargs
+            for param in sig.parameters.values():
+                if param.kind == inspect.Parameter.VAR_POSITIONAL:
+                    raise ValueError("Functions with *args are not supported as tools")
+                if param.kind == inspect.Parameter.VAR_KEYWORD:
+                    raise ValueError(
+                        "Functions with **kwargs are not supported as tools"
+                    )
+
+            # Reject exclude_args that don't exist in the function or don't have a default value
+            if exclude_args:
+                for arg_name in exclude_args:
+                    if arg_name not in sig.parameters:
+                        raise ValueError(
+                            f"Parameter '{arg_name}' in exclude_args does not exist in function."
+                        )
+                    param = sig.parameters[arg_name]
+                    if param.default == inspect.Parameter.empty:
+                        raise ValueError(
+                            f"Parameter '{arg_name}' in exclude_args must have a default value."
+                        )
+
+        # collect name and doc before we potentially modify the function
+        fn_name = getattr(fn, "__name__", None) or fn.__class__.__name__
+        fn_doc = fn.__doc__
+
+        # if the fn is a callable class, we need to get the __call__ method from here out
+        if not inspect.isroutine(fn):
+            fn = fn.__call__
+        # if the fn is a staticmethod, we need to work with the underlying function
+        if isinstance(fn, staticmethod):
+            fn = fn.__func__
+
+        type_adapter = get_cached_typeadapter(fn)
+        schema = type_adapter.json_schema()
+
+        prune_params: list[str] = []
+        context_kwarg = find_kwarg_by_type(fn, kwarg_type=Context)
+        if context_kwarg:
+            prune_params.append(context_kwarg)
+        if exclude_args:
+            prune_params.extend(exclude_args)
+
+        schema = compress_schema(schema, prune_params=prune_params)
+        return cls(
+            fn=fn,
+            name=fn_name,
+            description=fn_doc,
+            parameters=schema,
+        )
 
 
 def _convert_to_content(

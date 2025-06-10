@@ -1,4 +1,5 @@
 import base64
+from types import EllipsisType
 from typing import Annotated, Any
 
 import pytest
@@ -307,6 +308,14 @@ class TestFindKwargByType:
             pass
 
         assert find_kwarg_by_type(func, SENTINEL) is None  # type: ignore
+
+    def test_ellipsis_annotation(self):
+        """Test finding parameter with an ellipsis annotation."""
+
+        def func(a: int, b: EllipsisType, c: str):  # type: ignore  # noqa: F821
+            pass
+
+        assert find_kwarg_by_type(func, EllipsisType) == "b"  # type: ignore
 
     def test_missing_type_annotation(self):
         """Test finding parameter with a missing type annotation."""
