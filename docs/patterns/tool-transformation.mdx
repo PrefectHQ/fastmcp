@@ -53,6 +53,30 @@ product_search_tool = Tool.from_tool(
 
 mcp.add_tool(product_search_tool)
 ```
+
+<Tip>
+When you transform a tool, the original tool remains registered on the server. To avoid confusing an LLM with two similar tools, you can disable the original one:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.tools import Tool
+
+mcp = FastMCP()
+
+# The original, generic tool
+@mcp.tool
+def search(query: str, category: str = "all") -> list[dict]:
+    ...
+
+# Create a more domain-specific version
+product_search_tool = Tool.from_tool(search, ...)
+mcp.add_tool(product_search_tool)
+
+# Disable the original tool
+search.disable()
+```
+</Tip>
+
 Now, clients see a tool named `find_products` with a clear, domain-specific purpose and relevant tags, even though it still uses the original generic `search` function's logic.
 
 ### Parameters
