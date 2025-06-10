@@ -136,6 +136,13 @@
                 "pages": [
                     "tutorials/create-mcp-server"
                 ]
+            },
+            {
+                "anchor": "Changelog",
+                "icon": "list-check",
+                "pages": [
+                    "changelog"
+                ]
             }
         ]
     },
