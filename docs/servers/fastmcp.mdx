@@ -96,6 +96,49 @@ def analyze_data(data_points: list[float]) -> str:
 
 See [Prompts](/servers/prompts) for detailed documentation.
 
+## Tag-Based Filtering
+
+<VersionBadge version="2.8.0" />
+
+FastMCP supports tag-based filtering to selectively expose components based on configurable include/exclude tag sets. This is useful for creating different views of your server for different environments or users.
+
+Components can be tagged when defined using the `tags` parameter:
+
+```python
+@mcp.tool(tags={"public", "utility"})
+def public_tool() -> str:
+    return "This tool is public"
+
+@mcp.tool(tags={"internal", "admin"})
+def admin_tool() -> str:
+    return "This tool is for admins only"
+```
+
+
+The filtering logic works as follows:
+- **Include tags**: If specified, only components with at least one matching tag are exposed
+- **Exclude tags**: Components with any matching tag are filtered out
+- **Precedence**: Exclude tags always take priority over include tags
+
+<Tip>
+To ensure a component is never exposed, you can set `enabled=False` on the component itself. To learn more, see the component-specific documentation.
+</Tip>
+
+You configure tag-based filtering when creating your server:
+
+```python
+# Only expose components tagged with "public"
+mcp = FastMCP(include_tags={"public"})
+
+# Hide components tagged as "internal" or "deprecated"  
+mcp = FastMCP(exclude_tags={"internal", "deprecated"})
+
+# Combine both: show admin tools but hide deprecated ones
+mcp = FastMCP(include_tags={"admin"}, exclude_tags={"deprecated"})
+```
+
+This filtering applies to all component types (tools, resources, resource templates, and prompts) and affects both listing and access.
+
 ## Running the Server
 
 FastMCP servers need a transport mechanism to communicate with clients. You typically start your server by calling the `mcp.run()` method on your `FastMCP` instance, often within an `if __name__ == "__main__":` block in your main server script. This pattern ensures compatibility with various MCP clients.
