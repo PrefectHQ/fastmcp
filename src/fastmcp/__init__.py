@@ -25,7 +25,6 @@ __all__ = [
 ]
 
 
+# ensure deprecation warnings are displayedby default
 if settings.deprecation_warnings:
     warnings.simplefilter("default", DeprecationWarning)
-else:
-    warnings.simplefilter("ignore", DeprecationWarning)

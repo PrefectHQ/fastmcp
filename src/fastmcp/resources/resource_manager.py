@@ -123,11 +123,12 @@ class ResourceManager:
             returns the existing resource.
         """
         # deprecated in 2.7.0
-        warnings.warn(
-            "add_resource_from_fn is deprecated. Use Resource.from_function() and call add_resource() instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
+        if settings.deprecation_warnings:
+            warnings.warn(
+                "add_resource_from_fn is deprecated. Use Resource.from_function() and call add_resource() instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
         resource = Resource.from_function(
             fn=fn,
             uri=uri,
@@ -180,11 +181,12 @@ class ResourceManager:
     ) -> ResourceTemplate:
         """Create a template from a function."""
         # deprecated in 2.7.0
-        warnings.warn(
-            "add_template_from_fn is deprecated. Use ResourceTemplate.from_function() and call add_template() instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
+        if settings.deprecation_warnings:
+            warnings.warn(
+                "add_template_from_fn is deprecated. Use ResourceTemplate.from_function() and call add_template() instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
         template = ResourceTemplate.from_function(
             fn,
             uri_template=uri_template,

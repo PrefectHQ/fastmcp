@@ -5,9 +5,32 @@ import pytest
 from starlette.applications import Starlette
 
 from fastmcp import Client, FastMCP
+from fastmcp.utilities.tests import temporary_settings
 
 # reset deprecation warnings for this module
 pytestmark = pytest.mark.filterwarnings("default::DeprecationWarning")
+
+
+class TestDeprecationWarningsSetting:
+    def test_deprecation_warnings_setting_true(self):
+        with temporary_settings(deprecation_warnings=True):
+            with pytest.warns(DeprecationWarning) as recorded_warnings:
+                # will warn once for providing deprecated arg
+                mcp = FastMCP(host="1.2.3.4")
+                # will warn once for accessing deprecated property
+                mcp.settings
+
+            assert len(recorded_warnings) == 2
+
+    def test_deprecation_warnings_setting_false(self):
+        with temporary_settings(deprecation_warnings=False):
+            # will error if a warning is raised
+            with warnings.catch_warnings():
+                warnings.simplefilter("error")
+                # will warn once for providing deprecated arg
+                mcp = FastMCP(host="1.2.3.4")
+                # will warn once for accessing deprecated property
+                mcp.settings
 
 
 def test_sse_app_deprecation_warning():

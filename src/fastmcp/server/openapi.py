@@ -16,6 +16,7 @@ import httpx
 from mcp.types import EmbeddedResource, ImageContent, TextContent, ToolAnnotations
 from pydantic.networks import AnyUrl
 
+import fastmcp
 from fastmcp.exceptions import ToolError
 from fastmcp.resources import Resource, ResourceTemplate
 from fastmcp.server.dependencies import get_http_headers
@@ -129,27 +130,30 @@ class RouteMap:
         """Validate and process the route map after initialization."""
         # Handle backward compatibility for route_type, deprecated in 2.5.0
         if self.mcp_type is None and self.route_type is not None:
-            warnings.warn(
-                "The 'route_type' parameter is deprecated and will be removed in a future version. "
-                "Use 'mcp_type' instead with the appropriate MCPType value.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-            if isinstance(self.route_type, RouteType):
+            if fastmcp.settings.deprecation_warnings:
                 warnings.warn(
-                    "The RouteType class is deprecated and will be removed in a future version. "
-                    "Use MCPType instead.",
+                    "The 'route_type' parameter is deprecated and will be removed in a future version. "
+                    "Use 'mcp_type' instead with the appropriate MCPType value.",
                     DeprecationWarning,
                     stacklevel=2,
                 )
+            if isinstance(self.route_type, RouteType):
+                if fastmcp.settings.deprecation_warnings:
+                    warnings.warn(
+                        "The RouteType class is deprecated and will be removed in a future version. "
+                        "Use MCPType instead.",
+                        DeprecationWarning,
+                        stacklevel=2,
+                    )
             # Check for the deprecated IGNORE value
             if self.route_type == RouteType.IGNORE:
-                warnings.warn(
-                    "RouteType.IGNORE is deprecated and will be removed in a future version. "
-                    "Use MCPType.EXCLUDE instead.",
-                    DeprecationWarning,
-                    stacklevel=2,
-                )
+                if fastmcp.settings.deprecation_warnings:
+                    warnings.warn(
+                        "RouteType.IGNORE is deprecated and will be removed in a future version. "
+                        "Use MCPType.EXCLUDE instead.",
+                        DeprecationWarning,
+                        stacklevel=2,
+                    )
 
             # Convert from RouteType to MCPType if needed
             if isinstance(self.route_type, RouteType):

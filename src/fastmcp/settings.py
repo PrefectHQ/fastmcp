@@ -1,7 +1,6 @@
 from __future__ import annotations as _annotations
 
 import inspect
-import warnings
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
@@ -14,6 +13,10 @@ from pydantic_settings import (
     SettingsConfigDict,
 )
 from typing_extensions import Self
+
+from fastmcp.utilities.logging import get_logger
+
+logger = get_logger(__name__)
 
 LOG_LEVEL = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 
@@ -39,10 +42,8 @@ class ExtendedEnvSettingsSource(EnvSettingsSource):
                 if env_val is not None:
                     if prefix == "FASTMCP_SERVER_":
                         # Deprecated in 2.8.0
-                        warnings.warn(
+                        logger.warning(
                             "Using `FASTMCP_SERVER_` environment variables is deprecated. Use `FASTMCP_` instead.",
-                            DeprecationWarning,
-                            stacklevel=2,
                         )
                     return env_val, field_key, value_is_complex
 
@@ -89,10 +90,8 @@ class Settings(BaseSettings):
         which accessed fastmcp.settings.settings
         """
         # Deprecated in 2.8.0
-        warnings.warn(
+        logger.warning(
             "Using fastmcp.settings.settings is deprecated. Use fastmcp.settings instead.",
-            DeprecationWarning,
-            stacklevel=2,
         )
         return self
 

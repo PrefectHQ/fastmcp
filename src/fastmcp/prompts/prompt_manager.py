@@ -60,11 +60,12 @@ class PromptManager:
     ) -> FunctionPrompt:
         """Create a prompt from a function."""
         # deprecated in 2.7.0
-        warnings.warn(
-            "PromptManager.add_prompt_from_fn() is deprecated. Use Prompt.from_function() and call add_prompt() instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
+        if settings.deprecation_warnings:
+            warnings.warn(
+                "PromptManager.add_prompt_from_fn() is deprecated. Use Prompt.from_function() and call add_prompt() instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
         prompt = FunctionPrompt.from_function(
             fn, name=name, description=description, tags=tags
         )

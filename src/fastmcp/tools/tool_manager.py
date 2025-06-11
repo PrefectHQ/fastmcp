@@ -71,11 +71,12 @@ class ToolManager:
     ) -> Tool:
         """Add a tool to the server."""
         # deprecated in 2.7.0
-        warnings.warn(
-            "ToolManager.add_tool_from_fn() is deprecated. Use Tool.from_function() and call add_tool() instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
+        if settings.deprecation_warnings:
+            warnings.warn(
+                "ToolManager.add_tool_from_fn() is deprecated. Use Tool.from_function() and call add_tool() instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
         tool = Tool.from_function(
             fn,
             name=name,

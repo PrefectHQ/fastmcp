@@ -20,6 +20,7 @@ from mcp.shared.memory import create_client_server_memory_streams
 from pydantic import AnyUrl
 from typing_extensions import Unpack
 
+import fastmcp
 from fastmcp.client.auth.bearer import BearerAuth
 from fastmcp.client.auth.oauth import OAuth
 from fastmcp.server.dependencies import get_http_headers
@@ -109,11 +110,12 @@ class WSTransport(ClientTransport):
 
     def __init__(self, url: str | AnyUrl):
         # we never really used this transport, so it can be removed at any time
-        warnings.warn(
-            "WSTransport is a deprecated MCP transport and will be removed in a future version. Use StreamableHttpTransport instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
+        if fastmcp.settings.deprecation_warnings:
+            warnings.warn(
+                "WSTransport is a deprecated MCP transport and will be removed in a future version. Use StreamableHttpTransport instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
         if isinstance(url, AnyUrl):
             url = str(url)
         if not isinstance(url, str) or not url.startswith("ws"):
