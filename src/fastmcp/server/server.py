@@ -1332,8 +1332,12 @@ class FastMCP(Generic[LifespanResultT]):
                 or self._deprecated_settings.streamable_http_path,
                 event_store=None,
                 auth=self.auth,
-                json_response=self._deprecated_settings.json_response,
-                stateless_http=self._deprecated_settings.stateless_http,
+                json_response=(
+                    json_response or self._deprecated_settings.json_response
+                ),
+                stateless_http=(
+                    stateless_http or self._deprecated_settings.stateless_http
+                ),
                 debug=self._deprecated_settings.debug,
                 middleware=middleware,
             )
