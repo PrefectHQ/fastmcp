@@ -1231,7 +1231,6 @@ class FastMCP(Generic[LifespanResultT]):
         port: int | None = None,
         log_level: str | None = None,
         path: str | None = None,
-        message_path: str | None = None,
         uvicorn_config: dict[str, Any] | None = None,
     ) -> None:
         """Run the server using SSE transport."""
@@ -1333,10 +1332,14 @@ class FastMCP(Generic[LifespanResultT]):
                 event_store=None,
                 auth=self.auth,
                 json_response=(
-                    json_response or self._deprecated_settings.json_response
+                    json_response
+                    if json_response is not None
+                    else self._deprecated_settings.json_response
                 ),
                 stateless_http=(
-                    stateless_http or self._deprecated_settings.stateless_http
+                    stateless_http
+                    if stateless_http is not None
+                    else self._deprecated_settings.stateless_http
                 ),
                 debug=self._deprecated_settings.debug,
                 middleware=middleware,
