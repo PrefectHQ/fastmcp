@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import inspect
 import json
-from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
@@ -33,7 +32,7 @@ def default_serializer(data: Any) -> str:
     return pydantic_core.to_json(data, fallback=str, indent=2).decode()
 
 
-class Tool(FastMCPComponent, ABC):
+class Tool(FastMCPComponent):
     """Internal tool registration info."""
 
     parameters: dict[str, Any] = Field(description="JSON schema for tool parameters")
@@ -76,7 +75,6 @@ class Tool(FastMCPComponent, ABC):
             enabled=enabled,
         )
 
-    @abstractmethod
     async def run(
         self, arguments: dict[str, Any]
     ) -> list[TextContent | ImageContent | EmbeddedResource]:

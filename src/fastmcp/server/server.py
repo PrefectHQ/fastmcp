@@ -59,6 +59,7 @@ from fastmcp.settings import Settings
 from fastmcp.tools import ToolManager
 from fastmcp.tools.tool import FunctionTool, Tool
 from fastmcp.utilities.cache import TimedCache
+from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.mcp_config import MCPConfig
 
@@ -130,6 +131,8 @@ class FastMCP(Generic[LifespanResultT]):
         mask_error_details: bool | None = None,
         tools: list[Tool | Callable[..., Any]] | None = None,
         dependencies: list[str] | None = None,
+        include_tags: set[str] | None = None,
+        exclude_tags: set[str] | None = None,
         # ---
         # ---
         # --- The following arguments are DEPRECATED ---
@@ -190,6 +193,9 @@ class FastMCP(Generic[LifespanResultT]):
                 if not isinstance(tool, Tool):
                     tool = Tool.from_function(tool, serializer=self._tool_serializer)
                 self.add_tool(tool)
+
+        self.include_tags = include_tags
+        self.exclude_tags = exclude_tags
 
         # Set up MCP protocol handlers
         self._setup_handlers()
@@ -295,12 +301,12 @@ class FastMCP(Generic[LifespanResultT]):
     def _setup_handlers(self) -> None:
         """Set up core MCP protocol handlers."""
         self._mcp_server.list_tools()(self._mcp_list_tools)
-        self._mcp_server.call_tool()(self._mcp_call_tool)
         self._mcp_server.list_resources()(self._mcp_list_resources)
-        self._mcp_server.read_resource()(self._mcp_read_resource)
-        self._mcp_server.list_prompts()(self._mcp_list_prompts)
-        self._mcp_server.get_prompt()(self._mcp_get_prompt)
         self._mcp_server.list_resource_templates()(self._mcp_list_resource_templates)
+        self._mcp_server.list_prompts()(self._mcp_list_prompts)
+        self._mcp_server.call_tool()(self._mcp_call_tool)
+        self._mcp_server.read_resource()(self._mcp_read_resource)
+        self._mcp_server.get_prompt()(self._mcp_get_prompt)
 
     async def get_tools(self) -> dict[str, Tool]:
         """Get all registered tools, indexed by registered key."""
@@ -450,9 +456,13 @@ class FastMCP(Generic[LifespanResultT]):
 
         """
         tools = await self.get_tools()
-        return [
-            tool.to_mcp_tool(name=key) for key, tool in tools.items() if tool.enabled
-        ]
+
+        mcp_tools: list[MCPTool] = []
+        for key, tool in tools.items():
+            if self._should_enable_component(tool):
+                mcp_tools.append(tool.to_mcp_tool(name=key))
+
+        return mcp_tools
 
     async def _mcp_list_resources(self) -> list[MCPResource]:
         """
@@ -461,11 +471,11 @@ class FastMCP(Generic[LifespanResultT]):
 
         """
         resources = await self.get_resources()
-        return [
-            resource.to_mcp_resource(uri=key)
-            for key, resource in resources.items()
-            if resource.enabled
-        ]
+        mcp_resources: list[MCPResource] = []
+        for key, resource in resources.items():
+            if self._should_enable_component(resource):
+                mcp_resources.append(resource.to_mcp_resource(uri=key))
+        return mcp_resources
 
     async def _mcp_list_resource_templates(self) -> list[MCPResourceTemplate]:
         """
@@ -474,11 +484,11 @@ class FastMCP(Generic[LifespanResultT]):
 
         """
         templates = await self.get_resource_templates()
-        return [
-            template.to_mcp_template(uriTemplate=key)
-            for key, template in templates.items()
-            if template.enabled
-        ]
+        mcp_templates: list[MCPResourceTemplate] = []
+        for key, template in templates.items():
+            if self._should_enable_component(template):
+                mcp_templates.append(template.to_mcp_template(uriTemplate=key))
+        return mcp_templates
 
     async def _mcp_list_prompts(self) -> list[MCPPrompt]:
         """
@@ -487,11 +497,11 @@ class FastMCP(Generic[LifespanResultT]):
 
         """
         prompts = await self.get_prompts()
-        return [
-            prompt.to_mcp_prompt(name=key)
-            for key, prompt in prompts.items()
-            if prompt.enabled
-        ]
+        mcp_prompts: list[MCPPrompt] = []
+        for key, prompt in prompts.items():
+            if self._should_enable_component(prompt):
+                mcp_prompts.append(prompt.to_mcp_prompt(name=key))
+        return mcp_prompts
 
     async def _mcp_call_tool(
         self, key: str, arguments: dict[str, Any]
@@ -539,7 +549,7 @@ class FastMCP(Generic[LifespanResultT]):
         # Get tool, checking first from our tools, then from the mounted servers
         if self._tool_manager.has_tool(key):
             tool = self._tool_manager.get_tool(key)
-            if not tool.enabled:
+            if not self._should_enable_component(tool):
                 raise DisabledError(f"Tool {key!r} is disabled")
             return await self._tool_manager.call_tool(key, arguments)
 
@@ -576,7 +586,7 @@ class FastMCP(Generic[LifespanResultT]):
         """
         if self._resource_manager.has_resource(uri):
             resource = await self._resource_manager.get_resource(uri)
-            if not resource.enabled:
+            if not self._should_enable_component(resource):
                 raise DisabledError(f"Resource {str(uri)!r} is disabled")
             content = await self._resource_manager.read_resource(uri)
             return [
@@ -630,7 +640,7 @@ class FastMCP(Generic[LifespanResultT]):
         # Get prompt, checking first from our prompts, then from the mounted servers
         if self._prompt_manager.has_prompt(name):
             prompt = self._prompt_manager.get_prompt(name)
-            if not prompt.enabled:
+            if not self._should_enable_component(prompt):
                 raise DisabledError(f"Prompt {name!r} is disabled")
             return await self._prompt_manager.render_prompt(name, arguments)
 
@@ -1653,6 +1663,41 @@ class FastMCP(Generic[LifespanResultT]):
         )
 
         return cls.as_proxy(client, **settings)
+
+    def _should_enable_component(
+        self,
+        component: FastMCPComponent,
+    ) -> bool:
+        """
+        Given a component, determine if it should be enabled. Returns True if it should be enabled; False if it should not.
+
+        Rules:
+            • If the component's enabled property is False, always return False.
+            • If both include_tags and exclude_tags are None, return True.
+            • If exclude_tags is provided, check each exclude tag:
+                - If the exclude tag is a string, it must be present in the input tags to exclude.
+            • If include_tags is provided, check each include tag:
+                - If the include tag is a string, it must be present in the input tags to include.
+            • If include_tags is provided and none of the include tags match, return False.
+            • If include_tags is not provided, return True.
+        """
+        if not component.enabled:
+            return False
+
+        if self.include_tags is None and self.exclude_tags is None:
+            return True
+
+        if self.exclude_tags is not None:
+            if any(etag in component.tags for etag in self.exclude_tags):
+                return False
+
+        if self.include_tags is not None:
+            if any(itag in component.tags for itag in self.include_tags):
+                return True
+            else:
+                return False
+
+        return True
 
 
 class MountedServer:

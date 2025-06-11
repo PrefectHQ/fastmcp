@@ -233,3 +233,33 @@ class Settings(BaseSettings):
             ),
         ),
     ] = None
+
+    include_tags: Annotated[
+        set[str] | None,
+        Field(
+            default=None,
+            description=inspect.cleandoc(
+                """
+                If provided, only components that match these tags will be
+                exposed to clients. A component is considered to match if ANY of
+                its tags match ANY of the tags in the set.
+                """
+            ),
+        ),
+    ] = None
+    exclude_tags: Annotated[
+        set[str] | None,
+        Field(
+            default=None,
+            description=inspect.cleandoc(
+                """
+                If provided, components that match these tags will be excluded
+                from the server. A component is considered to match if ANY of
+                its tags match ANY of the tags in the set.
+                """
+            ),
+        ),
+    ] = None
+
+
+settings = Settings()

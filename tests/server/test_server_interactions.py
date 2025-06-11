@@ -115,6 +115,76 @@ class TestTools:
             assert result[0].text == '[\n  "x",\n  2\n]'  # type: ignore[attr-defined]
 
 
+class TestToolTags:
+    def create_server(self, include_tags=None, exclude_tags=None):
+        mcp = FastMCP(include_tags=include_tags, exclude_tags=exclude_tags)
+
+        @mcp.tool(tags={"a", "b"})
+        def tool_1() -> int:
+            return 1
+
+        @mcp.tool(tags={"b", "c"})
+        def tool_2() -> int:
+            return 2
+
+        return mcp
+
+    async def test_include_tags_all_tools(self):
+        mcp = self.create_server(include_tags={"a", "b"})
+
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+            assert {t.name for t in tools} == {"tool_1", "tool_2"}
+
+    async def test_include_tags_some_tools(self):
+        mcp = self.create_server(include_tags={"a", "z"})
+
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+            assert {t.name for t in tools} == {"tool_1"}
+
+    async def test_exclude_tags_all_tools(self):
+        mcp = self.create_server(exclude_tags={"a", "b"})
+
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+            assert {t.name for t in tools} == set()
+
+    async def test_exclude_tags_some_tools(self):
+        mcp = self.create_server(exclude_tags={"a", "z"})
+
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+            assert {t.name for t in tools} == {"tool_2"}
+
+    async def test_exclude_precedence(self):
+        mcp = self.create_server(exclude_tags={"a"}, include_tags={"b"})
+
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+            assert {t.name for t in tools} == {"tool_2"}
+
+    async def test_call_included_tool(self):
+        mcp = self.create_server(include_tags={"a"})
+
+        async with Client(mcp) as client:
+            result_1 = await client.call_tool("tool_1", {})
+            assert result_1[0].text == "1"  # type: ignore[attr-defined]
+
+            with pytest.raises(ToolError, match="Unknown tool"):
+                await client.call_tool("tool_2", {})
+
+    async def test_call_excluded_tool(self):
+        mcp = self.create_server(exclude_tags={"a"})
+
+        async with Client(mcp) as client:
+            with pytest.raises(ToolError, match="Unknown tool"):
+                await client.call_tool("tool_1", {})
+
+            result_2 = await client.call_tool("tool_2", {})
+            assert result_2[0].text == "2"  # type: ignore[attr-defined]
+
+
 class TestToolReturnTypes:
     async def test_string(self):
         mcp = FastMCP()
@@ -865,6 +935,73 @@ class TestResource:
             assert result[0].blob == base64.b64encode(b"Binary file data").decode()  # type: ignore[attr-defined]
 
 
+class TestResourceTags:
+    def create_server(self, include_tags=None, exclude_tags=None):
+        mcp = FastMCP(include_tags=include_tags, exclude_tags=exclude_tags)
+
+        @mcp.resource("resource://1", tags={"a", "b"})
+        def resource_1() -> str:
+            return "1"
+
+        @mcp.resource("resource://2", tags={"b", "c"})
+        def resource_2() -> str:
+            return "2"
+
+        return mcp
+
+    async def test_include_tags_all_resources(self):
+        mcp = self.create_server(include_tags={"a", "b"})
+
+        async with Client(mcp) as client:
+            resources = await client.list_resources()
+            assert {r.name for r in resources} == {"resource_1", "resource_2"}
+
+    async def test_include_tags_some_resources(self):
+        mcp = self.create_server(include_tags={"a", "z"})
+
+        async with Client(mcp) as client:
+            resources = await client.list_resources()
+            assert {r.name for r in resources} == {"resource_1"}
+
+    async def test_exclude_tags_all_resources(self):
+        mcp = self.create_server(exclude_tags={"a", "b"})
+
+        async with Client(mcp) as client:
+            resources = await client.list_resources()
+            assert {r.name for r in resources} == set()
+
+    async def test_exclude_tags_some_resources(self):
+        mcp = self.create_server(exclude_tags={"a", "z"})
+
+        async with Client(mcp) as client:
+            resources = await client.list_resources()
+            assert {r.name for r in resources} == {"resource_2"}
+
+    async def test_exclude_precedence(self):
+        mcp = self.create_server(exclude_tags={"a"}, include_tags={"b"})
+
+        async with Client(mcp) as client:
+            resources = await client.list_resources()
+            assert {r.name for r in resources} == {"resource_2"}
+
+    async def test_read_included_resource(self):
+        mcp = self.create_server(include_tags={"a"})
+
+        async with Client(mcp) as client:
+            result = await client.read_resource(AnyUrl("resource://1"))
+            assert result[0].text == "1"  # type: ignore[attr-defined]
+
+            with pytest.raises(McpError, match="Unknown resource"):
+                await client.read_resource(AnyUrl("resource://2"))
+
+    async def test_read_excluded_resource(self):
+        mcp = self.create_server(exclude_tags={"a"})
+
+        async with Client(mcp) as client:
+            with pytest.raises(McpError, match="Unknown resource"):
+                await client.read_resource(AnyUrl("resource://1"))
+
+
 class TestResourceContext:
     async def test_resource_with_context_annotation_gets_context(self):
         mcp = FastMCP()
@@ -1194,6 +1331,76 @@ class TestResourceTemplates:
 
             result = await client.read_resource(AnyUrl("resource://a/b"))
             assert result[0].text == "Template resource 1: a/b"  # type: ignore[attr-defined]
+
+
+class TestResourceTemplatesTags:
+    def create_server(self, include_tags=None, exclude_tags=None):
+        mcp = FastMCP(include_tags=include_tags, exclude_tags=exclude_tags)
+
+        @mcp.resource("resource://1/{param}", tags={"a", "b"})
+        def template_resource_1(param: str) -> str:
+            return f"Template resource 1: {param}"
+
+        @mcp.resource("resource://2/{param}", tags={"b", "c"})
+        def template_resource_2(param: str) -> str:
+            return f"Template resource 2: {param}"
+
+        return mcp
+
+    async def test_include_tags_all_resources(self):
+        mcp = self.create_server(include_tags={"a", "b"})
+
+        async with Client(mcp) as client:
+            resources = await client.list_resource_templates()
+            assert {r.name for r in resources} == {
+                "template_resource_1",
+                "template_resource_2",
+            }
+
+    async def test_include_tags_some_resources(self):
+        mcp = self.create_server(include_tags={"a"})
+
+        async with Client(mcp) as client:
+            resources = await client.list_resource_templates()
+            assert {r.name for r in resources} == {"template_resource_1"}
+
+    async def test_exclude_tags_all_resources(self):
+        mcp = self.create_server(exclude_tags={"a", "b"})
+
+        async with Client(mcp) as client:
+            resources = await client.list_resource_templates()
+            assert {r.name for r in resources} == set()
+
+    async def test_exclude_tags_some_resources(self):
+        mcp = self.create_server(exclude_tags={"a"})
+
+        async with Client(mcp) as client:
+            resources = await client.list_resource_templates()
+            assert {r.name for r in resources} == {"template_resource_2"}
+
+    async def test_exclude_takes_precedence_over_include(self):
+        mcp = self.create_server(exclude_tags={"a"}, include_tags={"b"})
+
+        async with Client(mcp) as client:
+            resources = await client.list_resource_templates()
+            assert {r.name for r in resources} == {"template_resource_2"}
+
+    async def test_read_resource_template_includes_tags(self):
+        mcp = self.create_server(include_tags={"a"})
+
+        async with Client(mcp) as client:
+            result = await client.read_resource("resource://1/x")
+            assert result[0].text == "Template resource 1: x"  # type: ignore[attr-defined]
+
+            with pytest.raises(McpError, match="Unknown resource"):
+                await client.read_resource("resource://2/x")
+
+    async def test_read_resource_template_excludes_tags(self):
+        mcp = self.create_server(exclude_tags={"a"})
+
+        async with Client(mcp) as client:
+            with pytest.raises(McpError, match="Unknown resource"):
+                await client.read_resource("resource://1/x")
 
 
 class TestResourceTemplateContext:
@@ -1631,3 +1838,73 @@ class TestPromptContext:
             message = result.messages[0]
             assert message.role == "user"
             assert message.content.text == "Hello, World! 1"  # type: ignore[attr-defined]
+
+
+class TestPromptTags:
+    def create_server(self, include_tags=None, exclude_tags=None):
+        mcp = FastMCP(include_tags=include_tags, exclude_tags=exclude_tags)
+
+        @mcp.prompt(tags={"a", "b"})
+        def prompt_1() -> str:
+            return "1"
+
+        @mcp.prompt(tags={"b", "c"})
+        def prompt_2() -> str:
+            return "2"
+
+        return mcp
+
+    async def test_include_tags_all_prompts(self):
+        mcp = self.create_server(include_tags={"a", "b"})
+
+        async with Client(mcp) as client:
+            prompts = await client.list_prompts()
+            assert {p.name for p in prompts} == {"prompt_1", "prompt_2"}
+
+    async def test_include_tags_some_prompts(self):
+        mcp = self.create_server(include_tags={"a"})
+
+        async with Client(mcp) as client:
+            prompts = await client.list_prompts()
+            assert {p.name for p in prompts} == {"prompt_1"}
+
+    async def test_exclude_tags_all_prompts(self):
+        mcp = self.create_server(exclude_tags={"a", "b"})
+
+        async with Client(mcp) as client:
+            prompts = await client.list_prompts()
+            assert {p.name for p in prompts} == set()
+
+    async def test_exclude_tags_some_prompts(self):
+        mcp = self.create_server(exclude_tags={"a"})
+
+        async with Client(mcp) as client:
+            prompts = await client.list_prompts()
+            assert {p.name for p in prompts} == {"prompt_2"}
+
+    async def test_exclude_takes_precedence_over_include(self):
+        mcp = self.create_server(exclude_tags={"a"}, include_tags={"b"})
+
+        async with Client(mcp) as client:
+            prompts = await client.list_prompts()
+            assert {p.name for p in prompts} == {"prompt_2"}
+
+    async def test_read_prompt_includes_tags(self):
+        mcp = self.create_server(include_tags={"a"})
+
+        async with Client(mcp) as client:
+            result = await client.get_prompt("prompt_1")
+            assert result.messages[0].content.text == "1"  # type: ignore[attr-defined]
+
+            with pytest.raises(McpError, match="Unknown prompt"):
+                await client.get_prompt("prompt_2")
+
+    async def test_read_prompt_excludes_tags(self):
+        mcp = self.create_server(exclude_tags={"a"})
+
+        async with Client(mcp) as client:
+            with pytest.raises(McpError, match="Unknown prompt"):
+                await client.get_prompt("prompt_1")
+
+            result = await client.get_prompt("prompt_2")
+            assert result.messages[0].content.text == "2"  # type: ignore[attr-defined]
