@@ -111,6 +111,20 @@ class Settings(BaseSettings):
         ),
     ] = True
 
+    deprecation_warnings: Annotated[
+        bool,
+        Field(
+            description=inspect.cleandoc(
+                """
+                Whether to show deprecation warnings. You can completely reset
+                Python's warning behavior by running `warnings.resetwarnings()`.
+                Note this will NOT apply to deprecation warnings from the
+                settings class itself.
+                """,
+            )
+        ),
+    ] = True
+
     client_raise_first_exceptiongroup_error: Annotated[
         bool,
         Field(
