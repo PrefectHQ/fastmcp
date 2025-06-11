@@ -305,7 +305,7 @@ class TestDeprecatedServerInitKwargs:
 class TestDeprecatedEnvironmentVariables:
     """Test deprecated environment variable prefixes."""
 
-    def test_fastmcp_server_env_var_deprecation_warning(self):
+    def test_fastmcp_server_env_var_deprecation_warning(self, caplog):
         """Test that FASTMCP_SERVER_ environment variables emit deprecation warnings."""
         env_var_name = "FASTMCP_SERVER_HOST"
         original_value = os.environ.get(env_var_name)
@@ -313,11 +313,15 @@ class TestDeprecatedEnvironmentVariables:
         try:
             os.environ[env_var_name] = "192.168.1.1"
 
-            with pytest.warns(
-                DeprecationWarning,
-                match=r"Using `FASTMCP_SERVER_` environment variables is deprecated\. Use `FASTMCP_` instead\.",
-            ):
-                settings = Settings()
+            settings = Settings()
+
+            # Check that a warning was logged
+            assert any(
+                "Using `FASTMCP_SERVER_` environment variables is deprecated. Use `FASTMCP_` instead."
+                in record.message
+                for record in caplog.records
+                if record.levelname == "WARNING"
+            )
 
             # Verify the setting is still applied
             assert settings.host == "192.168.1.1"
@@ -333,16 +337,20 @@ class TestDeprecatedEnvironmentVariables:
 class TestDeprecatedSettingsProperty:
     """Test deprecated settings property access."""
 
-    def test_settings_property_deprecation_warning(self):
-        """Test that accessing fastmcp.settings.settings raises a deprecation warning."""
+    def test_settings_property_deprecation_warning(self, caplog):
+        """Test that accessing fastmcp.settings.settings logs a deprecation warning."""
         from fastmcp import settings
 
-        with pytest.warns(
-            DeprecationWarning,
-            match=r"Using fastmcp\.settings\.settings is deprecated\. Use fastmcp\.settings instead\.",
-        ):
-            # Access the deprecated property
-            deprecated_settings = settings.settings
+        # Access the deprecated property
+        deprecated_settings = settings.settings
+
+        # Check that a warning was logged
+        assert any(
+            "Using fastmcp.settings.settings is deprecated. Use fastmcp.settings instead."
+            in record.message
+            for record in caplog.records
+            if record.levelname == "WARNING"
+        )
 
         # Verify it still returns the same settings object
         assert deprecated_settings is settings

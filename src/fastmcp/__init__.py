@@ -1,5 +1,6 @@
 """FastMCP - An ergonomic MCP interface."""
 
+import warnings
 from importlib.metadata import version
 from fastmcp.settings import Settings
 
@@ -22,3 +23,8 @@ __all__ = [
     "settings",
     "Image",
 ]
+
+
+# ensure deprecation warnings are displayedby default
+if settings.deprecation_warnings:
+    warnings.simplefilter("default", DeprecationWarning)

@@ -242,11 +242,12 @@ class FastMCP(Generic[LifespanResultT]):
         ]:
             if arg is not None:
                 # Deprecated in 2.8.0
-                warnings.warn(
-                    f"Providing `{name}` when creating a server is deprecated. Provide it when calling `run` or as a global setting instead.",
-                    DeprecationWarning,
-                    stacklevel=2,
-                )
+                if fastmcp.settings.deprecation_warnings:
+                    warnings.warn(
+                        f"Providing `{name}` when creating a server is deprecated. Provide it when calling `run` or as a global setting instead.",
+                        DeprecationWarning,
+                        stacklevel=2,
+                    )
                 deprecated_settings[name] = arg
 
         combined_settings = fastmcp.settings.model_dump() | deprecated_settings
@@ -254,11 +255,13 @@ class FastMCP(Generic[LifespanResultT]):
 
     @property
     def settings(self) -> Settings:
-        warnings.warn(
-            "Accessing `.settings` on a FastMCP instance is deprecated. Use the global `fastmcp.settings` instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
+        # Deprecated in 2.8.0
+        if fastmcp.settings.deprecation_warnings:
+            warnings.warn(
+                "Accessing `.settings` on a FastMCP instance is deprecated. Use the global `fastmcp.settings` instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
         return self._deprecated_settings
 
     @property
@@ -865,11 +868,12 @@ class FastMCP(Generic[LifespanResultT]):
             tags: Optional set of tags for categorizing the resource
         """
         # deprecated since 2.7.0
-        warnings.warn(
-            "The add_resource_fn method is deprecated. Use the resource decorator instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
+        if fastmcp.settings.deprecation_warnings:
+            warnings.warn(
+                "The add_resource_fn method is deprecated. Use the resource decorator instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
         self._resource_manager.add_resource_or_template_from_fn(
             fn=fn,
             uri=uri,
@@ -1233,13 +1237,14 @@ class FastMCP(Generic[LifespanResultT]):
         """Run the server using SSE transport."""
 
         # Deprecated since 2.3.2
-        warnings.warn(
-            "The run_sse_async method is deprecated (as of 2.3.2). Use run_http_async for a "
-            "modern (non-SSE) alternative, or create an SSE app with "
-            "`fastmcp.server.http.create_sse_app` and run it directly.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
+        if fastmcp.settings.deprecation_warnings:
+            warnings.warn(
+                "The run_sse_async method is deprecated (as of 2.3.2). Use run_http_async for a "
+                "modern (non-SSE) alternative, or create an SSE app with "
+                "`fastmcp.server.http.create_sse_app` and run it directly.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
         await self.run_http_async(
             transport="sse",
             host=host,
@@ -1264,12 +1269,13 @@ class FastMCP(Generic[LifespanResultT]):
             middleware: A list of middleware to apply to the app
         """
         # Deprecated since 2.3.2
-        warnings.warn(
-            "The sse_app method is deprecated (as of 2.3.2). Use http_app as a modern (non-SSE) "
-            "alternative, or call `fastmcp.server.http.create_sse_app` directly.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
+        if fastmcp.settings.deprecation_warnings:
+            warnings.warn(
+                "The sse_app method is deprecated (as of 2.3.2). Use http_app as a modern (non-SSE) "
+                "alternative, or call `fastmcp.server.http.create_sse_app` directly.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
         return create_sse_app(
             server=self,
             message_path=message_path or self._deprecated_settings.message_path,
@@ -1292,11 +1298,12 @@ class FastMCP(Generic[LifespanResultT]):
             middleware: A list of middleware to apply to the app
         """
         # Deprecated since 2.3.2
-        warnings.warn(
-            "The streamable_http_app method is deprecated (as of 2.3.2). Use http_app() instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
+        if fastmcp.settings.deprecation_warnings:
+            warnings.warn(
+                "The streamable_http_app method is deprecated (as of 2.3.2). Use http_app() instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
         return self.http_app(path=path, middleware=middleware)
 
     def http_app(
@@ -1349,12 +1356,13 @@ class FastMCP(Generic[LifespanResultT]):
         uvicorn_config: dict[str, Any] | None = None,
     ) -> None:
         # Deprecated since 2.3.2
-        warnings.warn(
-            "The run_streamable_http_async method is deprecated (as of 2.3.2). "
-            "Use run_http_async instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
+        if fastmcp.settings.deprecation_warnings:
+            warnings.warn(
+                "The run_streamable_http_async method is deprecated (as of 2.3.2). "
+                "Use run_http_async instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
         await self.run_http_async(
             transport="streamable-http",
             host=host,
@@ -1422,30 +1430,33 @@ class FastMCP(Generic[LifespanResultT]):
 
         if tool_separator is not None:
             # Deprecated since 2.4.0
-            warnings.warn(
-                "The tool_separator parameter is deprecated and will be removed in a future version. "
-                "Tools are now prefixed using 'prefix_toolname' format.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
+            if fastmcp.settings.deprecation_warnings:
+                warnings.warn(
+                    "The tool_separator parameter is deprecated and will be removed in a future version. "
+                    "Tools are now prefixed using 'prefix_toolname' format.",
+                    DeprecationWarning,
+                    stacklevel=2,
+                )
 
         if resource_separator is not None:
             # Deprecated since 2.4.0
-            warnings.warn(
-                "The resource_separator parameter is deprecated and ignored. "
-                "Resource prefixes are now added using the protocol://prefix/path format.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
+            if fastmcp.settings.deprecation_warnings:
+                warnings.warn(
+                    "The resource_separator parameter is deprecated and ignored. "
+                    "Resource prefixes are now added using the protocol://prefix/path format.",
+                    DeprecationWarning,
+                    stacklevel=2,
+                )
 
         if prompt_separator is not None:
             # Deprecated since 2.4.0
-            warnings.warn(
-                "The prompt_separator parameter is deprecated and will be removed in a future version. "
-                "Prompts are now prefixed using 'prefix_promptname' format.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
+            if fastmcp.settings.deprecation_warnings:
+                warnings.warn(
+                    "The prompt_separator parameter is deprecated and will be removed in a future version. "
+                    "Prompts are now prefixed using 'prefix_promptname' format.",
+                    DeprecationWarning,
+                    stacklevel=2,
+                )
 
         # if as_proxy is not specified and the server has a custom lifespan,
         # we should treat it as a proxy
@@ -1507,30 +1518,33 @@ class FastMCP(Generic[LifespanResultT]):
         """
         if tool_separator is not None:
             # Deprecated since 2.4.0
-            warnings.warn(
-                "The tool_separator parameter is deprecated and will be removed in a future version. "
-                "Tools are now prefixed using 'prefix_toolname' format.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
+            if fastmcp.settings.deprecation_warnings:
+                warnings.warn(
+                    "The tool_separator parameter is deprecated and will be removed in a future version. "
+                    "Tools are now prefixed using 'prefix_toolname' format.",
+                    DeprecationWarning,
+                    stacklevel=2,
+                )
 
         if resource_separator is not None:
             # Deprecated since 2.4.0
-            warnings.warn(
-                "The resource_separator parameter is deprecated and ignored. "
-                "Resource prefixes are now added using the protocol://prefix/path format.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
+            if fastmcp.settings.deprecation_warnings:
+                warnings.warn(
+                    "The resource_separator parameter is deprecated and ignored. "
+                    "Resource prefixes are now added using the protocol://prefix/path format.",
+                    DeprecationWarning,
+                    stacklevel=2,
+                )
 
         if prompt_separator is not None:
             # Deprecated since 2.4.0
-            warnings.warn(
-                "The prompt_separator parameter is deprecated and will be removed in a future version. "
-                "Prompts are now prefixed using 'prefix_promptname' format.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
+            if fastmcp.settings.deprecation_warnings:
+                warnings.warn(
+                    "The prompt_separator parameter is deprecated and will be removed in a future version. "
+                    "Prompts are now prefixed using 'prefix_promptname' format.",
+                    DeprecationWarning,
+                    stacklevel=2,
+                )
 
         # Import tools from the mounted server
         tool_prefix = f"{prefix}_"
@@ -1666,11 +1680,12 @@ class FastMCP(Generic[LifespanResultT]):
         Create a FastMCP proxy server from a FastMCP client.
         """
         # Deprecated since 2.3.5
-        warnings.warn(
-            "FastMCP.from_client() is deprecated; use FastMCP.as_proxy() instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
+        if fastmcp.settings.deprecation_warnings:
+            warnings.warn(
+                "FastMCP.from_client() is deprecated; use FastMCP.as_proxy() instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
 
         return cls.as_proxy(client, **settings)
 
