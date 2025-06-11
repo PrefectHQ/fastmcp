@@ -51,6 +51,7 @@ Each `RouteMap` specifies a combination of methods, patterns, and tags, as well 
 - **Pattern**: Regex pattern to match the route path (e.g. `r"^/users/.*"` or `r".*"` for all)
 - **Tags**: A set of OpenAPI tags that must all be present. An empty set (`{}`) means no tag filtering, so the route matches regardless of its tags.
 - **MCP type**: What MCP component type to create (`TOOL`, `RESOURCE`, `RESOURCE_TEMPLATE`, or `EXCLUDE`)
+- **MCP tags** A set of custom tags to add to components created from matching routes
 
 Here is FastMCP's default rule:
 
@@ -206,9 +207,76 @@ mcp = FastMCP.from_openapi(
 
 ## Customizing MCP Components
 
+### Tags
+
+<VersionBadge version="2.8.0" />
+
+FastMCP provides several ways to add tags to your MCP components, allowing you to categorize and organize them for better discoverability and filtering. Tags are combined from multiple sources to create the final set of tags on each component.
+
+#### RouteMap Tags
+
+You can add custom tags to components created from specific routes using the `mcp_tags` parameter in `RouteMap`. These tags will be applied to all components created from routes that match that particular route map.
+
+```python {12, 20, 28}
+from fastmcp import FastMCP
+from fastmcp.server.openapi import RouteMap, MCPType
+
+mcp = FastMCP.from_openapi(
+    ...,
+    route_maps=[
+        # Add custom tags to all POST endpoints
+        RouteMap(
+            methods=["POST"],
+            pattern=r".*",
+            mcp_type=MCPType.TOOL,
+            mcp_tags={"write-operation", "api-mutation"}
+        ),
+        
+        # Add different tags to detail view endpoints
+        RouteMap(
+            methods=["GET"],
+            pattern=r".*\{.*\}.*",
+            mcp_type=MCPType.RESOURCE_TEMPLATE,
+            mcp_tags={"detail-view", "parameterized"}
+        ),
+        
+        # Add tags to list endpoints
+        RouteMap(
+            methods=["GET"],
+            pattern=r".*",
+            mcp_type=MCPType.RESOURCE,
+            mcp_tags={"list-data", "collection"}
+        ),
+    ],
+)
+```
+
+#### Global Tags
+
+You can add tags to **all** components by providing a `tags` parameter when creating your FastMCP server with `from_openapi` or `from_fastapi`. These global tags will be applied to every component created from your OpenAPI specification.
+
+<CodeGroup>
+```python {6} from_openapi()
+from fastmcp import FastMCP
+
+mcp = FastMCP.from_openapi(
+    openapi_spec=spec,
+    client=client,
+    tags={"api-v2", "production", "external"}
+)
+```
+```python {5} from_fastapi()
+from fastmcp import FastMCP
+
+mcp = FastMCP.from_fastapi(
+    app=app,
+    tags={"internal-api", "microservice"}
+)
+```
+</CodeGroup>
 
 
-### Component Names
+### Names
 
 <VersionBadge version="2.5.0" />
 
@@ -421,10 +489,16 @@ mcp = FastMCP.from_fastapi(
     app=app,
     name="My Custom Server",
     timeout=5.0,
+    tags={"api-v1", "fastapi"},  # Global tags for all components
     mcp_names={"operationId": "friendly_name"},  # Custom component names
     route_maps=[
-        # Admin endpoints become tools
-        RouteMap(methods="*", pattern=r"^/admin/.*", mcp_type=MCPType.TOOL),
+        # Admin endpoints become tools with custom tags
+        RouteMap(
+            methods="*", 
+            pattern=r"^/admin/.*", 
+            mcp_type=MCPType.TOOL,
+            mcp_tags={"admin", "privileged"}
+        ),
         # Internal endpoints are excluded
         RouteMap(methods="*", pattern=r".*", mcp_type=MCPType.EXCLUDE, tags={"internal"}),
     ],
