@@ -2460,3 +2460,357 @@ class TestMCPNames:
         assert (
             len(truncated_name) == 56
         )  # Should be exactly 56 since original was longer
+
+
+class TestRouteMapMCPTags:
+    """Tests for RouteMap mcp_tags functionality."""
+
+    @pytest.fixture
+    def simple_fastapi_app(self) -> FastAPI:
+        """Create a simple FastAPI app for testing mcp_tags."""
+        app = FastAPI(title="MCP Tags Test API")
+
+        @app.get("/users", tags=["users"])
+        async def get_users():
+            """Get all users."""
+            return [{"id": 1, "name": "Alice"}]
+
+        @app.get("/users/{user_id}", tags=["users"])
+        async def get_user(user_id: int):
+            """Get user by ID."""
+            return {"id": user_id, "name": f"User {user_id}"}
+
+        @app.post("/users", tags=["users"])
+        async def create_user(name: str):
+            """Create a new user."""
+            return {"id": 99, "name": name}
+
+        return app
+
+    @pytest.fixture
+    async def mock_client(self) -> httpx.AsyncClient:
+        """Mock client for testing."""
+
+        async def _responder(request):
+            return httpx.Response(200, json={"status": "ok"})
+
+        transport = httpx.MockTransport(_responder)
+        return httpx.AsyncClient(transport=transport, base_url="http://test")
+
+    async def test_mcp_tags_added_to_tools(self, simple_fastapi_app, mock_client):
+        """Test that mcp_tags are added to Tools created from routes."""
+        # Create route map that adds custom tags to POST endpoints
+        route_maps = [
+            RouteMap(
+                methods=["POST"],
+                pattern=r".*",
+                mcp_type=MCPType.TOOL,
+                mcp_tags={"custom", "api-write"},
+            ),
+            # Default mapping for other routes
+            RouteMap(methods=["GET"], pattern=r".*", mcp_type=MCPType.RESOURCE),
+        ]
+
+        server = FastMCPOpenAPI(
+            openapi_spec=simple_fastapi_app.openapi(),
+            client=mock_client,
+            route_maps=route_maps,
+        )
+
+        # Get the POST tool
+        tools = server._tool_manager.list_tools()
+        create_user_tool = next((t for t in tools if "create_user" in t.name), None)
+
+        assert create_user_tool is not None, "create_user tool not found"
+
+        # Check that both original tags and mcp_tags are present
+        assert "users" in create_user_tool.tags  # Original OpenAPI tag
+        assert "custom" in create_user_tool.tags  # Added via mcp_tags
+        assert "api-write" in create_user_tool.tags  # Added via mcp_tags
+
+    async def test_mcp_tags_added_to_resources(self, simple_fastapi_app, mock_client):
+        """Test that mcp_tags are added to Resources created from routes."""
+        # Create route map that adds custom tags to GET endpoints without path params
+        route_maps = [
+            RouteMap(
+                methods=["GET"],
+                pattern=r"^/users$",  # Only match /users, not /users/{id}
+                mcp_type=MCPType.RESOURCE,
+                mcp_tags={"list-data", "public-api"},
+            ),
+            # Default mapping for other routes
+            RouteMap(
+                methods=["GET"], pattern=r".*", mcp_type=MCPType.RESOURCE_TEMPLATE
+            ),
+            RouteMap(methods=["POST"], pattern=r".*", mcp_type=MCPType.TOOL),
+        ]
+
+        server = FastMCPOpenAPI(
+            openapi_spec=simple_fastapi_app.openapi(),
+            client=mock_client,
+            route_maps=route_maps,
+        )
+
+        # Get the resource
+        resources = list(server._resource_manager.get_resources().values())
+        get_users_resource = next((r for r in resources if "get_users" in r.name), None)
+
+        assert get_users_resource is not None, "get_users resource not found"
+
+        # Check that both original tags and mcp_tags are present
+        assert "users" in get_users_resource.tags  # Original OpenAPI tag
+        assert "list-data" in get_users_resource.tags  # Added via mcp_tags
+        assert "public-api" in get_users_resource.tags  # Added via mcp_tags
+
+    async def test_mcp_tags_added_to_resource_templates(
+        self, simple_fastapi_app, mock_client
+    ):
+        """Test that mcp_tags are added to ResourceTemplates created from routes."""
+        # Create route map that adds custom tags to GET endpoints with path params
+        route_maps = [
+            RouteMap(
+                methods=["GET"],
+                pattern=r".*\{.*\}.*",  # Match routes with path parameters
+                mcp_type=MCPType.RESOURCE_TEMPLATE,
+                mcp_tags={"detail-view", "parameterized"},
+            ),
+            # Default mapping for other routes
+            RouteMap(methods=["GET"], pattern=r".*", mcp_type=MCPType.RESOURCE),
+            RouteMap(methods=["POST"], pattern=r".*", mcp_type=MCPType.TOOL),
+        ]
+
+        server = FastMCPOpenAPI(
+            openapi_spec=simple_fastapi_app.openapi(),
+            client=mock_client,
+            route_maps=route_maps,
+        )
+
+        # Get the resource template
+        templates = list(server._resource_manager.get_templates().values())
+        get_user_template = next((t for t in templates if "get_user" in t.name), None)
+
+        assert get_user_template is not None, "get_user template not found"
+
+        # Check that both original tags and mcp_tags are present
+        assert "users" in get_user_template.tags  # Original OpenAPI tag
+        assert "detail-view" in get_user_template.tags  # Added via mcp_tags
+        assert "parameterized" in get_user_template.tags  # Added via mcp_tags
+
+    async def test_multiple_route_maps_with_different_mcp_tags(
+        self, simple_fastapi_app, mock_client
+    ):
+        """Test that different route maps can add different mcp_tags."""
+        # Multiple route maps with different mcp_tags
+        route_maps = [
+            # First priority: POST requests get write-related tags
+            RouteMap(
+                methods=["POST"],
+                pattern=r".*",
+                mcp_type=MCPType.TOOL,
+                mcp_tags={"write-operation", "mutation"},
+            ),
+            # Second priority: GET with path params get detail tags
+            RouteMap(
+                methods=["GET"],
+                pattern=r".*\{.*\}.*",
+                mcp_type=MCPType.RESOURCE_TEMPLATE,
+                mcp_tags={"detail", "single-item"},
+            ),
+            # Third priority: Other GET requests get list tags
+            RouteMap(
+                methods=["GET"],
+                pattern=r".*",
+                mcp_type=MCPType.RESOURCE,
+                mcp_tags={"list", "collection"},
+            ),
+        ]
+
+        server = FastMCPOpenAPI(
+            openapi_spec=simple_fastapi_app.openapi(),
+            client=mock_client,
+            route_maps=route_maps,
+        )
+
+        # Check tool tags
+        tools = server._tool_manager.list_tools()
+        create_tool = next((t for t in tools if "create_user" in t.name), None)
+        assert create_tool is not None
+        assert "write-operation" in create_tool.tags
+        assert "mutation" in create_tool.tags
+
+        # Check resource template tags
+        templates = list(server._resource_manager.get_templates().values())
+        detail_template = next((t for t in templates if "get_user" in t.name), None)
+        assert detail_template is not None
+        assert "detail" in detail_template.tags
+        assert "single-item" in detail_template.tags
+
+        # Check resource tags
+        resources = list(server._resource_manager.get_resources().values())
+        list_resource = next((r for r in resources if "get_users" in r.name), None)
+        assert list_resource is not None
+        assert "list" in list_resource.tags
+        assert "collection" in list_resource.tags
+
+
+class TestGlobalTagsParameter:
+    """Tests for the global tags parameter on from_openapi and from_fastapi class methods."""
+
+    @pytest.fixture
+    def simple_fastapi_app(self) -> FastAPI:
+        """Create a simple FastAPI app for testing global tags."""
+        app = FastAPI(title="Global Tags Test API")
+
+        @app.get("/items", tags=["items"])
+        async def get_items():
+            """Get all items."""
+            return [{"id": 1, "name": "Item 1"}]
+
+        @app.get("/items/{item_id}", tags=["items"])
+        async def get_item(item_id: int):
+            """Get item by ID."""
+            return {"id": item_id, "name": f"Item {item_id}"}
+
+        @app.post("/items", tags=["items"])
+        async def create_item(name: str):
+            """Create a new item."""
+            return {"id": 99, "name": name}
+
+        return app
+
+    @pytest.fixture
+    async def mock_client(self) -> httpx.AsyncClient:
+        """Mock client for testing."""
+
+        async def _responder(request):
+            return httpx.Response(200, json={"status": "ok"})
+
+        transport = httpx.MockTransport(_responder)
+        return httpx.AsyncClient(transport=transport, base_url="http://test")
+
+    async def test_from_fastapi_adds_global_tags(self, simple_fastapi_app):
+        """Test that from_fastapi adds global tags to all components."""
+        global_tags = {"global", "api-v1"}
+
+        server = FastMCP.from_fastapi(
+            simple_fastapi_app,
+            tags=global_tags,
+            route_maps=[
+                RouteMap(
+                    methods=["GET"], pattern=r"^/items$", mcp_type=MCPType.RESOURCE
+                ),
+                RouteMap(
+                    methods=["GET"],
+                    pattern=r".*\{.*\}.*",
+                    mcp_type=MCPType.RESOURCE_TEMPLATE,
+                ),
+                RouteMap(methods=["POST"], pattern=r".*", mcp_type=MCPType.TOOL),
+            ],
+        )
+
+        # Check tool has both original and global tags
+        tools = server._tool_manager.list_tools()
+        create_item_tool = next((t for t in tools if "create_item" in t.name), None)
+        assert create_item_tool is not None
+        assert "items" in create_item_tool.tags  # Original OpenAPI tag
+        assert "global" in create_item_tool.tags  # Global tag
+        assert "api-v1" in create_item_tool.tags  # Global tag
+
+        # Check resource has both original and global tags
+        resources = list(server._resource_manager.get_resources().values())
+        get_items_resource = next((r for r in resources if "get_items" in r.name), None)
+        assert get_items_resource is not None
+        assert "items" in get_items_resource.tags  # Original OpenAPI tag
+        assert "global" in get_items_resource.tags  # Global tag
+        assert "api-v1" in get_items_resource.tags  # Global tag
+
+        # Check resource template has both original and global tags
+        templates = list(server._resource_manager.get_templates().values())
+        get_item_template = next((t for t in templates if "get_item" in t.name), None)
+        assert get_item_template is not None
+        assert "items" in get_item_template.tags  # Original OpenAPI tag
+        assert "global" in get_item_template.tags  # Global tag
+        assert "api-v1" in get_item_template.tags  # Global tag
+
+    async def test_from_openapi_adds_global_tags(self, simple_fastapi_app, mock_client):
+        """Test that from_openapi adds global tags to all components."""
+        global_tags = {"openapi-global", "service"}
+
+        server = FastMCP.from_openapi(
+            openapi_spec=simple_fastapi_app.openapi(),
+            client=mock_client,
+            tags=global_tags,
+            route_maps=[
+                RouteMap(
+                    methods=["GET"], pattern=r"^/items$", mcp_type=MCPType.RESOURCE
+                ),
+                RouteMap(
+                    methods=["GET"],
+                    pattern=r".*\{.*\}.*",
+                    mcp_type=MCPType.RESOURCE_TEMPLATE,
+                ),
+                RouteMap(methods=["POST"], pattern=r".*", mcp_type=MCPType.TOOL),
+            ],
+        )
+
+        # Check tool has both original and global tags
+        tools = server._tool_manager.list_tools()
+        create_item_tool = next((t for t in tools if "create_item" in t.name), None)
+        assert create_item_tool is not None
+        assert "items" in create_item_tool.tags  # Original OpenAPI tag
+        assert "openapi-global" in create_item_tool.tags  # Global tag
+        assert "service" in create_item_tool.tags  # Global tag
+
+        # Check resource has both original and global tags
+        resources = list(server._resource_manager.get_resources().values())
+        get_items_resource = next((r for r in resources if "get_items" in r.name), None)
+        assert get_items_resource is not None
+        assert "items" in get_items_resource.tags  # Original OpenAPI tag
+        assert "openapi-global" in get_items_resource.tags  # Global tag
+        assert "service" in get_items_resource.tags  # Global tag
+
+        # Check resource template has both original and global tags
+        templates = list(server._resource_manager.get_templates().values())
+        get_item_template = next((t for t in templates if "get_item" in t.name), None)
+        assert get_item_template is not None
+        assert "items" in get_item_template.tags  # Original OpenAPI tag
+        assert "openapi-global" in get_item_template.tags  # Global tag
+        assert "service" in get_item_template.tags  # Global tag
+
+    async def test_global_tags_combine_with_route_map_tags(
+        self, simple_fastapi_app, mock_client
+    ):
+        """Test that global tags combine with both OpenAPI tags and RouteMap mcp_tags."""
+        global_tags = {"global"}
+        route_map_tags = {"route-specific"}
+
+        server = FastMCP.from_openapi(
+            openapi_spec=simple_fastapi_app.openapi(),
+            client=mock_client,
+            tags=global_tags,
+            route_maps=[
+                RouteMap(
+                    methods=["POST"],
+                    pattern=r".*",
+                    mcp_type=MCPType.TOOL,
+                    mcp_tags=route_map_tags,
+                ),
+                RouteMap(methods=["GET"], pattern=r".*", mcp_type=MCPType.RESOURCE),
+            ],
+        )
+
+        # Check that all three types of tags are present on the tool
+        tools = server._tool_manager.list_tools()
+        create_item_tool = next((t for t in tools if "create_item" in t.name), None)
+        assert create_item_tool is not None
+        assert "items" in create_item_tool.tags  # Original OpenAPI tag
+        assert "global" in create_item_tool.tags  # Global tag
+        assert "route-specific" in create_item_tool.tags  # RouteMap mcp_tag
+
+        # Check that resource only has OpenAPI and global tags (no route-specific since different RouteMap)
+        resources = list(server._resource_manager.get_resources().values())
+        get_items_resource = next((r for r in resources if "get_items" in r.name), None)
+        assert get_items_resource is not None
+        assert "items" in get_items_resource.tags  # Original OpenAPI tag
+        assert "global" in get_items_resource.tags  # Global tag
+        assert "route-specific" not in get_items_resource.tags  # Not from this RouteMap

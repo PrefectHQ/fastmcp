@@ -692,7 +692,6 @@ class FastMCPOpenAPI(FastMCP):
         route_map_fn: RouteMapFn | None = None,
         mcp_component_fn: ComponentFn | None = None,
         mcp_names: dict[str, str] | None = None,
-        mcp_tags: dict[str, set[str]] | None = None,
         tags: set[str] | None = None,
         timeout: float | None = None,
         **settings: Any,
@@ -716,9 +715,6 @@ class FastMCPOpenAPI(FastMCP):
                 operationId up to the first double underscore. If no operationId exists,
                 falls back to slugified summary or path-based naming.
                 All names are truncated to 56 characters maximum.
-            mcp_tags: Optional dictionary mapping operationId to set of tags.
-                If an operationId is not in the dictionary, falls back to using the
-                tags from the route.
             tags: Optional set of tags to add to all components. Components always receive any tags
                 from the route.
             timeout: Optional timeout (in seconds) for all requests
@@ -770,8 +766,6 @@ class FastMCPOpenAPI(FastMCP):
             component_name = self._generate_default_name(route, mcp_names)
 
             route_tags = set(route.tags) | route_map.mcp_tags | (tags or set())
-            if route.operation_id:
-                route_tags |= (mcp_tags or {}).get(route.operation_id, set())
 
             if route_type == MCPType.TOOL:
                 self._create_openapi_tool(route, component_name, tags=route_tags)
