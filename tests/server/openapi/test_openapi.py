@@ -2709,25 +2709,22 @@ class TestGlobalTagsParameter:
         )
 
         # Check tool has both original and global tags
-        tools = server._tool_manager.list_tools()
-        create_item_tool = next((t for t in tools if "create_item" in t.name), None)
-        assert create_item_tool is not None
+        tools = await server.get_tools()
+        create_item_tool = tools["create_item_items_post"]
         assert "items" in create_item_tool.tags  # Original OpenAPI tag
         assert "global" in create_item_tool.tags  # Global tag
         assert "api-v1" in create_item_tool.tags  # Global tag
 
         # Check resource has both original and global tags
-        resources = list(server._resource_manager.get_resources().values())
-        get_items_resource = next((r for r in resources if "get_items" in r.name), None)
-        assert get_items_resource is not None
+        resources = await server.get_resources()
+        get_items_resource = resources["resource://get_items_items_get"]
         assert "items" in get_items_resource.tags  # Original OpenAPI tag
         assert "global" in get_items_resource.tags  # Global tag
         assert "api-v1" in get_items_resource.tags  # Global tag
 
         # Check resource template has both original and global tags
-        templates = list(server._resource_manager.get_templates().values())
-        get_item_template = next((t for t in templates if "get_item" in t.name), None)
-        assert get_item_template is not None
+        templates = await server.get_resource_templates()
+        get_item_template = templates["resource://get_item_items/{item_id}"]
         assert "items" in get_item_template.tags  # Original OpenAPI tag
         assert "global" in get_item_template.tags  # Global tag
         assert "api-v1" in get_item_template.tags  # Global tag
@@ -2754,25 +2751,22 @@ class TestGlobalTagsParameter:
         )
 
         # Check tool has both original and global tags
-        tools = server._tool_manager.list_tools()
-        create_item_tool = next((t for t in tools if "create_item" in t.name), None)
-        assert create_item_tool is not None
+        tools = await server.get_tools()
+        create_item_tool = tools["create_item_items_post"]
         assert "items" in create_item_tool.tags  # Original OpenAPI tag
         assert "openapi-global" in create_item_tool.tags  # Global tag
         assert "service" in create_item_tool.tags  # Global tag
 
         # Check resource has both original and global tags
-        resources = list(server._resource_manager.get_resources().values())
-        get_items_resource = next((r for r in resources if "get_items" in r.name), None)
-        assert get_items_resource is not None
+        resources = await server.get_resources()
+        get_items_resource = resources["resource://get_items_items_get"]
         assert "items" in get_items_resource.tags  # Original OpenAPI tag
         assert "openapi-global" in get_items_resource.tags  # Global tag
         assert "service" in get_items_resource.tags  # Global tag
 
         # Check resource template has both original and global tags
-        templates = list(server._resource_manager.get_templates().values())
-        get_item_template = next((t for t in templates if "get_item" in t.name), None)
-        assert get_item_template is not None
+        templates = await server.get_resource_templates()
+        get_item_template = templates["resource://get_item_items/{item_id}"]
         assert "items" in get_item_template.tags  # Original OpenAPI tag
         assert "openapi-global" in get_item_template.tags  # Global tag
         assert "service" in get_item_template.tags  # Global tag
@@ -2800,17 +2794,15 @@ class TestGlobalTagsParameter:
         )
 
         # Check that all three types of tags are present on the tool
-        tools = server._tool_manager.list_tools()
-        create_item_tool = next((t for t in tools if "create_item" in t.name), None)
-        assert create_item_tool is not None
+        tools = await server.get_tools()
+        create_item_tool = tools["create_item_items_post"]
         assert "items" in create_item_tool.tags  # Original OpenAPI tag
         assert "global" in create_item_tool.tags  # Global tag
         assert "route-specific" in create_item_tool.tags  # RouteMap mcp_tag
 
         # Check that resource only has OpenAPI and global tags (no route-specific since different RouteMap)
-        resources = list(server._resource_manager.get_resources().values())
-        get_items_resource = next((r for r in resources if "get_items" in r.name), None)
-        assert get_items_resource is not None
+        resources = await server.get_resources()
+        get_items_resource = resources["resource://get_items_items_get"]
         assert "items" in get_items_resource.tags  # Original OpenAPI tag
         assert "global" in get_items_resource.tags  # Global tag
         assert "route-specific" not in get_items_resource.tags  # Not from this RouteMap

@@ -175,7 +175,6 @@ class TestDeprecatedServerInitKwargs:
             server = FastMCP(
                 name="TestServer",
                 instructions="Test instructions",
-                tags={"test", "server"},
                 cache_expiration_seconds=60.0,
                 on_duplicate_tools="warn",
                 on_duplicate_resources="error",
@@ -193,7 +192,6 @@ class TestDeprecatedServerInitKwargs:
         # Verify server was created successfully
         assert server.name == "TestServer"
         assert server.instructions == "Test instructions"
-        assert server.tags == {"test", "server"}
 
     def test_none_values_no_warnings(self):
         """Test that None values for deprecated kwargs don't raise warnings."""

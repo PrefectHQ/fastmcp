@@ -121,7 +121,6 @@ class FastMCP(Generic[LifespanResultT]):
             ]
             | None
         ) = None,
-        tags: set[str] | None = None,
         tool_serializer: Callable[[Any], str] | None = None,
         cache_expiration_seconds: float | None = None,
         on_duplicate_tools: DuplicateBehavior | None = None,
@@ -151,8 +150,6 @@ class FastMCP(Generic[LifespanResultT]):
         self.resource_prefix_format: Literal["protocol", "path"] = (
             resource_prefix_format or fastmcp.settings.resource_prefix_format
         )
-
-        self.tags: set[str] = tags or set()
 
         self._cache = TimedCache(
             expiration=datetime.timedelta(seconds=cache_expiration_seconds or 0)
@@ -1561,6 +1558,7 @@ class FastMCP(Generic[LifespanResultT]):
         route_map_fn: OpenAPIRouteMapFn | None = None,
         mcp_component_fn: OpenAPIComponentFn | None = None,
         mcp_names: dict[str, str] | None = None,
+        tags: set[str] | None = None,
         **settings: Any,
     ) -> FastMCPOpenAPI:
         """
@@ -1575,6 +1573,7 @@ class FastMCP(Generic[LifespanResultT]):
             route_map_fn=route_map_fn,
             mcp_component_fn=mcp_component_fn,
             mcp_names=mcp_names,
+            tags=tags,
             **settings,
         )
 
@@ -1588,6 +1587,7 @@ class FastMCP(Generic[LifespanResultT]):
         mcp_component_fn: OpenAPIComponentFn | None = None,
         mcp_names: dict[str, str] | None = None,
         httpx_client_kwargs: dict[str, Any] | None = None,
+        tags: set[str] | None = None,
         **settings: Any,
     ) -> FastMCPOpenAPI:
         """
@@ -1615,6 +1615,7 @@ class FastMCP(Generic[LifespanResultT]):
             route_map_fn=route_map_fn,
             mcp_component_fn=mcp_component_fn,
             mcp_names=mcp_names,
+            tags=tags,
             **settings,
         )
 
