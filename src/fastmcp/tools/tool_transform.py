@@ -97,6 +97,7 @@ class ArgTransform:
         type: New type for the argument. Use ... for no change.
         hide: If True, hide this argument from clients but pass a constant value to parent.
         required: If True, make argument required (remove default). Use ... for no change.
+        examples: Examples for the argument. Use ... for no change.
 
     Examples:
         # Rename argument 'old_name' to 'new_name'
@@ -137,6 +138,7 @@ class ArgTransform:
     type: Any | EllipsisType = NotSet
     hide: bool = False
     required: Literal[True] | EllipsisType = NotSet
+    examples: Any | EllipsisType = NotSet
 
     def __post_init__(self):
         """Validate that only one of default or default_factory is provided."""
@@ -583,6 +585,10 @@ class TransformedTool(Tool):
             type_schema = get_cached_typeadapter(transform.type).json_schema()
             # Update the schema with the type information from TypeAdapter
             new_schema.update(type_schema)
+
+        # Handle examples transformation
+        if transform.examples is not NotSet:
+            new_schema["examples"] = transform.examples
 
         return new_name, new_schema, is_required
 

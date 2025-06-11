@@ -987,3 +987,35 @@ class TestEnableDisable:
 
             with pytest.raises(ToolError):
                 await client.call_tool("new_add", {"x": 1, "y": 2})
+
+
+def test_arg_transform_examples_in_schema(add_tool):
+    # Simple example
+    new_tool = Tool.from_tool(
+        add_tool,
+        transform_args={
+            "old_x": ArgTransform(examples=[1, 2, 3]),
+        },
+    )
+    prop = get_property(new_tool, "old_x")
+    assert prop["examples"] == [1, 2, 3]
+
+    # Nested example (e.g., for array type)
+    new_tool2 = Tool.from_tool(
+        add_tool,
+        transform_args={
+            "old_x": ArgTransform(examples=[["a", "b"], ["c", "d"]]),
+        },
+    )
+    prop2 = get_property(new_tool2, "old_x")
+    assert prop2["examples"] == [["a", "b"], ["c", "d"]]
+
+    # If not set, should not be present
+    new_tool3 = Tool.from_tool(
+        add_tool,
+        transform_args={
+            "old_x": ArgTransform(),
+        },
+    )
+    prop3 = get_property(new_tool3, "old_x")
+    assert "examples" not in prop3
