@@ -253,6 +253,15 @@ class FastMCP(Generic[LifespanResultT]):
         self._deprecated_settings = Settings(**combined_settings)
 
     @property
+    def settings(self) -> Settings:
+        warnings.warn(
+            "Accessing `.settings` on a FastMCP instance is deprecated. Use the global `fastmcp.settings` instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self._deprecated_settings
+
+    @property
     def name(self) -> str:
         return self._mcp_server.name
 

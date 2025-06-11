@@ -214,33 +214,76 @@ proxy = FastMCP.as_proxy(backend, name="ProxyServer")
 
 ## Server Configuration
 
-Server behavior, like transport settings (host, port for SSE) and how duplicate components are handled, can be configured via `ServerSettings`. These settings can be passed during `FastMCP` initialization, set via environment variables (prefixed with `FASTMCP_SERVER_`), or loaded from a `.env` file.
+Servers can be configured using a combination of initialization arguments, global settings, and transport-specific settings.
+
+### Server-Specific Configuration
+
+Server-specific settings are passed when creating the `FastMCP` instance and control server behavior:
 
 ```python
 from fastmcp import FastMCP
 
-# Configure during initialization
+# Configure server-specific settings
 mcp = FastMCP(
     name="ConfiguredServer",
-    port=8080, # Directly maps to ServerSettings
-    on_duplicate_tools="error" # Set duplicate handling
+    dependencies=["requests", "pandas>=2.0.0"],  # Optional server dependencies
+    include_tags={"public", "api"},              # Only expose these tagged components
+    exclude_tags={"internal", "deprecated"},     # Hide these tagged components
+    on_duplicate_tools="error",                  # Handle duplicate registrations
+    on_duplicate_resources="warn",
+    on_duplicate_prompts="replace",
 )
-
-# Settings are accessible via mcp.settings
-print(mcp.settings.port) # Output: 8080
-print(mcp.settings.on_duplicate_tools) # Output: "error"
 ```
 
-### Key Configuration Options
+### Global Settings
 
-- **`host`**: Host address for SSE transport (default: "127.0.0.1")
-- **`port`**: Port number for SSE transport (default: 8000)
-- **`log_level`**: Logging level (default: "INFO")
-- **`on_duplicate_tools`**: How to handle duplicate tool registrations
-- **`on_duplicate_resources`**: How to handle duplicate resource registrations
-- **`on_duplicate_prompts`**: How to handle duplicate prompt registrations
+Global settings affect all FastMCP servers and can be configured via environment variables (prefixed with `FASTMCP_`) or in a `.env` file:
 
-All of these can be configured directly as parameters when creating the `FastMCP` instance.
+```python
+import fastmcp
+
+# Access global settings
+print(fastmcp.settings.log_level)        # Default: "INFO"
+print(fastmcp.settings.mask_error_details)  # Default: False
+print(fastmcp.settings.resource_prefix_format)  # Default: "path"
+```
+
+Common global settings include:
+- **`log_level`**: Logging level ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"), set with `FASTMCP_LOG_LEVEL`
+- **`mask_error_details`**: Whether to hide detailed error information from clients, set with `FASTMCP_MASK_ERROR_DETAILS`
+- **`resource_prefix_format`**: How to format resource prefixes ("path" or "protocol"), set with `FASTMCP_RESOURCE_PREFIX_FORMAT`
+
+### Transport-Specific Configuration
+
+Transport settings are provided when running the server and control network behavior:
+
+```python
+# Configure transport when running
+mcp.run(
+    transport="streamable-http",
+    host="0.0.0.0",           # Bind to all interfaces
+    port=9000,                # Custom port
+    log_level="DEBUG",        # Override global log level
+)
+
+# Or for async usage
+await mcp.run_async(
+    transport="streamable-http", 
+    host="127.0.0.1",
+    port=8080,
+)
+```
+
+### Environment Variables
+
+Settings can be configured via environment variables:
+
+```bash
+# Global settings
+export FASTMCP_LOG_LEVEL=DEBUG
+export FASTMCP_MASK_ERROR_DETAILS=True
+export FASTMCP_RESOURCE_PREFIX_FORMAT=protocol
+```
 
 ### Custom Tool Serialization
 
