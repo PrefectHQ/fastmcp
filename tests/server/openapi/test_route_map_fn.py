@@ -3,7 +3,7 @@
 import httpx
 import pytest
 
-from fastmcp.server.openapi import FastMCPOpenAPI, MCPType
+from fastmcp.server.openapi import FastMCPOpenAPI, MCPType, RouteMap, RouteMapFn
 
 
 @pytest.fixture
@@ -175,8 +175,6 @@ def test_route_map_fn_returns_none(sample_openapi_spec, http_client):
 def test_route_map_fn_called_for_excluded_routes(sample_openapi_spec, http_client):
     """Test that route_map_fn is called for excluded routes and can rescue them."""
 
-    from fastmcp.server.openapi import RouteMap
-
     # Exclude all admin routes
     route_maps = [
         RouteMap(
@@ -188,7 +186,7 @@ def test_route_map_fn_called_for_excluded_routes(sample_openapi_spec, http_clien
 
     def track_calls_and_rescue(route, mcp_type):
         """Track which routes the function is called for and rescue some excluded routes."""
-        called_routes.append(route.path)
+        called_routes.append((route.method, route.path))
 
         # Rescue the admin GET route by converting it to a tool
         if route.path == "/admin/settings" and route.method == "GET":
@@ -205,10 +203,11 @@ def test_route_map_fn_called_for_excluded_routes(sample_openapi_spec, http_clien
     )
 
     # route_map_fn should now be called for all routes, including excluded admin routes
-    assert "/admin/settings" in called_routes
-    assert "/users" in called_routes
-    assert "/users/{id}" in called_routes
-    assert "/api/data" in called_routes
+    assert ("GET", "/admin/settings") in called_routes
+    assert ("GET", "/users") in called_routes
+    assert ("GET", "/users/{id}") in called_routes
+    assert ("GET", "/api/data") in called_routes
+    assert ("POST", "/admin/settings") in called_routes
 
     # The rescued admin GET route should now be a tool
     tools = server._tool_manager._tools
@@ -296,7 +295,7 @@ def test_combined_route_map_fn_and_component_fn(sample_openapi_spec, http_client
 
 def test_route_map_fn_signature_validation():
     """Test that route_map_fn has the correct signature."""
-    from fastmcp.server.openapi import RouteMapFn
+
     from fastmcp.utilities import openapi
 
     # This is more of a type checking test
@@ -334,8 +333,6 @@ def test_component_fn_signature_validation():
 
 def test_route_map_fn_can_rescue_excluded_routes(sample_openapi_spec, http_client):
     """Test that route_map_fn can rescue routes that were excluded by RouteMap."""
-
-    from fastmcp.server.openapi import RouteMap
 
     # Exclude ALL routes by default
     route_maps = [
