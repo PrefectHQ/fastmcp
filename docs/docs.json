@@ -132,12 +132,17 @@
             },
             {
                 "anchor": "Tutorials",
-                "icon": "graduation-cap",
-                "pages": [
-                    "tutorials/mcp",
-                    "tutorials/create-mcp-server",
-                    "tutorials/rest-api"
-                ]
+                "groups": [
+                    {
+                        "group": "MCP",
+                        "pages": [
+                            "tutorials/mcp",
+                            "tutorials/create-mcp-server",
+                            "tutorials/rest-api"
+                        ]
+                    }
+                ],
+                "icon": "graduation-cap"
             },
             {
                 "anchor": "Changelog",
