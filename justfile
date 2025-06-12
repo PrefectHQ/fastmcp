@@ -7,3 +7,6 @@ test: build
 # Run pyright on all files
 typecheck:
     uv run --frozen pyright
+
+docs:
+    cd docs && npx mintlify dev

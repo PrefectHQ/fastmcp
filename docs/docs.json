@@ -150,6 +150,13 @@
                 "pages": [
                     "changelog"
                 ]
+            },
+            {
+                "anchor": "Community",
+                "icon": "users",
+                "pages": [
+                    "community/showcase"
+                ]
             }
         ]
     },
