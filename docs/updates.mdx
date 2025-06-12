@@ -4,6 +4,34 @@ sidebarTitle: "Updates"
 icon: "sparkles"
 tag: "New!"
 ---
+
+<Update label="FastMCP 2.8" description="June 11, 2025" tags={["Releases", "Blog Posts"]}>
+<Card 
+title="FastMCP 2.8: Transform and Roll Out" href="https://www.jlowin.dev/blog/fastmcp-2-8-tool-transformation" 
+img="https://www.jlowin.dev/_image?href=%2F_astro%2Fhero.su3kspkP.png&w=1000&h=500&f=webp" 
+cta="Read more"  
+>
+FastMCP 2.8 is here, and it's all about taking control of your tools.
+
+This release is packed with new features for curating the perfect LLM experience:
+
+🛠️ Tool Transformation
+
+The headline feature lets you wrap any tool—from your own code, a third-party library, or an OpenAPI spec—to create an enhanced, LLM-friendly version. You can rename arguments, rewrite descriptions, and hide parameters without touching the original code.
+
+This feature was developed in close partnership with Bill Easton. As Bill brilliantly [put it](https://www.linkedin.com/posts/williamseaston_huge-thanks-to-william-easton-for-providing-activity-7338011349525983232-Mw6T?utm_source=share&utm_medium=member_desktop&rcm=ACoAAAAd6d0B3uL9zpCsq9eYWKi3HIvb8eN_r_Q), "Tool transformation flips Prompt Engineering on its head: stop writing tool-friendly LLM prompts and start providing LLM-friendly tools."
+
+🏷️ Component Control
+
+Now that you're transforming tools, you need a way to hide the old ones! In FastMCP 2.8 you can programmatically enable/disable any component, and for everyone who's been asking what FastMCP's tags are for—they finally have a purpose! You can now use tags to declaratively filter which components are exposed to your clients.
+
+🚀 Pragmatic by Default
+
+Lastly, to ensure maximum compatibility with the ecosystem, we've made the pragmatic decision to default all OpenAPI routes to Tools, making your entire API immediately accessible to any tool-using agent. When the industry catches up and supports resources, we'll restore the old default -- but no reason you should do extra work before OpenAI, Anthropic, or Google!
+
+</Card>
+</Update>
+
 <Update label="FastMCP 2.7" description="June 6, 2025" tags={["Releases"]}>
 <Card 
 title="FastMCP 2.7: Pare Programming" href="https://github.com/jlowin/fastmcp/releases/tag/v2.7.0" 
@@ -32,7 +60,7 @@ The bulk of the update is focused on improving the FastMCP internals, including 
 
 <Update label="FastMCP 2.6" description="June 2, 2025" tags={["Releases", "Blog Posts"]}>
 <Card 
-title="Blast Auth with FastMCP 2.6" href="https://www.jlowin.dev/blog/fastmcp-2-6" 
+title="FastMCP 2.6: Blast Auth" href="https://www.jlowin.dev/blog/fastmcp-2-6" 
 img="https://www.jlowin.dev/_image?href=%2F_astro%2Fhero.Bsu8afiw.png&w=1000&h=500&f=webp" 
 cta="Read more"  
 >
