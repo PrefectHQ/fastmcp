@@ -73,14 +73,17 @@ async with Client(
 
 ## Custom Headers
 
-If the MCP server expects a custom header or token scheme, you can manually set the client's `headers` instead of using the `auth` parameter:
+If the MCP server expects a custom header or token scheme, you can manually set the client's `headers` instead of using the `auth` parameter by setting them on your transport:
 
 ```python {5}
 from fastmcp import Client
+from fastmcp.client.transports import StreamableHttpTransport
 
 async with Client(
-    "https://fastmcp.cloud/mcp", 
-    headers={"X-API-Key": "<your-token>"},
+    transport=StreamableHttpTransport(
+        "https://fastmcp.cloud/mcp", 
+        headers={"X-API-Key": "<your-token>"},
+    ),
 ) as client:
     await client.ping()
 ```
