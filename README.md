@@ -17,11 +17,13 @@
 > [!Note]
 > #### Beyond the Protocol
 > 
-> FastMCP is the standard framework for working with the Model Context Protocol. FastMCP 1.0 was incorporated into the [official low-level Python SDK](https://github.com/modelcontextprotocol/python-sdk), and FastMCP 2.0 *(this project)* provides a complete toolkit for working with the MCP ecosystem.
+> FastMCP is the standard framework for working with the Model Context Protocol. FastMCP 1.0 was incorporated into the [official MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk) in 2024.
+> 
+> This is FastMCP 2.0, the **actively maintained version** that provides a complete toolkit for working with the MCP ecosystem.
 >
-> FastMCP has a comprehensive set of features that go far beyond the core MCP specification, all in service of providing **the simplest path to production**. These include client support, server composition, auth, automatic generation from OpenAPI specs, remote server proxying, built-in testing tools, integrations, and more.
+> FastMCP 2.0 has a comprehensive set of features that go far beyond the core MCP specification, all in service of providing **the simplest path to production**. These include deployment, auth, clients, server proxying and composition, generating servers from REST APIs, dynamic tool rewriting, built-in testing tools, integrations, and more.
 >
-> Ready to upgrade or get started? Follow the [installation instructions](/getting-started/installation), which include specific steps for upgrading from the official MCP SDK.
+> Ready to upgrade or get started? Follow the [installation instructions](/getting-started/installation), which include steps for upgrading from the official MCP SDK.
 
 ---
 
