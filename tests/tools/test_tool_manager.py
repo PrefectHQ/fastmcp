@@ -8,11 +8,12 @@ import pytest
 from mcp.types import ImageContent
 from pydantic import BaseModel
 
-from fastmcp import Context, FastMCP, Image
+from fastmcp import Context, FastMCP
 from fastmcp.exceptions import NotFoundError, ToolError
 from fastmcp.tools import FunctionTool, ToolManager
 from fastmcp.tools.tool import Tool
 from fastmcp.utilities.tests import temporary_settings
+from fastmcp.utilities.types import Image
 
 
 class TestAddTools:

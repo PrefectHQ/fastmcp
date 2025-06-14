@@ -266,8 +266,10 @@ At this time, FastMCP responds only to your tool's return *value*, not its retur
 </Tip>
 
 ```python
-from fastmcp import FastMCP, Image
+from fastmcp import FastMCP
+from fastmcp.utilities.types import Image
 import io
+
 try:
     from PIL import Image as PILImage
 except ImportError:

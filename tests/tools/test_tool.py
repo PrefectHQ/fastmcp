@@ -2,11 +2,12 @@ import pytest
 from mcp.types import EmbeddedResource, ImageContent, TextContent, TextResourceContents
 from pydantic import AnyUrl, BaseModel
 
-from fastmcp import FastMCP, Image
+from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.exceptions import ToolError
 from fastmcp.tools.tool import Tool, _convert_to_content
 from fastmcp.utilities.tests import temporary_settings
+from fastmcp.utilities.types import Image
 
 
 class TestToolFromFunction:
