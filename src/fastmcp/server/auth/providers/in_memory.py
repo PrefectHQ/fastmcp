@@ -184,7 +184,7 @@ class InMemoryOAuthProvider(OAuthProvider):
 
         return OAuthToken(
             access_token=access_token_value,
-            token_type="bearer",
+            token_type="Bearer",
             expires_in=DEFAULT_ACCESS_TOKEN_EXPIRY_SECONDS,
             refresh_token=refresh_token_value,
             scope=" ".join(authorization_code.scopes),
@@ -254,7 +254,7 @@ class InMemoryOAuthProvider(OAuthProvider):
 
         return OAuthToken(
             access_token=new_access_token_value,
-            token_type="bearer",
+            token_type="Bearer",
             expires_in=DEFAULT_ACCESS_TOKEN_EXPIRY_SECONDS,
             refresh_token=new_refresh_token_value,
             scope=" ".join(scopes),

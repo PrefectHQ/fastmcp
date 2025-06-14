@@ -10,6 +10,7 @@ import pydantic_core
 import pytest
 from mcp import McpError
 from mcp.types import (
+    EmbeddedResource,
     ImageContent,
     TextContent,
     TextResourceContents,
@@ -19,7 +20,7 @@ from pydantic import AnyUrl, Field
 from fastmcp import Client, Context, FastMCP
 from fastmcp.client.transports import FastMCPTransport
 from fastmcp.exceptions import ToolError
-from fastmcp.prompts.prompt import EmbeddedResource, Prompt, PromptMessage
+from fastmcp.prompts.prompt import Prompt, PromptMessage
 from fastmcp.resources import FileResource, ResourceTemplate
 from fastmcp.resources.resource import FunctionResource
 from fastmcp.tools.tool import Tool
@@ -1648,11 +1649,10 @@ class TestPrompts:
             result = await client.get_prompt("fn")
             assert result.messages[0].role == "user"
             content = result.messages[0].content
-            assert isinstance(content, EmbeddedResource)  # type: ignore[attr-defined]
-            resource = content.resource
-            assert isinstance(resource, TextResourceContents)  # type: ignore[attr-defined]
-            assert resource.text == "File contents"  # type: ignore[attr-defined]
-            assert resource.mimeType == "text/plain"
+            assert isinstance(content, EmbeddedResource)
+            assert isinstance(content.resource, TextResourceContents)
+            assert content.resource.text == "File contents"
+            assert content.resource.mimeType == "text/plain"
 
     async def test_get_unknown_prompt(self):
         """Test error when getting unknown prompt."""

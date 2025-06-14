@@ -11,7 +11,6 @@ from mcp.server.lowlevel.helper_types import ReadResourceContents
 from mcp.shared.context import RequestContext
 from mcp.types import (
     CreateMessageResult,
-    ImageContent,
     ModelHint,
     ModelPreferences,
     Root,
@@ -25,6 +24,7 @@ import fastmcp.server.dependencies
 from fastmcp import settings
 from fastmcp.server.server import FastMCP
 from fastmcp.utilities.logging import get_logger
+from fastmcp.utilities.types import MCPContent
 
 logger = get_logger(__name__)
 
@@ -204,7 +204,7 @@ class Context:
         temperature: float | None = None,
         max_tokens: int | None = None,
         model_preferences: ModelPreferences | str | list[str] | None = None,
-    ) -> TextContent | ImageContent:
+    ) -> MCPContent:
         """
         Send a sampling request to the client and await the response.
 

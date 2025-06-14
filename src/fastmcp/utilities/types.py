@@ -6,12 +6,14 @@ from collections.abc import Callable
 from functools import lru_cache
 from pathlib import Path
 from types import UnionType
-from typing import Annotated, TypeVar, Union, get_args, get_origin
+from typing import Annotated, TypeAlias, TypeVar, Union, get_args, get_origin
 
-from mcp.types import ImageContent
+from mcp.types import AudioContent, EmbeddedResource, ImageContent, TextContent
 from pydantic import BaseModel, ConfigDict, TypeAdapter
 
 T = TypeVar("T")
+
+MCPContent: TypeAlias = TextContent | ImageContent | AudioContent | EmbeddedResource
 
 
 class FastMCPBaseModel(BaseModel):

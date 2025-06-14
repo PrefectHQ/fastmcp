@@ -4,13 +4,14 @@ import warnings
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
-from mcp.types import EmbeddedResource, ImageContent, TextContent, ToolAnnotations
+from mcp.types import ToolAnnotations
 
 from fastmcp import settings
 from fastmcp.exceptions import NotFoundError, ToolError
 from fastmcp.settings import DuplicateBehavior
 from fastmcp.tools.tool import Tool
 from fastmcp.utilities.logging import get_logger
+from fastmcp.utilities.types import MCPContent
 
 if TYPE_CHECKING:
     pass
@@ -120,9 +121,7 @@ class ToolManager:
         else:
             raise NotFoundError(f"Unknown tool: {key}")
 
-    async def call_tool(
-        self, key: str, arguments: dict[str, Any]
-    ) -> list[TextContent | ImageContent | EmbeddedResource]:
+    async def call_tool(self, key: str, arguments: dict[str, Any]) -> list[MCPContent]:
         """Call a tool by name with arguments."""
         tool = self.get_tool(key)
         if not tool:

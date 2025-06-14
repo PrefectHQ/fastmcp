@@ -29,6 +29,7 @@ from fastmcp.exceptions import ToolError
 from fastmcp.server import FastMCP
 from fastmcp.utilities.exceptions import get_catch_handlers
 from fastmcp.utilities.mcp_config import MCPConfig
+from fastmcp.utilities.types import MCPContent
 
 from .transports import (
     ClientTransportT,
@@ -658,9 +659,7 @@ class Client(Generic[ClientTransportT]):
         arguments: dict[str, Any] | None = None,
         timeout: datetime.timedelta | float | int | None = None,
         progress_handler: ProgressHandler | None = None,
-    ) -> list[
-        mcp.types.TextContent | mcp.types.ImageContent | mcp.types.EmbeddedResource
-    ]:
+    ) -> list[MCPContent]:
         """Call a tool on the server.
 
         Unlike call_tool_mcp, this method raises a ToolError if the tool call results in an error.
@@ -672,7 +671,7 @@ class Client(Generic[ClientTransportT]):
             progress_handler (ProgressHandler | None, optional): The progress handler to use for the tool call. Defaults to None.
 
         Returns:
-            list[mcp.types.TextContent | mcp.types.ImageContent | mcp.types.EmbeddedResource]:
+            list[mcp.types.TextContent | mcp.types.ImageContent | mcp.types.AudioContent | mcp.types.EmbeddedResource]:
                 The content returned by the tool.
 
         Raises:

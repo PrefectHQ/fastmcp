@@ -9,13 +9,7 @@ from mcp.shared.context import LifespanContextT, RequestContext
 from mcp.types import CreateMessageRequestParams as SamplingParams
 from mcp.types import SamplingMessage
 
-__all__ = ["SamplingMessage", "SamplingParams", "MessageResult", "SamplingHandler"]
-
-
-class MessageResult(CreateMessageResult):
-    role: mcp.types.Role = "assistant"
-    content: mcp.types.TextContent | mcp.types.ImageContent
-    model: str = "client-model"
+__all__ = ["SamplingMessage", "SamplingParams", "SamplingHandler"]
 
 
 SamplingHandler: TypeAlias = Callable[
@@ -39,8 +33,10 @@ def create_sampling_callback(sampling_handler: SamplingHandler) -> SamplingFnT:
                 result = await result
 
             if isinstance(result, str):
-                result = MessageResult(
-                    content=mcp.types.TextContent(type="text", text=result)
+                result = CreateMessageResult(
+                    role="assistant",
+                    model="fastmcp-client",
+                    content=mcp.types.TextContent(type="text", text=result),
                 )
             return result
         except Exception as e:

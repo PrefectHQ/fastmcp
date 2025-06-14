@@ -25,10 +25,7 @@ from mcp.server.lowlevel.server import Server as MCPServer
 from mcp.server.stdio import stdio_server
 from mcp.types import (
     AnyFunction,
-    EmbeddedResource,
     GetPromptResult,
-    ImageContent,
-    TextContent,
     ToolAnnotations,
 )
 from mcp.types import Prompt as MCPPrompt
@@ -62,6 +59,7 @@ from fastmcp.utilities.cache import TimedCache
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.mcp_config import MCPConfig
+from fastmcp.utilities.types import MCPContent
 
 if TYPE_CHECKING:
     from fastmcp.client import Client
@@ -514,7 +512,7 @@ class FastMCP(Generic[LifespanResultT]):
 
     async def _mcp_call_tool(
         self, key: str, arguments: dict[str, Any]
-    ) -> list[TextContent | ImageContent | EmbeddedResource]:
+    ) -> list[MCPContent]:
         """
         Handle MCP 'callTool' requests.
 
@@ -540,9 +538,7 @@ class FastMCP(Generic[LifespanResultT]):
                 # standardize NotFound message
                 raise NotFoundError(f"Unknown tool: {key}")
 
-    async def _call_tool(
-        self, key: str, arguments: dict[str, Any]
-    ) -> list[TextContent | ImageContent | EmbeddedResource]:
+    async def _call_tool(self, key: str, arguments: dict[str, Any]) -> list[MCPContent]:
         """
         Call a tool with raw MCP arguments. FastMCP subclasses should override
         this method, not _mcp_call_tool.

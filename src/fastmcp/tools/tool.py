@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import pydantic_core
-from mcp.types import EmbeddedResource, ImageContent, TextContent, ToolAnnotations
+from mcp.types import TextContent, ToolAnnotations
 from mcp.types import Tool as MCPTool
 from pydantic import Field
 
@@ -18,6 +18,7 @@ from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import (
     Image,
+    MCPContent,
     find_kwarg_by_type,
     get_cached_typeadapter,
 )
@@ -75,9 +76,7 @@ class Tool(FastMCPComponent):
             enabled=enabled,
         )
 
-    async def run(
-        self, arguments: dict[str, Any]
-    ) -> list[TextContent | ImageContent | EmbeddedResource]:
+    async def run(self, arguments: dict[str, Any]) -> list[MCPContent]:
         """Run the tool with arguments."""
         raise NotImplementedError("Subclasses must implement run()")
 
@@ -142,9 +141,7 @@ class FunctionTool(Tool):
             enabled=enabled if enabled is not None else True,
         )
 
-    async def run(
-        self, arguments: dict[str, Any]
-    ) -> list[TextContent | ImageContent | EmbeddedResource]:
+    async def run(self, arguments: dict[str, Any]) -> list[MCPContent]:
         """Run the tool with arguments."""
         from fastmcp.server.context import Context
 
@@ -265,12 +262,12 @@ def _convert_to_content(
     result: Any,
     serializer: Callable[[Any], str] | None = None,
     _process_as_single_item: bool = False,
-) -> list[TextContent | ImageContent | EmbeddedResource]:
+) -> list[MCPContent]:
     """Convert a result to a sequence of content objects."""
     if result is None:
         return []
 
-    if isinstance(result, TextContent | ImageContent | EmbeddedResource):
+    if isinstance(result, MCPContent):
         return [result]
 
     if isinstance(result, Image):
@@ -287,7 +284,7 @@ def _convert_to_content(
         other_content = []
 
         for item in result:
-            if isinstance(item, TextContent | ImageContent | EmbeddedResource | Image):
+            if isinstance(item, MCPContent | Image):
                 mcp_types.append(_convert_to_content(item)[0])
             else:
                 other_content.append(item)
