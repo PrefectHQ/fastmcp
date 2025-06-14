@@ -8,7 +8,13 @@ from pathlib import Path
 from types import UnionType
 from typing import Annotated, TypeAlias, TypeVar, Union, get_args, get_origin
 
-from mcp.types import AudioContent, EmbeddedResource, ImageContent, TextContent
+from mcp.types import (
+    Annotations,
+    AudioContent,
+    EmbeddedResource,
+    ImageContent,
+    TextContent,
+)
 from pydantic import BaseModel, ConfigDict, TypeAdapter
 
 T = TypeVar("T")
@@ -90,6 +96,7 @@ class Image:
         path: str | Path | None = None,
         data: bytes | None = None,
         format: str | None = None,
+        annotations: Annotations | None = None,
     ):
         if path is None and data is None:
             raise ValueError("Either path or data must be provided")
@@ -100,6 +107,7 @@ class Image:
         self.data = data
         self._format = format
         self._mime_type = self._get_mime_type()
+        self.annotations = annotations
 
     def _get_mime_type(self) -> str:
         """Get MIME type from format or guess from file extension."""
@@ -117,7 +125,11 @@ class Image:
             }.get(suffix, "application/octet-stream")
         return "image/png"  # default for raw binary data
 
-    def to_image_content(self) -> ImageContent:
+    def to_image_content(
+        self,
+        mime_type: str | None = None,
+        annotations: Annotations | None = None,
+    ) -> ImageContent:
         """Convert to MCP ImageContent."""
         if self.path:
             with open(self.path, "rb") as f:
@@ -127,4 +139,67 @@ class Image:
         else:
             raise ValueError("No image data available")
 
-        return ImageContent(type="image", data=data, mimeType=self._mime_type)
+        return ImageContent(
+            type="image",
+            data=data,
+            mimeType=mime_type or self._mime_type,
+            annotations=annotations or self.annotations,
+        )
+
+
+class Audio:
+    """Helper class for returning audio from tools."""
+
+    def __init__(
+        self,
+        path: str | Path | None = None,
+        data: bytes | None = None,
+        format: str | None = None,
+        annotations: Annotations | None = None,
+    ):
+        if path is None and data is None:
+            raise ValueError("Either path or data must be provided")
+        if path is not None and data is not None:
+            raise ValueError("Only one of path or data can be provided")
+
+        self.path = Path(path) if path else None
+        self.data = data
+        self._format = format
+        self._mime_type = self._get_mime_type()
+        self.annotations = annotations
+
+    def _get_mime_type(self) -> str:
+        """Get MIME type from format or guess from file extension."""
+        if self._format:
+            return f"audio/{self._format.lower()}"
+
+        if self.path:
+            suffix = self.path.suffix.lower()
+            return {
+                ".wav": "audio/wav",
+                ".mp3": "audio/mpeg",
+                ".ogg": "audio/ogg",
+                ".m4a": "audio/mp4",
+                ".flac": "audio/flac",
+            }.get(suffix, "application/octet-stream")
+        return "audio/wav"  # default for raw binary data
+
+    def to_audio_content(
+        self,
+        mime_type: str | None = None,
+        annotations: Annotations | None = None,
+    ) -> AudioContent:
+        if self.path:
+            with open(self.path, "rb") as f:
+                data = base64.b64encode(f.read()).decode()
+        elif self.data is not None:
+            data = base64.b64encode(self.data).decode()
+        else:
+            raise ValueError("No audio data available")
+
+        return AudioContent(
+            type="audio",
+            data=data,
+            mimeType=mime_type or self._mime_type,
+            annotations=annotations or self.annotations,
+        )
