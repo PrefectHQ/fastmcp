@@ -5,6 +5,7 @@ from typing import Annotated, Any
 import pytest
 
 from fastmcp.utilities.types import (
+    Audio,
     Image,
     find_kwarg_by_type,
     is_class_member_of_type,
@@ -200,6 +201,103 @@ class TestImage:
 
         with pytest.raises(ValueError, match="No image data available"):
             img.to_image_content()
+
+
+class TestAudio:
+    def test_audio_initialization_with_path(self):
+        """Test audio initialization with a path."""
+        # Mock test - we're not actually going to read a file
+        audio = Audio(path="test.wav")
+        assert audio.path is not None
+        assert audio.data is None
+        assert audio._mime_type == "audio/wav"
+
+    def test_audio_initialization_with_data(self):
+        """Test audio initialization with data."""
+        audio = Audio(data=b"test")
+        assert audio.path is None
+        assert audio.data == b"test"
+        assert audio._mime_type == "audio/wav"  # Default for raw data
+
+    def test_audio_initialization_with_format(self):
+        """Test audio initialization with a specific format."""
+        audio = Audio(data=b"test", format="mp3")
+        assert audio._mime_type == "audio/mp3"
+
+    def test_missing_data_and_path_raises_error(self):
+        """Test that error is raised when neither path nor data is provided."""
+        with pytest.raises(ValueError, match="Either path or data must be provided"):
+            Audio()
+
+    def test_both_data_and_path_raises_error(self):
+        """Test that error is raised when both path and data are provided."""
+        with pytest.raises(
+            ValueError, match="Only one of path or data can be provided"
+        ):
+            Audio(path="test.wav", data=b"test")
+
+    def test_get_mime_type_from_path(self, tmp_path):
+        """Test MIME type detection from file extension."""
+        extensions = {
+            ".wav": "audio/wav",
+            ".mp3": "audio/mpeg",
+            ".ogg": "audio/ogg",
+            ".m4a": "audio/mp4",
+            ".flac": "audio/flac",
+            ".unknown": "application/octet-stream",
+        }
+
+        for ext, mime in extensions.items():
+            path = tmp_path / f"test{ext}"
+            path.write_bytes(b"fake audio data")
+            audio = Audio(path=path)
+            assert audio._mime_type == mime
+
+    def test_to_audio_content(self, tmp_path, monkeypatch):
+        """Test conversion to AudioContent."""
+        # Test with path
+        audio_path = tmp_path / "test.wav"
+        test_data = b"fake audio data"
+        audio_path.write_bytes(test_data)
+
+        audio = Audio(path=audio_path)
+        content = audio.to_audio_content()
+
+        assert content.type == "audio"
+        assert content.mimeType == "audio/wav"
+        assert content.data == base64.b64encode(test_data).decode()
+
+        # Test with data
+        audio = Audio(data=test_data, format="mp3")
+        content = audio.to_audio_content()
+
+        assert content.type == "audio"
+        assert content.mimeType == "audio/mp3"
+        assert content.data == base64.b64encode(test_data).decode()
+
+    def test_to_audio_content_error(self, monkeypatch):
+        """Test error case in to_audio_content."""
+        # Create an Audio with neither path nor data (shouldn't happen due to __init__ checks,
+        # but testing the method's own error handling)
+        audio = Audio(data=b"test")
+        monkeypatch.setattr(audio, "path", None)
+        monkeypatch.setattr(audio, "data", None)
+
+        with pytest.raises(ValueError, match="No audio data available"):
+            audio.to_audio_content()
+
+    def test_to_audio_content_with_override_mime_type(self, tmp_path):
+        """Test conversion to AudioContent with override MIME type."""
+        audio_path = tmp_path / "test.wav"
+        test_data = b"fake audio data"
+        audio_path.write_bytes(test_data)
+
+        audio = Audio(path=audio_path)
+        content = audio.to_audio_content(mime_type="audio/custom")
+
+        assert content.type == "audio"
+        assert content.mimeType == "audio/custom"
+        assert content.data == base64.b64encode(test_data).decode()
 
 
 class TestFindKwargByType:

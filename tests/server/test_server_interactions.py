@@ -10,6 +10,7 @@ import pydantic_core
 import pytest
 from mcp import McpError
 from mcp.types import (
+    AudioContent,
     EmbeddedResource,
     ImageContent,
     TextContent,
@@ -24,7 +25,7 @@ from fastmcp.prompts.prompt import Prompt, PromptMessage
 from fastmcp.resources import FileResource, ResourceTemplate
 from fastmcp.resources.resource import FunctionResource
 from fastmcp.tools.tool import Tool
-from fastmcp.utilities.types import Image
+from fastmcp.utilities.types import Audio, Image
 
 
 @pytest.fixture
@@ -48,6 +49,10 @@ def tool_server():
         return Image(path)
 
     @mcp.tool
+    def audio_tool(path: str) -> Audio:
+        return Audio(path)
+
+    @mcp.tool
     def mixed_content_tool() -> list[TextContent | ImageContent]:
         return [
             TextContent(type="text", text="Hello"),
@@ -63,6 +68,15 @@ def tool_server():
             TextContent(type="text", text="direct content"),
         ]
 
+    @mcp.tool
+    def mixed_audio_list_fn(audio_path: str) -> list:
+        return [
+            "text message",
+            Audio(audio_path),
+            {"key": "value"},
+            TextContent(type="text", text="direct content"),
+        ]
+
     return mcp
 
 
@@ -74,7 +88,7 @@ class TestTools:
 
     async def test_list_tools(self, tool_server: FastMCP):
         async with Client(tool_server) as client:
-            assert len(await client.list_tools()) == 6
+            assert len(await client.list_tools()) == 8
 
     async def test_call_tool(self, tool_server: FastMCP):
         async with Client(tool_server) as client:
@@ -114,6 +128,104 @@ class TestTools:
         async with Client(tool_server) as client:
             result = await client.call_tool("list_tool", {})
             assert result[0].text == '[\n  "x",\n  2\n]'  # type: ignore[attr-defined]
+
+    async def test_image(self, tmp_path: Path):
+        mcp = FastMCP()
+
+        @mcp.tool
+        def image_tool(path: str) -> Image:
+            return Image(path)
+
+        # Create a test image
+        image_path = tmp_path / "test.png"
+        image_path.write_bytes(b"fake png data")
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("image_tool", {"path": str(image_path)})
+            content = result[0]
+            assert isinstance(content, ImageContent)
+            assert content.type == "image"
+            assert content.mimeType == "image/png"
+            # Verify base64 encoding
+            decoded = base64.b64decode(content.data)
+            assert decoded == b"fake png data"
+
+    async def test_audio(self, tmp_path: Path):
+        mcp = FastMCP()
+
+        @mcp.tool
+        def audio_tool(path: str) -> Audio:
+            return Audio(path)
+
+        # Create a test audio file
+        audio_path = tmp_path / "test.wav"
+        audio_path.write_bytes(b"fake wav data")
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("audio_tool", {"path": str(audio_path)})
+            content = result[0]
+            assert isinstance(content, AudioContent)
+            assert content.type == "audio"
+            assert content.mimeType == "audio/wav"
+            # Verify base64 encoding
+            decoded = base64.b64decode(content.data)
+            assert decoded == b"fake wav data"
+
+    async def test_tool_mixed_list_with_image(
+        self, tool_server: FastMCP, tmp_path: Path
+    ):
+        """Test that lists containing Image objects and other types are handled
+        correctly. Note that the non-MCP content will be grouped together."""
+        # Create a test image
+        image_path = tmp_path / "test.png"
+        image_path.write_bytes(b"test image data")
+
+        async with Client(tool_server) as client:
+            result = await client.call_tool(
+                "mixed_list_fn", {"image_path": str(image_path)}
+            )
+            assert len(result) == 3
+            # Check text conversion
+            content1 = result[0]
+            assert isinstance(content1, TextContent)
+            assert json.loads(content1.text) == ["text message", {"key": "value"}]
+            # Check image conversion
+            content2 = result[1]
+            assert isinstance(content2, ImageContent)
+            assert content2.mimeType == "image/png"
+            assert base64.b64decode(content2.data) == b"test image data"
+            # Check direct TextContent
+            content3 = result[2]
+            assert isinstance(content3, TextContent)
+            assert content3.text == "direct content"
+
+    async def test_tool_mixed_list_with_audio(
+        self, tool_server: FastMCP, tmp_path: Path
+    ):
+        """Test that lists containing Audio objects and other types are handled
+        correctly. Note that the non-MCP content will be grouped together."""
+        # Create a test audio file
+        audio_path = tmp_path / "test.wav"
+        audio_path.write_bytes(b"test audio data")
+
+        async with Client(tool_server) as client:
+            result = await client.call_tool(
+                "mixed_audio_list_fn", {"audio_path": str(audio_path)}
+            )
+            assert len(result) == 3
+            # Check text conversion
+            content1 = result[0]
+            assert isinstance(content1, TextContent)
+            assert json.loads(content1.text) == ["text message", {"key": "value"}]
+            # Check audio conversion
+            content2 = result[1]
+            assert isinstance(content2, AudioContent)
+            assert content2.mimeType == "audio/wav"
+            assert base64.b64decode(content2.data) == b"test audio data"
+            # Check direct TextContent
+            content3 = result[2]
+            assert isinstance(content3, TextContent)
+            assert content3.text == "direct content"
 
 
 class TestToolTags:
@@ -269,6 +381,27 @@ class TestToolReturnTypes:
             decoded = base64.b64decode(content.data)
             assert decoded == b"fake png data"
 
+    async def test_audio(self, tmp_path: Path):
+        mcp = FastMCP()
+
+        @mcp.tool
+        def audio_tool(path: str) -> Audio:
+            return Audio(path)
+
+        # Create a test audio file
+        audio_path = tmp_path / "test.wav"
+        audio_path.write_bytes(b"fake wav data")
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("audio_tool", {"path": str(audio_path)})
+            content = result[0]
+            assert isinstance(content, AudioContent)
+            assert content.type == "audio"
+            assert content.mimeType == "audio/wav"
+            # Verify base64 encoding
+            decoded = base64.b64decode(content.data)
+            assert decoded == b"fake wav data"
+
     async def test_tool_mixed_content(self, tool_server: FastMCP):
         async with Client(tool_server) as client:
             result = await client.call_tool("mixed_content_tool", {})
@@ -304,6 +437,34 @@ class TestToolReturnTypes:
             assert isinstance(content2, ImageContent)
             assert content2.mimeType == "image/png"
             assert base64.b64decode(content2.data) == b"test image data"
+            # Check direct TextContent
+            content3 = result[2]
+            assert isinstance(content3, TextContent)
+            assert content3.text == "direct content"
+
+    async def test_tool_mixed_list_with_audio(
+        self, tool_server: FastMCP, tmp_path: Path
+    ):
+        """Test that lists containing Audio objects and other types are handled
+        correctly. Note that the non-MCP content will be grouped together."""
+        # Create a test audio file
+        audio_path = tmp_path / "test.wav"
+        audio_path.write_bytes(b"test audio data")
+
+        async with Client(tool_server) as client:
+            result = await client.call_tool(
+                "mixed_audio_list_fn", {"audio_path": str(audio_path)}
+            )
+            assert len(result) == 3
+            # Check text conversion
+            content1 = result[0]
+            assert isinstance(content1, TextContent)
+            assert json.loads(content1.text) == ["text message", {"key": "value"}]
+            # Check audio conversion
+            content2 = result[1]
+            assert isinstance(content2, AudioContent)
+            assert content2.mimeType == "audio/wav"
+            assert base64.b64decode(content2.data) == b"test audio data"
             # Check direct TextContent
             content3 = result[2]
             assert isinstance(content3, TextContent)
@@ -972,7 +1133,7 @@ class TestResourceTags:
             assert {r.name for r in resources} == set()
 
     async def test_exclude_tags_some_resources(self):
-        mcp = self.create_server(exclude_tags={"a", "z"})
+        mcp = self.create_server(exclude_tags={"a"})
 
         async with Client(mcp) as client:
             resources = await client.list_resources()
@@ -1403,6 +1564,9 @@ class TestResourceTemplatesTags:
             with pytest.raises(McpError, match="Unknown resource"):
                 await client.read_resource("resource://1/x")
 
+            result = await client.read_resource("resource://2/x")
+            assert result[0].text == "Template resource 2: x"  # type: ignore[attr-defined]
+
 
 class TestResourceTemplateContext:
     async def test_resource_template_context(self):
@@ -1495,6 +1659,9 @@ class TestResourceTemplateEnabled:
         async with Client(mcp) as client:
             templates = await client.list_resource_templates()
             assert len(templates) == 0
+
+            with pytest.raises(McpError, match="Unknown resource"):
+                await client.read_resource(AnyUrl("resource://test"))
 
     async def test_get_template_and_disable(self):
         mcp = FastMCP()
