@@ -1,7 +1,7 @@
 from typing import Any
 
 import pytest
-from mcp.types import EmbeddedResource, ImageContent, TextContent
+from mcp.types import TextContent
 
 from fastmcp import FastMCP
 from fastmcp.contrib.bulk_tool_caller.bulk_tool_caller import (
@@ -10,8 +10,6 @@ from fastmcp.contrib.bulk_tool_caller.bulk_tool_caller import (
     CallToolRequestResult,
 )
 from fastmcp.tools.tool import Tool
-
-ContentType = TextContent | ImageContent | EmbeddedResource
 
 
 class ToolException(Exception):

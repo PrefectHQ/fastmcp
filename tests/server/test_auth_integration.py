@@ -93,7 +93,7 @@ class MockOAuthProvider(OAuthAuthorizationServerProvider):
 
         return OAuthToken(
             access_token=access_token,
-            token_type="bearer",
+            token_type="Bearer",
             expires_in=3600,
             scope="read write",
             refresh_token=refresh_token,
@@ -157,7 +157,7 @@ class MockOAuthProvider(OAuthAuthorizationServerProvider):
 
         return OAuthToken(
             access_token=new_access_token,
-            token_type="bearer",
+            token_type="Bearer",
             expires_in=3600,
             scope=" ".join(scopes) if scopes else " ".join(token_info.scopes),
             refresh_token=new_refresh_token,
@@ -812,7 +812,7 @@ class TestAuthEndpoints:
         assert "token_type" in token_response
         assert "refresh_token" in token_response
         assert "expires_in" in token_response
-        assert token_response["token_type"] == "bearer"
+        assert token_response["token_type"] == "Bearer"
 
         # 5. Verify the access token
         access_token = token_response["access_token"]

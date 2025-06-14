@@ -138,16 +138,16 @@ class TestTimeout:
         with pytest.raises(McpError, match="Timed out"):
             async with Client(
                 transport=StreamableHttpTransport(streamable_http_server),
-                timeout=0.01,
+                timeout=0.1,
             ) as client:
-                await client.call_tool("sleep", {"seconds": 0.1})
+                await client.call_tool("sleep", {"seconds": 0.2})
 
     async def test_timeout_tool_call(self, streamable_http_server: str):
         async with Client(
             transport=StreamableHttpTransport(streamable_http_server),
         ) as client:
             with pytest.raises(McpError):
-                await client.call_tool("sleep", {"seconds": 0.1}, timeout=0.01)
+                await client.call_tool("sleep", {"seconds": 0.2}, timeout=0.1)
 
     async def test_timeout_tool_call_overrides_client_timeout(
         self, streamable_http_server: str
@@ -157,7 +157,7 @@ class TestTimeout:
             timeout=2,
         ) as client:
             with pytest.raises(McpError):
-                await client.call_tool("sleep", {"seconds": 0.1}, timeout=0.01)
+                await client.call_tool("sleep", {"seconds": 0.2}, timeout=0.1)
 
     async def test_timeout_client_timeout_overrides_tool_call_timeout_if_lower(
         self, streamable_http_server: str
@@ -165,6 +165,6 @@ class TestTimeout:
         with pytest.raises(McpError):
             async with Client(
                 transport=StreamableHttpTransport(streamable_http_server),
-                timeout=0.01,
+                timeout=0.1,
             ) as client:
-                await client.call_tool("sleep", {"seconds": 0.1}, timeout=2)
+                await client.call_tool("sleep", {"seconds": 0.2}, timeout=2)

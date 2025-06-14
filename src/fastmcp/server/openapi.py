@@ -13,7 +13,7 @@ from re import Pattern
 from typing import TYPE_CHECKING, Any, Literal
 
 import httpx
-from mcp.types import EmbeddedResource, ImageContent, TextContent, ToolAnnotations
+from mcp.types import ToolAnnotations
 from pydantic.networks import AnyUrl
 
 import fastmcp
@@ -29,6 +29,7 @@ from fastmcp.utilities.openapi import (
     _combine_schemas,
     format_description_with_responses,
 )
+from fastmcp.utilities.types import MCPContent
 
 if TYPE_CHECKING:
     from fastmcp.server import Context
@@ -254,9 +255,7 @@ class OpenAPITool(Tool):
         """Custom representation to prevent recursion errors when printing."""
         return f"OpenAPITool(name={self.name!r}, method={self._route.method}, path={self._route.path})"
 
-    async def run(
-        self, arguments: dict[str, Any]
-    ) -> list[TextContent | ImageContent | EmbeddedResource]:
+    async def run(self, arguments: dict[str, Any]) -> list[MCPContent]:
         """Execute the HTTP request based on the route configuration."""
 
         # Prepare URL

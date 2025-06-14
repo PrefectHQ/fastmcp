@@ -1,12 +1,19 @@
 import pytest
-from mcp.types import EmbeddedResource, ImageContent, TextContent, TextResourceContents
+from mcp.types import (
+    AudioContent,
+    EmbeddedResource,
+    ImageContent,
+    TextContent,
+    TextResourceContents,
+)
 from pydantic import AnyUrl, BaseModel
 
-from fastmcp import FastMCP, Image
+from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.exceptions import ToolError
 from fastmcp.tools.tool import Tool, _convert_to_content
 from fastmcp.utilities.tests import temporary_settings
+from fastmcp.utilities.types import Audio, Image
 
 
 class TestToolFromFunction:
@@ -96,6 +103,16 @@ class TestToolFromFunction:
         result = await tool.run({"data": "test.png"})
         assert tool.parameters["properties"]["data"]["type"] == "string"
         assert isinstance(result[0], ImageContent)
+
+    async def test_tool_with_audio_return(self):
+        def audio_tool(data: bytes) -> Audio:
+            return Audio(data=data)
+
+        tool = Tool.from_function(audio_tool)
+
+        result = await tool.run({"data": "test.wav"})
+        assert tool.parameters["properties"]["data"]["type"] == "string"
+        assert isinstance(result[0], AudioContent)
 
     def test_non_callable_fn(self):
         with pytest.raises(TypeError, match="not a callable object"):
@@ -440,6 +457,17 @@ class TestConvertResultToContent:
         assert isinstance(result[0], ImageContent)
         assert result[0].data == "ZmFrZWltYWdlZGF0YQ=="
 
+    def test_audio_object_result(self):
+        """Test that an Audio object is converted to AudioContent."""
+        audio_obj = Audio(data=b"fakeaudiodata")
+
+        result = _convert_to_content(audio_obj)
+
+        assert isinstance(result, list)
+        assert len(result) == 1
+        assert isinstance(result[0], AudioContent)
+        assert result[0].data == "ZmFrZWF1ZGlvZGF0YQ=="
+
     def test_basic_type_result(self):
         """Test that a basic type is converted to TextContent."""
         result = _convert_to_content(123)
@@ -523,6 +551,28 @@ class TestConvertResultToContent:
 
         image_item = next(item for item in result if isinstance(item, ImageContent))
         assert image_item.data == "ZmFrZWltYWdlZGF0YQ=="
+
+    def test_list_of_mixed_types_with_audio(self):
+        """Test that a list of mixed types including Audio is converted correctly."""
+        content1 = TextContent(type="text", text="hello")
+        audio_obj = Audio(data=b"fakeaudiodata")
+        basic_data = {"a": 1}
+        result = _convert_to_content([content1, audio_obj, basic_data])
+
+        assert isinstance(result, list)
+        assert len(result) == 3
+
+        text_content_count = sum(isinstance(item, TextContent) for item in result)
+        audio_content_count = sum(isinstance(item, AudioContent) for item in result)
+
+        assert text_content_count == 2
+        assert audio_content_count == 1
+
+        text_item = next(item for item in result if isinstance(item, TextContent))
+        assert text_item.text == '{\n  "a": 1\n}'
+
+        audio_item = next(item for item in result if isinstance(item, AudioContent))
+        assert audio_item.data == "ZmFrZWF1ZGlvZGF0YQ=="
 
     def test_empty_list(self):
         """Test that an empty list results in an empty list."""

@@ -9,10 +9,7 @@ from mcp.shared.exceptions import McpError
 from mcp.types import (
     METHOD_NOT_FOUND,
     BlobResourceContents,
-    EmbeddedResource,
     GetPromptResult,
-    ImageContent,
-    TextContent,
     TextResourceContents,
 )
 from pydantic.networks import AnyUrl
@@ -25,6 +22,7 @@ from fastmcp.server.context import Context
 from fastmcp.server.server import FastMCP
 from fastmcp.tools.tool import Tool
 from fastmcp.utilities.logging import get_logger
+from fastmcp.utilities.types import MCPContent
 
 if TYPE_CHECKING:
     from fastmcp.server import Context
@@ -50,7 +48,7 @@ class ProxyTool(Tool):
         self,
         arguments: dict[str, Any],
         context: Context | None = None,
-    ) -> list[TextContent | ImageContent | EmbeddedResource]:
+    ) -> list[MCPContent]:
         # the client context manager will swallow any exceptions inside a TaskGroup
         # so we return the raw result and raise an exception ourselves
         async with self._client:
@@ -254,9 +252,7 @@ class FastMCPProxy(FastMCP):
 
         return prompts
 
-    async def _call_tool(
-        self, key: str, arguments: dict[str, Any]
-    ) -> list[TextContent | ImageContent | EmbeddedResource]:
+    async def _call_tool(self, key: str, arguments: dict[str, Any]) -> list[MCPContent]:
         try:
             result = await super()._call_tool(key, arguments)
             return result

@@ -256,7 +256,9 @@ FastMCP automatically converts the value returned by your function into the appr
 - **`str`**: Sent as `TextContent`.
 - **`dict`, `list`, Pydantic `BaseModel`**: Serialized to a JSON string and sent as `TextContent`.
 - **`bytes`**: Base64 encoded and sent as `BlobResourceContents` (often within an `EmbeddedResource`).
-- **`fastmcp.Image`**: A helper class for easily returning image data. Sent as `ImageContent`.
+- **`fastmcp.utilities.types.Image`**: A helper class for easily returning image data. Sent as `ImageContent`.
+- **`fastmcp.utilities.types.Audio`**: A helper class for easily returning audio data. Sent as `AudioContent`.
+- **A list of any of the above**: Automatically converts each item appropriately.
 - **`None`**: Results in an empty response (no content is sent back to the client).
 
 FastMCP will attempt to serialize other types to a string if possible.
@@ -266,8 +268,10 @@ At this time, FastMCP responds only to your tool's return *value*, not its retur
 </Tip>
 
 ```python
-from fastmcp import FastMCP, Image
+from fastmcp import FastMCP
+from fastmcp.utilities.types import Image
 import io
+
 try:
     from PIL import Image as PILImage
 except ImportError:
