@@ -21,6 +21,7 @@ from fastmcp.utilities.tests import run_server_in_process
 def fastmcp_server():
     """Fixture that creates a FastMCP server with tools, resources, and prompts."""
     server = FastMCP("TestServer")
+    server.settings.stateless_http = True
 
     # Add a tool
     @server.tool
