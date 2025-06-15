@@ -6,6 +6,7 @@ import pytest
 
 from fastmcp.utilities.types import (
     Audio,
+    File,
     Image,
     find_kwarg_by_type,
     is_class_member_of_type,
@@ -298,6 +299,103 @@ class TestAudio:
         assert content.type == "audio"
         assert content.mimeType == "audio/custom"
         assert content.data == base64.b64encode(test_data).decode()
+
+
+class TestFile:
+    def test_file_initialization_with_path(self):
+        """Test file initialization with a path."""
+        # Mock test - we're not actually going to read a file
+        file = File(path="test.txt")
+        assert file.path is not None
+        assert file.data is None
+        assert file._mime_type == "text/plain"
+
+    def test_file_initialization_with_data(self):
+        """Test initialization with data and format."""
+        test_data = b"test data"
+        file = File(data=test_data, format="octet-stream")
+        assert file.data == test_data
+        # The format parameter should set the MIME type
+        assert file._mime_type == "application/octet-stream"
+        assert file._name is None
+        assert file.annotations is None
+
+    def test_file_initialization_with_format(self):
+        """Test file initialization with a specific format."""
+        file = File(data=b"test", format="pdf")
+        assert file._mime_type == "application/pdf"
+
+    def test_file_initialization_with_name(self):
+        """Test file initialization with a custom name."""
+        file = File(data=b"test", name="custom")
+        assert file._name == "custom"
+
+    def test_missing_data_and_path_raises_error(self):
+        """Test that error is raised when neither path nor data is provided."""
+        with pytest.raises(ValueError, match="Either path or data must be provided"):
+            File()
+
+    def test_both_data_and_path_raises_error(self):
+        """Test that error is raised when both path and data are provided."""
+        with pytest.raises(
+            ValueError, match="Only one of path or data can be provided"
+        ):
+            File(path="test.txt", data=b"test")
+
+    def test_get_mime_type_from_path(self, tmp_path):
+        """Test MIME type detection from file extension."""
+        file_path = tmp_path / "test.txt"
+        file_path.write_text("test content")  # Need to write content for MIME type detection
+        file = File(path=file_path)
+        # The MIME type should be detected from the .txt extension
+        assert file._mime_type == "text/plain"
+
+    def test_to_resource_content_with_path(self, tmp_path):
+        """Test conversion to ResourceContent with path."""
+        file_path = tmp_path / "test.txt"
+        test_data = b"test file data"
+        file_path.write_bytes(test_data)
+
+        file = File(path=file_path)
+        resource = file.to_resource_content()
+
+        assert resource.type == "resource"
+        assert resource.resource.mimeType == "text/plain"
+        # Convert both to strings for comparison
+        assert str(resource.resource.uri) == file_path.resolve().as_uri()
+        assert resource.resource.blob == base64.b64encode(test_data).decode()
+
+    def test_to_resource_content_with_data(self):
+        """Test conversion to ResourceContent with data."""
+        test_data = b"test file data"
+        file = File(data=test_data, format="pdf")
+        resource = file.to_resource_content()
+
+        assert resource.type == "resource"
+        assert resource.resource.mimeType == "application/pdf"
+        # Convert URI to string for comparison
+        assert str(resource.resource.uri) == "file:///resource.pdf"
+        assert resource.resource.blob == base64.b64encode(test_data).decode()
+
+    def test_to_resource_content_error(self, monkeypatch):
+        """Test error case in to_resource_content."""
+        file = File(data=b"test")
+        monkeypatch.setattr(file, "path", None)
+        monkeypatch.setattr(file, "data", None)
+
+        with pytest.raises(ValueError, match="No resource data available"):
+            file.to_resource_content()
+
+    def test_to_resource_content_with_override_mime_type(self, tmp_path):
+        """Test conversion to ResourceContent with override MIME type."""
+        file_path = tmp_path / "test.txt"
+        test_data = b"test file data"
+        file_path.write_bytes(test_data)
+
+        file = File(path=file_path)
+        resource = file.to_resource_content(mime_type="application/custom")
+
+        assert resource.resource.mimeType == "application/custom"
 
 
 class TestFindKwargByType:

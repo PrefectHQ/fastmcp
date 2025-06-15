@@ -7,6 +7,7 @@ from functools import lru_cache
 from pathlib import Path
 from types import UnionType
 from typing import Annotated, TypeAlias, TypeVar, Union, get_args, get_origin
+import mimetypes
 
 from mcp.types import (
     Annotations,
@@ -14,6 +15,7 @@ from mcp.types import (
     EmbeddedResource,
     ImageContent,
     TextContent,
+    BlobResourceContents
 )
 from pydantic import BaseModel, ConfigDict, TypeAdapter
 
@@ -201,5 +203,70 @@ class Audio:
             type="audio",
             data=data,
             mimeType=mime_type or self._mime_type,
+            annotations=annotations or self.annotations,
+        )
+
+
+class File:
+    """Helper class for returning audio from tools."""
+
+    def __init__(
+        self,
+        path: str | Path | None = None,
+        data: bytes | None = None,
+        format: str | None = None,
+        name: str | None = None,
+        annotations: Annotations | None = None,
+    ):
+        if path is None and data is None:
+            raise ValueError("Either path or data must be provided")
+        if path is not None and data is not None:
+            raise ValueError("Only one of path or data can be provided")
+
+        self.path = Path(path) if path else None
+        self.data = data
+        self._format = format
+        self._mime_type = self._get_mime_type()
+        self._name = name
+        self.annotations = annotations
+
+    def _get_mime_type(self) -> str:
+        """Get MIME type from format or guess from file extension."""
+        if self._format:
+            return f"application/{self._format.lower()}"
+
+        if self.path:
+            mime_type, _ = mimetypes.guess_type(self.path)
+            if mime_type:
+                return mime_type
+        
+        return "application/octet-stream"
+
+    def to_resource_content(
+        self,
+        mime_type: str | None = None,
+        annotations: Annotations | None = None,
+    ) -> EmbeddedResource:
+        if self.path:
+            with open(self.path, "rb") as f:
+                data = base64.b64encode(f.read()).decode()
+                uri=self.path.resolve().as_uri()
+
+        elif self.data is not None:
+            data = base64.b64encode(self.data).decode()
+            uri=self.path or (self._name and f"file:///{self._name}.{self._mime_type.split('/')[1]}") or f"file:///resource.{self._mime_type.split('/')[1]}"
+
+        else:
+            raise ValueError("No resource data available")
+
+        resource = BlobResourceContents(
+                blob=data, 
+                mimeType=mime_type or self._mime_type,
+                uri=uri,
+            )
+
+        return EmbeddedResource(
+            type="resource",
+            resource=resource,
             annotations=annotations or self.annotations,
         )
