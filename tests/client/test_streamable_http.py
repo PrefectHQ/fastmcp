@@ -99,8 +99,12 @@ def run_nested_server(host: str, port: int) -> None:
 
 
 @pytest.fixture()
-async def streamable_http_server(stateless_http: bool = False) -> AsyncGenerator[str, None]:
-    with run_server_in_process(run_server, stateless_http=stateless_http, transport="streamable-http") as url:
+async def streamable_http_server(
+    stateless_http: bool = False,
+) -> AsyncGenerator[str, None]:
+    with run_server_in_process(
+        run_server, stateless_http=stateless_http, transport="streamable-http"
+    ) as url:
         async with Client(transport=StreamableHttpTransport(f"{url}/mcp")) as client:
             assert await client.ping()
         yield f"{url}/mcp"
@@ -134,7 +138,8 @@ async def test_greet_with_progress_tool(streamable_http_server: str):
     progress_handler = AsyncMock(return_value=None)
 
     async with Client(
-        transport=StreamableHttpTransport(streamable_http_server), progress_handler=progress_handler
+        transport=StreamableHttpTransport(streamable_http_server),
+        progress_handler=progress_handler,
     ) as client:
         result = await client.call_tool("greet_with_progress", {"name": "Alice"})
 
