@@ -155,7 +155,7 @@ class FunctionPrompt(Prompt):
             if param.kind == inspect.Parameter.VAR_KEYWORD:
                 raise ValueError("Functions with **kwargs are not supported as prompts")
 
-        description = description or fn.__doc__
+        description = description or inspect.getdoc(fn)
 
         # if the fn is a callable class, we need to get the __call__ method from here out
         if not inspect.isroutine(fn):
