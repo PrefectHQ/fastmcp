@@ -258,6 +258,7 @@ FastMCP automatically converts the value returned by your function into the appr
 - **`bytes`**: Base64 encoded and sent as `BlobResourceContents` (often within an `EmbeddedResource`).
 - **`fastmcp.utilities.types.Image`**: A helper class for easily returning image data. Sent as `ImageContent`.
 - **`fastmcp.utilities.types.Audio`**: A helper class for easily returning audio data. Sent as `AudioContent`.
+- **`fastmcp.utilities.types.File`**: A helper class for easily returning binary data as base64-encoded content. Sent as `EmbeddedResource`.
 - **A list of any of the above**: Automatically converts each item appropriately.
 - **`None`**: Results in an empty response (no content is sent back to the client).
 
