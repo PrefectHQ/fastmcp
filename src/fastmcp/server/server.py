@@ -110,8 +110,9 @@ class FastMCP(Generic[LifespanResultT]):
     def __init__(
         self,
         name: str | None = None,
-        version: str | None = None,
         instructions: str | None = None,
+        *,
+        version: str | None = None,
         auth: OAuthProvider | None = None,
         lifespan: (
             Callable[
