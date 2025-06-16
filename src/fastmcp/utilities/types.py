@@ -16,6 +16,7 @@ from mcp.types import (
     EmbeddedResource,
     ImageContent,
     TextContent,
+    TextResourceContents,  # Added import
 )
 from pydantic import AnyUrl, BaseModel, ConfigDict, TypeAdapter, UrlConstraints
 
@@ -249,26 +250,38 @@ class File:
     ) -> EmbeddedResource:
         if self.path:
             with open(self.path, "rb") as f:
-                data = base64.b64encode(f.read()).decode()
+                raw_data = f.read()
                 uri_str = self.path.resolve().as_uri()
-
         elif self.data is not None:
-            data = base64.b64encode(self.data).decode()
+            raw_data = self.data
             if self._name:
                 uri_str = f"file:///{self._name}.{self._mime_type.split('/')[1]}"
             else:
                 uri_str = f"file:///resource.{self._mime_type.split('/')[1]}"
-
         else:
             raise ValueError("No resource data available")
 
+        mime = mime_type or self._mime_type
         UriType = Annotated[AnyUrl, UrlConstraints(host_required=False)]
         uri = TypeAdapter(UriType).validate_python(uri_str)
-        resource = BlobResourceContents(
-            blob=data,
-            mimeType=mime_type or self._mime_type,
-            uri=uri,
-        )
+
+        if mime.startswith("text/"):
+            try:
+                text = raw_data.decode("utf-8")
+            except UnicodeDecodeError:
+                text = raw_data.decode("latin-1")
+            resource = TextResourceContents(
+                text=text,
+                mimeType=mime,
+                uri=uri,
+            )
+        else:
+            data = base64.b64encode(raw_data).decode()
+            resource = BlobResourceContents(
+                blob=data,
+                mimeType=mime,
+                uri=uri,
+            )
 
         return EmbeddedResource(
             type="resource",
