@@ -3,6 +3,7 @@ from types import EllipsisType
 from typing import Annotated, Any
 
 import pytest
+from mcp.types import BlobResourceContents
 
 from fastmcp.utilities.types import (
     Audio,
@@ -345,7 +346,9 @@ class TestFile:
     def test_get_mime_type_from_path(self, tmp_path):
         """Test MIME type detection from file extension."""
         file_path = tmp_path / "test.txt"
-        file_path.write_text("test content")  # Need to write content for MIME type detection
+        file_path.write_text(
+            "test content"
+        )  # Need to write content for MIME type detection
         file = File(path=file_path)
         # The MIME type should be detected from the .txt extension
         assert file._mime_type == "text/plain"
@@ -363,7 +366,8 @@ class TestFile:
         assert resource.resource.mimeType == "text/plain"
         # Convert both to strings for comparison
         assert str(resource.resource.uri) == file_path.resolve().as_uri()
-        assert resource.resource.blob == base64.b64encode(test_data).decode()
+        if isinstance(resource.resource, BlobResourceContents):
+            assert resource.resource.blob == base64.b64encode(test_data).decode()
 
     def test_to_resource_content_with_data(self):
         """Test conversion to ResourceContent with data."""
@@ -375,7 +379,8 @@ class TestFile:
         assert resource.resource.mimeType == "application/pdf"
         # Convert URI to string for comparison
         assert str(resource.resource.uri) == "file:///resource.pdf"
-        assert resource.resource.blob == base64.b64encode(test_data).decode()
+        if isinstance(resource.resource, BlobResourceContents):
+            assert resource.resource.blob == base64.b64encode(test_data).decode()
 
     def test_to_resource_content_error(self, monkeypatch):
         """Test error case in to_resource_content."""

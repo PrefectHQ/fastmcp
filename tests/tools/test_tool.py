@@ -113,7 +113,7 @@ class TestToolFromFunction:
         result = await tool.run({"data": "test.wav"})
         assert tool.parameters["properties"]["data"]["type"] == "string"
         assert isinstance(result[0], AudioContent)
-        
+
     async def test_tool_with_file_return(self):
         def file_tool(data: bytes) -> File:
             return File(data=data, format="octet-stream")
@@ -620,7 +620,7 @@ class TestConvertResultToContent:
 
         text_content_count = sum(isinstance(item, TextContent) for item in result)
         embedded_content_count = sum(
-            isinstance(item, EmbeddedResource) and item.type == "resource" 
+            isinstance(item, EmbeddedResource) and item.type == "resource"
             for item in result
         )
 
@@ -631,7 +631,8 @@ class TestConvertResultToContent:
         assert text_item.text == '{\n  "a": 1\n}'
 
         embedded_item = next(
-            item for item in result 
+            item
+            for item in result
             if isinstance(item, EmbeddedResource) and item.type == "resource"
         )
         resource = embedded_item.resource

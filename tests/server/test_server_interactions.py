@@ -11,11 +11,11 @@ import pytest
 from mcp import McpError
 from mcp.types import (
     AudioContent,
+    BlobResourceContents,
     EmbeddedResource,
     ImageContent,
     TextContent,
     TextResourceContents,
-    BlobResourceContents,
 )
 from pydantic import AnyUrl, Field
 
@@ -62,7 +62,14 @@ def tool_server():
         return [
             TextContent(type="text", text="Hello"),
             ImageContent(type="image", data="abc", mimeType="application/octet-stream"),
-            EmbeddedResource(type="resource", resource=BlobResourceContents(blob="abc", mimeType="application/octet-stream", uri=AnyUrl("abc"))),
+            EmbeddedResource(
+                type="resource",
+                resource=BlobResourceContents(
+                    blob=base64.b64encode(b"abc").decode(),
+                    mimeType="application/octet-stream",
+                    uri=AnyUrl("file:///test.bin"),
+                ),
+            ),
         ]
 
     @mcp.tool

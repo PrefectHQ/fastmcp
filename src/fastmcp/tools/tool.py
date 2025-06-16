@@ -18,8 +18,8 @@ from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import (
     Audio,
-    Image,
     File,
+    Image,
     MCPContent,
     find_kwarg_by_type,
     get_cached_typeadapter,

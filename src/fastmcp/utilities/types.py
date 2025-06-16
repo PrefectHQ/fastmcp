@@ -2,22 +2,22 @@
 
 import base64
 import inspect
+import mimetypes
 from collections.abc import Callable
 from functools import lru_cache
 from pathlib import Path
 from types import UnionType
 from typing import Annotated, TypeAlias, TypeVar, Union, get_args, get_origin
-import mimetypes
 
 from mcp.types import (
     Annotations,
     AudioContent,
+    BlobResourceContents,
     EmbeddedResource,
     ImageContent,
     TextContent,
-    BlobResourceContents
 )
-from pydantic import BaseModel, ConfigDict, TypeAdapter
+from pydantic import AnyUrl, BaseModel, ConfigDict, TypeAdapter, UrlConstraints
 
 T = TypeVar("T")
 
@@ -239,7 +239,7 @@ class File:
             mime_type, _ = mimetypes.guess_type(self.path)
             if mime_type:
                 return mime_type
-        
+
         return "application/octet-stream"
 
     def to_resource_content(
@@ -250,20 +250,25 @@ class File:
         if self.path:
             with open(self.path, "rb") as f:
                 data = base64.b64encode(f.read()).decode()
-                uri=self.path.resolve().as_uri()
+                uri_str = self.path.resolve().as_uri()
 
         elif self.data is not None:
             data = base64.b64encode(self.data).decode()
-            uri=self.path or (self._name and f"file:///{self._name}.{self._mime_type.split('/')[1]}") or f"file:///resource.{self._mime_type.split('/')[1]}"
+            if self._name:
+                uri_str = f"file:///{self._name}.{self._mime_type.split('/')[1]}"
+            else:
+                uri_str = f"file:///resource.{self._mime_type.split('/')[1]}"
 
         else:
             raise ValueError("No resource data available")
 
+        UriType = Annotated[AnyUrl, UrlConstraints(host_required=False)]
+        uri = TypeAdapter(UriType).validate_python(uri_str)
         resource = BlobResourceContents(
-                blob=data, 
-                mimeType=mime_type or self._mime_type,
-                uri=uri,
-            )
+            blob=data,
+            mimeType=mime_type or self._mime_type,
+            uri=uri,
+        )
 
         return EmbeddedResource(
             type="resource",
