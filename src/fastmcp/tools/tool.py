@@ -18,6 +18,7 @@ from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import (
     Audio,
+    File,
     Image,
     MCPContent,
     find_kwarg_by_type,
@@ -277,6 +278,9 @@ def _convert_to_content(
     elif isinstance(result, Audio):
         return [result.to_audio_content()]
 
+    elif isinstance(result, File):
+        return [result.to_resource_content()]
+
     if isinstance(result, list | tuple) and not _process_as_single_item:
         # if the result is a list, then it could either be a list of MCP types,
         # or a "regular" list that the tool is returning, or a mix of both.
@@ -288,7 +292,7 @@ def _convert_to_content(
         other_content = []
 
         for item in result:
-            if isinstance(item, MCPContent | Image | Audio):
+            if isinstance(item, MCPContent | Image | Audio | File):
                 mcp_types.append(_convert_to_content(item)[0])
             else:
                 other_content.append(item)

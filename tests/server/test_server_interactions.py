@@ -11,6 +11,7 @@ import pytest
 from mcp import McpError
 from mcp.types import (
     AudioContent,
+    BlobResourceContents,
     EmbeddedResource,
     ImageContent,
     TextContent,
@@ -25,7 +26,7 @@ from fastmcp.prompts.prompt import Prompt, PromptMessage
 from fastmcp.resources import FileResource, ResourceTemplate
 from fastmcp.resources.resource import FunctionResource
 from fastmcp.tools.tool import Tool
-from fastmcp.utilities.types import Audio, Image
+from fastmcp.utilities.types import Audio, File, Image
 
 
 @pytest.fixture
@@ -53,10 +54,22 @@ def tool_server():
         return Audio(path)
 
     @mcp.tool
-    def mixed_content_tool() -> list[TextContent | ImageContent]:
+    def file_tool(path: str) -> File:
+        return File(path)
+
+    @mcp.tool
+    def mixed_content_tool() -> list[TextContent | ImageContent | EmbeddedResource]:
         return [
             TextContent(type="text", text="Hello"),
-            ImageContent(type="image", data="abc", mimeType="image/png"),
+            ImageContent(type="image", data="abc", mimeType="application/octet-stream"),
+            EmbeddedResource(
+                type="resource",
+                resource=BlobResourceContents(
+                    blob=base64.b64encode(b"abc").decode(),
+                    mimeType="application/octet-stream",
+                    uri=AnyUrl("file:///test.bin"),
+                ),
+            ),
         ]
 
     @mcp.tool
@@ -77,6 +90,20 @@ def tool_server():
             TextContent(type="text", text="direct content"),
         ]
 
+    @mcp.tool
+    def mixed_file_list_fn(file_path: str) -> list:
+        return [
+            "text message",
+            File(file_path),
+            {"key": "value"},
+            TextContent(type="text", text="direct content"),
+        ]
+
+    @mcp.tool
+    def file_text_tool() -> File:
+        # Return a File with text data and text/plain format
+        return File(data=b"hello world", format="plain")
+
     return mcp
 
 
@@ -88,7 +115,7 @@ class TestTools:
 
     async def test_list_tools(self, tool_server: FastMCP):
         async with Client(tool_server) as client:
-            assert len(await client.list_tools()) == 8
+            assert len(await client.list_tools()) == 11
 
     async def test_call_tool(self, tool_server: FastMCP):
         async with Client(tool_server) as client:
@@ -128,6 +155,17 @@ class TestTools:
         async with Client(tool_server) as client:
             result = await client.call_tool("list_tool", {})
             assert result[0].text == '[\n  "x",\n  2\n]'  # type: ignore[attr-defined]
+
+    async def test_file_text_tool(self, tool_server: FastMCP):
+        async with Client(tool_server) as client:
+            result = await client.call_tool("file_text_tool", {})
+            assert len(result) == 1
+            embedded = result[0]
+            assert isinstance(embedded, EmbeddedResource)
+            resource = embedded.resource
+            assert isinstance(resource, TextResourceContents)
+            assert resource.mimeType == "text/plain"
+            assert resource.text == "hello world"
 
 
 class TestToolTags:
@@ -304,17 +342,52 @@ class TestToolReturnTypes:
             decoded = base64.b64decode(content.data)
             assert decoded == b"fake wav data"
 
+    async def test_file(self, tmp_path: Path):
+        mcp = FastMCP()
+
+        @mcp.tool
+        def file_tool(path: str) -> File:
+            return File(path)
+
+        # Create a test file
+        file_path = tmp_path / "test.bin"
+        file_path.write_bytes(b"test file data")
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("file_tool", {"path": str(file_path)})
+            content = result[0]
+            assert isinstance(content, EmbeddedResource)
+            assert content.type == "resource"
+            resource = content.resource
+            assert resource.mimeType == "application/octet-stream"
+            # Verify base64 encoding
+            assert hasattr(resource, "blob")
+            blob_data = getattr(resource, "blob")
+            decoded = base64.b64decode(blob_data)
+            assert decoded == b"test file data"
+            # Verify URI points to the file
+            assert str(resource.uri) == file_path.resolve().as_uri()
+
     async def test_tool_mixed_content(self, tool_server: FastMCP):
         async with Client(tool_server) as client:
             result = await client.call_tool("mixed_content_tool", {})
-            assert len(result) == 2
+            assert len(result) == 3
             content1 = result[0]
             content2 = result[1]
+            content3 = result[2]
             assert isinstance(content1, TextContent)
             assert content1.text == "Hello"
             assert isinstance(content2, ImageContent)
-            assert content2.mimeType == "image/png"
+            assert content2.mimeType == "application/octet-stream"
             assert content2.data == "abc"
+            assert isinstance(content3, EmbeddedResource)
+            assert content3.type == "resource"
+            resource = content3.resource
+            assert resource.mimeType == "application/octet-stream"
+            assert hasattr(resource, "blob")
+            blob_data = getattr(resource, "blob")
+            decoded = base64.b64decode(blob_data)
+            assert decoded == b"abc"
 
     async def test_tool_mixed_list_with_image(
         self, tool_server: FastMCP, tmp_path: Path
@@ -367,6 +440,38 @@ class TestToolReturnTypes:
             assert isinstance(content2, AudioContent)
             assert content2.mimeType == "audio/wav"
             assert base64.b64decode(content2.data) == b"test audio data"
+            # Check direct TextContent
+            content3 = result[2]
+            assert isinstance(content3, TextContent)
+            assert content3.text == "direct content"
+
+    async def test_tool_mixed_list_with_file(
+        self, tool_server: FastMCP, tmp_path: Path
+    ):
+        """Test that lists containing File objects and other types are handled
+        correctly. Note that the non-MCP content will be grouped together."""
+        # Create a test file
+        file_path = tmp_path / "test.bin"
+        file_path.write_bytes(b"test file data")
+
+        async with Client(tool_server) as client:
+            result = await client.call_tool(
+                "mixed_file_list_fn", {"file_path": str(file_path)}
+            )
+            assert len(result) == 3
+            # Check text conversion
+            content1 = result[0]
+            assert isinstance(content1, TextContent)
+            assert json.loads(content1.text) == ["text message", {"key": "value"}]
+            # Check file conversion
+            content2 = result[1]
+            assert isinstance(content2, EmbeddedResource)
+            assert content2.type == "resource"
+            resource = content2.resource
+            assert resource.mimeType == "application/octet-stream"
+            assert hasattr(resource, "blob")
+            blob_data = getattr(resource, "blob")
+            assert base64.b64decode(blob_data) == b"test file data"
             # Check direct TextContent
             content3 = result[2]
             assert isinstance(content3, TextContent)

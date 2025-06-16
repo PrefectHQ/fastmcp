@@ -2,6 +2,7 @@
 
 import base64
 import inspect
+import mimetypes
 from collections.abc import Callable
 from functools import lru_cache
 from pathlib import Path
@@ -11,11 +12,13 @@ from typing import Annotated, TypeAlias, TypeVar, Union, get_args, get_origin
 from mcp.types import (
     Annotations,
     AudioContent,
+    BlobResourceContents,
     EmbeddedResource,
     ImageContent,
     TextContent,
+    TextResourceContents,  # Added import
 )
-from pydantic import BaseModel, ConfigDict, TypeAdapter
+from pydantic import AnyUrl, BaseModel, ConfigDict, TypeAdapter, UrlConstraints
 
 T = TypeVar("T")
 
@@ -201,5 +204,91 @@ class Audio:
             type="audio",
             data=data,
             mimeType=mime_type or self._mime_type,
+            annotations=annotations or self.annotations,
+        )
+
+
+class File:
+    """Helper class for returning audio from tools."""
+
+    def __init__(
+        self,
+        path: str | Path | None = None,
+        data: bytes | None = None,
+        format: str | None = None,
+        name: str | None = None,
+        annotations: Annotations | None = None,
+    ):
+        if path is None and data is None:
+            raise ValueError("Either path or data must be provided")
+        if path is not None and data is not None:
+            raise ValueError("Only one of path or data can be provided")
+
+        self.path = Path(path) if path else None
+        self.data = data
+        self._format = format
+        self._mime_type = self._get_mime_type()
+        self._name = name
+        self.annotations = annotations
+
+    def _get_mime_type(self) -> str:
+        """Get MIME type from format or guess from file extension."""
+        if self._format:
+            fmt = self._format.lower()
+            # Map common text formats to text/plain
+            if fmt in {"plain", "txt", "text"}:
+                return "text/plain"
+            return f"application/{fmt}"
+
+        if self.path:
+            mime_type, _ = mimetypes.guess_type(self.path)
+            if mime_type:
+                return mime_type
+
+        return "application/octet-stream"
+
+    def to_resource_content(
+        self,
+        mime_type: str | None = None,
+        annotations: Annotations | None = None,
+    ) -> EmbeddedResource:
+        if self.path:
+            with open(self.path, "rb") as f:
+                raw_data = f.read()
+                uri_str = self.path.resolve().as_uri()
+        elif self.data is not None:
+            raw_data = self.data
+            if self._name:
+                uri_str = f"file:///{self._name}.{self._mime_type.split('/')[1]}"
+            else:
+                uri_str = f"file:///resource.{self._mime_type.split('/')[1]}"
+        else:
+            raise ValueError("No resource data available")
+
+        mime = mime_type or self._mime_type
+        UriType = Annotated[AnyUrl, UrlConstraints(host_required=False)]
+        uri = TypeAdapter(UriType).validate_python(uri_str)
+
+        if mime.startswith("text/"):
+            try:
+                text = raw_data.decode("utf-8")
+            except UnicodeDecodeError:
+                text = raw_data.decode("latin-1")
+            resource = TextResourceContents(
+                text=text,
+                mimeType=mime,
+                uri=uri,
+            )
+        else:
+            data = base64.b64encode(raw_data).decode()
+            resource = BlobResourceContents(
+                blob=data,
+                mimeType=mime,
+                uri=uri,
+            )
+
+        return EmbeddedResource(
+            type="resource",
+            resource=resource,
             annotations=annotations or self.annotations,
         )
