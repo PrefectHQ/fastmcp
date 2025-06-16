@@ -110,6 +110,7 @@ class FastMCP(Generic[LifespanResultT]):
     def __init__(
         self,
         name: str | None = None,
+        version: str | None = None,
         instructions: str | None = None,
         auth: OAuthProvider | None = None,
         lifespan: (
@@ -175,6 +176,7 @@ class FastMCP(Generic[LifespanResultT]):
             self._has_lifespan = True
         self._mcp_server = MCPServer[LifespanResultT](
             name=name or "FastMCP",
+            version=version,
             instructions=instructions,
             lifespan=_lifespan_wrapper(self, lifespan),
         )
