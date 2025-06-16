@@ -502,6 +502,19 @@ class TestConvertResultToContent:
         # Convert URI to string for startswith check
         assert str(resource.uri).startswith("file:///resource.octet-stream")
 
+    def test_file_object_text_result(self):
+        """Test that a File object with text data is converted to EmbeddedResource with TextResourceContents."""
+        file_obj = File(data=b"sometext", format="plain")
+        result = _convert_to_content(file_obj)
+        assert isinstance(result, list)
+        assert len(result) == 1
+        assert isinstance(result[0], EmbeddedResource)
+        assert result[0].type == "resource"
+        resource = result[0].resource
+        assert isinstance(resource, TextResourceContents)
+        assert resource.mimeType == "text/plain"
+        assert resource.text == "sometext"
+
     def test_basic_type_result(self):
         """Test that a basic type is converted to TextContent."""
         result = _convert_to_content(123)

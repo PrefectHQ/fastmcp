@@ -99,6 +99,11 @@ def tool_server():
             TextContent(type="text", text="direct content"),
         ]
 
+    @mcp.tool
+    def file_text_tool() -> File:
+        # Return a File with text data and text/plain format
+        return File(data=b"hello world", format="plain")
+
     return mcp
 
 
@@ -110,7 +115,7 @@ class TestTools:
 
     async def test_list_tools(self, tool_server: FastMCP):
         async with Client(tool_server) as client:
-            assert len(await client.list_tools()) == 10
+            assert len(await client.list_tools()) == 11
 
     async def test_call_tool(self, tool_server: FastMCP):
         async with Client(tool_server) as client:
@@ -150,6 +155,17 @@ class TestTools:
         async with Client(tool_server) as client:
             result = await client.call_tool("list_tool", {})
             assert result[0].text == '[\n  "x",\n  2\n]'  # type: ignore[attr-defined]
+
+    async def test_file_text_tool(self, tool_server: FastMCP):
+        async with Client(tool_server) as client:
+            result = await client.call_tool("file_text_tool", {})
+            assert len(result) == 1
+            embedded = result[0]
+            assert isinstance(embedded, EmbeddedResource)
+            resource = embedded.resource
+            assert isinstance(resource, TextResourceContents)
+            assert resource.mimeType == "text/plain"
+            assert resource.text == "hello world"
 
 
 class TestToolTags:

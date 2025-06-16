@@ -3,7 +3,7 @@ from types import EllipsisType
 from typing import Annotated, Any
 
 import pytest
-from mcp.types import BlobResourceContents
+from mcp.types import BlobResourceContents, TextResourceContents
 
 from fastmcp.utilities.types import (
     Audio,
@@ -381,6 +381,17 @@ class TestFile:
         assert str(resource.resource.uri) == "file:///resource.pdf"
         if isinstance(resource.resource, BlobResourceContents):
             assert resource.resource.blob == base64.b64encode(test_data).decode()
+
+    def test_to_resource_content_with_text_data(self):
+        """Test conversion to ResourceContent with text data (TextResourceContents)."""
+        test_data = b"hello world"
+        file = File(data=test_data, format="plain")
+        resource = file.to_resource_content()
+        assert resource.type == "resource"
+        # Should be TextResourceContents for text/plain
+        assert isinstance(resource.resource, TextResourceContents)
+        assert resource.resource.mimeType == "text/plain"
+        assert resource.resource.text == "hello world"
 
     def test_to_resource_content_error(self, monkeypatch):
         """Test error case in to_resource_content."""
