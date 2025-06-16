@@ -321,6 +321,31 @@ async def test_initialize_result_disconnected(fastmcp_server):
         _ = client.initialize_result
 
 
+async def test_server_info_custom_version():
+    """Test that custom version is properly set in serverInfo."""
+    # Test with custom version
+    server_with_version = FastMCP("CustomVersionServer", version="1.2.3")
+    client = Client(transport=FastMCPTransport(server_with_version))
+
+    async with client:
+        result = client.initialize_result
+        assert result.serverInfo.name == "CustomVersionServer"
+        assert result.serverInfo.version == "1.2.3"
+
+    # Test without version (backward compatibility)
+    server_without_version = FastMCP("DefaultVersionServer")
+    client = Client(transport=FastMCPTransport(server_without_version))
+
+    async with client:
+        result = client.initialize_result
+        assert result.serverInfo.name == "DefaultVersionServer"
+        # Should fall back to MCP library version
+        assert result.serverInfo.version is not None
+        assert (
+            result.serverInfo.version != "1.2.3"
+        )  # Should be different from custom version
+
+
 async def test_client_nested_context_manager(fastmcp_server):
     """Test that the client connects and disconnects once in nested context manager."""
 
