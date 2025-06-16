@@ -214,7 +214,7 @@ class FunctionResourceTemplate(ResourceTemplate):
                     f"URI parameters {uri_params} must be a subset of the function arguments: {func_params}"
                 )
 
-        description = description or fn.__doc__
+        description = description or inspect.getdoc(fn)
 
         # if the fn is a callable class, we need to get the __call__ method from here out
         if not inspect.isroutine(fn):

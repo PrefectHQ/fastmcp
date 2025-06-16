@@ -135,7 +135,7 @@ class FunctionResource(Resource):
             fn=fn,
             uri=uri,
             name=name or fn.__name__,
-            description=description or fn.__doc__,
+            description=description or inspect.getdoc(fn),
             mime_type=mime_type or "text/plain",
             tags=tags or set(),
             enabled=enabled if enabled is not None else True,
