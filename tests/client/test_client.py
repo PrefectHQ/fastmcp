@@ -341,7 +341,9 @@ async def test_server_info_custom_version():
         assert result.serverInfo.name == "DefaultVersionServer"
         # Should fall back to MCP library version
         assert result.serverInfo.version is not None
-        assert result.serverInfo.version != "1.2.3"  # Should be different from custom version
+        assert (
+            result.serverInfo.version != "1.2.3"
+        )  # Should be different from custom version
 
 
 async def test_client_nested_context_manager(fastmcp_server):
