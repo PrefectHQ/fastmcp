@@ -1,3 +1,5 @@
+from mcp.types import ToolAnnotations
+
 # MCP Mixin
 
 This module provides the `MCPMixin` base class and associated decorators (`@mcp_tool`, `@mcp_resource`, `@mcp_prompt`).
@@ -21,8 +23,9 @@ Resources:
 Inherit from `MCPMixin` and use the decorators on the methods you want to register.
 
 ```python
+from mcp.types import ToolAnnotations
 from fastmcp import FastMCP
-from fastmcp.contrib.mcp_mixin import MCPMixin, mcp_tool, mcp_resource
+from fastmcp.contrib.mcp_mixin import MCPMixin, mcp_tool, mcp_resource, mcp_prompt
 
 class MyComponent(MCPMixin):
     @mcp_tool(name="my_tool", description="Does something cool.")
@@ -35,18 +38,47 @@ class MyComponent(MCPMixin):
         # This function can't be called by client because it's disabled
         return "You'll never get here!"
 
+    # example of excluded parameter tool
     @mcp_tool(
         name="my_tool", description="Does something cool.",
-        annotations={
-            "title": "Attn LLM, use this tool first!",
-            "readOnlyHint": False,
-            "destructiveHint": False,
-            "idempotentHint": False
-        }
+        enabled=False, exclude_args=['delete_everything'],
+    )
+    def excluded_param_tool_method(self, delete_everything=False):
+        # MCP tool calls can't pass the "delete_everything" argument
+        if delete_everything:
+            return "Nothing to delete, I bet you're not a tool :)"
+        return "You might be a tool if..."
+
+    # example tool w/annotations
+    @mcp_tool(
+        name="my_tool", description="Does something cool.",
+        annotations=ToolAnnotations(
+            title="Attn LLM, use this tool first!",
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+        )
     )
     def tool_method(self):
         return "Tool executed!"
 
+    # example tool w/everything
+    @mcp_tool(
+        name="my_tool", description="Does something cool.",
+        enabled=True,
+        exclude_args=['delete_all'],
+        annotations=ToolAnnotations(
+            title="Attn LLM, use this tool first!",
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+        )
+    )
+    def tool_method(self, delete_all=False):
+        if delete_all:
+            return "99 records deleted. I bet you're not a tool :)"
+        return "Tool executed, but you might be a tool!"
+    
     @mcp_resource(uri="component://data")
     def resource_method(self):
         return {"data": "some data"}
@@ -55,6 +87,16 @@ class MyComponent(MCPMixin):
     @mcp_resource(uri="component://data", enabled=False)
     def resource_method(self):
         return {"data": "some data"}
+
+    # prompt
+    @mcp_prompt(name="A prompt")
+    def prompt_method(self, name):
+        return f"Whats up {name}?"
+
+    # disabled prompt
+    @mcp_prompt(name="A prompt", enabled=False)
+    def prompt_method(self, name):
+        return f"Whats up {name}?"
 
 mcp_server = FastMCP()
 component = MyComponent()
