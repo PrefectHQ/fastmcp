@@ -4,6 +4,18 @@ This module provides the `MCPMixin` base class and associated decorators (`@mcp_
 
 It allows developers to easily define classes whose methods can be registered as tools, resources, or prompts with a `FastMCP` server instance using the `register_all()`, `register_tools()`, `register_resources()`, or `register_prompts()` methods provided by the mixin.
 
+Includes support for
+Tools:
+* [enable/disable](https://gofastmcp.com/servers/tools#disabling-tools)
+* [annotations](https://gofastmcp.com/servers/tools#annotations-2)
+* [excluded arguments](https://gofastmcp.com/servers/tools#excluding-arguments)
+
+Prompts:
+* [enable/disable](https://gofastmcp.com/servers/prompts#disabling-prompts)
+
+Resources:
+* [enable/disabe](https://gofastmcp.com/servers/resources#disabling-resources)
+  
 ## Usage
 
 Inherit from `MCPMixin` and use the decorators on the methods you want to register.
@@ -17,7 +29,30 @@ class MyComponent(MCPMixin):
     def tool_method(self):
         return "Tool executed!"
 
+    # example of disabled tool
+    @mcp_tool(name="my_tool", description="Does something cool.", enabled=False)
+    def disabled_tool_method(self):
+        # This function can't be called by client because it's disabled
+        return "You'll never get here!"
+
+    @mcp_tool(
+        name="my_tool", description="Does something cool.",
+        annotations={
+            "title": "Attn LLM, use this tool first!",
+            "readOnlyHint": False,
+            "destructiveHint": False,
+            "idempotentHint": False
+        }
+    )
+    def tool_method(self):
+        return "Tool executed!"
+
     @mcp_resource(uri="component://data")
+    def resource_method(self):
+        return {"data": "some data"}
+
+    # Disabled resource
+    @mcp_resource(uri="component://data", enabled=False)
     def resource_method(self):
         return {"data": "some data"}
 
