@@ -82,6 +82,7 @@ def mcp_prompt(
     name: str | None = None,
     description: str | None = None,
     tags: set[str] | None = None,
+    enabled: bool | None = None,
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """Decorator to mark a method as an MCP prompt for later registration."""
 
