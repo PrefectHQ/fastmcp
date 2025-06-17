@@ -25,7 +25,7 @@ def mcp_tool(
     name: str | None = None,
     description: str | None = None,
     tags: set[str] | None = None,
-    annotations: ToolAnnotations | None = None,
+    annotations: ToolAnnotations | dict[str, Any] | None = None,
     exclude_args: list[str] | None = None,
     serializer: Callable[[Any], str] | None = None,
     enabled: bool | None = None,
