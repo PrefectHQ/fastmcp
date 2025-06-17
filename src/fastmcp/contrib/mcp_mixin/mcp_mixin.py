@@ -23,6 +23,10 @@ def mcp_tool(
     name: str | None = None,
     description: str | None = None,
     tags: set[str] | None = None,
+    annotations: ToolAnnotations | None = None,
+    exclude_args: list[str] | None = None,
+    serializer: Callable[[Any], str] | None = None,
+    enabled: bool | None = None,
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """Decorator to mark a method as an MCP tool for later registration."""
 
@@ -31,6 +35,10 @@ def mcp_tool(
             "name": name or func.__name__,
             "description": description,
             "tags": tags,
+            "annotations": annotations,
+            "exclude_args": exclude_args,
+            "serializer": serializer,
+            "enabled": enabled,
         }
         call_args = {k: v for k, v in call_args.items() if v is not None}
         setattr(func, _MCP_REGISTRATION_TOOL_ATTR, call_args)
@@ -46,6 +54,7 @@ def mcp_resource(
     description: str | None = None,
     mime_type: str | None = None,
     tags: set[str] | None = None,
+    enabled: bool | None = None,
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """Decorator to mark a method as an MCP resource for later registration."""
 
@@ -56,6 +65,7 @@ def mcp_resource(
             "description": description,
             "mime_type": mime_type,
             "tags": tags,
+            "enabled": enabled,
         }
         call_args = {k: v for k, v in call_args.items() if v is not None}
 
@@ -78,6 +88,7 @@ def mcp_prompt(
             "name": name or func.__name__,
             "description": description,
             "tags": tags,
+            "enabled": enabled,
         }
 
         call_args = {k: v for k, v in call_args.items() if v is not None}
