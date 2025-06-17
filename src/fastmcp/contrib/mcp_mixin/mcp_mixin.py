@@ -3,6 +3,8 @@
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
+from mcp.types import ToolAnnotations
+
 from fastmcp.prompts.prompt import Prompt
 from fastmcp.resources.resource import Resource
 from fastmcp.tools.tool import Tool
