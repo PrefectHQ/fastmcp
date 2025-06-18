@@ -3,6 +3,8 @@
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
+from mcp.types import ToolAnnotations
+
 from fastmcp.prompts.prompt import Prompt
 from fastmcp.resources.resource import Resource
 from fastmcp.tools.tool import Tool
@@ -23,6 +25,10 @@ def mcp_tool(
     name: str | None = None,
     description: str | None = None,
     tags: set[str] | None = None,
+    annotations: ToolAnnotations | dict[str, Any] | None = None,
+    exclude_args: list[str] | None = None,
+    serializer: Callable[[Any], str] | None = None,
+    enabled: bool | None = None,
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """Decorator to mark a method as an MCP tool for later registration."""
 
@@ -31,6 +37,10 @@ def mcp_tool(
             "name": name or func.__name__,
             "description": description,
             "tags": tags,
+            "annotations": annotations,
+            "exclude_args": exclude_args,
+            "serializer": serializer,
+            "enabled": enabled,
         }
         call_args = {k: v for k, v in call_args.items() if v is not None}
         setattr(func, _MCP_REGISTRATION_TOOL_ATTR, call_args)
@@ -46,6 +56,7 @@ def mcp_resource(
     description: str | None = None,
     mime_type: str | None = None,
     tags: set[str] | None = None,
+    enabled: bool | None = None,
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """Decorator to mark a method as an MCP resource for later registration."""
 
@@ -56,6 +67,7 @@ def mcp_resource(
             "description": description,
             "mime_type": mime_type,
             "tags": tags,
+            "enabled": enabled,
         }
         call_args = {k: v for k, v in call_args.items() if v is not None}
 
@@ -70,6 +82,7 @@ def mcp_prompt(
     name: str | None = None,
     description: str | None = None,
     tags: set[str] | None = None,
+    enabled: bool | None = None,
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """Decorator to mark a method as an MCP prompt for later registration."""
 
@@ -78,6 +91,7 @@ def mcp_prompt(
             "name": name or func.__name__,
             "description": description,
             "tags": tags,
+            "enabled": enabled,
         }
 
         call_args = {k: v for k, v in call_args.items() if v is not None}
