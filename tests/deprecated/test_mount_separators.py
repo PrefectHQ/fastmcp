@@ -1,14 +1,27 @@
 """Tests for the deprecated separator parameters in mount() and import_server() methods."""
 
 import pytest
+from mcp import McpError
 
-from fastmcp import FastMCP
+from fastmcp import Client, FastMCP
 
 # reset deprecation warnings for this module
 pytestmark = pytest.mark.filterwarnings("default::DeprecationWarning")
 
 
-def test_mount_tool_separator_deprecation_warning():
+def test_mount_resource_separator_deprecation_warning():
+    """Test that using resource_separator in mount() raises a deprecation warning."""
+    main_app = FastMCP("MainApp")
+    sub_app = FastMCP("SubApp")
+
+    with pytest.warns(
+        DeprecationWarning,
+        match="The resource_separator parameter is deprecated and ignored",
+    ):
+        main_app.mount("sub", sub_app, resource_separator="+")
+
+
+async def test_mount_tool_separator_deprecation_warning():
     """Test that using tool_separator in mount() raises a deprecation warning."""
     main_app = FastMCP("MainApp")
     sub_app = FastMCP("SubApp")
@@ -24,24 +37,12 @@ def test_mount_tool_separator_deprecation_warning():
     def test_tool():
         return "test"
 
-    mounted_server = main_app._mounted_servers["sub"]
-    assert mounted_server.match_tool("sub_test_tool")
-    assert not mounted_server.match_tool("sub-test_tool")
+    async with Client(main_app) as client:
+        assert "sub_test_tool" in {t.name for t in await client.list_tools()}
+        assert "sub-test_tool" not in {t.name for t in await client.list_tools()}
 
 
-def test_mount_resource_separator_deprecation_warning():
-    """Test that using resource_separator in mount() raises a deprecation warning."""
-    main_app = FastMCP("MainApp")
-    sub_app = FastMCP("SubApp")
-
-    with pytest.warns(
-        DeprecationWarning,
-        match="The resource_separator parameter is deprecated and ignored",
-    ):
-        main_app.mount("sub", sub_app, resource_separator="+")
-
-
-def test_mount_prompt_separator_deprecation_warning():
+async def test_mount_prompt_separator_deprecation_warning():
     """Test that using prompt_separator in mount() raises a deprecation warning."""
     main_app = FastMCP("MainApp")
     sub_app = FastMCP("SubApp")
@@ -57,9 +58,10 @@ def test_mount_prompt_separator_deprecation_warning():
     def test_prompt():
         return "test"
 
-    mounted_server = main_app._mounted_servers["sub"]
-    assert mounted_server.match_prompt("sub_test_prompt")
-    assert not mounted_server.match_prompt("sub-test_prompt")
+    async with Client(main_app) as client:
+        assert await client.get_prompt("sub_test_prompt")
+        with pytest.raises(McpError, match="Unknown prompt"):
+            await client.get_prompt("sub-test_prompt")
 
 
 async def test_import_server_separator_deprecation_warnings():
