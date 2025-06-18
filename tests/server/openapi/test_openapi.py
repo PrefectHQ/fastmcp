@@ -911,28 +911,6 @@ class TestOpenAPI31Compatibility:
             assert order["items"] == ["item4", "item5"]
 
 
-class TestMountFastMCP:
-    """Tests for mounting FastMCP servers."""
-
-    async def test_mount_fastmcp(
-        self, fastmcp_openapi_server_with_all_types: FastMCPOpenAPI
-    ):
-        """Test mounting an OpenAPI server."""
-        mcp = FastMCP("MainApp")
-
-        await mcp.import_server("fastapi", fastmcp_openapi_server_with_all_types)
-
-        # Check that resources are available with prefixed URIs
-        async with Client(mcp) as client:
-            resources = await client.list_resources()
-        assert len(resources) == 4  # Updated to account for new search endpoint
-        # We're checking the key used by mcp to store the resource
-        # The prefixed URI is used as the key, but the resource's original uri is preserved
-        prefixed_uri = "resource://fastapi/get_users_users_get"
-        resource = mcp._resource_manager.get_resources().get(prefixed_uri)
-        assert resource is not None
-
-
 async def test_empty_query_parameters_not_sent(
     fastapi_app: FastAPI, api_client: httpx.AsyncClient
 ):

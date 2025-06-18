@@ -9,7 +9,6 @@ from fastmcp.exceptions import NotFoundError
 from fastmcp.prompts.prompt import FunctionPrompt, Prompt
 from fastmcp.resources import Resource, ResourceTemplate
 from fastmcp.server.server import (
-    MountedServer,
     add_resource_prefix,
     has_resource_prefix,
     remove_resource_prefix,
@@ -1126,7 +1125,7 @@ class TestResourcePrefixMounting:
 
         # Create a main server and mount the resource server
         main_server = FastMCP(name="MainServer")
-        main_server.mount("prefix", server)
+        main_server.mount(server, "prefix")
 
         # Check that the resources are mounted with the correct prefixes
         resources = await main_server.get_resources()
@@ -1183,16 +1182,23 @@ class TestResourcePrefixMounting:
     async def test_mounted_server_matching_and_stripping(
         self, uri, prefix, expected_match, expected_strip
     ):
-        """Test that MountedServer correctly matches and strips resource prefixes."""
-        # Create a basic server to mount
+        """Test that resource prefix utility functions correctly match and strip resource prefixes."""
+        from fastmcp.server.server import has_resource_prefix, remove_resource_prefix
+
+        # Create a basic server to get the default resource prefix format
         server = FastMCP()
-        mounted = MountedServer(prefix=prefix, server=server)
 
         # Test matching
-        assert mounted.match_resource(uri) == expected_match
+        assert (
+            has_resource_prefix(uri, prefix, server.resource_prefix_format)
+            == expected_match
+        )
 
         # Test stripping
-        assert mounted.strip_resource_prefix(uri) == expected_strip
+        assert (
+            remove_resource_prefix(uri, prefix, server.resource_prefix_format)
+            == expected_strip
+        )
 
     async def test_import_server_with_new_prefix_format(self):
         """Test that import_server correctly uses the new prefix format."""
@@ -1213,7 +1219,7 @@ class TestResourcePrefixMounting:
 
         # Create target server and import the source server
         target_server = FastMCP(name="TargetServer")
-        await target_server.import_server("imported", source_server)
+        await target_server.import_server(source_server, "imported")
 
         # Check that the resources were imported with the correct prefixes
         resources = await target_server.get_resources()
