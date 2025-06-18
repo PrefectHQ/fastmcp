@@ -15,7 +15,7 @@ from contextlib import (
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Generic, Literal, overload
+from typing import TYPE_CHECKING, Any, Generic, Literal, cast, overload
 
 import anyio
 import httpx
@@ -155,7 +155,7 @@ class FastMCP(Generic[LifespanResultT]):
         self._cache = TimedCache(
             expiration=datetime.timedelta(seconds=cache_expiration_seconds or 0)
         )
-        self._mounted_servers: dict[str, MountedServer] = {}
+        self._mounted_servers: list[MountedServer] = []
         self._additional_http_routes: list[BaseRoute] = []
         self._tool_manager = ToolManager(
             duplicate_behavior=on_duplicate_tools,
@@ -323,17 +323,21 @@ class FastMCP(Generic[LifespanResultT]):
         """Get all registered tools, indexed by registered key."""
         if (tools := self._cache.get("tools")) is self._cache.NOT_FOUND:
             tools: dict[str, Tool] = {}
-            for prefix, mounted_server in self._mounted_servers.items():
+
+            # iterate such that new mounts overwrite older ones
+            for mounted_server in self._mounted_servers:
                 try:
                     server_tools = await mounted_server.server.get_tools()
-                    # Apply prefix to each tool key
-                    prefixed_tools = {
-                        f"{prefix}_{key}": tool for key, tool in server_tools.items()
-                    }
-                    tools.update(prefixed_tools)
+                    # Apply prefix to each tool key if prefix exists and is not empty
+                    if mounted_server.prefix:
+                        server_tools = {
+                            f"{mounted_server.prefix}_{key}": tool
+                            for key, tool in server_tools.items()
+                        }
+                    tools.update(server_tools)
                 except Exception as e:
                     logger.warning(
-                        f"Failed to get tools from mounted server '{prefix}': {e}"
+                        f"Failed to get tools from mounted server '{mounted_server.prefix}': {e}"
                     )
                     continue
             tools.update(self._tool_manager.get_tools())
@@ -350,20 +354,25 @@ class FastMCP(Generic[LifespanResultT]):
         """Get all registered resources, indexed by registered key."""
         if (resources := self._cache.get("resources")) is self._cache.NOT_FOUND:
             resources: dict[str, Resource] = {}
-            for prefix, mounted_server in self._mounted_servers.items():
+
+            # iterate such that new mounts overwrite older ones
+            for mounted_server in self._mounted_servers:
                 try:
                     server_resources = await mounted_server.server.get_resources()
-                    # Apply prefix to each resource key
-                    prefixed_resources = {
-                        add_resource_prefix(
-                            key, prefix, mounted_server.server.resource_prefix_format
-                        ): resource
-                        for key, resource in server_resources.items()
-                    }
-                    resources.update(prefixed_resources)
+                    # Apply prefix to each resource key if prefix exists
+                    if mounted_server.prefix:
+                        server_resources = {
+                            add_resource_prefix(
+                                key,
+                                mounted_server.prefix,
+                                mounted_server.server.resource_prefix_format,
+                            ): resource
+                            for key, resource in server_resources.items()
+                        }
+                    resources.update(server_resources)
                 except Exception as e:
                     logger.warning(
-                        f"Failed to get resources from mounted server '{prefix}': {e}"
+                        f"Failed to get resources from mounted server '{mounted_server.prefix}': {e}"
                     )
                     continue
             resources.update(self._resource_manager.get_resources())
@@ -382,23 +391,28 @@ class FastMCP(Generic[LifespanResultT]):
             templates := self._cache.get("resource_templates")
         ) is self._cache.NOT_FOUND:
             templates: dict[str, ResourceTemplate] = {}
-            for prefix, mounted_server in self._mounted_servers.items():
+
+            # iterate such that new mounts overwrite older ones
+            for mounted_server in self._mounted_servers:
                 try:
                     server_templates = (
                         await mounted_server.server.get_resource_templates()
                     )
-                    # Apply prefix to each template key
-                    prefixed_templates = {
-                        add_resource_prefix(
-                            key, prefix, mounted_server.server.resource_prefix_format
-                        ): template
-                        for key, template in server_templates.items()
-                    }
-                    templates.update(prefixed_templates)
+                    # Apply prefix to each template key if prefix exists
+                    if mounted_server.prefix:
+                        server_templates = {
+                            add_resource_prefix(
+                                key,
+                                mounted_server.prefix,
+                                mounted_server.server.resource_prefix_format,
+                            ): template
+                            for key, template in server_templates.items()
+                        }
+                    templates.update(server_templates)
                 except Exception as e:
                     logger.warning(
                         "Failed to get resource templates from mounted server "
-                        f"'{prefix}': {e}"
+                        f"'{mounted_server.prefix}': {e}"
                     )
                     continue
             templates.update(self._resource_manager.get_templates())
@@ -417,18 +431,21 @@ class FastMCP(Generic[LifespanResultT]):
         """
         if (prompts := self._cache.get("prompts")) is self._cache.NOT_FOUND:
             prompts: dict[str, Prompt] = {}
-            for prefix, mounted_server in self._mounted_servers.items():
+
+            # iterate such that new mounts overwrite older ones
+            for mounted_server in self._mounted_servers:
                 try:
                     server_prompts = await mounted_server.server.get_prompts()
-                    # Apply prefix to each prompt key
-                    prefixed_prompts = {
-                        f"{prefix}_{key}": prompt
-                        for key, prompt in server_prompts.items()
-                    }
-                    prompts.update(prefixed_prompts)
+                    # Apply prefix to each prompt key if prefix exists
+                    if mounted_server.prefix:
+                        server_prompts = {
+                            f"{mounted_server.prefix}_{key}": prompt
+                            for key, prompt in server_prompts.items()
+                        }
+                    prompts.update(server_prompts)
                 except Exception as e:
                     logger.warning(
-                        f"Failed to get prompts from mounted server '{prefix}': {e}"
+                        f"Failed to get prompts from mounted server '{mounted_server.prefix}': {e}"
                     )
                     continue
             prompts.update(self._prompt_manager.get_prompts())
@@ -588,10 +605,20 @@ class FastMCP(Generic[LifespanResultT]):
             return await self._tool_manager.call_tool(key, arguments)
 
         # Check mounted servers to see if they have the tool
-        for prefix, mounted_server in self._mounted_servers.items():
-            if key.startswith(f"{prefix}_"):
-                tool_key = key.removeprefix(f"{prefix}_")
+        # iterate such that new mounts take precedence over older ones
+        for mounted_server in reversed(self._mounted_servers):
+            tool_key = key
+            try:
+                # If server has a prefix, check if key matches and strip prefix
+                if mounted_server.prefix:
+                    if tool_key.startswith(f"{mounted_server.prefix}_"):
+                        tool_key = tool_key.removeprefix(f"{mounted_server.prefix}_")
+                    else:
+                        continue
                 return await mounted_server.server._call_tool(tool_key, arguments)
+            except NotFoundError:
+                # Tool not found on this server, try the next one
+                continue
 
         raise NotFoundError(f"Unknown tool: {key!r}")
 
@@ -630,14 +657,28 @@ class FastMCP(Generic[LifespanResultT]):
                 )
             ]
         else:
-            for prefix, mounted_server in self._mounted_servers.items():
-                if has_resource_prefix(
-                    str(uri), prefix, mounted_server.server.resource_prefix_format
-                ):
-                    new_uri = remove_resource_prefix(
-                        str(uri), prefix, mounted_server.server.resource_prefix_format
-                    )
-                    return await mounted_server.server._mcp_read_resource(new_uri)
+            # iterate such that new mounts take precedence over older ones
+            for mounted_server in reversed(self._mounted_servers):
+                resource_uri = uri
+                try:
+                    if mounted_server.prefix:
+                        # If server has a prefix, check if URI matches and strip prefix
+                        if has_resource_prefix(
+                            str(resource_uri),
+                            mounted_server.prefix,
+                            mounted_server.server.resource_prefix_format,
+                        ):
+                            resource_uri = remove_resource_prefix(
+                                str(resource_uri),
+                                mounted_server.prefix,
+                                mounted_server.server.resource_prefix_format,
+                            )
+                        else:
+                            continue
+                    return await mounted_server.server._mcp_read_resource(resource_uri)
+                except NotFoundError:
+                    # Resource not found on this server, try the next one
+                    continue
             else:
                 raise NotFoundError(f"Unknown resource: {uri}")
 
@@ -683,12 +724,24 @@ class FastMCP(Generic[LifespanResultT]):
             return await self._prompt_manager.render_prompt(name, arguments)
 
         # Check mounted servers to see if they have the prompt
-        for prefix, mounted_server in self._mounted_servers.items():
-            if name.startswith(f"{prefix}_"):
-                prompt_name = name.removeprefix(f"{prefix}_")
+        # iterate such that new mounts take precedence over older ones
+        for mounted_server in reversed(self._mounted_servers):
+            prompt_name = name
+            try:
+                if mounted_server.prefix:
+                    # If server has a prefix, check if name matches and strip prefix
+                    if prompt_name.startswith(f"{mounted_server.prefix}_"):
+                        prompt_name = prompt_name.removeprefix(
+                            f"{mounted_server.prefix}_"
+                        )
+                    else:
+                        continue
                 return await mounted_server.server._mcp_get_prompt(
                     prompt_name, arguments
                 )
+            except NotFoundError:
+                # Prompt not found on this server, try the next one
+                continue
 
         raise NotFoundError(f"Unknown prompt: {name}")
 
@@ -1412,15 +1465,15 @@ class FastMCP(Generic[LifespanResultT]):
 
     def mount(
         self,
-        prefix: str,
         server: FastMCP[LifespanResultT],
+        prefix: str | None = None,
         as_proxy: bool | None = None,
         *,
         tool_separator: str | None = None,
         resource_separator: str | None = None,
         prompt_separator: str | None = None,
     ) -> None:
-        """Mount another FastMCP server on this server with the given prefix.
+        """Mount another FastMCP server on this server with an optional prefix.
 
         Unlike importing (with import_server), mounting establishes a dynamic connection
         between servers. When a client interacts with a mounted server's objects through
@@ -1428,7 +1481,7 @@ class FastMCP(Generic[LifespanResultT]):
         This means changes to the mounted server are immediately reflected when accessed
         through the parent.
 
-        When a server is mounted:
+        When a server is mounted with a prefix:
         - Tools from the mounted server are accessible with prefixed names.
           Example: If server has a tool named "get_weather", it will be available as "prefix_get_weather".
         - Resources are accessible with prefixed URIs.
@@ -1440,6 +1493,10 @@ class FastMCP(Generic[LifespanResultT]):
         - Prompts are accessible with prefixed names.
           Example: If server has a prompt named "weather_prompt", it will be available as
           "prefix_weather_prompt".
+
+        When a server is mounted without a prefix (prefix=None), its tools, resources, templates,
+        and prompts are accessible with their original names. Multiple servers can be mounted
+        without prefixes, and they will be tried in order until a match is found.
 
         There are two modes for mounting servers:
         1. Direct mounting (default when server has no custom lifespan): The parent server
@@ -1453,8 +1510,9 @@ class FastMCP(Generic[LifespanResultT]):
            execution, but with slightly higher overhead.
 
         Args:
-            prefix: Prefix to use for the mounted server's objects.
             server: The FastMCP server to mount.
+            prefix: Optional prefix to use for the mounted server's objects. If None,
+                the server's objects are accessible with their original names.
             as_proxy: Whether to treat the mounted server as a proxy. If None (default),
                 automatically determined based on whether the server has a custom lifespan
                 (True if it has a custom lifespan, False otherwise).
@@ -1465,6 +1523,20 @@ class FastMCP(Generic[LifespanResultT]):
         from fastmcp import Client
         from fastmcp.client.transports import FastMCPTransport
         from fastmcp.server.proxy import FastMCPProxy
+
+        # Deprecated since 2.9.0
+        # Prior to 2.9.0, the first positional argument was the prefix and the
+        # second was the server. Here we swap them if needed now that the prefix
+        # is optional.
+        if isinstance(server, str):
+            if fastmcp.settings.deprecation_warnings:
+                warnings.warn(
+                    "Mount prefixes are now optional and the first positional argument "
+                    "should be the server you want to mount.",
+                    DeprecationWarning,
+                    stacklevel=2,
+                )
+            server, prefix = cast(FastMCP[Any], prefix), server
 
         if tool_separator is not None:
             # Deprecated since 2.4.0
@@ -1508,17 +1580,13 @@ class FastMCP(Generic[LifespanResultT]):
             server=server,
             prefix=prefix,
         )
-        self._mounted_servers[prefix] = mounted_server
-        self._cache.clear()
-
-    def unmount(self, prefix: str) -> None:
-        self._mounted_servers.pop(prefix)
+        self._mounted_servers.append(mounted_server)
         self._cache.clear()
 
     async def import_server(
         self,
-        prefix: str,
         server: FastMCP[LifespanResultT],
+        prefix: str | None = None,
         tool_separator: str | None = None,
         resource_separator: str | None = None,
         prompt_separator: str | None = None,
@@ -1532,7 +1600,7 @@ class FastMCP(Generic[LifespanResultT]):
         future changes to the imported server will not be reflected in the
         importing server. Server-level configurations and lifespans are not imported.
 
-        When a server is imported:
+        When a server is imported with a prefix:
         - The tools are imported with prefixed names
           Example: If server has a tool named "get_weather", it will be
           available as "prefix_get_weather"
@@ -1546,14 +1614,33 @@ class FastMCP(Generic[LifespanResultT]):
           Example: If server has a prompt named "weather_prompt", it will be available as
           "prefix_weather_prompt"
 
+        When a server is imported without a prefix (prefix=None), its tools, resources,
+        templates, and prompts are imported with their original names.
+
         Args:
-            prefix: The prefix to use for the imported server
             server: The FastMCP server to import
+            prefix: Optional prefix to use for the imported server's objects. If None,
+                objects are imported with their original names.
             tool_separator: Deprecated. Separator for tool names.
             resource_separator: Deprecated and ignored. Prefix is now
               applied using the protocol://prefix/path format
             prompt_separator: Deprecated. Separator for prompt names.
         """
+
+        # Deprecated since 2.9.0
+        # Prior to 2.9.0, the first positional argument was the prefix and the
+        # second was the server. Here we swap them if needed now that the prefix
+        # is optional.
+        if isinstance(server, str):
+            if fastmcp.settings.deprecation_warnings:
+                warnings.warn(
+                    "Import prefixes are now optional and the first positional argument "
+                    "should be the server you want to import.",
+                    DeprecationWarning,
+                    stacklevel=2,
+                )
+            server, prefix = cast(FastMCP[Any], prefix), server
+
         if tool_separator is not None:
             # Deprecated since 2.4.0
             if fastmcp.settings.deprecation_warnings:
@@ -1584,29 +1671,49 @@ class FastMCP(Generic[LifespanResultT]):
                     stacklevel=2,
                 )
 
-        # Import tools from the mounted server
-        tool_prefix = f"{prefix}_"
+        # Import tools from the server
         for key, tool in (await server.get_tools()).items():
-            self._tool_manager.add_tool(tool, key=f"{tool_prefix}{key}")
+            if prefix:
+                tool_key = f"{prefix}_{key}"
+            else:
+                tool_key = key
+            self._tool_manager.add_tool(tool, key=tool_key)
 
-        # Import resources and templates from the mounted server
+        # Import resources and templates from the server
         for key, resource in (await server.get_resources()).items():
-            prefixed_key = add_resource_prefix(key, prefix, self.resource_prefix_format)
-            self._resource_manager.add_resource(resource, key=prefixed_key)
+            if prefix:
+                resource_key = add_resource_prefix(
+                    key, prefix, self.resource_prefix_format
+                )
+            else:
+                resource_key = key
+            self._resource_manager.add_resource(resource, key=resource_key)
 
         for key, template in (await server.get_resource_templates()).items():
-            prefixed_key = add_resource_prefix(key, prefix, self.resource_prefix_format)
-            self._resource_manager.add_template(template, key=prefixed_key)
+            if prefix:
+                template_key = add_resource_prefix(
+                    key, prefix, self.resource_prefix_format
+                )
+            else:
+                template_key = key
+            self._resource_manager.add_template(template, key=template_key)
 
-        # Import prompts from the mounted server
-        prompt_prefix = f"{prefix}_"
+        # Import prompts from the server
         for key, prompt in (await server.get_prompts()).items():
-            self._prompt_manager.add_prompt(prompt, key=f"{prompt_prefix}{key}")
+            if prefix:
+                prompt_key = f"{prefix}_{key}"
+            else:
+                prompt_key = key
+            self._prompt_manager.add_prompt(prompt, key=prompt_key)
 
-        logger.info(f"Imported server {server.name} with prefix '{prefix}'")
-        logger.debug(f"Imported tools with prefix '{tool_prefix}'")
-        logger.debug(f"Imported resources and templates with prefix '{prefix}/'")
-        logger.debug(f"Imported prompts with prefix '{prompt_prefix}'")
+        if prefix:
+            logger.info(f"Imported server {server.name} with prefix '{prefix}'")
+            logger.debug(f"Imported tools with prefix '{prefix}_'")
+            logger.debug(f"Imported resources and templates with prefix '{prefix}/'")
+            logger.debug(f"Imported prompts with prefix '{prefix}_'")
+        else:
+            logger.info(f"Imported server {server.name}")
+            logger.debug("Imported tools, resources, templates, and prompts")
 
         self._cache.clear()
 
@@ -1765,7 +1872,7 @@ class FastMCP(Generic[LifespanResultT]):
 
 @dataclass
 class MountedServer:
-    prefix: str
+    prefix: str | None
     server: FastMCP[Any]
 
 

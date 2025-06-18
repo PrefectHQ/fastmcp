@@ -18,7 +18,7 @@ async def test_import_basic_functionality():
         return "This is from the sub app"
 
     # Import the sub-app to the main app
-    await main_app.import_server("sub", sub_app)
+    await main_app.import_server(sub_app, "sub")
 
     # Verify the tool was imported with the prefix
     assert "sub_sub_tool" in main_app._tool_manager._tools
@@ -49,8 +49,8 @@ async def test_import_multiple_apps():
         return "News headlines"
 
     # Import both sub-apps to the main app
-    await main_app.import_server("weather", weather_app)
-    await main_app.import_server("news", news_app)
+    await main_app.import_server(weather_app, "weather")
+    await main_app.import_server(news_app, "news")
 
     # Verify tools were imported with the correct prefixes
     assert "weather_get_forecast" in main_app._tool_manager._tools
@@ -74,11 +74,11 @@ async def test_import_combines_tools():
         return "Second app tool"
 
     # Import first app
-    await main_app.import_server("api", first_app)
+    await main_app.import_server(first_app, "api")
     assert "api_first_tool" in main_app._tool_manager._tools
 
     # Import second app to same prefix
-    await main_app.import_server("api", second_app)
+    await main_app.import_server(second_app, "api")
 
     # Verify second tool is there
     assert "api_second_tool" in main_app._tool_manager._tools
@@ -99,7 +99,7 @@ async def test_import_with_resources():
         return ["user1", "user2"]
 
     # Import the data app
-    await main_app.import_server("data", data_app)
+    await main_app.import_server(data_app, "data")
 
     # Verify the resource was imported with the prefix
     assert "data://data/users" in main_app._resource_manager._resources
@@ -117,7 +117,7 @@ async def test_import_with_resource_templates():
         return {"id": user_id, "name": f"User {user_id}"}
 
     # Import the user app
-    await main_app.import_server("api", user_app)
+    await main_app.import_server(user_app, "api")
 
     # Verify the template was imported with the prefix
     assert "users://api/{user_id}/profile" in main_app._resource_manager._templates
@@ -135,7 +135,7 @@ async def test_import_with_prompts():
         return f"Hello, {name}!"
 
     # Import the assistant app
-    await main_app.import_server("assistant", assistant_app)
+    await main_app.import_server(assistant_app, "assistant")
 
     # Verify the prompt was imported with the prefix
     assert "assistant_greeting" in main_app._prompt_manager._prompts
@@ -158,8 +158,8 @@ async def test_import_multiple_resource_templates():
         return f"News for {category}"
 
     # Import both apps
-    await main_app.import_server("data", weather_app)
-    await main_app.import_server("content", news_app)
+    await main_app.import_server(weather_app, "data")
+    await main_app.import_server(news_app, "content")
 
     # Verify templates were imported with correct prefixes
     assert "weather://data/{city}" in main_app._resource_manager._templates
@@ -183,8 +183,8 @@ async def test_import_multiple_prompts():
         return f"Explaining SQL query:\n{query}"
 
     # Import both apps
-    await main_app.import_server("python", python_app)
-    await main_app.import_server("sql", sql_app)
+    await main_app.import_server(python_app, "python")
+    await main_app.import_server(sql_app, "sql")
 
     # Verify prompts were imported with correct prefixes
     assert "python_review_python" in main_app._prompt_manager._prompts
@@ -200,7 +200,7 @@ async def test_tool_custom_name_preserved_when_imported():
         return f"Data for query: {query}"
 
     api_app.add_tool(Tool.from_function(fetch_data, name="get_data"))
-    await main_app.import_server("api", api_app)
+    await main_app.import_server(api_app, "api")
 
     # Check that the tool is accessible by its prefixed name
     tool = main_app._tool_manager.get_tool("api_get_data")
@@ -220,7 +220,7 @@ async def test_call_imported_custom_named_tool():
         return f"Data for query: {query}"
 
     api_app.add_tool(Tool.from_function(fetch_data, name="get_data"))
-    await main_app.import_server("api", api_app)
+    await main_app.import_server(api_app, "api")
 
     async with Client(main_app) as client:
         result = await client.call_tool("api_get_data", {"query": "test"})
@@ -236,7 +236,7 @@ async def test_first_level_importing_with_custom_name():
         return input * 2
 
     provider_app.add_tool(Tool.from_function(calculate_value, name="compute"))
-    await service_app.import_server("provider", provider_app)
+    await service_app.import_server(provider_app, "provider")
 
     # Tool is accessible in the service app with the first prefix
     tool = service_app._tool_manager.get_tool("provider_compute")
@@ -255,8 +255,8 @@ async def test_nested_importing_preserves_prefixes():
         return input * 2
 
     provider_app.add_tool(Tool.from_function(calculate_value, name="compute"))
-    await service_app.import_server("provider", provider_app)
-    await main_app.import_server("service", service_app)
+    await service_app.import_server(provider_app, "provider")
+    await main_app.import_server(service_app, "service")
 
     # Tool is accessible in the main app with both prefixes
     tool = main_app._tool_manager.get_tool("service_provider_compute")
@@ -273,13 +273,12 @@ async def test_call_nested_imported_tool():
         return input * 2
 
     provider_app.add_tool(Tool.from_function(calculate_value, name="compute"))
-    await service_app.import_server("provider", provider_app)
-    await main_app.import_server("service", service_app)
+    await service_app.import_server(provider_app, "provider")
+    await main_app.import_server(service_app, "service")
 
-    result = await main_app._tool_manager.call_tool(
-        "service_provider_compute", {"input": 21}
-    )
-    assert result[0].text == "42"  # type: ignore[attr-defined]
+    async with Client(main_app) as client:
+        result = await client.call_tool("service_provider_compute", {"input": 21})
+        assert result[0].text == "42"  # type: ignore[attr-defined]
 
 
 async def test_import_with_proxy_tools():
@@ -299,10 +298,11 @@ async def test_import_with_proxy_tools():
         return f"Data for query: {query}"
 
     proxy_app = FastMCP.as_proxy(Client(api_app))
-    await main_app.import_server("api", proxy_app)
+    await main_app.import_server(proxy_app, "api")
 
-    result = await main_app._mcp_call_tool("api_get_data", {"query": "test"})
-    assert result[0].text == "Data for query: test"  # type: ignore[attr-defined]
+    async with Client(main_app) as client:
+        result = await client.call_tool("api_get_data", {"query": "test"})
+        assert result[0].text == "Data for query: test"  # type: ignore[attr-defined]
 
 
 async def test_import_with_proxy_prompts():
@@ -322,11 +322,12 @@ async def test_import_with_proxy_prompts():
         return f"Hello, {name} from API!"
 
     proxy_app = FastMCP.as_proxy(Client(api_app))
-    await main_app.import_server("api", proxy_app)
+    await main_app.import_server(proxy_app, "api")
 
-    result = await main_app._mcp_get_prompt("api_greeting", {"name": "World"})
-    assert result.messages[0].content.text == "Hello, World from API!"  # type: ignore[attr-defined]
-    assert result.description == "Example greeting prompt."
+    async with Client(main_app) as client:
+        result = await client.get_prompt("api_greeting", {"name": "World"})
+        assert result.messages[0].content.text == "Hello, World from API!"  # type: ignore[attr-defined]
+        assert result.description == "Example greeting prompt."
 
 
 async def test_import_with_proxy_resources():
@@ -349,7 +350,7 @@ async def test_import_with_proxy_resources():
         }
 
     proxy_app = FastMCP.as_proxy(Client(api_app))
-    await main_app.import_server("api", proxy_app)
+    await main_app.import_server(proxy_app, "api")
 
     # Access the resource through the main app with the prefixed key
     async with Client(main_app) as client:
@@ -376,7 +377,7 @@ async def test_import_with_proxy_resource_templates():
         return {"name": name, "email": email}
 
     proxy_app = FastMCP.as_proxy(Client(api_app))
-    await main_app.import_server("api", proxy_app)
+    await main_app.import_server(proxy_app, "api")
 
     # Instantiate the template through the main app with the prefixed key
 
@@ -396,7 +397,7 @@ async def test_import_invalid_resource_prefix():
     # This test doesn't apply anymore with the new prefix format since we're not validating
     # the protocol://prefix/path format
     # Just import the server to maintain test coverage without deprecated parameters
-    await main_app.import_server("api_sub", api_app)
+    await main_app.import_server(api_app, "api")
 
 
 async def test_import_invalid_resource_separator():
@@ -405,4 +406,202 @@ async def test_import_invalid_resource_separator():
 
     # This test is for maintaining coverage for importing with prefixes
     # We no longer pass the deprecated resource_separator parameter
-    await main_app.import_server("api", api_app)
+    await main_app.import_server(api_app, "api")
+
+
+async def test_import_with_no_prefix():
+    """Test importing a server without providing a prefix."""
+    main_app = FastMCP("MainApp")
+    sub_app = FastMCP("SubApp")
+
+    @sub_app.tool
+    def sub_tool() -> str:
+        return "Sub tool result"
+
+    @sub_app.resource(uri="data://config")
+    def sub_resource():
+        return "Sub resource data"
+
+    @sub_app.resource(uri="users://{user_id}/info")
+    def sub_template(user_id: str):
+        return f"Sub template for user {user_id}"
+
+    @sub_app.prompt
+    def sub_prompt() -> str:
+        return "Sub prompt content"
+
+    # Import without prefix
+    await main_app.import_server(sub_app)
+
+    # Verify all component types are accessible with original names
+    assert "sub_tool" in main_app._tool_manager._tools
+    assert "data://config" in main_app._resource_manager._resources
+    assert "users://{user_id}/info" in main_app._resource_manager._templates
+    assert "sub_prompt" in main_app._prompt_manager._prompts
+
+    # Test actual functionality through Client
+    async with Client(main_app) as client:
+        # Test tool
+        tool_result = await client.call_tool("sub_tool", {})
+        assert tool_result[0].text == "Sub tool result"  # type: ignore[attr-defined]
+
+        # Test resource
+        resource_result = await client.read_resource("data://config")
+        assert resource_result[0].text == "Sub resource data"  # type: ignore[attr-defined]
+
+        # Test template
+        template_result = await client.read_resource("users://123/info")
+        assert template_result[0].text == "Sub template for user 123"  # type: ignore[attr-defined]
+
+        # Test prompt
+        prompt_result = await client.get_prompt("sub_prompt", {})
+        assert prompt_result.messages is not None
+        assert prompt_result.messages[0].content.text == "Sub prompt content"  # type: ignore[attr-defined]
+
+
+async def test_import_conflict_resolution_tools():
+    """Test that later imported tools overwrite earlier ones when names conflict."""
+    main_app = FastMCP("MainApp")
+    first_app = FastMCP("FirstApp")
+    second_app = FastMCP("SecondApp")
+
+    @first_app.tool(name="shared_tool")
+    def first_shared_tool() -> str:
+        return "First app tool"
+
+    @second_app.tool(name="shared_tool")
+    def second_shared_tool() -> str:
+        return "Second app tool"
+
+    # Import both apps without prefix
+    await main_app.import_server(first_app)
+    await main_app.import_server(second_app)
+
+    async with Client(main_app) as client:
+        # The later imported server should win
+        tools = await client.list_tools()
+        tool_names = [t.name for t in tools]
+        assert "shared_tool" in tool_names
+        assert tool_names.count("shared_tool") == 1  # Should only appear once
+
+        result = await client.call_tool("shared_tool", {})
+        assert result[0].text == "Second app tool"  # type: ignore[attr-defined]
+
+
+async def test_import_conflict_resolution_resources():
+    """Test that later imported resources overwrite earlier ones when URIs conflict."""
+    main_app = FastMCP("MainApp")
+    first_app = FastMCP("FirstApp")
+    second_app = FastMCP("SecondApp")
+
+    @first_app.resource(uri="shared://data")
+    def first_resource():
+        return "First app data"
+
+    @second_app.resource(uri="shared://data")
+    def second_resource():
+        return "Second app data"
+
+    # Import both apps without prefix
+    await main_app.import_server(first_app)
+    await main_app.import_server(second_app)
+
+    async with Client(main_app) as client:
+        # The later imported server should win
+        resources = await client.list_resources()
+        resource_uris = [str(r.uri) for r in resources]
+        assert "shared://data" in resource_uris
+        assert resource_uris.count("shared://data") == 1  # Should only appear once
+
+        result = await client.read_resource("shared://data")
+        assert result[0].text == "Second app data"  # type: ignore[attr-defined]
+
+
+async def test_import_conflict_resolution_templates():
+    """Test that later imported templates overwrite earlier ones when URI templates conflict."""
+    main_app = FastMCP("MainApp")
+    first_app = FastMCP("FirstApp")
+    second_app = FastMCP("SecondApp")
+
+    @first_app.resource(uri="users://{user_id}/profile")
+    def first_template(user_id: str):
+        return f"First app user {user_id}"
+
+    @second_app.resource(uri="users://{user_id}/profile")
+    def second_template(user_id: str):
+        return f"Second app user {user_id}"
+
+    # Import both apps without prefix
+    await main_app.import_server(first_app)
+    await main_app.import_server(second_app)
+
+    async with Client(main_app) as client:
+        # The later imported server should win
+        templates = await client.list_resource_templates()
+        template_uris = [t.uriTemplate for t in templates]
+        assert "users://{user_id}/profile" in template_uris
+        assert (
+            template_uris.count("users://{user_id}/profile") == 1
+        )  # Should only appear once
+
+        result = await client.read_resource("users://123/profile")
+        assert result[0].text == "Second app user 123"  # type: ignore[attr-defined]
+
+
+async def test_import_conflict_resolution_prompts():
+    """Test that later imported prompts overwrite earlier ones when names conflict."""
+    main_app = FastMCP("MainApp")
+    first_app = FastMCP("FirstApp")
+    second_app = FastMCP("SecondApp")
+
+    @first_app.prompt(name="shared_prompt")
+    def first_shared_prompt() -> str:
+        return "First app prompt"
+
+    @second_app.prompt(name="shared_prompt")
+    def second_shared_prompt() -> str:
+        return "Second app prompt"
+
+    # Import both apps without prefix
+    await main_app.import_server(first_app)
+    await main_app.import_server(second_app)
+
+    async with Client(main_app) as client:
+        # The later imported server should win
+        prompts = await client.list_prompts()
+        prompt_names = [p.name for p in prompts]
+        assert "shared_prompt" in prompt_names
+        assert prompt_names.count("shared_prompt") == 1  # Should only appear once
+
+        result = await client.get_prompt("shared_prompt", {})
+        assert result.messages is not None
+        assert result.messages[0].content.text == "Second app prompt"  # type: ignore[attr-defined]
+
+
+async def test_import_conflict_resolution_with_prefix():
+    """Test that later imported components overwrite earlier ones when prefixed names conflict."""
+    main_app = FastMCP("MainApp")
+    first_app = FastMCP("FirstApp")
+    second_app = FastMCP("SecondApp")
+
+    @first_app.tool(name="shared_tool")
+    def first_shared_tool() -> str:
+        return "First app tool"
+
+    @second_app.tool(name="shared_tool")
+    def second_shared_tool() -> str:
+        return "Second app tool"
+
+    # Import both apps with same prefix
+    await main_app.import_server(first_app, "api")
+    await main_app.import_server(second_app, "api")
+
+    async with Client(main_app) as client:
+        # The later imported server should win
+        tools = await client.list_tools()
+        tool_names = [t.name for t in tools]
+        assert "api_shared_tool" in tool_names
+        assert tool_names.count("api_shared_tool") == 1  # Should only appear once
+
+        result = await client.call_tool("api_shared_tool", {})
+        assert result[0].text == "Second app tool"  # type: ignore[attr-defined]

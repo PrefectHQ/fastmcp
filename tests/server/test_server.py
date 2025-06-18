@@ -1125,7 +1125,7 @@ class TestResourcePrefixMounting:
 
         # Create a main server and mount the resource server
         main_server = FastMCP(name="MainServer")
-        main_server.mount("prefix", server)
+        main_server.mount(server, "prefix")
 
         # Check that the resources are mounted with the correct prefixes
         resources = await main_server.get_resources()
@@ -1219,7 +1219,7 @@ class TestResourcePrefixMounting:
 
         # Create target server and import the source server
         target_server = FastMCP(name="TargetServer")
-        await target_server.import_server("imported", source_server)
+        await target_server.import_server(source_server, "imported")
 
         # Check that the resources were imported with the correct prefixes
         resources = await target_server.get_resources()

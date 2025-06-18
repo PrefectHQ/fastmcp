@@ -26,8 +26,8 @@ async def test_resource_prefix_format_in_constructor():
     main_server_protocol = FastMCP("MainProtocol", resource_prefix_format="protocol")
 
     # Mount the servers
-    main_server_path.mount("sub", server_path)
-    main_server_protocol.mount("sub", server_protocol)
+    main_server_path.mount(server_path, "sub")
+    main_server_protocol.mount(server_protocol, "sub")
 
     # Check that the resources are prefixed correctly
     path_resources = await main_server_path.get_resources()
@@ -49,11 +49,11 @@ async def test_resource_prefix_format_in_import_server():
 
     # Import with path format
     main_server_path = FastMCP("MainPath", resource_prefix_format="path")
-    await main_server_path.import_server("sub", server)
+    await main_server_path.import_server(server, "sub")
 
     # Import with protocol format
     main_server_protocol = FastMCP("MainProtocol", resource_prefix_format="protocol")
-    await main_server_protocol.import_server("sub", server)
+    await main_server_protocol.import_server(server, "sub")
 
     # Check that the resources are prefixed correctly
     path_resources = main_server_path._resource_manager.get_resources()

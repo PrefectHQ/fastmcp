@@ -14,11 +14,16 @@ def test_mount_resource_separator_deprecation_warning():
     main_app = FastMCP("MainApp")
     sub_app = FastMCP("SubApp")
 
-    with pytest.warns(
-        DeprecationWarning,
-        match="The resource_separator parameter is deprecated and ignored",
-    ):
-        main_app.mount("sub", sub_app, resource_separator="+")
+    with pytest.warns(DeprecationWarning) as warnings:
+        main_app.mount("sub", sub_app, resource_separator="+")  # type: ignore[arg-type]
+
+    # Check that we get both the argument order warning and the resource_separator warning
+    warning_messages = [str(w.message) for w in warnings]
+    assert any(
+        "resource_separator parameter is deprecated and ignored" in msg
+        for msg in warning_messages
+    )
+    assert any("Mount prefixes are now optional" in msg for msg in warning_messages)
 
 
 async def test_mount_tool_separator_deprecation_warning():
@@ -26,11 +31,15 @@ async def test_mount_tool_separator_deprecation_warning():
     main_app = FastMCP("MainApp")
     sub_app = FastMCP("SubApp")
 
-    with pytest.warns(
-        DeprecationWarning,
-        match="The tool_separator parameter is deprecated and will be removed in a future version",
-    ):
-        main_app.mount("sub", sub_app, tool_separator="-")
+    with pytest.warns(DeprecationWarning) as warnings:
+        main_app.mount("sub", sub_app, tool_separator="-")  # type: ignore[arg-type]
+
+    # Check that we get both the argument order warning and the tool_separator warning
+    warning_messages = [str(w.message) for w in warnings]
+    assert any(
+        "tool_separator parameter is deprecated" in msg for msg in warning_messages
+    )
+    assert any("Mount prefixes are now optional" in msg for msg in warning_messages)
 
     # Verify the separator is ignored and the default is used
     @sub_app.tool
@@ -47,11 +56,15 @@ async def test_mount_prompt_separator_deprecation_warning():
     main_app = FastMCP("MainApp")
     sub_app = FastMCP("SubApp")
 
-    with pytest.warns(
-        DeprecationWarning,
-        match="The prompt_separator parameter is deprecated and will be removed in a future version",
-    ):
-        main_app.mount("sub", sub_app, prompt_separator="-")
+    with pytest.warns(DeprecationWarning) as warnings:
+        main_app.mount("sub", sub_app, prompt_separator="-")  # type: ignore[arg-type]
+
+    # Check that we get both the argument order warning and the prompt_separator warning
+    warning_messages = [str(w.message) for w in warnings]
+    assert any(
+        "prompt_separator parameter is deprecated" in msg for msg in warning_messages
+    )
+    assert any("Mount prefixes are now optional" in msg for msg in warning_messages)
 
     # Verify the separator is ignored and the default is used
     @sub_app.prompt
@@ -69,22 +82,32 @@ async def test_import_server_separator_deprecation_warnings():
     main_app = FastMCP("MainApp")
     sub_app = FastMCP("SubApp")
 
-    with pytest.warns(
-        DeprecationWarning,
-        match="The tool_separator parameter is deprecated and will be removed in a future version",
-    ):
-        await main_app.import_server("sub", sub_app, tool_separator="-")
+    with pytest.warns(DeprecationWarning) as warnings:
+        await main_app.import_server("sub", sub_app, tool_separator="-")  # type: ignore[arg-type]
+
+    # Check that we get both warnings
+    warning_messages = [str(w.message) for w in warnings]
+    assert any(
+        "tool_separator parameter is deprecated" in msg for msg in warning_messages
+    )
+    assert any("Import prefixes are now optional" in msg for msg in warning_messages)
 
     main_app = FastMCP("MainApp")
-    with pytest.warns(
-        DeprecationWarning,
-        match="The resource_separator parameter is deprecated and ignored",
-    ):
-        await main_app.import_server("sub", sub_app, resource_separator="+")
+    with pytest.warns(DeprecationWarning) as warnings:
+        await main_app.import_server("sub", sub_app, resource_separator="+")  # type: ignore[arg-type]
+
+    warning_messages = [str(w.message) for w in warnings]
+    assert any(
+        "resource_separator parameter is deprecated" in msg for msg in warning_messages
+    )
+    assert any("Import prefixes are now optional" in msg for msg in warning_messages)
 
     main_app = FastMCP("MainApp")
-    with pytest.warns(
-        DeprecationWarning,
-        match="The prompt_separator parameter is deprecated and will be removed in a future version",
-    ):
-        await main_app.import_server("sub", sub_app, prompt_separator="-")
+    with pytest.warns(DeprecationWarning) as warnings:
+        await main_app.import_server("sub", sub_app, prompt_separator="-")  # type: ignore[arg-type]
+
+    warning_messages = [str(w.message) for w in warnings]
+    assert any(
+        "prompt_separator parameter is deprecated" in msg for msg in warning_messages
+    )
+    assert any("Import prefixes are now optional" in msg for msg in warning_messages)
