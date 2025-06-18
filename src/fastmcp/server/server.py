@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any, Generic, Literal, cast, overload
 
 import anyio
 import httpx
+import mcp.types
 import uvicorn
 from mcp.server.lowlevel.helper_types import ReadResourceContents
 from mcp.server.lowlevel.server import LifespanResultT, NotificationOptions
@@ -53,6 +54,7 @@ from fastmcp.server.http import (
     create_sse_app,
     create_streamable_http_app,
 )
+from fastmcp.server.middleware.middleware import MCPMiddleware, MiddlewareContext
 from fastmcp.settings import Settings
 from fastmcp.tools import ToolManager
 from fastmcp.tools.tool import FunctionTool, Tool
@@ -115,6 +117,7 @@ class FastMCP(Generic[LifespanResultT]):
         *,
         version: str | None = None,
         auth: OAuthProvider | None = None,
+        middleware: list[MCPMiddleware] | None = None,
         lifespan: (
             Callable[
                 [FastMCP[LifespanResultT]],
@@ -195,6 +198,8 @@ class FastMCP(Generic[LifespanResultT]):
 
         self.include_tags = include_tags
         self.exclude_tags = exclude_tags
+
+        self.middleware = middleware or []
 
         # Set up MCP protocol handlers
         self._setup_handlers()
@@ -318,6 +323,20 @@ class FastMCP(Generic[LifespanResultT]):
         self._mcp_server.call_tool()(self._mcp_call_tool)
         self._mcp_server.read_resource()(self._mcp_read_resource)
         self._mcp_server.get_prompt()(self._mcp_get_prompt)
+
+    async def _apply_middleware(
+        self,
+        context: MiddlewareContext[Any],
+        call_next: Callable[[MiddlewareContext[Any]], Awaitable[Any]],
+    ) -> Any:
+        """Builds and executes the middleware chain."""
+        chain = call_next
+        for mw in reversed(self.middleware):
+            chain = partial(mw, call_next=chain)
+        return await chain(context)
+
+    def add_middleware(self, middleware: MCPMiddleware) -> None:
+        self.middleware.append(middleware)
 
     async def get_tools(self) -> dict[str, Tool]:
         """Get all registered tools, indexed by registered key."""
@@ -508,14 +527,33 @@ class FastMCP(Generic[LifespanResultT]):
         server.
 
         """
-        tools = await self.get_tools()
+        logger.debug("List tools")
 
-        mcp_tools: list[MCPTool] = []
-        for key, tool in tools.items():
-            if self._should_enable_component(tool):
-                mcp_tools.append(tool.to_mcp_tool(name=key))
+        async def _final_handler(
+            context: MiddlewareContext[dict[str, Any]],
+        ) -> list[MCPTool]:
+            # Call the business logic method
+            tools = await self.get_tools()
 
-        return mcp_tools
+            mcp_tools: list[MCPTool] = []
+            for key, tool in tools.items():
+                if self._should_enable_component(tool):
+                    mcp_tools.append(tool.to_mcp_tool(name=key))
+
+            return mcp_tools
+
+        with fastmcp.server.context.Context(fastmcp=self) as fastmcp_ctx:
+            # Create the middleware context.
+            mw_context = MiddlewareContext(
+                message={},  # List tools doesn't have parameters
+                source="client",
+                type="request",
+                method="tools/list",
+                fastmcp_context=fastmcp_ctx,
+            )
+
+            # Apply the middleware chain.
+            return await self._apply_middleware(mw_context, _final_handler)
 
     async def _mcp_list_resources(self) -> list[MCPResource]:
         """
@@ -523,12 +561,31 @@ class FastMCP(Generic[LifespanResultT]):
         server.
 
         """
-        resources = await self.get_resources()
-        mcp_resources: list[MCPResource] = []
-        for key, resource in resources.items():
-            if self._should_enable_component(resource):
-                mcp_resources.append(resource.to_mcp_resource(uri=key))
-        return mcp_resources
+        logger.debug("List resources")
+
+        async def _final_handler(
+            context: MiddlewareContext[dict[str, Any]],
+        ) -> list[MCPResource]:
+            # Call the business logic method
+            resources = await self.get_resources()
+            mcp_resources: list[MCPResource] = []
+            for key, resource in resources.items():
+                if self._should_enable_component(resource):
+                    mcp_resources.append(resource.to_mcp_resource(uri=key))
+            return mcp_resources
+
+        with fastmcp.server.context.Context(fastmcp=self) as fastmcp_ctx:
+            # Create the middleware context.
+            mw_context = MiddlewareContext(
+                message={},  # List resources doesn't have parameters
+                source="client",
+                type="request",
+                method="resources/list",
+                fastmcp_context=fastmcp_ctx,
+            )
+
+            # Apply the middleware chain.
+            return await self._apply_middleware(mw_context, _final_handler)
 
     async def _mcp_list_resource_templates(self) -> list[MCPResourceTemplate]:
         """
@@ -536,12 +593,31 @@ class FastMCP(Generic[LifespanResultT]):
         MCP server.
 
         """
-        templates = await self.get_resource_templates()
-        mcp_templates: list[MCPResourceTemplate] = []
-        for key, template in templates.items():
-            if self._should_enable_component(template):
-                mcp_templates.append(template.to_mcp_template(uriTemplate=key))
-        return mcp_templates
+        logger.debug("List resource templates")
+
+        async def _final_handler(
+            context: MiddlewareContext[dict[str, Any]],
+        ) -> list[MCPResourceTemplate]:
+            # Call the business logic method
+            templates = await self.get_resource_templates()
+            mcp_templates: list[MCPResourceTemplate] = []
+            for key, template in templates.items():
+                if self._should_enable_component(template):
+                    mcp_templates.append(template.to_mcp_template(uriTemplate=key))
+            return mcp_templates
+
+        with fastmcp.server.context.Context(fastmcp=self) as fastmcp_ctx:
+            # Create the middleware context.
+            mw_context = MiddlewareContext(
+                message={},  # List resource templates doesn't have parameters
+                source="client",
+                type="request",
+                method="resources/list_templates",
+                fastmcp_context=fastmcp_ctx,
+            )
+
+            # Apply the middleware chain.
+            return await self._apply_middleware(mw_context, _final_handler)
 
     async def _mcp_list_prompts(self) -> list[MCPPrompt]:
         """
@@ -549,12 +625,31 @@ class FastMCP(Generic[LifespanResultT]):
         server.
 
         """
-        prompts = await self.get_prompts()
-        mcp_prompts: list[MCPPrompt] = []
-        for key, prompt in prompts.items():
-            if self._should_enable_component(prompt):
-                mcp_prompts.append(prompt.to_mcp_prompt(name=key))
-        return mcp_prompts
+        logger.debug("List prompts")
+
+        async def _final_handler(
+            context: MiddlewareContext[dict[str, Any]],
+        ) -> list[MCPPrompt]:
+            # Call the business logic method
+            prompts = await self.get_prompts()
+            mcp_prompts: list[MCPPrompt] = []
+            for key, prompt in prompts.items():
+                if self._should_enable_component(prompt):
+                    mcp_prompts.append(prompt.to_mcp_prompt(name=key))
+            return mcp_prompts
+
+        with fastmcp.server.context.Context(fastmcp=self) as fastmcp_ctx:
+            # Create the middleware context.
+            mw_context = MiddlewareContext(
+                message={},  # List prompts doesn't have parameters
+                source="client",
+                type="request",
+                method="prompts/list",
+                fastmcp_context=fastmcp_ctx,
+            )
+
+            # Apply the middleware chain.
+            return await self._apply_middleware(mw_context, _final_handler)
 
     async def _mcp_call_tool(
         self, key: str, arguments: dict[str, Any]
@@ -573,16 +668,42 @@ class FastMCP(Generic[LifespanResultT]):
         """
         logger.debug("Call tool: %s with %s", key, arguments)
 
-        # Create and use context for the entire call
         with fastmcp.server.context.Context(fastmcp=self):
             try:
-                return await self._call_tool(key, arguments)
+                return await self._middleware_call_tool(key, arguments)
             except DisabledError:
-                # convert to NotFoundError to avoid leaking tool presence
                 raise NotFoundError(f"Unknown tool: {key}")
             except NotFoundError:
-                # standardize NotFound message
                 raise NotFoundError(f"Unknown tool: {key}")
+
+    async def _middleware_call_tool(
+        self,
+        key: str,
+        arguments: dict[str, Any],
+    ) -> list[MCPContent]:
+        """
+        Call a tool with middleware.
+        """
+
+        async def _handler(
+            context: MiddlewareContext[mcp.types.CallToolRequest],
+        ) -> list[MCPContent]:
+            return await self._call_tool(
+                key=context.message.params.name,
+                arguments=context.message.params.arguments or {},
+            )
+
+        mw_context = MiddlewareContext(
+            message=mcp.types.CallToolRequest(
+                method="tools/call",
+                params=mcp.types.CallToolRequestParams(name=key, arguments=arguments),
+            ),
+            source="client",
+            type="request",
+            method="tools/call",
+            fastmcp_context=fastmcp.server.dependencies.get_context(),
+        )
+        return await self._apply_middleware(mw_context, _handler)
 
     async def _call_tool(self, key: str, arguments: dict[str, Any]) -> list[MCPContent]:
         """
@@ -615,7 +736,9 @@ class FastMCP(Generic[LifespanResultT]):
                         tool_key = tool_key.removeprefix(f"{mounted_server.prefix}_")
                     else:
                         continue
-                return await mounted_server.server._call_tool(tool_key, arguments)
+                return await mounted_server.server._middleware_call_tool(
+                    tool_key, arguments
+                )
             except NotFoundError:
                 # Tool not found on this server, try the next one
                 continue
@@ -632,13 +755,48 @@ class FastMCP(Generic[LifespanResultT]):
 
         with fastmcp.server.context.Context(fastmcp=self):
             try:
-                return await self._read_resource(uri)
+                return await self._middleware_read_resource(uri)
             except DisabledError:
                 # convert to NotFoundError to avoid leaking resource presence
                 raise NotFoundError(f"Unknown resource: {str(uri)!r}")
             except NotFoundError:
                 # standardize NotFound message
                 raise NotFoundError(f"Unknown resource: {str(uri)!r}")
+
+    async def _middleware_read_resource(
+        self,
+        uri: AnyUrl | str,
+    ) -> list[ReadResourceContents]:
+        """
+        Read a resource with middleware.
+        """
+
+        async def _handler(
+            context: MiddlewareContext[mcp.types.ReadResourceRequest],
+        ) -> list[ReadResourceContents]:
+            return await self._read_resource(
+                uri=context.message.params.uri,
+            )
+
+        # Convert string URI to AnyUrl if needed
+        if isinstance(uri, str):
+            from pydantic import AnyUrl
+
+            uri_param = AnyUrl(uri)
+        else:
+            uri_param = uri
+
+        mw_context = MiddlewareContext(
+            message=mcp.types.ReadResourceRequest(
+                method="resources/read",
+                params=mcp.types.ReadResourceRequestParams(uri=uri_param),
+            ),
+            source="client",
+            type="request",
+            method="resources/read",
+            fastmcp_context=fastmcp.server.dependencies.get_context(),
+        )
+        return await self._apply_middleware(mw_context, _handler)
 
     async def _read_resource(self, uri: AnyUrl | str) -> list[ReadResourceContents]:
         """
@@ -675,7 +833,9 @@ class FastMCP(Generic[LifespanResultT]):
                             )
                         else:
                             continue
-                    return await mounted_server.server._mcp_read_resource(resource_uri)
+                    return await mounted_server.server._middleware_read_resource(
+                        resource_uri
+                    )
                 except NotFoundError:
                     # Resource not found on this server, try the next one
                     continue
@@ -694,13 +854,42 @@ class FastMCP(Generic[LifespanResultT]):
 
         with fastmcp.server.context.Context(fastmcp=self):
             try:
-                return await self._get_prompt(name, arguments)
+                return await self._middleware_get_prompt(name, arguments)
             except DisabledError:
                 # convert to NotFoundError to avoid leaking prompt presence
                 raise NotFoundError(f"Unknown prompt: {name}")
             except NotFoundError:
                 # standardize NotFound message
                 raise NotFoundError(f"Unknown prompt: {name}")
+
+    async def _middleware_get_prompt(
+        self,
+        name: str,
+        arguments: dict[str, Any] | None = None,
+    ) -> GetPromptResult:
+        """
+        Get a prompt with middleware.
+        """
+
+        async def _handler(
+            context: MiddlewareContext[mcp.types.GetPromptRequest],
+        ) -> GetPromptResult:
+            return await self._get_prompt(
+                name=context.message.params.name,
+                arguments=context.message.params.arguments,
+            )
+
+        mw_context = MiddlewareContext(
+            message=mcp.types.GetPromptRequest(
+                method="prompts/get",
+                params=mcp.types.GetPromptRequestParams(name=name, arguments=arguments),
+            ),
+            source="client",
+            type="request",
+            method="prompts/get",
+            fastmcp_context=fastmcp.server.dependencies.get_context(),
+        )
+        return await self._apply_middleware(mw_context, _handler)
 
     async def _get_prompt(
         self, name: str, arguments: dict[str, Any] | None = None
@@ -736,7 +925,7 @@ class FastMCP(Generic[LifespanResultT]):
                         )
                     else:
                         continue
-                return await mounted_server.server._mcp_get_prompt(
+                return await mounted_server.server._middleware_get_prompt(
                     prompt_name, arguments
                 )
             except NotFoundError:
