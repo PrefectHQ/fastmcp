@@ -75,9 +75,9 @@ class RecordingMiddleware(MCPMiddleware):
         """Assert that a hook was called a specific number of times."""
         calls = self.get_calls(hook=hook, method=method)
         actual_times = len(calls)
+        identifier = dict(hook=hook, method=method)
         assert actual_times == times, (
-            f"Expected {hook!r} to be called {times} times"
-            f"{f' for method {method!r}' if method else ''}, "
+            f"Expected {times} calls for {identifier}, "
             f"but was called {actual_times} times"
         )
         return True
@@ -546,3 +546,22 @@ class TestNestedMiddlewareHooks:
         assert nested_middleware.assert_called(
             hook="on_list_resource_templates", times=1
         )
+
+
+class TestProxyServer:
+    async def test_call_tool(
+        self, mcp_server: FastMCP, recording_middleware: RecordingMiddleware
+    ):
+        # proxy server will have its tools listed as well as called in order to
+        # run the `should_enable_component` hook prior to the call.
+        proxy_server = FastMCP.as_proxy(mcp_server, name="Proxy Server")
+        async with Client(proxy_server) as client:
+            await client.call_tool("add", {"a": 1, "b": 2})
+
+        assert recording_middleware.assert_called(times=6)
+        assert recording_middleware.assert_called(method="tools/call", times=3)
+        assert recording_middleware.assert_called(method="tools/list", times=3)
+        assert recording_middleware.assert_called(hook="on_message", times=2)
+        assert recording_middleware.assert_called(hook="on_request", times=2)
+        assert recording_middleware.assert_called(hook="on_call_tool", times=1)
+        assert recording_middleware.assert_called(hook="on_list_tools", times=1)
