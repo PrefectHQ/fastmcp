@@ -435,7 +435,7 @@ class FastMCP(Generic[LifespanResultT]):
 
         with fastmcp.server.context.Context(fastmcp=self):
             tools = await self._middleware_list_tools()
-            return [tool.to_mcp_tool(name=tool.name) for tool in tools]
+            return [tool.to_mcp_tool(name=tool.key) for tool in tools]
 
     async def _middleware_list_tools(self) -> list[Tool]:
         """
@@ -475,7 +475,7 @@ class FastMCP(Generic[LifespanResultT]):
         """
 
         if (tools := self._cache.get("tools")) is self._cache.NOT_FOUND:
-            tools: list[Tool] = []
+            tools: dict[str, Tool] = {}
 
             # iterate such that new mounts overwrite older ones
             for mounted_server in self._mounted_servers:
@@ -490,17 +490,17 @@ class FastMCP(Generic[LifespanResultT]):
                     if mounted_server.prefix:
                         for tool in server_tools:
                             tool = tool.with_key(f"{mounted_server.prefix}_{tool.key}")
-                            tools.append(tool)
+                            tools[tool.key] = tool
                     else:
-                        tools.extend(server_tools)
+                        tools.update({tool.key: tool for tool in server_tools})
                 except Exception as e:
                     logger.warning(
                         f"Failed to get tools from mounted server '{mounted_server.prefix}': {e}"
                     )
                     continue
-            tools.extend(self._tool_manager.get_tools().values())
+            tools.update(self._tool_manager.get_tools())
             self._cache.set("tools", tools)
-        return tools
+        return list(tools.values())
 
     async def _mcp_list_resources(self) -> list[MCPResource]:
         logger.debug("Handler called: list_resources")
@@ -549,7 +549,7 @@ class FastMCP(Generic[LifespanResultT]):
         """
 
         if (resources := self._cache.get("resources")) is self._cache.NOT_FOUND:
-            resources: list[Resource] = []
+            resources: dict[str, Resource] = {}
 
             # iterate such that new mounts overwrite older ones
             for mounted_server in self._mounted_servers:
@@ -570,17 +570,19 @@ class FastMCP(Generic[LifespanResultT]):
                                     self.resource_prefix_format,
                                 )
                             )
-                            resources.append(resource)
+                            resources[resource.key] = resource
                     else:
-                        resources.extend(server_resources)
+                        resources.update(
+                            {resource.key: resource for resource in server_resources}
+                        )
                 except Exception as e:
                     logger.warning(
                         f"Failed to get resources from mounted server '{mounted_server.prefix}': {e}"
                     )
                     continue
-            resources.extend(self._resource_manager.get_resources().values())
+            resources.update(self._resource_manager.get_resources())
             self._cache.set("resources", resources)
-        return resources
+        return list(resources.values())
 
     async def _mcp_list_resource_templates(self) -> list[MCPResourceTemplate]:
         logger.debug("Handler called: list_resource_templates")
@@ -634,7 +636,7 @@ class FastMCP(Generic[LifespanResultT]):
         if (
             templates := self._cache.get("resource_templates")
         ) is self._cache.NOT_FOUND:
-            templates: list[ResourceTemplate] = []
+            templates: dict[str, ResourceTemplate] = {}
 
             # iterate such that new mounts overwrite older ones
             for mounted_server in self._mounted_servers:
@@ -655,18 +657,20 @@ class FastMCP(Generic[LifespanResultT]):
                                     self.resource_prefix_format,
                                 )
                             )
-                            templates.append(template)
+                            templates[template.key] = template
                     else:
-                        templates.extend(server_templates)
+                        templates.update(
+                            {template.key: template for template in server_templates}
+                        )
                 except Exception as e:
                     logger.warning(
                         "Failed to get resource templates from mounted server "
                         f"'{mounted_server.prefix}': {e}"
                     )
                     continue
-            templates.extend(self._resource_manager.get_templates().values())
+            templates.update(self._resource_manager.get_templates())
             self._cache.set("resource_templates", templates)
-        return templates
+        return list(templates.values())
 
     async def _mcp_list_prompts(self) -> list[MCPPrompt]:
         logger.debug("Handler called: list_prompts")
@@ -713,7 +717,7 @@ class FastMCP(Generic[LifespanResultT]):
         """
 
         if (prompts := self._cache.get("prompts")) is self._cache.NOT_FOUND:
-            prompts: list[Prompt] = []
+            prompts: dict[str, Prompt] = {}
 
             # iterate such that new mounts overwrite older ones
             for mounted_server in self._mounted_servers:
@@ -730,17 +734,19 @@ class FastMCP(Generic[LifespanResultT]):
                             prompt = prompt.with_key(
                                 f"{mounted_server.prefix}_{prompt.key}"
                             )
-                            prompts.append(prompt)
+                            prompts[prompt.key] = prompt
                     else:
-                        prompts.extend(server_prompts)
+                        prompts.update(
+                            {prompt.key: prompt for prompt in server_prompts}
+                        )
                 except Exception as e:
                     logger.warning(
                         f"Failed to get prompts from mounted server '{mounted_server.prefix}': {e}"
                     )
                     continue
-            prompts.extend(self._prompt_manager.get_prompts().values())
+            prompts.update(self._prompt_manager.get_prompts())
             self._cache.set("prompts", prompts)
-        return prompts
+        return list(prompts.values())
 
     async def _mcp_call_tool(
         self, key: str, arguments: dict[str, Any]

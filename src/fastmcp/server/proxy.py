@@ -172,8 +172,11 @@ class FastMCPProxy(FastMCP):
         super().__init__(**kwargs)
         self.client = client
 
-    async def get_tools(self) -> dict[str, Tool]:
-        tools = await super().get_tools()
+    async def _list_tools(self, apply_middleware: bool = True) -> list[Tool]:
+        tools = {
+            tool.name: tool
+            for tool in await super()._list_tools(apply_middleware=apply_middleware)
+        }
 
         async with self.client:
             try:
@@ -187,12 +190,17 @@ class FastMCPProxy(FastMCP):
                 # don't overwrite tools defined in the server
                 if tool.name not in tools:
                     tool_proxy = await ProxyTool.from_client(self.client, tool)
-                    tools[tool_proxy.name] = tool_proxy
+                    tools[tool_proxy.key] = tool_proxy
 
-        return tools
+        return list(tools.values())
 
-    async def get_resources(self) -> dict[str, Resource]:
-        resources = await super().get_resources()
+    async def _list_resources(self, apply_middleware: bool = True) -> list[Resource]:
+        resources = {
+            resource.uri: resource
+            for resource in await super()._list_resources(
+                apply_middleware=apply_middleware
+            )
+        }
 
         async with self.client:
             try:
@@ -204,16 +212,19 @@ class FastMCPProxy(FastMCP):
                     raise e
             for resource in client_resources:
                 # don't overwrite resources defined in the server
-                if str(resource.uri) not in resources:
+                if resource.uri not in resources:
                     resource_proxy = await ProxyResource.from_client(
                         self.client, resource
                     )
-                    resources[str(resource_proxy.uri)] = resource_proxy
+                    resources[resource_proxy.uri] = resource_proxy
 
-        return resources
+        return list(resources.values())
 
-    async def get_resource_templates(self) -> dict[str, ResourceTemplate]:
-        templates = await super().get_resource_templates()
+    async def _list_resource_templates(self) -> list[ResourceTemplate]:
+        templates = {
+            template.uri_template: template
+            for template in await super()._list_resource_templates()
+        }
 
         async with self.client:
             try:
@@ -231,10 +242,10 @@ class FastMCPProxy(FastMCP):
                     )
                     templates[template_proxy.uri_template] = template_proxy
 
-        return templates
+        return list(templates.values())
 
-    async def get_prompts(self) -> dict[str, Prompt]:
-        prompts = await super().get_prompts()
+    async def _list_prompts(self) -> list[Prompt]:
+        prompts = {prompt.name: prompt for prompt in await super()._list_prompts()}
 
         async with self.client:
             try:
@@ -250,7 +261,7 @@ class FastMCPProxy(FastMCP):
                     prompt_proxy = await ProxyPrompt.from_client(self.client, prompt)
                     prompts[prompt_proxy.name] = prompt_proxy
 
-        return prompts
+        return list(prompts.values())
 
     async def _call_tool(self, key: str, arguments: dict[str, Any]) -> list[MCPContent]:
         try:
