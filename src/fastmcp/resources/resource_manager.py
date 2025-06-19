@@ -136,7 +136,9 @@ class ResourceManager:
                     child_templates = await mounted.server._list_resource_templates()
                 else:
                     # Use the manager-to-manager unfiltered path
-                    child_templates = await mounted.server._resource_manager._list_resource_templates()
+                    child_templates = (
+                        await mounted.server._resource_manager.list_resource_templates()
+                    )
                 child_dict = {template.key: template for template in child_templates}
 
                 # Apply prefix if needed
@@ -163,14 +165,14 @@ class ResourceManager:
         all_templates.update(self._templates)
         return all_templates
 
-    async def _list_resources(self) -> list[Resource]:
+    async def list_resources(self) -> list[Resource]:
         """
         Lists all resources, applying protocol filtering.
         """
         resources_dict = await self._load_resources(via_server=True)
         return list(resources_dict.values())
 
-    async def _list_resource_templates(self) -> list[ResourceTemplate]:
+    async def list_resource_templates(self) -> list[ResourceTemplate]:
         """
         Lists all templates, applying protocol filtering.
         """
@@ -265,35 +267,26 @@ class ResourceManager:
         )
         return self.add_resource(resource)
 
-    def add_resource(self, resource: Resource, key: str | None = None) -> Resource:
+    def add_resource(self, resource: Resource) -> Resource:
         """Add a resource to the manager.
 
         Args:
-            resource: A Resource instance to add
-            key: Optional URI to use as the storage key (if different from resource.uri)
+            resource: A Resource instance to add. The resource's .key attribute
+                will be used as the storage key. To overwrite it, call
+                Resource.with_key() before calling this method.
         """
-        storage_key = key or str(resource.uri)
-        logger.debug(
-            "Adding resource",
-            extra={
-                "uri": resource.uri,
-                "storage_key": storage_key,
-                "type": type(resource).__name__,
-                "resource_name": resource.name,
-            },
-        )
-        existing = self._resources.get(storage_key)
+        existing = self._resources.get(resource.key)
         if existing:
             if self.duplicate_behavior == "warn":
-                logger.warning(f"Resource already exists: {storage_key}")
-                self._resources[storage_key] = resource
+                logger.warning(f"Resource already exists: {resource.key}")
+                self._resources[resource.key] = resource
             elif self.duplicate_behavior == "replace":
-                self._resources[storage_key] = resource
+                self._resources[resource.key] = resource
             elif self.duplicate_behavior == "error":
-                raise ValueError(f"Resource already exists: {storage_key}")
+                raise ValueError(f"Resource already exists: {resource.key}")
             elif self.duplicate_behavior == "ignore":
                 return existing
-        self._resources[storage_key] = resource
+        self._resources[resource.key] = resource
         return resource
 
     def add_template_from_fn(
@@ -323,42 +316,30 @@ class ResourceManager:
         )
         return self.add_template(template)
 
-    def add_template(
-        self, template: ResourceTemplate, key: str | None = None
-    ) -> ResourceTemplate:
+    def add_template(self, template: ResourceTemplate) -> ResourceTemplate:
         """Add a template to the manager.
 
         Args:
-            template: A ResourceTemplate instance to add
-            key: Optional URI template to use as the storage key (if different from template.uri_template)
+            template: A ResourceTemplate instance to add. The template's .key attribute
+                will be used as the storage key. To overwrite it, call
+                ResourceTemplate.with_key() before calling this method.
 
         Returns:
             The added template. If a template with the same URI already exists,
             returns the existing template.
         """
-        uri_template_str = str(template.uri_template)
-        storage_key = key or uri_template_str
-        logger.debug(
-            "Adding template",
-            extra={
-                "uri_template": uri_template_str,
-                "storage_key": storage_key,
-                "type": type(template).__name__,
-                "template_name": template.name,
-            },
-        )
-        existing = self._templates.get(storage_key)
+        existing = self._templates.get(template.key)
         if existing:
             if self.duplicate_behavior == "warn":
-                logger.warning(f"Template already exists: {storage_key}")
-                self._templates[storage_key] = template
+                logger.warning(f"Template already exists: {template.key}")
+                self._templates[template.key] = template
             elif self.duplicate_behavior == "replace":
-                self._templates[storage_key] = template
+                self._templates[template.key] = template
             elif self.duplicate_behavior == "error":
-                raise ValueError(f"Template already exists: {storage_key}")
+                raise ValueError(f"Template already exists: {template.key}")
             elif self.duplicate_behavior == "ignore":
                 return existing
-        self._templates[storage_key] = template
+        self._templates[template.key] = template
         return template
 
     async def has_resource(self, uri: AnyUrl | str) -> bool:

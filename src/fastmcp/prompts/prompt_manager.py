@@ -63,7 +63,7 @@ class PromptManager:
                     child_results = await mounted.server._list_prompts()
                 else:
                     # Use the manager-to-manager unfiltered path
-                    child_results = await mounted.server._prompt_manager._list_prompts()
+                    child_results = await mounted.server._prompt_manager.list_prompts()
 
                 # The combination logic is the same for both paths
                 child_dict = {p.key: p for p in child_results}
@@ -104,7 +104,7 @@ class PromptManager:
         """
         return await self._load_prompts(via_server=False)
 
-    async def _list_prompts(self) -> list[Prompt]:
+    async def list_prompts(self) -> list[Prompt]:
         """
         Lists all prompts, applying protocol filtering.
         """
@@ -131,24 +131,22 @@ class PromptManager:
         )
         return self.add_prompt(prompt)  # type: ignore
 
-    def add_prompt(self, prompt: Prompt, key: str | None = None) -> Prompt:
+    def add_prompt(self, prompt: Prompt) -> Prompt:
         """Add a prompt to the manager."""
-        key = key or prompt.name
-
         # Check for duplicates
-        existing = self._prompts.get(key)
+        existing = self._prompts.get(prompt.key)
         if existing:
             if self.duplicate_behavior == "warn":
-                logger.warning(f"Prompt already exists: {key}")
-                self._prompts[key] = prompt
+                logger.warning(f"Prompt already exists: {prompt.key}")
+                self._prompts[prompt.key] = prompt
             elif self.duplicate_behavior == "replace":
-                self._prompts[key] = prompt
+                self._prompts[prompt.key] = prompt
             elif self.duplicate_behavior == "error":
-                raise ValueError(f"Prompt already exists: {key}")
+                raise ValueError(f"Prompt already exists: {prompt.key}")
             elif self.duplicate_behavior == "ignore":
                 return existing
         else:
-            self._prompts[key] = prompt
+            self._prompts[prompt.key] = prompt
         return prompt
 
     async def render_prompt(

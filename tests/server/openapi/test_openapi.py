@@ -472,7 +472,7 @@ class TestTagTransfer:
     ):
         """Test that tags from OpenAPI routes are correctly transferred to Tools."""
         # Get internal tools directly (not the public API which returns MCP.Content)
-        tools = await fastmcp_openapi_server._tool_manager._list_tools()
+        tools = await fastmcp_openapi_server._tool_manager.list_tools()
 
         # Find the create_user and update_user_name tools
         create_user_tool = next(
@@ -1546,7 +1546,7 @@ class TestFastAPIDescriptionPropagation:
             print(f"  Template: {name}, Name attribute: {template.name}")
 
         print("\nDEBUG - Tools created:")
-        tools = await server._tool_manager._list_tools()
+        tools = await server._tool_manager.list_tools()
         for tool in tools:
             print(f"  Tool: {tool.name}")
 
@@ -1779,7 +1779,7 @@ class TestReprMethods:
 
     async def test_openapi_tool_repr(self, fastmcp_openapi_server: FastMCPOpenAPI):
         """Test that OpenAPITool's __repr__ method works without recursion errors."""
-        tools = await fastmcp_openapi_server._tool_manager._list_tools()
+        tools = await fastmcp_openapi_server._tool_manager.list_tools()
         tool = next(iter(tools))
 
         # Verify repr doesn't cause recursion and contains expected elements
@@ -1854,7 +1854,7 @@ class TestEnumHandling:
         )
 
         # Get the tools from the server
-        tools = await server._tool_manager._list_tools()
+        tools = await server._tool_manager.list_tools()
 
         # Find the read_item tool
         read_item_tool = next((t for t in tools if t.name == "read_item_items"), None)
@@ -1947,7 +1947,7 @@ class TestRouteMapWildcard:
         )
 
         # All operations should be mapped to tools
-        tools = await mcp._tool_manager._list_tools()
+        tools = await mcp._tool_manager.list_tools()
         tool_names = {tool.name for tool in tools}
 
         # Check that all 4 operations became tools
@@ -2264,7 +2264,7 @@ class TestMCPNames:
         )
 
         # Check tools use custom names
-        tools = await server._tool_manager._list_tools()
+        tools = await server._tool_manager.list_tools()
         tool_names = {tool.name for tool in tools}
         assert "admin_create_user" in tool_names
 
@@ -2294,7 +2294,7 @@ class TestMCPNames:
             route_maps=GET_ROUTE_MAPS,
         )
 
-        tools = await server._tool_manager._list_tools()
+        tools = await server._tool_manager.list_tools()
         tool_names = {tool.name for tool in tools}
 
         templates_dict = await server._resource_manager.get_resource_templates()
@@ -2350,7 +2350,7 @@ class TestMCPNames:
         # Check all component types
         all_names = []
 
-        tools = await server._tool_manager._list_tools()
+        tools = await server._tool_manager.list_tools()
         all_names.extend(tool.name for tool in tools)
 
         resources_dict = await server._resource_manager.get_resources()
@@ -2383,7 +2383,7 @@ class TestMCPNames:
             mcp_names=mcp_names,
         )
 
-        tools = await server._tool_manager._list_tools()
+        tools = await server._tool_manager.list_tools()
         tool_names = {tool.name for tool in tools}
         assert "openapi_user_list" in tool_names
 
@@ -2415,7 +2415,7 @@ class TestMCPNames:
             mcp_names=mcp_names,
         )
 
-        tools = await server._tool_manager._list_tools()
+        tools = await server._tool_manager.list_tools()
         tool_names = {tool.name for tool in tools}
 
         assert "fastapi_create_user" in tool_names
@@ -2518,7 +2518,7 @@ class TestRouteMapMCPTags:
         )
 
         # Get the POST tool
-        tools = await server._tool_manager._list_tools()
+        tools = await server._tool_manager.list_tools()
         create_user_tool = next((t for t in tools if "create_user" in t.name), None)
 
         assert create_user_tool is not None, "create_user tool not found"
@@ -2634,7 +2634,7 @@ class TestRouteMapMCPTags:
         )
 
         # Check tool tags
-        tools = await server._tool_manager._list_tools()
+        tools = await server._tool_manager.list_tools()
         create_tool = next((t for t in tools if "create_user" in t.name), None)
         assert create_tool is not None
         assert "write-operation" in create_tool.tags

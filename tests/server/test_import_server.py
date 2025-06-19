@@ -25,7 +25,7 @@ async def test_import_basic_functionality():
     assert "sub_tool" in sub_app._tool_manager._tools
 
     # Verify the original tool still exists in the sub-app
-    tool = main_app._tool_manager.get_tool("sub_sub_tool")
+    tool = await main_app._tool_manager.get_tool("sub_sub_tool")
     assert tool is not None
     assert tool.name == "sub_tool"
     assert isinstance(tool, FunctionTool)
@@ -203,7 +203,7 @@ async def test_tool_custom_name_preserved_when_imported():
     await main_app.import_server(api_app, "api")
 
     # Check that the tool is accessible by its prefixed name
-    tool = main_app._tool_manager.get_tool("api_get_data")
+    tool = await main_app._tool_manager.get_tool("api_get_data")
     assert tool is not None
 
     # Check that the function name is preserved
@@ -239,7 +239,7 @@ async def test_first_level_importing_with_custom_name():
     await service_app.import_server(provider_app, "provider")
 
     # Tool is accessible in the service app with the first prefix
-    tool = service_app._tool_manager.get_tool("provider_compute")
+    tool = await service_app._tool_manager.get_tool("provider_compute")
     assert tool is not None
     assert isinstance(tool, FunctionTool)
     assert tool.fn.__name__ == "calculate_value"
@@ -259,7 +259,7 @@ async def test_nested_importing_preserves_prefixes():
     await main_app.import_server(service_app, "service")
 
     # Tool is accessible in the main app with both prefixes
-    tool = main_app._tool_manager.get_tool("service_provider_compute")
+    tool = await main_app._tool_manager.get_tool("service_provider_compute")
     assert tool is not None
 
 

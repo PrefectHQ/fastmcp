@@ -64,7 +64,7 @@ class ToolManager:
                     child_results = await mounted.server._list_tools()
                 else:
                     # Use the manager-to-manager unfiltered path
-                    child_results = await mounted.server._tool_manager._list_tools()
+                    child_results = await mounted.server._tool_manager.list_tools()
 
                 # The combination logic is the same for both paths
                 child_dict = {t.key: t for t in child_results}
@@ -103,7 +103,7 @@ class ToolManager:
         """
         return await self._load_tools(via_server=False)
 
-    async def _list_tools(self) -> list[Tool]:
+    async def list_tools(self) -> list[Tool]:
         """
         Lists all tools, applying protocol filtering.
         """
@@ -139,22 +139,21 @@ class ToolManager:
         )
         return self.add_tool(tool)
 
-    def add_tool(self, tool: Tool, key: str | None = None) -> Tool:
+    def add_tool(self, tool: Tool) -> Tool:
         """Register a tool with the server."""
-        key = key or tool.name
-        existing = self._tools.get(key)
+        existing = self._tools.get(tool.key)
         if existing:
             if self.duplicate_behavior == "warn":
-                logger.warning(f"Tool already exists: {key}")
-                self._tools[key] = tool
+                logger.warning(f"Tool already exists: {tool.key}")
+                self._tools[tool.key] = tool
             elif self.duplicate_behavior == "replace":
-                self._tools[key] = tool
+                self._tools[tool.key] = tool
             elif self.duplicate_behavior == "error":
-                raise ValueError(f"Tool already exists: {key}")
+                raise ValueError(f"Tool already exists: {tool.key}")
             elif self.duplicate_behavior == "ignore":
                 return existing
         else:
-            self._tools[key] = tool
+            self._tools[tool.key] = tool
         return tool
 
     def remove_tool(self, key: str) -> None:

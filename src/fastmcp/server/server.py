@@ -159,7 +159,6 @@ class FastMCP(Generic[LifespanResultT]):
         self._cache = TimedCache(
             expiration=datetime.timedelta(seconds=cache_expiration_seconds or 0)
         )
-        self._mounted_servers: list[MountedServer] = []
         self._additional_http_routes: list[BaseRoute] = []
         self._tool_manager = ToolManager(
             duplicate_behavior=on_duplicate_tools,
@@ -442,7 +441,7 @@ class FastMCP(Generic[LifespanResultT]):
         async def _handler(
             context: MiddlewareContext[mcp.types.ListToolsRequest],
         ) -> list[Tool]:
-            tools = await self._tool_manager._list_tools()  # type: ignore[reportPrivateUsage]
+            tools = await self._tool_manager.list_tools()  # type: ignore[reportPrivateUsage]
 
             mcp_tools: list[Tool] = []
             for tool in tools:
@@ -483,7 +482,7 @@ class FastMCP(Generic[LifespanResultT]):
         async def _handler(
             context: MiddlewareContext[dict[str, Any]],
         ) -> list[Resource]:
-            resources = await self._resource_manager._list_resources()  # type: ignore[reportPrivateUsage]
+            resources = await self._resource_manager.list_resources()  # type: ignore[reportPrivateUsage]
 
             mcp_resources: list[Resource] = []
             for resource in resources:
@@ -525,7 +524,7 @@ class FastMCP(Generic[LifespanResultT]):
         async def _handler(
             context: MiddlewareContext[dict[str, Any]],
         ) -> list[ResourceTemplate]:
-            templates = await self._resource_manager._list_resource_templates()
+            templates = await self._resource_manager.list_resource_templates()
 
             mcp_templates: list[ResourceTemplate] = []
             for template in templates:
@@ -564,7 +563,7 @@ class FastMCP(Generic[LifespanResultT]):
         async def _handler(
             context: MiddlewareContext[mcp.types.ListPromptsRequest],
         ) -> list[Prompt]:
-            prompts = await self._prompt_manager._list_prompts()  # type: ignore[reportPrivateUsage]
+            prompts = await self._prompt_manager.list_prompts()  # type: ignore[reportPrivateUsage]
 
             mcp_prompts: list[Prompt] = []
             for prompt in prompts:
@@ -902,23 +901,23 @@ class FastMCP(Generic[LifespanResultT]):
             enabled=enabled,
         )
 
-    def add_resource(self, resource: Resource, key: str | None = None) -> None:
+    def add_resource(self, resource: Resource) -> None:
         """Add a resource to the server.
 
         Args:
             resource: A Resource instance to add
         """
 
-        self._resource_manager.add_resource(resource, key=key)
+        self._resource_manager.add_resource(resource)
         self._cache.clear()
 
-    def add_template(self, template: ResourceTemplate, key: str | None = None) -> None:
+    def add_template(self, template: ResourceTemplate) -> None:
         """Add a resource template to the server.
 
         Args:
             template: A ResourceTemplate instance to add
         """
-        self._resource_manager.add_template(template, key=key)
+        self._resource_manager.add_template(template)
 
     def add_resource_fn(
         self,
@@ -1670,10 +1669,8 @@ class FastMCP(Generic[LifespanResultT]):
         # Import tools from the server
         for key, tool in (await server.get_tools()).items():
             if prefix:
-                tool_key = f"{prefix}_{key}"
-            else:
-                tool_key = key
-            self._tool_manager.add_tool(tool, key=tool_key)
+                tool = tool.with_key(f"{prefix}_{key}")
+            self._tool_manager.add_tool(tool)
 
         # Import resources and templates from the server
         for key, resource in (await server.get_resources()).items():
@@ -1681,35 +1678,27 @@ class FastMCP(Generic[LifespanResultT]):
                 resource_key = add_resource_prefix(
                     key, prefix, self.resource_prefix_format
                 )
-            else:
-                resource_key = key
-            self._resource_manager.add_resource(resource, key=resource_key)
+                resource = resource.with_key(resource_key)
+            self._resource_manager.add_resource(resource)
 
         for key, template in (await server.get_resource_templates()).items():
             if prefix:
                 template_key = add_resource_prefix(
                     key, prefix, self.resource_prefix_format
                 )
-            else:
-                template_key = key
-            self._resource_manager.add_template(template, key=template_key)
+                template = template.with_key(template_key)
+            self._resource_manager.add_template(template)
 
         # Import prompts from the server
         for key, prompt in (await server.get_prompts()).items():
             if prefix:
-                prompt_key = f"{prefix}_{key}"
-            else:
-                prompt_key = key
-            self._prompt_manager.add_prompt(prompt, key=prompt_key)
+                prompt = prompt.with_key(f"{prefix}_{key}")
+            self._prompt_manager.add_prompt(prompt)
 
         if prefix:
-            logger.info(f"Imported server {server.name} with prefix '{prefix}'")
-            logger.debug(f"Imported tools with prefix '{prefix}_'")
-            logger.debug(f"Imported resources and templates with prefix '{prefix}/'")
-            logger.debug(f"Imported prompts with prefix '{prefix}_'")
+            logger.debug(f"Imported server {server.name} with prefix '{prefix}'")
         else:
-            logger.info(f"Imported server {server.name}")
-            logger.debug("Imported tools, resources, templates, and prompts")
+            logger.debug(f"Imported server {server.name}")
 
         self._cache.clear()
 

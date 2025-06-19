@@ -62,7 +62,7 @@ class ProxyToolManager(ToolManager):
 
         return all_tools
 
-    async def _list_tools(self) -> list[Tool]:
+    async def list_tools(self) -> list[Tool]:
         """Gets the filtered list of tools including local, mounted, and proxy tools."""
         tools_dict = await self.get_tools()
         return list(tools_dict.values())
@@ -129,12 +129,12 @@ class ProxyResourceManager(ResourceManager):
 
         return all_templates
 
-    async def _list_resources(self) -> list[Resource]:
+    async def list_resources(self) -> list[Resource]:
         """Gets the filtered list of resources including local, mounted, and proxy resources."""
         resources_dict = await self.get_resources()
         return list(resources_dict.values())
 
-    async def _list_resource_templates(self) -> list[ResourceTemplate]:
+    async def list_resource_templates(self) -> list[ResourceTemplate]:
         """Gets the filtered list of templates including local, mounted, and proxy templates."""
         templates_dict = await self.get_resource_templates()
         return list(templates_dict.values())
@@ -185,7 +185,7 @@ class ProxyPromptManager(PromptManager):
 
         return all_prompts
 
-    async def _list_prompts(self) -> list[Prompt]:
+    async def list_prompts(self) -> list[Prompt]:
         """Gets the filtered list of prompts including local, mounted, and proxy prompts."""
         prompts_dict = await self.get_prompts()
         return list(prompts_dict.values())
@@ -399,9 +399,3 @@ class FastMCPProxy(FastMCP):
         self._tool_manager = ProxyToolManager(client=self.client)
         self._resource_manager = ProxyResourceManager(client=self.client)
         self._prompt_manager = ProxyPromptManager(client=self.client)
-
-    #
-    # NO MORE METHOD OVERRIDES ARE NEEDED!
-    # The inherited _list_tools, _call_tool, etc., from FastMCP will now
-    # correctly delegate to the proxy managers, which in turn call the client.
-    #
