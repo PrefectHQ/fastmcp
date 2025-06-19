@@ -92,7 +92,7 @@ class TestSessionId:
     def test_session_id_with_http_headers(self, context):
         """Test that session_id returns the value from mcp-session-id header."""
         mock_headers = {"mcp-session-id": "test-session-123"}
-        
+
         with patch(
             "fastmcp.server.dependencies.get_http_headers", return_value=mock_headers
         ):
@@ -101,15 +101,15 @@ class TestSessionId:
     def test_session_id_without_http_headers(self, context):
         """Test that session_id returns None when no HTTP headers are available."""
         with patch(
-            "fastmcp.server.dependencies.get_http_headers", 
-            side_effect=RuntimeError("No active HTTP request found.")
+            "fastmcp.server.dependencies.get_http_headers",
+            side_effect=RuntimeError("No active HTTP request found."),
         ):
             assert context.session_id is None
 
     def test_session_id_with_missing_header(self, context):
         """Test that session_id returns None when mcp-session-id header is missing."""
         mock_headers = {"other-header": "value"}
-        
+
         with patch(
             "fastmcp.server.dependencies.get_http_headers", return_value=mock_headers
         ):
@@ -118,7 +118,7 @@ class TestSessionId:
     def test_session_id_with_empty_header(self, context):
         """Test that session_id returns None when mcp-session-id header is empty."""
         mock_headers = {"mcp-session-id": ""}
-        
+
         with patch(
             "fastmcp.server.dependencies.get_http_headers", return_value=mock_headers
         ):

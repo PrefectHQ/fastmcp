@@ -181,15 +181,15 @@ class Context:
     @property
     def session_id(self) -> str | None:
         """Get the MCP session ID for HTTP transports.
-        
+
         Returns the session ID that can be used as a key for session-based
         data storage (e.g., Redis) to share data between tool calls within
         the same client session.
-        
+
         Returns:
             The session ID for HTTP transports (SSE, StreamableHTTP), or None
             for stdio and in-memory transports which don't use session IDs.
-            
+
         Example:
             ```python
             @server.tool
@@ -202,6 +202,7 @@ class Context:
         """
         try:
             from fastmcp.server.dependencies import get_http_headers
+
             headers = get_http_headers(include_all=True)
             return headers.get("mcp-session-id")
         except RuntimeError:
