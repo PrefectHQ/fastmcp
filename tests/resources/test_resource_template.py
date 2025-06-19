@@ -405,6 +405,7 @@ class TestMatchUriTemplate:
             ("test://a/b/c", None),
             ("test://a/x/b", {"x": "x"}),
             ("test://a/x/y/b", None),
+            ("test://a/1-2/b", {"x": "1-2"}),
         ],
     )
     def test_match_uri_template_single_param(

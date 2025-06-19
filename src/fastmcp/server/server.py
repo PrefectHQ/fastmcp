@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any, Generic, Literal, cast, overload
 
 import anyio
 import httpx
+import mcp.types
 import uvicorn
 from mcp.server.lowlevel.helper_types import ReadResourceContents
 from mcp.server.lowlevel.server import LifespanResultT, NotificationOptions
@@ -34,7 +35,7 @@ from mcp.types import Resource as MCPResource
 from mcp.types import ResourceTemplate as MCPResourceTemplate
 from mcp.types import Tool as MCPTool
 from pydantic import AnyUrl
-from starlette.middleware import Middleware
+from starlette.middleware import Middleware as ASGIMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
 from starlette.routing import BaseRoute, Route
@@ -53,6 +54,7 @@ from fastmcp.server.http import (
     create_sse_app,
     create_streamable_http_app,
 )
+from fastmcp.server.middleware import Middleware, MiddlewareContext
 from fastmcp.settings import Settings
 from fastmcp.tools import ToolManager
 from fastmcp.tools.tool import FunctionTool, Tool
@@ -115,6 +117,7 @@ class FastMCP(Generic[LifespanResultT]):
         *,
         version: str | None = None,
         auth: OAuthProvider | None = None,
+        middleware: list[Middleware] | None = None,
         lifespan: (
             Callable[
                 [FastMCP[LifespanResultT]],
@@ -155,7 +158,6 @@ class FastMCP(Generic[LifespanResultT]):
         self._cache = TimedCache(
             expiration=datetime.timedelta(seconds=cache_expiration_seconds or 0)
         )
-        self._mounted_servers: list[MountedServer] = []
         self._additional_http_routes: list[BaseRoute] = []
         self._tool_manager = ToolManager(
             duplicate_behavior=on_duplicate_tools,
@@ -195,6 +197,8 @@ class FastMCP(Generic[LifespanResultT]):
 
         self.include_tags = include_tags
         self.exclude_tags = exclude_tags
+
+        self.middleware = middleware or []
 
         # Set up MCP protocol handlers
         self._setup_handlers()
@@ -319,30 +323,23 @@ class FastMCP(Generic[LifespanResultT]):
         self._mcp_server.read_resource()(self._mcp_read_resource)
         self._mcp_server.get_prompt()(self._mcp_get_prompt)
 
+    async def _apply_middleware(
+        self,
+        context: MiddlewareContext[Any],
+        call_next: Callable[[MiddlewareContext[Any]], Awaitable[Any]],
+    ) -> Any:
+        """Builds and executes the middleware chain."""
+        chain = call_next
+        for mw in reversed(self.middleware):
+            chain = partial(mw, call_next=chain)
+        return await chain(context)
+
+    def add_middleware(self, middleware: Middleware) -> None:
+        self.middleware.append(middleware)
+
     async def get_tools(self) -> dict[str, Tool]:
         """Get all registered tools, indexed by registered key."""
-        if (tools := self._cache.get("tools")) is self._cache.NOT_FOUND:
-            tools: dict[str, Tool] = {}
-
-            # iterate such that new mounts overwrite older ones
-            for mounted_server in self._mounted_servers:
-                try:
-                    server_tools = await mounted_server.server.get_tools()
-                    # Apply prefix to each tool key if prefix exists and is not empty
-                    if mounted_server.prefix:
-                        for tool in server_tools.values():
-                            tool = tool.with_key(f"{mounted_server.prefix}_{tool.key}")
-                            tools[tool.key] = tool
-                    else:
-                        tools.update(server_tools)
-                except Exception as e:
-                    logger.warning(
-                        f"Failed to get tools from mounted server '{mounted_server.prefix}': {e}"
-                    )
-                    continue
-            tools.update(self._tool_manager.get_tools())
-            self._cache.set("tools", tools)
-        return tools
+        return await self._tool_manager.get_tools()
 
     async def get_tool(self, key: str) -> Tool:
         tools = await self.get_tools()
@@ -352,34 +349,7 @@ class FastMCP(Generic[LifespanResultT]):
 
     async def get_resources(self) -> dict[str, Resource]:
         """Get all registered resources, indexed by registered key."""
-        if (resources := self._cache.get("resources")) is self._cache.NOT_FOUND:
-            resources: dict[str, Resource] = {}
-
-            # iterate such that new mounts overwrite older ones
-            for mounted_server in self._mounted_servers:
-                try:
-                    server_resources = await mounted_server.server.get_resources()
-                    # Apply prefix to each resource key if prefix exists
-                    if mounted_server.prefix:
-                        for resource in server_resources.values():
-                            resource = resource.with_key(
-                                add_resource_prefix(
-                                    resource.key,
-                                    mounted_server.prefix,
-                                    self.resource_prefix_format,
-                                )
-                            )
-                            resources[resource.key] = resource
-                    else:
-                        resources.update(server_resources)
-                except Exception as e:
-                    logger.warning(
-                        f"Failed to get resources from mounted server '{mounted_server.prefix}': {e}"
-                    )
-                    continue
-            resources.update(self._resource_manager.get_resources())
-            self._cache.set("resources", resources)
-        return resources
+        return await self._resource_manager.get_resources()
 
     async def get_resource(self, key: str) -> Resource:
         resources = await self.get_resources()
@@ -389,39 +359,7 @@ class FastMCP(Generic[LifespanResultT]):
 
     async def get_resource_templates(self) -> dict[str, ResourceTemplate]:
         """Get all registered resource templates, indexed by registered key."""
-        if (
-            templates := self._cache.get("resource_templates")
-        ) is self._cache.NOT_FOUND:
-            templates: dict[str, ResourceTemplate] = {}
-
-            # iterate such that new mounts overwrite older ones
-            for mounted_server in self._mounted_servers:
-                try:
-                    server_templates = (
-                        await mounted_server.server.get_resource_templates()
-                    )
-                    # Apply prefix to each template key if prefix exists
-                    if mounted_server.prefix:
-                        for template in server_templates.values():
-                            template = template.with_key(
-                                add_resource_prefix(
-                                    template.key,
-                                    mounted_server.prefix,
-                                    self.resource_prefix_format,
-                                )
-                            )
-                            templates[template.key] = template
-                    else:
-                        templates.update(server_templates)
-                except Exception as e:
-                    logger.warning(
-                        "Failed to get resource templates from mounted server "
-                        f"'{mounted_server.prefix}': {e}"
-                    )
-                    continue
-            templates.update(self._resource_manager.get_templates())
-            self._cache.set("resource_templates", templates)
-        return templates
+        return await self._resource_manager.get_resource_templates()
 
     async def get_resource_template(self, key: str) -> ResourceTemplate:
         templates = await self.get_resource_templates()
@@ -433,31 +371,7 @@ class FastMCP(Generic[LifespanResultT]):
         """
         List all available prompts.
         """
-
-        if (prompts := self._cache.get("prompts")) is self._cache.NOT_FOUND:
-            prompts: dict[str, Prompt] = {}
-
-            # iterate such that new mounts overwrite older ones
-            for mounted_server in self._mounted_servers:
-                try:
-                    server_prompts = await mounted_server.server.get_prompts()
-                    # Apply prefix to each prompt key if prefix exists
-                    if mounted_server.prefix:
-                        for prompt in server_prompts.values():
-                            prompt = prompt.with_key(
-                                f"{mounted_server.prefix}_{prompt.key}"
-                            )
-                            prompts[prompt.key] = prompt
-                    else:
-                        prompts.update(server_prompts)
-                except Exception as e:
-                    logger.warning(
-                        f"Failed to get prompts from mounted server '{mounted_server.prefix}': {e}"
-                    )
-                    continue
-            prompts.update(self._prompt_manager.get_prompts())
-            self._cache.set("prompts", prompts)
-        return prompts
+        return await self._prompt_manager.get_prompts()
 
     async def get_prompt(self, key: str) -> Prompt:
         prompts = await self.get_prompts()
@@ -510,59 +424,165 @@ class FastMCP(Generic[LifespanResultT]):
         return decorator
 
     async def _mcp_list_tools(self) -> list[MCPTool]:
+        logger.debug("Handler called: list_tools")
+
+        with fastmcp.server.context.Context(fastmcp=self):
+            tools = await self._list_tools()
+            return [tool.to_mcp_tool(name=tool.key) for tool in tools]
+
+    async def _list_tools(self) -> list[Tool]:
         """
         List all available tools, in the format expected by the low-level MCP
         server.
 
         """
-        tools = await self.get_tools()
 
-        mcp_tools: list[MCPTool] = []
-        for key, tool in tools.items():
-            if self._should_enable_component(tool):
-                mcp_tools.append(tool.to_mcp_tool(name=key))
+        async def _handler(
+            context: MiddlewareContext[mcp.types.ListToolsRequest],
+        ) -> list[Tool]:
+            tools = await self._tool_manager.list_tools()  # type: ignore[reportPrivateUsage]
 
-        return mcp_tools
+            mcp_tools: list[Tool] = []
+            for tool in tools:
+                if self._should_enable_component(tool):
+                    mcp_tools.append(tool)
+
+            return mcp_tools
+
+        with fastmcp.server.context.Context(fastmcp=self) as fastmcp_ctx:
+            # Create the middleware context.
+            mw_context = MiddlewareContext(
+                message=mcp.types.ListToolsRequest(method="tools/list"),
+                source="client",
+                type="request",
+                method="tools/list",
+                fastmcp_context=fastmcp_ctx,
+            )
+
+            # Apply the middleware chain.
+            return await self._apply_middleware(mw_context, _handler)
 
     async def _mcp_list_resources(self) -> list[MCPResource]:
+        logger.debug("Handler called: list_resources")
+
+        with fastmcp.server.context.Context(fastmcp=self):
+            resources = await self._list_resources()
+            return [
+                resource.to_mcp_resource(uri=resource.key) for resource in resources
+            ]
+
+    async def _list_resources(self) -> list[Resource]:
         """
         List all available resources, in the format expected by the low-level MCP
         server.
 
         """
-        resources = await self.get_resources()
 
-        mcp_resources: list[MCPResource] = []
-        for key, resource in resources.items():
-            if self._should_enable_component(resource):
-                mcp_resources.append(resource.to_mcp_resource(uri=key))
-        return mcp_resources
+        async def _handler(
+            context: MiddlewareContext[dict[str, Any]],
+        ) -> list[Resource]:
+            resources = await self._resource_manager.list_resources()  # type: ignore[reportPrivateUsage]
+
+            mcp_resources: list[Resource] = []
+            for resource in resources:
+                if self._should_enable_component(resource):
+                    mcp_resources.append(resource)
+
+            return mcp_resources
+
+        with fastmcp.server.context.Context(fastmcp=self) as fastmcp_ctx:
+            # Create the middleware context.
+            mw_context = MiddlewareContext(
+                message={},  # List resources doesn't have parameters
+                source="client",
+                type="request",
+                method="resources/list",
+                fastmcp_context=fastmcp_ctx,
+            )
+
+            # Apply the middleware chain.
+            return await self._apply_middleware(mw_context, _handler)
 
     async def _mcp_list_resource_templates(self) -> list[MCPResourceTemplate]:
+        logger.debug("Handler called: list_resource_templates")
+
+        with fastmcp.server.context.Context(fastmcp=self):
+            templates = await self._list_resource_templates()
+            return [
+                template.to_mcp_template(uriTemplate=template.key)
+                for template in templates
+            ]
+
+    async def _list_resource_templates(self) -> list[ResourceTemplate]:
         """
-        List all available resource templates, in the format expected by the low-level
-        MCP server.
+        List all available resource templates, in the format expected by the low-level MCP
+        server.
 
         """
-        templates = await self.get_resource_templates()
-        mcp_templates: list[MCPResourceTemplate] = []
-        for key, template in templates.items():
-            if self._should_enable_component(template):
-                mcp_templates.append(template.to_mcp_template(uriTemplate=key))
-        return mcp_templates
+
+        async def _handler(
+            context: MiddlewareContext[dict[str, Any]],
+        ) -> list[ResourceTemplate]:
+            templates = await self._resource_manager.list_resource_templates()
+
+            mcp_templates: list[ResourceTemplate] = []
+            for template in templates:
+                if self._should_enable_component(template):
+                    mcp_templates.append(template)
+
+            return mcp_templates
+
+        with fastmcp.server.context.Context(fastmcp=self) as fastmcp_ctx:
+            # Create the middleware context.
+            mw_context = MiddlewareContext(
+                message={},  # List resource templates doesn't have parameters
+                source="client",
+                type="request",
+                method="resources/templates/list",
+                fastmcp_context=fastmcp_ctx,
+            )
+
+            # Apply the middleware chain.
+            return await self._apply_middleware(mw_context, _handler)
 
     async def _mcp_list_prompts(self) -> list[MCPPrompt]:
+        logger.debug("Handler called: list_prompts")
+
+        with fastmcp.server.context.Context(fastmcp=self):
+            prompts = await self._list_prompts()
+            return [prompt.to_mcp_prompt(name=prompt.key) for prompt in prompts]
+
+    async def _list_prompts(self) -> list[Prompt]:
         """
         List all available prompts, in the format expected by the low-level MCP
         server.
 
         """
-        prompts = await self.get_prompts()
-        mcp_prompts: list[MCPPrompt] = []
-        for key, prompt in prompts.items():
-            if self._should_enable_component(prompt):
-                mcp_prompts.append(prompt.to_mcp_prompt(name=key))
-        return mcp_prompts
+
+        async def _handler(
+            context: MiddlewareContext[mcp.types.ListPromptsRequest],
+        ) -> list[Prompt]:
+            prompts = await self._prompt_manager.list_prompts()  # type: ignore[reportPrivateUsage]
+
+            mcp_prompts: list[Prompt] = []
+            for prompt in prompts:
+                if self._should_enable_component(prompt):
+                    mcp_prompts.append(prompt)
+
+            return mcp_prompts
+
+        with fastmcp.server.context.Context(fastmcp=self) as fastmcp_ctx:
+            # Create the middleware context.
+            mw_context = MiddlewareContext(
+                message=mcp.types.ListPromptsRequest(method="prompts/list"),
+                source="client",
+                type="request",
+                method="prompts/list",
+                fastmcp_context=fastmcp_ctx,
+            )
+
+            # Apply the middleware chain.
+            return await self._apply_middleware(mw_context, _handler)
 
     async def _mcp_call_tool(
         self, key: str, arguments: dict[str, Any]
@@ -579,56 +599,40 @@ class FastMCP(Generic[LifespanResultT]):
         Returns:
             List of MCP Content objects containing the tool results
         """
-        logger.debug("Call tool: %s with %s", key, arguments)
+        logger.debug("Handler called: call_tool %s with %s", key, arguments)
 
-        # Create and use context for the entire call
         with fastmcp.server.context.Context(fastmcp=self):
             try:
                 return await self._call_tool(key, arguments)
             except DisabledError:
-                # convert to NotFoundError to avoid leaking tool presence
                 raise NotFoundError(f"Unknown tool: {key}")
             except NotFoundError:
-                # standardize NotFound message
                 raise NotFoundError(f"Unknown tool: {key}")
 
     async def _call_tool(self, key: str, arguments: dict[str, Any]) -> list[MCPContent]:
         """
-        Call a tool with raw MCP arguments. FastMCP subclasses should override
-        this method, not _mcp_call_tool.
-
-        Args:
-            key: The name of the tool to call arguments: Arguments to pass to
-            the tool
-
-        Returns:
-            List of MCP Content objects containing the tool results
+        Applies this server's middleware and delegates the filtered call to the manager.
         """
 
-        # Get tool, checking first from our tools, then from the mounted servers
-        if self._tool_manager.has_tool(key):
-            tool = self._tool_manager.get_tool(key)
+        async def _handler(
+            context: MiddlewareContext[mcp.types.CallToolRequestParams],
+        ) -> list[MCPContent]:
+            tool = await self._tool_manager.get_tool(context.message.name)
             if not self._should_enable_component(tool):
-                raise DisabledError(f"Tool {key!r} is disabled")
-            return await self._tool_manager.call_tool(key, arguments)
+                raise NotFoundError(f"Unknown tool: {context.message.name!r}")
 
-        # Check mounted servers to see if they have the tool
-        # iterate such that new mounts take precedence over older ones
-        for mounted_server in reversed(self._mounted_servers):
-            tool_key = key
-            try:
-                # If server has a prefix, check if key matches and strip prefix
-                if mounted_server.prefix:
-                    if tool_key.startswith(f"{mounted_server.prefix}_"):
-                        tool_key = tool_key.removeprefix(f"{mounted_server.prefix}_")
-                    else:
-                        continue
-                return await mounted_server.server._call_tool(tool_key, arguments)
-            except NotFoundError:
-                # Tool not found on this server, try the next one
-                continue
+            return await self._tool_manager.call_tool(
+                key=context.message.name, arguments=context.message.arguments or {}
+            )
 
-        raise NotFoundError(f"Unknown tool: {key!r}")
+        mw_context = MiddlewareContext(
+            message=mcp.types.CallToolRequestParams(name=key, arguments=arguments),
+            source="client",
+            type="request",
+            method="tools/call",
+            fastmcp_context=fastmcp.server.dependencies.get_context(),
+        )
+        return await self._apply_middleware(mw_context, _handler)
 
     async def _mcp_read_resource(self, uri: AnyUrl | str) -> list[ReadResourceContents]:
         """
@@ -636,7 +640,7 @@ class FastMCP(Generic[LifespanResultT]):
 
         Delegates to _read_resource, which should be overridden by FastMCP subclasses.
         """
-        logger.debug("Read resource: %s", uri)
+        logger.debug("Handler called: read_resource %s", uri)
 
         with fastmcp.server.context.Context(fastmcp=self):
             try:
@@ -650,45 +654,38 @@ class FastMCP(Generic[LifespanResultT]):
 
     async def _read_resource(self, uri: AnyUrl | str) -> list[ReadResourceContents]:
         """
-        Read a resource by URI, in the format expected by the low-level MCP
-        server.
+        Applies this server's middleware and delegates the filtered call to the manager.
         """
-        if self._resource_manager.has_resource(uri):
-            resource = await self._resource_manager.get_resource(uri)
+
+        async def _handler(
+            context: MiddlewareContext[mcp.types.ReadResourceRequestParams],
+        ) -> list[ReadResourceContents]:
+            resource = await self._resource_manager.get_resource(context.message.uri)
             if not self._should_enable_component(resource):
-                raise DisabledError(f"Resource {str(uri)!r} is disabled")
-            content = await self._resource_manager.read_resource(uri)
+                raise NotFoundError(f"Unknown resource: {str(context.message.uri)!r}")
+
+            content = await self._resource_manager.read_resource(context.message.uri)
             return [
                 ReadResourceContents(
                     content=content,
                     mime_type=resource.mime_type,
                 )
             ]
+
+        # Convert string URI to AnyUrl if needed
+        if isinstance(uri, str):
+            uri_param = AnyUrl(uri)
         else:
-            # iterate such that new mounts take precedence over older ones
-            for mounted_server in reversed(self._mounted_servers):
-                resource_uri = uri
-                try:
-                    if mounted_server.prefix:
-                        # If server has a prefix, check if URI matches and strip prefix
-                        if has_resource_prefix(
-                            str(resource_uri),
-                            mounted_server.prefix,
-                            self.resource_prefix_format,
-                        ):
-                            resource_uri = remove_resource_prefix(
-                                str(resource_uri),
-                                mounted_server.prefix,
-                                self.resource_prefix_format,
-                            )
-                        else:
-                            continue
-                    return await mounted_server.server._mcp_read_resource(resource_uri)
-                except NotFoundError:
-                    # Resource not found on this server, try the next one
-                    continue
-            else:
-                raise NotFoundError(f"Unknown resource: {uri}")
+            uri_param = uri
+
+        mw_context = MiddlewareContext(
+            message=mcp.types.ReadResourceRequestParams(uri=uri_param),
+            source="client",
+            type="request",
+            method="resources/read",
+            fastmcp_context=fastmcp.server.dependencies.get_context(),
+        )
+        return await self._apply_middleware(mw_context, _handler)
 
     async def _mcp_get_prompt(
         self, name: str, arguments: dict[str, Any] | None = None
@@ -698,7 +695,7 @@ class FastMCP(Generic[LifespanResultT]):
 
         Delegates to _get_prompt, which should be overridden by FastMCP subclasses.
         """
-        logger.debug("Get prompt: %s with %s", name, arguments)
+        logger.debug("Handler called: get_prompt %s with %s", name, arguments)
 
         with fastmcp.server.context.Context(fastmcp=self):
             try:
@@ -713,45 +710,29 @@ class FastMCP(Generic[LifespanResultT]):
     async def _get_prompt(
         self, name: str, arguments: dict[str, Any] | None = None
     ) -> GetPromptResult:
-        """Handle MCP 'getPrompt' requests.
-
-        Args:
-            name: The name of the prompt to render
-            arguments: Arguments to pass to the prompt
-
-        Returns:
-            GetPromptResult containing the rendered prompt messages
         """
-        logger.debug("Get prompt: %s with %s", name, arguments)
+        Applies this server's middleware and delegates the filtered call to the manager.
+        """
 
-        # Get prompt, checking first from our prompts, then from the mounted servers
-        if self._prompt_manager.has_prompt(name):
-            prompt = self._prompt_manager.get_prompt(name)
+        async def _handler(
+            context: MiddlewareContext[mcp.types.GetPromptRequestParams],
+        ) -> GetPromptResult:
+            prompt = await self._prompt_manager.get_prompt(context.message.name)
             if not self._should_enable_component(prompt):
-                raise DisabledError(f"Prompt {name!r} is disabled")
-            return await self._prompt_manager.render_prompt(name, arguments)
+                raise NotFoundError(f"Unknown prompt: {context.message.name!r}")
 
-        # Check mounted servers to see if they have the prompt
-        # iterate such that new mounts take precedence over older ones
-        for mounted_server in reversed(self._mounted_servers):
-            prompt_name = name
-            try:
-                if mounted_server.prefix:
-                    # If server has a prefix, check if name matches and strip prefix
-                    if prompt_name.startswith(f"{mounted_server.prefix}_"):
-                        prompt_name = prompt_name.removeprefix(
-                            f"{mounted_server.prefix}_"
-                        )
-                    else:
-                        continue
-                return await mounted_server.server._mcp_get_prompt(
-                    prompt_name, arguments
-                )
-            except NotFoundError:
-                # Prompt not found on this server, try the next one
-                continue
+            return await self._prompt_manager.render_prompt(
+                name=context.message.name, arguments=context.message.arguments
+            )
 
-        raise NotFoundError(f"Unknown prompt: {name}")
+        mw_context = MiddlewareContext(
+            message=mcp.types.GetPromptRequestParams(name=name, arguments=arguments),
+            source="client",
+            type="request",
+            method="prompts/get",
+            fastmcp_context=fastmcp.server.dependencies.get_context(),
+        )
+        return await self._apply_middleware(mw_context, _handler)
 
     def add_tool(self, tool: Tool) -> None:
         """Add a tool to the server.
@@ -919,23 +900,23 @@ class FastMCP(Generic[LifespanResultT]):
             enabled=enabled,
         )
 
-    def add_resource(self, resource: Resource, key: str | None = None) -> None:
+    def add_resource(self, resource: Resource) -> None:
         """Add a resource to the server.
 
         Args:
             resource: A Resource instance to add
         """
 
-        self._resource_manager.add_resource(resource, key=key)
+        self._resource_manager.add_resource(resource)
         self._cache.clear()
 
-    def add_template(self, template: ResourceTemplate, key: str | None = None) -> None:
+    def add_template(self, template: ResourceTemplate) -> None:
         """Add a resource template to the server.
 
         Args:
             template: A ResourceTemplate instance to add
         """
-        self._resource_manager.add_template(template, key=key)
+        self._resource_manager.add_template(template)
 
     def add_resource_fn(
         self,
@@ -1278,7 +1259,7 @@ class FastMCP(Generic[LifespanResultT]):
         log_level: str | None = None,
         path: str | None = None,
         uvicorn_config: dict[str, Any] | None = None,
-        middleware: list[Middleware] | None = None,
+        middleware: list[ASGIMiddleware] | None = None,
     ) -> None:
         """Run the server using HTTP transport.
 
@@ -1349,7 +1330,7 @@ class FastMCP(Generic[LifespanResultT]):
         self,
         path: str | None = None,
         message_path: str | None = None,
-        middleware: list[Middleware] | None = None,
+        middleware: list[ASGIMiddleware] | None = None,
     ) -> StarletteWithLifespan:
         """
         Create a Starlette app for the SSE server.
@@ -1379,7 +1360,7 @@ class FastMCP(Generic[LifespanResultT]):
     def streamable_http_app(
         self,
         path: str | None = None,
-        middleware: list[Middleware] | None = None,
+        middleware: list[ASGIMiddleware] | None = None,
     ) -> StarletteWithLifespan:
         """
         Create a Starlette app for the StreamableHTTP server.
@@ -1400,7 +1381,7 @@ class FastMCP(Generic[LifespanResultT]):
     def http_app(
         self,
         path: str | None = None,
-        middleware: list[Middleware] | None = None,
+        middleware: list[ASGIMiddleware] | None = None,
         json_response: bool | None = None,
         stateless_http: bool | None = None,
         transport: Literal["streamable-http", "sse"] = "streamable-http",
@@ -1584,11 +1565,16 @@ class FastMCP(Generic[LifespanResultT]):
         if as_proxy and not isinstance(server, FastMCPProxy):
             server = FastMCPProxy(Client(transport=FastMCPTransport(server)))
 
+        # Delegate mounting to all three managers
         mounted_server = MountedServer(
-            server=server,
             prefix=prefix,
+            server=server,
+            resource_prefix_format=self.resource_prefix_format,
         )
-        self._mounted_servers.append(mounted_server)
+        self._tool_manager.mount(mounted_server)
+        self._resource_manager.mount(mounted_server)
+        self._prompt_manager.mount(mounted_server)
+
         self._cache.clear()
 
     async def import_server(
@@ -1682,10 +1668,8 @@ class FastMCP(Generic[LifespanResultT]):
         # Import tools from the server
         for key, tool in (await server.get_tools()).items():
             if prefix:
-                tool_key = f"{prefix}_{key}"
-            else:
-                tool_key = key
-            self._tool_manager.add_tool(tool, key=tool_key)
+                tool = tool.with_key(f"{prefix}_{key}")
+            self._tool_manager.add_tool(tool)
 
         # Import resources and templates from the server
         for key, resource in (await server.get_resources()).items():
@@ -1693,35 +1677,27 @@ class FastMCP(Generic[LifespanResultT]):
                 resource_key = add_resource_prefix(
                     key, prefix, self.resource_prefix_format
                 )
-            else:
-                resource_key = key
-            self._resource_manager.add_resource(resource, key=resource_key)
+                resource = resource.with_key(resource_key)
+            self._resource_manager.add_resource(resource)
 
         for key, template in (await server.get_resource_templates()).items():
             if prefix:
                 template_key = add_resource_prefix(
                     key, prefix, self.resource_prefix_format
                 )
-            else:
-                template_key = key
-            self._resource_manager.add_template(template, key=template_key)
+                template = template.with_key(template_key)
+            self._resource_manager.add_template(template)
 
         # Import prompts from the server
         for key, prompt in (await server.get_prompts()).items():
             if prefix:
-                prompt_key = f"{prefix}_{key}"
-            else:
-                prompt_key = key
-            self._prompt_manager.add_prompt(prompt, key=prompt_key)
+                prompt = prompt.with_key(f"{prefix}_{key}")
+            self._prompt_manager.add_prompt(prompt)
 
         if prefix:
-            logger.info(f"Imported server {server.name} with prefix '{prefix}'")
-            logger.debug(f"Imported tools with prefix '{prefix}_'")
-            logger.debug(f"Imported resources and templates with prefix '{prefix}/'")
-            logger.debug(f"Imported prompts with prefix '{prefix}_'")
+            logger.debug(f"Imported server {server.name} with prefix '{prefix}'")
         else:
-            logger.info(f"Imported server {server.name}")
-            logger.debug("Imported tools, resources, templates, and prompts")
+            logger.debug(f"Imported server {server.name}")
 
         self._cache.clear()
 
@@ -1882,6 +1858,7 @@ class FastMCP(Generic[LifespanResultT]):
 class MountedServer:
     prefix: str | None
     server: FastMCP[Any]
+    resource_prefix_format: Literal["protocol", "path"] | None = None
 
 
 def add_resource_prefix(

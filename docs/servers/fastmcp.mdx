@@ -193,7 +193,7 @@ def hello():
     return "hi"
 
 # Mount directly
-main.mount("sub", sub)
+main.mount(sub, prefix="sub")
 ```
 
 ## Proxying Servers

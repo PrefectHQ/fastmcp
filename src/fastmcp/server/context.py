@@ -8,6 +8,7 @@ from dataclasses import dataclass
 
 from mcp import LoggingLevel
 from mcp.server.lowlevel.helper_types import ReadResourceContents
+from mcp.server.lowlevel.server import request_ctx
 from mcp.shared.context import RequestContext
 from mcp.types import (
     CreateMessageResult,
@@ -95,8 +96,14 @@ class Context:
 
     @property
     def request_context(self) -> RequestContext:
-        """Access to the underlying request context."""
-        return self.fastmcp._mcp_server.request_context
+        """Access to the underlying request context.
+
+        If called outside of a request context, this will raise a ValueError.
+        """
+        try:
+            return request_ctx.get()
+        except LookupError:
+            raise ValueError("Context is not available outside of a request")
 
     async def report_progress(
         self, progress: float, total: float | None = None, message: str | None = None

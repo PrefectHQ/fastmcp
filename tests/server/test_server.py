@@ -282,7 +282,7 @@ class TestToolDecorator:
             return x * 2
 
         # Verify the tags were set correctly
-        tools = mcp._tool_manager.list_tools()
+        tools = await mcp._tool_manager.list_tools()
         assert len(tools) == 1
         assert tools[0].tags == {"example", "test-tag"}
 
