@@ -17,6 +17,11 @@ from typing import (
 
 import mcp.types as mt
 
+from fastmcp.prompts.prompt import Prompt
+from fastmcp.resources.resource import Resource
+from fastmcp.resources.template import ResourceTemplate
+from fastmcp.tools.tool import Tool
+
 if TYPE_CHECKING:
     from fastmcp.server.context import Context
 
@@ -45,6 +50,32 @@ ServerResultT = TypeVar(
     | mt.CallToolResult
     | mt.ListToolsResult,
 )
+
+
+@dataclass(kw_only=True)
+class CallToolResult:
+    content: list[mt.Content]
+    isError: bool = False
+
+
+@dataclass(kw_only=True)
+class ListToolsResult:
+    tools: dict[str, Tool]
+
+
+@dataclass(kw_only=True)
+class ListResourcesResult:
+    resources: list[Resource]
+
+
+@dataclass(kw_only=True)
+class ListResourceTemplatesResult:
+    resource_templates: list[ResourceTemplate]
+
+
+@dataclass(kw_only=True)
+class ListPromptsResult:
+    prompts: list[Prompt]
 
 
 @runtime_checkable
@@ -95,29 +126,29 @@ class MCPMiddleware:
     ) -> Any:
         """Main entry point that orchestrates the pipeline."""
         handler_chain = await self._dispatch_handler(
-            context.message,
+            context,
             call_next=call_next,
         )
         return await handler_chain(context)
 
     async def _dispatch_handler(
-        self, message: Any, call_next: CallNext[Any, Any]
+        self, context: MiddlewareContext[Any], call_next: CallNext[Any, Any]
     ) -> CallNext[Any, Any]:
         """Builds a chain of handlers for a given message."""
         handler = call_next
 
-        match message:
-            case mt.CallToolRequest():
+        match context.method:
+            case "tools/call":
                 handler = partial(self.on_call_tool, call_next=handler)
-            case mt.ReadResourceRequest():
+            case "resources/read":
                 handler = partial(self.on_read_resource, call_next=handler)
-            case mt.GetPromptRequest():
+            case "prompts/get":
                 handler = partial(self.on_get_prompt, call_next=handler)
 
-        match message:
-            case mt.Request():
+        match context.type:
+            case "request":
                 handler = partial(self.on_request, call_next=handler)
-            case mt.Notification():
+            case "notification":
                 handler = partial(self.on_notification, call_next=handler)
 
         handler = partial(self.on_message, call_next=handler)
@@ -147,28 +178,28 @@ class MCPMiddleware:
 
     async def on_call_tool(
         self,
-        context: MiddlewareContext[mt.CallToolRequest],
-        call_next: CallNext[mt.CallToolRequest, mt.CallToolResult],
+        context: MiddlewareContext[mt.CallToolRequestParams],
+        call_next: CallNext[mt.CallToolRequestParams, mt.CallToolResult],
     ) -> mt.CallToolResult:
         return await call_next(context)
 
     async def on_read_resource(
         self,
-        context: MiddlewareContext[mt.ReadResourceRequest],
-        call_next: CallNext[mt.ReadResourceRequest, mt.ReadResourceResult],
+        context: MiddlewareContext[mt.ReadResourceRequestParams],
+        call_next: CallNext[mt.ReadResourceRequestParams, mt.ReadResourceResult],
     ) -> mt.ReadResourceResult:
         return await call_next(context)
 
     async def on_get_prompt(
         self,
-        context: MiddlewareContext[mt.GetPromptRequest],
-        call_next: CallNext[mt.GetPromptRequest, mt.GetPromptResult],
+        context: MiddlewareContext[mt.GetPromptRequestParams],
+        call_next: CallNext[mt.GetPromptRequestParams, mt.GetPromptResult],
     ) -> mt.GetPromptResult:
         return await call_next(context)
 
     async def on_list_tools(
         self,
         context: MiddlewareContext[mt.ListToolsRequest],
-        call_next: CallNext[mt.ListToolsRequest, mt.ListToolsResult],
-    ) -> mt.ListToolsResult:
+        call_next: CallNext[mt.ListToolsRequest, ListToolsResult],
+    ) -> ListToolsResult:
         return await call_next(context)
