@@ -478,7 +478,7 @@ class TestTagTransfer:
     ):
         """Test that tags from OpenAPI routes are correctly transferred to Tools."""
         # Get internal tools directly (not the public API which returns MCP.Content)
-        tools = fastmcp_openapi_server_with_all_types._tool_manager.list_tools()
+        tools = fastmcp_openapi_server_with_all_types._tool_manager._list_tools()
 
         # Find the create_user and update_user_name tools
         create_user_tool = next(
@@ -528,7 +528,7 @@ class TestTagTransfer:
         """Test that tags from OpenAPI routes are correctly transferred to ResourceTemplates."""
         # Get internal resource templates directly
         templates = list(
-            fastmcp_openapi_server_with_all_types._resource_manager.get_templates().values()
+            fastmcp_openapi_server_with_all_types._resource_manager.get_resource_templates().values()
         )
 
         # Find the get_user template
@@ -549,7 +549,7 @@ class TestTagTransfer:
         """Test that tags are preserved when creating resources from templates."""
         # Get internal resource templates directly
         templates = list(
-            fastmcp_openapi_server_with_all_types._resource_manager.get_templates().values()
+            fastmcp_openapi_server_with_all_types._resource_manager.get_resource_templates().values()
         )
 
         # Find the get_user template
@@ -1537,11 +1537,11 @@ class TestFastAPIDescriptionPropagation:
             print(f"  Resource: {name}, Name attribute: {resource.name}")
 
         print("\nDEBUG - Templates created:")
-        for name, template in server._resource_manager.get_templates().items():
+        for name, template in server._resource_manager.get_resource_templates().items():
             print(f"  Template: {name}, Name attribute: {template.name}")
 
         print("\nDEBUG - Tools created:")
-        for tool in server._tool_manager.list_tools():
+        for tool in server._tool_manager._list_tools():
             print(f"  Tool: {tool.name}")
 
         return server
@@ -1759,7 +1759,7 @@ class TestReprMethods:
         self, fastmcp_openapi_server_with_all_types: FastMCPOpenAPI
     ):
         """Test that OpenAPITool's __repr__ method works without recursion errors."""
-        tools = fastmcp_openapi_server_with_all_types._tool_manager.list_tools()
+        tools = fastmcp_openapi_server_with_all_types._tool_manager._list_tools()
         tool = next(iter(tools))
 
         # Verify repr doesn't cause recursion and contains expected elements
@@ -1790,7 +1790,7 @@ class TestReprMethods:
     ):
         """Test that OpenAPIResourceTemplate's __repr__ method works without recursion errors."""
         templates = list(
-            fastmcp_openapi_server_with_all_types._resource_manager.get_templates().values()
+            fastmcp_openapi_server_with_all_types._resource_manager.get_resource_templates().values()
         )
         template = next(iter(templates))
 
@@ -1836,7 +1836,7 @@ class TestEnumHandling:
         )
 
         # Get the tools from the server
-        tools = server._tool_manager.list_tools()
+        tools = server._tool_manager._list_tools()
 
         # Find the read_item tool
         read_item_tool = next((t for t in tools if t.name == "read_item_items"), None)
@@ -1929,7 +1929,7 @@ class TestRouteMapWildcard:
         )
 
         # All operations should be mapped to tools
-        tools = mcp._tool_manager.list_tools()
+        tools = mcp._tool_manager._list_tools()
         tool_names = {tool.name for tool in tools}
 
         # Check that all 4 operations became tools
@@ -2246,12 +2246,12 @@ class TestMCPNames:
         )
 
         # Check tools use custom names
-        tools = server._tool_manager.list_tools()
+        tools = server._tool_manager._list_tools()
         tool_names = {tool.name for tool in tools}
         assert "admin_create_user" in tool_names
 
         # Check resource templates use custom names
-        templates = list(server._resource_manager.get_templates().values())
+        templates = list(server._resource_manager.get_resource_templates().values())
         template_names = {template.name for template in templates}
         assert "user_detail" in template_names
 
@@ -2276,10 +2276,10 @@ class TestMCPNames:
             route_maps=GET_ROUTE_MAPS,
         )
 
-        tools = server._tool_manager.list_tools()
+        tools = server._tool_manager._list_tools()
         tool_names = {tool.name for tool in tools}
 
-        templates = list(server._resource_manager.get_templates().values())
+        templates = list(server._resource_manager.get_resource_templates().values())
         template_names = {template.name for template in templates}
 
         resources = list(server._resource_manager.get_resources().values())
@@ -2330,13 +2330,13 @@ class TestMCPNames:
         # Check all component types
         all_names = []
 
-        tools = server._tool_manager.list_tools()
+        tools = server._tool_manager._list_tools()
         all_names.extend(tool.name for tool in tools)
 
         resources = list(server._resource_manager.get_resources().values())
         all_names.extend(resource.name for resource in resources)
 
-        templates = list(server._resource_manager.get_templates().values())
+        templates = list(server._resource_manager.get_resource_templates().values())
         all_names.extend(template.name for template in templates)
 
         # All names should be 56 characters or less
@@ -2363,7 +2363,7 @@ class TestMCPNames:
             mcp_names=mcp_names,
         )
 
-        tools = server._tool_manager.list_tools()
+        tools = server._tool_manager._list_tools()
         tool_names = {tool.name for tool in tools}
         assert "openapi_user_list" in tool_names
 
@@ -2395,7 +2395,7 @@ class TestMCPNames:
             mcp_names=mcp_names,
         )
 
-        tools = server._tool_manager.list_tools()
+        tools = server._tool_manager._list_tools()
         tool_names = {tool.name for tool in tools}
 
         assert "fastapi_create_user" in tool_names
@@ -2496,7 +2496,7 @@ class TestRouteMapMCPTags:
         )
 
         # Get the POST tool
-        tools = server._tool_manager.list_tools()
+        tools = server._tool_manager._list_tools()
         create_user_tool = next((t for t in tools if "create_user" in t.name), None)
 
         assert create_user_tool is not None, "create_user tool not found"
@@ -2564,7 +2564,7 @@ class TestRouteMapMCPTags:
         )
 
         # Get the resource template
-        templates = list(server._resource_manager.get_templates().values())
+        templates = list(server._resource_manager.get_resource_templates().values())
         get_user_template = next((t for t in templates if "get_user" in t.name), None)
 
         assert get_user_template is not None, "get_user template not found"
@@ -2610,14 +2610,14 @@ class TestRouteMapMCPTags:
         )
 
         # Check tool tags
-        tools = server._tool_manager.list_tools()
+        tools = server._tool_manager._list_tools()
         create_tool = next((t for t in tools if "create_user" in t.name), None)
         assert create_tool is not None
         assert "write-operation" in create_tool.tags
         assert "mutation" in create_tool.tags
 
         # Check resource template tags
-        templates = list(server._resource_manager.get_templates().values())
+        templates = list(server._resource_manager.get_resource_templates().values())
         detail_template = next((t for t in templates if "get_user" in t.name), None)
         assert detail_template is not None
         assert "detail" in detail_template.tags

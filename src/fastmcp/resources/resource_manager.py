@@ -1,9 +1,11 @@
 """Resource manager functionality."""
 
+from __future__ import annotations
+
 import inspect
 import warnings
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import AnyUrl
 
@@ -16,6 +18,9 @@ from fastmcp.resources.template import (
 )
 from fastmcp.settings import DuplicateBehavior
 from fastmcp.utilities.logging import get_logger
+
+if TYPE_CHECKING:
+    from fastmcp.server.server import MountedServer
 
 logger = get_logger(__name__)
 
@@ -38,6 +43,7 @@ class ResourceManager:
         """
         self._resources: dict[str, Resource] = {}
         self._templates: dict[str, ResourceTemplate] = {}
+        self._mounted_sources: list[MountedServer] = []
         self.mask_error_details = mask_error_details or settings.mask_error_details
 
         # Default to "warn" if None is provided
@@ -50,6 +56,128 @@ class ResourceManager:
                 f"Must be one of: {', '.join(DuplicateBehavior.__args__)}"
             )
         self.duplicate_behavior = duplicate_behavior
+
+    def mount(self, server: MountedServer) -> None:
+        """Adds a mounted server as a source for resources and templates."""
+        self._mounted_sources.append(server)
+
+    async def get_resources(self) -> dict[str, Resource]:
+        """Get all registered resources, keyed by URI."""
+        return await self._load_resources(mode="inventory")
+
+    async def get_resource_templates(self) -> dict[str, ResourceTemplate]:
+        """Get all registered templates, keyed by URI template."""
+        return await self._load_resource_templates(mode="inventory")
+
+    async def _load_resources(
+        self, *, mode: Literal["inventory", "protocol"]
+    ) -> dict[str, Resource]:
+        """
+        The single, consolidated recursive method for fetching resources. The 'mode'
+        parameter determines the communication path.
+
+        - mode="inventory": Manager-to-manager path for complete, unfiltered inventory
+        - mode="protocol": Server-to-server path for filtered MCP requests
+        """
+        all_resources: dict[str, Resource] = {}
+
+        for mounted in self._mounted_sources:
+            try:
+                if mode == "protocol":
+                    # PATH 2: Use the server-to-server filtered path
+                    child_resources_list = await mounted.server._list_resources()
+                    child_resources = {
+                        resource.key: resource for resource in child_resources_list
+                    }
+                else:  # mode == "inventory"
+                    # PATH 1: Use the manager-to-manager unfiltered path
+                    child_resources = (
+                        await mounted.server._resource_manager.get_resources()
+                    )
+
+                # Apply prefix if needed
+                if mounted.prefix:
+                    from fastmcp.server.server import add_resource_prefix
+
+                    for uri, resource in child_resources.items():
+                        prefixed_uri = add_resource_prefix(
+                            uri, mounted.prefix, mounted.resource_prefix_format
+                        )
+                        # Create a copy of the resource with the prefixed key
+                        prefixed_resource = resource.with_key(prefixed_uri)
+                        all_resources[prefixed_uri] = prefixed_resource
+                else:
+                    all_resources.update(child_resources)
+            except Exception as e:
+                # Skip failed mounts silently, matches existing behavior
+                logger.warning(
+                    f"Failed to get resources from mounted server '{mounted.prefix}': {e}"
+                )
+                continue
+
+        # Finally, add local resources, which always take precedence
+        all_resources.update(self._resources)
+        return all_resources
+
+    async def _load_resource_templates(
+        self, *, mode: Literal["inventory", "protocol"]
+    ) -> dict[str, ResourceTemplate]:
+        """
+        The single, consolidated recursive method for fetching templates. The 'mode'
+        parameter determines the communication path.
+
+        - mode="inventory": Manager-to-manager path for complete, unfiltered inventory
+        - mode="protocol": Server-to-server path for filtered MCP requests
+        """
+        all_templates: dict[str, ResourceTemplate] = {}
+
+        for mounted in self._mounted_sources:
+            try:
+                if mode == "protocol":
+                    # PATH 2: Use the server-to-server filtered path
+                    child_templates = await mounted.server._list_resource_templates()
+                else:  # mode == "inventory"
+                    # PATH 1: Use the manager-to-manager unfiltered path
+                    child_templates = await mounted.server._resource_manager._list_resource_templates()
+                child_dict = {template.key: template for template in child_templates}
+
+                # Apply prefix if needed
+                if mounted.prefix:
+                    from fastmcp.server.server import add_resource_prefix
+
+                    for uri_template, template in child_dict.items():
+                        prefixed_uri_template = add_resource_prefix(
+                            uri_template, mounted.prefix, mounted.resource_prefix_format
+                        )
+                        # Create a copy of the template with the prefixed key
+                        prefixed_template = template.with_key(prefixed_uri_template)
+                        all_templates[prefixed_uri_template] = prefixed_template
+                else:
+                    all_templates.update(child_dict)
+            except Exception as e:
+                # Skip failed mounts silently, matches existing behavior
+                logger.warning(
+                    f"Failed to get templates from mounted server '{mounted.prefix}': {e}"
+                )
+                continue
+
+        # Finally, add local templates, which always take precedence
+        all_templates.update(self._templates)
+        return all_templates
+
+    async def _list_resources(self) -> list[Resource]:
+        """
+        Lists all resources, applying protocol filtering.
+        """
+        resources_dict = await self._load_resources(mode="protocol")
+        return list(resources_dict.values())
+
+    async def _list_resource_templates(self) -> list[ResourceTemplate]:
+        """
+        Lists all templates, applying protocol filtering.
+        """
+        templates_dict = await self._load_resource_templates(mode="protocol")
+        return list(templates_dict.values())
 
     def add_resource_or_template_from_fn(
         self,
@@ -235,14 +363,21 @@ class ResourceManager:
         self._templates[storage_key] = template
         return template
 
-    def has_resource(self, uri: AnyUrl | str) -> bool:
+    async def has_resource(self, uri: AnyUrl | str) -> bool:
         """Check if a resource exists."""
         uri_str = str(uri)
-        if uri_str in self._resources:
+
+        # First check concrete resources (local and mounted)
+        resources = await self.get_resources()
+        if uri_str in resources:
             return True
-        for template_key in self._templates.keys():
+
+        # Then check templates (local and mounted) only if not found in concrete resources
+        templates = await self.get_resource_templates()
+        for template_key in templates.keys():
             if match_uri_template(uri_str, template_key):
                 return True
+
         return False
 
     async def get_resource(self, uri: AnyUrl | str) -> Resource:
@@ -257,12 +392,14 @@ class ResourceManager:
         uri_str = str(uri)
         logger.debug("Getting resource", extra={"uri": uri_str})
 
-        # First check concrete resources
-        if resource := self._resources.get(uri_str):
+        # First check concrete resources (local and mounted)
+        resources = await self.get_resources()
+        if resource := resources.get(uri_str):
             return resource
 
-        # Then check templates - use the utility function to match against storage keys
-        for storage_key, template in self._templates.items():
+        # Then check templates (local and mounted) - use the utility function to match against storage keys
+        templates = await self.get_resource_templates()
+        for storage_key, template in templates.items():
             # Try to match against the storage key (which might be a custom key)
             if params := match_uri_template(uri_str, storage_key):
                 try:
@@ -289,31 +426,89 @@ class ResourceManager:
         raise NotFoundError(f"Unknown resource: {uri_str}")
 
     async def read_resource(self, uri: AnyUrl | str) -> str | bytes:
-        """Read a resource contents."""
-        resource = await self.get_resource(uri)
+        """
+        Internal API for servers: Finds and reads a resource, respecting the
+        filtered protocol path.
+        """
+        uri_str = str(uri)
 
-        try:
-            return await resource.read()
+        # 1. Check local resources first. The server will have already applied its filter.
+        if uri_str in self._resources:
+            resource = await self.get_resource(uri_str)
+            if not resource:
+                raise NotFoundError(f"Resource {uri_str!r} not found")
 
-        # raise ResourceErrors as-is
-        except ResourceError as e:
-            logger.error(f"Error reading resource {uri!r}: {e}")
-            raise e
+            try:
+                return await resource.read()
 
-        # Handle other exceptions
-        except Exception as e:
-            logger.error(f"Error reading resource {uri!r}: {e}")
-            if self.mask_error_details:
-                # Mask internal details
-                raise ResourceError(f"Error reading resource {uri!r}") from e
-            else:
-                # Include original error details
-                raise ResourceError(f"Error reading resource {uri!r}: {e}") from e
+            # raise ResourceErrors as-is
+            except ResourceError as e:
+                logger.exception(f"Error reading resource {uri_str!r}: {e}")
+                raise e
 
-    def get_resources(self) -> dict[str, Resource]:
-        """Get all registered resources, keyed by URI."""
-        return self._resources
+            # Handle other exceptions
+            except Exception as e:
+                logger.exception(f"Error reading resource {uri_str!r}: {e}")
+                if self.mask_error_details:
+                    # Mask internal details
+                    raise ResourceError(f"Error reading resource {uri_str!r}") from e
+                else:
+                    # Include original error details
+                    raise ResourceError(
+                        f"Error reading resource {uri_str!r}: {e}"
+                    ) from e
 
-    def get_templates(self) -> dict[str, ResourceTemplate]:
-        """Get all registered templates, keyed by URI template."""
-        return self._templates
+        # 1b. Check local templates if not found in concrete resources
+        for template in self._templates.values():
+            if params := match_uri_template(uri_str, template.uri_template):
+                try:
+                    resource = await template.create_resource(uri_str, params=params)
+                    return await resource.read()
+                except ResourceError as e:
+                    logger.exception(
+                        f"Error reading resource from template {uri_str!r}: {e}"
+                    )
+                    raise e
+                except Exception as e:
+                    logger.exception(
+                        f"Error reading resource from template {uri_str!r}: {e}"
+                    )
+                    if self.mask_error_details:
+                        raise ResourceError(
+                            f"Error reading resource from template {uri_str!r}"
+                        ) from e
+                    else:
+                        raise ResourceError(
+                            f"Error reading resource from template {uri_str!r}: {e}"
+                        ) from e
+
+        # 2. Check mounted servers using the filtered protocol path.
+        from fastmcp.server.server import has_resource_prefix, remove_resource_prefix
+
+        for mounted in reversed(self._mounted_sources):
+            resource_uri = uri_str
+            try:
+                if mounted.prefix:
+                    # If server has a prefix, check if URI matches and strip prefix
+                    if has_resource_prefix(
+                        resource_uri,
+                        mounted.prefix,
+                        mounted.resource_prefix_format,
+                    ):
+                        resource_uri = remove_resource_prefix(
+                            resource_uri,
+                            mounted.prefix,
+                            mounted.resource_prefix_format,
+                        )
+                    else:
+                        continue
+
+                result = await mounted.server._read_resource(resource_uri)
+                # Extract content from the first ReadResourceContents
+                if result and len(result) > 0:
+                    return result[0].content
+                raise NotFoundError(f"Resource {uri_str!r} returned empty content")
+            except NotFoundError:
+                continue
+
+        raise NotFoundError(f"Resource {uri_str!r} not found.")

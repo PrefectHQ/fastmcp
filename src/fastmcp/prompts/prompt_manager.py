@@ -65,14 +65,10 @@ class PromptManager:
                     child_results = await mounted.server._list_prompts()
                 else:  # mode == "inventory"
                     # PATH 1: Use the manager-to-manager unfiltered path
-                    child_results = await mounted.server._prompt_manager.get_prompts()
+                    child_results = await mounted.server._prompt_manager._list_prompts()
 
                 # The combination logic is the same for both paths
-                child_dict = (
-                    {p.key: p for p in child_results}
-                    if isinstance(child_results, list)
-                    else child_results
-                )
+                child_dict = {p.key: p for p in child_results}
                 if mounted.prefix:
                     for prompt in child_dict.values():
                         prefixed_prompt = prompt.with_key(
@@ -110,7 +106,7 @@ class PromptManager:
         """
         return await self._load_prompts(mode="inventory")
 
-    async def list_prompts(self) -> list[Prompt]:
+    async def _list_prompts(self) -> list[Prompt]:
         """
         Lists all prompts, applying protocol filtering.
         """

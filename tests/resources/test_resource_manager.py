@@ -180,7 +180,7 @@ class TestResourceManager:
 
         assert "Template already exists" in caplog.text
         # Should have the template
-        assert manager.get_templates() == {"test://{id}": template}
+        assert manager.get_resource_templates() == {"test://{id}": template}
 
     def test_error_on_duplicate_templates(self):
         """Test error on duplicate templates."""
@@ -226,7 +226,7 @@ class TestResourceManager:
         manager.add_template(template2)
 
         # Should have replaced with the new template
-        templates = list(manager.get_templates().values())
+        templates = list(manager.get_resource_templates().values())
         assert len(templates) == 1
         assert templates[0].name == "replacement"
 
@@ -256,7 +256,7 @@ class TestResourceManager:
         result = manager.add_template(template2)
 
         # Should keep the original
-        templates = list(manager.get_templates().values())
+        templates = list(manager.get_resource_templates().values())
         assert len(templates) == 1
         assert templates[0].name == "original"
         # Result should be the original template
@@ -379,7 +379,7 @@ class TestResourceTags:
         )
 
         manager.add_template(template)
-        templates = list(manager.get_templates().values())
+        templates = list(manager.get_resource_templates().values())
         assert len(templates) == 1
         assert templates[0].tags == {"users", "template", "data"}
 

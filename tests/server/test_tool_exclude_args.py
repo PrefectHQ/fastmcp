@@ -19,7 +19,7 @@ async def test_tool_exclude_args_in_tool_manager():
             pass
         return message
 
-    tools = mcp._tool_manager.list_tools()
+    tools = mcp._tool_manager._list_tools()
     assert len(tools) == 1
     assert "state" not in echo.parameters["properties"]
 
@@ -60,7 +60,7 @@ async def test_add_tool_method_exclude_args():
     mcp.add_tool(tool)
 
     # Check internal tool objects directly
-    tools = mcp._tool_manager.list_tools()
+    tools = mcp._tool_manager._list_tools()
     assert len(tools) == 1
     assert "state" not in tools[0].parameters["properties"]
 

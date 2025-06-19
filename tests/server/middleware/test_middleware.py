@@ -172,6 +172,18 @@ class TestMiddlewareHooks:
         assert recording_middleware.assert_called(hook="on_request", times=1)
         assert recording_middleware.assert_called(hook="on_read_resource", times=1)
 
+    async def test_read_resource_template(
+        self, mcp_server: FastMCP, recording_middleware: RecordingMiddleware
+    ):
+        async with Client(mcp_server) as client:
+            await client.read_resource("resource://test-template/1")
+
+        assert recording_middleware.assert_called(times=3)
+        assert recording_middleware.assert_called(method="resources/read", times=3)
+        assert recording_middleware.assert_called(hook="on_message", times=1)
+        assert recording_middleware.assert_called(hook="on_request", times=1)
+        assert recording_middleware.assert_called(hook="on_read_resource", times=1)
+
     async def test_get_prompt(
         self, mcp_server: FastMCP, recording_middleware: RecordingMiddleware
     ):
@@ -354,6 +366,50 @@ class TestNestedMiddlewareHooks:
 
         async with Client(mcp_server) as client:
             await client.read_resource("resource://nested/test")
+
+        assert recording_middleware.assert_called(times=3)
+        assert recording_middleware.assert_called(method="resources/read", times=3)
+        assert recording_middleware.assert_called(hook="on_message", times=1)
+        assert recording_middleware.assert_called(hook="on_request", times=1)
+        assert recording_middleware.assert_called(hook="on_read_resource", times=1)
+
+        assert nested_middleware.assert_called(times=3)
+        assert nested_middleware.assert_called(method="resources/read", times=3)
+        assert nested_middleware.assert_called(hook="on_message", times=1)
+        assert nested_middleware.assert_called(hook="on_request", times=1)
+        assert nested_middleware.assert_called(hook="on_read_resource", times=1)
+
+    async def test_read_resource_template_on_parent_server(
+        self,
+        mcp_server: FastMCP,
+        nested_mcp_server: FastMCP,
+        recording_middleware: RecordingMiddleware,
+        nested_middleware: RecordingMiddleware,
+    ):
+        mcp_server.mount(nested_mcp_server, prefix="nested")
+
+        async with Client(mcp_server) as client:
+            await client.read_resource("resource://test-template/1")
+
+        assert recording_middleware.assert_called(times=3)
+        assert recording_middleware.assert_called(method="resources/read", times=3)
+        assert recording_middleware.assert_called(hook="on_message", times=1)
+        assert recording_middleware.assert_called(hook="on_request", times=1)
+        assert recording_middleware.assert_called(hook="on_read_resource", times=1)
+
+        assert nested_middleware.assert_called(times=0)
+
+    async def test_read_resource_template_on_nested_server(
+        self,
+        mcp_server: FastMCP,
+        nested_mcp_server: FastMCP,
+        recording_middleware: RecordingMiddleware,
+        nested_middleware: RecordingMiddleware,
+    ):
+        mcp_server.mount(nested_mcp_server, prefix="nested")
+
+        async with Client(mcp_server) as client:
+            await client.read_resource("resource://nested/test-template/1")
 
         assert recording_middleware.assert_called(times=3)
         assert recording_middleware.assert_called(method="resources/read", times=3)

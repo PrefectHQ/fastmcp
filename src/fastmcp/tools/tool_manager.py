@@ -66,14 +66,10 @@ class ToolManager:
                     child_results = await mounted.server._list_tools()
                 else:  # mode == "inventory"
                     # PATH 1: Use the manager-to-manager unfiltered path
-                    child_results = await mounted.server._tool_manager.get_tools()
+                    child_results = await mounted.server._tool_manager._list_tools()
 
                 # The combination logic is the same for both paths
-                child_dict = (
-                    {t.key: t for t in child_results}
-                    if isinstance(child_results, list)
-                    else child_results
-                )
+                child_dict = {t.key: t for t in child_results}
                 if mounted.prefix:
                     for tool in child_dict.values():
                         prefixed_tool = tool.with_key(f"{mounted.prefix}_{tool.key}")
@@ -109,7 +105,7 @@ class ToolManager:
         """
         return await self._load_tools(mode="inventory")
 
-    async def list_tools(self) -> list[Tool]:
+    async def _list_tools(self) -> list[Tool]:
         """
         Lists all tools, applying protocol filtering.
         """
