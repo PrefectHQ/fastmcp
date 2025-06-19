@@ -144,6 +144,14 @@ class MCPMiddleware:
                 handler = partial(self.on_read_resource, call_next=handler)
             case "prompts/get":
                 handler = partial(self.on_get_prompt, call_next=handler)
+            case "tools/list":
+                handler = partial(self.on_list_tools, call_next=handler)
+            case "resources/list":
+                handler = partial(self.on_list_resources, call_next=handler)
+            case "resource-templates/list":
+                handler = partial(self.on_list_resource_templates, call_next=handler)
+            case "prompts/list":
+                handler = partial(self.on_list_prompts, call_next=handler)
 
         match context.type:
             case "request":
@@ -202,4 +210,27 @@ class MCPMiddleware:
         context: MiddlewareContext[mt.ListToolsRequest],
         call_next: CallNext[mt.ListToolsRequest, ListToolsResult],
     ) -> ListToolsResult:
+        return await call_next(context)
+
+    async def on_list_resources(
+        self,
+        context: MiddlewareContext[mt.ListResourcesRequest],
+        call_next: CallNext[mt.ListResourcesRequest, ListResourcesResult],
+    ) -> ListResourcesResult:
+        return await call_next(context)
+
+    async def on_list_resource_templates(
+        self,
+        context: MiddlewareContext[mt.ListResourceTemplatesRequest],
+        call_next: CallNext[
+            mt.ListResourceTemplatesRequest, ListResourceTemplatesResult
+        ],
+    ) -> ListResourceTemplatesResult:
+        return await call_next(context)
+
+    async def on_list_prompts(
+        self,
+        context: MiddlewareContext[mt.ListPromptsRequest],
+        call_next: CallNext[mt.ListPromptsRequest, ListPromptsResult],
+    ) -> ListPromptsResult:
         return await call_next(context)

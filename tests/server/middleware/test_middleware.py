@@ -7,7 +7,7 @@ import pytest
 
 from fastmcp import Client, FastMCP
 from fastmcp.server.context import Context
-from fastmcp.server.middleware.middleware import MCPMiddleware, MiddlewareContext
+from fastmcp.server.middleware import MCPMiddleware, MiddlewareContext
 
 
 @dataclass
@@ -194,3 +194,43 @@ class TestMiddlewareHooks:
         assert recording_middleware.assert_called(hook="on_message", times=1)
         assert recording_middleware.assert_called(hook="on_request", times=1)
         assert recording_middleware.assert_called(hook="on_list_tools", times=1)
+
+    async def test_list_resources(
+        self, mcp_server: FastMCP, recording_middleware: RecordingMiddleware
+    ):
+        async with Client(mcp_server) as client:
+            await client.list_resources()
+
+        assert recording_middleware.assert_called(times=3)
+        assert recording_middleware.assert_called(method="resources/list", times=3)
+        assert recording_middleware.assert_called(hook="on_message", times=1)
+        assert recording_middleware.assert_called(hook="on_request", times=1)
+        assert recording_middleware.assert_called(hook="on_list_resources", times=1)
+
+    async def test_list_resource_templates(
+        self, mcp_server: FastMCP, recording_middleware: RecordingMiddleware
+    ):
+        async with Client(mcp_server) as client:
+            await client.list_resource_templates()
+
+        assert recording_middleware.assert_called(times=3)
+        assert recording_middleware.assert_called(
+            method="resource-templates/list", times=3
+        )
+        assert recording_middleware.assert_called(hook="on_message", times=1)
+        assert recording_middleware.assert_called(hook="on_request", times=1)
+        assert recording_middleware.assert_called(
+            hook="on_list_resource_templates", times=1
+        )
+
+    async def test_list_prompts(
+        self, mcp_server: FastMCP, recording_middleware: RecordingMiddleware
+    ):
+        async with Client(mcp_server) as client:
+            await client.list_prompts()
+
+        assert recording_middleware.assert_called(times=3)
+        assert recording_middleware.assert_called(method="prompts/list", times=3)
+        assert recording_middleware.assert_called(hook="on_message", times=1)
+        assert recording_middleware.assert_called(hook="on_request", times=1)
+        assert recording_middleware.assert_called(hook="on_list_prompts", times=1)

@@ -341,7 +341,8 @@ class FastMCP(Generic[LifespanResultT]):
 
     async def get_tools(self) -> dict[str, Tool]:
         """Get all registered tools, indexed by registered key."""
-        return await self._list_tools(apply_middleware=False)
+        tools = await self._list_tools(apply_middleware=False)
+        return {tool.key: tool for tool in tools}
 
     async def get_tool(self, key: str) -> Tool:
         tools = await self.get_tools()
@@ -515,7 +516,7 @@ class FastMCP(Generic[LifespanResultT]):
             tools = await self._middleware_list_tools()
             return [tool.to_mcp_tool(name=tool.name) for tool in tools]
 
-    async def _middleware_list_tools(self) -> dict[str, Tool]:
+    async def _middleware_list_tools(self) -> list[Tool]:
         """
         List all available tools, in the format expected by the low-level MCP
         server.
@@ -524,13 +525,13 @@ class FastMCP(Generic[LifespanResultT]):
 
         async def _handler(
             context: MiddlewareContext[mcp.types.ListToolsRequest],
-        ) -> list[MCPTool]:
+        ) -> list[Tool]:
             tools = await self._list_tools()
 
-            mcp_tools: list[MCPTool] = []
-            for key, tool in tools.items():
+            mcp_tools: list[Tool] = []
+            for tool in tools:
                 if self._should_enable_component(tool):
-                    mcp_tools.append(tool.to_mcp_tool(name=key))
+                    mcp_tools.append(tool)
 
             return mcp_tools
 
@@ -547,13 +548,13 @@ class FastMCP(Generic[LifespanResultT]):
             # Apply the middleware chain.
             return await self._apply_middleware(mw_context, _handler)
 
-    async def _list_tools(self, apply_middleware: bool = True) -> dict[str, Tool]:
+    async def _list_tools(self, apply_middleware: bool = True) -> list[Tool]:
         """
         List all available tools.
         """
 
         if (tools := self._cache.get("tools")) is self._cache.NOT_FOUND:
-            tools: dict[str, Tool] = {}
+            tools: list[Tool] = []
 
             # iterate such that new mounts overwrite older ones
             for mounted_server in self._mounted_servers:
@@ -566,18 +567,17 @@ class FastMCP(Generic[LifespanResultT]):
                         server_tools = await mounted_server.server._list_tools()
                     # Apply prefix to each tool key if prefix exists and is not empty
                     if mounted_server.prefix:
-                        for tool in server_tools.values():
+                        for tool in server_tools:
                             tool = tool.with_key(f"{mounted_server.prefix}_{tool.key}")
-                            tools[tool.key] = tool
+                            tools.append(tool)
                     else:
-                        tools.update(server_tools)
-                    tools.update(server_tools)
+                        tools.extend(server_tools)
                 except Exception as e:
                     logger.warning(
                         f"Failed to get tools from mounted server '{mounted_server.prefix}': {e}"
                     )
                     continue
-            tools.update(self._tool_manager.get_tools())
+            tools.extend(self._tool_manager.get_tools().values())
             self._cache.set("tools", tools)
         return tools
 
