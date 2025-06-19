@@ -35,7 +35,7 @@ from mcp.types import Resource as MCPResource
 from mcp.types import ResourceTemplate as MCPResourceTemplate
 from mcp.types import Tool as MCPTool
 from pydantic import AnyUrl
-from starlette.middleware import Middleware
+from starlette.middleware import Middleware as ASGIMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
 from starlette.routing import BaseRoute, Route
@@ -55,7 +55,7 @@ from fastmcp.server.http import (
     create_sse_app,
     create_streamable_http_app,
 )
-from fastmcp.server.middleware import MCPMiddleware, MiddlewareContext
+from fastmcp.server.middleware import Middleware, MiddlewareContext
 from fastmcp.settings import Settings
 from fastmcp.tools import ToolManager
 from fastmcp.tools.tool import FunctionTool, Tool
@@ -118,7 +118,7 @@ class FastMCP(Generic[LifespanResultT]):
         *,
         version: str | None = None,
         auth: OAuthProvider | None = None,
-        middleware: list[MCPMiddleware] | None = None,
+        middleware: list[Middleware] | None = None,
         lifespan: (
             Callable[
                 [FastMCP[LifespanResultT]],
@@ -335,7 +335,7 @@ class FastMCP(Generic[LifespanResultT]):
             chain = partial(mw, call_next=chain)
         return await chain(context)
 
-    def add_middleware(self, middleware: MCPMiddleware) -> None:
+    def add_middleware(self, middleware: Middleware) -> None:
         self.middleware.append(middleware)
 
     async def get_tools(self) -> dict[str, Tool]:
@@ -917,7 +917,7 @@ class FastMCP(Generic[LifespanResultT]):
         Args:
             template: A ResourceTemplate instance to add
         """
-        self._resource_manager.add_template(template)
+        self._resource_manager.add_template(template, key=key)
 
     def add_resource_fn(
         self,
@@ -1260,7 +1260,7 @@ class FastMCP(Generic[LifespanResultT]):
         log_level: str | None = None,
         path: str | None = None,
         uvicorn_config: dict[str, Any] | None = None,
-        middleware: list[Middleware] | None = None,
+        middleware: list[ASGIMiddleware] | None = None,
     ) -> None:
         """Run the server using HTTP transport.
 
@@ -1331,7 +1331,7 @@ class FastMCP(Generic[LifespanResultT]):
         self,
         path: str | None = None,
         message_path: str | None = None,
-        middleware: list[Middleware] | None = None,
+        middleware: list[ASGIMiddleware] | None = None,
     ) -> StarletteWithLifespan:
         """
         Create a Starlette app for the SSE server.
@@ -1361,7 +1361,7 @@ class FastMCP(Generic[LifespanResultT]):
     def streamable_http_app(
         self,
         path: str | None = None,
-        middleware: list[Middleware] | None = None,
+        middleware: list[ASGIMiddleware] | None = None,
     ) -> StarletteWithLifespan:
         """
         Create a Starlette app for the StreamableHTTP server.
@@ -1382,7 +1382,7 @@ class FastMCP(Generic[LifespanResultT]):
     def http_app(
         self,
         path: str | None = None,
-        middleware: list[Middleware] | None = None,
+        middleware: list[ASGIMiddleware] | None = None,
         json_response: bool | None = None,
         stateless_http: bool | None = None,
         transport: Literal["streamable-http", "sse"] = "streamable-http",

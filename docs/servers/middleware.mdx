@@ -1,18 +1,22 @@
 ---
 title: MCP Middleware
 sidebarTitle: Middleware
-description: Add cross-cutting functionality to your MCP server with middleware that can inspect, modify, and respond to all MCP requests and responses.
+description: Add custom functionality to your MCP server with middleware that can inspect, modify, and respond to all MCP requests and responses.
 icon: layers
 ---
 
 import { VersionBadge } from "/snippets/version-badge.mdx"
 
-<VersionBadge version="2.8.0" />
+<VersionBadge version="2.9.0" />
 
 MCP middleware is a powerful concept that allows you to add cross-cutting functionality to your FastMCP server. Unlike traditional web middleware, MCP middleware is designed specifically for the Model Context Protocol, providing hooks for different types of MCP operations like tool calls, resource reads, and prompt requests.
 
-<Warning>
+<Tip>
 MCP middleware is a FastMCP-specific concept and is not part of the official MCP protocol specification. This middleware system is designed to work with FastMCP servers and may not be compatible with other MCP implementations.
+</Tip>
+
+<Warning>
+MCP middleware is a brand new concept and may be subject to breaking changes in future versions.
 </Warning>
 
 ## What is MCP Middleware?
@@ -58,13 +62,13 @@ The middleware hook system is designed to be extensible. As FastMCP evolves and 
 
 ### Basic Middleware Structure
 
-MCP middleware is implemented by subclassing the `MCPMiddleware` base class and overriding the hooks you need:
+MCP middleware is implemented by subclassing the `Middleware` base class and overriding the hooks you need:
 
 ```python
 from fastmcp import FastMCP
-from fastmcp.server.middleware import MCPMiddleware, MiddlewareContext
+from fastmcp.server.middleware import Middleware, MiddlewareContext
 
-class LoggingMiddleware(MCPMiddleware):
+class LoggingMiddleware(Middleware):
     """Middleware that logs all MCP operations."""
     
     async def on_message(self, context: MiddlewareContext, call_next):
@@ -97,7 +101,7 @@ mcp.add_middleware(LoggingMiddleware())
 The `MiddlewareContext` object provides access to information about the current request:
 
 ```python
-class InspectionMiddleware(MCPMiddleware):
+class InspectionMiddleware(Middleware):
     async def on_request(self, context: MiddlewareContext, call_next):
         # Access request information
         method = context.method              # e.g., "tools/call"
@@ -120,7 +124,7 @@ Each middleware hook receives a `MiddlewareContext` and a `call_next` function. 
 3. **Operation-specific hooks**: Called for specific MCP operations
 
 ```python
-class ComprehensiveMiddleware(MCPMiddleware):
+class ComprehensiveMiddleware(Middleware):
     async def on_message(self, context: MiddlewareContext, call_next):
         """Called for ALL messages (requests and notifications)."""
         print(f"Message: {context.method}")
@@ -143,10 +147,10 @@ class ComprehensiveMiddleware(MCPMiddleware):
 ### Authentication Middleware
 
 ```python
-from fastmcp.server.middleware import MCPMiddleware, MiddlewareContext
+from fastmcp.server.middleware import Middleware, MiddlewareContext
 from fastmcp.exceptions import ToolError
 
-class AuthenticationMiddleware(MCPMiddleware):
+class AuthenticationMiddleware(Middleware):
     def __init__(self, required_token: str):
         self.required_token = required_token
     
@@ -184,7 +188,7 @@ mcp.add_middleware(AuthenticationMiddleware("secret-token-123"))
 import time
 import logging
 
-class PerformanceMiddleware(MCPMiddleware):
+class PerformanceMiddleware(Middleware):
     def __init__(self):
         self.logger = logging.getLogger("performance")
     
@@ -214,7 +218,7 @@ class PerformanceMiddleware(MCPMiddleware):
 ### Request/Response Transformation Middleware
 
 ```python
-class TransformationMiddleware(MCPMiddleware):
+class TransformationMiddleware(Middleware):
     async def on_call_tool(self, context: MiddlewareContext, call_next):
         """Transform tool arguments and results."""
         
@@ -253,7 +257,7 @@ import asyncio
 from collections import defaultdict
 from datetime import datetime, timedelta
 
-class RateLimitMiddleware(MCPMiddleware):
+class RateLimitMiddleware(Middleware):
     def __init__(self, max_requests: int = 100, window_minutes: int = 1):
         self.max_requests = max_requests
         self.window = timedelta(minutes=window_minutes)
@@ -327,7 +331,7 @@ mcp.add_middleware(LoggingMiddleware())
 ### Conditional Middleware
 
 ```python
-class ConditionalMiddleware(MCPMiddleware):
+class ConditionalMiddleware(Middleware):
     def __init__(self, condition_func):
         self.should_process = condition_func
     
@@ -352,7 +356,7 @@ mcp.add_middleware(ConditionalMiddleware(only_expensive_tools))
 ### Middleware with State
 
 ```python
-class StatefulMiddleware(MCPMiddleware):
+class StatefulMiddleware(Middleware):
     def __init__(self):
         self.call_count = 0
         self.tools_used = set()
@@ -377,7 +381,7 @@ class StatefulMiddleware(MCPMiddleware):
 ### Error Handling Middleware
 
 ```python
-class ErrorHandlingMiddleware(MCPMiddleware):
+class ErrorHandlingMiddleware(Middleware):
     async def on_call_tool(self, context: MiddlewareContext, call_next):
         """Provide consistent error handling."""
         try:
@@ -400,7 +404,7 @@ class ErrorHandlingMiddleware(MCPMiddleware):
 3. **Cache when possible**: Store frequently accessed data to avoid repeated lookups
 
 ```python
-class EfficientMiddleware(MCPMiddleware):
+class EfficientMiddleware(Middleware):
     def __init__(self):
         self._cache = {}
     
@@ -428,7 +432,7 @@ class EfficientMiddleware(MCPMiddleware):
 3. **Use `ToolError` for client-facing errors**: Keep internal errors internal
 
 ```python
-class RobustMiddleware(MCPMiddleware):
+class RobustMiddleware(Middleware):
     async def on_request(self, context: MiddlewareContext, call_next):
         """Robust error handling example."""
         try:

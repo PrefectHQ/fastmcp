@@ -78,6 +78,7 @@
                                     "servers/auth/bearer"
                                 ]
                             },
+                            "servers/middleware",
                             "servers/openapi",
                             "servers/proxy",
                             "servers/composition",

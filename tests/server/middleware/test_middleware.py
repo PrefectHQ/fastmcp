@@ -7,7 +7,7 @@ import pytest
 
 from fastmcp import Client, FastMCP
 from fastmcp.server.context import Context
-from fastmcp.server.middleware import MCPMiddleware, MiddlewareContext
+from fastmcp.server.middleware import Middleware, MiddlewareContext
 
 
 @dataclass
@@ -18,7 +18,7 @@ class Recording:
     result: mcp.types.ServerResult | None
 
 
-class RecordingMiddleware(MCPMiddleware):
+class RecordingMiddleware(Middleware):
     """A middleware that automatically records all method calls."""
 
     def __init__(self, name: str | None = None):

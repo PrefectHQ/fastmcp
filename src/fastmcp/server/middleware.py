@@ -104,7 +104,7 @@ class MiddlewareContext(Generic[T]):
 
 
 def make_middleware_wrapper(
-    middleware: MCPMiddleware, call_next: CallNext[T, R]
+    middleware: Middleware, call_next: CallNext[T, R]
 ) -> CallNext[T, R]:
     """Create a wrapper that applies a single middleware to a context. The
     closure bakes in the middleware and call_next function, so it can be
@@ -116,7 +116,7 @@ def make_middleware_wrapper(
     return wrapper
 
 
-class MCPMiddleware:
+class Middleware:
     """Base class for FastMCP middleware with dispatching hooks."""
 
     async def __call__(
