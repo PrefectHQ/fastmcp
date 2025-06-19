@@ -131,6 +131,19 @@ class ResourceTemplate(FastMCPComponent):
         }
         return MCPResourceTemplate(**kwargs | overrides)
 
+    @classmethod
+    def from_mcp_template(cls, mcp_template: MCPResourceTemplate) -> ResourceTemplate:
+        """Creates a FastMCP ResourceTemplate from a raw MCP ResourceTemplate object."""
+        # Note: This creates a simple ResourceTemplate instance. For function-based templates,
+        # the original function is lost, which is expected for remote templates.
+        return cls(
+            uri_template=mcp_template.uriTemplate,
+            name=mcp_template.name,
+            description=mcp_template.description,
+            mime_type=mcp_template.mimeType or "text/plain",
+            parameters={},  # Remote templates don't have local parameters
+        )
+
     @property
     def key(self) -> str:
         """
