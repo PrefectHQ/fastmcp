@@ -293,6 +293,7 @@ async def request_info(ctx: Context) -> dict:
 
 - **`ctx.request_id -> str`**: Get the unique ID for the current MCP request
 - **`ctx.client_id -> str | None`**: Get the ID of the client making the request, if provided during initialization
+- **`ctx.session_id -> str | None`**: Get the MCP session ID for session-based data sharing (HTTP transports only)
 
 ### Advanced Access
 
