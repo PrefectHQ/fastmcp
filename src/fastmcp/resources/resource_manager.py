@@ -5,7 +5,7 @@ from __future__ import annotations
 import inspect
 import warnings
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any
 
 from pydantic import AnyUrl
 
@@ -63,34 +63,32 @@ class ResourceManager:
 
     async def get_resources(self) -> dict[str, Resource]:
         """Get all registered resources, keyed by URI."""
-        return await self._load_resources(mode="inventory")
+        return await self._load_resources(via_server=False)
 
     async def get_resource_templates(self) -> dict[str, ResourceTemplate]:
         """Get all registered templates, keyed by URI template."""
-        return await self._load_resource_templates(mode="inventory")
+        return await self._load_resource_templates(via_server=False)
 
-    async def _load_resources(
-        self, *, mode: Literal["inventory", "protocol"]
-    ) -> dict[str, Resource]:
+    async def _load_resources(self, *, via_server: bool = False) -> dict[str, Resource]:
         """
-        The single, consolidated recursive method for fetching resources. The 'mode'
+        The single, consolidated recursive method for fetching resources. The 'via_server'
         parameter determines the communication path.
 
-        - mode="inventory": Manager-to-manager path for complete, unfiltered inventory
-        - mode="protocol": Server-to-server path for filtered MCP requests
+        - via_server=False: Manager-to-manager path for complete, unfiltered inventory
+        - via_server=True: Server-to-server path for filtered MCP requests
         """
         all_resources: dict[str, Resource] = {}
 
         for mounted in self._mounted_sources:
             try:
-                if mode == "protocol":
-                    # PATH 2: Use the server-to-server filtered path
+                if via_server:
+                    # Use the server-to-server filtered path
                     child_resources_list = await mounted.server._list_resources()
                     child_resources = {
                         resource.key: resource for resource in child_resources_list
                     }
-                else:  # mode == "inventory"
-                    # PATH 1: Use the manager-to-manager unfiltered path
+                else:
+                    # Use the manager-to-manager unfiltered path
                     child_resources = (
                         await mounted.server._resource_manager.get_resources()
                     )
@@ -120,24 +118,24 @@ class ResourceManager:
         return all_resources
 
     async def _load_resource_templates(
-        self, *, mode: Literal["inventory", "protocol"]
+        self, *, via_server: bool = False
     ) -> dict[str, ResourceTemplate]:
         """
-        The single, consolidated recursive method for fetching templates. The 'mode'
+        The single, consolidated recursive method for fetching templates. The 'via_server'
         parameter determines the communication path.
 
-        - mode="inventory": Manager-to-manager path for complete, unfiltered inventory
-        - mode="protocol": Server-to-server path for filtered MCP requests
+        - via_server=False: Manager-to-manager path for complete, unfiltered inventory
+        - via_server=True: Server-to-server path for filtered MCP requests
         """
         all_templates: dict[str, ResourceTemplate] = {}
 
         for mounted in self._mounted_sources:
             try:
-                if mode == "protocol":
-                    # PATH 2: Use the server-to-server filtered path
+                if via_server:
+                    # Use the server-to-server filtered path
                     child_templates = await mounted.server._list_resource_templates()
-                else:  # mode == "inventory"
-                    # PATH 1: Use the manager-to-manager unfiltered path
+                else:
+                    # Use the manager-to-manager unfiltered path
                     child_templates = await mounted.server._resource_manager._list_resource_templates()
                 child_dict = {template.key: template for template in child_templates}
 
@@ -169,14 +167,14 @@ class ResourceManager:
         """
         Lists all resources, applying protocol filtering.
         """
-        resources_dict = await self._load_resources(mode="protocol")
+        resources_dict = await self._load_resources(via_server=True)
         return list(resources_dict.values())
 
     async def _list_resource_templates(self) -> list[ResourceTemplate]:
         """
         Lists all templates, applying protocol filtering.
         """
-        templates_dict = await self._load_resource_templates(mode="protocol")
+        templates_dict = await self._load_resource_templates(via_server=True)
         return list(templates_dict.values())
 
     def add_resource_or_template_from_fn(

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import warnings
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any
 
 from mcp.types import ToolAnnotations
 
@@ -47,25 +47,23 @@ class ToolManager:
         """Adds a mounted server as a source for tools."""
         self._mounted_sources.append(server)
 
-    async def _load_tools(
-        self, *, mode: Literal["inventory", "protocol"]
-    ) -> dict[str, Tool]:
+    async def _load_tools(self, *, via_server: bool = False) -> dict[str, Tool]:
         """
-        The single, consolidated recursive method for fetching tools. The 'mode'
+        The single, consolidated recursive method for fetching tools. The 'via_server'
         parameter determines the communication path.
 
-        - mode="inventory": Manager-to-manager path for complete, unfiltered inventory
-        - mode="protocol": Server-to-server path for filtered MCP requests
+        - via_server=False: Manager-to-manager path for complete, unfiltered inventory
+        - via_server=True: Server-to-server path for filtered MCP requests
         """
         all_tools: dict[str, Tool] = {}
 
         for mounted in self._mounted_sources:
             try:
-                if mode == "protocol":
-                    # PATH 2: Use the server-to-server filtered path
+                if via_server:
+                    # Use the server-to-server filtered path
                     child_results = await mounted.server._list_tools()
-                else:  # mode == "inventory"
-                    # PATH 1: Use the manager-to-manager unfiltered path
+                else:
+                    # Use the manager-to-manager unfiltered path
                     child_results = await mounted.server._tool_manager._list_tools()
 
                 # The combination logic is the same for both paths
@@ -103,13 +101,13 @@ class ToolManager:
         """
         Gets the complete, unfiltered inventory of all tools.
         """
-        return await self._load_tools(mode="inventory")
+        return await self._load_tools(via_server=False)
 
     async def _list_tools(self) -> list[Tool]:
         """
         Lists all tools, applying protocol filtering.
         """
-        tools_dict = await self._load_tools(mode="protocol")
+        tools_dict = await self._load_tools(via_server=True)
         return list(tools_dict.values())
 
     def add_tool_from_fn(
