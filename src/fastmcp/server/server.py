@@ -434,10 +434,10 @@ class FastMCP(Generic[LifespanResultT]):
         logger.debug("Handler called: list_tools")
 
         with fastmcp.server.context.Context(fastmcp=self):
-            tools = await self._middleware_list_tools()
+            tools = await self._list_tools()
             return [tool.to_mcp_tool(name=tool.key) for tool in tools]
 
-    async def _middleware_list_tools(self) -> list[Tool]:
+    async def _list_tools(self) -> list[Tool]:
         """
         List all available tools, in the format expected by the low-level MCP
         server.
@@ -447,7 +447,7 @@ class FastMCP(Generic[LifespanResultT]):
         async def _handler(
             context: MiddlewareContext[mcp.types.ListToolsRequest],
         ) -> list[Tool]:
-            tools = await self._list_tools()
+            tools = await self._tool_manager.list_tools()
 
             mcp_tools: list[Tool] = []
             for tool in tools:
@@ -468,39 +468,6 @@ class FastMCP(Generic[LifespanResultT]):
 
             # Apply the middleware chain.
             return await self._apply_middleware(mw_context, _handler)
-
-    async def _list_tools(self, apply_middleware: bool = True) -> list[Tool]:
-        """
-        List all available tools.
-        """
-
-        if (tools := self._cache.get("tools")) is self._cache.NOT_FOUND:
-            tools: dict[str, Tool] = {}
-
-            # iterate such that new mounts overwrite older ones
-            for mounted_server in self._mounted_servers:
-                try:
-                    if apply_middleware:
-                        server_tools = (
-                            await mounted_server.server._middleware_list_tools()
-                        )
-                    else:
-                        server_tools = await mounted_server.server._list_tools()
-                    # Apply prefix to each tool key if prefix exists and is not empty
-                    if mounted_server.prefix:
-                        for tool in server_tools:
-                            tool = tool.with_key(f"{mounted_server.prefix}_{tool.key}")
-                            tools[tool.key] = tool
-                    else:
-                        tools.update({tool.key: tool for tool in server_tools})
-                except Exception as e:
-                    logger.warning(
-                        f"Failed to get tools from mounted server '{mounted_server.prefix}': {e}"
-                    )
-                    continue
-            tools.update(self._tool_manager.get_tools())
-            self._cache.set("tools", tools)
-        return list(tools.values())
 
     async def _mcp_list_resources(self) -> list[MCPResource]:
         logger.debug("Handler called: list_resources")
@@ -580,7 +547,11 @@ class FastMCP(Generic[LifespanResultT]):
                         f"Failed to get resources from mounted server '{mounted_server.prefix}': {e}"
                     )
                     continue
-            resources.update(self._resource_manager.get_resources())
+            (
+                local_resources,
+                _,
+            ) = await self._resource_manager.get_resources_and_templates()
+            resources.update(local_resources)
             self._cache.set("resources", resources)
         return list(resources.values())
 
@@ -668,7 +639,11 @@ class FastMCP(Generic[LifespanResultT]):
                         f"'{mounted_server.prefix}': {e}"
                     )
                     continue
-            templates.update(self._resource_manager.get_templates())
+            (
+                _,
+                local_templates,
+            ) = await self._resource_manager.get_resources_and_templates()
+            templates.update(local_templates)
             self._cache.set("resource_templates", templates)
         return list(templates.values())
 
@@ -744,7 +719,7 @@ class FastMCP(Generic[LifespanResultT]):
                         f"Failed to get prompts from mounted server '{mounted_server.prefix}': {e}"
                     )
                     continue
-            prompts.update(self._prompt_manager.get_prompts())
+            prompts.update(await self._prompt_manager.get_prompts())
             self._cache.set("prompts", prompts)
         return list(prompts.values())
 
@@ -767,27 +742,26 @@ class FastMCP(Generic[LifespanResultT]):
 
         with fastmcp.server.context.Context(fastmcp=self):
             try:
-                return await self._middleware_call_tool(key, arguments)
+                return await self._call_tool(key, arguments)
             except DisabledError:
                 raise NotFoundError(f"Unknown tool: {key}")
             except NotFoundError:
                 raise NotFoundError(f"Unknown tool: {key}")
 
-    async def _middleware_call_tool(
-        self,
-        key: str,
-        arguments: dict[str, Any],
-    ) -> list[MCPContent]:
+    async def _call_tool(self, key: str, arguments: dict[str, Any]) -> list[MCPContent]:
         """
-        Call a tool with middleware.
+        Applies this server's middleware and delegates the filtered call to the manager.
         """
 
         async def _handler(
             context: MiddlewareContext[mcp.types.CallToolRequestParams],
         ) -> list[MCPContent]:
-            return await self._call_tool(
-                key=context.message.name,
-                arguments=context.message.arguments or {},
+            tool = await self._tool_manager.get_tool(context.message.name)
+            if not self._should_enable_component(tool):
+                raise NotFoundError(f"Unknown tool: {context.message.name!r}")
+
+            return await self._tool_manager.call_tool(
+                key=context.message.name, arguments=context.message.arguments or {}
             )
 
         mw_context = MiddlewareContext(
@@ -798,46 +772,6 @@ class FastMCP(Generic[LifespanResultT]):
             fastmcp_context=fastmcp.server.dependencies.get_context(),
         )
         return await self._apply_middleware(mw_context, _handler)
-
-    async def _call_tool(self, key: str, arguments: dict[str, Any]) -> list[MCPContent]:
-        """
-        Call a tool with raw MCP arguments. FastMCP subclasses should override
-        this method, not _mcp_call_tool.
-
-        Args:
-            key: The name of the tool to call arguments: Arguments to pass to
-            the tool
-
-        Returns:
-            List of MCP Content objects containing the tool results
-        """
-
-        # Get tool, checking first from our tools, then from the mounted servers
-        if self._tool_manager.has_tool(key):
-            tool = self._tool_manager.get_tool(key)
-            if not self._should_enable_component(tool):
-                raise DisabledError(f"Tool {key!r} is disabled")
-            return await self._tool_manager.call_tool(key, arguments)
-
-        # Check mounted servers to see if they have the tool
-        # iterate such that new mounts take precedence over older ones
-        for mounted_server in reversed(self._mounted_servers):
-            tool_key = key
-            try:
-                # If server has a prefix, check if key matches and strip prefix
-                if mounted_server.prefix:
-                    if tool_key.startswith(f"{mounted_server.prefix}_"):
-                        tool_key = tool_key.removeprefix(f"{mounted_server.prefix}_")
-                    else:
-                        continue
-                return await mounted_server.server._middleware_call_tool(
-                    tool_key, arguments
-                )
-            except NotFoundError:
-                # Tool not found on this server, try the next one
-                continue
-
-        raise NotFoundError(f"Unknown tool: {key!r}")
 
     async def _mcp_read_resource(self, uri: AnyUrl | str) -> list[ReadResourceContents]:
         """
@@ -1853,11 +1787,12 @@ class FastMCP(Generic[LifespanResultT]):
         if as_proxy and not isinstance(server, FastMCPProxy):
             server = FastMCPProxy(Client(transport=FastMCPTransport(server)))
 
-        mounted_server = MountedServer(
-            server=server,
-            prefix=prefix,
-        )
-        self._mounted_servers.append(mounted_server)
+        # Delegate mounting to all three managers
+        mounted_server = MountedServer(prefix=prefix, server=server)
+        self._tool_manager.mount(mounted_server)
+        self._resource_manager.mount(mounted_server)
+        self._prompt_manager.mount(mounted_server)
+
         self._cache.clear()
 
     async def import_server(
