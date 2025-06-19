@@ -33,7 +33,7 @@ def temp_file():
 class TestResourceManager:
     """Test ResourceManager functionality."""
 
-    def test_add_resource(self, temp_file: Path):
+    async def test_add_resource(self, temp_file: Path):
         """Test adding a resource."""
         manager = ResourceManager()
         file_url = "file://test-resource"
@@ -45,10 +45,11 @@ class TestResourceManager:
         added = manager.add_resource(resource)
         assert added == resource
         # Get the actual key from the resource manager
-        assert len(manager.get_resources()) == 1
-        assert resource in manager.get_resources().values()
+        resources = await manager.get_resources()
+        assert len(resources) == 1
+        assert resource in resources.values()
 
-    def test_add_duplicate_resource(self, temp_file: Path):
+    async def test_add_duplicate_resource(self, temp_file: Path):
         """Test adding the same resource twice."""
         manager = ResourceManager()
         file_url = "file://test-resource"
@@ -61,10 +62,11 @@ class TestResourceManager:
         second = manager.add_resource(resource)
         assert first == second
         # Check the resource is there
-        assert len(manager.get_resources()) == 1
-        assert resource in manager.get_resources().values()
+        resources = await manager.get_resources()
+        assert len(resources) == 1
+        assert resource in resources.values()
 
-    def test_warn_on_duplicate_resources(self, temp_file: Path, caplog):
+    async def test_warn_on_duplicate_resources(self, temp_file: Path, caplog):
         """Test warning on duplicate resources."""
         manager = ResourceManager(duplicate_behavior="warn")
 
@@ -80,10 +82,11 @@ class TestResourceManager:
 
         assert "Resource already exists" in caplog.text
         # Should have the resource
-        assert len(manager.get_resources()) == 1
-        assert resource in manager.get_resources().values()
+        resources = await manager.get_resources()
+        assert len(resources) == 1
+        assert resource in resources.values()
 
-    def test_disable_warn_on_duplicate_resources(self, temp_file: Path, caplog):
+    async def test_disable_warn_on_duplicate_resources(self, temp_file: Path, caplog):
         """Test disabling warning on duplicate resources."""
         manager = ResourceManager(duplicate_behavior="ignore")
         resource = FileResource(
@@ -95,7 +98,7 @@ class TestResourceManager:
         manager.add_resource(resource)
         assert "Resource already exists" not in caplog.text
 
-    def test_error_on_duplicate_resources(self, temp_file: Path):
+    async def test_error_on_duplicate_resources(self, temp_file: Path):
         """Test error on duplicate resources."""
         manager = ResourceManager(duplicate_behavior="error")
 
@@ -110,7 +113,7 @@ class TestResourceManager:
         with pytest.raises(ValueError, match="Resource already exists"):
             manager.add_resource(resource)
 
-    def test_replace_duplicate_resources(self, temp_file: Path):
+    async def test_replace_duplicate_resources(self, temp_file: Path):
         """Test replacing duplicate resources."""
         manager = ResourceManager(duplicate_behavior="replace")
 
@@ -131,11 +134,12 @@ class TestResourceManager:
         manager.add_resource(resource2)
 
         # Should have replaced with the new resource
-        resources = list(manager.get_resources().values())
-        assert len(resources) == 1
-        assert resources[0].name == "replacement"
+        resources = await manager.get_resources()
+        resource_list = list(resources.values())
+        assert len(resource_list) == 1
+        assert resource_list[0].name == "replacement"
 
-    def test_ignore_duplicate_resources(self, temp_file: Path):
+    async def test_ignore_duplicate_resources(self, temp_file: Path):
         """Test ignoring duplicate resources."""
         manager = ResourceManager(duplicate_behavior="ignore")
 
@@ -156,13 +160,14 @@ class TestResourceManager:
         result = manager.add_resource(resource2)
 
         # Should keep the original
-        resources = list(manager.get_resources().values())
-        assert len(resources) == 1
-        assert resources[0].name == "original"
+        resources = await manager.get_resources()
+        resource_list = list(resources.values())
+        assert len(resource_list) == 1
+        assert resource_list[0].name == "original"
         # Result should be the original resource
         assert result.name == "original"
 
-    def test_warn_on_duplicate_templates(self, caplog):
+    async def test_warn_on_duplicate_templates(self, caplog):
         """Test warning on duplicate templates."""
         manager = ResourceManager(duplicate_behavior="warn")
 
@@ -180,9 +185,10 @@ class TestResourceManager:
 
         assert "Template already exists" in caplog.text
         # Should have the template
-        assert manager.get_templates() == {"test://{id}": template}
+        templates = await manager.get_resource_templates()
+        assert templates == {"test://{id}": template}
 
-    def test_error_on_duplicate_templates(self):
+    async def test_error_on_duplicate_templates(self):
         """Test error on duplicate templates."""
         manager = ResourceManager(duplicate_behavior="error")
 
@@ -200,7 +206,7 @@ class TestResourceManager:
         with pytest.raises(ValueError, match="Template already exists"):
             manager.add_template(template)
 
-    def test_replace_duplicate_templates(self):
+    async def test_replace_duplicate_templates(self):
         """Test replacing duplicate templates."""
         manager = ResourceManager(duplicate_behavior="replace")
 
@@ -226,11 +232,12 @@ class TestResourceManager:
         manager.add_template(template2)
 
         # Should have replaced with the new template
-        templates = list(manager.get_templates().values())
+        templates_dict = await manager.get_resource_templates()
+        templates = list(templates_dict.values())
         assert len(templates) == 1
         assert templates[0].name == "replacement"
 
-    def test_ignore_duplicate_templates(self):
+    async def test_ignore_duplicate_templates(self):
         """Test ignoring duplicate templates."""
         manager = ResourceManager(duplicate_behavior="ignore")
 
@@ -256,7 +263,8 @@ class TestResourceManager:
         result = manager.add_template(template2)
 
         # Should keep the original
-        templates = list(manager.get_templates().values())
+        templates_dict = await manager.get_resource_templates()
+        templates = list(templates_dict.values())
         assert len(templates) == 1
         assert templates[0].name == "original"
         # Result should be the original template
@@ -299,7 +307,7 @@ class TestResourceManager:
         with pytest.raises(NotFoundError, match="Unknown resource"):
             await manager.get_resource(AnyUrl("unknown://test"))
 
-    def test_get_resources(self, temp_file: Path):
+    async def test_get_resources(self, temp_file: Path):
         """Test retrieving all resources."""
         manager = ResourceManager()
         file_url1 = "file://test-resource1"
@@ -316,7 +324,7 @@ class TestResourceManager:
         )
         manager.add_resource(resource1)
         manager.add_resource(resource2)
-        resources = manager.get_resources()
+        resources = await manager.get_resources()
         assert len(resources) == 2
         values = list(resources.values())
         assert resource1 in values
@@ -326,7 +334,7 @@ class TestResourceManager:
 class TestResourceTags:
     """Test functionality related to resource tags."""
 
-    def test_add_resource_with_tags(self, temp_file: Path):
+    async def test_add_resource_with_tags(self, temp_file: Path):
         """Test adding a resource with tags."""
         manager = ResourceManager()
         resource = FileResource(
@@ -338,11 +346,12 @@ class TestResourceTags:
         manager.add_resource(resource)
 
         # Check that tags are preserved
-        resources = list(manager.get_resources().values())
+        resources_dict = await manager.get_resources()
+        resources = list(resources_dict.values())
         assert len(resources) == 1
         assert resources[0].tags == {"weather", "data"}
 
-    def test_add_function_resource_with_tags(self):
+    async def test_add_function_resource_with_tags(self):
         """Test adding a function resource with tags."""
         manager = ResourceManager()
 
@@ -359,11 +368,12 @@ class TestResourceTags:
         )
 
         manager.add_resource(resource)
-        resources = list(manager.get_resources().values())
+        resources_dict = await manager.get_resources()
+        resources = list(resources_dict.values())
         assert len(resources) == 1
         assert resources[0].tags == {"sample", "test", "data"}
 
-    def test_add_template_with_tags(self):
+    async def test_add_template_with_tags(self):
         """Test adding a resource template with tags."""
         manager = ResourceManager()
 
@@ -379,11 +389,12 @@ class TestResourceTags:
         )
 
         manager.add_template(template)
-        templates = list(manager.get_templates().values())
+        templates_dict = await manager.get_resource_templates()
+        templates = list(templates_dict.values())
         assert len(templates) == 1
         assert templates[0].tags == {"users", "template", "data"}
 
-    def test_filter_resources_by_tags(self, temp_file: Path):
+    async def test_filter_resources_by_tags(self, temp_file: Path):
         """Test filtering resources by tags."""
         manager = ResourceManager()
 
@@ -392,7 +403,7 @@ class TestResourceTags:
             uri=FileUrl("file://weather-data"),
             name="weather_data",
             path=temp_file,
-            tags={"weather", "external"},
+            tags={"weather", "data"},
         )
 
         async def get_user_data():
@@ -401,8 +412,10 @@ class TestResourceTags:
         resource2 = FunctionResource(
             uri=AnyUrl("data://users"),
             name="user_data",
+            description="User data resource",
+            mime_type="text/plain",
             fn=get_user_data,
-            tags={"users", "internal"},
+            tags={"users", "data"},
         )
 
         async def get_system_data():
@@ -411,26 +424,25 @@ class TestResourceTags:
         resource3 = FunctionResource(
             uri=AnyUrl("data://system"),
             name="system_data",
+            description="System data resource",
+            mime_type="text/plain",
             fn=get_system_data,
-            tags={"system", "internal"},
+            tags={"system", "admin"},
         )
 
         manager.add_resource(resource1)
         manager.add_resource(resource2)
         manager.add_resource(resource3)
 
-        # Filter resources by tags
-        internal_resources = [
-            r for r in manager.get_resources().values() if "internal" in r.tags
-        ]
-        assert len(internal_resources) == 2
-        assert {r.name for r in internal_resources} == {"user_data", "system_data"}
+        # Filter by tags
+        resources_dict = await manager.get_resources()
+        data_resources = [r for r in resources_dict.values() if "data" in r.tags]
+        assert len(data_resources) == 2
+        assert {r.name for r in data_resources} == {"weather_data", "user_data"}
 
-        external_resources = [
-            r for r in manager.get_resources().values() if "external" in r.tags
-        ]
-        assert len(external_resources) == 1
-        assert external_resources[0].name == "weather_data"
+        admin_resources = [r for r in resources_dict.values() if "admin" in r.tags]
+        assert len(admin_resources) == 1
+        assert admin_resources[0].name == "system_data"
 
 
 class TestCustomResourceKeys:
@@ -452,7 +464,9 @@ class TestCustomResourceKeys:
             fn=get_data,
         )
 
-        manager.add_resource(resource, key=custom_key)
+        # Use with_key to create a new resource with the custom key
+        resource_with_custom_key = resource.with_key(custom_key)
+        manager.add_resource(resource_with_custom_key)
 
         # Resource should be accessible via custom key
         assert custom_key in manager._resources
@@ -477,7 +491,9 @@ class TestCustomResourceKeys:
             name="test_template",
         )
 
-        manager.add_template(template, key=custom_key)
+        # Use with_key to create a new template with the custom key
+        template_with_custom_key = template.with_key(custom_key)
+        manager.add_template(template_with_custom_key)
 
         # Template should be accessible via custom key
         assert custom_key in manager._templates
@@ -502,7 +518,9 @@ class TestCustomResourceKeys:
             fn=get_data,
         )
 
-        manager.add_resource(resource, key=custom_key)
+        # Use with_key to create a new resource with the custom key
+        resource_with_custom_key = resource.with_key(custom_key)
+        manager.add_resource(resource_with_custom_key)
 
         # Should be retrievable by the custom key
         retrieved = await manager.get_resource(custom_key)
@@ -529,7 +547,9 @@ class TestCustomResourceKeys:
             name="custom_greeter",
         )
 
-        manager.add_template(template, key=custom_key)
+        # Use with_key to create a new template with the custom key
+        template_with_custom_key = template.with_key(custom_key)
+        manager.add_template(template_with_custom_key)
 
         # Using a URI that matches the custom key pattern
         resource = await manager.get_resource("custom://greet/world")

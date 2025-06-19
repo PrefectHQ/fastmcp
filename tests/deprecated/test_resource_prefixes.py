@@ -99,7 +99,7 @@ async def test_import_server_with_legacy_prefixes():
             await main_server.import_server("sub", sub_server)  # type: ignore[arg-type]
 
         # Check that the resource is prefixed using the legacy format
-        resources = main_server._resource_manager.get_resources()
+        resources = await main_server.get_resources()
 
         # In legacy format, the key would be "sub+resource://test"
         assert "sub+resource://test" in resources

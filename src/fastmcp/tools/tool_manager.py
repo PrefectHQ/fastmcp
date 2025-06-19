@@ -1,4 +1,4 @@
-from __future__ import annotations as _annotations
+from __future__ import annotations
 
 import warnings
 from collections.abc import Callable
@@ -14,7 +14,7 @@ from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import MCPContent
 
 if TYPE_CHECKING:
-    pass
+    from fastmcp.server.server import MountedServer
 
 logger = get_logger(__name__)
 
@@ -28,6 +28,7 @@ class ToolManager:
         mask_error_details: bool | None = None,
     ):
         self._tools: dict[str, Tool] = {}
+        self._mounted_servers: list[MountedServer] = []
         self.mask_error_details = mask_error_details or settings.mask_error_details
 
         # Default to "warn" if None is provided
@@ -42,23 +43,72 @@ class ToolManager:
 
         self.duplicate_behavior = duplicate_behavior
 
-    def has_tool(self, key: str) -> bool:
+    def mount(self, server: MountedServer) -> None:
+        """Adds a mounted server as a source for tools."""
+        self._mounted_servers.append(server)
+
+    async def _load_tools(self, *, via_server: bool = False) -> dict[str, Tool]:
+        """
+        The single, consolidated recursive method for fetching tools. The 'via_server'
+        parameter determines the communication path.
+
+        - via_server=False: Manager-to-manager path for complete, unfiltered inventory
+        - via_server=True: Server-to-server path for filtered MCP requests
+        """
+        all_tools: dict[str, Tool] = {}
+
+        for mounted in self._mounted_servers:
+            try:
+                if via_server:
+                    # Use the server-to-server filtered path
+                    child_results = await mounted.server._list_tools()
+                else:
+                    # Use the manager-to-manager unfiltered path
+                    child_results = await mounted.server._tool_manager.list_tools()
+
+                # The combination logic is the same for both paths
+                child_dict = {t.key: t for t in child_results}
+                if mounted.prefix:
+                    for tool in child_dict.values():
+                        prefixed_tool = tool.with_key(f"{mounted.prefix}_{tool.key}")
+                        all_tools[prefixed_tool.key] = prefixed_tool
+                else:
+                    all_tools.update(child_dict)
+            except Exception as e:
+                # Skip failed mounts silently, matches existing behavior
+                logger.warning(
+                    f"Failed to get tools from mounted server '{mounted.prefix}': {e}"
+                )
+                continue
+
+        # Finally, add local tools, which always take precedence
+        all_tools.update(self._tools)
+        return all_tools
+
+    async def has_tool(self, key: str) -> bool:
         """Check if a tool exists."""
-        return key in self._tools
+        tools = await self.get_tools()
+        return key in tools
 
-    def get_tool(self, key: str) -> Tool:
+    async def get_tool(self, key: str) -> Tool:
         """Get tool by key."""
-        if key in self._tools:
-            return self._tools[key]
-        raise NotFoundError(f"Unknown tool: {key}")
+        tools = await self.get_tools()
+        if key in tools:
+            return tools[key]
+        raise NotFoundError(f"Tool {key!r} not found")
 
-    def get_tools(self) -> dict[str, Tool]:
-        """Get all registered tools, indexed by registered key."""
-        return self._tools
+    async def get_tools(self) -> dict[str, Tool]:
+        """
+        Gets the complete, unfiltered inventory of all tools.
+        """
+        return await self._load_tools(via_server=False)
 
-    def list_tools(self) -> list[Tool]:
-        """List all registered tools."""
-        return list(self.get_tools().values())
+    async def list_tools(self) -> list[Tool]:
+        """
+        Lists all tools, applying protocol filtering.
+        """
+        tools_dict = await self._load_tools(via_server=True)
+        return list(tools_dict.values())
 
     def add_tool_from_fn(
         self,
@@ -89,22 +139,21 @@ class ToolManager:
         )
         return self.add_tool(tool)
 
-    def add_tool(self, tool: Tool, key: str | None = None) -> Tool:
+    def add_tool(self, tool: Tool) -> Tool:
         """Register a tool with the server."""
-        key = key or tool.name
-        existing = self._tools.get(key)
+        existing = self._tools.get(tool.key)
         if existing:
             if self.duplicate_behavior == "warn":
-                logger.warning(f"Tool already exists: {key}")
-                self._tools[key] = tool
+                logger.warning(f"Tool already exists: {tool.key}")
+                self._tools[tool.key] = tool
             elif self.duplicate_behavior == "replace":
-                self._tools[key] = tool
+                self._tools[tool.key] = tool
             elif self.duplicate_behavior == "error":
-                raise ValueError(f"Tool already exists: {key}")
+                raise ValueError(f"Tool already exists: {tool.key}")
             elif self.duplicate_behavior == "ignore":
                 return existing
         else:
-            self._tools[key] = tool
+            self._tools[tool.key] = tool
         return tool
 
     def remove_tool(self, key: str) -> None:
@@ -119,28 +168,48 @@ class ToolManager:
         if key in self._tools:
             del self._tools[key]
         else:
-            raise NotFoundError(f"Unknown tool: {key}")
+            raise NotFoundError(f"Tool {key!r} not found")
 
     async def call_tool(self, key: str, arguments: dict[str, Any]) -> list[MCPContent]:
-        """Call a tool by name with arguments."""
-        tool = self.get_tool(key)
-        if not tool:
-            raise NotFoundError(f"Unknown tool: {key}")
+        """
+        Internal API for servers: Finds and calls a tool, respecting the
+        filtered protocol path.
+        """
+        # 1. Check local tools first. The server will have already applied its filter.
+        if key in self._tools:
+            tool = await self.get_tool(key)
+            if not tool:
+                raise NotFoundError(f"Tool {key!r} not found")
 
-        try:
-            return await tool.run(arguments)
+            try:
+                return await tool.run(arguments)
 
-        # raise ToolErrors as-is
-        except ToolError as e:
-            logger.exception(f"Error calling tool {key!r}: {e}")
-            raise e
+            # raise ToolErrors as-is
+            except ToolError as e:
+                logger.exception(f"Error calling tool {key!r}: {e}")
+                raise e
 
-        # Handle other exceptions
-        except Exception as e:
-            logger.exception(f"Error calling tool {key!r}: {e}")
-            if self.mask_error_details:
-                # Mask internal details
-                raise ToolError(f"Error calling tool {key!r}") from e
-            else:
-                # Include original error details
-                raise ToolError(f"Error calling tool {key!r}: {e}") from e
+            # Handle other exceptions
+            except Exception as e:
+                logger.exception(f"Error calling tool {key!r}: {e}")
+                if self.mask_error_details:
+                    # Mask internal details
+                    raise ToolError(f"Error calling tool {key!r}") from e
+                else:
+                    # Include original error details
+                    raise ToolError(f"Error calling tool {key!r}: {e}") from e
+
+        # 2. Check mounted servers using the filtered protocol path.
+        for mounted in reversed(self._mounted_servers):
+            tool_key = key
+            if mounted.prefix:
+                if key.startswith(f"{mounted.prefix}_"):
+                    tool_key = key.removeprefix(f"{mounted.prefix}_")
+                else:
+                    continue
+            try:
+                return await mounted.server._call_tool(tool_key, arguments)
+            except NotFoundError:
+                continue
+
+        raise NotFoundError(f"Tool {key!r} not found.")

@@ -56,8 +56,8 @@ async def test_resource_prefix_format_in_import_server():
     await main_server_protocol.import_server(server, "sub")
 
     # Check that the resources are prefixed correctly
-    path_resources = main_server_path._resource_manager.get_resources()
-    protocol_resources = main_server_protocol._resource_manager.get_resources()
+    path_resources = await main_server_path._resource_manager.get_resources()
+    protocol_resources = await main_server_protocol._resource_manager.get_resources()
 
     # Path format should be resource://sub/test
     assert "resource://sub/test" in path_resources
