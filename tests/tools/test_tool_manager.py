@@ -760,8 +760,9 @@ class TestCustomToolNames:
         # Create a tool with a specific name
         tool = Tool.from_function(fn, name="my_tool")
         manager = ToolManager()
-        # Store it under a different name
-        manager.add_tool(tool, key="proxy_tool")
+        # Use with_key to create a new tool with the custom key
+        tool_with_custom_key = tool.with_key("proxy_tool")
+        manager.add_tool(tool_with_custom_key)
         # The tool is accessible under the key
         stored = await manager.get_tool("proxy_tool")
         assert stored is not None

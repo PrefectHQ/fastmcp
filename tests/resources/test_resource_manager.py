@@ -464,7 +464,9 @@ class TestCustomResourceKeys:
             fn=get_data,
         )
 
-        manager.add_resource(resource, key=custom_key)
+        # Use with_key to create a new resource with the custom key
+        resource_with_custom_key = resource.with_key(custom_key)
+        manager.add_resource(resource_with_custom_key)
 
         # Resource should be accessible via custom key
         assert custom_key in manager._resources
@@ -489,7 +491,9 @@ class TestCustomResourceKeys:
             name="test_template",
         )
 
-        manager.add_template(template, key=custom_key)
+        # Use with_key to create a new template with the custom key
+        template_with_custom_key = template.with_key(custom_key)
+        manager.add_template(template_with_custom_key)
 
         # Template should be accessible via custom key
         assert custom_key in manager._templates
@@ -514,7 +518,9 @@ class TestCustomResourceKeys:
             fn=get_data,
         )
 
-        manager.add_resource(resource, key=custom_key)
+        # Use with_key to create a new resource with the custom key
+        resource_with_custom_key = resource.with_key(custom_key)
+        manager.add_resource(resource_with_custom_key)
 
         # Should be retrievable by the custom key
         retrieved = await manager.get_resource(custom_key)
@@ -541,7 +547,9 @@ class TestCustomResourceKeys:
             name="custom_greeter",
         )
 
-        manager.add_template(template, key=custom_key)
+        # Use with_key to create a new template with the custom key
+        template_with_custom_key = template.with_key(custom_key)
+        manager.add_template(template_with_custom_key)
 
         # Using a URI that matches the custom key pattern
         resource = await manager.get_resource("custom://greet/world")

@@ -42,7 +42,6 @@ from starlette.routing import BaseRoute, Route
 
 import fastmcp
 import fastmcp.server
-import fastmcp.server.middleware
 from fastmcp.exceptions import DisabledError, NotFoundError
 from fastmcp.prompts import Prompt, PromptManager
 from fastmcp.prompts.prompt import FunctionPrompt
@@ -917,7 +916,7 @@ class FastMCP(Generic[LifespanResultT]):
         Args:
             template: A ResourceTemplate instance to add
         """
-        self._resource_manager.add_template(template, key=key)
+        self._resource_manager.add_template(template)
 
     def add_resource_fn(
         self,
