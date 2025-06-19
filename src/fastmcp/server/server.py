@@ -349,11 +349,11 @@ class FastMCP(Generic[LifespanResultT]):
                     server_tools = await mounted_server.server.get_tools()
                     # Apply prefix to each tool key if prefix exists and is not empty
                     if mounted_server.prefix:
-                        server_tools = {
-                            f"{mounted_server.prefix}_{key}": tool
-                            for key, tool in server_tools.items()
-                        }
-                    tools.update(server_tools)
+                        for tool in server_tools.values():
+                            tool = tool.with_key(f"{mounted_server.prefix}_{tool.key}")
+                            tools[tool.key] = tool
+                    else:
+                        tools.update(server_tools)
                 except Exception as e:
                     logger.warning(
                         f"Failed to get tools from mounted server '{mounted_server.prefix}': {e}"
@@ -380,15 +380,17 @@ class FastMCP(Generic[LifespanResultT]):
                     server_resources = await mounted_server.server.get_resources()
                     # Apply prefix to each resource key if prefix exists
                     if mounted_server.prefix:
-                        server_resources = {
-                            add_resource_prefix(
-                                key,
-                                mounted_server.prefix,
-                                mounted_server.server.resource_prefix_format,
-                            ): resource
-                            for key, resource in server_resources.items()
-                        }
-                    resources.update(server_resources)
+                        for resource in server_resources.values():
+                            resource = resource.with_key(
+                                add_resource_prefix(
+                                    resource.key,
+                                    mounted_server.prefix,
+                                    self.resource_prefix_format,
+                                )
+                            )
+                            resources[resource.key] = resource
+                    else:
+                        resources.update(server_resources)
                 except Exception as e:
                     logger.warning(
                         f"Failed to get resources from mounted server '{mounted_server.prefix}': {e}"
@@ -419,15 +421,17 @@ class FastMCP(Generic[LifespanResultT]):
                     )
                     # Apply prefix to each template key if prefix exists
                     if mounted_server.prefix:
-                        server_templates = {
-                            add_resource_prefix(
-                                key,
-                                mounted_server.prefix,
-                                mounted_server.server.resource_prefix_format,
-                            ): template
-                            for key, template in server_templates.items()
-                        }
-                    templates.update(server_templates)
+                        for template in server_templates.values():
+                            template = template.with_key(
+                                add_resource_prefix(
+                                    template.key,
+                                    mounted_server.prefix,
+                                    self.resource_prefix_format,
+                                )
+                            )
+                            templates[template.key] = template
+                    else:
+                        templates.update(server_templates)
                 except Exception as e:
                     logger.warning(
                         "Failed to get resource templates from mounted server "
@@ -448,6 +452,7 @@ class FastMCP(Generic[LifespanResultT]):
         """
         List all available prompts.
         """
+
         if (prompts := self._cache.get("prompts")) is self._cache.NOT_FOUND:
             prompts: dict[str, Prompt] = {}
 
@@ -457,11 +462,13 @@ class FastMCP(Generic[LifespanResultT]):
                     server_prompts = await mounted_server.server.get_prompts()
                     # Apply prefix to each prompt key if prefix exists
                     if mounted_server.prefix:
-                        server_prompts = {
-                            f"{mounted_server.prefix}_{key}": prompt
-                            for key, prompt in server_prompts.items()
-                        }
-                    prompts.update(server_prompts)
+                        for prompt in server_prompts.values():
+                            prompt = prompt.with_key(
+                                f"{mounted_server.prefix}_{prompt.key}"
+                            )
+                            prompts[prompt.key] = prompt
+                    else:
+                        prompts.update(server_prompts)
                 except Exception as e:
                     logger.warning(
                         f"Failed to get prompts from mounted server '{mounted_server.prefix}': {e}"
@@ -824,12 +831,12 @@ class FastMCP(Generic[LifespanResultT]):
                         if has_resource_prefix(
                             str(resource_uri),
                             mounted_server.prefix,
-                            mounted_server.server.resource_prefix_format,
+                            self.resource_prefix_format,
                         ):
                             resource_uri = remove_resource_prefix(
                                 str(resource_uri),
                                 mounted_server.prefix,
-                                mounted_server.server.resource_prefix_format,
+                                self.resource_prefix_format,
                             )
                         else:
                             continue

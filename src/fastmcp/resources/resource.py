@@ -101,6 +101,16 @@ class Resource(FastMCPComponent, abc.ABC):
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(uri={self.uri!r}, name={self.name!r}, description={self.description!r}, tags={self.tags})"
 
+    @property
+    def key(self) -> str:
+        """
+        The key of the component. This is used for internal bookkeeping
+        and may reflect e.g. prefixes or other identifiers. You should not depend on
+        keys having a certain value, as the same tool loaded from different
+        hierarchies of servers may have different keys.
+        """
+        return self._key or str(self.uri)
+
 
 class FunctionResource(Resource):
     """A resource that defers data loading by wrapping a function.
