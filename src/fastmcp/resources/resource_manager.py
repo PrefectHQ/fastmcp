@@ -43,7 +43,7 @@ class ResourceManager:
         """
         self._resources: dict[str, Resource] = {}
         self._templates: dict[str, ResourceTemplate] = {}
-        self._mounted_sources: list[MountedServer] = []
+        self._mounted_servers: list[MountedServer] = []
         self.mask_error_details = mask_error_details or settings.mask_error_details
 
         # Default to "warn" if None is provided
@@ -59,7 +59,7 @@ class ResourceManager:
 
     def mount(self, server: MountedServer) -> None:
         """Adds a mounted server as a source for resources and templates."""
-        self._mounted_sources.append(server)
+        self._mounted_servers.append(server)
 
     async def get_resources(self) -> dict[str, Resource]:
         """Get all registered resources, keyed by URI."""
@@ -79,7 +79,7 @@ class ResourceManager:
         """
         all_resources: dict[str, Resource] = {}
 
-        for mounted in self._mounted_sources:
+        for mounted in self._mounted_servers:
             try:
                 if via_server:
                     # Use the server-to-server filtered path
@@ -129,7 +129,7 @@ class ResourceManager:
         """
         all_templates: dict[str, ResourceTemplate] = {}
 
-        for mounted in self._mounted_sources:
+        for mounted in self._mounted_servers:
             try:
                 if via_server:
                     # Use the server-to-server filtered path
@@ -457,8 +457,8 @@ class ResourceManager:
                     ) from e
 
         # 1b. Check local templates if not found in concrete resources
-        for template in self._templates.values():
-            if params := match_uri_template(uri_str, template.uri_template):
+        for key, template in self._templates.items():
+            if params := match_uri_template(uri_str, key):
                 try:
                     resource = await template.create_resource(uri_str, params=params)
                     return await resource.read()
@@ -483,29 +483,28 @@ class ResourceManager:
         # 2. Check mounted servers using the filtered protocol path.
         from fastmcp.server.server import has_resource_prefix, remove_resource_prefix
 
-        for mounted in reversed(self._mounted_sources):
-            resource_uri = uri_str
+        for mounted in reversed(self._mounted_servers):
+            key = uri_str
             try:
                 if mounted.prefix:
-                    # If server has a prefix, check if URI matches and strip prefix
                     if has_resource_prefix(
-                        resource_uri,
+                        key,
                         mounted.prefix,
                         mounted.resource_prefix_format,
                     ):
-                        resource_uri = remove_resource_prefix(
-                            resource_uri,
+                        key = remove_resource_prefix(
+                            key,
                             mounted.prefix,
                             mounted.resource_prefix_format,
                         )
                     else:
                         continue
 
-                result = await mounted.server._read_resource(resource_uri)
-                # Extract content from the first ReadResourceContents
-                if result and len(result) > 0:
+                try:
+                    result = await mounted.server._read_resource(key)
                     return result[0].content
-                raise NotFoundError(f"Resource {uri_str!r} returned empty content")
+                except NotFoundError:
+                    continue
             except NotFoundError:
                 continue
 

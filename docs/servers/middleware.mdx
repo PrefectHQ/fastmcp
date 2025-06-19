@@ -1,0 +1,510 @@
+---
+title: MCP Middleware
+sidebarTitle: Middleware
+description: Add cross-cutting functionality to your MCP server with middleware that can inspect, modify, and respond to all MCP requests and responses.
+icon: layers
+---
+
+import { VersionBadge } from "/snippets/version-badge.mdx"
+
+<VersionBadge version="2.8.0" />
+
+MCP middleware is a powerful concept that allows you to add cross-cutting functionality to your FastMCP server. Unlike traditional web middleware, MCP middleware is designed specifically for the Model Context Protocol, providing hooks for different types of MCP operations like tool calls, resource reads, and prompt requests.
+
+<Warning>
+MCP middleware is a FastMCP-specific concept and is not part of the official MCP protocol specification. This middleware system is designed to work with FastMCP servers and may not be compatible with other MCP implementations.
+</Warning>
+
+## What is MCP Middleware?
+
+MCP middleware lets you intercept and modify MCP requests and responses as they flow through your server. Unlike traditional HTTP middleware that operates on request/response pairs, MCP middleware is aware of the specific MCP protocol operations and can provide targeted hooks for different types of interactions.
+
+Common use cases for MCP middleware include:
+- **Authentication and Authorization**: Verify client permissions before executing operations
+- **Logging and Monitoring**: Track usage patterns and performance metrics
+- **Rate Limiting**: Control request frequency per client or operation type
+- **Request/Response Transformation**: Modify data before it reaches tools or after it leaves
+- **Caching**: Store frequently requested data to improve performance
+- **Error Handling**: Provide consistent error responses across your server
+
+## How MCP Middleware Works
+
+MCP middleware operates on a pipeline model where each middleware can:
+
+1. **Inspect the incoming request** and its context
+2. **Modify the request** before passing it to the next middleware or handler
+3. **Execute the next middleware/handler** in the chain
+4. **Inspect and modify the response** before returning it
+5. **Handle errors** that occur during processing
+
+The middleware system provides specialized hooks for different MCP operations:
+
+- `on_message`: Called for all MCP messages (requests and notifications)
+- `on_request`: Called specifically for MCP requests (that expect responses)
+- `on_notification`: Called specifically for MCP notifications (fire-and-forget)
+- `on_call_tool`: Called when tools are being executed
+- `on_read_resource`: Called when resources are being read
+- `on_get_prompt`: Called when prompts are being retrieved
+- `on_list_tools`: Called when listing available tools
+- `on_list_resources`: Called when listing available resources
+- `on_list_resource_templates`: Called when listing resource templates
+- `on_list_prompts`: Called when listing available prompts
+
+<Tip>
+The middleware hook system is designed to be extensible. As FastMCP evolves and new MCP operations are added, additional hooks will be introduced to provide fine-grained control over new functionality.
+</Tip>
+
+## Creating Middleware
+
+### Basic Middleware Structure
+
+MCP middleware is implemented by subclassing the `MCPMiddleware` base class and overriding the hooks you need:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.middleware import MCPMiddleware, MiddlewareContext
+
+class LoggingMiddleware(MCPMiddleware):
+    """Middleware that logs all MCP operations."""
+    
+    async def on_message(self, context: MiddlewareContext, call_next):
+        """Called for all MCP messages."""
+        print(f"Processing {context.method} from {context.source}")
+        
+        # Call the next middleware/handler in the chain
+        result = await call_next(context)
+        
+        print(f"Completed {context.method}")
+        return result
+    
+    async def on_call_tool(self, context: MiddlewareContext, call_next):
+        """Called specifically for tool calls."""
+        tool_name = context.message.name
+        print(f"Calling tool: {tool_name}")
+        
+        result = await call_next(context)
+        
+        print(f"Tool {tool_name} completed")
+        return result
+
+# Add middleware to your server
+mcp = FastMCP("MyServer")
+mcp.add_middleware(LoggingMiddleware())
+```
+
+### Middleware Context
+
+The `MiddlewareContext` object provides access to information about the current request:
+
+```python
+class InspectionMiddleware(MCPMiddleware):
+    async def on_request(self, context: MiddlewareContext, call_next):
+        # Access request information
+        method = context.method              # e.g., "tools/call"
+        source = context.source              # "client" or "server"
+        message_type = context.type          # "request" or "notification"
+        timestamp = context.timestamp        # When the request was received
+        message = context.message            # The actual MCP message
+        fastmcp_context = context.fastmcp_context  # FastMCP Context object (if available)
+        
+        # Continue processing
+        return await call_next(context)
+```
+
+### Middleware Hooks
+
+Each middleware hook receives a `MiddlewareContext` and a `call_next` function. The hooks are organized in a hierarchy:
+
+1. **`on_message`**: The broadest hook, called for all MCP messages
+2. **`on_request`** / **`on_notification`**: Called based on message type
+3. **Operation-specific hooks**: Called for specific MCP operations
+
+```python
+class ComprehensiveMiddleware(MCPMiddleware):
+    async def on_message(self, context: MiddlewareContext, call_next):
+        """Called for ALL messages (requests and notifications)."""
+        print(f"Message: {context.method}")
+        return await call_next(context)
+    
+    async def on_request(self, context: MiddlewareContext, call_next):
+        """Called only for requests (messages that expect responses)."""
+        print(f"Request: {context.method}")
+        return await call_next(context)
+    
+    async def on_call_tool(self, context: MiddlewareContext, call_next):
+        """Called only for tool execution requests."""
+        tool_name = context.message.name
+        print(f"Executing tool: {tool_name}")
+        return await call_next(context)
+```
+
+## Middleware Examples
+
+### Authentication Middleware
+
+```python
+from fastmcp.server.middleware import MCPMiddleware, MiddlewareContext
+from fastmcp.exceptions import ToolError
+
+class AuthenticationMiddleware(MCPMiddleware):
+    def __init__(self, required_token: str):
+        self.required_token = required_token
+    
+    async def on_request(self, context: MiddlewareContext, call_next):
+        """Verify authentication for all requests."""
+        
+        # Check if this is an HTTP request with headers
+        if hasattr(context, 'fastmcp_context') and context.fastmcp_context:
+            try:
+                # Access HTTP request if available
+                request = context.fastmcp_context.get_http_request()
+                auth_header = request.headers.get("Authorization")
+                
+                if not auth_header or not auth_header.startswith("Bearer "):
+                    raise ToolError("Missing or invalid authorization header")
+                
+                token = auth_header.split(" ", 1)[1]
+                if token != self.required_token:
+                    raise ToolError("Invalid authentication token")
+                    
+            except Exception:
+                # If HTTP request is not available, continue without auth
+                pass
+        
+        return await call_next(context)
+
+# Usage
+mcp = FastMCP("SecureServer")
+mcp.add_middleware(AuthenticationMiddleware("secret-token-123"))
+```
+
+### Performance Monitoring Middleware
+
+```python
+import time
+import logging
+
+class PerformanceMiddleware(MCPMiddleware):
+    def __init__(self):
+        self.logger = logging.getLogger("performance")
+    
+    async def on_call_tool(self, context: MiddlewareContext, call_next):
+        """Monitor tool execution performance."""
+        tool_name = context.message.name
+        start_time = time.time()
+        
+        try:
+            result = await call_next(context)
+            execution_time = time.time() - start_time
+            
+            self.logger.info(
+                f"Tool {tool_name} completed in {execution_time:.3f}s"
+            )
+            
+            return result
+            
+        except Exception as e:
+            execution_time = time.time() - start_time
+            self.logger.error(
+                f"Tool {tool_name} failed after {execution_time:.3f}s: {e}"
+            )
+            raise
+```
+
+### Request/Response Transformation Middleware
+
+```python
+class TransformationMiddleware(MCPMiddleware):
+    async def on_call_tool(self, context: MiddlewareContext, call_next):
+        """Transform tool arguments and results."""
+        
+        # Access and modify tool arguments
+        if hasattr(context.message, 'arguments'):
+            args = context.message.arguments or {}
+            
+            # Example: Add a timestamp to all tool calls
+            args['_middleware_timestamp'] = context.timestamp.isoformat()
+            
+            # Create a modified context
+            modified_context = context.copy(
+                message=context.message.model_copy(update={'arguments': args})
+            )
+        else:
+            modified_context = context
+        
+        # Execute with modified context
+        result = await call_next(modified_context)
+        
+        # Transform the result if needed
+        if hasattr(result, 'content'):
+            # Example: Add metadata to tool results
+            if result.content and len(result.content) > 0:
+                original_content = result.content[0].text
+                enhanced_content = f"[Processed at {context.timestamp}]\n{original_content}"
+                result.content[0].text = enhanced_content
+        
+        return result
+```
+
+### Rate Limiting Middleware
+
+```python
+import asyncio
+from collections import defaultdict
+from datetime import datetime, timedelta
+
+class RateLimitMiddleware(MCPMiddleware):
+    def __init__(self, max_requests: int = 100, window_minutes: int = 1):
+        self.max_requests = max_requests
+        self.window = timedelta(minutes=window_minutes)
+        self.requests = defaultdict(list)  # client_id -> [timestamps]
+    
+    async def on_request(self, context: MiddlewareContext, call_next):
+        """Implement rate limiting per client."""
+        
+        # Get client identifier (you may need to implement this based on your auth)
+        client_id = getattr(context.fastmcp_context, 'client_id', 'anonymous')
+        
+        now = datetime.now()
+        
+        # Clean old requests
+        self.requests[client_id] = [
+            timestamp for timestamp in self.requests[client_id]
+            if now - timestamp < self.window
+        ]
+        
+        # Check rate limit
+        if len(self.requests[client_id]) >= self.max_requests:
+            raise ToolError(
+                f"Rate limit exceeded: {self.max_requests} requests per "
+                f"{self.window.total_seconds()/60:.0f} minutes"
+            )
+        
+        # Record this request
+        self.requests[client_id].append(now)
+        
+        return await call_next(context)
+```
+
+## Adding Middleware to Your Server
+
+### Single Middleware
+
+```python
+from fastmcp import FastMCP
+
+mcp = FastMCP("MyServer")
+
+# Add a single middleware instance
+logging_middleware = LoggingMiddleware()
+mcp.add_middleware(logging_middleware)
+```
+
+### Multiple Middleware
+
+Middleware is executed in the order it's added to the server:
+
+```python
+mcp = FastMCP("MyServer")
+
+# Add multiple middleware - they execute in order
+mcp.add_middleware(AuthenticationMiddleware("secret-token"))
+mcp.add_middleware(PerformanceMiddleware())
+mcp.add_middleware(LoggingMiddleware())
+
+# Request flow:
+# 1. AuthenticationMiddleware.on_request()
+# 2. PerformanceMiddleware.on_request()  
+# 3. LoggingMiddleware.on_request()
+# 4. Actual tool/resource handler
+# 5. LoggingMiddleware response processing
+# 6. PerformanceMiddleware response processing
+# 7. AuthenticationMiddleware response processing
+```
+
+## Advanced Patterns
+
+### Conditional Middleware
+
+```python
+class ConditionalMiddleware(MCPMiddleware):
+    def __init__(self, condition_func):
+        self.should_process = condition_func
+    
+    async def on_call_tool(self, context: MiddlewareContext, call_next):
+        """Only process certain tools."""
+        
+        if not self.should_process(context.message.name):
+            # Skip processing for this tool
+            return await call_next(context)
+        
+        # Apply middleware logic
+        print(f"Processing tool: {context.message.name}")
+        return await call_next(context)
+
+# Usage
+def only_expensive_tools(tool_name: str) -> bool:
+    return tool_name in ["complex_analysis", "heavy_computation"]
+
+mcp.add_middleware(ConditionalMiddleware(only_expensive_tools))
+```
+
+### Middleware with State
+
+```python
+class StatefulMiddleware(MCPMiddleware):
+    def __init__(self):
+        self.call_count = 0
+        self.tools_used = set()
+    
+    async def on_call_tool(self, context: MiddlewareContext, call_next):
+        """Track usage statistics."""
+        self.call_count += 1
+        self.tools_used.add(context.message.name)
+        
+        print(f"Total calls: {self.call_count}, Unique tools: {len(self.tools_used)}")
+        
+        return await call_next(context)
+    
+    def get_stats(self):
+        return {
+            "total_calls": self.call_count,
+            "unique_tools": len(self.tools_used),
+            "tools_used": list(self.tools_used)
+        }
+```
+
+### Error Handling Middleware
+
+```python
+class ErrorHandlingMiddleware(MCPMiddleware):
+    async def on_call_tool(self, context: MiddlewareContext, call_next):
+        """Provide consistent error handling."""
+        try:
+            return await call_next(context)
+        except ToolError:
+            # Re-raise ToolErrors as-is
+            raise
+        except Exception as e:
+            # Log the error and convert to a user-friendly message
+            logging.error(f"Tool {context.message.name} failed: {e}")
+            raise ToolError(f"Tool execution failed: {str(e)}")
+```
+
+## Best Practices
+
+### Performance Considerations
+
+1. **Keep middleware lightweight**: Avoid heavy computations in middleware
+2. **Use async operations**: Don't block the event loop with synchronous operations
+3. **Cache when possible**: Store frequently accessed data to avoid repeated lookups
+
+```python
+class EfficientMiddleware(MCPMiddleware):
+    def __init__(self):
+        self._cache = {}
+    
+    async def on_call_tool(self, context: MiddlewareContext, call_next):
+        """Example of efficient middleware with caching."""
+        
+        # Check cache first
+        cache_key = f"{context.message.name}:{hash(str(context.message.arguments))}"
+        
+        if cache_key in self._cache:
+            print("Returning cached result")
+            return self._cache[cache_key]
+        
+        # Execute and cache result
+        result = await call_next(context)
+        self._cache[cache_key] = result
+        
+        return result
+```
+
+### Error Handling
+
+1. **Always call `call_next`**: Unless you're intentionally stopping the chain
+2. **Handle exceptions appropriately**: Don't let middleware errors break the entire request
+3. **Use `ToolError` for client-facing errors**: Keep internal errors internal
+
+```python
+class RobustMiddleware(MCPMiddleware):
+    async def on_request(self, context: MiddlewareContext, call_next):
+        """Robust error handling example."""
+        try:
+            # Middleware logic here
+            return await call_next(context)
+        except ToolError:
+            # Client-facing errors should be re-raised
+            raise
+        except Exception as e:
+            # Log internal errors but don't expose details
+            logging.error(f"Middleware error: {e}")
+            # Optionally continue without middleware processing
+            return await call_next(context)
+```
+
+### Testing Middleware
+
+```python
+import pytest
+from fastmcp import FastMCP, Client
+
+@pytest.mark.asyncio
+async def test_logging_middleware():
+    """Test middleware functionality."""
+    
+    # Create server with middleware
+    mcp = FastMCP("TestServer")
+    logging_middleware = LoggingMiddleware()
+    mcp.add_middleware(logging_middleware)
+    
+    @mcp.tool
+    def test_tool(x: int) -> int:
+        return x * 2
+    
+    # Test with client
+    async with Client(mcp) as client:
+        result = await client.call_tool("test_tool", {"x": 5})
+        assert result == 10
+    
+    # Verify middleware was called
+    # (You'll need to add tracking to your middleware for testing)
+```
+
+## Server Composition and Middleware
+
+When using [Server Composition](/servers/composition) with `mount` or `import_server`, middleware behavior follows these rules:
+
+1. **Parent server middleware** runs for all requests, including those routed to mounted servers
+2. **Mounted server middleware** only runs for requests handled by that specific server
+3. **Middleware order** is preserved within each server
+
+```python
+# Parent server with middleware
+parent = FastMCP("Parent")
+parent.add_middleware(AuthenticationMiddleware("token"))
+
+# Child server with its own middleware  
+child = FastMCP("Child")
+child.add_middleware(LoggingMiddleware())
+
+@child.tool
+def child_tool() -> str:
+    return "from child"
+
+# Mount the child server
+parent.mount(child, prefix="child")
+
+# Request to "child_tool" will:
+# 1. Run parent's AuthenticationMiddleware
+# 2. Route to child server
+# 3. Run child's LoggingMiddleware  
+# 4. Execute child_tool
+```
+
+This allows you to create layered middleware architectures where parent servers handle cross-cutting concerns like authentication, while child servers focus on domain-specific middleware.
+
+<Tip>
+When debugging middleware issues in composed servers, remember that both parent and child middleware may be executing. Use detailed logging to trace the middleware execution path.
+</Tip>

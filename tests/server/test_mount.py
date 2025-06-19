@@ -71,7 +71,8 @@ class TestBasicMount:
         # Mount without deprecated parameters
         main_app.mount(api_app, "api")
 
-    async def test_mount_with_no_prefix(self):
+    @pytest.mark.parametrize("prefix", ["", None])
+    async def test_mount_with_no_prefix(self, prefix):
         main_app = FastMCP("MainApp")
         sub_app = FastMCP("SubApp")
 
@@ -80,7 +81,7 @@ class TestBasicMount:
             return "This is from the sub app"
 
         # Mount with empty prefix but without deprecated separators
-        main_app.mount(sub_app, prefix="")
+        main_app.mount(sub_app, prefix=prefix)
 
         tools = await main_app.get_tools()
         # With empty prefix, the tool should keep its original name

@@ -10,7 +10,7 @@ from fastmcp.prompts.prompt_manager import PromptManager
 
 
 class TestPromptManager:
-    def test_add_prompt(self):
+    async def test_add_prompt(self):
         """Test adding a prompt to the manager."""
 
         def fn() -> str:
@@ -20,9 +20,9 @@ class TestPromptManager:
         prompt = Prompt.from_function(fn)
         added = manager.add_prompt(prompt)
         assert added == prompt
-        assert manager.get_prompt("fn") == prompt
+        assert await manager.get_prompt("fn") == prompt
 
-    def test_add_duplicate_prompt(self, caplog):
+    async def test_add_duplicate_prompt(self, caplog):
         """Test adding the same prompt twice."""
 
         def fn() -> str:
@@ -35,7 +35,7 @@ class TestPromptManager:
         assert first == second
         assert "Prompt already exists" in caplog.text
 
-    def test_disable_warn_on_duplicate_prompts(self, caplog):
+    async def test_disable_warn_on_duplicate_prompts(self, caplog):
         """Test disabling warning on duplicate prompts."""
 
         def fn() -> str:
@@ -48,7 +48,7 @@ class TestPromptManager:
         assert first == second
         assert "Prompt already exists" not in caplog.text
 
-    def test_warn_on_duplicate_prompts(self, caplog):
+    async def test_warn_on_duplicate_prompts(self, caplog):
         """Test warning on duplicate prompts."""
         manager = PromptManager(duplicate_behavior="warn")
 
@@ -62,9 +62,9 @@ class TestPromptManager:
 
         assert "Prompt already exists: test_prompt" in caplog.text
         # Should have the prompt
-        assert manager.get_prompt("test_prompt") is not None
+        assert await manager.get_prompt("test_prompt") is not None
 
-    def test_error_on_duplicate_prompts(self):
+    async def test_error_on_duplicate_prompts(self):
         """Test error on duplicate prompts."""
         manager = PromptManager(duplicate_behavior="error")
 
@@ -78,7 +78,7 @@ class TestPromptManager:
         with pytest.raises(ValueError, match="Prompt already exists: test_prompt"):
             manager.add_prompt(prompt)
 
-    def test_replace_duplicate_prompts(self):
+    async def test_replace_duplicate_prompts(self):
         """Test replacing duplicate prompts."""
         manager = PromptManager(duplicate_behavior="replace")
 
@@ -95,12 +95,12 @@ class TestPromptManager:
         manager.add_prompt(prompt2)
 
         # Should have replaced with the new prompt
-        prompt = manager.get_prompt("test_prompt")
+        prompt = await manager.get_prompt("test_prompt")
         assert prompt is not None
         assert isinstance(prompt, FunctionPrompt)
         assert prompt.fn.__name__ == "replacement_fn"
 
-    def test_ignore_duplicate_prompts(self):
+    async def test_ignore_duplicate_prompts(self):
         """Test ignoring duplicate prompts."""
         manager = PromptManager(duplicate_behavior="ignore")
 
@@ -117,7 +117,7 @@ class TestPromptManager:
         result = manager.add_prompt(prompt2)
 
         # Should keep the original
-        prompt = manager.get_prompt("test_prompt")
+        prompt = await manager.get_prompt("test_prompt")
         assert prompt is not None
         assert isinstance(prompt, FunctionPrompt)
         assert prompt.fn.__name__ == "original_fn"
@@ -125,7 +125,7 @@ class TestPromptManager:
         assert isinstance(result, FunctionPrompt)
         assert result.fn.__name__ == "original_fn"
 
-    def test_get_prompts(self):
+    async def test_get_prompts(self):
         """Test retrieving all prompts."""
 
         def fn1() -> str:
@@ -139,7 +139,7 @@ class TestPromptManager:
         prompt2 = Prompt.from_function(fn2)
         manager.add_prompt(prompt1)
         manager.add_prompt(prompt2)
-        prompts = manager.get_prompts()
+        prompts = await manager.get_prompts()
         assert len(prompts) == 2
         assert prompts["fn1"] == prompt1
         assert prompts["fn2"] == prompt2
@@ -270,7 +270,7 @@ class TestRenderPrompt:
 class TestPromptTags:
     """Test functionality related to prompt tags."""
 
-    def test_add_prompt_with_tags(self):
+    async def test_add_prompt_with_tags(self):
         """Test adding a prompt with tags."""
 
         def greeting() -> str:
@@ -280,11 +280,11 @@ class TestPromptTags:
         prompt = Prompt.from_function(greeting, tags={"greeting", "simple"})
         manager.add_prompt(prompt)
 
-        prompt = manager.get_prompt("greeting")
+        prompt = await manager.get_prompt("greeting")
         assert prompt is not None
         assert prompt.tags == {"greeting", "simple"}
 
-    def test_add_prompt_with_empty_tags(self):
+    async def test_add_prompt_with_empty_tags(self):
         """Test adding a prompt with empty tags."""
 
         def greeting() -> str:
@@ -294,11 +294,11 @@ class TestPromptTags:
         prompt = Prompt.from_function(greeting, tags=set())
         manager.add_prompt(prompt)
 
-        prompt = manager.get_prompt("greeting")
+        prompt = await manager.get_prompt("greeting")
         assert prompt is not None
         assert prompt.tags == set()
 
-    def test_add_prompt_with_none_tags(self):
+    async def test_add_prompt_with_none_tags(self):
         """Test adding a prompt with None tags."""
 
         def greeting() -> str:
@@ -308,11 +308,11 @@ class TestPromptTags:
         prompt = Prompt.from_function(greeting, tags=None)
         manager.add_prompt(prompt)
 
-        prompt = manager.get_prompt("greeting")
+        prompt = await manager.get_prompt("greeting")
         assert prompt is not None
         assert prompt.tags == set()
 
-    def test_list_prompts_with_tags(self):
+    async def test_list_prompts_with_tags(self):
         """Test listing prompts with specific tags."""
 
         def greeting() -> str:
@@ -332,13 +332,12 @@ class TestPromptTags:
         )
 
         # Filter prompts by tags
-        simple_prompts = [
-            p for p in manager.get_prompts().values() if "simple" in p.tags
-        ]
+        prompts = await manager.get_prompts()
+        simple_prompts = [p for p in prompts.values() if "simple" in p.tags]
         assert len(simple_prompts) == 2
         assert {p.name for p in simple_prompts} == {"greeting", "summary"}
 
-        nlp_prompts = [p for p in manager.get_prompts().values() if "nlp" in p.tags]
+        nlp_prompts = [p for p in prompts.values() if "nlp" in p.tags]
         assert len(nlp_prompts) == 1
         assert nlp_prompts[0].name == "summary"
 

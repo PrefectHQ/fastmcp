@@ -28,7 +28,7 @@ class ToolManager:
         mask_error_details: bool | None = None,
     ):
         self._tools: dict[str, Tool] = {}
-        self._mounted_sources: list[MountedServer] = []
+        self._mounted_servers: list[MountedServer] = []
         self.mask_error_details = mask_error_details or settings.mask_error_details
 
         # Default to "warn" if None is provided
@@ -45,7 +45,7 @@ class ToolManager:
 
     def mount(self, server: MountedServer) -> None:
         """Adds a mounted server as a source for tools."""
-        self._mounted_sources.append(server)
+        self._mounted_servers.append(server)
 
     async def _load_tools(self, *, via_server: bool = False) -> dict[str, Tool]:
         """
@@ -57,7 +57,7 @@ class ToolManager:
         """
         all_tools: dict[str, Tool] = {}
 
-        for mounted in self._mounted_sources:
+        for mounted in self._mounted_servers:
             try:
                 if via_server:
                     # Use the server-to-server filtered path
@@ -201,12 +201,16 @@ class ToolManager:
                     raise ToolError(f"Error calling tool {key!r}: {e}") from e
 
         # 2. Check mounted servers using the filtered protocol path.
-        for mounted in reversed(self._mounted_sources):
-            if mounted.prefix and key.startswith(f"{mounted.prefix}_"):
-                key_on_child = key.removeprefix(f"{mounted.prefix}_")
-                try:
-                    return await mounted.server._call_tool(key_on_child, arguments)
-                except NotFoundError:
+        for mounted in reversed(self._mounted_servers):
+            tool_key = key
+            if mounted.prefix:
+                if key.startswith(f"{mounted.prefix}_"):
+                    tool_key = key.removeprefix(f"{mounted.prefix}_")
+                else:
                     continue
+            try:
+                return await mounted.server._call_tool(tool_key, arguments)
+            except NotFoundError:
+                continue
 
         raise NotFoundError(f"Tool {key!r} not found.")

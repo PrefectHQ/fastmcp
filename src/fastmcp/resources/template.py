@@ -62,6 +62,9 @@ class ResourceTemplate(FastMCPComponent):
         description="JSON schema for function parameters"
     )
 
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}(uri_template={self.uri_template!r}, name={self.name!r}, description={self.description!r}, tags={self.tags})"
+
     @staticmethod
     def from_function(
         fn: Callable[..., Any],

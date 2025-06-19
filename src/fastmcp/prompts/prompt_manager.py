@@ -27,7 +27,7 @@ class PromptManager:
         mask_error_details: bool | None = None,
     ):
         self._prompts: dict[str, Prompt] = {}
-        self._mounted_sources: list[MountedServer] = []
+        self._mounted_servers: list[MountedServer] = []
         self.mask_error_details = mask_error_details or settings.mask_error_details
 
         # Default to "warn" if None is provided
@@ -44,7 +44,7 @@ class PromptManager:
 
     def mount(self, server: MountedServer) -> None:
         """Adds a mounted server as a source for prompts."""
-        self._mounted_sources.append(server)
+        self._mounted_servers.append(server)
 
     async def _load_prompts(self, *, via_server: bool = False) -> dict[str, Prompt]:
         """
@@ -56,7 +56,7 @@ class PromptManager:
         """
         all_prompts: dict[str, Prompt] = {}
 
-        for mounted in self._mounted_sources:
+        for mounted in self._mounted_servers:
             try:
                 if via_server:
                     # Use the server-to-server filtered path
@@ -188,12 +188,16 @@ class PromptManager:
                     raise PromptError(f"Error rendering prompt {name!r}: {e}") from e
 
         # 2. Check mounted servers using the filtered protocol path.
-        for mounted in reversed(self._mounted_sources):
-            if mounted.prefix and name.startswith(f"{mounted.prefix}_"):
-                name_on_child = name.removeprefix(f"{mounted.prefix}_")
-                try:
-                    return await mounted.server._get_prompt(name_on_child, arguments)
-                except NotFoundError:
+        for mounted in reversed(self._mounted_servers):
+            prompt_key = name
+            if mounted.prefix:
+                if name.startswith(f"{mounted.prefix}_"):
+                    prompt_key = name.removeprefix(f"{mounted.prefix}_")
+                else:
                     continue
+            try:
+                return await mounted.server._get_prompt(prompt_key, arguments)
+            except NotFoundError:
+                continue
 
         raise NotFoundError(f"Unknown prompt: {name}")
