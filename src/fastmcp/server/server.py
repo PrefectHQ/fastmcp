@@ -341,8 +341,7 @@ class FastMCP(Generic[LifespanResultT]):
 
     async def get_tools(self) -> dict[str, Tool]:
         """Get all registered tools, indexed by registered key."""
-        tools = await self._list_tools(apply_middleware=False)
-        return {tool.key: tool for tool in tools}
+        return await self._tool_manager.get_tools()
 
     async def get_tool(self, key: str) -> Tool:
         tools = await self.get_tools()
@@ -376,9 +375,7 @@ class FastMCP(Generic[LifespanResultT]):
         """
         List all available prompts.
         """
-
-        prompts = await self._list_prompts(apply_middleware=False)
-        return {prompt.key: prompt for prompt in prompts}
+        return await self._prompt_manager.get_prompts()
 
     async def get_prompt(self, key: str) -> Prompt:
         prompts = await self.get_prompts()
@@ -651,10 +648,10 @@ class FastMCP(Generic[LifespanResultT]):
         logger.debug("Handler called: list_prompts")
 
         with fastmcp.server.context.Context(fastmcp=self):
-            prompts = await self._middleware_list_prompts()
+            prompts = await self._list_prompts()
             return [prompt.to_mcp_prompt(name=prompt.key) for prompt in prompts]
 
-    async def _middleware_list_prompts(self) -> list[Prompt]:
+    async def _list_prompts(self) -> list[Prompt]:
         """
         List all available prompts, in the format expected by the low-level MCP
         server.
@@ -662,9 +659,9 @@ class FastMCP(Generic[LifespanResultT]):
         """
 
         async def _handler(
-            context: MiddlewareContext[dict[str, Any]],
+            context: MiddlewareContext[mcp.types.ListPromptsRequest],
         ) -> list[Prompt]:
-            prompts = await self._list_prompts()
+            prompts = await self._prompt_manager.list_prompts()
 
             mcp_prompts: list[Prompt] = []
             for prompt in prompts:
@@ -676,7 +673,7 @@ class FastMCP(Generic[LifespanResultT]):
         with fastmcp.server.context.Context(fastmcp=self) as fastmcp_ctx:
             # Create the middleware context.
             mw_context = MiddlewareContext(
-                message={},  # List prompts doesn't have parameters
+                message=mcp.types.ListPromptsRequest(method="prompts/list"),
                 source="client",
                 type="request",
                 method="prompts/list",
@@ -685,43 +682,6 @@ class FastMCP(Generic[LifespanResultT]):
 
             # Apply the middleware chain.
             return await self._apply_middleware(mw_context, _handler)
-
-    async def _list_prompts(self, apply_middleware: bool = True) -> list[Prompt]:
-        """
-        List all available prompts.
-        """
-
-        if (prompts := self._cache.get("prompts")) is self._cache.NOT_FOUND:
-            prompts: dict[str, Prompt] = {}
-
-            # iterate such that new mounts overwrite older ones
-            for mounted_server in self._mounted_servers:
-                try:
-                    if apply_middleware:
-                        server_prompts = (
-                            await mounted_server.server._middleware_list_prompts()
-                        )
-                    else:
-                        server_prompts = await mounted_server.server._list_prompts()
-                    # Apply prefix to each prompt key if prefix exists
-                    if mounted_server.prefix:
-                        for prompt in server_prompts:
-                            prompt = prompt.with_key(
-                                f"{mounted_server.prefix}_{prompt.key}"
-                            )
-                            prompts[prompt.key] = prompt
-                    else:
-                        prompts.update(
-                            {prompt.key: prompt for prompt in server_prompts}
-                        )
-                except Exception as e:
-                    logger.warning(
-                        f"Failed to get prompts from mounted server '{mounted_server.prefix}': {e}"
-                    )
-                    continue
-            prompts.update(await self._prompt_manager.get_prompts())
-            self._cache.set("prompts", prompts)
-        return list(prompts.values())
 
     async def _mcp_call_tool(
         self, key: str, arguments: dict[str, Any]
@@ -828,7 +788,7 @@ class FastMCP(Generic[LifespanResultT]):
         Read a resource by URI, in the format expected by the low-level MCP
         server.
         """
-        if self._resource_manager.has_resource(uri):
+        if await self._resource_manager.has_resource(uri):
             resource = await self._resource_manager.get_resource(uri)
             if not self._should_enable_component(resource):
                 raise DisabledError(f"Resource {str(uri)!r} is disabled")
@@ -840,32 +800,7 @@ class FastMCP(Generic[LifespanResultT]):
                 )
             ]
         else:
-            # iterate such that new mounts take precedence over older ones
-            for mounted_server in reversed(self._mounted_servers):
-                resource_uri = uri
-                try:
-                    if mounted_server.prefix:
-                        # If server has a prefix, check if URI matches and strip prefix
-                        if has_resource_prefix(
-                            str(resource_uri),
-                            mounted_server.prefix,
-                            self.resource_prefix_format,
-                        ):
-                            resource_uri = remove_resource_prefix(
-                                str(resource_uri),
-                                mounted_server.prefix,
-                                self.resource_prefix_format,
-                            )
-                        else:
-                            continue
-                    return await mounted_server.server._middleware_read_resource(
-                        resource_uri
-                    )
-                except NotFoundError:
-                    # Resource not found on this server, try the next one
-                    continue
-            else:
-                raise NotFoundError(f"Unknown resource: {uri}")
+            raise NotFoundError(f"Unknown resource: {uri}")
 
     async def _mcp_get_prompt(
         self, name: str, arguments: dict[str, Any] | None = None
@@ -879,7 +814,7 @@ class FastMCP(Generic[LifespanResultT]):
 
         with fastmcp.server.context.Context(fastmcp=self):
             try:
-                return await self._middleware_get_prompt(name, arguments)
+                return await self._get_prompt(name, arguments)
             except DisabledError:
                 # convert to NotFoundError to avoid leaking prompt presence
                 raise NotFoundError(f"Unknown prompt: {name}")
@@ -887,21 +822,22 @@ class FastMCP(Generic[LifespanResultT]):
                 # standardize NotFound message
                 raise NotFoundError(f"Unknown prompt: {name}")
 
-    async def _middleware_get_prompt(
-        self,
-        name: str,
-        arguments: dict[str, Any] | None = None,
+    async def _get_prompt(
+        self, name: str, arguments: dict[str, Any] | None = None
     ) -> GetPromptResult:
         """
-        Get a prompt with middleware.
+        Applies this server's middleware and delegates the filtered call to the manager.
         """
 
         async def _handler(
             context: MiddlewareContext[mcp.types.GetPromptRequestParams],
         ) -> GetPromptResult:
-            return await self._get_prompt(
-                name=context.message.name,
-                arguments=context.message.arguments,
+            prompt = await self._prompt_manager.get_prompt(context.message.name)
+            if not self._should_enable_component(prompt):
+                raise NotFoundError(f"Unknown prompt: {context.message.name!r}")
+
+            return await self._prompt_manager.render_prompt(
+                name=context.message.name, arguments=context.message.arguments
             )
 
         mw_context = MiddlewareContext(
@@ -912,49 +848,6 @@ class FastMCP(Generic[LifespanResultT]):
             fastmcp_context=fastmcp.server.dependencies.get_context(),
         )
         return await self._apply_middleware(mw_context, _handler)
-
-    async def _get_prompt(
-        self, name: str, arguments: dict[str, Any] | None = None
-    ) -> GetPromptResult:
-        """Handle MCP 'getPrompt' requests.
-
-        Args:
-            name: The name of the prompt to render
-            arguments: Arguments to pass to the prompt
-
-        Returns:
-            GetPromptResult containing the rendered prompt messages
-        """
-        logger.debug("Get prompt: %s with %s", name, arguments)
-
-        # Get prompt, checking first from our prompts, then from the mounted servers
-        if self._prompt_manager.has_prompt(name):
-            prompt = self._prompt_manager.get_prompt(name)
-            if not self._should_enable_component(prompt):
-                raise DisabledError(f"Prompt {name!r} is disabled")
-            return await self._prompt_manager.render_prompt(name, arguments)
-
-        # Check mounted servers to see if they have the prompt
-        # iterate such that new mounts take precedence over older ones
-        for mounted_server in reversed(self._mounted_servers):
-            prompt_name = name
-            try:
-                if mounted_server.prefix:
-                    # If server has a prefix, check if name matches and strip prefix
-                    if prompt_name.startswith(f"{mounted_server.prefix}_"):
-                        prompt_name = prompt_name.removeprefix(
-                            f"{mounted_server.prefix}_"
-                        )
-                    else:
-                        continue
-                return await mounted_server.server._middleware_get_prompt(
-                    prompt_name, arguments
-                )
-            except NotFoundError:
-                # Prompt not found on this server, try the next one
-                continue
-
-        raise NotFoundError(f"Unknown prompt: {name}")
 
     def add_tool(self, tool: Tool) -> None:
         """Add a tool to the server.
