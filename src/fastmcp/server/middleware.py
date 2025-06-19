@@ -148,7 +148,7 @@ class MCPMiddleware:
                 handler = partial(self.on_list_tools, call_next=handler)
             case "resources/list":
                 handler = partial(self.on_list_resources, call_next=handler)
-            case "resource-templates/list":
+            case "resources/templates/list":
                 handler = partial(self.on_list_resource_templates, call_next=handler)
             case "prompts/list":
                 handler = partial(self.on_list_prompts, call_next=handler)
