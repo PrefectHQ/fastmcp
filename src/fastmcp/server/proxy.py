@@ -220,10 +220,14 @@ class FastMCPProxy(FastMCP):
 
         return list(resources.values())
 
-    async def _list_resource_templates(self) -> list[ResourceTemplate]:
+    async def _list_resource_templates(
+        self, apply_middleware: bool = True
+    ) -> list[ResourceTemplate]:
         templates = {
             template.uri_template: template
-            for template in await super()._list_resource_templates()
+            for template in await super()._list_resource_templates(
+                apply_middleware=apply_middleware
+            )
         }
 
         async with self.client:
@@ -244,8 +248,11 @@ class FastMCPProxy(FastMCP):
 
         return list(templates.values())
 
-    async def _list_prompts(self) -> list[Prompt]:
-        prompts = {prompt.name: prompt for prompt in await super()._list_prompts()}
+    async def _list_prompts(self, apply_middleware: bool = True) -> list[Prompt]:
+        prompts = {
+            prompt.name: prompt
+            for prompt in await super()._list_prompts(apply_middleware=apply_middleware)
+        }
 
         async with self.client:
             try:
