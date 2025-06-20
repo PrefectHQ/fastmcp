@@ -17,7 +17,7 @@ from mcp.shared.auth import (
     OAuthClientInformationFull,
     OAuthToken,
 )
-from pydantic import SecretStr
+from pydantic import AnyHttpUrl, SecretStr, ValidationError
 
 from fastmcp.server.auth.auth import (
     ClientRegistrationOptions,
@@ -179,8 +179,16 @@ class BearerAuthProvider(OAuthProvider):
         if public_key and jwks_uri:
             raise ValueError("Provide either public_key or jwks_uri, not both")
 
+        # Only pass issuer to parent if it's a valid URL, otherwise use default
+        # This allows the issuer claim validation to work with string issuers per RFC 7519
+        try:
+            issuer_url = AnyHttpUrl(issuer) if issuer else "https://fastmcp.example.com"
+        except ValidationError:
+            # Issuer is not a valid URL, use default for parent class
+            issuer_url = "https://fastmcp.example.com"
+
         super().__init__(
-            issuer_url=issuer or "https://fastmcp.example.com",
+            issuer_url=issuer_url,
             client_registration_options=ClientRegistrationOptions(enabled=False),
             revocation_options=RevocationOptions(enabled=False),
             required_scopes=required_scopes,
