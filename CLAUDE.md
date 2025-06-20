@@ -28,3 +28,8 @@ Only use HTTP transport when testing network-specific features. Prefer Streamabl
 async with Client(transport=StreamableHttpTransport(server_url)) as client:
     result = await client.ping()
 ```
+
+## Development Workflow
+
+- You must always run pre-commit if you open a PR, because it is run as part of a required check.
+- When opening PRs, apply labels appropriately for bugs/breaking changes/enhancements/features. Generally, improvements are enhancements (not features) unless told otherwise.
