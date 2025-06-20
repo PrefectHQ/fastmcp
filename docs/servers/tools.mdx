@@ -251,6 +251,8 @@ Use `async def` when your tool needs to perform operations that might wait for e
 
 ### Return Values
 
+#### Output Conversion
+
 FastMCP automatically converts the value returned by your function into the appropriate MCP content format for the client:
 
 - **`str`**: Sent as `TextContent`.
@@ -264,42 +266,51 @@ FastMCP automatically converts the value returned by your function into the appr
 
 FastMCP will attempt to serialize other types to a string if possible.
 
-<Tip>
-At this time, FastMCP responds only to your tool's return *value*, not its return *annotation*.
-</Tip>
+#### Output Schemas
 
-```python
+<VersionBadge version="2.10.0" />
+
+FastMCP will automatically generate MCP [output schemas](https://modelcontextprotocol.io/specification/2025-06-18/server/tools#output-schema) for your tools based on their return type annotations. This helps MCP clients understand what type of data to expect from your tool, enabling better validation and type safety.
+
+When you add a return type annotation to your tool function, FastMCP will generate a JSON schema describing the expected output format and include it in the tool definition sent to MCP clients.
+
+<CodeGroup>
+```python Tool Definition
+from dataclasses import dataclass
 from fastmcp import FastMCP
-from fastmcp.utilities.types import Image
-import io
 
-try:
-    from PIL import Image as PILImage
-except ImportError:
-    raise ImportError("Please install the `pillow` library to run this example.")
+mcp = FastMCP()
 
-mcp = FastMCP("Image Demo")
-
-@mcp.tool
-def generate_image(width: int, height: int, color: str) -> Image:
-    """Generates a solid color image."""
-    # Create image using Pillow
-    img = PILImage.new("RGB", (width, height), color=color)
-
-    # Save to a bytes buffer
-    buffer = io.BytesIO()
-    img.save(buffer, format="PNG")
-    img_bytes = buffer.getvalue()
-
-    # Return using FastMCP's Image helper
-    return Image(data=img_bytes, format="png")
+@dataclass
+class Person:
+    name: str
+    age: int
+    email: str
 
 @mcp.tool
-def do_nothing() -> None:
-    """This tool performs an action but returns no data."""
-    print("Performing a side effect...")
-    return None
+def get_user_profile(user_id: str) -> Person:
+    """Get a user's profile information."""
+    return Person(name="Alice", age=30, email="alice@example.com")
 ```
+
+```json Generated Output Schema
+{
+  "properties": {
+    "name": {"title": "Name", "type": "string"},
+    "age": {"title": "Age", "type": "integer"},
+    "email": {"title": "Email", "type": "string"}
+  },
+  "required": ["name", "age", "email"],
+  "title": "Person",
+  "type": "object"
+}
+ ```
+</CodeGroup>
+The output schema is automatically generated for most common types including basic types, collections, union types, Pydantic models, TypedDict structures, and dataclasses. For FastMCP's special types (`Image`, `Audio`, `File`), the output schema reflects their MCP equivalents rather than the FastMCP wrapper types.
+
+<Note>
+If your return type annotation cannot be converted to a JSON schema (e.g., complex custom classes without Pydantic support), the output schema will be omitted from the tool definition. The tool will still function normally, but clients won't receive type information about the expected output.
+</Note>
 
 ### Error Handling
 
