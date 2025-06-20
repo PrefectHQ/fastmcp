@@ -38,8 +38,11 @@ def get_cached_typeadapter(cls: T) -> TypeAdapter[T]:
     create them once in a global scope and reuse them as often as possible.
     However, this isn't feasible for user-generated functions. Instead, we use a
     cache to minimize the cost of creating them as much as possible.
+
+    The _parent_depth is set to 3 to look at an additional frame, since this
+    function is in its own scope.
     """
-    return TypeAdapter(cls)
+    return TypeAdapter(cls, _parent_depth=3)
 
 
 def issubclass_safe(cls: type, base: type) -> bool:
