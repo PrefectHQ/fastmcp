@@ -30,7 +30,7 @@ parse_file_path(server_spec: str) -> tuple[Path, str | None]
 Parse a file path that may include a server object specification.
 
 **Args:**
-- `server_spec`: Path to file, optionally with :object suffix
+- `server_spec`: Path to file, optionally with \:object suffix
 
 **Returns:**
 - Tuple of (file_path, server_object)
@@ -47,7 +47,7 @@ Import a MCP server from a file.
 
 **Args:**
 - `file`: Path to the file
-- `server_object`: Optional object name in format "module:object" or just "object"
+- `server_object`: Optional object name in format "module\:object" or just "object"
 
 **Returns:**
 - The server object
@@ -97,7 +97,7 @@ run_command(server_spec: str, transport: str | None = None, host: str | None = N
 Run a MCP server or connect to a remote one.
 
 **Args:**
-- `server_spec`: Python file, object specification (file:obj), or URL
+- `server_spec`: Python file, object specification (file\:obj), or URL
 - `transport`: Transport protocol to use
 - `host`: Host to bind to when using http transport
 - `port`: Port to bind to when using http transport

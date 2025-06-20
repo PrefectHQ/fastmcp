@@ -177,9 +177,11 @@
           {
             "group": "fastmcp.client",
             "pages": [
+              "python-sdk/fastmcp-client-__init__",
               {
                 "group": "auth",
                 "pages": [
+                  "python-sdk/fastmcp-client-auth-__init__",
                   "python-sdk/fastmcp-client-auth-bearer",
                   "python-sdk/fastmcp-client-auth-oauth"
                 ]
@@ -196,6 +198,7 @@
           {
             "group": "fastmcp.prompts",
             "pages": [
+              "python-sdk/fastmcp-prompts-__init__",
               "python-sdk/fastmcp-prompts-prompt",
               "python-sdk/fastmcp-prompts-prompt_manager"
             ]
@@ -203,6 +206,7 @@
           {
             "group": "fastmcp.resources",
             "pages": [
+              "python-sdk/fastmcp-resources-__init__",
               "python-sdk/fastmcp-resources-resource",
               "python-sdk/fastmcp-resources-resource_manager",
               "python-sdk/fastmcp-resources-template",
@@ -212,13 +216,16 @@
           {
             "group": "fastmcp.server",
             "pages": [
+              "python-sdk/fastmcp-server-__init__",
               {
                 "group": "auth",
                 "pages": [
+                  "python-sdk/fastmcp-server-auth-__init__",
                   "python-sdk/fastmcp-server-auth-auth",
                   {
                     "group": "providers",
                     "pages": [
+                      "python-sdk/fastmcp-server-auth-providers-__init__",
                       "python-sdk/fastmcp-server-auth-providers-bearer",
                       "python-sdk/fastmcp-server-auth-providers-bearer_env",
                       "python-sdk/fastmcp-server-auth-providers-in_memory"
@@ -238,6 +245,7 @@
           {
             "group": "fastmcp.tools",
             "pages": [
+              "python-sdk/fastmcp-tools-__init__",
               "python-sdk/fastmcp-tools-tool",
               "python-sdk/fastmcp-tools-tool_manager",
               "python-sdk/fastmcp-tools-tool_transform"

@@ -38,7 +38,7 @@ Generate an RSA key pair for testing.
 #### `create_token`
 
 ```python
-create_token(self, subject: str = 'fastmcp-user', issuer: str = 'https://fastmcp.example.com', audience: str | None = None, scopes: list[str] | None = None, expires_in_seconds: int = 3600, additional_claims: dict[str, Any] | None = None, kid: str | None = None) -> str
+create_token(self, subject: str = 'fastmcp-user', issuer: str = 'https://fastmcp.example.com', audience: str | list[str] | None = None, scopes: list[str] | None = None, expires_in_seconds: int = 3600, additional_claims: dict[str, Any] | None = None, kid: str | None = None) -> str
 ```
 
 Generate a test JWT token for testing purposes.
@@ -47,7 +47,7 @@ Generate a test JWT token for testing purposes.
 - `private_key_pem`: RSA private key in PEM format
 - `subject`: Subject claim (usually user ID)
 - `issuer`: Issuer claim
-- `audience`: Audience claim (optional)
+- `audience`: Audience claim - can be a string or list of strings (optional)
 - `scopes`: List of scopes to include
 - `expires_in_seconds`: Token expiration time in seconds
 - `additional_claims`: Any additional claims to include
