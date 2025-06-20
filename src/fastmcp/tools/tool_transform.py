@@ -7,12 +7,12 @@ from dataclasses import dataclass
 from types import EllipsisType
 from typing import Any, Literal
 
-from mcp.types import ToolAnnotations
+from mcp.types import ContentBlock, ToolAnnotations
 from pydantic import ConfigDict
 
 from fastmcp.tools.tool import ParsedFunction, Tool
 from fastmcp.utilities.logging import get_logger
-from fastmcp.utilities.types import MCPContent, get_cached_typeadapter
+from fastmcp.utilities.types import get_cached_typeadapter
 
 logger = get_logger(__name__)
 
@@ -202,7 +202,7 @@ class TransformedTool(Tool):
     forwarding_fn: Callable[..., Any]  # Always present, handles arg transformation
     transform_args: dict[str, ArgTransform]
 
-    async def run(self, arguments: dict[str, Any]) -> list[MCPContent]:
+    async def run(self, arguments: dict[str, Any]) -> list[ContentBlock]:
         """Run the tool with context set for forward() functions.
 
         This method executes the tool's function while setting up the context

@@ -9,6 +9,7 @@ import httpx
 import mcp.types
 from exceptiongroup import catch
 from mcp import ClientSession
+from mcp.types import ContentBlock
 from pydantic import AnyUrl
 
 import fastmcp
@@ -29,7 +30,6 @@ from fastmcp.exceptions import ToolError
 from fastmcp.server import FastMCP
 from fastmcp.utilities.exceptions import get_catch_handlers
 from fastmcp.utilities.mcp_config import MCPConfig
-from fastmcp.utilities.types import MCPContent
 
 from .transports import (
     ClientTransportT,
@@ -659,7 +659,7 @@ class Client(Generic[ClientTransportT]):
         arguments: dict[str, Any] | None = None,
         timeout: datetime.timedelta | float | int | None = None,
         progress_handler: ProgressHandler | None = None,
-    ) -> list[MCPContent]:
+    ) -> list[ContentBlock]:
         """Call a tool on the server.
 
         Unlike call_tool_mcp, this method raises a ToolError if the tool call results in an error.
