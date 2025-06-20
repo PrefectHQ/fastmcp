@@ -96,7 +96,13 @@ mcp = FastMCP("MyServer")
 
 # Define custom middleware
 custom_middleware = [
-    Middleware(CORSMiddleware, allow_origins=["*"]),
+    Middleware(
+        CORSMiddleware,
+        allow_origins=["https://example.com", "https://app.example.com"],
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_headers=["Content-Type", "Authorization"],
+    ),
 ]
 
 # Create ASGI app with custom middleware
