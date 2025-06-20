@@ -17,7 +17,7 @@ from mcp.types import (
     TextContent,
     TextResourceContents,
 )
-from pydantic import AnyUrl, Field
+from pydantic import AnyUrl, Field, TypeAdapter
 
 from fastmcp import Client, Context, FastMCP
 from fastmcp.client.transports import FastMCPTransport
@@ -824,6 +824,22 @@ class TestToolParameters:
         async with Client(mcp) as client:
             result = await client.call_tool("send_timedelta", {"x": 1000})
             assert result[0].text == "0:16:40"  # type: ignore[attr-defined]
+
+
+class TestToolOutputSchema:
+    @pytest.mark.parametrize("annotation", [str, int, float, bool, list, dict, AnyUrl])
+    async def test_output_schema(self, annotation):
+        mcp = FastMCP()
+
+        @mcp.tool
+        def f() -> annotation:  # type: ignore
+            return "hello"
+
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+            assert len(tools) == 1
+            # this line will fail until MCP adds output schemas!!
+            assert tools[0].outputSchema == TypeAdapter(annotation).json_schema()  # type: ignore
 
 
 class TestToolContextInjection:

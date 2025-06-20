@@ -6,20 +6,18 @@ import mimetypes
 from collections.abc import Callable
 from functools import lru_cache
 from pathlib import Path
-from types import UnionType
-from typing import Annotated, TypeVar, Union, get_args, get_origin
+from types import EllipsisType, UnionType
+from typing import Annotated, TypeAlias, TypeVar, Union, get_args, get_origin
 
-from mcp.types import (
-    Annotations,
-    AudioContent,
-    BlobResourceContents,
-    EmbeddedResource,
-    ImageContent,
-    TextResourceContents,
-)
+import mcp.types
+from mcp.types import Annotations
 from pydantic import AnyUrl, BaseModel, ConfigDict, TypeAdapter, UrlConstraints
 
 T = TypeVar("T")
+
+# sentinel values for optional arguments
+NotSet = ...
+NotSetT: TypeAlias = EllipsisType
 
 
 class FastMCPBaseModel(BaseModel):
@@ -129,7 +127,7 @@ class Image:
         self,
         mime_type: str | None = None,
         annotations: Annotations | None = None,
-    ) -> ImageContent:
+    ) -> mcp.types.ImageContent:
         """Convert to MCP ImageContent."""
         if self.path:
             with open(self.path, "rb") as f:
@@ -139,7 +137,7 @@ class Image:
         else:
             raise ValueError("No image data available")
 
-        return ImageContent(
+        return mcp.types.ImageContent(
             type="image",
             data=data,
             mimeType=mime_type or self._mime_type,
@@ -188,7 +186,7 @@ class Audio:
         self,
         mime_type: str | None = None,
         annotations: Annotations | None = None,
-    ) -> AudioContent:
+    ) -> mcp.types.AudioContent:
         if self.path:
             with open(self.path, "rb") as f:
                 data = base64.b64encode(f.read()).decode()
@@ -197,7 +195,7 @@ class Audio:
         else:
             raise ValueError("No audio data available")
 
-        return AudioContent(
+        return mcp.types.AudioContent(
             type="audio",
             data=data,
             mimeType=mime_type or self._mime_type,
@@ -248,7 +246,7 @@ class File:
         self,
         mime_type: str | None = None,
         annotations: Annotations | None = None,
-    ) -> EmbeddedResource:
+    ) -> mcp.types.EmbeddedResource:
         if self.path:
             with open(self.path, "rb") as f:
                 raw_data = f.read()
@@ -271,21 +269,57 @@ class File:
                 text = raw_data.decode("utf-8")
             except UnicodeDecodeError:
                 text = raw_data.decode("latin-1")
-            resource = TextResourceContents(
+            resource = mcp.types.TextResourceContents(
                 text=text,
                 mimeType=mime,
                 uri=uri,
             )
         else:
             data = base64.b64encode(raw_data).decode()
-            resource = BlobResourceContents(
+            resource = mcp.types.BlobResourceContents(
                 blob=data,
                 mimeType=mime,
                 uri=uri,
             )
 
-        return EmbeddedResource(
+        return mcp.types.EmbeddedResource(
             type="resource",
             resource=resource,
             annotations=annotations or self.annotations,
         )
+
+
+def replace_type(type_, type_map: dict[type, type]):
+    """
+    Given a (possibly generic, nested, or otherwise complex) type, replaces all
+    instances of old_type with new_type.
+
+    This is useful for transforming types when creating tools.
+
+    Args:
+        type_: The type to replace instances of old_type with new_type.
+        old_type: The type to replace.
+        new_type: The type to replace old_type with.
+
+    Examples:
+        >>> replace_type(list[int | bool], {int: str})
+        list[str | bool]
+
+        >>> replace_type(list[list[int]], {int: str})
+        list[list[str]]
+
+    """
+    if type_ in type_map:
+        return type_map[type_]
+
+    origin = get_origin(type_)
+    if not origin:
+        return type_
+
+    args = get_args(type_)
+    new_args = tuple(replace_type(arg, type_map) for arg in args)
+
+    if origin is UnionType:
+        return Union[new_args]  # type: ignore # noqa: UP007
+    else:
+        return origin[new_args]

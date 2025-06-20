@@ -4,7 +4,6 @@ import inspect
 from collections.abc import Callable
 from contextvars import ContextVar
 from dataclasses import dataclass
-from types import EllipsisType
 from typing import Any, Literal
 
 from mcp.types import ContentBlock, ToolAnnotations
@@ -12,11 +11,9 @@ from pydantic import ConfigDict
 
 from fastmcp.tools.tool import ParsedFunction, Tool
 from fastmcp.utilities.logging import get_logger
-from fastmcp.utilities.types import get_cached_typeadapter
+from fastmcp.utilities.types import NotSet, NotSetT, get_cached_typeadapter
 
 logger = get_logger(__name__)
-
-NotSet = ...
 
 
 # Context variable to store current transformed tool
@@ -131,14 +128,14 @@ class ArgTransform:
         ArgTransform(name="new_name", description="New desc", default=None, type=int)
     """
 
-    name: str | EllipsisType = NotSet
-    description: str | EllipsisType = NotSet
-    default: Any | EllipsisType = NotSet
-    default_factory: Callable[[], Any] | EllipsisType = NotSet
-    type: Any | EllipsisType = NotSet
+    name: str | NotSetT = NotSet
+    description: str | NotSetT = NotSet
+    default: Any | NotSetT = NotSet
+    default_factory: Callable[[], Any] | NotSetT = NotSet
+    type: Any | NotSetT = NotSet
     hide: bool = False
-    required: Literal[True] | EllipsisType = NotSet
-    examples: Any | EllipsisType = NotSet
+    required: Literal[True] | NotSetT = NotSet
+    examples: Any | NotSetT = NotSet
 
     def __post_init__(self):
         """Validate that only one of default or default_factory is provided."""
@@ -334,7 +331,7 @@ class TransformedTool(Tool):
             has_kwargs = cls._function_has_kwargs(transform_fn)
 
             # Validate function parameters against transformed schema
-            fn_params = set(parsed_fn.parameters.get("properties", {}).keys())
+            fn_params = set(parsed_fn.input_schema.get("properties", {}).keys())
             transformed_params = set(schema.get("properties", {}).keys())
 
             if not has_kwargs:
@@ -351,7 +348,7 @@ class TransformedTool(Tool):
                 # ArgTransform takes precedence over function signature
                 # Start with function schema as base, then override with transformed schema
                 final_schema = cls._merge_schema_with_precedence(
-                    parsed_fn.parameters, schema
+                    parsed_fn.input_schema, schema
                 )
             else:
                 # With **kwargs, function can access all transformed params
@@ -360,7 +357,7 @@ class TransformedTool(Tool):
 
                 # Start with function schema as base, then override with transformed schema
                 final_schema = cls._merge_schema_with_precedence(
-                    parsed_fn.parameters, schema
+                    parsed_fn.input_schema, schema
                 )
 
         # Additional validation: check for naming conflicts after transformation
