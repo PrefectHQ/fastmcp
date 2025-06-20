@@ -16,11 +16,11 @@ docs:
 
 # Generate API reference documentation for all modules
 api-ref-all:
-    uv run --with-editable . --with git+https://github.com/zzstoatzz/mdxify.git@fix-navigation-structure mdxify --all --root-module fastmcp --anchor-name "SDK Reference"
+    uv run --with-editable . --with mdxify@latest mdxify --all --root-module fastmcp --anchor-name "SDK Reference"
 
 # Generate API reference for specific modules (e.g., just api-ref prefect.flows prefect.tasks)
 api-ref *MODULES:
-    uv run --with-editable . --with git+https://github.com/zzstoatzz/mdxify.git@fix-navigation-structure mdxify {{MODULES}} --root-module fastmcp --anchor-name "SDK Reference"
+    uv run --with-editable . --with mdxify@latest mdxify {{MODULES}} --root-module fastmcp --anchor-name "SDK Reference"
 
 # Clean up API reference documentation
 api-ref-clean:
