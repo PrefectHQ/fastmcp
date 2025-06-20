@@ -42,7 +42,7 @@ def get_cached_typeadapter(cls: T) -> TypeAdapter[T]:
     The _parent_depth is set to 3 to look at an additional frame, since this
     function is in its own scope.
     """
-    return TypeAdapter(cls, _parent_depth=3)
+    return TypeAdapter(cls)
 
 
 def issubclass_safe(cls: type, base: type) -> bool:

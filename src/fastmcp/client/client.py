@@ -24,6 +24,7 @@ from fastmcp.client.roots import (
     RootsList,
     create_roots_callback,
 )
+from fastmcp.client.elicitation import ElicitationHandler, create_elicitation_callback
 from fastmcp.client.sampling import SamplingHandler, create_sampling_callback
 from fastmcp.exceptions import ToolError
 from fastmcp.server import FastMCP
@@ -52,6 +53,7 @@ __all__ = [
     "LogHandler",
     "MessageHandler",
     "SamplingHandler",
+    "ElicitationHandler",
     "ProgressHandler",
 ]
 
@@ -141,6 +143,7 @@ class Client(Generic[ClientTransportT]):
         # Common args
         roots: RootsList | RootsHandler | None = None,
         sampling_handler: SamplingHandler | None = None,
+        elicitation_handler: ElicitationHandler | None = None,
         log_handler: LogHandler | None = None,
         message_handler: MessageHandler | None = None,
         progress_handler: ProgressHandler | None = None,
@@ -193,6 +196,11 @@ class Client(Generic[ClientTransportT]):
                 sampling_handler
             )
 
+        if elicitation_handler is not None:
+            self._session_kwargs["elicitation_callback"] = create_elicitation_callback(
+                elicitation_handler
+            )
+
         # session context management
         self._session: ClientSession | None = None
         self._exit_stack: AsyncExitStack | None = None
@@ -229,6 +237,12 @@ class Client(Generic[ClientTransportT]):
         """Set the sampling callback for the client."""
         self._session_kwargs["sampling_callback"] = create_sampling_callback(
             sampling_callback
+        )
+
+    def set_elicitation_callback(self, elicitation_callback: ElicitationHandler) -> None:
+        """Set the elicitation callback for the client."""
+        self._session_kwargs["elicitation_callback"] = create_elicitation_callback(
+            elicitation_callback
         )
 
     def is_connected(self) -> bool:

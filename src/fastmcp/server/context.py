@@ -1,12 +1,13 @@
-from __future__ import annotations as _annotations
+from __future__ import annotations
 
 import warnings
 from collections.abc import Generator
 from contextlib import contextmanager
 from contextvars import ContextVar, Token
 from dataclasses import dataclass
+from typing import TypeVar, cast
 
-from mcp import LoggingLevel
+from mcp import LoggingLevel, ServerSession
 from mcp.server.lowlevel.helper_types import ReadResourceContents
 from mcp.server.lowlevel.server import request_ctx
 from mcp.shared.context import RequestContext
@@ -23,12 +24,20 @@ from starlette.requests import Request
 
 import fastmcp.server.dependencies
 from fastmcp import settings
+from fastmcp.server.elicitation import (
+    AcceptedElicitation,
+    CancelledElicitation,
+    DeclinedElicitation,
+    PrimitiveElicitationType,
+    get_elicitation_schema,
+)
 from fastmcp.server.server import FastMCP
 from fastmcp.utilities.logging import get_logger
-from fastmcp.utilities.types import MCPContent
+from fastmcp.utilities.types import MCPContent, get_cached_typeadapter
 
 logger = get_logger(__name__)
 
+T = TypeVar("T")
 _current_context: ContextVar[Context | None] = ContextVar("context", default=None)
 
 
@@ -105,64 +114,10 @@ class Context:
         except LookupError:
             raise ValueError("Context is not available outside of a request")
 
-    async def report_progress(
-        self, progress: float, total: float | None = None, message: str | None = None
-    ) -> None:
-        """Report progress for the current operation.
-
-        Args:
-            progress: Current progress value e.g. 24
-            total: Optional total value e.g. 100
-        """
-
-        progress_token = (
-            self.request_context.meta.progressToken
-            if self.request_context.meta
-            else None
-        )
-
-        if progress_token is None:
-            return
-
-        await self.request_context.session.send_progress_notification(
-            progress_token=progress_token,
-            progress=progress,
-            total=total,
-            message=message,
-            related_request_id=self.request_id,
-        )
-
-    async def read_resource(self, uri: str | AnyUrl) -> list[ReadResourceContents]:
-        """Read a resource by URI.
-
-        Args:
-            uri: Resource URI to read
-
-        Returns:
-            The resource content as either text or bytes
-        """
-        assert self.fastmcp is not None, "Context is not available outside of a request"
-        return await self.fastmcp._mcp_read_resource(uri)
-
-    async def log(
-        self,
-        message: str,
-        level: LoggingLevel | None = None,
-        logger_name: str | None = None,
-    ) -> None:
-        """Send a log message to the client.
-
-        Args:
-            message: Log message
-            level: Optional log level. One of "debug", "info", "notice", "warning", "error", "critical",
-                "alert", or "emergency". Default is "info".
-            logger_name: Optional logger name
-        """
-        if level is None:
-            level = "info"
-        await self.request_context.session.send_log_message(
-            level=level, data=message, logger=logger_name
-        )
+    @property
+    def session(self) -> ServerSession:
+        """Access to the underlying session for advanced usage."""
+        return self.request_context.session
 
     @property
     def client_id(self) -> str | None:
@@ -209,10 +164,67 @@ class Context:
             # No HTTP context available (stdio/in-memory transport)
             return None
 
-    @property
-    def session(self):
-        """Access to the underlying session for advanced usage."""
-        return self.request_context.session
+    async def report_progress(
+        self, progress: float, total: float | None = None, message: str | None = None
+    ) -> None:
+        """Report progress for the current operation.
+
+        Args:
+            progress: Current progress value e.g. 24
+            total: Optional total value e.g. 100
+        """
+
+        progress_token = (
+            self.request_context.meta.progressToken
+            if self.request_context.meta
+            else None
+        )
+
+        if progress_token is None:
+            return
+
+        await self.session.send_progress_notification(
+            progress_token=progress_token,
+            progress=progress,
+            total=total,
+            message=message,
+            related_request_id=self.request_id,
+        )
+
+    async def read_resource(self, uri: str | AnyUrl) -> list[ReadResourceContents]:
+        """Read a resource by URI.
+
+        Args:
+            uri: Resource URI to read
+
+        Returns:
+            The resource content as either text or bytes
+        """
+        assert self.fastmcp is not None, "Context is not available outside of a request"
+        return await self.fastmcp._mcp_read_resource(uri)
+
+    async def log(
+        self,
+        message: str,
+        level: LoggingLevel | None = None,
+        logger_name: str | None = None,
+    ) -> None:
+        """Send a log message to the client.
+
+        Args:
+            message: Log message
+            level: Optional log level. One of "debug", "info", "notice", "warning", "error", "critical",
+                "alert", or "emergency". Default is "info".
+            logger_name: Optional logger name
+        """
+        if level is None:
+            level = "info"
+        await self.session.send_log_message(
+            level=level,
+            data=message,
+            logger=logger_name,
+            related_request_id=self.request_id,
+        )
 
     # Convenience methods for common log levels
     async def debug(self, message: str, logger_name: str | None = None) -> None:
@@ -233,7 +245,7 @@ class Context:
 
     async def list_roots(self) -> list[Root]:
         """List the roots available to the server, as indicated by the client."""
-        result = await self.request_context.session.list_roots()
+        result = await self.session.list_roots()
         return result.roots
 
     async def sample(
@@ -269,15 +281,72 @@ class Context:
                 for m in messages
             ]
 
-        result: CreateMessageResult = await self.request_context.session.create_message(
+        result: CreateMessageResult = await self.session.create_message(
             messages=sampling_messages,
             system_prompt=system_prompt,
             temperature=temperature,
             max_tokens=max_tokens,
             model_preferences=self._parse_model_preferences(model_preferences),
+            related_request_id=self.request_id,
         )
 
         return result.content
+
+    async def elicit(
+        self,
+        message: str,
+        response_type: type[T] | None = None,
+    ) -> AcceptedElicitation[T] | DeclinedElicitation | CancelledElicitation:
+        """
+        Send an elicitation request to the client and await the response.
+
+        Call this method at any time to request additional information from
+        the user through the client. The client must support elicitation,
+        or the request will error.
+
+        Note that the MCP protocol only supports simple object schemas with
+        primitive types. You can provide a dataclass, TypedDict, or BaseModel to
+        comply. If you provide a primitive type, an object schema with a single
+        "value" field will be generated for the MCP interaction and
+        automatically deconstructed into the primitive type upon response.
+
+        Args:
+            message: A human-readable message explaining what information is needed
+            response_type: The type of the response, which should be a primitive
+                type or dataclass or BaseModel. If it is a primitive type, an
+                object schema with a single "value" field will be generated.
+        """
+        if response_type is None:
+            response_type = str  # type: ignore
+
+        if response_type in {bool, int, float, str}:
+            response_type = PrimitiveElicitationType[response_type]  # type: ignore
+
+        requested_schema = get_elicitation_schema(response_type)  # type: ignore
+
+        result = await self.session.elicit(
+            message=message,
+            requestedSchema=requested_schema,
+            related_request_id=self.request_id,
+        )
+
+        if result.action == "accept" and result.content:
+            type_adapter = get_cached_typeadapter(response_type)
+            validated_data = cast(
+                T | PrimitiveElicitationType[T],
+                type_adapter.validate_python(result.content),
+            )
+            if isinstance(validated_data, PrimitiveElicitationType):
+                return AcceptedElicitation[T](data=validated_data.value)
+            else:
+                return AcceptedElicitation[T](data=validated_data)
+        elif result.action == "decline":
+            return DeclinedElicitation()
+        elif result.action == "cancel":
+            return CancelledElicitation()
+        else:
+            # This should never happen, but handle it just in case
+            raise ValueError(f"Unexpected elicitation action: {result.action}")
 
     def get_http_request(self) -> Request:
         """Get the active starlette request."""
