@@ -4,14 +4,13 @@ import warnings
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
-from mcp.types import ToolAnnotations
+from mcp.types import ContentBlock, ToolAnnotations
 
 from fastmcp import settings
 from fastmcp.exceptions import NotFoundError, ToolError
 from fastmcp.settings import DuplicateBehavior
 from fastmcp.tools.tool import Tool
 from fastmcp.utilities.logging import get_logger
-from fastmcp.utilities.types import MCPContent
 
 if TYPE_CHECKING:
     from fastmcp.server.server import MountedServer
@@ -170,7 +169,9 @@ class ToolManager:
         else:
             raise NotFoundError(f"Tool {key!r} not found")
 
-    async def call_tool(self, key: str, arguments: dict[str, Any]) -> list[MCPContent]:
+    async def call_tool(
+        self, key: str, arguments: dict[str, Any]
+    ) -> list[ContentBlock]:
         """
         Internal API for servers: Finds and calls a tool, respecting the
         filtered protocol path.
