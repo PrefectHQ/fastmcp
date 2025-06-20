@@ -1,0 +1,63 @@
+---
+title: oauth_callback
+sidebarTitle: oauth_callback
+---
+
+# `fastmcp.client.oauth_callback`
+
+
+
+OAuth callback server for handling authorization code flows.
+
+This module provides a reusable callback server that can handle OAuth redirects
+and display styled responses to users.
+
+
+## Functions
+
+### `create_callback_html`
+
+```python
+create_callback_html(message: str, is_success: bool = True, title: str = 'FastMCP OAuth', server_url: str | None = None) -> str
+```
+
+
+Create a styled HTML response for OAuth callbacks.
+
+
+### `create_oauth_callback_server`
+
+```python
+create_oauth_callback_server(port: int, callback_path: str = '/callback', server_url: str | None = None, response_future: asyncio.Future | None = None) -> Server
+```
+
+
+Create an OAuth callback server.
+
+**Args:**
+- `port`: The port to run the server on
+- `callback_path`: The path to listen for OAuth redirects on
+- `server_url`: Optional server URL to display in success messages
+- `response_future`: Optional future to resolve when OAuth callback is received
+
+**Returns:**
+- Configured uvicorn Server instance (not yet running)
+
+
+## Classes
+
+### `CallbackResponse`
+
+**Methods:**
+
+#### `from_dict`
+
+```python
+from_dict(cls, data: dict[str, str]) -> CallbackResponse
+```
+
+#### `to_dict`
+
+```python
+to_dict(self) -> dict[str, str]
+```

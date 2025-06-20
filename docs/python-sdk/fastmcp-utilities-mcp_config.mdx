@@ -1,0 +1,50 @@
+---
+title: mcp_config
+sidebarTitle: mcp_config
+---
+
+# `fastmcp.utilities.mcp_config`
+
+## Functions
+
+### `infer_transport_type_from_url`
+
+```python
+infer_transport_type_from_url(url: str | AnyUrl) -> Literal['streamable-http', 'sse']
+```
+
+
+Infer the appropriate transport type from the given URL.
+
+
+## Classes
+
+### `StdioMCPServer`
+
+**Methods:**
+
+#### `to_transport`
+
+```python
+to_transport(self) -> StdioTransport
+```
+
+### `RemoteMCPServer`
+
+**Methods:**
+
+#### `to_transport`
+
+```python
+to_transport(self) -> StreamableHttpTransport | SSETransport
+```
+
+### `MCPConfig`
+
+**Methods:**
+
+#### `from_dict`
+
+```python
+from_dict(cls, config: dict[str, Any]) -> MCPConfig
+```

@@ -1,0 +1,112 @@
+---
+title: types
+sidebarTitle: types
+---
+
+# `fastmcp.utilities.types`
+
+
+Common types used across FastMCP.
+
+## Functions
+
+### `get_cached_typeadapter`
+
+```python
+get_cached_typeadapter(cls: T) -> TypeAdapter[T]
+```
+
+
+TypeAdapters are heavy objects, and in an application context we'd typically
+create them once in a global scope and reuse them as often as possible.
+However, this isn't feasible for user-generated functions. Instead, we use a
+cache to minimize the cost of creating them as much as possible.
+
+
+### `issubclass_safe`
+
+```python
+issubclass_safe(cls: type, base: type) -> bool
+```
+
+
+Check if cls is a subclass of base, even if cls is a type variable.
+
+
+### `is_class_member_of_type`
+
+```python
+is_class_member_of_type(cls: type, base: type) -> bool
+```
+
+
+Check if cls is a member of base, even if cls is a type variable.
+
+Base can be a type, a UnionType, or an Annotated type. Generic types are not
+considered members (e.g. T is not a member of list\[T]).
+
+
+### `find_kwarg_by_type`
+
+```python
+find_kwarg_by_type(fn: Callable, kwarg_type: type) -> str | None
+```
+
+
+Find the name of the kwarg that is of type kwarg_type.
+
+Includes union types that contain the kwarg_type, as well as Annotated types.
+
+
+## Classes
+
+### `FastMCPBaseModel`
+
+
+Base model for FastMCP models.
+
+
+### `Image`
+
+
+Helper class for returning images from tools.
+
+
+**Methods:**
+
+#### `to_image_content`
+
+```python
+to_image_content(self, mime_type: str | None = None, annotations: Annotations | None = None) -> ImageContent
+```
+
+Convert to MCP ImageContent.
+
+
+### `Audio`
+
+
+Helper class for returning audio from tools.
+
+
+**Methods:**
+
+#### `to_audio_content`
+
+```python
+to_audio_content(self, mime_type: str | None = None, annotations: Annotations | None = None) -> AudioContent
+```
+
+### `File`
+
+
+Helper class for returning audio from tools.
+
+
+**Methods:**
+
+#### `to_resource_content`
+
+```python
+to_resource_content(self, mime_type: str | None = None, annotations: Annotations | None = None) -> EmbeddedResource
+```

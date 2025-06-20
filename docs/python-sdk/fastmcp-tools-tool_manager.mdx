@@ -1,0 +1,58 @@
+---
+title: tool_manager
+sidebarTitle: tool_manager
+---
+
+# `fastmcp.tools.tool_manager`
+
+## Classes
+
+### `ToolManager`
+
+
+Manages FastMCP tools.
+
+
+**Methods:**
+
+#### `mount`
+
+```python
+mount(self, server: MountedServer) -> None
+```
+
+Adds a mounted server as a source for tools.
+
+
+#### `add_tool_from_fn`
+
+```python
+add_tool_from_fn(self, fn: Callable[..., Any], name: str | None = None, description: str | None = None, tags: set[str] | None = None, annotations: ToolAnnotations | None = None, serializer: Callable[[Any], str] | None = None, exclude_args: list[str] | None = None) -> Tool
+```
+
+Add a tool to the server.
+
+
+#### `add_tool`
+
+```python
+add_tool(self, tool: Tool) -> Tool
+```
+
+Register a tool with the server.
+
+
+#### `remove_tool`
+
+```python
+remove_tool(self, key: str) -> None
+```
+
+Remove a tool from the server.
+
+**Args:**
+- `key`: The key of the tool to remove
+
+**Raises:**
+- `NotFoundError`: If the tool is not found
+

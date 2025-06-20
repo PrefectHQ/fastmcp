@@ -1,0 +1,84 @@
+---
+title: prompt
+sidebarTitle: prompt
+---
+
+# `fastmcp.prompts.prompt`
+
+
+Base classes for FastMCP prompts.
+
+## Functions
+
+### `Message`
+
+```python
+Message(content: str | MCPContent, role: Role | None = None, **kwargs: Any) -> PromptMessage
+```
+
+
+A user-friendly constructor for PromptMessage.
+
+
+## Classes
+
+### `PromptArgument`
+
+
+An argument that can be passed to a prompt.
+
+
+### `Prompt`
+
+
+A prompt template that can be rendered with parameters.
+
+
+**Methods:**
+
+#### `to_mcp_prompt`
+
+```python
+to_mcp_prompt(self, **overrides: Any) -> MCPPrompt
+```
+
+Convert the prompt to an MCP prompt.
+
+
+#### `from_function`
+
+```python
+from_function(fn: Callable[..., PromptResult | Awaitable[PromptResult]], name: str | None = None, description: str | None = None, tags: set[str] | None = None, enabled: bool | None = None) -> FunctionPrompt
+```
+
+Create a Prompt from a function.
+
+The function can return:
+- A string (converted to a message)
+- A Message object
+- A dict (converted to a message)
+- A sequence of any of the above
+
+
+### `FunctionPrompt`
+
+
+A prompt that is a function.
+
+
+**Methods:**
+
+#### `from_function`
+
+```python
+from_function(cls, fn: Callable[..., PromptResult | Awaitable[PromptResult]], name: str | None = None, description: str | None = None, tags: set[str] | None = None, enabled: bool | None = None) -> FunctionPrompt
+```
+
+Create a Prompt from a function.
+
+The function can return:
+- A string (converted to a message)
+- A Message object
+- A dict (converted to a message)
+- A sequence of any of the above
+
