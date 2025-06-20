@@ -273,7 +273,9 @@ class TestMultipleServerMount:
         main_app.mount(working_app, "working")
 
         # Use an unreachable port
-        unreachable_client = Client(transport=SSETransport("http://127.0.0.1:9999/sse"))
+        unreachable_client = Client(
+            transport=SSETransport("http://127.0.0.1:9999/sse/")
+        )
 
         # Create a proxy server that will fail to connect
         unreachable_proxy = FastMCP.as_proxy(unreachable_client)

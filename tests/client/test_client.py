@@ -735,7 +735,8 @@ class TestInferTransport:
             "http://example.com/api/sse/stream",
             "https://localhost:8080/mcp/sse/endpoint",
             "http://example.com/api/sse",
-            "https://localhost:8080/mcp/sse",
+            "http://example.com/api/sse/",
+            "https://localhost:8080/mcp/sse/",
             "http://example.com/api/sse?param=value",
             "https://localhost:8080/mcp/sse/?param=value",
             "https://localhost:8000/mcp/sse?x=1&y=2",
@@ -744,6 +745,7 @@ class TestInferTransport:
             "path_with_sse_directory",
             "path_with_sse_subdirectory",
             "path_ending_with_sse",
+            "path_ending_with_sse_slash",
             "path_ending_with_sse_https",
             "path_with_sse_and_query_params",
             "path_with_sse_slash_and_query_params",
@@ -758,7 +760,7 @@ class TestInferTransport:
         "url",
         [
             "http://example.com/api",
-            "https://localhost:8080/mcp",
+            "https://localhost:8080/mcp/",
             "http://example.com/asset/image.jpg",
             "https://localhost:8080/sservice/endpoint",
             "https://example.com/assets/file",
@@ -779,7 +781,7 @@ class TestInferTransport:
         config = {
             "mcpServers": {
                 "test_server": {
-                    "url": "http://localhost:8000/sse",
+                    "url": "http://localhost:8000/sse/",
                     "headers": {"Authorization": "Bearer 123"},
                 },
             }
@@ -787,7 +789,7 @@ class TestInferTransport:
         transport = infer_transport(config)
         assert isinstance(transport, MCPConfigTransport)
         assert isinstance(transport.transport, SSETransport)
-        assert transport.transport.url == "http://localhost:8000/sse"
+        assert transport.transport.url == "http://localhost:8000/sse/"
         assert transport.transport.headers == {"Authorization": "Bearer 123"}
 
     def test_infer_local_transport_from_config(self):
@@ -825,7 +827,7 @@ class TestInferTransport:
                     "args": ["hello"],
                 },
                 "remote": {
-                    "url": "http://localhost:8000/sse",
+                    "url": "http://localhost:8000/sse/",
                     "headers": {"Authorization": "Bearer 123"},
                 },
             }

@@ -307,7 +307,7 @@ def OAuth(
 
     Args:
         mcp_url: Full URL to the MCP endpoint (e.g.,
-        "http://host/mcp/sse")
+        "http://host/mcp/sse/")
         scopes: OAuth scopes to request. Can be a
         space-separated string or a list of strings.
         client_name: Name for this client during registration

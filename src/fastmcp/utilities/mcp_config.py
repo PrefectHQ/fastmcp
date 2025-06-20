@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING, Annotated, Any, Literal
 from urllib.parse import urlparse
 
@@ -28,7 +29,8 @@ def infer_transport_type_from_url(
     parsed_url = urlparse(url)
     path = parsed_url.path
 
-    if "/sse/" in path or path.rstrip("/").endswith("/sse"):
+    # Match /sse followed by /, ?, &, or end of string
+    if re.search(r"/sse(/|\?|&|$)", path):
         return "sse"
     else:
         return "streamable-http"

@@ -61,21 +61,21 @@ def test_parse_remote_config_with_url_inference():
     config = {
         "mcpServers": {
             "test_server": {
-                "url": "http://localhost:8000/sse",
+                "url": "http://localhost:8000/sse/",
             }
         }
     }
     mcp_config = MCPConfig.from_dict(config)
     transport = mcp_config.mcpServers["test_server"].to_transport()
     assert isinstance(transport, SSETransport)
-    assert transport.url == "http://localhost:8000/sse"
+    assert transport.url == "http://localhost:8000/sse/"
 
 
 def test_parse_multiple_servers():
     config = {
         "mcpServers": {
             "test_server": {
-                "url": "http://localhost:8000/sse",
+                "url": "http://localhost:8000/sse/",
             },
             "test_server_2": {
                 "command": "echo",
@@ -172,7 +172,7 @@ async def test_remote_config_sse_with_auth_token():
     config = {
         "mcpServers": {
             "test_server": {
-                "url": "http://localhost:8000/sse",
+                "url": "http://localhost:8000/sse/",
                 "auth": "test_token",
             }
         }
