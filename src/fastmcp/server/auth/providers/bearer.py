@@ -312,7 +312,7 @@ class BearerAuthProvider(OAuthProvider):
             # Validate audience if configured
             if self.audience:
                 aud = claims.get("aud")
-                
+
                 # Handle different combinations of audience types
                 if isinstance(self.audience, list):
                     # self.audience is a list - check if any expected audience is present

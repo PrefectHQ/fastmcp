@@ -446,7 +446,9 @@ class TestBearerToken:
         access_token = await provider.load_access_token(token)
         assert access_token is not None
 
-    async def test_provider_with_multiple_expected_audiences(self, rsa_key_pair: RSAKeyPair):
+    async def test_provider_with_multiple_expected_audiences(
+        self, rsa_key_pair: RSAKeyPair
+    ):
         """Test provider configured with multiple expected audiences."""
         provider = BearerAuthProvider(
             public_key=rsa_key_pair.public_key,
