@@ -8,6 +8,7 @@ from mcp.shared.exceptions import McpError
 from mcp.types import (
     METHOD_NOT_FOUND,
     BlobResourceContents,
+    ContentBlock,
     GetPromptResult,
     TextResourceContents,
 )
@@ -25,7 +26,6 @@ from fastmcp.server.server import FastMCP
 from fastmcp.tools.tool import Tool
 from fastmcp.tools.tool_manager import ToolManager
 from fastmcp.utilities.logging import get_logger
-from fastmcp.utilities.types import MCPContent
 
 if TYPE_CHECKING:
     from fastmcp.server import Context
@@ -67,7 +67,9 @@ class ProxyToolManager(ToolManager):
         tools_dict = await self.get_tools()
         return list(tools_dict.values())
 
-    async def call_tool(self, key: str, arguments: dict[str, Any]) -> list[MCPContent]:
+    async def call_tool(
+        self, key: str, arguments: dict[str, Any]
+    ) -> list[ContentBlock]:
         """Calls a tool, trying local/mounted first, then proxy if not found."""
         try:
             # First try local and mounted tools
@@ -230,7 +232,7 @@ class ProxyTool(Tool):
         self,
         arguments: dict[str, Any],
         context: Context | None = None,
-    ) -> list[MCPContent]:
+    ) -> list[ContentBlock]:
         """Executes the tool by making a call through the client."""
         # This is where the remote execution logic lives.
         async with self._client:

@@ -223,6 +223,8 @@ class TestTools:
 
         assert tools[0].model_dump() == dict(
             name="create_user_users_post",
+            meta=None,
+            title=None,
             annotations=None,
             description=IsStr(regex=r"^Create a new user\..*$", regex_flags=re.DOTALL),
             inputSchema={
@@ -236,6 +238,8 @@ class TestTools:
         )
         assert tools[1].model_dump() == dict(
             name="update_user_name_users",
+            meta=None,
+            title=None,
             annotations=None,
             description=IsStr(
                 regex=r"^Update a user's name\..*$", regex_flags=re.DOTALL

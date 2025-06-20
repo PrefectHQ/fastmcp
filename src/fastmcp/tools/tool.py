@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import pydantic_core
-from mcp.types import TextContent, ToolAnnotations
+from mcp.types import ContentBlock, TextContent, ToolAnnotations
 from mcp.types import Tool as MCPTool
 from pydantic import Field
 
@@ -20,7 +20,6 @@ from fastmcp.utilities.types import (
     Audio,
     File,
     Image,
-    MCPContent,
     find_kwarg_by_type,
     get_cached_typeadapter,
 )
@@ -78,7 +77,7 @@ class Tool(FastMCPComponent):
             enabled=enabled,
         )
 
-    async def run(self, arguments: dict[str, Any]) -> list[MCPContent]:
+    async def run(self, arguments: dict[str, Any]) -> list[ContentBlock]:
         """Run the tool with arguments."""
         raise NotImplementedError("Subclasses must implement run()")
 
@@ -143,7 +142,7 @@ class FunctionTool(Tool):
             enabled=enabled if enabled is not None else True,
         )
 
-    async def run(self, arguments: dict[str, Any]) -> list[MCPContent]:
+    async def run(self, arguments: dict[str, Any]) -> list[ContentBlock]:
         """Run the tool with arguments."""
         from fastmcp.server.context import Context
 
@@ -264,12 +263,12 @@ def _convert_to_content(
     result: Any,
     serializer: Callable[[Any], str] | None = None,
     _process_as_single_item: bool = False,
-) -> list[MCPContent]:
+) -> list[ContentBlock]:
     """Convert a result to a sequence of content objects."""
     if result is None:
         return []
 
-    if isinstance(result, MCPContent):
+    if isinstance(result, ContentBlock):
         return [result]
 
     if isinstance(result, Image):
@@ -292,7 +291,7 @@ def _convert_to_content(
         other_content = []
 
         for item in result:
-            if isinstance(item, MCPContent | Image | Audio | File):
+            if isinstance(item, ContentBlock | Image | Audio | File):
                 mcp_types.append(_convert_to_content(item)[0])
             else:
                 other_content.append(item)

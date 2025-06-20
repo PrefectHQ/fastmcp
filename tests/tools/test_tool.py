@@ -1,3 +1,5 @@
+import json
+
 import pytest
 from mcp.types import (
     AudioContent,
@@ -696,7 +698,7 @@ class TestConvertResultToContent:
         assert len(result) == 1
         assert isinstance(result[0], TextContent)
         # Should fall back to default serializer (pydantic_core.to_json)
-        assert result[0].text == '{\n  "a": 1\n}'
+        assert json.loads(result[0].text) == {"a": 1}
         assert "Error serializing tool result" in caplog.text
 
     def test_process_as_single_item_flag(self):
@@ -714,7 +716,7 @@ class TestConvertResultToContent:
         assert len(result) == 1
         assert isinstance(result[0], TextContent)
 
-        assert (
-            result[0].text
-            == '[\n  1,\n  {\n    "type": "text",\n    "text": "hello",\n    "annotations": null\n  }\n]'
-        )
+        assert json.loads(result[0].text) == [
+            1,
+            {"type": "text", "text": "hello", "annotations": None, "_meta": None},
+        ]
