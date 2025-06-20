@@ -390,6 +390,15 @@ class TestToolDecorator:
             def my_function(x: int) -> str:
                 return f"Result: {x}"
 
+    async def test_tool_decorator_with_output_schema(self):
+        mcp = FastMCP()
+
+        @mcp.tool(output_schema={"type": "integer"})
+        def my_function(x: int) -> str:
+            return f"Result: {x}"
+
+        assert my_function.output_schema == {"type": "integer"}
+
 
 class TestResourceDecorator:
     async def test_no_resources_before_decorator(self):

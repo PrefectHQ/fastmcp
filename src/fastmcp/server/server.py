@@ -768,6 +768,7 @@ class FastMCP(Generic[LifespanResultT]):
         name: str | None = None,
         description: str | None = None,
         tags: set[str] | None = None,
+        output_schema: dict[str, Any] | None = None,
         annotations: ToolAnnotations | dict[str, Any] | None = None,
         exclude_args: list[str] | None = None,
         enabled: bool | None = None,
@@ -781,6 +782,7 @@ class FastMCP(Generic[LifespanResultT]):
         name: str | None = None,
         description: str | None = None,
         tags: set[str] | None = None,
+        output_schema: dict[str, Any] | None = None,
         annotations: ToolAnnotations | dict[str, Any] | None = None,
         exclude_args: list[str] | None = None,
         enabled: bool | None = None,
@@ -793,6 +795,7 @@ class FastMCP(Generic[LifespanResultT]):
         name: str | None = None,
         description: str | None = None,
         tags: set[str] | None = None,
+        output_schema: dict[str, Any] | None = None,
         annotations: ToolAnnotations | dict[str, Any] | None = None,
         exclude_args: list[str] | None = None,
         enabled: bool | None = None,
@@ -815,6 +818,7 @@ class FastMCP(Generic[LifespanResultT]):
             name: Optional name for the tool (keyword-only, alternative to name_or_fn)
             description: Optional description of what the tool does
             tags: Optional set of tags for categorizing the tool
+            output_schema: Optional JSON schema for the tool's output
             annotations: Optional annotations about the tool's behavior (e.g. {"is_async": True})
             exclude_args: Optional list of argument names to exclude from the tool schema
             enabled: Optional boolean to enable or disable the tool
@@ -867,6 +871,7 @@ class FastMCP(Generic[LifespanResultT]):
                 name=tool_name,
                 description=description,
                 tags=tags,
+                output_schema=output_schema,
                 annotations=annotations,
                 exclude_args=exclude_args,
                 serializer=self._tool_serializer,
@@ -897,6 +902,7 @@ class FastMCP(Generic[LifespanResultT]):
             name=tool_name,
             description=description,
             tags=tags,
+            output_schema=output_schema,
             annotations=annotations,
             exclude_args=exclude_args,
             enabled=enabled,

@@ -369,6 +369,111 @@ class TestToolFromFunctionOutputSchema:
         tool = Tool.from_function(func)
         assert tool.output_schema is None
 
+    async def test_provided_output_schema_takes_precedence_over_json_compatible_annotation(
+        self,
+    ):
+        """Test that provided output_schema takes precedence over inferred schema from JSON-compatible annotation."""
+
+        def func() -> dict[str, int]:
+            return {"a": 1, "b": 2}
+
+        # Provide a custom output schema that differs from the inferred one
+        custom_schema = {"type": "string", "description": "Custom schema"}
+
+        tool = Tool.from_function(func, output_schema=custom_schema)
+        assert tool.output_schema == custom_schema
+
+    async def test_provided_output_schema_takes_precedence_over_complex_annotation(
+        self,
+    ):
+        """Test that provided output_schema takes precedence over inferred schema from complex annotation."""
+
+        def func() -> list[dict[str, int | float]]:
+            return [{"a": 1, "b": 2.5}]
+
+        # Provide a custom output schema that differs from the inferred one
+        custom_schema = {"type": "object", "properties": {"custom": {"type": "string"}}}
+
+        tool = Tool.from_function(func, output_schema=custom_schema)
+        assert tool.output_schema == custom_schema
+
+    async def test_provided_output_schema_takes_precedence_over_unserializable_annotation(
+        self,
+    ):
+        """Test that provided output_schema takes precedence over None schema from unserializable annotation."""
+
+        class Unserializable:
+            def __init__(self, data: Any):
+                self.data = data
+
+        def func() -> Unserializable:
+            return Unserializable(data="test")
+
+        # Provide a custom output schema even though the annotation is unserializable
+        custom_schema = {"type": "array", "items": {"type": "string"}}
+
+        tool = Tool.from_function(func, output_schema=custom_schema)
+        assert tool.output_schema == custom_schema
+
+    async def test_provided_output_schema_takes_precedence_over_no_annotation(self):
+        """Test that provided output_schema takes precedence over None schema from no annotation."""
+
+        def func():
+            return "hello"
+
+        # Provide a custom output schema even though there's no return annotation
+        custom_schema = {"type": "number", "minimum": 0}
+
+        tool = Tool.from_function(func, output_schema=custom_schema)
+        assert tool.output_schema == custom_schema
+
+    async def test_provided_output_schema_takes_precedence_over_converted_annotation(
+        self,
+    ):
+        """Test that provided output_schema takes precedence over converted schema from Image/Audio/File annotations."""
+
+        def func() -> Image:
+            return Image(data=b"test")
+
+        # Provide a custom output schema that differs from the converted ImageContent schema
+        custom_schema = {
+            "type": "object",
+            "properties": {"custom_image": {"type": "string"}},
+        }
+
+        tool = Tool.from_function(func, output_schema=custom_schema)
+        assert tool.output_schema == custom_schema
+
+    async def test_provided_output_schema_takes_precedence_over_union_annotation(self):
+        """Test that provided output_schema takes precedence over inferred schema from union annotation."""
+
+        def func() -> str | int | None:
+            return "hello"
+
+        # Provide a custom output schema that differs from the inferred union schema
+        custom_schema = {"type": "boolean"}
+
+        tool = Tool.from_function(func, output_schema=custom_schema)
+        assert tool.output_schema == custom_schema
+
+    async def test_provided_output_schema_takes_precedence_over_pydantic_annotation(
+        self,
+    ):
+        """Test that provided output_schema takes precedence over inferred schema from Pydantic model annotation."""
+
+        class Person(BaseModel):
+            name: str
+            age: int
+
+        def func() -> Person:
+            return Person(name="John", age=30)
+
+        # Provide a custom output schema that differs from the inferred Person schema
+        custom_schema = {"type": "array", "items": {"type": "number"}}
+
+        tool = Tool.from_function(func, output_schema=custom_schema)
+        assert tool.output_schema == custom_schema
+
 
 class TestLegacyToolJsonParsing:
     """Tests for Tool's JSON pre-parsing functionality."""
