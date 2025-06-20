@@ -157,6 +157,11 @@ def create_sse_app(
     Returns:
         A Starlette application with RequestContextMiddleware
     """
+    
+    # Ensure the message_path ends with a trailing slash to avoid automatic redirects
+    # when mounting the application. sse_path uses Route instead of Mount so no fix needed.
+    if not message_path.endswith("/"):
+        message_path = message_path + "/"
 
     server_routes: list[BaseRoute] = []
     server_middleware: list[Middleware] = []
@@ -305,7 +310,28 @@ def create_streamable_http_app(
                 # Re-raise other RuntimeErrors if they don't match the specific message
                 raise
 
-    # Add StreamableHTTP routes with or without auth
+    # Create an ASGI app wrapper that normalizes paths and handles both /mcp and /mcp/
+    class PathNormalizingASGIApp:
+        def __init__(self, app):
+            self.app = app
+            
+        async def __call__(self, scope, receive, send):
+            # Normalize path to remove trailing slash for MCP SDK
+            if scope["type"] == "http":
+                path = scope["path"]
+                if path.endswith("/") and len(path) > 1:
+                    scope = dict(scope)
+                    scope["path"] = path.rstrip("/")
+            
+            await self.app(scope, receive, send)
+
+    # Create the path-normalizing wrapper
+    normalized_handler = PathNormalizingASGIApp(handle_streamable_http)
+
+    # Create path pattern without trailing slash
+    path_pattern = streamable_http_path.rstrip("/")
+
+    # Add StreamableHTTP routes with or without auth - add both with and without trailing slash  
     if auth:
         auth_middleware, auth_routes, required_scopes = (
             setup_auth_middleware_and_routes(auth)
@@ -314,19 +340,38 @@ def create_streamable_http_app(
         server_routes.extend(auth_routes)
         server_middleware.extend(auth_middleware)
 
-        # Auth is enabled, wrap endpoint with RequireAuthMiddleware
+        # Auth is enabled, wrap app with RequireAuthMiddleware
+        wrapped_app = RequireAuthMiddleware(normalized_handler, required_scopes)
+        
+        # Add routes for both with and without trailing slash
         server_routes.append(
-            Mount(
-                streamable_http_path,
-                app=RequireAuthMiddleware(handle_streamable_http, required_scopes),
+            Route(
+                path_pattern,
+                endpoint=wrapped_app,
+                methods=["GET", "POST"]
+            )
+        )
+        server_routes.append(
+            Route(
+                path_pattern + "/",
+                endpoint=wrapped_app,
+                methods=["GET", "POST"]
             )
         )
     else:
-        # No auth required
+        # No auth required - add routes for both with and without trailing slash
         server_routes.append(
-            Mount(
-                streamable_http_path,
-                app=handle_streamable_http,
+            Route(
+                path_pattern,
+                endpoint=normalized_handler,
+                methods=["GET", "POST"]
+            )
+        )
+        server_routes.append(
+            Route(
+                path_pattern + "/",
+                endpoint=normalized_handler,
+                methods=["GET", "POST"]
             )
         )
 
@@ -355,6 +400,6 @@ def create_streamable_http_app(
     # Store the FastMCP server instance on the Starlette app state
     app.state.fastmcp_server = server
 
-    app.state.path = streamable_http_path
+    app.state.path = streamable_http_path.rstrip("/")
 
     return app
