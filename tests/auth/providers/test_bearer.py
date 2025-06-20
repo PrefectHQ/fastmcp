@@ -446,6 +446,43 @@ class TestBearerToken:
         access_token = await provider.load_access_token(token)
         assert access_token is not None
 
+    async def test_provider_with_multiple_expected_audiences(self, rsa_key_pair: RSAKeyPair):
+        """Test provider configured with multiple expected audiences."""
+        provider = BearerAuthProvider(
+            public_key=rsa_key_pair.public_key,
+            issuer="https://test.example.com",
+            audience=["https://api.example.com", "https://other-api.example.com"],
+        )
+
+        # Token with single audience that matches one of the expected
+        token1 = rsa_key_pair.create_token(
+            subject="test-user",
+            issuer="https://test.example.com",
+            audience="https://api.example.com",
+        )
+        access_token1 = await provider.load_access_token(token1)
+        assert access_token1 is not None
+
+        # Token with multiple audiences, one of which matches
+        token2 = rsa_key_pair.create_token(
+            subject="test-user",
+            issuer="https://test.example.com",
+            additional_claims={
+                "aud": ["https://api.example.com", "https://third-party.example.com"]
+            },
+        )
+        access_token2 = await provider.load_access_token(token2)
+        assert access_token2 is not None
+
+        # Token with audience that doesn't match any expected
+        token3 = rsa_key_pair.create_token(
+            subject="test-user",
+            issuer="https://test.example.com",
+            audience="https://wrong-api.example.com",
+        )
+        access_token3 = await provider.load_access_token(token3)
+        assert access_token3 is None
+
     async def test_scope_extraction_string(
         self, rsa_key_pair: RSAKeyPair, bearer_provider: BearerAuthProvider
     ):

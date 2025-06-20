@@ -89,7 +89,7 @@ class RSAKeyPair:
         self,
         subject: str = "fastmcp-user",
         issuer: str = "https://fastmcp.example.com",
-        audience: str | None = None,
+        audience: str | list[str] | None = None,
         scopes: list[str] | None = None,
         expires_in_seconds: int = 3600,
         additional_claims: dict[str, Any] | None = None,
@@ -102,7 +102,7 @@ class RSAKeyPair:
             private_key_pem: RSA private key in PEM format
             subject: Subject claim (usually user ID)
             issuer: Issuer claim
-            audience: Audience claim (optional)
+            audience: Audience claim - can be a string or list of strings (optional)
             scopes: List of scopes to include
             expires_in_seconds: Token expiration time in seconds
             additional_claims: Any additional claims to include
@@ -161,7 +161,7 @@ class BearerAuthProvider(OAuthProvider):
         public_key: str | None = None,
         jwks_uri: str | None = None,
         issuer: str | None = None,
-        audience: str | None = None,
+        audience: str | list[str] | None = None,
         required_scopes: list[str] | None = None,
     ):
         """
@@ -171,7 +171,7 @@ class BearerAuthProvider(OAuthProvider):
             public_key: RSA public key in PEM format (for static key)
             jwks_uri: URI to fetch keys from (for key rotation)
             issuer: Expected issuer claim (optional)
-            audience: Expected audience claim (optional)
+            audience: Expected audience claim - can be a string or list of strings (optional)
             required_scopes: List of required scopes for access (optional)
         """
         if not (public_key or jwks_uri):
@@ -312,11 +312,25 @@ class BearerAuthProvider(OAuthProvider):
             # Validate audience if configured
             if self.audience:
                 aud = claims.get("aud")
-                if isinstance(aud, list):
-                    if self.audience not in aud:
+                
+                # Handle different combinations of audience types
+                if isinstance(self.audience, list):
+                    # self.audience is a list - check if any expected audience is present
+                    if isinstance(aud, list):
+                        # Both are lists - check for intersection
+                        if not any(expected in aud for expected in self.audience):
+                            return None
+                    else:
+                        # aud is a string - check if it's in our expected list
+                        if aud not in self.audience:
+                            return None
+                else:
+                    # self.audience is a string - use original logic
+                    if isinstance(aud, list):
+                        if self.audience not in aud:
+                            return None
+                    elif aud != self.audience:
                         return None
-                elif aud != self.audience:
-                    return None
 
             # Extract claims - prefer client_id over sub for OAuth application identification
             client_id = claims.get("client_id") or claims.get("sub") or "unknown"
