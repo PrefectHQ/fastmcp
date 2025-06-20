@@ -13,6 +13,7 @@ from mcp.types import ContentBlock
 from pydantic import AnyUrl
 
 import fastmcp
+from fastmcp.client.elicitation import ElicitationHandler, create_elicitation_callback
 from fastmcp.client.logging import (
     LogHandler,
     MessageHandler,
@@ -25,7 +26,6 @@ from fastmcp.client.roots import (
     RootsList,
     create_roots_callback,
 )
-from fastmcp.client.elicitation import ElicitationHandler, create_elicitation_callback
 from fastmcp.client.sampling import SamplingHandler, create_sampling_callback
 from fastmcp.exceptions import ToolError
 from fastmcp.server import FastMCP
