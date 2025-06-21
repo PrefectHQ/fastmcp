@@ -1,7 +1,9 @@
 """FastMCP CLI tools."""
 
+import asyncio
 import importlib.metadata
 import importlib.util
+import json
 import os
 import platform
 import subprocess
@@ -19,6 +21,7 @@ import fastmcp
 from fastmcp.cli import claude
 from fastmcp.cli import run as run_module
 from fastmcp.server.server import FastMCP
+from fastmcp.utilities.inspect import get_fastmcp_info
 from fastmcp.utilities.logging import get_logger
 
 logger = get_logger("cli")
@@ -434,4 +437,108 @@ def install(
         logger.info(f"Successfully installed {name} in Claude app")
     else:
         logger.error(f"Failed to install {name} in Claude app")
+        sys.exit(1)
+
+
+@app.command()
+def inspect(
+    server_spec: str = typer.Argument(
+        ...,
+        help="Python file to inspect, optionally with :object suffix",
+    ),
+    output: Annotated[
+        Path,
+        typer.Option(
+            "--output",
+            "-o",
+            help="Output file path for the JSON report (default: server-info.json)",
+        ),
+    ] = Path("server-info.json"),
+) -> None:
+    """Inspect a FastMCP server and generate a JSON report.
+
+    This command analyzes a FastMCP server (v1.x or v2.x) and generates
+    a comprehensive JSON report containing information about the server's
+    name, instructions, version, tools, prompts, resources, templates,
+    and capabilities.
+
+    Examples:
+        fastmcp inspect server.py
+        fastmcp inspect server.py -o report.json
+        fastmcp inspect server.py:mcp -o analysis.json
+        fastmcp inspect path/to/server.py:app -o /tmp/server-info.json
+    """
+
+    # Parse the server specification
+    file, server_object = run_module.parse_file_path(server_spec)
+
+    logger.debug(
+        "Inspecting server",
+        extra={
+            "file": str(file),
+            "server_object": server_object,
+            "output": str(output),
+        },
+    )
+
+    try:
+        # Import the server
+        server = run_module.import_server(file, server_object)
+
+        # Get server information
+        async def get_info():
+            return await get_fastmcp_info(server)
+
+        info = asyncio.run(get_info())
+
+        # Convert to dict for JSON serialization
+        def convert_dataclass_to_dict(obj):
+            """Convert dataclass instances to dicts for JSON serialization."""
+            if hasattr(obj, "__dataclass_fields__"):
+                return {
+                    k: convert_dataclass_to_dict(v) for k, v in obj.__dict__.items()
+                }
+            elif isinstance(obj, list):
+                return [convert_dataclass_to_dict(item) for item in obj]
+            elif isinstance(obj, set):
+                return list(obj)
+            elif hasattr(obj, "model_dump"):  # Pydantic models
+                return obj.model_dump()
+            elif hasattr(obj, "__dict__"):  # Other objects with __dict__
+                return {
+                    k: convert_dataclass_to_dict(v) for k, v in obj.__dict__.items()
+                }
+            else:
+                return obj
+
+        info_dict = convert_dataclass_to_dict(info)
+
+        # Ensure output directory exists
+        output.parent.mkdir(parents=True, exist_ok=True)
+
+        # Write JSON report (always pretty-printed)
+        with output.open("w", encoding="utf-8") as f:
+            json.dump(info_dict, f, indent=2, ensure_ascii=False)
+
+        logger.info(f"Server inspection complete. Report saved to {output}")
+
+        # Print summary to console
+        console.print(
+            f"[bold green]✓[/bold green] Inspected server: [bold]{info.name}[/bold]"
+        )
+        console.print(f"  Tools: {len(info.tools)}")
+        console.print(f"  Prompts: {len(info.prompts)}")
+        console.print(f"  Resources: {len(info.resources)}")
+        console.print(f"  Templates: {len(info.templates)}")
+        console.print(f"  Report saved to: [cyan]{output}[/cyan]")
+
+    except Exception as e:
+        logger.error(
+            f"Failed to inspect server: {e}",
+            extra={
+                "server_spec": server_spec,
+                "error": str(e),
+            },
+        )
+        console.print(f"[bold red]✗[/bold red] Failed to inspect server: {e}")
         sys.exit(1)
