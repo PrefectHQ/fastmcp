@@ -492,26 +492,23 @@ def inspect(
         info = asyncio.run(get_info())
 
         # Convert to dict for JSON serialization
-        def convert_dataclass_to_dict(obj):
-            """Convert dataclass instances to dicts for JSON serialization."""
-            if hasattr(obj, "__dataclass_fields__"):
-                return {
-                    k: convert_dataclass_to_dict(v) for k, v in obj.__dict__.items()
-                }
-            elif isinstance(obj, list):
-                return [convert_dataclass_to_dict(item) for item in obj]
+        from dataclasses import asdict
+
+        def convert_for_json(obj):
+            """Convert objects for JSON serialization."""
+            if isinstance(obj, list):
+                return [convert_for_json(item) for item in obj]
             elif isinstance(obj, set):
                 return list(obj)
             elif hasattr(obj, "model_dump"):  # Pydantic models
                 return obj.model_dump()
-            elif hasattr(obj, "__dict__"):  # Other objects with __dict__
-                return {
-                    k: convert_dataclass_to_dict(v) for k, v in obj.__dict__.items()
-                }
             else:
                 return obj
 
-        info_dict = convert_dataclass_to_dict(info)
+        info_dict = asdict(
+            info,
+            dict_factory=lambda fields: {k: convert_for_json(v) for k, v in fields},
+        )
 
         # Ensure output directory exists
         output.parent.mkdir(parents=True, exist_ok=True)
