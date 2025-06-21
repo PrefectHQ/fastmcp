@@ -53,9 +53,12 @@
             "pages": [
               "getting-started/welcome",
               "getting-started/installation",
-              "getting-started/quickstart",
-              "updates"
+              "getting-started/quickstart"
             ]
+          },
+          {
+            "group": "What's New",
+            "pages": ["updates", "changelog"]
           },
           {
             "group": "Servers",
@@ -74,9 +77,7 @@
               {
                 "group": "Authentication",
                 "icon": "shield-check",
-                "pages": [
-                  "servers/auth/bearer"
-                ]
+                "pages": ["servers/auth/bearer"]
               },
               "servers/middleware",
               "servers/openapi",
@@ -85,10 +86,7 @@
               {
                 "group": "Deployment",
                 "icon": "upload",
-                "pages": [
-                  "deployment/running-server",
-                  "deployment/asgi"
-                ]
+                "pages": ["deployment/running-server", "deployment/asgi"]
               }
             ]
           },
@@ -100,10 +98,7 @@
               {
                 "group": "Authentication",
                 "icon": "user-shield",
-                "pages": [
-                  "clients/auth/oauth",
-                  "clients/auth/bearer"
-                ]
+                "pages": ["clients/auth/oauth", "clients/auth/bearer"]
               },
               "clients/advanced-features"
             ]
@@ -127,15 +122,9 @@
               "patterns/testing",
               "patterns/cli"
             ]
-          }
-        ],
-        "icon": "book"
-      },
-      {
-        "anchor": "Tutorials",
-        "groups": [
+          },
           {
-            "group": "MCP",
+            "group": "Tutorials",
             "pages": [
               "tutorials/mcp",
               "tutorials/create-mcp-server",
@@ -143,21 +132,12 @@
             ]
           }
         ],
-        "icon": "graduation-cap"
-      },
-      {
-        "anchor": "Changelog",
-        "icon": "list-check",
-        "pages": [
-          "changelog"
-        ]
+        "icon": "book"
       },
       {
         "anchor": "Community",
         "icon": "users",
-        "pages": [
-          "community/showcase"
-        ]
+        "pages": ["community/showcase"]
       },
       {
         "anchor": "SDK Reference",
