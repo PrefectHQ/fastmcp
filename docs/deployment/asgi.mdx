@@ -48,7 +48,7 @@ Both approaches return a Starlette application that can be integrated with other
 The returned app stores the `FastMCP` instance on `app.state.fastmcp_server`, so you
 can access it from custom middleware or routes via `request.app.state.fastmcp_server`.
 
-The MCP server's endpoint is mounted at the root path `/mcp` for Streamable HTTP transport, and `/sse` for SSE transport, though you can change these paths by passing a `path` argument to the `http_app()` method:
+The MCP server's endpoint is mounted at the root path `/mcp/` for Streamable HTTP transport, and `/sse/` for SSE transport, though you can change these paths by passing a `path` argument to the `http_app()` method:
 
 ```python
 # For Streamable HTTP transport
@@ -96,7 +96,13 @@ mcp = FastMCP("MyServer")
 
 # Define custom middleware
 custom_middleware = [
-    Middleware(CORSMiddleware, allow_origins=["*"]),
+    Middleware(
+        CORSMiddleware,
+        allow_origins=["https://example.com", "https://app.example.com"],
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_headers=["Content-Type", "Authorization"],
+    ),
 ]
 
 # Create ASGI app with custom middleware
@@ -131,7 +137,7 @@ app = Starlette(
 )
 ```
 
-The MCP endpoint will be available at `/mcp-server/mcp` of the resulting Starlette app.
+The MCP endpoint will be available at `/mcp-server/mcp/` of the resulting Starlette app.
 
 <Warning>
 For Streamable HTTP transport, you **must** pass the lifespan context from the FastMCP app to the resulting Starlette app, as nested lifespans are not recognized. Otherwise, the FastMCP server's session manager will not be properly initialized.
@@ -161,7 +167,7 @@ app = Starlette(
 )
 ```
 
-In this setup, the MCP server is accessible at the `/outer/inner/mcp` path of the resulting Starlette app.
+In this setup, the MCP server is accessible at the `/outer/inner/mcp/` path of the resulting Starlette app.
 
 <Warning>
 For Streamable HTTP transport, you **must** pass the lifespan context from the FastMCP app to the *outer* Starlette app, as nested lifespans are not recognized. Otherwise, the FastMCP server's session manager will not be properly initialized.
@@ -188,7 +194,7 @@ app = FastAPI(lifespan=mcp_app.lifespan)
 app.mount("/mcp-server", mcp_app)
 ```
 
-The MCP endpoint will be available at `/mcp-server/mcp` of the resulting FastAPI app.
+The MCP endpoint will be available at `/mcp-server/mcp/` of the resulting FastAPI app.
 
 <Warning>
 For Streamable HTTP transport, you **must** pass the lifespan context from the FastMCP app to the resulting FastAPI app, as nested lifespans are not recognized. Otherwise, the FastMCP server's session manager will not be properly initialized.

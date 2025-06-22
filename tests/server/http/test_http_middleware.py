@@ -126,7 +126,7 @@ async def test_create_sse_app_with_custom_middleware():
     app = create_sse_app(
         server=server,
         message_path="/message",
-        sse_path="/sse",
+        sse_path="/sse/",
         middleware=custom_middleware,
         routes=additional_routes,
     )

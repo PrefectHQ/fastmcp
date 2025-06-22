@@ -123,7 +123,7 @@ class TestDeprecatedServerInitKwargs:
                 debug=False,
                 host="127.0.0.1",
                 port=9999,
-                sse_path="/sse",
+                sse_path="/sse/",
                 message_path="/msg",
                 streamable_http_path="/http",
                 json_response=False,
@@ -162,7 +162,7 @@ class TestDeprecatedServerInitKwargs:
         assert server._deprecated_settings.debug is False
         assert server._deprecated_settings.host == "127.0.0.1"
         assert server._deprecated_settings.port == 9999
-        assert server._deprecated_settings.sse_path == "/sse"
+        assert server._deprecated_settings.sse_path == "/sse/"
         assert server._deprecated_settings.message_path == "/msg"
         assert server._deprecated_settings.streamable_http_path == "/http"
         assert server._deprecated_settings.json_response is False

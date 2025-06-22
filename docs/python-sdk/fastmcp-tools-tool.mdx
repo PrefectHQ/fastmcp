@@ -1,0 +1,68 @@
+---
+title: tool
+sidebarTitle: tool
+---
+
+# `fastmcp.tools.tool`
+
+## Functions
+
+### `default_serializer`
+
+```python
+default_serializer(data: Any) -> str
+```
+
+## Classes
+
+### `Tool`
+
+
+Internal tool registration info.
+
+
+**Methods:**
+
+#### `to_mcp_tool`
+
+```python
+to_mcp_tool(self, **overrides: Any) -> MCPTool
+```
+
+#### `from_function`
+
+```python
+from_function(fn: Callable[..., Any], name: str | None = None, description: str | None = None, tags: set[str] | None = None, annotations: ToolAnnotations | None = None, exclude_args: list[str] | None = None, serializer: Callable[[Any], str] | None = None, enabled: bool | None = None) -> FunctionTool
+```
+
+Create a Tool from a function.
+
+
+#### `from_tool`
+
+```python
+from_tool(cls, tool: Tool, transform_fn: Callable[..., Any] | None = None, name: str | None = None, transform_args: dict[str, ArgTransform] | None = None, description: str | None = None, tags: set[str] | None = None, annotations: ToolAnnotations | None = None, serializer: Callable[[Any], str] | None = None, enabled: bool | None = None) -> TransformedTool
+```
+
+### `FunctionTool`
+
+**Methods:**
+
+#### `from_function`
+
+```python
+from_function(cls, fn: Callable[..., Any], name: str | None = None, description: str | None = None, tags: set[str] | None = None, annotations: ToolAnnotations | None = None, exclude_args: list[str] | None = None, serializer: Callable[[Any], str] | None = None, enabled: bool | None = None) -> FunctionTool
+```
+
+Create a Tool from a function.
+
+
+### `ParsedFunction`
+
+**Methods:**
+
+#### `from_function`
+
+```python
+from_function(cls, fn: Callable[..., Any], exclude_args: list[str] | None = None, validate: bool = True) -> ParsedFunction
+```

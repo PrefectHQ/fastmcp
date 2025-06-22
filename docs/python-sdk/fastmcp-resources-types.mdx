@@ -1,0 +1,83 @@
+---
+title: types
+sidebarTitle: types
+---
+
+# `fastmcp.resources.types`
+
+
+Concrete resource implementations.
+
+## Classes
+
+### `TextResource`
+
+
+A resource that reads from a string.
+
+
+### `BinaryResource`
+
+
+A resource that reads from bytes.
+
+
+### `FileResource`
+
+
+A resource that reads from a file.
+
+Set is_binary=True to read file as binary data instead of text.
+
+
+**Methods:**
+
+#### `validate_absolute_path`
+
+```python
+validate_absolute_path(cls, path: Path) -> Path
+```
+
+Ensure path is absolute.
+
+
+#### `set_binary_from_mime_type`
+
+```python
+set_binary_from_mime_type(cls, is_binary: bool, info: ValidationInfo) -> bool
+```
+
+Set is_binary based on mime_type if not explicitly set.
+
+
+### `HttpResource`
+
+
+A resource that reads from an HTTP endpoint.
+
+
+### `DirectoryResource`
+
+
+A resource that lists files in a directory.
+
+
+**Methods:**
+
+#### `validate_absolute_path`
+
+```python
+validate_absolute_path(cls, path: Path) -> Path
+```
+
+Ensure path is absolute.
+
+
+#### `list_files`
+
+```python
+list_files(self) -> list[Path]
+```
+
+List files in the directory.
+

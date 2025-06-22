@@ -21,6 +21,7 @@ fastmcp --help
 | `run` | Run a FastMCP server directly | Uses your current environment; you are responsible for ensuring all dependencies are available |
 | `dev` | Run a server with the MCP Inspector for testing | Creates an isolated environment; dependencies must be explicitly specified with `--with` and/or `--with-editable` |
 | `install` | Install a server in the Claude desktop app | Creates an isolated environment; dependencies must be explicitly specified with `--with` and/or `--with-editable` |
+| `inspect` | Generate a JSON report about a FastMCP server | Uses your current environment; you are responsible for ensuring all dependencies are available |
 | `version` | Display version information | N/A |
 
 ## Command Details
@@ -177,6 +178,29 @@ fastmcp install server.py:my_server
 
 # With custom name and dependencies
 fastmcp install server.py:my_server -n "My Analysis Server" --with pandas
+```
+
+### `inspect`
+
+<VersionBadge version="2.9.0" />
+
+Generate a detailed JSON report about a FastMCP server, including information about its tools, prompts, resources, and capabilities.
+
+```bash
+fastmcp inspect server.py
+```
+
+The command supports the same server specification format as `run` and `install`:
+
+```bash
+# Auto-detect server object
+fastmcp inspect server.py
+
+# Specify server object
+fastmcp inspect server.py:my_server
+
+# Custom output location
+fastmcp inspect server.py --output analysis.json
 ```
 
 ### `version`

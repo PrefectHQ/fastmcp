@@ -1,0 +1,104 @@
+---
+title: template
+sidebarTitle: template
+---
+
+# `fastmcp.resources.template`
+
+
+Resource template functionality.
+
+## Functions
+
+### `build_regex`
+
+```python
+build_regex(template: str) -> re.Pattern
+```
+
+### `match_uri_template`
+
+```python
+match_uri_template(uri: str, uri_template: str) -> dict[str, str] | None
+```
+
+## Classes
+
+### `ResourceTemplate`
+
+
+A template for dynamically creating resources.
+
+
+**Methods:**
+
+#### `from_function`
+
+```python
+from_function(fn: Callable[..., Any], uri_template: str, name: str | None = None, description: str | None = None, mime_type: str | None = None, tags: set[str] | None = None, enabled: bool | None = None) -> FunctionResourceTemplate
+```
+
+#### `set_default_mime_type`
+
+```python
+set_default_mime_type(cls, mime_type: str | None) -> str
+```
+
+Set default MIME type if not provided.
+
+
+#### `matches`
+
+```python
+matches(self, uri: str) -> dict[str, Any] | None
+```
+
+Check if URI matches template and extract parameters.
+
+
+#### `to_mcp_template`
+
+```python
+to_mcp_template(self, **overrides: Any) -> MCPResourceTemplate
+```
+
+Convert the resource template to an MCPResourceTemplate.
+
+
+#### `from_mcp_template`
+
+```python
+from_mcp_template(cls, mcp_template: MCPResourceTemplate) -> ResourceTemplate
+```
+
+Creates a FastMCP ResourceTemplate from a raw MCP ResourceTemplate object.
+
+
+#### `key`
+
+```python
+key(self) -> str
+```
+
+The key of the component. This is used for internal bookkeeping
+and may reflect e.g. prefixes or other identifiers. You should not depend on
+keys having a certain value, as the same tool loaded from different
+hierarchies of servers may have different keys.
+
+
+### `FunctionResourceTemplate`
+
+
+A template for dynamically creating resources.
+
+
+**Methods:**
+
+#### `from_function`
+
+```python
+from_function(cls, fn: Callable[..., Any], uri_template: str, name: str | None = None, description: str | None = None, mime_type: str | None = None, tags: set[str] | None = None, enabled: bool | None = None) -> FunctionResourceTemplate
+```
+
+Create a template from a function.
+

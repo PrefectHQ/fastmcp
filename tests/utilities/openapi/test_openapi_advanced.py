@@ -294,6 +294,28 @@ def test_complex_schema_route_count(parsed_complex_routes):
     assert len(parsed_complex_routes) == 3
 
 
+def test_complex_schema_ref_rewriting(parsed_complex_routes):
+    """Test that all #/components references have been rewritten."""
+
+    def no_components(value):
+        if isinstance(value, dict):
+            for k, v in value.items():
+                if k == "$ref":
+                    assert not v.startswith("#/components/"), (
+                        f"reference '{v}' was not rewritten"
+                    )
+                else:
+                    no_components(v)
+        elif isinstance(value, list):
+            for v in value:
+                no_components(v)
+
+    for route in parsed_complex_routes:
+        no_components(route.schema_definitions)
+        for param in route.parameters:
+            no_components(param.schema_)
+
+
 def test_complex_schema_list_users_query_param_limit(complex_route_map):
     """Test that a reference to a limit query parameter is correctly resolved."""
     list_users = complex_route_map["listUsers"]

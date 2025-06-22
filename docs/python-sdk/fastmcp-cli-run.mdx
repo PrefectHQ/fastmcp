@@ -1,0 +1,106 @@
+---
+title: run
+sidebarTitle: run
+---
+
+# `fastmcp.cli.run`
+
+
+FastMCP run command implementation.
+
+## Functions
+
+### `is_url`
+
+```python
+is_url(path: str) -> bool
+```
+
+
+Check if a string is a URL.
+
+
+### `parse_file_path`
+
+```python
+parse_file_path(server_spec: str) -> tuple[Path, str | None]
+```
+
+
+Parse a file path that may include a server object specification.
+
+**Args:**
+- `server_spec`: Path to file, optionally with \:object suffix
+
+**Returns:**
+- Tuple of (file_path, server_object)
+
+
+### `import_server`
+
+```python
+import_server(file: Path, server_object: str | None = None) -> Any
+```
+
+
+Import a MCP server from a file.
+
+**Args:**
+- `file`: Path to the file
+- `server_object`: Optional object name in format "module\:object" or just "object"
+
+**Returns:**
+- The server object
+
+
+### `create_client_server`
+
+```python
+create_client_server(url: str) -> Any
+```
+
+
+Create a FastMCP server from a client URL.
+
+**Args:**
+- `url`: The URL to connect to
+
+**Returns:**
+- A FastMCP server instance
+
+
+### `import_server_with_args`
+
+```python
+import_server_with_args(file: Path, server_object: str | None = None, server_args: list[str] | None = None) -> Any
+```
+
+
+Import a server with optional command line arguments.
+
+**Args:**
+- `file`: Path to the server file
+- `server_object`: Optional server object name
+- `server_args`: Optional command line arguments to inject
+
+**Returns:**
+- The imported server object
+
+
+### `run_command`
+
+```python
+run_command(server_spec: str, transport: str | None = None, host: str | None = None, port: int | None = None, log_level: str | None = None, server_args: list[str] | None = None) -> None
+```
+
+
+Run a MCP server or connect to a remote one.
+
+**Args:**
+- `server_spec`: Python file, object specification (file\:obj), or URL
+- `transport`: Transport protocol to use
+- `host`: Host to bind to when using http transport
+- `port`: Port to bind to when using http transport
+- `log_level`: Log level
+- `server_args`: Additional arguments to pass to the server
+

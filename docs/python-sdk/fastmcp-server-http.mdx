@@ -1,0 +1,113 @@
+---
+title: http
+sidebarTitle: http
+---
+
+# `fastmcp.server.http`
+
+## Functions
+
+### `set_http_request`
+
+```python
+set_http_request(request: Request) -> Generator[Request, None, None]
+```
+
+### `setup_auth_middleware_and_routes`
+
+```python
+setup_auth_middleware_and_routes(auth: OAuthProvider) -> tuple[list[Middleware], list[BaseRoute], list[str]]
+```
+
+
+Set up authentication middleware and routes if auth is enabled.
+
+**Args:**
+- `auth`: The OAuthProvider authorization server provider
+
+**Returns:**
+- Tuple of (middleware, auth_routes, required_scopes)
+
+
+### `create_base_app`
+
+```python
+create_base_app(routes: list[BaseRoute], middleware: list[Middleware], debug: bool = False, lifespan: Callable | None = None) -> StarletteWithLifespan
+```
+
+
+Create a base Starlette app with common middleware and routes.
+
+**Args:**
+- `routes`: List of routes to include in the app
+- `middleware`: List of middleware to include in the app
+- `debug`: Whether to enable debug mode
+- `lifespan`: Optional lifespan manager for the app
+
+**Returns:**
+- A Starlette application
+
+
+### `create_sse_app`
+
+```python
+create_sse_app(server: FastMCP[LifespanResultT], message_path: str, sse_path: str, auth: OAuthProvider | None = None, debug: bool = False, routes: list[BaseRoute] | None = None, middleware: list[Middleware] | None = None) -> StarletteWithLifespan
+```
+
+
+Return an instance of the SSE server app.
+
+**Args:**
+- `server`: The FastMCP server instance
+- `message_path`: Path for SSE messages
+- `sse_path`: Path for SSE connections
+- `auth`: Optional auth provider
+- `debug`: Whether to enable debug mode
+- `routes`: Optional list of custom routes
+- `middleware`: Optional list of middleware
+
+Returns:
+    A Starlette application with RequestContextMiddleware
+
+
+### `create_streamable_http_app`
+
+```python
+create_streamable_http_app(server: FastMCP[LifespanResultT], streamable_http_path: str, event_store: EventStore | None = None, auth: OAuthProvider | None = None, json_response: bool = False, stateless_http: bool = False, debug: bool = False, routes: list[BaseRoute] | None = None, middleware: list[Middleware] | None = None) -> StarletteWithLifespan
+```
+
+
+Return an instance of the StreamableHTTP server app.
+
+**Args:**
+- `server`: The FastMCP server instance
+- `streamable_http_path`: Path for StreamableHTTP connections
+- `event_store`: Optional event store for session management
+- `auth`: Optional auth provider
+- `json_response`: Whether to use JSON response format
+- `stateless_http`: Whether to use stateless mode (new transport per request)
+- `debug`: Whether to enable debug mode
+- `routes`: Optional list of custom routes
+- `middleware`: Optional list of middleware
+
+**Returns:**
+- A Starlette application with StreamableHTTP support
+
+
+## Classes
+
+### `StarletteWithLifespan`
+
+**Methods:**
+
+#### `lifespan`
+
+```python
+lifespan(self) -> Lifespan
+```
+
+### `RequestContextMiddleware`
+
+
+Middleware that stores each request in a ContextVar
+
