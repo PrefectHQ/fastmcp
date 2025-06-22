@@ -185,8 +185,6 @@ class FunctionPrompt(Prompt):
                     )
                 )
 
-        # Store original function without validate_call to handle our own conversion
-
         return cls(
             name=func_name,
             description=description,
