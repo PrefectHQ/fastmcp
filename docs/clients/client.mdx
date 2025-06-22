@@ -1,7 +1,7 @@
 ---
-title: Client Overview
+title: The FastMCP Client
 sidebarTitle: Overview
-description: Learn how to use the FastMCP Client to interact with MCP servers.
+description: Programmatic client for interacting with MCP servers through a well-typed, Pythonic interface.
 icon: user-robot
 ---
 
@@ -9,294 +9,213 @@ import { VersionBadge } from '/snippets/version-badge.mdx'
 
 <VersionBadge version="2.0.0" />
 
-The `fastmcp.Client` provides a high-level, asynchronous interface for interacting with any Model Context Protocol (MCP) server, whether it's built with FastMCP or another implementation. It simplifies communication by handling protocol details and connection management.
+The central piece of MCP client applications is the `fastmcp.Client` class. This class provides a **programmatic interface** for interacting with any Model Context Protocol (MCP) server, handling protocol details and connection management automatically.
 
-## FastMCP Client
+The FastMCP Client is designed for deterministic, controlled interactions rather than autonomous behavior, making it ideal for:
 
-The FastMCP Client architecture separates the protocol logic (`Client`) from the connection mechanism (`Transport`).
+- **Testing MCP servers** during development
+- **Building deterministic applications** that need reliable MCP interactions  
+- **Creating the foundation for agentic or LLM-based clients** with structured, type-safe operations
 
-- **`Client`**: Handles sending MCP requests (like `tools/call`, `resources/read`), receiving responses, and managing callbacks.
-- **`Transport`**: Responsible for establishing and maintaining the connection to the server (e.g., via WebSockets, SSE, Stdio, or in-memory).
+All client operations require using the `async with` context manager for proper connection lifecycle management.
 
-### Transports
 
-Clients must be initialized with a `transport`. You can either provide an already instantiated transport object, or provide a transport source and let FastMCP attempt to infer the correct transport to use.
+<Note>
+This is not an agentic client - it requires explicit function calls and provides direct control over all MCP operations. Use it as a building block for higher-level systems.
+</Note>
 
-The following inference rules are used to determine the appropriate `ClientTransport` based on the input type:
+## Creating a Client
 
-1.  **`ClientTransport` Instance**: If you provide an already instantiated transport object, it's used directly.
-2.  **`FastMCP` Instance**: Creates a `FastMCPTransport` for efficient in-memory communication (ideal for testing). This also works with a **FastMCP 1.0 server** created via `mcp.server.fastmcp.FastMCP`.
-3.  **`Path` or `str` pointing to an existing file**:
-    *   If it ends with `.py`: Creates a `PythonStdioTransport` to run the script using `python`.
-    *   If it ends with `.js`: Creates a `NodeStdioTransport` to run the script using `node`.
-4.  **`AnyUrl` or `str` pointing to a URL that begins with `http://` or `https://`**:
-    *   Creates a `StreamableHttpTransport`
-5.  **`MCPConfig` or dictionary matching MCPConfig schema**: Creates a client that connects to one or more MCP servers specified in the config.
-6.  **Other**: Raises a `ValueError` if the type cannot be inferred.
+Creating a client is straightforward. You provide a server source and the client automatically infers the appropriate transport mechanism.
 
 ```python
 import asyncio
 from fastmcp import Client, FastMCP
 
-# Example transports (more details in Transports page)
-server_instance = FastMCP(name="TestServer") # In-memory server
-http_url = "https://example.com/mcp"        # HTTP server URL
-server_script = "my_mcp_server.py"         # Path to a Python server file
+# In-memory server (ideal for testing)
+server = FastMCP("TestServer")
+client = Client(server)
 
-# Client automatically infers the transport type
-client_in_memory = Client(server_instance)
-client_http = Client(http_url)
+# HTTP server
+client = Client("https://example.com/mcp")
 
-client_stdio = Client(server_script)
+# Local Python script
+client = Client("my_mcp_server.py")
 
-print(client_in_memory.transport)
-print(client_http.transport)
-print(client_stdio.transport)
+async def main():
+    async with client:
+        # Basic server interaction
+        await client.ping()
+        
+        # List available operations
+        tools = await client.list_tools()
+        resources = await client.list_resources()
+        prompts = await client.list_prompts()
+        
+        # Execute operations
+        result = await client.call_tool("example_tool", {"param": "value"})
+        print(result)
 
-# Expected Output (types may vary slightly based on environment):
-# <FastMCP(server='TestServer')>
-# <StreamableHttp(url='https://example.com/mcp')>
-# <PythonStdioTransport(command='python', args=['/path/to/your/my_mcp_server.py'])>
+asyncio.run(main())
 ```
 
-You can also initialize a client from an MCP configuration dictionary or `MCPConfig` file:
+## Client-Transport Architecture
+
+The FastMCP Client separates concerns between protocol and connection:
+
+- **`Client`**: Handles MCP protocol operations (tools, resources, prompts) and manages callbacks
+- **`Transport`**: Establishes and maintains the connection (WebSockets, HTTP, Stdio, in-memory)
+
+### Transport Inference
+
+The client automatically infers the appropriate transport based on the input:
+
+1. **`FastMCP` instance** → In-memory transport (perfect for testing)
+2. **File path ending in `.py`** → Python Stdio transport
+3. **File path ending in `.js`** → Node.js Stdio transport  
+4. **URL starting with `http://` or `https://`** → HTTP transport
+5. **`MCPConfig` dictionary** → Multi-server client
 
 ```python
-from fastmcp import Client
+from fastmcp import Client, FastMCP
 
-config = {
-    "mcpServers": {
-        "local": {"command": "python", "args": ["local_server.py"]},
-        "remote": {"url": "https://example.com/mcp"},
-    }
-}
-
-client_config = Client(config)
+# Examples of transport inference
+client_memory = Client(FastMCP("TestServer"))
+client_script = Client("./server.py") 
+client_http = Client("https://api.example.com/mcp")
 ```
+
 <Tip>
-For more control over connection details (like headers for SSE, environment variables for Stdio), you can instantiate the specific `ClientTransport` class yourself and pass it to the `Client`. See the [Transports](/clients/transports) page for details.
+For testing and development, always prefer the in-memory transport by passing a `FastMCP` server directly to the client. This eliminates network complexity and separate processes.
 </Tip>
 
-### Multi-Server Clients
+## Configuration-Based Clients
 
 <VersionBadge version="2.4.0" />
 
-FastMCP supports creating clients that connect to multiple MCP servers through a single client interface using a standard MCP configuration format (`MCPConfig`). This configuration approach makes it easy to connect to multiple specialized servers or create composable systems with a simple, declarative syntax.
+Create clients from MCP configuration dictionaries, which can include multiple servers. While there is no official standard for MCP configuration format, FastMCP follows established conventions used by tools like Claude Desktop.
 
-<Note>
-The MCP configuration format follows an emerging standard and may evolve as the specification matures. FastMCP will strive to maintain compatibility with future versions, but be aware that field names or structure might change.
-</Note>
-
-When you create a client with an `MCPConfig` containing multiple servers:
-
-1. FastMCP creates a composite client that internally mounts all servers using their config names as prefixes
-2. Tools and resources from each server are accessible with appropriate prefixes in the format `servername_toolname` and `protocol://servername/resource/path`
-3. You interact with this as a single unified client, with requests automatically routed to the appropriate server
+### Configuration Format
 
 ```python
-from fastmcp import Client
-
-# Create a standard MCP configuration with multiple servers
 config = {
     "mcpServers": {
-        # A remote HTTP server
-        "weather": {
-            "url": "https://weather-api.example.com/mcp",
-            "transport": "streamable-http"
+        "server_name": {
+            # Remote HTTP/SSE server
+            "transport": "streamable-http",  # or "sse" 
+            "url": "https://api.example.com/mcp",
+            "headers": {"Authorization": "Bearer token"},
+            "auth": "oauth"  # or bearer token string
         },
-        # A local server running via stdio
-        "assistant": {
+        "local_server": {
+            # Local stdio server
+            "transport": "stdio"
             "command": "python",
-            "args": ["./my_assistant_server.py"],
-            "env": {"DEBUG": "true"}
+            "args": ["./server.py", "--verbose"],
+            "env": {"DEBUG": "true"},
+            "cwd": "/path/to/server",
         }
     }
 }
+```
 
-# Create a client that connects to both servers
+### Multi-Server Example
+
+```python
+config = {
+    "mcpServers": {
+        "weather": {"url": "https://weather-api.example.com/mcp"},
+        "assistant": {"command": "python", "args": ["./assistant_server.py"]}
+    }
+}
+
 client = Client(config)
 
-async def main():
-    async with client:
-        # Access tools from different servers with prefixes
-        weather_data = await client.call_tool("weather_get_forecast", {"city": "London"})
-        response = await client.call_tool("assistant_answer_question", {"question": "What's the capital of France?"})
-        
-        # Access resources with prefixed URIs
-        weather_icons = await client.read_resource("weather://weather/icons/sunny")
-        templates = await client.read_resource("resource://assistant/templates/list")
-        
-        print(f"Weather: {weather_data}")
-        print(f"Assistant: {response}")
-
-if __name__ == "__main__":
-    asyncio.run(main())
-```
-
-If your configuration has only a single server, FastMCP will create a direct client to that server without any prefixing.
-
-## Client Usage
-
-### Connection Lifecycle
-
-The client operates asynchronously and must be used within an `async with` block. This context manager handles establishing the connection, initializing the MCP session, and cleaning up resources upon exit.
-
-```python
-import asyncio
-from fastmcp import Client
-
-client = Client("my_mcp_server.py") # Assumes my_mcp_server.py exists
-
-async def main():
-    # Connection is established here
-    async with client:
-        print(f"Client connected: {client.is_connected()}")
-
-        # Make MCP calls within the context
-        tools = await client.list_tools()
-        print(f"Available tools: {tools}")
-
-        if any(tool.name == "greet" for tool in tools):
-            result = await client.call_tool("greet", {"name": "World"})
-            print(f"Greet result: {result}")
-
-    # Connection is closed automatically here
-    print(f"Client connected: {client.is_connected()}")
-
-if __name__ == "__main__":
-    asyncio.run(main())
-```
-
-You can make multiple calls to the server within the same `async with` block using the established session.
-
-### Client Methods
-
-The `Client` provides methods corresponding to standard MCP requests:
-
-<Warning>
-The standard client methods return user-friendly representations that may change as the protocol evolves. For consistent access to the complete data structure, use the `*_mcp` methods described later.
-</Warning>
-
-#### Tool Operations
-
-*   **`list_tools()`**: Retrieves a list of tools available on the server.
-    ```python
-    tools = await client.list_tools()
-    # tools -> list[mcp.types.Tool]
-    ```
-*   **`call_tool(name: str, arguments: dict[str, Any] | None = None, timeout: float | None = None, progress_handler: ProgressHandler | None = None)`**: Executes a tool on the server.
-    ```python
-    result = await client.call_tool("add", {"a": 5, "b": 3})
-    # result -> list[mcp.types.TextContent | mcp.types.ImageContent | ...]
-    print(result[0].text) # Assuming TextContent, e.g., '8'
-    
-    # With timeout (aborts if execution takes longer than 2 seconds)
-    result = await client.call_tool("long_running_task", {"param": "value"}, timeout=2.0)
-    
-    # With progress handler (to track execution progress)
-    result = await client.call_tool(
-        "long_running_task",
-        {"param": "value"},
-        progress_handler=my_progress_handler
-    )
-    ```
-    *   Arguments are passed as a dictionary. FastMCP servers automatically handle JSON string parsing for complex types if needed.
-    *   Returns a list of content objects (usually `TextContent` or `ImageContent`).
-    *   The optional `timeout` parameter limits the maximum execution time (in seconds) for this specific call, overriding any client-level timeout.
-    *   The optional `progress_handler` parameter receives progress updates during execution, overriding any client-level progress handler.
-
-#### Resource Operations
-
-*   **`list_resources()`**: Retrieves a list of static resources.
-    ```python
-    resources = await client.list_resources()
-    # resources -> list[mcp.types.Resource]
-    ```
-*   **`list_resource_templates()`**: Retrieves a list of resource templates.
-    ```python
-    templates = await client.list_resource_templates()
-    # templates -> list[mcp.types.ResourceTemplate]
-    ```
-*   **`read_resource(uri: str | AnyUrl)`**: Reads the content of a resource or a resolved template.
-    ```python
-    # Read a static resource
-    readme_content = await client.read_resource("file:///path/to/README.md")
-    # readme_content -> list[mcp.types.TextResourceContents | mcp.types.BlobResourceContents]
-    print(readme_content[0].text) # Assuming text
-
-    # Read a resource generated from a template
-    weather_content = await client.read_resource("data://weather/london")
-    print(weather_content[0].text) # Assuming text JSON
-    ```
-
-#### Prompt Operations
-
-*   **`list_prompts()`**: Retrieves available prompt templates.
-*   **`get_prompt(name: str, arguments: dict[str, Any] | None = None)`**: Retrieves a rendered prompt message list.
-
-<VersionBadge version="2.9.0" />
-
-**Automatic Argument Serialization**: When calling prompts with complex arguments, the FastMCP client automatically serializes non-string values to JSON strings as required by the MCP specification. This allows you to pass typed objects directly while maintaining protocol compliance.
-
-```python
-from dataclasses import dataclass
-
-@dataclass
-class UserData:
-    name: str
-    age: int
-
 async with client:
-    # You can pass complex objects directly
-    result = await client.get_prompt("analyze_user", {
-        "user": UserData(name="Alice", age=30),     # Automatically serialized to JSON
-        "preferences": {"theme": "dark"},           # Dict serialized to JSON string
-        "scores": [85, 92, 78],                     # List serialized to JSON string
-        "simple_name": "Bob"                        # Strings passed through unchanged
-    })
+    # Tools are prefixed with server names
+    weather_data = await client.call_tool("weather_get_forecast", {"city": "London"})
+    response = await client.call_tool("assistant_answer_question", {"question": "What's the capital of France?"})
+    
+    # Resources use prefixed URIs
+    icons = await client.read_resource("weather://weather/icons/sunny")
+    templates = await client.read_resource("resource://assistant/templates/list")
 ```
 
-The client handles the serialization automatically using `pydantic_core.to_json()` for consistent formatting, while the server can deserialize these JSON strings back to the expected types if using FastMCP's server-side type conversion.
+## Connection Lifecycle
 
-### Raw MCP Protocol Objects
-
-<VersionBadge version="2.2.7" />
-
-The FastMCP client attempts to provide a "friendly" interface to the MCP protocol, but sometimes you may need access to the raw MCP protocol objects. Each of the main client methods that returns data has a corresponding `*_mcp` method that returns the raw MCP protocol objects directly.
-
-<Warning>
-The standard client methods (without `_mcp`) return user-friendly representations of MCP data, while `*_mcp` methods will always return the complete MCP protocol objects. As the protocol evolves, changes to these user-friendly representations may occur and could potentially be breaking. If you need consistent, stable access to the full data structure, prefer using the `*_mcp` methods.
-</Warning>
+The client operates asynchronously and uses context managers for connection management:
 
 ```python
-# Standard method - returns just the list of tools
-tools = await client.list_tools()
-# tools -> list[mcp.types.Tool]
-
-# Raw MCP method - returns the full protocol object
-result = await client.list_tools_mcp()
-# result -> mcp.types.ListToolsResult
-tools = result.tools
+async def example():
+    client = Client("my_mcp_server.py")
+    
+    # Connection established here
+    async with client:
+        print(f"Connected: {client.is_connected()}")
+        
+        # Make multiple calls within the same session
+        tools = await client.list_tools()
+        result = await client.call_tool("greet", {"name": "World"})
+        
+    # Connection closed automatically here
+    print(f"Connected: {client.is_connected()}")
 ```
 
-Available raw MCP methods:
+## Operations
 
-*   **`list_tools_mcp()`**: Returns `mcp.types.ListToolsResult`
-*   **`call_tool_mcp(name, arguments)`**: Returns `mcp.types.CallToolResult`
-*   **`list_resources_mcp()`**: Returns `mcp.types.ListResourcesResult`
-*   **`list_resource_templates_mcp()`**: Returns `mcp.types.ListResourceTemplatesResult`
-*   **`read_resource_mcp(uri)`**: Returns `mcp.types.ReadResourceResult`
-*   **`list_prompts_mcp()`**: Returns `mcp.types.ListPromptsResult`
-*   **`get_prompt_mcp(name, arguments)`**: Returns `mcp.types.GetPromptResult`
-*   **`complete_mcp(ref, argument)`**: Returns `mcp.types.CompleteResult`
+FastMCP clients can interact with several types of server components:
 
-These methods are especially useful for debugging or when you need to access metadata or fields that aren't exposed by the simplified methods.
+### Tools
 
-### Additional Features
+Tools are server-side functions that the client can execute with arguments.
 
-#### Pinging the Server
+```python
+async with client:
+    # List available tools
+    tools = await client.list_tools()
+    
+    # Execute a tool
+    result = await client.call_tool("multiply", {"a": 5, "b": 3})
+    print(result[0].text)  # "15"
+```
 
-The client can be used to ping the server to verify connectivity.
+See [Tools](/clients/tools) for detailed documentation.
+
+### Resources
+
+Resources are data sources that the client can read, either static or templated.
+
+```python
+async with client:
+    # List available resources
+    resources = await client.list_resources()
+    
+    # Read a resource
+    content = await client.read_resource("file:///config/settings.json")
+    print(content[0].text)
+```
+
+See [Resources](/clients/resources) for detailed documentation.
+
+### Prompts
+
+Prompts are reusable message templates that can accept arguments.
+
+```python
+async with client:
+    # List available prompts
+    prompts = await client.list_prompts()
+    
+    # Get a rendered prompt
+    messages = await client.get_prompt("analyze_data", {"data": [1, 2, 3]})
+    print(messages.messages)
+```
+
+See [Prompts](/clients/prompts) for detailed documentation.
+
+### Server Connectivity
+
+Use `ping()` to verify the server is reachable:
 
 ```python
 async with client:
@@ -304,93 +223,69 @@ async with client:
     print("Server is reachable")
 ```
 
-#### Session Management
+## Client Configuration
 
-When using stdio transports, clients support a `keep_alive` feature (enabled by default) that maintains subprocess sessions between connection contexts. You can manually control this behavior using the client's `close()` method.
+Clients can be configured with additional handlers and settings for specialized use cases.
 
-When `keep_alive=False`, the client will automatically close the session when the context manager exits.
+### Callback Handlers
 
-```python
-from fastmcp import Client
-
-client = Client("my_mcp_server.py")  # keep_alive=True by default
-
-async def example():
-    async with client:
-        await client.ping()
-    
-    async with client:
-        await client.ping()  # Same subprocess as above
-```
-
-<Note>
-For detailed examples and configuration options, see [Session Management in Transports](/clients/transports#session-management).
-</Note>
-
-#### Timeouts
-
-<VersionBadge version="2.3.4" />
-
-You can control request timeouts at both the client level and individual request level:
+The client supports several callback handlers for advanced server interactions:
 
 ```python
 from fastmcp import Client
-from fastmcp.exceptions import McpError
+from fastmcp.client.logging import LogMessage
 
-# Client with a global 5-second timeout for all requests
+async def log_handler(message: LogMessage):
+    print(f"Server log: {message.data}")
+
+async def progress_handler(progress: float, total: float | None, message: str | None):
+    print(f"Progress: {progress}/{total} - {message}")
+
+async def sampling_handler(messages, params, context):
+    # Integrate with your LLM service here
+    return "Generated response"
+
 client = Client(
-    my_mcp_server,
-    timeout=5.0  # Default timeout in seconds
+    "my_mcp_server.py",
+    log_handler=log_handler,
+    progress_handler=progress_handler,
+    sampling_handler=sampling_handler,
+    timeout=30.0
 )
-
-async with client:
-    # This uses the global 5-second timeout
-    result1 = await client.call_tool("quick_task", {"param": "value"})
-    
-    # This specifies a 10-second timeout for this specific call
-    result2 = await client.call_tool("slow_task", {"param": "value"}, timeout=10.0)
-    
-    try:
-        # This will likely timeout
-        result3 = await client.call_tool("medium_task", {"param": "value"}, timeout=0.01)
-    except McpError as e:
-        # Handle timeout error
-        print(f"The task timed out: {e}")
 ```
 
-<Warning>
-Timeout behavior varies between transport types:
+The `Client` constructor accepts several configuration options:
 
-- With **SSE** transport, the per-request (tool call) timeout **always** takes precedence, regardless of which is lower.
-- With **HTTP** transport, the **lower** of the two timeouts (client or tool call) takes precedence.
+- `transport`: Transport instance or source for automatic inference  
+- `log_handler`: Handle server log messages
+- `progress_handler`: Monitor long-running operations
+- `sampling_handler`: Respond to server LLM requests
+- `roots`: Provide local context to servers
+- `timeout`: Default timeout for requests (in seconds)
 
-For consistent behavior across all transports, we recommend explicitly setting timeouts at the individual tool call level when needed, rather than relying on client-level timeouts.
-</Warning>
+### Transport Configuration
 
-#### Error Handling
+For detailed transport configuration (headers, authentication, environment variables), see the [Transports](/clients/transports) documentation.
 
-When a `call_tool` request results in an error on the server (e.g., the tool function raised an exception), the `client.call_tool()` method will raise a `fastmcp.exceptions.ClientError`.
+## Next Steps
 
-```python
-async def safe_call_tool():
-    async with client:
-        try:
-            # Assume 'divide' tool exists and might raise ZeroDivisionError
-            result = await client.call_tool("divide", {"a": 10, "b": 0})
-            print(f"Result: {result}")
-        except ClientError as e:
-            print(f"Tool call failed: {e}")
-        except ConnectionError as e:
-            print(f"Connection failed: {e}")
-        except Exception as e:
-            print(f"An unexpected error occurred: {e}")
+Explore the detailed documentation for each operation type:
 
-# Example Output if division by zero occurs:
-# Tool call failed: Division by zero is not allowed.
-```
+### Core Operations
+- **[Tools](/clients/tools)** - Execute server-side functions and handle results
+- **[Resources](/clients/resources)** - Access static and templated resources  
+- **[Prompts](/clients/prompts)** - Work with message templates and argument serialization
 
-Other errors, like connection failures, will raise standard Python exceptions (e.g., `ConnectionError`, `TimeoutError`). 
+### Advanced Features
+- **[Logging](/clients/logging)** - Handle server log messages
+- **[Progress](/clients/progress)** - Monitor long-running operations
+- **[Sampling](/clients/sampling)** - Respond to server LLM requests
+- **[Roots](/clients/roots)** - Provide local context to servers
+
+### Connection Details
+- **[Transports](/clients/transports)** - Configure connection methods and parameters
+- **[Authentication](/clients/auth/oauth)** - Set up OAuth and bearer token authentication
 
 <Tip>
-The client transport often has its own error-handling mechanisms, so you can not always trap errors like those raised by `call_tool` outside of the `async with` block. Instead, you can use `call_tool_mcp()` to get the raw `mcp.types.CallToolResult` object and handle errors yourself by checking its `isError` attribute.
+The FastMCP Client is designed as a foundational tool. Use it directly for deterministic operations, or build higher-level agentic systems on top of its reliable, type-safe interface.
 </Tip>
