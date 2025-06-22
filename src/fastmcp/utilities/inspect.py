@@ -79,7 +79,7 @@ class FastMCPInfo:
     capabilities: dict[str, Any]
 
 
-async def get_fastmcp_info_v2(mcp: FastMCP[Any]) -> FastMCPInfo:
+async def inspect_fastmcp_v2(mcp: FastMCP[Any]) -> FastMCPInfo:
     """Extract information from a FastMCP v2.x instance.
 
     Args:
@@ -179,7 +179,7 @@ async def get_fastmcp_info_v2(mcp: FastMCP[Any]) -> FastMCPInfo:
     )
 
 
-async def get_fastmcp_info_v1(mcp: Any) -> FastMCPInfo:
+async def inspect_fastmcp_v1(mcp: Any) -> FastMCPInfo:
     """Extract information from a FastMCP v1.x instance using a Client.
 
     Args:
@@ -308,7 +308,7 @@ def _is_fastmcp_v1(mcp: Any) -> bool:
     return isinstance(mcp, FastMCP1x) and not isinstance(mcp, FastMCP)
 
 
-async def get_fastmcp_info(mcp: FastMCP[Any] | Any) -> FastMCPInfo:
+async def inspect_fastmcp(mcp: FastMCP[Any] | Any) -> FastMCPInfo:
     """Extract information from a FastMCP instance into a dataclass.
 
     This function automatically detects whether the instance is FastMCP v1.x or v2.x
@@ -321,6 +321,6 @@ async def get_fastmcp_info(mcp: FastMCP[Any] | Any) -> FastMCPInfo:
         FastMCPInfo dataclass containing the extracted information
     """
     if _is_fastmcp_v1(mcp):
-        return await get_fastmcp_info_v1(mcp)
+        return await inspect_fastmcp_v1(mcp)
     else:
-        return await get_fastmcp_info_v2(mcp)
+        return await inspect_fastmcp_v2(mcp)

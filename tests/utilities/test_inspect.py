@@ -9,8 +9,8 @@ from fastmcp.utilities.inspect import (
     FastMCPInfo,
     ToolInfo,
     _is_fastmcp_v1,
-    get_fastmcp_info,
-    get_fastmcp_info_v1,
+    inspect_fastmcp,
+    inspect_fastmcp_v1,
 )
 
 
@@ -69,7 +69,7 @@ class TestGetFastMCPInfo:
         """Test get_fastmcp_info with an empty server."""
         mcp = FastMCP("EmptyServer", instructions="Empty server for testing")
 
-        info = await get_fastmcp_info(mcp)
+        info = await inspect_fastmcp(mcp)
 
         assert info.name == "EmptyServer"
         assert info.instructions == "Empty server for testing"
@@ -97,7 +97,7 @@ class TestGetFastMCPInfo:
         def greet(name: str) -> str:
             return f"Hello, {name}!"
 
-        info = await get_fastmcp_info(mcp)
+        info = await inspect_fastmcp(mcp)
 
         assert info.name == "ToolServer"
         assert len(info.tools) == 2
@@ -117,7 +117,7 @@ class TestGetFastMCPInfo:
         def get_dynamic_data(param: str) -> str:
             return f"Dynamic data: {param}"
 
-        info = await get_fastmcp_info(mcp)
+        info = await inspect_fastmcp(mcp)
 
         assert info.name == "ResourceServer"
         assert len(info.resources) == 1  # Static resource
@@ -139,7 +139,7 @@ class TestGetFastMCPInfo:
         def custom_analysis(text: str) -> list:
             return [{"role": "user", "content": f"Custom: {text}"}]
 
-        info = await get_fastmcp_info(mcp)
+        info = await inspect_fastmcp(mcp)
 
         assert info.name == "PromptServer"
         assert len(info.prompts) == 2
@@ -171,7 +171,7 @@ class TestGetFastMCPInfo:
         def analyze(content: str) -> list:
             return [{"role": "user", "content": content}]
 
-        info = await get_fastmcp_info(mcp)
+        info = await inspect_fastmcp(mcp)
 
         assert info.name == "ComprehensiveServer"
         assert info.instructions == "A server with everything"
@@ -204,7 +204,7 @@ class TestGetFastMCPInfo:
         """Test get_fastmcp_info with a server that has no instructions."""
         mcp = FastMCP("NoInstructionsServer")
 
-        info = await get_fastmcp_info(mcp)
+        info = await inspect_fastmcp(mcp)
 
         assert info.name == "NoInstructionsServer"
         assert info.instructions is None
@@ -226,7 +226,7 @@ class TestGetFastMCPInfo:
             return [{"role": "user", "content": "test"}]
 
         # Get info using our function
-        info = await get_fastmcp_info(mcp)
+        info = await inspect_fastmcp(mcp)
 
         # Verify using client
         async with Client(mcp) as client:
@@ -258,7 +258,7 @@ class TestFastMCP1xCompatibility:
         """Test get_fastmcp_info_v1 with an empty FastMCP1x server."""
         mcp = FastMCP1x("Test1x")
 
-        info = await get_fastmcp_info_v1(mcp)
+        info = await inspect_fastmcp_v1(mcp)
 
         assert info.name == "Test1x"
         assert info.instructions is None
@@ -283,7 +283,7 @@ class TestFastMCP1xCompatibility:
         def greet(name: str) -> str:
             return f"Hello, {name}!"
 
-        info = await get_fastmcp_info_v1(mcp)
+        info = await inspect_fastmcp_v1(mcp)
 
         assert info.name == "Test1x"
         assert len(info.tools) == 2
@@ -299,7 +299,7 @@ class TestFastMCP1xCompatibility:
         def get_data() -> str:
             return "Some data"
 
-        info = await get_fastmcp_info_v1(mcp)
+        info = await inspect_fastmcp_v1(mcp)
 
         assert info.name == "Test1x"
         assert len(info.resources) == 1
@@ -315,7 +315,7 @@ class TestFastMCP1xCompatibility:
         def analyze_data(data: str) -> list:
             return [{"role": "user", "content": f"Analyze: {data}"}]
 
-        info = await get_fastmcp_info_v1(mcp)
+        info = await inspect_fastmcp_v1(mcp)
 
         assert info.name == "Test1x"
         assert len(info.prompts) == 1
@@ -330,7 +330,7 @@ class TestFastMCP1xCompatibility:
         def test_tool() -> str:
             return "test"
 
-        info = await get_fastmcp_info(mcp)
+        info = await inspect_fastmcp(mcp)
 
         assert info.name == "Test1x"
         assert len(info.tools) == 1
@@ -346,7 +346,7 @@ class TestFastMCP1xCompatibility:
         def test_tool() -> str:
             return "test"
 
-        info = await get_fastmcp_info(mcp)
+        info = await inspect_fastmcp(mcp)
 
         assert info.name == "Test2x"
         assert len(info.tools) == 1
@@ -366,8 +366,8 @@ class TestFastMCP1xCompatibility:
         def tool2x() -> str:
             return "2x"
 
-        info1x = await get_fastmcp_info(mcp1x)
-        info2x = await get_fastmcp_info(mcp2x)
+        info1x = await inspect_fastmcp(mcp1x)
+        info2x = await inspect_fastmcp(mcp2x)
 
         assert info1x.name == "Test1x"
         assert info2x.name == "Test2x"

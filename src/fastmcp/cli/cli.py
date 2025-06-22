@@ -3,7 +3,6 @@
 import asyncio
 import importlib.metadata
 import importlib.util
-import json
 import os
 import platform
 import subprocess
@@ -13,6 +12,7 @@ from typing import Annotated
 
 import dotenv
 import typer
+from pydantic import TypeAdapter
 from rich.console import Console
 from rich.table import Table
 from typer import Context, Exit
@@ -21,7 +21,7 @@ import fastmcp
 from fastmcp.cli import claude
 from fastmcp.cli import run as run_module
 from fastmcp.server.server import FastMCP
-from fastmcp.utilities.inspect import get_fastmcp_info
+from fastmcp.utilities.inspect import FastMCPInfo, inspect_fastmcp
 from fastmcp.utilities.logging import get_logger
 
 logger = get_logger("cli")
@@ -487,35 +487,29 @@ def inspect(
 
         # Get server information
         async def get_info():
-            return await get_fastmcp_info(server)
+            return await inspect_fastmcp(server)
 
-        info = asyncio.run(get_info())
+        try:
+            # Try to use existing event loop if available
+            asyncio.get_running_loop()
+            # If there's already a loop running, we need to run in a thread
+            import concurrent.futures
 
-        # Convert to dict for JSON serialization
-        from dataclasses import asdict
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(asyncio.run, get_info())
+                info = future.result()
+        except RuntimeError:
+            # No running loop, safe to use asyncio.run
+            info = asyncio.run(get_info())
 
-        def convert_for_json(obj):
-            """Convert objects for JSON serialization."""
-            if isinstance(obj, list):
-                return [convert_for_json(item) for item in obj]
-            elif isinstance(obj, set):
-                return list(obj)
-            elif hasattr(obj, "model_dump"):  # Pydantic models
-                return obj.model_dump()
-            else:
-                return obj
-
-        info_dict = asdict(
-            info,
-            dict_factory=lambda fields: {k: convert_for_json(v) for k, v in fields},
-        )
+        info_json = TypeAdapter(FastMCPInfo).dump_json(info, indent=2)
 
         # Ensure output directory exists
         output.parent.mkdir(parents=True, exist_ok=True)
 
         # Write JSON report (always pretty-printed)
         with output.open("w", encoding="utf-8") as f:
-            json.dump(info_dict, f, indent=2, ensure_ascii=False)
+            f.write(info_json.decode("utf-8"))
 
         logger.info(f"Server inspection complete. Report saved to {output}")
 
