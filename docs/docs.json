@@ -124,9 +124,10 @@
                 "group": "Integrations",
                 "pages": [
                   "integrations/anthropic",
+                  "integrations/chatgpt",
                   "integrations/claude-desktop",
-                  "integrations/openai",
                   "integrations/gemini",
+                  "integrations/openai",
                   "integrations/contrib"
                 ]
               },
