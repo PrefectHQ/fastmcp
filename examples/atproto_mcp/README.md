@@ -49,7 +49,7 @@ async def demo():
         
         # Post to Bluesky
         post = await client.call_tool("post_to_bluesky", {
-            "text": "Hello from FastMCP! =€"
+            "text": "Hello from FastMCP!"
         })
         print(f"Posted: {post['uri']}")
         

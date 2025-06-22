@@ -1,14 +1,7 @@
-#!/usr/bin/env python3
-"""
-Demo script showing ATProto MCP server capabilities.
-"""
+"""Demo script showing ATProto MCP server capabilities."""
 
 import asyncio
-import sys
-from pathlib import Path
-
-# Add the src directory to the path
-sys.path.insert(0, str(Path(__file__).parent / "src"))
+import json
 
 from atproto_mcp.server import atproto_mcp
 
@@ -21,7 +14,8 @@ async def main():
     async with Client(atproto_mcp) as client:
         # 1. Check connection status
         print("1. Checking connection status...")
-        status = await client.call_tool("atproto_status", {})
+        result = await client.call_tool("atproto_status", {})
+        status = json.loads(result[0].text) if result else {}
 
         if status.get("connected"):
             print(f"✅ Connected as: @{status['handle']}")
@@ -34,7 +28,8 @@ async def main():
 
         # 2. Get timeline
         print("\n2. Getting timeline (last 3 posts)...")
-        timeline = await client.call_tool("get_timeline", {"limit": 3})
+        result = await client.call_tool("get_timeline", {"limit": 3})
+        timeline = json.loads(result[0].text) if result else {}
 
         if timeline.get("success"):
             print(f"✅ Found {timeline['count']} posts:")
@@ -54,7 +49,8 @@ async def main():
 
         # 3. Search for posts
         print("\n3. Searching for posts about 'Python'...")
-        search = await client.call_tool("search_posts", {"query": "Python", "limit": 3})
+        result = await client.call_tool("search_posts", {"query": "Python", "limit": 3})
+        search = json.loads(result[0].text) if result else {}
 
         if search.get("success"):
             print(f"✅ Found {search['count']} posts about Python")
@@ -70,7 +66,8 @@ async def main():
 
         # 4. Get notifications
         print("\n4. Checking notifications...")
-        notifs = await client.call_tool("get_notifications", {"limit": 5})
+        result = await client.call_tool("get_notifications", {"limit": 5})
+        notifs = json.loads(result[0].text) if result else {}
 
         if notifs.get("success"):
             print(f"✅ You have {notifs['count']} recent notifications")

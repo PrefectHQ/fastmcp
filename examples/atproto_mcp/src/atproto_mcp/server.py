@@ -99,8 +99,7 @@ def search_posts(query: str, limit: int = 10) -> dict:
     try:
         client = get_client()
         search_results = client.app.bsky.feed.search_posts(
-            q=query,
-            limit=limit,
+            params={"q": query, "limit": limit}
         )
 
         posts = []
@@ -134,7 +133,9 @@ def get_notifications(limit: int = 10) -> dict:
     """Get recent notifications for the authenticated user."""
     try:
         client = get_client()
-        notifications = client.app.bsky.notification.list_notifications(limit=limit)
+        notifications = client.app.bsky.notification.list_notifications(
+            params={"limit": limit}
+        )
 
         notifs = []
         for notif in notifications.notifications:
