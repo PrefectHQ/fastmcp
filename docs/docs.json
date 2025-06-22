@@ -95,7 +95,7 @@
             "pages": [
               "clients/client",
               {
-                "group": "Core Interactions",
+                "group": "Core Operations",
                 "icon": "handshake",
                 "pages": [
                   "clients/tools",

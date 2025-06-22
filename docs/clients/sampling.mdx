@@ -2,7 +2,7 @@
 title: LLM Sampling
 sidebarTitle: Sampling
 description: Learn how to handle server-initiated LLM sampling requests.
-icon: brain
+icon: robot
 ---
 
 import { VersionBadge } from '/snippets/version-badge.mdx'
@@ -40,15 +40,31 @@ client = Client(
 
 ## Handler Parameters
 
-The sampling handler receives:
+The sampling handler receives three parameters:
 
-- **`messages`**: List of `SamplingMessage` objects representing the conversation
-- **`params`**: `SamplingParams` object with generation parameters (systemPrompt, maxTokens, temperature, etc.)
-- **`context`**: `RequestContext` object with request metadata
+### SamplingMessage
+
+- **`role`**: Message role (e.g., "user", "assistant", "system")
+- **`content`**: Message content (usually has `.text` attribute)
+
+### SamplingParams
+
+- **`systemPrompt`**: System prompt string (optional)
+- **`maxTokens`**: Maximum tokens to generate (optional)
+- **`temperature`**: Sampling temperature (optional)
+- **`topP`**: Top-p sampling parameter (optional)
+- **`stopSequences`**: List of stop sequences (optional)
+
+### RequestContext
+
+- **`request_id`**: Unique identifier for the sampling request
 
 ## Basic Example
 
 ```python
+from fastmcp import Client
+from fastmcp.client.sampling import SamplingMessage, SamplingParams, RequestContext
+
 async def basic_sampling_handler(
     messages: list[SamplingMessage],
     params: SamplingParams,
@@ -71,24 +87,5 @@ client = Client(
     "my_mcp_server.py",
     sampling_handler=basic_sampling_handler
 )
-```
-
-## Accessing Parameters
-
-```python
-async def parameter_handler(
-    messages: list[SamplingMessage],
-    params: SamplingParams,
-    context: RequestContext
-) -> str:
-    # Available parameters from the server
-    system_prompt = params.systemPrompt
-    max_tokens = params.maxTokens
-    temperature = params.temperature
-    top_p = params.topP
-    stop_sequences = params.stopSequences
-    
-    # Use these parameters with your LLM service
-    return "Generated response"
 ```
 
