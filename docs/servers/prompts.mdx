@@ -57,6 +57,82 @@ def generate_code_request(language: str, task_description: str) -> PromptMessage
 Functions with `*args` or `**kwargs` are not supported as prompts. This restriction exists because FastMCP needs to generate a complete parameter schema for the MCP protocol, which isn't possible with variable argument lists.
 </Tip>
 
+### Argument Types
+
+The MCP specification requires that all prompt arguments be passed as strings, but FastMCP allows you to use typed annotations for better developer experience. When you use complex types like `list[int]` or `dict[str, str]`, FastMCP:
+
+1. **Automatically converts** string arguments from MCP clients to the expected types
+2. **Generates helpful descriptions** showing the exact JSON string format needed
+3. **Preserves direct usage** - you can still call prompts with properly typed arguments
+
+Since the MCP specification only allows string arguments, clients need to know what string format to use for complex types. FastMCP solves this by automatically enhancing the argument descriptions with JSON schema information, making it clear to both humans and LLMs how to format their arguments.
+
+<CodeGroup>
+
+```python Python Code
+@mcp.prompt
+def analyze_data(
+    numbers: list[int],
+    metadata: dict[str, str], 
+    threshold: float
+) -> str:
+    """Analyze numerical data."""
+    avg = sum(numbers) / len(numbers)
+    return f"Average: {avg}, above threshold: {avg > threshold}"
+```
+
+```json Resulting MCP Prompt
+{
+  "name": "analyze_data",
+  "description": "Analyze numerical data.",
+  "arguments": [
+    {
+      "name": "numbers",
+      "description": "Provide as a JSON string matching the following schema: {\"items\":{\"type\":\"integer\"},\"type\":\"array\"}",
+      "required": true
+    },
+    {
+      "name": "metadata", 
+      "description": "Provide as a JSON string matching the following schema: {\"additionalProperties\":{\"type\":\"string\"},\"type\":\"object\"}",
+      "required": true
+    },
+    {
+      "name": "threshold",
+      "description": "Provide as a JSON string matching the following schema: {\"type\":\"number\"}",
+      "required": true
+    }
+  ]
+}
+```
+
+</CodeGroup>
+
+**MCP clients will call this prompt with string arguments:**
+```json
+{
+  "numbers": "[1, 2, 3, 4, 5]",
+  "metadata": "{\"source\": \"api\", \"version\": \"1.0\"}",
+  "threshold": "2.5"
+}
+```
+
+**But you can still call it directly with proper types:**
+```python
+# This also works for direct calls
+result = await prompt.render({
+    "numbers": [1, 2, 3, 4, 5],
+    "metadata": {"source": "api", "version": "1.0"}, 
+    "threshold": 2.5
+})
+```
+
+<Warning>
+Keep your type annotations simple when using this feature. Complex nested types or custom classes may not convert reliably from JSON strings. The automatically generated schema descriptions are the only guidance users receive about the expected format.
+
+Good choices: `list[int]`, `dict[str, str]`, `float`, `bool`
+Avoid: Complex Pydantic models, deeply nested structures, custom classes
+</Warning>
+
 ### Return Values
 
 FastMCP intelligently handles different return types from your prompt function:
@@ -76,33 +152,6 @@ def roleplay_scenario(character: str, situation: str) -> list[Message]:
         Message(f"Let's roleplay. You are {character}. The situation is: {situation}"),
         Message("Okay, I understand. I am ready. What happens next?", role="assistant")
     ]
-```
-
-### Type Annotations
-
-Type annotations are important for prompts. They:
-1.  Inform FastMCP about the expected types for each parameter.
-2.  Allow validation of parameters received from clients.
-3.  Are used to generate the prompt's schema for the MCP protocol.
-
-```python
-from pydantic import Field
-from typing import Literal, Optional
-
-@mcp.prompt
-def generate_content_request(
-    topic: str = Field(description="The main subject to cover"),
-    format: Literal["blog", "email", "social"] = "blog",
-    tone: str = "professional",
-    word_count: Optional[int] = None
-) -> str:
-    """Create a request for generating content in a specific format."""
-    prompt = f"Please write a {format} post about {topic} in a {tone} tone."
-    
-    if word_count:
-        prompt += f" It should be approximately {word_count} words long."
-        
-    return prompt
 ```
 
 
