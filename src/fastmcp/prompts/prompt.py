@@ -5,13 +5,13 @@ from __future__ import annotations as _annotations
 import inspect
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable, Sequence
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import pydantic_core
 from mcp.types import Prompt as MCPPrompt
 from mcp.types import PromptArgument as MCPPromptArgument
 from mcp.types import PromptMessage, Role, TextContent
-from pydantic import Field, TypeAdapter, validate_call
+from pydantic import Field, TypeAdapter
 
 from fastmcp.exceptions import PromptError
 from fastmcp.server.dependencies import get_context
@@ -24,10 +24,6 @@ from fastmcp.utilities.types import (
     find_kwarg_by_type,
     get_cached_typeadapter,
 )
-
-if TYPE_CHECKING:
-    pass
-
 
 logger = get_logger(__name__)
 
@@ -189,8 +185,7 @@ class FunctionPrompt(Prompt):
                     )
                 )
 
-        # ensure the arguments are properly cast
-        fn = validate_call(fn)
+        # Store original function without validate_call to handle our own conversion
 
         return cls(
             name=func_name,
@@ -200,6 +195,60 @@ class FunctionPrompt(Prompt):
             enabled=enabled if enabled is not None else True,
             fn=fn,
         )
+
+    def _convert_string_arguments(self, kwargs: dict[str, Any]) -> dict[str, Any]:
+        """Convert string arguments to expected types based on function signature."""
+        from fastmcp.server.context import Context
+
+        sig = inspect.signature(self.fn)
+        converted_kwargs = {}
+
+        # Find context parameter name if any
+        context_param_name = find_kwarg_by_type(self.fn, kwarg_type=Context)
+
+        for param_name, param_value in kwargs.items():
+            if param_name in sig.parameters:
+                param = sig.parameters[param_name]
+
+                # Skip Context parameters - they're handled separately
+                if param_name == context_param_name:
+                    converted_kwargs[param_name] = param_value
+                    continue
+
+                # If parameter has no annotation or annotation is str, pass as-is
+                if (
+                    param.annotation == inspect.Parameter.empty
+                    or param.annotation is str
+                ):
+                    converted_kwargs[param_name] = param_value
+                # If argument is not a string, pass as-is (already properly typed)
+                elif not isinstance(param_value, str):
+                    converted_kwargs[param_name] = param_value
+                else:
+                    # Try to convert string argument using type adapter
+                    try:
+                        adapter = get_cached_typeadapter(param.annotation)
+                        # Try JSON parsing first for complex types
+                        try:
+                            converted_kwargs[param_name] = adapter.validate_json(
+                                param_value
+                            )
+                        except (ValueError, TypeError, pydantic_core.ValidationError):
+                            # Fallback to direct validation
+                            converted_kwargs[param_name] = adapter.validate_python(
+                                param_value
+                            )
+                    except (ValueError, TypeError, pydantic_core.ValidationError) as e:
+                        # If conversion fails, provide informative error
+                        raise ValueError(
+                            f"Could not convert argument '{param_name}' with value '{param_value}' "
+                            f"to expected type {param.annotation}. Error: {e}"
+                        )
+            else:
+                # Parameter not in function signature, pass as-is
+                converted_kwargs[param_name] = param_value
+
+        return converted_kwargs
 
     async def render(
         self,
@@ -222,6 +271,9 @@ class FunctionPrompt(Prompt):
             context_kwarg = find_kwarg_by_type(self.fn, kwarg_type=Context)
             if context_kwarg and context_kwarg not in kwargs:
                 kwargs[context_kwarg] = get_context()
+
+            # Convert string arguments to expected types when needed
+            kwargs = self._convert_string_arguments(kwargs)
 
             # Call function and check if result is a coroutine
             result = self.fn(**kwargs)

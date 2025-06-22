@@ -240,3 +240,127 @@ class TestRenderPrompt:
                 ),
             )
         ]
+
+
+class TestPromptTypeConversion:
+    async def test_list_of_integers_as_string_args(self):
+        """Test that prompts can handle complex types passed as strings from MCP spec."""
+
+        def sum_numbers(numbers: list[int]) -> str:
+            """Calculate the sum of a list of numbers."""
+            total = sum(numbers)
+            return f"The sum is: {total}"
+
+        prompt = Prompt.from_function(sum_numbers)
+
+        # MCP spec only allows string arguments, so this should work
+        # after we implement type conversion
+        result_from_string = await prompt.render(
+            arguments={"numbers": "[1, 2, 3, 4, 5]"}
+        )
+        assert result_from_string == [
+            PromptMessage(
+                role="user", content=TextContent(type="text", text="The sum is: 15")
+            )
+        ]
+
+        # Both should work now with string conversion
+        result_from_list_string = await prompt.render(
+            arguments={"numbers": "[1, 2, 3, 4, 5]"}
+        )
+        assert result_from_list_string == result_from_string
+
+    async def test_various_type_conversions(self):
+        """Test type conversion for various data types."""
+
+        def process_data(
+            name: str,
+            age: int,
+            scores: list[float],
+            metadata: dict[str, str],
+            active: bool,
+        ) -> str:
+            return f"{name} ({age}): {len(scores)} scores, active={active}, metadata keys={list(metadata.keys())}"
+
+        prompt = Prompt.from_function(process_data)
+
+        # All arguments as strings (as MCP would send them)
+        result = await prompt.render(
+            arguments={
+                "name": "Alice",
+                "age": "25",
+                "scores": "[1.5, 2.0, 3.5]",
+                "metadata": '{"project": "test", "version": "1.0"}',
+                "active": "true",
+            }
+        )
+
+        expected_text = (
+            "Alice (25): 3 scores, active=True, metadata keys=['project', 'version']"
+        )
+        assert result == [
+            PromptMessage(
+                role="user", content=TextContent(type="text", text=expected_text)
+            )
+        ]
+
+    async def test_type_conversion_error_handling(self):
+        """Test that informative errors are raised for invalid type conversions."""
+        from fastmcp.exceptions import PromptError
+
+        def typed_prompt(numbers: list[int]) -> str:
+            return f"Got {len(numbers)} numbers"
+
+        prompt = Prompt.from_function(typed_prompt)
+
+        # Test with invalid JSON - should raise PromptError due to exception handling in render()
+        with pytest.raises(PromptError) as exc_info:
+            await prompt.render(arguments={"numbers": "not valid json"})
+
+        assert f"Error rendering prompt {prompt.name}" in str(exc_info.value)
+
+    async def test_json_parsing_fallback(self):
+        """Test that JSON parsing falls back to direct validation when needed."""
+
+        def data_prompt(value: int) -> str:
+            return f"Value: {value}"
+
+        prompt = Prompt.from_function(data_prompt)
+
+        # This should work with JSON parsing (integer as string)
+        result1 = await prompt.render(arguments={"value": "42"})
+        assert result1 == [
+            PromptMessage(
+                role="user", content=TextContent(type="text", text="Value: 42")
+            )
+        ]
+
+        # This should work with direct validation (already an integer string)
+        result2 = await prompt.render(arguments={"value": "123"})
+        assert result2 == [
+            PromptMessage(
+                role="user", content=TextContent(type="text", text="Value: 123")
+            )
+        ]
+
+    async def test_mixed_string_and_typed_args(self):
+        """Test mixing string args (no conversion) with typed args (conversion needed)."""
+
+        def mixed_prompt(message: str, count: int) -> str:
+            return f"{message} (repeated {count} times)"
+
+        prompt = Prompt.from_function(mixed_prompt)
+
+        result = await prompt.render(
+            arguments={
+                "message": "Hello world",  # str - no conversion needed
+                "count": "3",  # int - conversion needed
+            }
+        )
+
+        assert result == [
+            PromptMessage(
+                role="user",
+                content=TextContent(type="text", text="Hello world (repeated 3 times)"),
+            )
+        ]
