@@ -1,5 +1,6 @@
 """Demo script showing ATProto MCP server capabilities."""
 
+import argparse
 import asyncio
 import json
 
@@ -8,7 +9,7 @@ from atproto_mcp.server import atproto_mcp
 from fastmcp import Client
 
 
-async def main():
+async def main(enable_posting: bool = False):
     print("🔵 ATProto MCP Server Demo\n")
 
     async with Client(atproto_mcp) as client:
@@ -77,22 +78,37 @@ async def main():
         else:
             print(f"❌ Failed to get notifications: {notifs.get('error')}")
 
-        # 5. Demo posting (commented out to avoid spam)
-        print("\n5. Posting capability:")
-        print("   To post, you would use:")
-        print(
-            '   await client.call_tool("post_to_bluesky", {"text": "Hello from FastMCP! 🚀"})'
-        )
-
-        # Uncomment to actually post:
-        # post = await client.call_tool("post_to_bluesky", {
-        #     "text": "Testing ATProto MCP server with FastMCP! 🚀"
-        # })
-        # if post.get("success"):
-        #     print(f"✅ Posted successfully: {post['uri']}")
+        # 5. Demo posting
+        if enable_posting:
+            print("\n5. Creating a test post...")
+            post = await client.call_tool(
+                "post_to_bluesky",
+                {
+                    "text": "🧪 Testing the ATProto MCP server demo! This post was created programmatically using FastMCP. #FastMCP #ATProto"
+                },
+            )
+            result = json.loads(post[0].text) if post else {}
+            if result.get("success"):
+                print("✅ Posted successfully!")
+                print(f"   URI: {result['uri']}")
+                print(f"   Created at: {result['created_at']}")
+            else:
+                print(f"❌ Failed to post: {result.get('error')}")
+        else:
+            print("\n5. Posting capability:")
+            print("   To enable posting, run with --post flag")
+            print("   Example: python demo.py --post")
 
         print("\n✨ Demo complete!")
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    parser = argparse.ArgumentParser(description="ATProto MCP Server Demo")
+    parser.add_argument(
+        "--post",
+        action="store_true",
+        help="Enable posting a test message to Bluesky",
+    )
+    args = parser.parse_args()
+
+    asyncio.run(main(enable_posting=args.post))
