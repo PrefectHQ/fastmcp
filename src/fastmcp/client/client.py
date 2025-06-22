@@ -7,6 +7,7 @@ from typing import Any, Generic, Literal, cast, overload
 import anyio
 import httpx
 import mcp.types
+import pydantic_core
 from exceptiongroup import catch
 from mcp import ClientSession
 from pydantic import AnyUrl
@@ -508,13 +509,13 @@ class Client(Generic[ClientTransportT]):
 
     # --- Prompt ---
     async def get_prompt_mcp(
-        self, name: str, arguments: dict[str, str] | None = None
+        self, name: str, arguments: dict[str, Any] | None = None
     ) -> mcp.types.GetPromptResult:
         """Send a prompts/get request and return the complete MCP protocol result.
 
         Args:
             name (str): The name of the prompt to retrieve.
-            arguments (dict[str, str] | None, optional): Arguments to pass to the prompt. Defaults to None.
+            arguments (dict[str, Any] | None, optional): Arguments to pass to the prompt. Defaults to None.
 
         Returns:
             mcp.types.GetPromptResult: The complete response object from the protocol,
@@ -523,17 +524,32 @@ class Client(Generic[ClientTransportT]):
         Raises:
             RuntimeError: If called while the client is not connected.
         """
-        result = await self.session.get_prompt(name=name, arguments=arguments)
+        # Serialize arguments for MCP protocol - convert non-string values to JSON
+        serialized_arguments: dict[str, str] | None = None
+        if arguments:
+            serialized_arguments = {}
+            for key, value in arguments.items():
+                if isinstance(value, str):
+                    serialized_arguments[key] = value
+                else:
+                    # Use pydantic_core.to_json for consistent serialization
+                    serialized_arguments[key] = pydantic_core.to_json(value).decode(
+                        "utf-8"
+                    )
+
+        result = await self.session.get_prompt(
+            name=name, arguments=serialized_arguments
+        )
         return result
 
     async def get_prompt(
-        self, name: str, arguments: dict[str, str] | None = None
+        self, name: str, arguments: dict[str, Any] | None = None
     ) -> mcp.types.GetPromptResult:
         """Retrieve a rendered prompt message list from the server.
 
         Args:
             name (str): The name of the prompt to retrieve.
-            arguments (dict[str, str] | None, optional): Arguments to pass to the prompt. Defaults to None.
+            arguments (dict[str, Any] | None, optional): Arguments to pass to the prompt. Defaults to None.
 
         Returns:
             mcp.types.GetPromptResult: The complete response object from the protocol,

@@ -220,6 +220,101 @@ async def test_get_prompt_mcp(fastmcp_server):
         assert result.description == "Example greeting prompt."
 
 
+async def test_client_serializes_all_non_string_arguments():
+    """Test that client always serializes non-string arguments to JSON, regardless of server types."""
+    server = FastMCP("TestServer")
+
+    @server.prompt
+    def echo_args(arg1: str, arg2: str, arg3: str) -> str:
+        """Server accepts all string args but client sends mixed types."""
+        return f"arg1: {arg1}, arg2: {arg2}, arg3: {arg3}"
+
+    client = Client(transport=FastMCPTransport(server))
+
+    async with client:
+        result = await client.get_prompt(
+            "echo_args",
+            {
+                "arg1": "hello",  # string - should pass through
+                "arg2": [1, 2, 3],  # list - should be JSON serialized
+                "arg3": {"key": "value"},  # dict - should be JSON serialized
+            },
+        )
+
+        content = result.messages[0].content.text  # type: ignore[attr-defined]
+        assert "arg1: hello" in content
+        assert "arg2: [1,2,3]" in content  # JSON serialized list
+        assert 'arg3: {"key":"value"}' in content  # JSON serialized dict
+
+
+async def test_client_server_type_conversion_integration():
+    """Test that client serialization works with server-side type conversion."""
+    server = FastMCP("TestServer")
+
+    @server.prompt
+    def typed_prompt(numbers: list[int], config: dict[str, str]) -> str:
+        """Server expects typed args - will convert from JSON strings."""
+        return f"Got {len(numbers)} numbers and {len(config)} config items"
+
+    client = Client(transport=FastMCPTransport(server))
+
+    async with client:
+        result = await client.get_prompt(
+            "typed_prompt",
+            {"numbers": [1, 2, 3, 4], "config": {"theme": "dark", "lang": "en"}},
+        )
+
+        content = result.messages[0].content.text  # type: ignore[attr-defined]
+        assert "Got 4 numbers and 2 config items" in content
+
+
+async def test_client_serialization_error():
+    """Test client error when object cannot be serialized."""
+    import pydantic_core
+
+    server = FastMCP("TestServer")
+
+    @server.prompt
+    def any_prompt(data: str) -> str:
+        return f"Got: {data}"
+
+    # Create an unserializable object
+    class UnserializableClass:
+        def __init__(self):
+            self.func = lambda x: x  # functions can't be JSON serialized
+
+    client = Client(transport=FastMCPTransport(server))
+
+    async with client:
+        with pytest.raises(
+            pydantic_core.PydanticSerializationError, match="Unable to serialize"
+        ):
+            await client.get_prompt("any_prompt", {"data": UnserializableClass()})
+
+
+async def test_server_deserialization_error():
+    """Test server error when JSON string cannot be converted to expected type."""
+    from mcp import McpError
+
+    server = FastMCP("TestServer")
+
+    @server.prompt
+    def strict_typed_prompt(numbers: list[int]) -> str:
+        """Expects list of integers but will receive invalid JSON."""
+        return f"Got {len(numbers)} numbers"
+
+    client = Client(transport=FastMCPTransport(server))
+
+    async with client:
+        with pytest.raises(McpError, match="Error rendering prompt"):
+            await client.get_prompt(
+                "strict_typed_prompt",
+                {
+                    "numbers": "not valid json"  # This will fail server-side conversion
+                },
+            )
+
+
 async def test_read_resource_invalid_uri(fastmcp_server):
     """Test reading a resource with an invalid URI."""
     client = Client(transport=FastMCPTransport(fastmcp_server))
