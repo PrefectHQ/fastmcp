@@ -271,7 +271,7 @@ async def test_client_server_type_conversion_integration():
 async def test_client_serialization_error():
     """Test client error when object cannot be serialized."""
     import pydantic_core
-    
+
     server = FastMCP("TestServer")
 
     @server.prompt
@@ -286,7 +286,9 @@ async def test_client_serialization_error():
     client = Client(transport=FastMCPTransport(server))
 
     async with client:
-        with pytest.raises(pydantic_core.PydanticSerializationError, match="Unable to serialize"):
+        with pytest.raises(
+            pydantic_core.PydanticSerializationError, match="Unable to serialize"
+        ):
             await client.get_prompt("any_prompt", {"data": UnserializableClass()})
 
 
