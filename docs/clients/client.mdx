@@ -1,7 +1,7 @@
 ---
-title: Client Overview
+title: The FastMCP Client
 sidebarTitle: Overview
-description: Learn how to use the FastMCP Client to programmatically interact with MCP servers.
+description: Programmatic client for interacting with MCP servers through a well-typed, Pythonic interface.
 icon: user-robot
 ---
 
@@ -9,20 +9,24 @@ import { VersionBadge } from '/snippets/version-badge.mdx'
 
 <VersionBadge version="2.0.0" />
 
-The `fastmcp.Client` is a **programmatic client** for interacting with any Model Context Protocol (MCP) server. It provides a high-level, well-typed, Pythonic interface for deterministic MCP access, making it ideal for:
+The central piece of MCP client applications is the `fastmcp.Client` class. This class provides a **programmatic interface** for interacting with any Model Context Protocol (MCP) server, handling protocol details and connection management automatically.
+
+The FastMCP Client is designed for deterministic, controlled interactions rather than autonomous behavior, making it ideal for:
 
 - **Testing MCP servers** during development
-- **Building deterministic applications** that need reliable MCP interactions
+- **Building deterministic applications** that need reliable MCP interactions  
 - **Creating the foundation for agentic or LLM-based clients** with structured, type-safe operations
+
+All client operations require using the `async with` context manager for proper connection lifecycle management.
 
 
 <Note>
 This is not an agentic client - it requires explicit function calls and provides direct control over all MCP operations. Use it as a building block for higher-level systems.
 </Note>
 
-## Quick Start
+## Creating a Client
 
-Note that all client operations require using the `async with` context manager for proper connection lifecycle management. The client uses transport inference to automatically determine the connection method.
+Creating a client is straightforward. You provide a server source and the client automatically infers the appropriate transport mechanism.
 
 ```python
 import asyncio
@@ -157,16 +161,57 @@ async def example():
     print(f"Connected: {client.is_connected()}")
 ```
 
-## Core Operations
+## Operations
 
-The client provides methods for all standard MCP operations:
+FastMCP clients can interact with several types of server components:
 
-| Operation | Method | Description |
-|-----------|--------|-------------|
-| **Tools** | `list_tools()`, `call_tool()` | Execute server-side functions |
-| **Resources** | `list_resources()`, `read_resource()` | Access server data sources |
-| **Prompts** | `list_prompts()`, `get_prompt()` | Retrieve message templates |
-| **Utility** | `ping()` | Test server connectivity |
+### Tools
+
+Tools are server-side functions that the client can execute with arguments.
+
+```python
+async with client:
+    # List available tools
+    tools = await client.list_tools()
+    
+    # Execute a tool
+    result = await client.call_tool("multiply", {"a": 5, "b": 3})
+    print(result[0].text)  # "15"
+```
+
+See [Tools](/clients/tools) for detailed documentation.
+
+### Resources
+
+Resources are data sources that the client can read, either static or templated.
+
+```python
+async with client:
+    # List available resources
+    resources = await client.list_resources()
+    
+    # Read a resource
+    content = await client.read_resource("file:///config/settings.json")
+    print(content[0].text)
+```
+
+See [Resources](/clients/resources) for detailed documentation.
+
+### Prompts
+
+Prompts are reusable message templates that can accept arguments.
+
+```python
+async with client:
+    # List available prompts
+    prompts = await client.list_prompts()
+    
+    # Get a rendered prompt
+    messages = await client.get_prompt("analyze_data", {"data": [1, 2, 3]})
+    print(messages.messages)
+```
+
+See [Prompts](/clients/prompts) for detailed documentation.
 
 ### Server Connectivity
 
@@ -177,6 +222,50 @@ async with client:
     await client.ping()
     print("Server is reachable")
 ```
+
+## Client Configuration
+
+Clients can be configured with additional handlers and settings for specialized use cases.
+
+### Callback Handlers
+
+The client supports several callback handlers for advanced server interactions:
+
+```python
+from fastmcp import Client
+from fastmcp.client.logging import LogMessage
+
+async def log_handler(message: LogMessage):
+    print(f"Server log: {message.data}")
+
+async def progress_handler(progress: float, total: float | None, message: str | None):
+    print(f"Progress: {progress}/{total} - {message}")
+
+async def sampling_handler(messages, params, context):
+    # Integrate with your LLM service here
+    return "Generated response"
+
+client = Client(
+    "my_mcp_server.py",
+    log_handler=log_handler,
+    progress_handler=progress_handler,
+    sampling_handler=sampling_handler,
+    timeout=30.0
+)
+```
+
+The `Client` constructor accepts several configuration options:
+
+- `transport`: Transport instance or source for automatic inference  
+- `log_handler`: Handle server log messages
+- `progress_handler`: Monitor long-running operations
+- `sampling_handler`: Respond to server LLM requests
+- `roots`: Provide local context to servers
+- `timeout`: Default timeout for requests (in seconds)
+
+### Transport Configuration
+
+For detailed transport configuration (headers, authentication, environment variables), see the [Transports](/clients/transports) documentation.
 
 ## Next Steps
 

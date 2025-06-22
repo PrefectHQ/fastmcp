@@ -63,7 +63,7 @@
           {
             "group": "Servers",
             "pages": [
-              "servers/fastmcp",
+              "servers/server",
               {
                 "group": "Core Components",
                 "icon": "toolbox",
