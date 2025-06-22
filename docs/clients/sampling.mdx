@@ -1,0 +1,94 @@
+---
+title: LLM Sampling
+sidebarTitle: Sampling
+description: Learn how to handle server-initiated LLM sampling requests.
+icon: brain
+---
+
+import { VersionBadge } from '/snippets/version-badge.mdx'
+
+<VersionBadge version="2.0.0" />
+
+MCP servers can request LLM completions from clients. The client handles these requests through a sampling handler callback.
+
+## Setting Up Sampling Handling
+
+Provide a `sampling_handler` function when creating the client:
+
+```python
+from fastmcp import Client
+from fastmcp.client.sampling import (
+    SamplingMessage,
+    SamplingParams,
+    RequestContext,
+)
+
+async def sampling_handler(
+    messages: list[SamplingMessage],
+    params: SamplingParams,
+    context: RequestContext
+) -> str:
+    # Your LLM integration logic here
+    # Extract text from messages and generate a response
+    return "Generated response based on the messages"
+
+client = Client(
+    "my_mcp_server.py",
+    sampling_handler=sampling_handler,
+)
+```
+
+## Handler Parameters
+
+The sampling handler receives:
+
+- **`messages`**: List of `SamplingMessage` objects representing the conversation
+- **`params`**: `SamplingParams` object with generation parameters (systemPrompt, maxTokens, temperature, etc.)
+- **`context`**: `RequestContext` object with request metadata
+
+## Basic Example
+
+```python
+async def basic_sampling_handler(
+    messages: list[SamplingMessage],
+    params: SamplingParams,
+    context: RequestContext
+) -> str:
+    # Extract message content
+    conversation = []
+    for message in messages:
+        content = message.content.text if hasattr(message.content, 'text') else str(message.content)
+        conversation.append(f"{message.role}: {content}")
+    
+    # Use the system prompt if provided
+    system_prompt = params.systemPrompt or "You are a helpful assistant."
+    
+    # Here you would integrate with your preferred LLM service
+    # This is just a placeholder response
+    return f"Response based on conversation: {' | '.join(conversation)}"
+
+client = Client(
+    "my_mcp_server.py",
+    sampling_handler=basic_sampling_handler
+)
+```
+
+## Accessing Parameters
+
+```python
+async def parameter_handler(
+    messages: list[SamplingMessage],
+    params: SamplingParams,
+    context: RequestContext
+) -> str:
+    # Available parameters from the server
+    system_prompt = params.systemPrompt
+    max_tokens = params.maxTokens
+    temperature = params.temperature
+    top_p = params.topP
+    stop_sequences = params.stopSequences
+    
+    # Use these parameters with your LLM service
+    return "Generated response"
+```
+

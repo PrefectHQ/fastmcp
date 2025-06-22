@@ -1,0 +1,63 @@
+---
+title: Server Logging
+sidebarTitle: Logging
+description: Learn how to receive and handle log messages from MCP servers.
+icon: file-text
+---
+
+import { VersionBadge } from '/snippets/version-badge.mdx'
+
+<VersionBadge version="2.0.0" />
+
+MCP servers can emit log messages to clients. The client can handle these logs through a log handler callback.
+
+## Setting Up Log Handling
+
+Provide a `log_handler` function when creating the client:
+
+```python
+from fastmcp import Client
+from fastmcp.client.logging import LogMessage
+
+async def log_handler(message: LogMessage):
+    level = message.level.upper()
+    logger = message.logger or 'server'
+    data = message.data
+    print(f"[{level}] {logger}: {data}")
+
+client = Client(
+    "my_mcp_server.py",
+    log_handler=log_handler,
+)
+```
+
+## LogMessage Structure
+
+The `log_handler` receives a `LogMessage` object with:
+
+- **`level`**: Log level (e.g., "debug", "info", "warning", "error")
+- **`logger`**: Logger name (optional, may be None)
+- **`data`**: The actual log message content
+
+```python
+async def detailed_log_handler(message: LogMessage):
+    if message.level == "error":
+        print(f"ERROR: {message.data}")
+    elif message.level == "warning":
+        print(f"WARNING: {message.data}")
+    else:
+        print(f"{message.level.upper()}: {message.data}")
+```
+
+## Default Log Handling
+
+If you don't provide a custom `log_handler`, FastMCP uses a default handler that emits DEBUG level logs:
+
+```python
+# Without custom handler - uses default DEBUG logging
+client = Client("my_mcp_server.py")
+
+async with client:
+    # Server logs will be emitted at DEBUG level
+    await client.call_tool("some_tool")
+```

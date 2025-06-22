@@ -94,13 +94,31 @@
             "group": "Clients",
             "pages": [
               "clients/client",
+              {
+                "group": "Core Interactions",
+                "icon": "handshake",
+                "pages": [
+                  "clients/tools",
+                  "clients/resources",
+                  "clients/prompts"
+                ]
+              },
+              {
+                "group": "Advanced Features",
+                "icon": "stars",
+                "pages": [
+                  "clients/logging",
+                  "clients/progress",
+                  "clients/sampling",
+                  "clients/roots"
+                ]
+              },
               "clients/transports",
               {
                 "group": "Authentication",
                 "icon": "user-shield",
                 "pages": ["clients/auth/oauth", "clients/auth/bearer"]
-              },
-              "clients/advanced-features"
+              }
             ]
           },
           {
