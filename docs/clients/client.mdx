@@ -234,6 +234,30 @@ The standard client methods return user-friendly representations that may change
 *   **`list_prompts()`**: Retrieves available prompt templates.
 *   **`get_prompt(name: str, arguments: dict[str, Any] | None = None)`**: Retrieves a rendered prompt message list.
 
+<VersionBadge version="2.9.0" />
+
+**Automatic Argument Serialization**: When calling prompts with complex arguments, the FastMCP client automatically serializes non-string values to JSON strings as required by the MCP specification. This allows you to pass typed objects directly while maintaining protocol compliance.
+
+```python
+from dataclasses import dataclass
+
+@dataclass
+class UserData:
+    name: str
+    age: int
+
+async with client:
+    # You can pass complex objects directly
+    result = await client.get_prompt("analyze_user", {
+        "user": UserData(name="Alice", age=30),     # Automatically serialized to JSON
+        "preferences": {"theme": "dark"},           # Dict serialized to JSON string
+        "scores": [85, 92, 78],                     # List serialized to JSON string
+        "simple_name": "Bob"                        # Strings passed through unchanged
+    })
+```
+
+The client handles the serialization automatically using `pydantic_core.to_json()` for consistent formatting, while the server can deserialize these JSON strings back to the expected types if using FastMCP's server-side type conversion.
+
 ### Raw MCP Protocol Objects
 
 <VersionBadge version="2.2.7" />
