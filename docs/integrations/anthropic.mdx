@@ -31,7 +31,7 @@ def roll_dice(n_dice: int) -> list[int]:
     return [random.randint(1, 6) for _ in range(n_dice)]
 
 if __name__ == "__main__":
-    mcp.run(transport="sse", port=8000)
+    mcp.run(transport="streamable-http", port=8000)
 ```
 
 ## Deploy the Server
@@ -70,7 +70,7 @@ You'll also need to authenticate with Anthropic. You can do this by setting the 
 export ANTHROPIC_API_KEY="your-api-key"
 ```
 
-Here is an example of how to call your server from Python. Note that you'll need to replace `https://your-server-url.com` with the actual URL of your server. In addition, we use `/sse` as the endpoint because we deployed an SSE server with the default path; you may need to use a different endpoint if you customized your server's deployment. **At this time you must also include the `extra_headers` parameter with the `anthropic-beta` header.**
+Here is an example of how to call your server from Python. Note that you'll need to replace `https://your-server-url.com` with the actual URL of your server. In addition, we use `/mcp/` as the endpoint because we deployed a streamable-HTTP server with the default path; you may need to use a different endpoint if you customized your server's deployment. **At this time you must also include the `extra_headers` parameter with the `anthropic-beta` header.**
 
 ```python {5, 13-22}
 import anthropic
@@ -88,7 +88,7 @@ response = client.beta.messages.create(
     mcp_servers=[
         {
             "type": "url",
-            "url": f"{url}/sse",
+            "url": f"{url}/mcp/",
             "name": "dice-server",
         }
     ],
@@ -175,7 +175,7 @@ def roll_dice(n_dice: int) -> list[int]:
 
 if __name__ == "__main__":
     print(f"\n---\n\n🔑 Dice Roller access token:\n\n{access_token}\n\n---\n")
-    mcp.run(transport="sse", port=8000)
+    mcp.run(transport="streamable-http", port=8000)
 ```
 
 ### Client Authentication
@@ -213,7 +213,7 @@ response = client.beta.messages.create(
     mcp_servers=[
         {
             "type": "url",
-            "url": f"{url}/sse",
+            "url": f"{url}/mcp/",
             "name": "dice-server",
             "authorization_token": access_token
         }
