@@ -4,7 +4,8 @@ import re
 from typing import TYPE_CHECKING, Annotated, Any, Literal
 from urllib.parse import urlparse
 
-from pydantic import AnyUrl, Field
+import httpx
+from pydantic import AnyUrl, ConfigDict, Field
 
 from fastmcp.utilities.types import FastMCPBaseModel
 
@@ -59,11 +60,13 @@ class RemoteMCPServer(FastMCPBaseModel):
     headers: dict[str, str] = Field(default_factory=dict)
     transport: Literal["streamable-http", "sse"] | None = None
     auth: Annotated[
-        str | Literal["oauth"] | None,
+        str | Literal["oauth"] | httpx.Auth | None,
         Field(
-            description='Either a string representing a Bearer token or the literal "oauth" to use OAuth authentication.'
+            description='Either a string representing a Bearer token, the literal "oauth" to use OAuth authentication, or an httpx.Auth instance for custom authentication.',
         ),
     ] = None
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     def to_transport(self) -> StreamableHttpTransport | SSETransport:
         from fastmcp.client.transports import SSETransport, StreamableHttpTransport
