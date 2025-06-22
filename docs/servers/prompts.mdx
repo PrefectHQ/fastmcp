@@ -59,6 +59,8 @@ Functions with `*args` or `**kwargs` are not supported as prompts. This restrict
 
 ### Argument Types
 
+<VersionBadge version="2.9.0" />
+
 The MCP specification requires that all prompt arguments be passed as strings, but FastMCP allows you to use typed annotations for better developer experience. When you use complex types like `list[int]` or `dict[str, str]`, FastMCP:
 
 1. **Automatically converts** string arguments from MCP clients to the expected types
