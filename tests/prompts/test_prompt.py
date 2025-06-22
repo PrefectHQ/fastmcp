@@ -388,34 +388,19 @@ class TestPromptArgumentDescriptions:
 
         # Check that non-string parameters have schema enhancements
         numbers_arg = next(arg for arg in prompt.arguments if arg.name == "numbers")
-        assert (
-            "Arguments must be strings conforming to this JSON schema:"
-            in numbers_arg.description
-        )
+        assert "Provide as a JSON string matching the following schema:" in numbers_arg.description
         assert '{"items":{"type":"integer"},"type":"array"}' in numbers_arg.description
 
         metadata_arg = next(arg for arg in prompt.arguments if arg.name == "metadata")
-        assert (
-            "Arguments must be strings conforming to this JSON schema:"
-            in metadata_arg.description
-        )
-        assert (
-            '{"additionalProperties":{"type":"string"},"type":"object"}'
-            in metadata_arg.description
-        )
+        assert "Provide as a JSON string matching the following schema:" in metadata_arg.description
+        assert '{"additionalProperties":{"type":"string"},"type":"object"}' in metadata_arg.description
 
         threshold_arg = next(arg for arg in prompt.arguments if arg.name == "threshold")
-        assert (
-            "Arguments must be strings conforming to this JSON schema:"
-            in threshold_arg.description
-        )
+        assert "Provide as a JSON string matching the following schema:" in threshold_arg.description
         assert '{"type":"number"}' in threshold_arg.description
 
         active_arg = next(arg for arg in prompt.arguments if arg.name == "active")
-        assert (
-            "Arguments must be strings conforming to this JSON schema:"
-            in active_arg.description
-        )
+        assert "Provide as a JSON string matching the following schema:" in active_arg.description
         assert '{"type":"boolean"}' in active_arg.description
 
     def test_enhanced_descriptions_with_existing_descriptions(self):
@@ -439,10 +424,7 @@ class TestPromptArgumentDescriptions:
         assert numbers_arg.description is not None
         assert "A list of integers to process" in numbers_arg.description
         assert "\n\n" in numbers_arg.description  # Should have newline separator
-        assert (
-            "Arguments must be strings conforming to this JSON schema:"
-            in numbers_arg.description
-        )
+        assert "Provide as a JSON string matching the following schema:" in numbers_arg.description
 
     def test_string_parameters_no_enhancement(self):
         """Test that string parameters don't get schema enhancement."""
@@ -455,7 +437,4 @@ class TestPromptArgumentDescriptions:
         for arg in prompt.arguments:
             # String parameters should not have schema enhancement
             if arg.description:
-                assert (
-                    "Arguments must be strings conforming to this JSON schema:"
-                    not in arg.description
-                )
+                assert "Provide as a JSON string matching the following schema:" not in arg.description

@@ -1812,29 +1812,15 @@ class TestPrompts:
 
             # Non-string parameters should have schema enhancements
             numbers_arg = args_by_name["numbers"]
-            assert (
-                "Arguments must be strings conforming to this JSON schema:"
-                in numbers_arg.description
-            )
-            assert (
-                '{"items":{"type":"integer"},"type":"array"}' in numbers_arg.description
-            )
+            assert "Provide as a JSON string matching the following schema:" in numbers_arg.description
+            assert '{"items":{"type":"integer"},"type":"array"}' in numbers_arg.description
 
             metadata_arg = args_by_name["metadata"]
-            assert (
-                "Arguments must be strings conforming to this JSON schema:"
-                in metadata_arg.description
-            )
-            assert (
-                '{"additionalProperties":{"type":"string"},"type":"object"}'
-                in metadata_arg.description
-            )
+            assert "Provide as a JSON string matching the following schema:" in metadata_arg.description
+            assert '{"additionalProperties":{"type":"string"},"type":"object"}' in metadata_arg.description
 
             threshold_arg = args_by_name["threshold"]
-            assert (
-                "Arguments must be strings conforming to this JSON schema:"
-                in threshold_arg.description
-            )
+            assert "Provide as a JSON string matching the following schema:" in threshold_arg.description
             assert '{"type":"number"}' in threshold_arg.description
 
     async def test_get_prompt(self):

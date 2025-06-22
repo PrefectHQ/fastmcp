@@ -198,7 +198,7 @@ class FunctionPrompt(Prompt):
                             schema_str = json.dumps(param_schema, separators=(",", ":"))
 
                             # Append schema info to description
-                            schema_note = f"Arguments must be strings conforming to this JSON schema: {schema_str}"
+                            schema_note = f"Provide as a JSON string matching the following schema: {schema_str}"
                             if arg_description:
                                 arg_description = f"{arg_description}\n\n{schema_note}"
                             else:
