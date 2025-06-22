@@ -1,0 +1,542 @@
+---
+title: server
+sidebarTitle: server
+---
+
+# `fastmcp.server.server`
+
+
+FastMCP - A more ergonomic interface for MCP servers.
+
+## Functions
+
+### `add_resource_prefix`
+
+```python
+add_resource_prefix(uri: str, prefix: str, prefix_format: Literal['protocol', 'path'] | None = None) -> str
+```
+
+
+Add a prefix to a resource URI.
+
+    Args:
+        uri: The original resource URI
+        prefix: The prefix to add
+
+    Returns:
+        The resource URI with the prefix added
+
+    Examples:
+        >>> add_resource_prefix("resource://path/to/resource", "prefix")
+        "resource://prefix/path/to/resource"  # with new style
+        >>> add_resource_prefix("resource://path/to/resource", "prefix")
+        "prefix+resource://path/to/resource"  # with legacy style
+        >>> add_resource_prefix("resource:///absolute/path", "prefix")
+        "resource://prefix//absolute/path"  # with new style
+
+    Raises:
+        ValueError: If the URI doesn't match the expected protocol://path format
+    
+
+### `remove_resource_prefix`
+
+```python
+remove_resource_prefix(uri: str, prefix: str, prefix_format: Literal['protocol', 'path'] | None = None) -> str
+```
+
+
+Remove a prefix from a resource URI.
+
+    Args:
+        uri: The resource URI with a prefix
+        prefix: The prefix to remove
+        prefix_format: The format of the prefix to remove
+    Returns:
+        The resource URI with the prefix removed
+
+    Examples:
+        >>> remove_resource_prefix("resource://prefix/path/to/resource", "prefix")
+        "resource://path/to/resource"  # with new style
+        >>> remove_resource_prefix("prefix+resource://path/to/resource", "prefix")
+        "resource://path/to/resource"  # with legacy style
+        >>> remove_resource_prefix("resource://prefix//absolute/path", "prefix")
+        "resource:///absolute/path"  # with new style
+
+    Raises:
+        ValueError: If the URI doesn't match the expected protocol://path format
+    
+
+### `has_resource_prefix`
+
+```python
+has_resource_prefix(uri: str, prefix: str, prefix_format: Literal['protocol', 'path'] | None = None) -> bool
+```
+
+
+Check if a resource URI has a specific prefix.
+
+    Args:
+        uri: The resource URI to check
+        prefix: The prefix to look for
+
+    Returns:
+        True if the URI has the specified prefix, False otherwise
+
+    Examples:
+        >>> has_resource_prefix("resource://prefix/path/to/resource", "prefix")
+        True  # with new style
+        >>> has_resource_prefix("prefix+resource://path/to/resource", "prefix")
+        True  # with legacy style
+        >>> has_resource_prefix("resource://other/path/to/resource", "prefix")
+        False
+
+    Raises:
+        ValueError: If the URI doesn't match the expected protocol://path format
+    
+
+## Classes
+
+### `FastMCP`
+
+**Methods:**
+
+#### `settings`
+
+```python
+settings(self) -> Settings
+```
+
+#### `name`
+
+```python
+name(self) -> str
+```
+
+#### `instructions`
+
+```python
+instructions(self) -> str | None
+```
+
+#### `run`
+
+```python
+run(self, transport: Literal['stdio', 'streamable-http', 'sse'] | None = None, **transport_kwargs: Any) -> None
+```
+
+Run the FastMCP server. Note this is a synchronous function.
+
+**Args:**
+- `transport`: Transport protocol to use ("stdio", "sse", or "streamable-http")
+
+
+#### `add_middleware`
+
+```python
+add_middleware(self, middleware: Middleware) -> None
+```
+
+#### `custom_route`
+
+```python
+custom_route(self, path: str, methods: list[str], name: str | None = None, include_in_schema: bool = True)
+```
+
+Decorator to register a custom HTTP route on the FastMCP server.
+
+Allows adding arbitrary HTTP endpoints outside the standard MCP protocol,
+which can be useful for OAuth callbacks, health checks, or admin APIs.
+The handler function must be an async function that accepts a Starlette
+Request and returns a Response.
+
+**Args:**
+- `path`: URL path for the route (e.g., "/oauth/callback")
+- `methods`: List of HTTP methods to support (e.g., ["GET", "POST"])
+- `name`: Optional name for the route (to reference this route with
+Starlette's reverse URL lookup feature)
+- `include_in_schema`: Whether to include in OpenAPI schema, defaults to True
+
+
+#### `add_tool`
+
+```python
+add_tool(self, tool: Tool) -> None
+```
+
+Add a tool to the server.
+
+The tool function can optionally request a Context object by adding a parameter
+with the Context type annotation. See the @tool decorator for examples.
+
+**Args:**
+- `tool`: The Tool instance to register
+
+
+#### `remove_tool`
+
+```python
+remove_tool(self, name: str) -> None
+```
+
+Remove a tool from the server.
+
+**Args:**
+- `name`: The name of the tool to remove
+
+**Raises:**
+- `NotFoundError`: If the tool is not found
+
+
+#### `tool`
+
+```python
+tool(self, name_or_fn: AnyFunction) -> FunctionTool
+```
+
+#### `tool`
+
+```python
+tool(self, name_or_fn: str | None = None) -> Callable[[AnyFunction], FunctionTool]
+```
+
+#### `tool`
+
+```python
+tool(self, name_or_fn: str | AnyFunction | None = None) -> Callable[[AnyFunction], FunctionTool] | FunctionTool
+```
+
+Decorator to register a tool.
+
+Tools can optionally request a Context object by adding a parameter with the
+Context type annotation. The context provides access to MCP capabilities like
+logging, progress reporting, and resource access.
+
+This decorator supports multiple calling patterns:
+- @server.tool (without parentheses)
+- @server.tool (with empty parentheses)
+- @server.tool("custom_name") (with name as first argument)
+- @server.tool(name="custom_name") (with name as keyword argument)
+- server.tool(function, name="custom_name") (direct function call)
+
+**Args:**
+- `name_or_fn`: Either a function (when used as @tool), a string name, or None
+- `name`: Optional name for the tool (keyword-only, alternative to name_or_fn)
+- `description`: Optional description of what the tool does
+- `tags`: Optional set of tags for categorizing the tool
+- `annotations`: Optional annotations about the tool's behavior (e.g. {"is_async"\: True})
+- `exclude_args`: Optional list of argument names to exclude from the tool schema
+- `enabled`: Optional boolean to enable or disable the tool
+
+
+#### `add_resource`
+
+```python
+add_resource(self, resource: Resource) -> None
+```
+
+Add a resource to the server.
+
+**Args:**
+- `resource`: A Resource instance to add
+
+
+#### `add_template`
+
+```python
+add_template(self, template: ResourceTemplate) -> None
+```
+
+Add a resource template to the server.
+
+**Args:**
+- `template`: A ResourceTemplate instance to add
+
+
+#### `add_resource_fn`
+
+```python
+add_resource_fn(self, fn: AnyFunction, uri: str, name: str | None = None, description: str | None = None, mime_type: str | None = None, tags: set[str] | None = None) -> None
+```
+
+Add a resource or template to the server from a function.
+
+If the URI contains parameters (e.g. "resource://{param}") or the function
+has parameters, it will be registered as a template resource.
+
+**Args:**
+- `fn`: The function to register as a resource
+- `uri`: The URI for the resource
+- `name`: Optional name for the resource
+- `description`: Optional description of the resource
+- `mime_type`: Optional MIME type for the resource
+- `tags`: Optional set of tags for categorizing the resource
+
+
+#### `resource`
+
+```python
+resource(self, uri: str) -> Callable[[AnyFunction], Resource | ResourceTemplate]
+```
+
+Decorator to register a function as a resource.
+
+The function will be called when the resource is read to generate its content.
+The function can return:
+- str for text content
+- bytes for binary content
+- other types will be converted to JSON
+
+Resources can optionally request a Context object by adding a parameter with the
+Context type annotation. The context provides access to MCP capabilities like
+logging, progress reporting, and session information.
+
+If the URI contains parameters (e.g. "resource://{param}") or the function
+has parameters, it will be registered as a template resource.
+
+**Args:**
+- `uri`: URI for the resource (e.g. "resource\://my-resource" or "resource\://{param}")
+- `name`: Optional name for the resource
+- `description`: Optional description of the resource
+- `mime_type`: Optional MIME type for the resource
+- `tags`: Optional set of tags for categorizing the resource
+- `enabled`: Optional boolean to enable or disable the resource
+
+
+#### `add_prompt`
+
+```python
+add_prompt(self, prompt: Prompt) -> None
+```
+
+Add a prompt to the server.
+
+**Args:**
+- `prompt`: A Prompt instance to add
+
+
+#### `prompt`
+
+```python
+prompt(self, name_or_fn: AnyFunction) -> FunctionPrompt
+```
+
+#### `prompt`
+
+```python
+prompt(self, name_or_fn: str | None = None) -> Callable[[AnyFunction], FunctionPrompt]
+```
+
+#### `prompt`
+
+```python
+prompt(self, name_or_fn: str | AnyFunction | None = None) -> Callable[[AnyFunction], FunctionPrompt] | FunctionPrompt
+```
+
+Decorator to register a prompt.
+
+        Prompts can optionally request a Context object by adding a parameter with the
+        Context type annotation. The context provides access to MCP capabilities like
+        logging, progress reporting, and session information.
+
+        This decorator supports multiple calling patterns:
+        - @server.prompt (without parentheses)
+        - @server.prompt() (with empty parentheses)
+        - @server.prompt("custom_name") (with name as first argument)
+        - @server.prompt(name="custom_name") (with name as keyword argument)
+        - server.prompt(function, name="custom_name") (direct function call)
+
+        Args:
+            name_or_fn: Either a function (when used as @prompt), a string name, or None
+            name: Optional name for the prompt (keyword-only, alternative to name_or_fn)
+            description: Optional description of what the prompt does
+            tags: Optional set of tags for categorizing the prompt
+            enabled: Optional boolean to enable or disable the prompt
+
+        Example:
+            @server.prompt
+            def analyze_table(table_name: str) -> list\[Message]:
+                schema = read_table_schema(table_name)
+                return [
+                    {
+                        "role": "user",
+                        "content": f"Analyze this schema:
+{schema}"
+                    }
+                ]
+
+            @server.prompt()
+            def analyze_with_context(table_name: str, ctx: Context) -> list\[Message]:
+                ctx.info(f"Analyzing table {table_name}")
+                schema = read_table_schema(table_name)
+                return [
+                    {
+                        "role": "user",
+                        "content": f"Analyze this schema:
+{schema}"
+                    }
+                ]
+
+            @server.prompt("custom_name")
+            def analyze_file(path: str) -> list\[Message]:
+                content = await read_file(path)
+                return [
+                    {
+                        "role": "user",
+                        "content": {
+                            "type": "resource",
+                            "resource": {
+                                "uri": f"file://{path}",
+                                "text": content
+                            }
+                        }
+                    }
+                ]
+
+            @server.prompt(name="custom_name")
+            def another_prompt(data: str) -> list\[Message]:
+                return [{"role": "user", "content": data}]
+
+            # Direct function call
+            server.prompt(my_function, name="custom_name")
+
+
+#### `sse_app`
+
+```python
+sse_app(self, path: str | None = None, message_path: str | None = None, middleware: list[ASGIMiddleware] | None = None) -> StarletteWithLifespan
+```
+
+Create a Starlette app for the SSE server.
+
+**Args:**
+- `path`: The path to the SSE endpoint
+- `message_path`: The path to the message endpoint
+- `middleware`: A list of middleware to apply to the app
+
+
+#### `streamable_http_app`
+
+```python
+streamable_http_app(self, path: str | None = None, middleware: list[ASGIMiddleware] | None = None) -> StarletteWithLifespan
+```
+
+Create a Starlette app for the StreamableHTTP server.
+
+**Args:**
+- `path`: The path to the StreamableHTTP endpoint
+- `middleware`: A list of middleware to apply to the app
+
+
+#### `http_app`
+
+```python
+http_app(self, path: str | None = None, middleware: list[ASGIMiddleware] | None = None, json_response: bool | None = None, stateless_http: bool | None = None, transport: Literal['streamable-http', 'sse'] = 'streamable-http') -> StarletteWithLifespan
+```
+
+Create a Starlette app using the specified HTTP transport.
+
+**Args:**
+- `path`: The path for the HTTP endpoint
+- `middleware`: A list of middleware to apply to the app
+- `transport`: Transport protocol to use - either "streamable-http" (default) or "sse"
+
+**Returns:**
+- A Starlette application configured with the specified transport
+
+
+#### `mount`
+
+```python
+mount(self, server: FastMCP[LifespanResultT], prefix: str | None = None, as_proxy: bool | None = None) -> None
+```
+
+Mount another FastMCP server on this server with an optional prefix.
+
+Unlike importing (with import_server), mounting establishes a dynamic connection
+between servers. When a client interacts with a mounted server's objects through
+the parent server, requests are forwarded to the mounted server in real-time.
+This means changes to the mounted server are immediately reflected when accessed
+through the parent.
+
+When a server is mounted with a prefix:
+- Tools from the mounted server are accessible with prefixed names.
+  Example: If server has a tool named "get_weather", it will be available as "prefix_get_weather".
+- Resources are accessible with prefixed URIs.
+  Example: If server has a resource with URI "weather://forecast", it will be available as
+  "weather://prefix/forecast".
+- Templates are accessible with prefixed URI templates.
+  Example: If server has a template with URI "weather://location/{id}", it will be available
+  as "weather://prefix/location/{id}".
+- Prompts are accessible with prefixed names.
+  Example: If server has a prompt named "weather_prompt", it will be available as
+  "prefix_weather_prompt".
+
+When a server is mounted without a prefix (prefix=None), its tools, resources, templates,
+and prompts are accessible with their original names. Multiple servers can be mounted
+without prefixes, and they will be tried in order until a match is found.
+
+There are two modes for mounting servers:
+1. Direct mounting (default when server has no custom lifespan): The parent server
+   directly accesses the mounted server's objects in-memory for better performance.
+   In this mode, no client lifecycle events occur on the mounted server, including
+   lifespan execution.
+
+2. Proxy mounting (default when server has a custom lifespan): The parent server
+   treats the mounted server as a separate entity and communicates with it via a
+   Client transport. This preserves all client-facing behaviors, including lifespan
+   execution, but with slightly higher overhead.
+
+**Args:**
+- `server`: The FastMCP server to mount.
+- `prefix`: Optional prefix to use for the mounted server's objects. If None,
+the server's objects are accessible with their original names.
+- `as_proxy`: Whether to treat the mounted server as a proxy. If None (default),
+automatically determined based on whether the server has a custom lifespan
+(True if it has a custom lifespan, False otherwise).
+- `tool_separator`: Deprecated. Separator character for tool names.
+- `resource_separator`: Deprecated. Separator character for resource URIs.
+- `prompt_separator`: Deprecated. Separator character for prompt names.
+
+
+#### `from_openapi`
+
+```python
+from_openapi(cls, openapi_spec: dict[str, Any], client: httpx.AsyncClient, route_maps: list[RouteMap] | None = None, route_map_fn: OpenAPIRouteMapFn | None = None, mcp_component_fn: OpenAPIComponentFn | None = None, mcp_names: dict[str, str] | None = None, tags: set[str] | None = None, **settings: Any) -> FastMCPOpenAPI
+```
+
+Create a FastMCP server from an OpenAPI specification.
+
+
+#### `from_fastapi`
+
+```python
+from_fastapi(cls, app: Any, name: str | None = None, route_maps: list[RouteMap] | None = None, route_map_fn: OpenAPIRouteMapFn | None = None, mcp_component_fn: OpenAPIComponentFn | None = None, mcp_names: dict[str, str] | None = None, httpx_client_kwargs: dict[str, Any] | None = None, tags: set[str] | None = None, **settings: Any) -> FastMCPOpenAPI
+```
+
+Create a FastMCP server from a FastAPI application.
+
+
+#### `as_proxy`
+
+```python
+as_proxy(cls, backend: Client[ClientTransportT] | ClientTransport | FastMCP[Any] | AnyUrl | Path | MCPConfig | dict[str, Any] | str, **settings: Any) -> FastMCPProxy
+```
+
+Create a FastMCP proxy server for the given backend.
+
+The ``backend`` argument can be either an existing :class:`~fastmcp.client.Client`
+instance or any value accepted as the ``transport`` argument of
+:class:`~fastmcp.client.Client`. This mirrors the convenience of the
+``Client`` constructor.
+
+
+#### `from_client`
+
+```python
+from_client(cls, client: Client[ClientTransportT], **settings: Any) -> FastMCPProxy
+```
+
+Create a FastMCP proxy server from a FastMCP client.
+
+
+### `MountedServer`

@@ -262,16 +262,18 @@ class OpenAPIParser(
 
             if isinstance(resolved_schema, (self.schema_cls)):
                 # Convert schema to dictionary
-                return resolved_schema.model_dump(
+                result = resolved_schema.model_dump(
                     mode="json", by_alias=True, exclude_none=True
                 )
             elif isinstance(resolved_schema, dict):
-                return resolved_schema
+                result = resolved_schema
             else:
                 logger.warning(
                     f"Expected Schema after resolving, got {type(resolved_schema)}. Returning empty dict."
                 )
-                return {}
+                result = {}
+
+            return _replace_ref_with_defs(result)
         except Exception as e:
             logger.error(f"Failed to extract schema as dict: {e}", exc_info=False)
             return {}

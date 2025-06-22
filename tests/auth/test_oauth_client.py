@@ -44,7 +44,7 @@ def run_server(host: str, port: int, **kwargs) -> None:
 @pytest.fixture(scope="module")
 def streamable_http_server() -> Generator[str, None, None]:
     with run_server_in_process(run_server, transport="streamable-http") as url:
-        yield f"{url}/mcp"
+        yield f"{url}/mcp/"
 
 
 @pytest.fixture()

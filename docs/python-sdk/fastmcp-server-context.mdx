@@ -1,0 +1,118 @@
+---
+title: context
+sidebarTitle: context
+---
+
+# `fastmcp.server.context`
+
+## Functions
+
+### `set_context`
+
+```python
+set_context(context: Context) -> Generator[Context, None, None]
+```
+
+## Classes
+
+### `Context`
+
+
+Context object providing access to MCP capabilities.
+
+This provides a cleaner interface to MCP's RequestContext functionality.
+It gets injected into tool and resource functions that request it via type hints.
+
+To use context in a tool function, add a parameter with the Context type annotation:
+
+```python
+@server.tool
+def my_tool(x: int, ctx: Context) -> str:
+    # Log messages to the client
+    ctx.info(f"Processing {x}")
+    ctx.debug("Debug info")
+    ctx.warning("Warning message")
+    ctx.error("Error message")
+
+    # Report progress
+    ctx.report_progress(50, 100, "Processing")
+
+    # Access resources
+    data = ctx.read_resource("resource://data")
+
+    # Get request info
+    request_id = ctx.request_id
+    client_id = ctx.client_id
+
+    return str(x)
+```
+
+The context parameter name can be anything as long as it's annotated with Context.
+The context is optional - tools that don't need it can omit the parameter.
+
+
+**Methods:**
+
+#### `request_context`
+
+```python
+request_context(self) -> RequestContext
+```
+
+Access to the underlying request context.
+
+If called outside of a request context, this will raise a ValueError.
+
+
+#### `client_id`
+
+```python
+client_id(self) -> str | None
+```
+
+Get the client ID if available.
+
+
+#### `request_id`
+
+```python
+request_id(self) -> str
+```
+
+Get the unique ID for this request.
+
+
+#### `session_id`
+
+```python
+session_id(self) -> str | None
+```
+
+Get the MCP session ID for HTTP transports.
+
+Returns the session ID that can be used as a key for session-based
+data storage (e.g., Redis) to share data between tool calls within
+the same client session.
+
+**Returns:**
+- The session ID for HTTP transports (SSE, StreamableHTTP), or None
+- for stdio and in-memory transports which don't use session IDs.
+
+
+#### `session`
+
+```python
+session(self)
+```
+
+Access to the underlying session for advanced usage.
+
+
+#### `get_http_request`
+
+```python
+get_http_request(self) -> Request
+```
+
+Get the active starlette request.
+

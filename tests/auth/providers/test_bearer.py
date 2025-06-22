@@ -67,7 +67,7 @@ def mcp_server_url(rsa_key_pair: RSAKeyPair) -> Generator[str]:
         public_key=rsa_key_pair.public_key,
         run_kwargs=dict(transport="streamable-http"),
     ) as url:
-        yield f"{url}/mcp"
+        yield f"{url}/mcp/"
 
 
 class TestRSAKeyPair:
@@ -446,6 +446,45 @@ class TestBearerToken:
         access_token = await provider.load_access_token(token)
         assert access_token is not None
 
+    async def test_provider_with_multiple_expected_audiences(
+        self, rsa_key_pair: RSAKeyPair
+    ):
+        """Test provider configured with multiple expected audiences."""
+        provider = BearerAuthProvider(
+            public_key=rsa_key_pair.public_key,
+            issuer="https://test.example.com",
+            audience=["https://api.example.com", "https://other-api.example.com"],
+        )
+
+        # Token with single audience that matches one of the expected
+        token1 = rsa_key_pair.create_token(
+            subject="test-user",
+            issuer="https://test.example.com",
+            audience="https://api.example.com",
+        )
+        access_token1 = await provider.load_access_token(token1)
+        assert access_token1 is not None
+
+        # Token with multiple audiences, one of which matches
+        token2 = rsa_key_pair.create_token(
+            subject="test-user",
+            issuer="https://test.example.com",
+            additional_claims={
+                "aud": ["https://api.example.com", "https://third-party.example.com"]
+            },
+        )
+        access_token2 = await provider.load_access_token(token2)
+        assert access_token2 is not None
+
+        # Token with audience that doesn't match any expected
+        token3 = rsa_key_pair.create_token(
+            subject="test-user",
+            issuer="https://test.example.com",
+            audience="https://wrong-api.example.com",
+        )
+        access_token3 = await provider.load_access_token(token3)
+        assert access_token3 is None
+
     async def test_scope_extraction_string(
         self, rsa_key_pair: RSAKeyPair, bearer_provider: BearerAuthProvider
     ):
@@ -539,6 +578,59 @@ class TestBearerToken:
         assert access_token is not None
         assert access_token.client_id == "app456"  # Should prefer client_id over sub
 
+    async def test_string_issuer_validation(self, rsa_key_pair: RSAKeyPair):
+        """Test that string (non-URL) issuers are supported per RFC 7519."""
+        # Create provider with string issuer
+        provider = BearerAuthProvider(
+            public_key=rsa_key_pair.public_key,
+            issuer="my-service",  # String issuer, not a URL
+        )
+
+        # Create token with matching string issuer
+        token = rsa_key_pair.create_token(
+            subject="test-user",
+            issuer="my-service",  # Same string issuer
+        )
+
+        access_token = await provider.load_access_token(token)
+        assert access_token is not None
+        assert access_token.client_id == "test-user"
+
+    async def test_string_issuer_mismatch_rejection(self, rsa_key_pair: RSAKeyPair):
+        """Test that mismatched string issuers are rejected."""
+        # Create provider with one string issuer
+        provider = BearerAuthProvider(
+            public_key=rsa_key_pair.public_key,
+            issuer="my-service",
+        )
+
+        # Create token with different string issuer
+        token = rsa_key_pair.create_token(
+            subject="test-user",
+            issuer="other-service",  # Different string issuer
+        )
+
+        access_token = await provider.load_access_token(token)
+        assert access_token is None
+
+    async def test_url_issuer_still_works(self, rsa_key_pair: RSAKeyPair):
+        """Test that URL issuers still work after the fix."""
+        # Create provider with URL issuer
+        provider = BearerAuthProvider(
+            public_key=rsa_key_pair.public_key,
+            issuer="https://my-auth-server.com",  # URL issuer
+        )
+
+        # Create token with matching URL issuer
+        token = rsa_key_pair.create_token(
+            subject="test-user",
+            issuer="https://my-auth-server.com",  # Same URL issuer
+        )
+
+        access_token = await provider.load_access_token(token)
+        assert access_token is not None
+        assert access_token.client_id == "test-user"
+
 
 class TestFastMCPBearerAuth:
     def test_bearer_auth(self):
@@ -606,7 +698,7 @@ class TestFastMCPBearerAuth:
             auth_kwargs=dict(required_scopes=["read", "write"]),
             run_kwargs=dict(transport="streamable-http"),
         ) as url:
-            mcp_server_url = f"{url}/mcp"
+            mcp_server_url = f"{url}/mcp/"
             with pytest.raises(httpx.HTTPStatusError) as exc_info:
                 async with Client(mcp_server_url, auth=BearerAuth(token)) as client:
                     tools = await client.list_tools()  # noqa: F841
@@ -629,7 +721,7 @@ class TestFastMCPBearerAuth:
             auth_kwargs=dict(required_scopes=["read", "write"]),
             run_kwargs=dict(transport="streamable-http"),
         ) as url:
-            mcp_server_url = f"{url}/mcp"
+            mcp_server_url = f"{url}/mcp/"
             async with Client(mcp_server_url, auth=BearerAuth(token)) as client:
                 tools = await client.list_tools()
         assert tools

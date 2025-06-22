@@ -1,0 +1,94 @@
+---
+title: client
+sidebarTitle: client
+---
+
+# `fastmcp.client.client`
+
+## Classes
+
+### `Client`
+
+
+
+    MCP client that delegates connection management to a Transport instance.
+
+    The Client class is responsible for MCP protocol logic, while the Transport
+    handles connection establishment and management. Client provides methods for
+    working with resources, prompts, tools and other MCP capabilities.
+
+    Args:
+        transport: Connection source specification, which can be:
+            - ClientTransport: Direct transport instance
+            - FastMCP: In-process FastMCP server
+            - AnyUrl | str: URL to connect to
+            - Path: File path for local socket
+            - MCPConfig: MCP server configuration
+            - dict: Transport configuration
+        roots: Optional RootsList or RootsHandler for filesystem access
+        sampling_handler: Optional handler for sampling requests
+        log_handler: Optional handler for log messages
+        message_handler: Optional handler for protocol messages
+        progress_handler: Optional handler for progress notifications
+        timeout: Optional timeout for requests (seconds or timedelta)
+        init_timeout: Optional timeout for initial connection (seconds or timedelta).
+            Set to 0 to disable. If None, uses the value in the FastMCP global settings.
+
+    Examples:
+        ```python # Connect to FastMCP server client =
+        Client("http://localhost:8080")
+
+        async with client:
+            # List available resources resources = await client.list_resources()
+
+            # Call a tool result = await client.call_tool("my_tool", {"param":
+            "value"})
+        ```
+    
+
+**Methods:**
+
+#### `session`
+
+```python
+session(self) -> ClientSession
+```
+
+Get the current active session. Raises RuntimeError if not connected.
+
+
+#### `initialize_result`
+
+```python
+initialize_result(self) -> mcp.types.InitializeResult
+```
+
+Get the result of the initialization request.
+
+
+#### `set_roots`
+
+```python
+set_roots(self, roots: RootsList | RootsHandler) -> None
+```
+
+Set the roots for the client. This does not automatically call `send_roots_list_changed`.
+
+
+#### `set_sampling_callback`
+
+```python
+set_sampling_callback(self, sampling_callback: SamplingHandler) -> None
+```
+
+Set the sampling callback for the client.
+
+
+#### `is_connected`
+
+```python
+is_connected(self) -> bool
+```
+
+Check if the client is currently connected.
+

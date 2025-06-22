@@ -1,0 +1,102 @@
+---
+title: oauth
+sidebarTitle: oauth
+---
+
+# `fastmcp.client.auth.oauth`
+
+## Functions
+
+### `default_cache_dir`
+
+```python
+default_cache_dir() -> Path
+```
+
+### `OAuth`
+
+```python
+OAuth(mcp_url: str, scopes: str | list[str] | None = None, client_name: str = 'FastMCP Client', token_storage_cache_dir: Path | None = None, additional_client_metadata: dict[str, Any] | None = None) -> _MCPOAuthClientProvider
+```
+
+
+Create an OAuthClientProvider for an MCP server.
+
+This is intended to be provided to the `auth` parameter of an
+httpx.AsyncClient (or appropriate FastMCP client/transport instance)
+
+**Args:**
+- `mcp_url`: Full URL to the MCP endpoint (e.g. "http\://host/mcp/sse/")
+- `scopes`: OAuth scopes to request. Can be a
+- `client_name`: Name for this client during registration
+- `token_storage_cache_dir`: Directory for FileTokenStorage
+- `additional_client_metadata`: Extra fields for OAuthClientMetadata
+
+**Returns:**
+- OAuthClientProvider
+
+
+## Classes
+
+### `ServerOAuthMetadata`
+
+
+More flexible OAuth metadata model that accepts broader ranges of values
+than the restrictive MCP standard model.
+
+This handles real-world OAuth servers like PayPal that may support
+additional methods not in the MCP specification.
+
+
+### `OAuthClientProvider`
+
+
+OAuth client provider with more flexible OAuth metadata discovery.
+
+
+### `FileTokenStorage`
+
+
+File-based token storage implementation for OAuth credentials and tokens.
+Implements the mcp.client.auth.TokenStorage protocol.
+
+Each instance is tied to a specific server URL for proper token isolation.
+
+
+**Methods:**
+
+#### `get_base_url`
+
+```python
+get_base_url(url: str) -> str
+```
+
+Extract the base URL (scheme + host) from a URL.
+
+
+#### `get_cache_key`
+
+```python
+get_cache_key(self) -> str
+```
+
+Generate a safe filesystem key from the server's base URL.
+
+
+#### `clear`
+
+```python
+clear(self) -> None
+```
+
+Clear all cached data for this server.
+
+
+#### `clear_all`
+
+```python
+clear_all(cls, cache_dir: Path | None = None) -> None
+```
+
+Clear all cached data for all servers.
+

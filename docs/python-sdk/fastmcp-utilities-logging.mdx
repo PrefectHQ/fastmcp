@@ -1,0 +1,41 @@
+---
+title: logging
+sidebarTitle: logging
+---
+
+# `fastmcp.utilities.logging`
+
+
+Logging utilities for FastMCP.
+
+## Functions
+
+### `get_logger`
+
+```python
+get_logger(name: str) -> logging.Logger
+```
+
+
+Get a logger nested under FastMCP namespace.
+
+**Args:**
+- `name`: the name of the logger, which will be prefixed with 'FastMCP.'
+
+**Returns:**
+- a configured logger instance
+
+
+### `configure_logging`
+
+```python
+configure_logging(level: Literal['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'] | int = 'INFO', logger: logging.Logger | None = None, enable_rich_tracebacks: bool = True) -> None
+```
+
+
+Configure logging for FastMCP.
+
+**Args:**
+- `logger`: the logger to configure
+- `level`: the log level to use
+

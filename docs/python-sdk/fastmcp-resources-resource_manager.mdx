@@ -1,0 +1,111 @@
+---
+title: resource_manager
+sidebarTitle: resource_manager
+---
+
+# `fastmcp.resources.resource_manager`
+
+
+Resource manager functionality.
+
+## Classes
+
+### `ResourceManager`
+
+
+Manages FastMCP resources.
+
+
+**Methods:**
+
+#### `mount`
+
+```python
+mount(self, server: MountedServer) -> None
+```
+
+Adds a mounted server as a source for resources and templates.
+
+
+#### `add_resource_or_template_from_fn`
+
+```python
+add_resource_or_template_from_fn(self, fn: Callable[..., Any], uri: str, name: str | None = None, description: str | None = None, mime_type: str | None = None, tags: set[str] | None = None) -> Resource | ResourceTemplate
+```
+
+Add a resource or template to the manager from a function.
+
+**Args:**
+- `fn`: The function to register as a resource or template
+- `uri`: The URI for the resource or template
+- `name`: Optional name for the resource or template
+- `description`: Optional description of the resource or template
+- `mime_type`: Optional MIME type for the resource or template
+- `tags`: Optional set of tags for categorizing the resource or template
+
+**Returns:**
+- The added resource or template. If a resource or template with the same URI already exists,
+- returns the existing resource or template.
+
+
+#### `add_resource_from_fn`
+
+```python
+add_resource_from_fn(self, fn: Callable[..., Any], uri: str, name: str | None = None, description: str | None = None, mime_type: str | None = None, tags: set[str] | None = None) -> Resource
+```
+
+Add a resource to the manager from a function.
+
+**Args:**
+- `fn`: The function to register as a resource
+- `uri`: The URI for the resource
+- `name`: Optional name for the resource
+- `description`: Optional description of the resource
+- `mime_type`: Optional MIME type for the resource
+- `tags`: Optional set of tags for categorizing the resource
+
+**Returns:**
+- The added resource. If a resource with the same URI already exists,
+- returns the existing resource.
+
+
+#### `add_resource`
+
+```python
+add_resource(self, resource: Resource) -> Resource
+```
+
+Add a resource to the manager.
+
+**Args:**
+- `resource`: A Resource instance to add. The resource's .key attribute
+will be used as the storage key. To overwrite it, call
+Resource.with_key() before calling this method.
+
+
+#### `add_template_from_fn`
+
+```python
+add_template_from_fn(self, fn: Callable[..., Any], uri_template: str, name: str | None = None, description: str | None = None, mime_type: str | None = None, tags: set[str] | None = None) -> ResourceTemplate
+```
+
+Create a template from a function.
+
+
+#### `add_template`
+
+```python
+add_template(self, template: ResourceTemplate) -> ResourceTemplate
+```
+
+Add a template to the manager.
+
+**Args:**
+- `template`: A ResourceTemplate instance to add. The template's .key attribute
+will be used as the storage key. To overwrite it, call
+ResourceTemplate.with_key() before calling this method.
+
+**Returns:**
+- The added template. If a template with the same URI already exists,
+- returns the existing template.
+
