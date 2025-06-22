@@ -382,25 +382,58 @@ class TestPromptArgumentDescriptions:
 
         prompt = Prompt.from_function(analyze_data)
 
+        assert prompt.arguments is not None
         # Check that string parameter has no schema enhancement
-        name_arg = next(arg for arg in prompt.arguments if arg.name == "name")
+        name_arg = next((arg for arg in prompt.arguments if arg.name == "name"), None)
+        assert name_arg is not None
         assert name_arg.description is None  # No enhancement for string types
 
         # Check that non-string parameters have schema enhancements
-        numbers_arg = next(arg for arg in prompt.arguments if arg.name == "numbers")
-        assert "Provide as a JSON string matching the following schema:" in numbers_arg.description
+        numbers_arg = next(
+            (arg for arg in prompt.arguments if arg.name == "numbers"), None
+        )
+        assert numbers_arg is not None
+        assert numbers_arg.description is not None
+        assert (
+            "Provide as a JSON string matching the following schema:"
+            in numbers_arg.description
+        )
         assert '{"items":{"type":"integer"},"type":"array"}' in numbers_arg.description
 
-        metadata_arg = next(arg for arg in prompt.arguments if arg.name == "metadata")
-        assert "Provide as a JSON string matching the following schema:" in metadata_arg.description
-        assert '{"additionalProperties":{"type":"string"},"type":"object"}' in metadata_arg.description
+        metadata_arg = next(
+            (arg for arg in prompt.arguments if arg.name == "metadata"), None
+        )
+        assert metadata_arg is not None
+        assert metadata_arg.description is not None
+        assert (
+            "Provide as a JSON string matching the following schema:"
+            in metadata_arg.description
+        )
+        assert (
+            '{"additionalProperties":{"type":"string"},"type":"object"}'
+            in metadata_arg.description
+        )
 
-        threshold_arg = next(arg for arg in prompt.arguments if arg.name == "threshold")
-        assert "Provide as a JSON string matching the following schema:" in threshold_arg.description
+        threshold_arg = next(
+            (arg for arg in prompt.arguments if arg.name == "threshold"), None
+        )
+        assert threshold_arg is not None
+        assert threshold_arg.description is not None
+        assert (
+            "Provide as a JSON string matching the following schema:"
+            in threshold_arg.description
+        )
         assert '{"type":"number"}' in threshold_arg.description
 
-        active_arg = next(arg for arg in prompt.arguments if arg.name == "active")
-        assert "Provide as a JSON string matching the following schema:" in active_arg.description
+        active_arg = next(
+            (arg for arg in prompt.arguments if arg.name == "active"), None
+        )
+        assert active_arg is not None
+        assert active_arg.description is not None
+        assert (
+            "Provide as a JSON string matching the following schema:"
+            in active_arg.description
+        )
         assert '{"type":"boolean"}' in active_arg.description
 
     def test_enhanced_descriptions_with_existing_descriptions(self):
@@ -419,12 +452,19 @@ class TestPromptArgumentDescriptions:
 
         prompt = Prompt.from_function(documented_prompt)
 
-        numbers_arg = next(arg for arg in prompt.arguments if arg.name == "numbers")
+        assert prompt.arguments is not None
+        numbers_arg = next(
+            (arg for arg in prompt.arguments if arg.name == "numbers"), None
+        )
+        assert numbers_arg is not None
         # Should have both the original description and the schema
         assert numbers_arg.description is not None
         assert "A list of integers to process" in numbers_arg.description
         assert "\n\n" in numbers_arg.description  # Should have newline separator
-        assert "Provide as a JSON string matching the following schema:" in numbers_arg.description
+        assert (
+            "Provide as a JSON string matching the following schema:"
+            in numbers_arg.description
+        )
 
     def test_string_parameters_no_enhancement(self):
         """Test that string parameters don't get schema enhancement."""
@@ -434,7 +474,11 @@ class TestPromptArgumentDescriptions:
 
         prompt = Prompt.from_function(string_only_prompt)
 
+        assert prompt.arguments is not None
         for arg in prompt.arguments:
             # String parameters should not have schema enhancement
-            if arg.description:
-                assert "Provide as a JSON string matching the following schema:" not in arg.description
+            if arg.description is not None:
+                assert (
+                    "Provide as a JSON string matching the following schema:"
+                    not in arg.description
+                )

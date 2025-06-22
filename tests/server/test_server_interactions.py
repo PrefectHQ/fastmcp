@@ -1804,6 +1804,7 @@ class TestPrompts:
             assert prompt.description == "Analyze some data."
 
             # Find each argument and verify schema enhancements
+            assert prompt.arguments is not None
             args_by_name = {arg.name: arg for arg in prompt.arguments}
 
             # String parameter should not have schema enhancement
@@ -1812,15 +1813,32 @@ class TestPrompts:
 
             # Non-string parameters should have schema enhancements
             numbers_arg = args_by_name["numbers"]
-            assert "Provide as a JSON string matching the following schema:" in numbers_arg.description
-            assert '{"items":{"type":"integer"},"type":"array"}' in numbers_arg.description
+            assert numbers_arg.description is not None
+            assert (
+                "Provide as a JSON string matching the following schema:"
+                in numbers_arg.description
+            )
+            assert (
+                '{"items":{"type":"integer"},"type":"array"}' in numbers_arg.description
+            )
 
             metadata_arg = args_by_name["metadata"]
-            assert "Provide as a JSON string matching the following schema:" in metadata_arg.description
-            assert '{"additionalProperties":{"type":"string"},"type":"object"}' in metadata_arg.description
+            assert metadata_arg.description is not None
+            assert (
+                "Provide as a JSON string matching the following schema:"
+                in metadata_arg.description
+            )
+            assert (
+                '{"additionalProperties":{"type":"string"},"type":"object"}'
+                in metadata_arg.description
+            )
 
             threshold_arg = args_by_name["threshold"]
-            assert "Provide as a JSON string matching the following schema:" in threshold_arg.description
+            assert threshold_arg.description is not None
+            assert (
+                "Provide as a JSON string matching the following schema:"
+                in threshold_arg.description
+            )
             assert '{"type":"number"}' in threshold_arg.description
 
     async def test_get_prompt(self):
