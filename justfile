@@ -16,7 +16,7 @@ docs:
 
 # Generate API reference documentation for all modules
 api-ref-all:
-    uvx --with-editable . --refresh-package mdxify mdxify@latest --all --root-module fastmcp --anchor-name "SDK Reference"
+    uv run --with-editable . --with git+https://github.com/zzstoatzz/mdxify.git@fix-nested-anchor-navigation mdxify --all --root-module fastmcp --anchor-name "Python SDK" --exclude fastmcp.contrib
 
 # Generate API reference for specific modules (e.g., just api-ref prefect.flows prefect.tasks)
 api-ref *MODULES:

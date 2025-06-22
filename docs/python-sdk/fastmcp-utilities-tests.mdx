@@ -1,0 +1,42 @@
+---
+title: tests
+sidebarTitle: tests
+---
+
+# `fastmcp.utilities.tests`
+
+## Functions
+
+### `temporary_settings`
+
+```python
+temporary_settings(**kwargs: Any)
+```
+
+
+Temporarily override ControlFlow setting values.
+
+**Args:**
+- `**kwargs`: The settings to override, including nested settings.
+
+
+### `run_server_in_process`
+
+```python
+run_server_in_process(server_fn: Callable[..., None], *args, **kwargs) -> Generator[str, None, None]
+```
+
+
+Context manager that runs a FastMCP server in a separate process and
+returns the server URL. When the context manager is exited, the server process is killed.
+
+**Args:**
+- `server_fn`: The function that runs a FastMCP server. FastMCP servers are
+not pickleable, so we need a function that creates and runs one.
+- `*args`: Arguments to pass to the server function.
+- `provide_host_and_port`: Whether to provide the host and port to the server function as kwargs.
+- `**kwargs`: Keyword arguments to pass to the server function.
+
+**Returns:**
+- The server URL.
+
