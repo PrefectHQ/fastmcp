@@ -533,7 +533,7 @@ class Client(Generic[ClientTransportT]):
                     serialized_arguments[key] = value
                 else:
                     # Use pydantic_core.to_json for consistent serialization
-                    serialized_arguments[key] = pydantic_core.to_json(value).decode()
+                    serialized_arguments[key] = pydantic_core.to_json(value).decode('utf-8')
 
         result = await self.session.get_prompt(
             name=name, arguments=serialized_arguments
