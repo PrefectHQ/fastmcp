@@ -70,7 +70,7 @@ def run_server(host: str, port: int, **kwargs) -> None:
 @pytest.fixture(autouse=True, scope="module")
 def sse_server() -> Generator[str, None, None]:
     with run_server_in_process(run_server, transport="sse") as url:
-        yield f"{url}/sse"
+        yield f"{url}/sse/"
 
 
 async def test_ping(sse_server: str):
@@ -92,7 +92,7 @@ async def test_http_headers(sse_server: str):
 
 
 def run_nested_server(host: str, port: int) -> None:
-    app = fastmcp_server().sse_app(path="/mcp/sse", message_path="/mcp/messages")
+    app = fastmcp_server().sse_app(path="/mcp/sse/", message_path="/mcp/messages")
     mount = Starlette(routes=[Mount("/nest-inner", app=app)])
     mount2 = Starlette(routes=[Mount("/nest-outer", app=mount)])
     server = uvicorn.Server(
@@ -114,7 +114,7 @@ async def test_nested_sse_server_resolves_correctly():
 
     with run_server_in_process(run_nested_server) as url:
         async with Client(
-            transport=SSETransport(f"{url}/nest-outer/nest-inner/mcp/sse")
+            transport=SSETransport(f"{url}/nest-outer/nest-inner/mcp/sse/")
         ) as client:
             result = await client.ping()
             assert result is True

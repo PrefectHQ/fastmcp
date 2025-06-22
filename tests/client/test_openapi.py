@@ -57,12 +57,12 @@ class TestClientHeaders:
     @pytest.fixture(scope="class")
     def shttp_server(self) -> Generator[str, None, None]:
         with run_server_in_process(run_server, transport="streamable-http") as url:
-            yield f"{url}/mcp"
+            yield f"{url}/mcp/"
 
     @pytest.fixture(scope="class")
     def sse_server(self) -> Generator[str, None, None]:
         with run_server_in_process(run_server, transport="sse") as url:
-            yield f"{url}/sse"
+            yield f"{url}/sse/"
 
     @pytest.fixture(scope="class")
     def proxy_server(self, shttp_server: str) -> Generator[str, None, None]:
@@ -71,7 +71,7 @@ class TestClientHeaders:
             shttp_url=shttp_server,
             transport="streamable-http",
         ) as url:
-            yield f"{url}/mcp"
+            yield f"{url}/mcp/"
 
     async def test_client_headers_sse_resource(self, sse_server: str):
         async with Client(

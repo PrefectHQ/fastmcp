@@ -1,0 +1,101 @@
+---
+title: proxy
+sidebarTitle: proxy
+---
+
+# `fastmcp.server.proxy`
+
+## Classes
+
+### `ProxyToolManager`
+
+
+A ToolManager that sources its tools from a remote client in addition to local and mounted tools.
+
+
+### `ProxyResourceManager`
+
+
+A ResourceManager that sources its resources from a remote client in addition to local and mounted resources.
+
+
+### `ProxyPromptManager`
+
+
+A PromptManager that sources its prompts from a remote client in addition to local and mounted prompts.
+
+
+### `ProxyTool`
+
+
+A Tool that represents and executes a tool on a remote server.
+
+
+**Methods:**
+
+#### `from_mcp_tool`
+
+```python
+from_mcp_tool(cls, client: Client, mcp_tool: mcp.types.Tool) -> ProxyTool
+```
+
+Factory method to create a ProxyTool from a raw MCP tool schema.
+
+
+### `ProxyResource`
+
+
+A Resource that represents and reads a resource from a remote server.
+
+
+**Methods:**
+
+#### `from_mcp_resource`
+
+```python
+from_mcp_resource(cls, client: Client, mcp_resource: mcp.types.Resource) -> ProxyResource
+```
+
+Factory method to create a ProxyResource from a raw MCP resource schema.
+
+
+### `ProxyTemplate`
+
+
+A ResourceTemplate that represents and creates resources from a remote server template.
+
+
+**Methods:**
+
+#### `from_mcp_template`
+
+```python
+from_mcp_template(cls, client: Client, mcp_template: mcp.types.ResourceTemplate) -> ProxyTemplate
+```
+
+Factory method to create a ProxyTemplate from a raw MCP template schema.
+
+
+### `ProxyPrompt`
+
+
+A Prompt that represents and renders a prompt from a remote server.
+
+
+**Methods:**
+
+#### `from_mcp_prompt`
+
+```python
+from_mcp_prompt(cls, client: Client, mcp_prompt: mcp.types.Prompt) -> ProxyPrompt
+```
+
+Factory method to create a ProxyPrompt from a raw MCP prompt schema.
+
+
+### `FastMCPProxy`
+
+
+A FastMCP server that acts as a proxy to a remote MCP-compliant server.
+It uses specialized managers that fulfill requests via an HTTP client.
+

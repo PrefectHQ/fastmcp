@@ -102,10 +102,10 @@ async def test_as_proxy_with_transport(fastmcp_server):
 
 def test_as_proxy_with_url():
     """FastMCP.as_proxy should accept a URL without connecting."""
-    proxy = FastMCP.as_proxy("http://example.com/mcp")
+    proxy = FastMCP.as_proxy("http://example.com/mcp/")
     assert isinstance(proxy, FastMCPProxy)
     assert isinstance(proxy.client.transport, StreamableHttpTransport)
-    assert proxy.client.transport.url == "http://example.com/mcp"
+    assert proxy.client.transport.url == "http://example.com/mcp/"
 
 
 class TestTools:

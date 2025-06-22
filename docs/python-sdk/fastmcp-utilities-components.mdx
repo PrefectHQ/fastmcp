@@ -1,0 +1,52 @@
+---
+title: components
+sidebarTitle: components
+---
+
+# `fastmcp.utilities.components`
+
+## Classes
+
+### `FastMCPComponent`
+
+
+Base class for FastMCP tools, prompts, resources, and resource templates.
+
+
+**Methods:**
+
+#### `key`
+
+```python
+key(self) -> str
+```
+
+The key of the component. This is used for internal bookkeeping
+and may reflect e.g. prefixes or other identifiers. You should not depend on
+keys having a certain value, as the same tool loaded from different
+hierarchies of servers may have different keys.
+
+
+#### `with_key`
+
+```python
+with_key(self, key: str) -> Self
+```
+
+#### `enable`
+
+```python
+enable(self) -> None
+```
+
+Enable the component.
+
+
+#### `disable`
+
+```python
+disable(self) -> None
+```
+
+Disable the component.
+

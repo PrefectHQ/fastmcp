@@ -1,0 +1,43 @@
+---
+title: claude
+sidebarTitle: claude
+---
+
+# `fastmcp.cli.claude`
+
+
+Claude app integration utilities.
+
+## Functions
+
+### `get_claude_config_path`
+
+```python
+get_claude_config_path() -> Path | None
+```
+
+
+Get the Claude config directory based on platform.
+
+
+### `update_claude_config`
+
+```python
+update_claude_config(file_spec: str, server_name: str) -> bool
+```
+
+
+Add or update a FastMCP server in Claude's configuration.
+
+**Args:**
+- `file_spec`: Path to the server file, optionally with \:object suffix
+- `server_name`: Name for the server in Claude's config
+- `with_editable`: Optional directory to install in editable mode
+- `with_packages`: Optional list of additional packages to install
+- `env_vars`: Optional dictionary of environment variables. These are merged with
+any existing variables, with new values taking precedence.
+
+**Raises:**
+- `RuntimeError`: If Claude Desktop's config directory is not found, indicating
+Claude Desktop may not be installed or properly set up.
+

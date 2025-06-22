@@ -55,7 +55,7 @@ class TestCustomRoutes:
         """Test that custom routes are included when using create_sse_app directly."""
         # Create the app by calling the constructor function directly
         app = create_sse_app(
-            server=server_with_custom_route, message_path="/message", sse_path="/sse"
+            server=server_with_custom_route, message_path="/message", sse_path="/sse/"
         )
 
         # Verify that the custom route is included

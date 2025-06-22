@@ -1,0 +1,69 @@
+---
+title: bearer
+sidebarTitle: bearer
+---
+
+# `fastmcp.server.auth.providers.bearer`
+
+## Classes
+
+### `JWKData`
+
+
+JSON Web Key data structure.
+
+
+### `JWKSData`
+
+
+JSON Web Key Set data structure.
+
+
+### `RSAKeyPair`
+
+**Methods:**
+
+#### `generate`
+
+```python
+generate(cls) -> 'RSAKeyPair'
+```
+
+Generate an RSA key pair for testing.
+
+**Returns:**
+- (private_key_pem, public_key_pem)
+
+
+#### `create_token`
+
+```python
+create_token(self, subject: str = 'fastmcp-user', issuer: str = 'https://fastmcp.example.com', audience: str | list[str] | None = None, scopes: list[str] | None = None, expires_in_seconds: int = 3600, additional_claims: dict[str, Any] | None = None, kid: str | None = None) -> str
+```
+
+Generate a test JWT token for testing purposes.
+
+**Args:**
+- `private_key_pem`: RSA private key in PEM format
+- `subject`: Subject claim (usually user ID)
+- `issuer`: Issuer claim
+- `audience`: Audience claim - can be a string or list of strings (optional)
+- `scopes`: List of scopes to include
+- `expires_in_seconds`: Token expiration time in seconds
+- `additional_claims`: Any additional claims to include
+- `kid`: Key ID for JWKS lookup (optional)
+
+**Returns:**
+- Signed JWT token string
+
+
+### `BearerAuthProvider`
+
+
+Simple JWT Bearer Token validator for hosted MCP servers.
+Uses RS256 asymmetric encryption. Supports either static public key
+or JWKS URI for key rotation.
+
+Note that this provider DOES NOT permit client registration or revocation, or any OAuth flows.
+It is intended to be used with a control plane that manages clients and tokens.
+

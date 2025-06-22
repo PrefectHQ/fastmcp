@@ -1,0 +1,117 @@
+---
+title: tool_transform
+sidebarTitle: tool_transform
+---
+
+# `fastmcp.tools.tool_transform`
+
+## Classes
+
+### `ArgTransform`
+
+
+Configuration for transforming a parent tool's argument.
+
+    This class allows fine-grained control over how individual arguments are transformed
+    when creating a new tool from an existing one. You can rename arguments, change their
+    descriptions, add default values, or hide them from clients while passing constants.
+
+    Attributes:
+        name: New name for the argument. Use None to keep original name, or ... for no change.
+        description: New description for the argument. Use None to remove description, or ... for no change.
+        default: New default value for the argument. Use ... for no change.
+        default_factory: Callable that returns a default value. Cannot be used with default.
+        type: New type for the argument. Use ... for no change.
+        hide: If True, hide this argument from clients but pass a constant value to parent.
+        required: If True, make argument required (remove default). Use ... for no change.
+        examples: Examples for the argument. Use ... for no change.
+
+    Examples:
+        # Rename argument 'old_name' to 'new_name'
+        ArgTransform(name="new_name")
+
+        # Change description only
+        ArgTransform(description="Updated description")
+
+        # Add a default value (makes argument optional)
+        ArgTransform(default=42)
+
+        # Add a default factory (makes argument optional)
+        ArgTransform(default_factory=lambda: time.time())
+
+        # Change the type
+        ArgTransform(type=str)
+
+        # Hide the argument entirely from clients
+        ArgTransform(hide=True)
+
+        # Hide argument but pass a constant value to parent
+        ArgTransform(hide=True, default="constant_value")
+
+        # Hide argument but pass a factory-generated value to parent
+        ArgTransform(hide=True, default_factory=lambda: uuid.uuid4().hex)
+
+        # Make an optional parameter required (removes any default)
+        ArgTransform(required=True)
+
+        # Combine multiple transformations
+        ArgTransform(name="new_name", description="New desc", default=None, type=int)
+    
+
+### `TransformedTool`
+
+
+A tool that is transformed from another tool.
+
+This class represents a tool that has been created by transforming another tool.
+It supports argument renaming, schema modification, custom function injection,
+and provides context for the forward() and forward_raw() functions.
+
+The transformation can be purely schema-based (argument renaming, dropping, etc.)
+or can include a custom function that uses forward() to call the parent tool
+with transformed arguments.
+
+
+**Methods:**
+
+#### `from_tool`
+
+```python
+from_tool(cls, tool: Tool, name: str | None = None, description: str | None = None, tags: set[str] | None = None, transform_fn: Callable[..., Any] | None = None, transform_args: dict[str, ArgTransform] | None = None, annotations: ToolAnnotations | None = None, serializer: Callable[[Any], str] | None = None, enabled: bool | None = None) -> TransformedTool
+```
+
+Create a transformed tool from a parent tool.
+
+**Args:**
+- `tool`: The parent tool to transform.
+- `transform_fn`: Optional custom function. Can use forward() and forward_raw()
+to call the parent tool. Functions with **kwargs receive transformed
+argument names.
+- `name`: New name for the tool. Defaults to parent tool's name.
+- `transform_args`: Optional transformations for parent tool arguments.
+Only specified arguments are transformed, others pass through unchanged\:
+- str\: Simple rename
+- ArgTransform\: Complex transformation (rename/description/default/drop)
+- None\: Drop the argument
+- `description`: New description. Defaults to parent's description.
+- `tags`: New tags. Defaults to parent's tags.
+- `annotations`: New annotations. Defaults to parent's annotations.
+- `serializer`: New serializer. Defaults to parent's serializer.
+
+**Returns:**
+- TransformedTool with the specified transformations.
+
+Examples:
+- # Transform specific arguments only
+- Tool.from_tool(parent, transform_args={"old": "new"})  # Others unchanged
+- # Custom function with partial transforms
+- async def custom(x: int, y: int) -> str:
+result = await forward(x=x, y=y)
+return f"Custom: {result}"
+- Tool.from_tool(parent, transform_fn=custom, transform_args={"a": "x", "b": "y"})
+- # Using **kwargs (gets all args, transformed and untransformed)
+- async def flexible(**kwargs) -> str:
+result = await forward(**kwargs)
+return f"Got: {kwargs}"
+- Tool.from_tool(parent, transform_fn=flexible, transform_args={"a": "x"})
+

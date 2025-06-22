@@ -1,0 +1,20 @@
+---
+title: exceptions
+sidebarTitle: exceptions
+---
+
+# `fastmcp.utilities.exceptions`
+
+## Functions
+
+### `iter_exc`
+
+```python
+iter_exc(group: BaseExceptionGroup)
+```
+
+### `get_catch_handlers`
+
+```python
+get_catch_handlers() -> Mapping[type[BaseException] | Iterable[type[BaseException]], Callable[[BaseExceptionGroup[Any]], Any]]
+```

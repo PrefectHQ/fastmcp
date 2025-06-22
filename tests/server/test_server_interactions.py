@@ -1785,6 +1785,62 @@ class TestPrompts:
             assert prompts[0].arguments[1].name == "optional"
             assert prompts[0].arguments[1].required is False
 
+    async def test_list_prompts_with_enhanced_descriptions(self):
+        """Test that enhanced descriptions with JSON schema are visible via MCP protocol."""
+        mcp = FastMCP()
+
+        @mcp.prompt
+        def analyze_data(
+            name: str, numbers: list[int], metadata: dict[str, str], threshold: float
+        ) -> str:
+            """Analyze some data."""
+            return f"Analyzed {name}"
+
+        async with Client(mcp) as client:
+            prompts = await client.list_prompts()
+            assert len(prompts) == 1
+            prompt = prompts[0]
+            assert prompt.name == "analyze_data"
+            assert prompt.description == "Analyze some data."
+
+            # Find each argument and verify schema enhancements
+            assert prompt.arguments is not None
+            args_by_name = {arg.name: arg for arg in prompt.arguments}
+
+            # String parameter should not have schema enhancement
+            name_arg = args_by_name["name"]
+            assert name_arg.description is None
+
+            # Non-string parameters should have schema enhancements
+            numbers_arg = args_by_name["numbers"]
+            assert numbers_arg.description is not None
+            assert (
+                "Provide as a JSON string matching the following schema:"
+                in numbers_arg.description
+            )
+            assert (
+                '{"items":{"type":"integer"},"type":"array"}' in numbers_arg.description
+            )
+
+            metadata_arg = args_by_name["metadata"]
+            assert metadata_arg.description is not None
+            assert (
+                "Provide as a JSON string matching the following schema:"
+                in metadata_arg.description
+            )
+            assert (
+                '{"additionalProperties":{"type":"string"},"type":"object"}'
+                in metadata_arg.description
+            )
+
+            threshold_arg = args_by_name["threshold"]
+            assert threshold_arg.description is not None
+            assert (
+                "Provide as a JSON string matching the following schema:"
+                in threshold_arg.description
+            )
+            assert '{"type":"number"}' in threshold_arg.description
+
     async def test_get_prompt(self):
         """Test getting a prompt through MCP protocol."""
         mcp = FastMCP()

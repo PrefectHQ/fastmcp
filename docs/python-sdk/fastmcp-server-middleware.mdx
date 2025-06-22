@@ -1,0 +1,56 @@
+---
+title: middleware
+sidebarTitle: middleware
+---
+
+# `fastmcp.server.middleware`
+
+## Functions
+
+### `make_middleware_wrapper`
+
+```python
+make_middleware_wrapper(middleware: Middleware, call_next: CallNext[T, R]) -> CallNext[T, R]
+```
+
+
+Create a wrapper that applies a single middleware to a context. The
+closure bakes in the middleware and call_next function, so it can be
+passed to other functions that expect a call_next function.
+
+
+## Classes
+
+### `CallNext`
+
+### `CallToolResult`
+
+### `ListToolsResult`
+
+### `ListResourcesResult`
+
+### `ListResourceTemplatesResult`
+
+### `ListPromptsResult`
+
+### `ServerResultProtocol`
+
+### `MiddlewareContext`
+
+
+Unified context for all middleware operations.
+
+
+**Methods:**
+
+#### `copy`
+
+```python
+copy(self, **kwargs: Any) -> MiddlewareContext[T]
+```
+
+### `Middleware`
+
+
+Base class for FastMCP middleware with dispatching hooks.
+

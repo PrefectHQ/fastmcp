@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+from collections import defaultdict
 
 
 def _prune_param(schema: dict, param: str) -> dict:
@@ -24,25 +25,77 @@ def _prune_param(schema: dict, param: str) -> dict:
     return schema
 
 
+def _prune_unused_defs(schema: dict) -> dict:
+    """Walk the schema and prune unused defs."""
+
+    root_defs: set[str] = set()
+    referenced_by: defaultdict[str, list] = defaultdict(list)
+
+    defs = schema.get("$defs")
+    if defs is None:
+        return schema
+
+    def walk(
+        node: object, current_def: str | None = None, skip_defs: bool = False
+    ) -> None:
+        if isinstance(node, dict):
+            # Process $ref for definition tracking
+            ref = node.get("$ref")
+            if isinstance(ref, str) and ref.startswith("#/$defs/"):
+                def_name = ref.split("/")[-1]
+                if current_def:
+                    referenced_by[def_name].append(current_def)
+                else:
+                    root_defs.add(def_name)
+
+            # Walk children
+            for k, v in node.items():
+                if skip_defs and k == "$defs":
+                    continue
+
+                walk(v, current_def=current_def)
+
+        elif isinstance(node, list):
+            for v in node:
+                walk(v)
+
+    # Traverse the schema once, skipping the $defs
+    walk(schema, skip_defs=True)
+
+    # Now figure out what defs reference other defs
+    for def_name, value in defs.items():
+        walk(value, current_def=def_name)
+
+    # Figure out what defs were referenced directly or recursively
+    def def_is_referenced(def_name):
+        if def_name in root_defs:
+            return True
+        references = referenced_by.get(def_name)
+        if references:
+            for reference in references:
+                if def_is_referenced(reference):
+                    return True
+        return False
+
+    # Remove orphaned definitions if requested
+    for def_name in list(defs):
+        if not def_is_referenced(def_name):
+            defs.pop(def_name)
+    if not defs:
+        schema.pop("$defs", None)
+
+    return schema
+
+
 def _walk_and_prune(
     schema: dict,
-    prune_defs: bool = False,
     prune_titles: bool = False,
     prune_additional_properties: bool = False,
 ) -> dict:
-    """Walk the schema and optionally prune titles, unused definitions, and additionalProperties: false."""
-
-    # Will only be used if prune_defs is True
-    used_defs: set[str] = set()
+    """Walk the schema and optionally prune titles and additionalProperties: false."""
 
     def walk(node: object) -> None:
         if isinstance(node, dict):
-            # Process $ref for definition tracking
-            if prune_defs:
-                ref = node.get("$ref")
-                if isinstance(ref, str) and ref.startswith("#/$defs/"):
-                    used_defs.add(ref.split("/")[-1])
-
             # Remove title if requested
             if prune_titles and "title" in node:
                 node.pop("title")
@@ -62,17 +115,7 @@ def _walk_and_prune(
             for v in node:
                 walk(v)
 
-    # Traverse the schema once
     walk(schema)
-
-    # Remove orphaned definitions if requested
-    if prune_defs:
-        defs = schema.get("$defs", {})
-        for def_name in list(defs):
-            if def_name not in used_defs:
-                defs.pop(def_name)
-        if not defs:
-            schema.pop("$defs", None)
 
     return schema
 
@@ -109,12 +152,13 @@ def compress_schema(
         schema = _prune_param(schema, param=param)
 
     # Do a single walk to handle pruning operations
-    if prune_defs or prune_titles or prune_additional_properties:
+    if prune_titles or prune_additional_properties:
         schema = _walk_and_prune(
             schema,
-            prune_defs=prune_defs,
             prune_titles=prune_titles,
             prune_additional_properties=prune_additional_properties,
         )
+    if prune_defs:
+        schema = _prune_unused_defs(schema)
 
     return schema

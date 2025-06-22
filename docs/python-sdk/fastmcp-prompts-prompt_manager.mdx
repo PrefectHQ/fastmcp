@@ -1,0 +1,43 @@
+---
+title: prompt_manager
+sidebarTitle: prompt_manager
+---
+
+# `fastmcp.prompts.prompt_manager`
+
+## Classes
+
+### `PromptManager`
+
+
+Manages FastMCP prompts.
+
+
+**Methods:**
+
+#### `mount`
+
+```python
+mount(self, server: MountedServer) -> None
+```
+
+Adds a mounted server as a source for prompts.
+
+
+#### `add_prompt_from_fn`
+
+```python
+add_prompt_from_fn(self, fn: Callable[..., PromptResult | Awaitable[PromptResult]], name: str | None = None, description: str | None = None, tags: set[str] | None = None) -> FunctionPrompt
+```
+
+Create a prompt from a function.
+
+
+#### `add_prompt`
+
+```python
+add_prompt(self, prompt: Prompt) -> Prompt
+```
+
+Add a prompt to the manager.
+

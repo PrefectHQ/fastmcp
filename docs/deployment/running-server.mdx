@@ -105,7 +105,7 @@ When using Stdio transport, you will typically *not* run the server yourself as 
 
 Streamable HTTP is a modern, efficient transport for exposing your MCP server via HTTP. It is the recommended transport for web-based deployments.
 
-To run a server using Streamable HTTP, you can use the `run()` method with the `transport` argument set to `"streamable-http"`. This will start a Uvicorn server on the default host (`127.0.0.1`), port (`8000`), and path (`/mcp`).
+To run a server using Streamable HTTP, you can use the `run()` method with the `transport` argument set to `"streamable-http"`. This will start a Uvicorn server on the default host (`127.0.0.1`), port (`8000`), and path (`/mcp/`).
 <CodeGroup>
 ```python {6} server.py
 from fastmcp import FastMCP
@@ -120,7 +120,7 @@ import asyncio
 from fastmcp import Client
 
 async def example():
-    async with Client("http://127.0.0.1:8000/mcp") as client:
+    async with Client("http://127.0.0.1:8000/mcp/") as client:
         await client.ping()
 
 if __name__ == "__main__":
@@ -168,7 +168,7 @@ New applications should use Streamable HTTP transport instead.
 
 Server-Sent Events (SSE) is an HTTP-based protocol for server-to-client streaming. While FastMCP still supports SSE, it is deprecated and Streamable HTTP is preferred for new projects.
 
-To run a server using SSE, you can use the `run()` method with the `transport` argument set to `"sse"`. This will start a Uvicorn server on the default host (`127.0.0.1`), port (`8000`), and with default SSE path (`/sse`) and message path (`/messages/`).
+To run a server using SSE, you can use the `run()` method with the `transport` argument set to `"sse"`. This will start a Uvicorn server on the default host (`127.0.0.1`), port (`8000`), and with default SSE path (`/sse/`) and message path (`/messages/`).
 
 <CodeGroup>
 ```python {6} server.py
@@ -186,7 +186,7 @@ from fastmcp.client.transports import SSETransport
 
 async def example():
     async with Client(
-        transport=SSETransport("http://127.0.0.1:8000/sse")
+        transport=SSETransport("http://127.0.0.1:8000/sse/")
     ) as client:
         await client.ping()
 
