@@ -364,3 +364,98 @@ class TestPromptTypeConversion:
                 content=TextContent(type="text", text="Hello world (repeated 3 times)"),
             )
         ]
+
+
+class TestPromptArgumentDescriptions:
+    def test_enhanced_descriptions_for_non_string_types(self):
+        """Test that non-string argument types get enhanced descriptions with JSON schema."""
+
+        def analyze_data(
+            name: str,
+            numbers: list[int],
+            metadata: dict[str, str],
+            threshold: float,
+            active: bool,
+        ) -> str:
+            """Analyze numerical data."""
+            return f"Analyzed {name}"
+
+        prompt = Prompt.from_function(analyze_data)
+
+        # Check that string parameter has no schema enhancement
+        name_arg = next(arg for arg in prompt.arguments if arg.name == "name")
+        assert name_arg.description is None  # No enhancement for string types
+
+        # Check that non-string parameters have schema enhancements
+        numbers_arg = next(arg for arg in prompt.arguments if arg.name == "numbers")
+        assert (
+            "Arguments must be strings conforming to this JSON schema:"
+            in numbers_arg.description
+        )
+        assert '{"items":{"type":"integer"},"type":"array"}' in numbers_arg.description
+
+        metadata_arg = next(arg for arg in prompt.arguments if arg.name == "metadata")
+        assert (
+            "Arguments must be strings conforming to this JSON schema:"
+            in metadata_arg.description
+        )
+        assert (
+            '{"additionalProperties":{"type":"string"},"type":"object"}'
+            in metadata_arg.description
+        )
+
+        threshold_arg = next(arg for arg in prompt.arguments if arg.name == "threshold")
+        assert (
+            "Arguments must be strings conforming to this JSON schema:"
+            in threshold_arg.description
+        )
+        assert '{"type":"number"}' in threshold_arg.description
+
+        active_arg = next(arg for arg in prompt.arguments if arg.name == "active")
+        assert (
+            "Arguments must be strings conforming to this JSON schema:"
+            in active_arg.description
+        )
+        assert '{"type":"boolean"}' in active_arg.description
+
+    def test_enhanced_descriptions_with_existing_descriptions(self):
+        """Test that existing parameter descriptions are preserved with schema appended."""
+        from typing import Annotated
+
+        from pydantic import Field
+
+        def documented_prompt(
+            numbers: Annotated[
+                list[int], Field(description="A list of integers to process")
+            ],
+        ) -> str:
+            """Process numbers."""
+            return "processed"
+
+        prompt = Prompt.from_function(documented_prompt)
+
+        numbers_arg = next(arg for arg in prompt.arguments if arg.name == "numbers")
+        # Should have both the original description and the schema
+        assert numbers_arg.description is not None
+        assert "A list of integers to process" in numbers_arg.description
+        assert "\n\n" in numbers_arg.description  # Should have newline separator
+        assert (
+            "Arguments must be strings conforming to this JSON schema:"
+            in numbers_arg.description
+        )
+
+    def test_string_parameters_no_enhancement(self):
+        """Test that string parameters don't get schema enhancement."""
+
+        def string_only_prompt(message: str, name: str) -> str:
+            return f"{message}, {name}"
+
+        prompt = Prompt.from_function(string_only_prompt)
+
+        for arg in prompt.arguments:
+            # String parameters should not have schema enhancement
+            if arg.description:
+                assert (
+                    "Arguments must be strings conforming to this JSON schema:"
+                    not in arg.description
+                )

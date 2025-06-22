@@ -3,6 +3,7 @@
 from __future__ import annotations as _annotations
 
 import inspect
+import json
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable, Sequence
 from typing import Any
@@ -177,10 +178,39 @@ class FunctionPrompt(Prompt):
         arguments: list[PromptArgument] = []
         if "properties" in parameters:
             for param_name, param in parameters["properties"].items():
+                arg_description = param.get("description")
+
+                # For non-string parameters, append JSON schema info to help users
+                # understand the expected format when passing as strings (MCP requirement)
+                if param_name in sig.parameters:
+                    sig_param = sig.parameters[param_name]
+                    if (
+                        sig_param.annotation != inspect.Parameter.empty
+                        and sig_param.annotation is not str
+                        and param_name != context_kwarg
+                    ):
+                        # Get the JSON schema for this specific parameter type
+                        try:
+                            param_adapter = get_cached_typeadapter(sig_param.annotation)
+                            param_schema = param_adapter.json_schema()
+
+                            # Create compact schema representation
+                            schema_str = json.dumps(param_schema, separators=(",", ":"))
+
+                            # Append schema info to description
+                            schema_note = f"Arguments must be strings conforming to this JSON schema: {schema_str}"
+                            if arg_description:
+                                arg_description = f"{arg_description}\n\n{schema_note}"
+                            else:
+                                arg_description = schema_note
+                        except Exception:
+                            # If schema generation fails, skip enhancement
+                            pass
+
                 arguments.append(
                     PromptArgument(
                         name=param_name,
-                        description=param.get("description"),
+                        description=arg_description,
                         required=param_name in parameters.get("required", []),
                     )
                 )
@@ -238,7 +268,7 @@ class FunctionPrompt(Prompt):
                             )
                     except (ValueError, TypeError, pydantic_core.ValidationError) as e:
                         # If conversion fails, provide informative error
-                        raise ValueError(
+                        raise PromptError(
                             f"Could not convert argument '{param_name}' with value '{param_value}' "
                             f"to expected type {param.annotation}. Error: {e}"
                         )
