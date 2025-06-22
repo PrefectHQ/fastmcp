@@ -125,6 +125,7 @@
                 "pages": [
                   "integrations/anthropic",
                   "integrations/chatgpt",
+                  "integrations/claude-code",
                   "integrations/claude-desktop",
                   "integrations/gemini",
                   "integrations/openai",
