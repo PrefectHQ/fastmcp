@@ -15,7 +15,6 @@ The `fastmcp.Client` is a **programmatic client** for interacting with any Model
 - **Building deterministic applications** that need reliable MCP interactions
 - **Creating the foundation for agentic or LLM-based clients** with structured, type-safe operations
 
-All client operations require using the `async with` context manager for proper connection lifecycle management.
 
 <Note>
 This is not an agentic client - it requires explicit function calls and provides direct control over all MCP operations. Use it as a building block for higher-level systems.
@@ -23,7 +22,7 @@ This is not an agentic client - it requires explicit function calls and provides
 
 ## Quick Start
 
-The client uses transport inference to automatically determine the connection method:
+Note that all client operations require using the `async with` context manager for proper connection lifecycle management. The client uses transport inference to automatically determine the connection method.
 
 ```python
 import asyncio
@@ -86,11 +85,37 @@ client_http = Client("https://api.example.com/mcp")
 For testing and development, always prefer the in-memory transport by passing a `FastMCP` server directly to the client. This eliminates network complexity and separate processes.
 </Tip>
 
-## Multi-Server Clients
+## Configuration-Based Clients
 
 <VersionBadge version="2.4.0" />
 
-Connect to multiple MCP servers through a single client using MCP configuration:
+Create clients from MCP configuration dictionaries, which can include multiple servers. While there is no official standard for MCP configuration format, FastMCP follows established conventions used by tools like Claude Desktop.
+
+### Configuration Format
+
+```python
+config = {
+    "mcpServers": {
+        "server_name": {
+            # Remote HTTP/SSE server
+            "transport": "streamable-http",  # or "sse" 
+            "url": "https://api.example.com/mcp",
+            "headers": {"Authorization": "Bearer token"},
+            "auth": "oauth"  # or bearer token string
+        },
+        "local_server": {
+            # Local stdio server
+            "transport": "stdio"
+            "command": "python",
+            "args": ["./server.py", "--verbose"],
+            "env": {"DEBUG": "true"},
+            "cwd": "/path/to/server",
+        }
+    }
+}
+```
+
+### Multi-Server Example
 
 ```python
 config = {
@@ -143,43 +168,14 @@ The client provides methods for all standard MCP operations:
 | **Prompts** | `list_prompts()`, `get_prompt()` | Retrieve message templates |
 | **Utility** | `ping()` | Test server connectivity |
 
-### Quick Examples
+### Server Connectivity
+
+Use `ping()` to verify the server is reachable:
 
 ```python
 async with client:
-    # Tool operations
-    tools = await client.list_tools()
-    result = await client.call_tool("calculate", {"a": 5, "b": 3})
-    
-    # Resource operations  
-    resources = await client.list_resources()
-    content = await client.read_resource("file:///config/settings.json")
-    
-    # Prompt operations
-    prompts = await client.list_prompts()
-    messages = await client.get_prompt("welcome", {"name": "Alice"})
-```
-
-## Advanced Configuration
-
-The client supports additional configuration for specialized use cases:
-
-```python
-from fastmcp import Client
-from fastmcp.client.logging import LogMessage
-
-async def log_handler(message: LogMessage):
-    print(f"Server log: {message.data}")
-
-async def progress_handler(progress: float, total: float | None, message: str | None):
-    print(f"Progress: {progress}/{total} - {message}")
-
-client = Client(
-    "my_mcp_server.py",
-    log_handler=log_handler,           # Handle server logs
-    progress_handler=progress_handler, # Monitor long operations
-    timeout=30.0                       # Set request timeout
-)
+    await client.ping()
+    print("Server is reachable")
 ```
 
 ## Next Steps
