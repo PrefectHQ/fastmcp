@@ -16,15 +16,12 @@ docs:
 
 # Generate API reference documentation for all modules
 api-ref-all:
-    uv run --with-editable . --with git+https://github.com/zzstoatzz/mdxify.git@fix-nested-anchor-navigation mdxify --all --root-module fastmcp --anchor-name "Python SDK" --exclude fastmcp.contrib
+    uvx --with-editable . --refresh-package mdxify mdxify@latest --all --root-module fastmcp --anchor-name "Python SDK" --exclude fastmcp.contrib
 
 # Generate API reference for specific modules (e.g., just api-ref prefect.flows prefect.tasks)
 api-ref *MODULES:
-    uvx --with-editable . --refresh-package mdxify mdxify@latest {{MODULES}} --root-module fastmcp --anchor-name "SDK Reference"
+    uvx --with-editable . --refresh-package mdxify mdxify@latest {{MODULES}} --root-module fastmcp --anchor-name "Python SDK"
 
 # Clean up API reference documentation
 api-ref-clean:
     rm -rf docs/python-sdk
-
-copy-context:
-    uvx --with-editable . --refresh-package copychat copychat@latest src/ docs/ -x changelog.mdx -x python-sdk/ -v
