@@ -5,6 +5,18 @@ from datetime import datetime
 from atproto import Client
 
 from atproto_mcp.settings import settings
+from atproto_mcp.types import (
+    FollowResult,
+    LikeResult,
+    Notification,
+    NotificationsResult,
+    Post,
+    PostResult,
+    ProfileInfo,
+    RepostResult,
+    SearchResult,
+    TimelineResult,
+)
 
 _client: Client | None = None
 
@@ -18,41 +30,59 @@ def get_client() -> Client:
     return _client
 
 
-def get_profile_info() -> dict:
+def get_profile_info() -> ProfileInfo:
     """Get profile information for the authenticated user."""
     try:
         client = get_client()
         profile = client.get_profile(client.me.did)
-        return {
-            "connected": True,
-            "handle": profile.handle,
-            "display_name": profile.display_name,
-            "did": client.me.did,
-            "followers": profile.followers_count,
-            "following": profile.follows_count,
-            "posts": profile.posts_count,
-        }
+        return ProfileInfo(
+            connected=True,
+            handle=profile.handle,
+            display_name=profile.display_name,
+            did=client.me.did,
+            followers=profile.followers_count,
+            following=profile.follows_count,
+            posts=profile.posts_count,
+            error=None,
+        )
     except Exception as e:
-        return {"connected": False, "error": str(e)}
+        return ProfileInfo(
+            connected=False,
+            handle=None,
+            display_name=None,
+            did=None,
+            followers=None,
+            following=None,
+            posts=None,
+            error=str(e),
+        )
 
 
-def create_post(text: str) -> dict:
+def create_post(text: str) -> PostResult:
     """Create a new post."""
     try:
         client = get_client()
         post = client.send_post(text=text)
-        return {
-            "success": True,
-            "uri": post.uri,
-            "cid": post.cid,
-            "text": text,
-            "created_at": datetime.now().isoformat(),
-        }
+        return PostResult(
+            success=True,
+            uri=post.uri,
+            cid=post.cid,
+            text=text,
+            created_at=datetime.now().isoformat(),
+            error=None,
+        )
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return PostResult(
+            success=False,
+            uri=None,
+            cid=None,
+            text=None,
+            created_at=None,
+            error=str(e),
+        )
 
 
-def fetch_timeline(limit: int = 10) -> dict:
+def fetch_timeline(limit: int = 10) -> TimelineResult:
     """Fetch the authenticated user's timeline."""
     try:
         client = get_client()
@@ -62,29 +92,35 @@ def fetch_timeline(limit: int = 10) -> dict:
         for feed_view in timeline.feed:
             post = feed_view.post
             posts.append(
-                {
-                    "author": post.author.handle,
-                    "text": post.record.text if hasattr(post.record, "text") else None,
-                    "created_at": post.record.created_at
+                Post(
+                    author=post.author.handle,
+                    text=post.record.text if hasattr(post.record, "text") else None,
+                    created_at=post.record.created_at
                     if hasattr(post.record, "created_at")
                     else None,
-                    "likes": post.like_count,
-                    "reposts": post.repost_count,
-                    "replies": post.reply_count,
-                    "uri": post.uri,
-                }
+                    likes=post.like_count,
+                    reposts=post.repost_count,
+                    replies=post.reply_count,
+                    uri=post.uri,
+                )
             )
 
-        return {
-            "success": True,
-            "count": len(posts),
-            "posts": posts,
-        }
+        return TimelineResult(
+            success=True,
+            count=len(posts),
+            posts=posts,
+            error=None,
+        )
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return TimelineResult(
+            success=False,
+            count=0,
+            posts=[],
+            error=str(e),
+        )
 
 
-def search_for_posts(query: str, limit: int = 10) -> dict:
+def search_for_posts(query: str, limit: int = 10) -> SearchResult:
     """Search for posts containing specific text."""
     try:
         client = get_client()
@@ -95,30 +131,37 @@ def search_for_posts(query: str, limit: int = 10) -> dict:
         posts = []
         for post in search_results.posts:
             posts.append(
-                {
-                    "author": post.author.handle,
-                    "text": post.record.text if hasattr(post.record, "text") else None,
-                    "created_at": post.record.created_at
+                Post(
+                    author=post.author.handle,
+                    text=post.record.text if hasattr(post.record, "text") else None,
+                    created_at=post.record.created_at
                     if hasattr(post.record, "created_at")
                     else None,
-                    "likes": post.like_count,
-                    "reposts": post.repost_count,
-                    "replies": post.reply_count,
-                    "uri": post.uri,
-                }
+                    likes=post.like_count,
+                    reposts=post.repost_count,
+                    replies=post.reply_count,
+                    uri=post.uri,
+                )
             )
 
-        return {
-            "success": True,
-            "query": query,
-            "count": len(posts),
-            "posts": posts,
-        }
+        return SearchResult(
+            success=True,
+            query=query,
+            count=len(posts),
+            posts=posts,
+            error=None,
+        )
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return SearchResult(
+            success=False,
+            query=query,
+            count=0,
+            posts=[],
+            error=str(e),
+        )
 
 
-def fetch_notifications(limit: int = 10) -> dict:
+def fetch_notifications(limit: int = 10) -> NotificationsResult:
     """Get recent notifications."""
     try:
         client = get_client()
@@ -129,69 +172,100 @@ def fetch_notifications(limit: int = 10) -> dict:
         notifs = []
         for notif in notifications.notifications:
             notifs.append(
-                {
-                    "reason": notif.reason,
-                    "author": notif.author.handle if notif.author else None,
-                    "is_read": notif.is_read,
-                    "created_at": notif.indexed_at,
-                    "uri": notif.uri,
-                }
+                Notification(
+                    reason=notif.reason,
+                    author=notif.author.handle if notif.author else None,
+                    is_read=notif.is_read,
+                    created_at=notif.indexed_at,
+                    uri=notif.uri,
+                )
             )
 
-        return {
-            "success": True,
-            "count": len(notifs),
-            "notifications": notifs,
-        }
+        return NotificationsResult(
+            success=True,
+            count=len(notifs),
+            notifications=notifs,
+            error=None,
+        )
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return NotificationsResult(
+            success=False,
+            count=0,
+            notifications=[],
+            error=str(e),
+        )
 
 
-def follow_user_by_handle(handle: str) -> dict:
+def follow_user_by_handle(handle: str) -> FollowResult:
     """Follow a user by their handle."""
     try:
         client = get_client()
         # Resolve handle to DID
         resolved = client.app.bsky.actor.search_actors(q=handle, limit=1)
         if not resolved.actors:
-            return {"success": False, "error": f"User {handle} not found"}
+            return FollowResult(
+                success=False,
+                followed=None,
+                did=None,
+                uri=None,
+                error=f"User {handle} not found",
+            )
 
         user_did = resolved.actors[0].did
         follow = client.follow(user_did)
 
-        return {
-            "success": True,
-            "followed": handle,
-            "did": user_did,
-            "uri": follow.uri,
-        }
+        return FollowResult(
+            success=True,
+            followed=handle,
+            did=user_did,
+            uri=follow.uri,
+            error=None,
+        )
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return FollowResult(
+            success=False,
+            followed=None,
+            did=None,
+            uri=None,
+            error=str(e),
+        )
 
 
-def like_post_by_uri(uri: str) -> dict:
+def like_post_by_uri(uri: str) -> LikeResult:
     """Like a post by its AT URI."""
     try:
         client = get_client()
         like = client.like(uri)
-        return {
-            "success": True,
-            "liked_uri": uri,
-            "like_uri": like.uri,
-        }
+        return LikeResult(
+            success=True,
+            liked_uri=uri,
+            like_uri=like.uri,
+            error=None,
+        )
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return LikeResult(
+            success=False,
+            liked_uri=None,
+            like_uri=None,
+            error=str(e),
+        )
 
 
-def repost_by_uri(uri: str) -> dict:
+def repost_by_uri(uri: str) -> RepostResult:
     """Repost a post by its AT URI."""
     try:
         client = get_client()
         repost = client.repost(uri)
-        return {
-            "success": True,
-            "reposted_uri": uri,
-            "repost_uri": repost.uri,
-        }
+        return RepostResult(
+            success=True,
+            reposted_uri=uri,
+            repost_uri=repost.uri,
+            error=None,
+        )
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return RepostResult(
+            success=False,
+            reposted_uri=None,
+            repost_uri=None,
+            error=str(e),
+        )

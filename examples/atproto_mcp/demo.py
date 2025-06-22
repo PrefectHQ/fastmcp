@@ -3,8 +3,16 @@
 import argparse
 import asyncio
 import json
+from typing import cast
 
 from atproto_mcp.server import atproto_mcp
+from atproto_mcp.types import (
+    NotificationsResult,
+    PostResult,
+    ProfileInfo,
+    SearchResult,
+    TimelineResult,
+)
 
 from fastmcp import Client
 
@@ -13,10 +21,12 @@ async def main(enable_posting: bool = False):
     print("🔵 ATProto MCP Server Demo\n")
 
     async with Client(atproto_mcp) as client:
-        # 1. Check connection status
-        print("1. Checking connection status...")
-        result = await client.call_tool("atproto_status", {})
-        status = json.loads(result[0].text) if result else {}
+        # 1. Check connection status (resource)
+        print("1. Checking connection status (resource)...")
+        result = await client.read_resource("atproto://profile/status")
+        status: ProfileInfo = (
+            json.loads(result[0].text) if result else cast(ProfileInfo, {})
+        )
 
         if status.get("connected"):
             print(f"✅ Connected as: @{status['handle']}")
@@ -27,10 +37,12 @@ async def main(enable_posting: bool = False):
             print(f"❌ Connection failed: {status.get('error')}")
             return
 
-        # 2. Get timeline
-        print("\n2. Getting timeline (last 3 posts)...")
-        result = await client.call_tool("get_timeline", {"limit": 3})
-        timeline = json.loads(result[0].text) if result else {}
+        # 2. Get timeline (resource with parameter)
+        print("\n2. Getting timeline (resource)...")
+        result = await client.read_resource("atproto://timeline")
+        timeline: TimelineResult = (
+            json.loads(result[0].text) if result else cast(TimelineResult, {})
+        )
 
         if timeline.get("success"):
             print(f"✅ Found {timeline['count']} posts:")
@@ -48,10 +60,12 @@ async def main(enable_posting: bool = False):
         else:
             print(f"❌ Failed to get timeline: {timeline.get('error')}")
 
-        # 3. Search for posts
-        print("\n3. Searching for posts about 'Python'...")
-        result = await client.call_tool("search_posts", {"query": "Python", "limit": 3})
-        search = json.loads(result[0].text) if result else {}
+        # 3. Search for posts (resource with template)
+        print("\n3. Searching for posts about 'Python' (template resource)...")
+        result = await client.read_resource("atproto://search/Python")
+        search: SearchResult = (
+            json.loads(result[0].text) if result else cast(SearchResult, {})
+        )
 
         if search.get("success"):
             print(f"✅ Found {search['count']} posts about Python")
@@ -65,10 +79,12 @@ async def main(enable_posting: bool = False):
         else:
             print(f"❌ Search failed: {search.get('error')}")
 
-        # 4. Get notifications
-        print("\n4. Checking notifications...")
-        result = await client.call_tool("get_notifications", {"limit": 5})
-        notifs = json.loads(result[0].text) if result else {}
+        # 4. Get notifications (resource)
+        print("\n4. Checking notifications (resource)...")
+        result = await client.read_resource("atproto://notifications")
+        notifs: NotificationsResult = (
+            json.loads(result[0].text) if result else cast(NotificationsResult, {})
+        )
 
         if notifs.get("success"):
             print(f"✅ You have {notifs['count']} recent notifications")
@@ -78,16 +94,18 @@ async def main(enable_posting: bool = False):
         else:
             print(f"❌ Failed to get notifications: {notifs.get('error')}")
 
-        # 5. Demo posting
+        # 5. Demo posting (tool)
         if enable_posting:
-            print("\n5. Creating a test post...")
-            post = await client.call_tool(
+            print("\n5. Creating a test post (tool)...")
+            post_result = await client.call_tool(
                 "post_to_bluesky",
                 {
                     "text": "🧪 Testing the ATProto MCP server demo! This post was created programmatically using FastMCP. #FastMCP #ATProto"
                 },
             )
-            result = json.loads(post[0].text) if post else {}
+            result: PostResult = (
+                json.loads(post_result[0].text) if post_result else cast(PostResult, {})
+            )
             if result.get("success"):
                 print("✅ Posted successfully!")
                 print(f"   URI: {result['uri']}")
@@ -95,9 +113,22 @@ async def main(enable_posting: bool = False):
             else:
                 print(f"❌ Failed to post: {result.get('error')}")
         else:
-            print("\n5. Posting capability:")
+            print("\n5. Posting capability (tool):")
             print("   To enable posting, run with --post flag")
             print("   Example: python demo.py --post")
+
+        # 6. Show available resources and tools
+        print("\n6. Available capabilities:")
+        print("   Resources (read-only):")
+        print("     - atproto://profile/status - Profile information")
+        print("     - atproto://timeline - Timeline feed")
+        print("     - atproto://search/{query} - Search posts")
+        print("     - atproto://notifications - Recent notifications")
+        print("   Tools (actions):")
+        print("     - post_to_bluesky - Create a new post")
+        print("     - follow_user - Follow a user")
+        print("     - like_post - Like a post")
+        print("     - repost - Repost content")
 
         print("\n✨ Demo complete!")
 

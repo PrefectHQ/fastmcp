@@ -1,16 +1,21 @@
 # ATProto MCP Server
 
-This example demonstrates a FastMCP server that provides tools for interacting with the AT Protocol (Bluesky).
+This example demonstrates a FastMCP server that provides tools and resources for interacting with the AT Protocol (Bluesky).
 
 ## Features
 
-The server provides the following tools:
+The server provides two types of capabilities:
 
-- **atproto_status**: Check connection status and profile information
+### Resources (Read-only operations)
+
+- **atproto://profile/status**: Get connection status and profile information
+- **atproto://timeline**: Retrieve your timeline feed (last 10 posts)
+- **atproto://search/{query}**: Search for posts by keyword
+- **atproto://notifications**: Get recent notifications (last 10)
+
+### Tools (Actions that modify state)
+
 - **post_to_bluesky**: Create new posts on Bluesky
-- **get_timeline**: Retrieve your timeline feed
-- **search_posts**: Search for posts by keyword
-- **get_notifications**: Get recent notifications
 - **follow_user**: Follow a user by handle
 - **like_post**: Like a post by URI
 - **repost**: Repost content by URI
@@ -43,27 +48,27 @@ from atproto_mcp.server import atproto_mcp
 
 async def demo():
     async with Client(atproto_mcp) as client:
-        # Check status
-        status = await client.call_tool("atproto_status", {})
-        print(f"Connected as: {status['handle']}")
+        # Read resources
+        status = await client.read_resource("atproto://profile/status")
+        print(f"Connected as: {status}")
         
-        # Post to Bluesky
+        timeline = await client.read_resource("atproto://timeline?limit=5")
+        print(f"Timeline: {timeline}")
+        
+        # Use tools for actions
         post = await client.call_tool("post_to_bluesky", {
             "text": "Hello from FastMCP!"
         })
-        print(f"Posted: {post['uri']}")
-        
-        # Get timeline
-        timeline = await client.call_tool("get_timeline", {"limit": 5})
-        print(f"Found {timeline['count']} posts")
-        
-        # Search posts
-        results = await client.call_tool("search_posts", {
-            "query": "FastMCP",
-            "limit": 10
-        })
-        print(f"Found {results['count']} posts matching 'FastMCP'")
+        print(f"Posted: {post}")
 ```
+
+## Architecture
+
+The server is organized with:
+- `server.py` - Public API with resource and tool definitions
+- `_atproto.py` - Private implementation details
+- `types.py` - TypedDict definitions for structured responses
+- `settings.py` - Configuration management
 
 ## Security Note
 
