@@ -25,3 +25,6 @@ api-ref *MODULES:
 # Clean up API reference documentation
 api-ref-clean:
     rm -rf docs/python-sdk
+
+copy-context:
+    uvx --with-editable . --refresh-package copychat copychat@latest src/ docs/ -x changelog.mdx -x python-sdk/ -v
