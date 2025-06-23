@@ -13,6 +13,7 @@ This example demonstrates a FastMCP server that provides tools and resources for
 ### Tools (Actions)
 
 - **post**: Create posts with rich features (text, images, quotes, replies, links, mentions)
+- **create_thread**: Post multi-part threads with automatic linking
 - **search**: Search for posts by query
 - **follow**: Follow users by handle
 - **like**: Like posts by URI
@@ -107,6 +108,15 @@ async def demo():
             "reply_to": "at://did:plc:xxx/app.bsky.feed.post/yyy",
             "links": [{"text": "this article", "url": "https://example.com/article"}]
         })
+        
+        # Create a thread
+        await client.call_tool("create_thread", {
+            "posts": [
+                {"text": "Starting a thread about Python 🧵"},
+                {"text": "Python is great for rapid prototyping"},
+                {"text": "And the ecosystem is amazing!", "images": ["https://example.com/python.jpg"]}
+            ]
+        })
 ```
 
 ## AI Assistant Use Cases
@@ -116,7 +126,7 @@ The unified API enables natural AI assistant interactions:
 - **"Reply to that post with these findings"** → Uses `reply_to` with rich text
 - **"Share this article with commentary"** → Uses `quote` with the article link
 - **"Post this chart with explanation"** → Uses `images` with descriptive text
-- **"Start a thread about AI safety"** → Chain multiple posts with `reply_to`
+- **"Start a thread about AI safety"** → Uses `create_thread` for automatic linking
 
 ## Architecture
 

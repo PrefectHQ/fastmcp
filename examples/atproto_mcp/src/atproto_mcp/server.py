@@ -16,6 +16,8 @@ from atproto_mcp.types import (
     RichTextLink,
     RichTextMention,
     SearchResult,
+    ThreadPost,
+    ThreadResult,
     TimelineResult,
 )
 from fastmcp import FastMCP
@@ -126,3 +128,27 @@ def search(
 ) -> SearchResult:
     """Search for posts containing specific text."""
     return _atproto.search_for_posts(query, limit)
+
+
+@atproto_mcp.tool
+def create_thread(
+    posts: Annotated[
+        list[ThreadPost],
+        Field(
+            description="List of posts to create as a thread. Each post can have text, images, links, mentions, and quotes."
+        ),
+    ],
+) -> ThreadResult:
+    """Create a thread of posts with automatic linking.
+
+    The first post becomes the root of the thread, and each subsequent post
+    replies to the previous one, maintaining the thread structure.
+
+    Example:
+        create_thread([
+            {"text": "Starting a thread about Python 🧵"},
+            {"text": "Python is great for rapid development"},
+            {"text": "And the ecosystem is amazing!", "images": ["https://example.com/python.jpg"]}
+        ])
+    """
+    return _atproto.create_thread(posts)
