@@ -320,7 +320,8 @@ def reply_to_post(
             raise ValueError("Parent post not found")
 
         parent_cid = parent_post.posts[0].cid
-        parent_ref = models.create_strong_ref({"uri": parent_uri, "cid": parent_cid})
+        # Create a proper StrongRef object
+        parent_ref = models.ComAtprotoRepoStrongRef.Main(uri=parent_uri, cid=parent_cid)
 
         # If no root_uri provided, parent is the root
         if root_uri is None:
@@ -331,7 +332,7 @@ def reply_to_post(
             if not root_post.posts:
                 raise ValueError("Root post not found")
             root_cid = root_post.posts[0].cid
-            root_ref = models.create_strong_ref({"uri": root_uri, "cid": root_cid})
+            root_ref = models.ComAtprotoRepoStrongRef.Main(uri=root_uri, cid=root_cid)
 
         # Create the reply
         reply = client.send_post(
@@ -449,7 +450,7 @@ def create_quote_post(text: str, quoted_uri: str) -> QuotePostResult:
 
         # Create strong ref for the quoted post
         quoted_cid = quoted_post.posts[0].cid
-        quoted_ref = models.create_strong_ref({"uri": quoted_uri, "cid": quoted_cid})
+        quoted_ref = models.ComAtprotoRepoStrongRef.Main(uri=quoted_uri, cid=quoted_cid)
 
         # Create the embed
         embed = models.AppBskyEmbedRecord.Main(record=quoted_ref)
@@ -490,34 +491,28 @@ def create_post_with_images(
         elif len(alt_texts) < len(image_urls):
             alt_texts.extend([""] * (len(image_urls) - len(alt_texts)))
 
-        images = []
+        image_data = []
+        image_alts = []
         for i, url in enumerate(image_urls[:4]):  # Max 4 images
-            # Download image
-            response = httpx.get(url)
+            # Download image (follow redirects)
+            response = httpx.get(url, follow_redirects=True)
             response.raise_for_status()
 
-            # Upload to blob storage
-            uploaded = client.upload_blob(response.content)
-
-            images.append(
-                {
-                    "image": uploaded.blob,
-                    "alt": alt_texts[i] if i < len(alt_texts) else "",
-                }
-            )
+            image_data.append(response.content)
+            image_alts.append(alt_texts[i] if i < len(alt_texts) else "")
 
         # Send post with images
         post = client.send_images(
             text=text,
-            images=[img["image"] for img in images],
-            image_alts=[img["alt"] for img in images],
+            images=image_data,
+            image_alts=image_alts,
         )
 
         return ImagePostResult(
             success=True,
             uri=post.uri,
             cid=post.cid,
-            image_count=len(images),
+            image_count=len(image_data),
             error=None,
         )
     except Exception as e:
