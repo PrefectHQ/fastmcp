@@ -41,23 +41,6 @@ def get_timeline() -> TimelineResult:
     return _atproto.fetch_timeline(settings.atproto_timeline_default_limit)
 
 
-@atproto_mcp.resource("atproto://search/{query}")
-def search_posts(
-    query: Annotated[str, Field(description="Search query for posts")],
-    limit: Annotated[
-        int,
-        Field(
-            default=settings.atproto_search_default_limit,
-            ge=1,
-            le=100,
-            description="Number of results to return",
-        ),
-    ],
-) -> SearchResult:
-    """Search for posts containing specific text."""
-    return _atproto.search_for_posts(query, limit)
-
-
 @atproto_mcp.resource("atproto://notifications")
 def get_notifications() -> NotificationsResult:
     """Get recent notifications for the authenticated user."""
@@ -132,3 +115,14 @@ def repost(
 ) -> RepostResult:
     """Repost a post by its AT URI."""
     return _atproto.repost_by_uri(uri)
+
+
+@atproto_mcp.tool
+def search(
+    query: Annotated[str, Field(description="Search query for posts")],
+    limit: Annotated[
+        int, Field(ge=1, le=100, description="Number of results to return")
+    ] = settings.atproto_search_default_limit,
+) -> SearchResult:
+    """Search for posts containing specific text."""
+    return _atproto.search_for_posts(query, limit)

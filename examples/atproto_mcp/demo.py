@@ -55,7 +55,7 @@ async def main(enable_posting: bool = False):
 
         # 3. Search for posts
         print("\n3. Searching for posts about 'Bluesky'...")
-        result = await client.read_resource("atproto://search/Bluesky")
+        result = await client.call_tool("search", {"query": "Bluesky", "limit": 5})
         search: SearchResult = (
             json.loads(result[0].text) if result else cast(SearchResult, {})
         )
@@ -195,7 +195,6 @@ async def main(enable_posting: bool = False):
         print("\n   Resources (read-only):")
         print("     - atproto://profile/status")
         print("     - atproto://timeline")
-        print("     - atproto://search/{query}")
         print("     - atproto://notifications")
 
         print("\n   Tools (actions):")
@@ -206,6 +205,7 @@ async def main(enable_posting: bool = False):
         print("       • Replies and threads")
         print("       • Quote posts")
         print("       • Combinations (quote + image, reply + rich text, etc.)")
+        print("     - search: Search for posts")
         print("     - follow: Follow users")
         print("     - like: Like posts")
         print("     - repost: Share posts")

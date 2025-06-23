@@ -8,12 +8,12 @@ This example demonstrates a FastMCP server that provides tools and resources for
 
 - **atproto://profile/status**: Get connection status and profile information
 - **atproto://timeline**: Retrieve your timeline feed
-- **atproto://search/{query}**: Search for posts by keyword
 - **atproto://notifications**: Get recent notifications
 
 ### Tools (Actions)
 
 - **post**: Create posts with rich features (text, images, quotes, replies, links, mentions)
+- **search**: Search for posts by query
 - **follow**: Follow users by handle
 - **like**: Like posts by URI
 - **repost**: Share posts by URI
