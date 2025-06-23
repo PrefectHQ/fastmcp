@@ -63,3 +63,24 @@ Install a MCP server in the Claude desktop app.
 Environment variables are preserved once added and only updated if new values
 are explicitly provided.
 
+
+### `inspect`
+
+```python
+inspect(server_spec: str = typer.Argument(..., help='Python file to inspect, optionally with :object suffix'), output: Annotated[Path, typer.Option('--output', '-o', help='Output file path for the JSON report (default: server-info.json)')] = Path('server-info.json')) -> None
+```
+
+
+Inspect a FastMCP server and generate a JSON report.
+
+    This command analyzes a FastMCP server (v1.x or v2.x) and generates
+    a comprehensive JSON report containing information about the server's
+    name, instructions, version, tools, prompts, resources, templates,
+    and capabilities.
+
+    Examples:
+        fastmcp inspect server.py
+        fastmcp inspect server.py -o report.json
+        fastmcp inspect server.py:mcp -o analysis.json
+        fastmcp inspect path/to/server.py:app -o /tmp/server-info.json
+    
