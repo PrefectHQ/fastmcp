@@ -1,5 +1,6 @@
 """Unified posting functionality."""
 
+import time
 from datetime import datetime
 
 from atproto import models
@@ -334,6 +335,9 @@ def create_thread(posts: list[ThreadPost]) -> ThreadResult:
                 root_uri = result["uri"]
                 parent_uri = root_uri
                 post_uris.append(root_uri)
+
+                # Small delay to ensure post is indexed
+                time.sleep(0.5)
             else:
                 # Subsequent posts reply to the previous one
                 result = create_post(
@@ -358,6 +362,10 @@ def create_thread(posts: list[ThreadPost]) -> ThreadResult:
 
                 parent_uri = result["uri"]
                 post_uris.append(parent_uri)
+
+                # Small delay between posts
+                if i < len(posts) - 1:
+                    time.sleep(0.5)
 
         return ThreadResult(
             success=True,
