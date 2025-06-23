@@ -24,4 +24,4 @@ build-backend = "hatchling.build"
 allow-direct-references = true
 
 [tool.uv.sources]
-fastmcp = { workspace = true }
+fastmcp = { path = "../../../fastmcp" }
