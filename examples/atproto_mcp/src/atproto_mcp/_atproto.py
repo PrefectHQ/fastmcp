@@ -201,7 +201,7 @@ def follow_user_by_handle(handle: str) -> FollowResult:
     try:
         client = get_client()
         # Resolve handle to DID
-        resolved = client.app.bsky.actor.search_actors(q=handle, limit=1)
+        resolved = client.app.bsky.actor.search_actors(params={"q": handle, "limit": 1})
         if not resolved.actors:
             return FollowResult(
                 success=False,
@@ -235,7 +235,24 @@ def like_post_by_uri(uri: str) -> LikeResult:
     """Like a post by its AT URI."""
     try:
         client = get_client()
-        like = client.like(uri)
+        # Parse the URI to get the components
+        # URI format: at://did:plc:xxx/app.bsky.feed.post/yyy
+        parts = uri.replace("at://", "").split("/")
+        if len(parts) != 3 or parts[1] != "app.bsky.feed.post":
+            raise ValueError("Invalid post URI format")
+
+        # repo = parts[0]  # Not needed for get_posts
+        # rkey = parts[2]  # Not needed for get_posts
+
+        # Get the post to retrieve its CID
+        post = client.app.bsky.feed.get_posts(params={"uris": [uri]})
+        if not post.posts:
+            raise ValueError("Post not found")
+
+        cid = post.posts[0].cid
+
+        # Now like the post with both URI and CID
+        like = client.like(uri, cid)
         return LikeResult(
             success=True,
             liked_uri=uri,
@@ -255,7 +272,21 @@ def repost_by_uri(uri: str) -> RepostResult:
     """Repost a post by its AT URI."""
     try:
         client = get_client()
-        repost = client.repost(uri)
+        # Parse the URI to get the components
+        # URI format: at://did:plc:xxx/app.bsky.feed.post/yyy
+        parts = uri.replace("at://", "").split("/")
+        if len(parts) != 3 or parts[1] != "app.bsky.feed.post":
+            raise ValueError("Invalid post URI format")
+
+        # Get the post to retrieve its CID
+        post = client.app.bsky.feed.get_posts(params={"uris": [uri]})
+        if not post.posts:
+            raise ValueError("Post not found")
+
+        cid = post.posts[0].cid
+
+        # Now repost with both URI and CID
+        repost = client.repost(uri, cid)
         return RepostResult(
             success=True,
             reposted_uri=uri,
