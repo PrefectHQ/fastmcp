@@ -7,6 +7,9 @@ changelog:
     - title: New Features 🎉
       labels:
         - feature
+      exclude:
+        labels:
+          - contrib
 
     - title: Enhancements 🔧
       labels:
@@ -14,17 +17,21 @@ changelog:
       exclude:
         labels:
           - breaking change
+          - contrib
 
     - title: Fixes 🐞
       labels:
         - bug
       exclude:
         labels:
-          - breaking change
+          - contrib
 
     - title: Breaking Changes 🛫
       labels:
         - breaking change
+      exclude:
+        labels:
+          - contrib
 
     - title: Docs 📚
       labels:
