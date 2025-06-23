@@ -119,3 +119,24 @@ class RichTextMention(TypedDict):
 
     handle: str
     display_text: str | None
+
+
+class ThreadPost(TypedDict, total=False):
+    """A post in a thread."""
+
+    text: str  # Required
+    images: list[str] | None
+    image_alts: list[str] | None
+    links: list[RichTextLink] | None
+    mentions: list[RichTextMention] | None
+    quote: str | None
+
+
+class ThreadResult(TypedDict):
+    """Result of creating a thread."""
+
+    success: bool
+    thread_uri: str | None  # URI of the first post
+    post_uris: list[str]
+    post_count: int
+    error: str | None

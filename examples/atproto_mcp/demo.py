@@ -185,6 +185,37 @@ async def main(enable_posting: bool = False):
                 )
                 if json.loads(result[0].text).get("success"):
                     print("   ✅ Followed @alternatebuild.dev!")
+
+            # h. Thread creation (new!)
+            print("\n   h) Creating a thread...")
+            result = await client.call_tool(
+                "create_thread",
+                {
+                    "posts": [
+                        {
+                            "text": "Let me share some thoughts about the ATProto MCP server 🧵"
+                        },
+                        {
+                            "text": "First, it makes posting from the terminal incredibly smooth"
+                        },
+                        {
+                            "text": "The unified post API means one tool handles everything",
+                            "links": [
+                                {
+                                    "text": "everything",
+                                    "url": "https://github.com/jlowin/fastmcp",
+                                }
+                            ],
+                        },
+                        {
+                            "text": "And now with create_thread, multi-post threads are trivial!"
+                        },
+                    ]
+                },
+            )
+            if json.loads(result[0].text).get("success"):
+                thread_result = json.loads(result[0].text)
+                print(f"   ✅ Thread created with {thread_result['post_count']} posts!")
         else:
             print("\n5. Posting capabilities (not enabled):")
             print("   To test posting, run with --post flag")
@@ -206,6 +237,7 @@ async def main(enable_posting: bool = False):
         print("       • Quote posts")
         print("       • Combinations (quote + image, reply + rich text, etc.)")
         print("     - search: Search for posts")
+        print("     - create_thread: Post multi-part threads")
         print("     - follow: Follow users")
         print("     - like: Like posts")
         print("     - repost: Share posts")

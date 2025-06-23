@@ -4,7 +4,13 @@ from datetime import datetime
 
 from atproto import models
 
-from atproto_mcp.types import PostResult, RichTextLink, RichTextMention
+from atproto_mcp.types import (
+    PostResult,
+    RichTextLink,
+    RichTextMention,
+    ThreadPost,
+    ThreadResult,
+)
 
 from ._client import get_client
 
@@ -282,3 +288,90 @@ def _send_images(
         created_at=datetime.now().isoformat(),
         error=None,
     )
+
+
+def create_thread(posts: list[ThreadPost]) -> ThreadResult:
+    """Create a thread of posts with automatic linking.
+
+    Args:
+        posts: List of posts to create as a thread. First post is the root.
+    """
+    if not posts:
+        return ThreadResult(
+            success=False,
+            thread_uri=None,
+            post_uris=[],
+            post_count=0,
+            error="No posts provided",
+        )
+
+    try:
+        post_uris = []
+        root_uri = None
+        parent_uri = None
+
+        for i, post_data in enumerate(posts):
+            # First post is the root
+            if i == 0:
+                result = create_post(
+                    text=post_data["text"],
+                    images=post_data.get("images"),
+                    image_alts=post_data.get("image_alts"),
+                    links=post_data.get("links"),
+                    mentions=post_data.get("mentions"),
+                    quote=post_data.get("quote"),
+                )
+
+                if not result["success"]:
+                    return ThreadResult(
+                        success=False,
+                        thread_uri=None,
+                        post_uris=post_uris,
+                        post_count=len(post_uris),
+                        error=f"Failed to create root post: {result['error']}",
+                    )
+
+                root_uri = result["uri"]
+                parent_uri = root_uri
+                post_uris.append(root_uri)
+            else:
+                # Subsequent posts reply to the previous one
+                result = create_post(
+                    text=post_data["text"],
+                    images=post_data.get("images"),
+                    image_alts=post_data.get("image_alts"),
+                    links=post_data.get("links"),
+                    mentions=post_data.get("mentions"),
+                    quote=post_data.get("quote"),
+                    reply_to=parent_uri,
+                    reply_root=root_uri,
+                )
+
+                if not result["success"]:
+                    return ThreadResult(
+                        success=False,
+                        thread_uri=root_uri,
+                        post_uris=post_uris,
+                        post_count=len(post_uris),
+                        error=f"Failed to create post {i + 1}: {result['error']}",
+                    )
+
+                parent_uri = result["uri"]
+                post_uris.append(parent_uri)
+
+        return ThreadResult(
+            success=True,
+            thread_uri=root_uri,
+            post_uris=post_uris,
+            post_count=len(post_uris),
+            error=None,
+        )
+
+    except Exception as e:
+        return ThreadResult(
+            success=False,
+            thread_uri=None,
+            post_uris=post_uris,
+            post_count=len(post_uris),
+            error=str(e),
+        )
