@@ -65,7 +65,7 @@ def mcp_server_url(rsa_key_pair: RSAKeyPair) -> Generator[str]:
     with run_server_in_process(
         run_mcp_server,
         public_key=rsa_key_pair.public_key,
-        run_kwargs=dict(transport="streamable-http"),
+        run_kwargs=dict(transport="http"),
     ) as url:
         yield f"{url}/mcp/"
 
@@ -696,7 +696,7 @@ class TestFastMCPBearerAuth:
             run_mcp_server,
             public_key=rsa_key_pair.public_key,
             auth_kwargs=dict(required_scopes=["read", "write"]),
-            run_kwargs=dict(transport="streamable-http"),
+            run_kwargs=dict(transport="http"),
         ) as url:
             mcp_server_url = f"{url}/mcp/"
             with pytest.raises(httpx.HTTPStatusError) as exc_info:
@@ -719,7 +719,7 @@ class TestFastMCPBearerAuth:
             run_mcp_server,
             public_key=rsa_key_pair.public_key,
             auth_kwargs=dict(required_scopes=["read", "write"]),
-            run_kwargs=dict(transport="streamable-http"),
+            run_kwargs=dict(transport="http"),
         ) as url:
             mcp_server_url = f"{url}/mcp/"
             async with Client(mcp_server_url, auth=BearerAuth(token)) as client:

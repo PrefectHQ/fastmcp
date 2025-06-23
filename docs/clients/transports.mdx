@@ -41,7 +41,7 @@ Streamable HTTP is the recommended transport for web-based deployments, providin
 
 - **Class:** `fastmcp.client.transports.StreamableHttpTransport`
 - **Inferred From:** URLs starting with `http://` or `https://` (default for HTTP URLs since v2.3.0) that do not contain `/sse/` in the path
-- **Server Compatibility:** Works with FastMCP servers running in `streamable-http` mode
+- **Server Compatibility:** Works with FastMCP servers running in `http` mode
 
 #### Basic Usage
 
@@ -150,7 +150,7 @@ client = Client(transport)
 - **Use Streamable HTTP when:**
   - Setting up new deployments (recommended default)
   - You need bidirectional streaming
-  - You're connecting to FastMCP servers running in `streamable-http` mode
+  - You're connecting to FastMCP servers running in `http` mode
 
 - **Use SSE when:**
   - Connecting to legacy FastMCP servers running in `sse` mode
@@ -397,7 +397,7 @@ config = {
         # Remote HTTP server
         "weather": {
             "url": "https://weather-api.example.com/mcp",
-            "transport": "streamable-http"
+            "transport": "http"
         },
         # Local stdio server
         "assistant": {
@@ -408,7 +408,7 @@ config = {
         # Another remote server
         "calendar": {
             "url": "https://calendar-api.example.com/mcp",
-            "transport": "streamable-http"
+            "transport": "http"
         }
     }
 }

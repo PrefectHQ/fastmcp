@@ -158,8 +158,8 @@ if __name__ == "__main__":
     # This runs the server, defaulting to STDIO transport
     mcp.run()
     
-    # To use a different transport, e.g., HTTP:
-    # mcp.run(transport="streamable-http", host="127.0.0.1", port=9000)
+    # To use a different transport, e.g., Streamable HTTP:
+    # mcp.run(transport="http", host="127.0.0.1", port=9000)
 ```
 
 FastMCP supports several transport options: 
@@ -260,7 +260,7 @@ Transport settings are provided when running the server and control network beha
 ```python
 # Configure transport when running
 mcp.run(
-    transport="streamable-http",
+    transport="http",
     host="0.0.0.0",           # Bind to all interfaces
     port=9000,                # Custom port
     log_level="DEBUG",        # Override global log level
@@ -268,7 +268,7 @@ mcp.run(
 
 # Or for async usage
 await mcp.run_async(
-    transport="streamable-http", 
+    transport="http", 
     host="127.0.0.1",
     port=8080,
 )

@@ -736,11 +736,11 @@ class MCPConfigTransport(ClientTransport):
             "mcpServers": {
                 "weather": {
                     "url": "https://weather-api.example.com/mcp",
-                    "transport": "streamable-http"
+                    "transport": "http"
                 },
                 "calendar": {
                     "url": "https://calendar-api.example.com/mcp",
-                    "transport": "streamable-http"
+                    "transport": "http"
                 }
             }
         }

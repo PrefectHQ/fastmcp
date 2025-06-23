@@ -74,6 +74,7 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 DuplicateBehavior = Literal["warn", "error", "replace", "ignore"]
+Transport = Literal["stdio", "http", "sse", "streamable-http"]
 
 # Compiled URI parsing regex to split a URI into protocol and path components
 URI_PATTERN = re.compile(r"^([^:]+://)(.*?)$")
@@ -280,7 +281,7 @@ class FastMCP(Generic[LifespanResultT]):
 
     async def run_async(
         self,
-        transport: Literal["stdio", "streamable-http", "sse"] | None = None,
+        transport: Transport | None = None,
         **transport_kwargs: Any,
     ) -> None:
         """Run the FastMCP server asynchronously.
@@ -290,19 +291,19 @@ class FastMCP(Generic[LifespanResultT]):
         """
         if transport is None:
             transport = "stdio"
-        if transport not in {"stdio", "streamable-http", "sse"}:
+        if transport not in {"stdio", "http", "sse", "streamable-http"}:
             raise ValueError(f"Unknown transport: {transport}")
 
         if transport == "stdio":
             await self.run_stdio_async(**transport_kwargs)
-        elif transport in {"streamable-http", "sse"}:
+        elif transport in {"http", "sse", "streamable-http"}:
             await self.run_http_async(transport=transport, **transport_kwargs)
         else:
             raise ValueError(f"Unknown transport: {transport}")
 
     def run(
         self,
-        transport: Literal["stdio", "streamable-http", "sse"] | None = None,
+        transport: Transport | None = None,
         **transport_kwargs: Any,
     ) -> None:
         """Run the FastMCP server. Note this is a synchronous function.
@@ -1253,7 +1254,7 @@ class FastMCP(Generic[LifespanResultT]):
 
     async def run_http_async(
         self,
-        transport: Literal["streamable-http", "sse"] = "streamable-http",
+        transport: Literal["http", "streamable-http", "sse"] = "http",
         host: str | None = None,
         port: int | None = None,
         log_level: str | None = None,
@@ -1384,7 +1385,7 @@ class FastMCP(Generic[LifespanResultT]):
         middleware: list[ASGIMiddleware] | None = None,
         json_response: bool | None = None,
         stateless_http: bool | None = None,
-        transport: Literal["streamable-http", "sse"] = "streamable-http",
+        transport: Literal["http", "streamable-http", "sse"] = "http",
     ) -> StarletteWithLifespan:
         """Create a Starlette app using the specified HTTP transport.
 
@@ -1397,7 +1398,7 @@ class FastMCP(Generic[LifespanResultT]):
             A Starlette application configured with the specified transport
         """
 
-        if transport == "streamable-http":
+        if transport in ("streamable-http", "http"):
             return create_streamable_http_app(
                 server=self,
                 streamable_http_path=path
@@ -1444,7 +1445,7 @@ class FastMCP(Generic[LifespanResultT]):
                 stacklevel=2,
             )
         await self.run_http_async(
-            transport="streamable-http",
+            transport="http",
             host=host,
             port=port,
             log_level=log_level,
