@@ -2,18 +2,23 @@
 
 from datetime import datetime
 
-from atproto import Client
+from atproto import Client, models
 
 from atproto_mcp.settings import settings
 from atproto_mcp.types import (
     FollowResult,
+    ImagePostResult,
     LikeResult,
     Notification,
     NotificationsResult,
     Post,
     PostResult,
     ProfileInfo,
+    QuotePostResult,
+    ReplyResult,
     RepostResult,
+    RichTextLink,
+    RichTextMention,
     SearchResult,
     TimelineResult,
 )
@@ -298,5 +303,228 @@ def repost_by_uri(uri: str) -> RepostResult:
             success=False,
             reposted_uri=None,
             repost_uri=None,
+            error=str(e),
+        )
+
+
+def reply_to_post(
+    parent_uri: str, text: str, root_uri: str | None = None
+) -> ReplyResult:
+    """Reply to a post."""
+    try:
+        client = get_client()
+
+        # Get parent post to extract CID
+        parent_post = client.app.bsky.feed.get_posts(params={"uris": [parent_uri]})
+        if not parent_post.posts:
+            raise ValueError("Parent post not found")
+
+        parent_cid = parent_post.posts[0].cid
+        parent_ref = models.create_strong_ref({"uri": parent_uri, "cid": parent_cid})
+
+        # If no root_uri provided, parent is the root
+        if root_uri is None:
+            root_ref = parent_ref
+        else:
+            # Get root post CID
+            root_post = client.app.bsky.feed.get_posts(params={"uris": [root_uri]})
+            if not root_post.posts:
+                raise ValueError("Root post not found")
+            root_cid = root_post.posts[0].cid
+            root_ref = models.create_strong_ref({"uri": root_uri, "cid": root_cid})
+
+        # Create the reply
+        reply = client.send_post(
+            text=text,
+            reply_to=models.AppBskyFeedPost.ReplyRef(parent=parent_ref, root=root_ref),
+        )
+
+        return ReplyResult(
+            success=True,
+            uri=reply.uri,
+            cid=reply.cid,
+            parent_uri=parent_uri,
+            root_uri=root_uri or parent_uri,
+            error=None,
+        )
+    except Exception as e:
+        return ReplyResult(
+            success=False,
+            uri=None,
+            cid=None,
+            parent_uri=None,
+            root_uri=None,
+            error=str(e),
+        )
+
+
+def create_post_with_rich_text(
+    text: str,
+    links: list[RichTextLink] | None = None,
+    mentions: list[RichTextMention] | None = None,
+) -> PostResult:
+    """Create a post with rich text formatting (links and mentions)."""
+    try:
+        client = get_client()
+        facets = []
+
+        # Process links
+        if links:
+            for link in links:
+                # Find the position of link text in the main text
+                start = text.find(link["text"])
+                if start == -1:
+                    continue
+                end = start + len(link["text"])
+
+                facets.append(
+                    models.AppBskyRichtextFacet.Main(
+                        features=[models.AppBskyRichtextFacet.Link(uri=link["url"])],
+                        index=models.AppBskyRichtextFacet.ByteSlice(
+                            byte_start=len(text[:start].encode("UTF-8")),
+                            byte_end=len(text[:end].encode("UTF-8")),
+                        ),
+                    )
+                )
+
+        # Process mentions
+        if mentions:
+            for mention in mentions:
+                display_text = mention.get("display_text") or f"@{mention['handle']}"
+                # Find the position of mention in the main text
+                start = text.find(display_text)
+                if start == -1:
+                    continue
+                end = start + len(display_text)
+
+                # Resolve handle to DID
+                resolved = client.app.bsky.actor.search_actors(
+                    params={"q": mention["handle"], "limit": 1}
+                )
+                if not resolved.actors:
+                    continue
+
+                did = resolved.actors[0].did
+                facets.append(
+                    models.AppBskyRichtextFacet.Main(
+                        features=[models.AppBskyRichtextFacet.Mention(did=did)],
+                        index=models.AppBskyRichtextFacet.ByteSlice(
+                            byte_start=len(text[:start].encode("UTF-8")),
+                            byte_end=len(text[:end].encode("UTF-8")),
+                        ),
+                    )
+                )
+
+        # Send the post with facets
+        post = client.send_post(text=text, facets=facets if facets else None)
+
+        return PostResult(
+            success=True,
+            uri=post.uri,
+            cid=post.cid,
+            text=text,
+            created_at=datetime.now().isoformat(),
+            error=None,
+        )
+    except Exception as e:
+        return PostResult(
+            success=False,
+            uri=None,
+            cid=None,
+            text=None,
+            created_at=None,
+            error=str(e),
+        )
+
+
+def create_quote_post(text: str, quoted_uri: str) -> QuotePostResult:
+    """Create a quote post."""
+    try:
+        client = get_client()
+
+        # Get the post to quote
+        quoted_post = client.app.bsky.feed.get_posts(params={"uris": [quoted_uri]})
+        if not quoted_post.posts:
+            raise ValueError("Quoted post not found")
+
+        # Create strong ref for the quoted post
+        quoted_cid = quoted_post.posts[0].cid
+        quoted_ref = models.create_strong_ref({"uri": quoted_uri, "cid": quoted_cid})
+
+        # Create the embed
+        embed = models.AppBskyEmbedRecord.Main(record=quoted_ref)
+
+        # Send the quote post
+        post = client.send_post(text=text, embed=embed)
+
+        return QuotePostResult(
+            success=True,
+            uri=post.uri,
+            cid=post.cid,
+            quoted_uri=quoted_uri,
+            error=None,
+        )
+    except Exception as e:
+        return QuotePostResult(
+            success=False,
+            uri=None,
+            cid=None,
+            quoted_uri=None,
+            error=str(e),
+        )
+
+
+def create_post_with_images(
+    text: str,
+    image_urls: list[str],
+    alt_texts: list[str] | None = None,
+) -> ImagePostResult:
+    """Create a post with images from URLs."""
+    try:
+        client = get_client()
+        import httpx
+
+        # Ensure alt_texts has same length as images
+        if alt_texts is None:
+            alt_texts = [""] * len(image_urls)
+        elif len(alt_texts) < len(image_urls):
+            alt_texts.extend([""] * (len(image_urls) - len(alt_texts)))
+
+        images = []
+        for i, url in enumerate(image_urls[:4]):  # Max 4 images
+            # Download image
+            response = httpx.get(url)
+            response.raise_for_status()
+
+            # Upload to blob storage
+            uploaded = client.upload_blob(response.content)
+
+            images.append(
+                {
+                    "image": uploaded.blob,
+                    "alt": alt_texts[i] if i < len(alt_texts) else "",
+                }
+            )
+
+        # Send post with images
+        post = client.send_images(
+            text=text,
+            images=[img["image"] for img in images],
+            image_alts=[img["alt"] for img in images],
+        )
+
+        return ImagePostResult(
+            success=True,
+            uri=post.uri,
+            cid=post.cid,
+            image_count=len(images),
+            error=None,
+        )
+    except Exception as e:
+        return ImagePostResult(
+            success=False,
+            uri=None,
+            cid=None,
+            image_count=0,
             error=str(e),
         )

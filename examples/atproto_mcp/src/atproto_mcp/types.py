@@ -103,3 +103,48 @@ class RepostResult(TypedDict):
     reposted_uri: str | None
     repost_uri: str | None
     error: str | None
+
+
+class ReplyResult(TypedDict):
+    """Result of replying to a post."""
+
+    success: bool
+    uri: str | None
+    cid: str | None
+    parent_uri: str | None
+    root_uri: str | None
+    error: str | None
+
+
+class RichTextLink(TypedDict):
+    """A link in rich text."""
+
+    text: str
+    url: str
+
+
+class RichTextMention(TypedDict):
+    """A mention in rich text."""
+
+    handle: str
+    display_text: str | None
+
+
+class QuotePostResult(TypedDict):
+    """Result of creating a quote post."""
+
+    success: bool
+    uri: str | None
+    cid: str | None
+    quoted_uri: str | None
+    error: str | None
+
+
+class ImagePostResult(TypedDict):
+    """Result of posting with images."""
+
+    success: bool
+    uri: str | None
+    cid: str | None
+    image_count: int
+    error: str | None

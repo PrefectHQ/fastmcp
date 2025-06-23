@@ -15,10 +15,17 @@ The server provides two types of capabilities:
 
 ### Tools (Actions that modify state)
 
+Basic interactions:
 - **post_to_bluesky**: Create new posts on Bluesky
 - **follow_user**: Follow a user by handle
 - **like_post**: Like a post by URI
 - **repost**: Repost content by URI
+
+Advanced interactions:
+- **reply_to_post**: Reply to posts and create threaded conversations
+- **post_with_rich_text**: Create posts with clickable links and @mentions
+- **quote_post**: Quote and comment on other posts
+- **post_with_images**: Create posts with up to 4 images
 
 ## Setup
 
@@ -40,7 +47,9 @@ pip install -e .
 python -m atproto_mcp
 ```
 
-## Usage Example
+## Usage Examples
+
+### Basic Usage
 
 ```python
 from fastmcp import Client
@@ -50,17 +59,52 @@ async def demo():
     async with Client(atproto_mcp) as client:
         # Read resources
         status = await client.read_resource("atproto://profile/status")
-        print(f"Connected as: {status}")
+        timeline = await client.read_resource("atproto://timeline")
         
-        timeline = await client.read_resource("atproto://timeline?limit=5")
-        print(f"Timeline: {timeline}")
-        
-        # Use tools for actions
+        # Basic post
         post = await client.call_tool("post_to_bluesky", {
             "text": "Hello from FastMCP!"
         })
-        print(f"Posted: {post}")
 ```
+
+### Advanced Usage
+
+```python
+# Reply to a post
+reply = await client.call_tool("reply_to_post", {
+    "parent_uri": "at://did:plc:xxx/app.bsky.feed.post/yyy",
+    "text": "Great point! Here's my perspective..."
+})
+
+# Post with rich text (links and mentions)
+rich_post = await client.call_tool("post_with_rich_text", {
+    "text": "Check out this article by @jlowin.dev",
+    "links": [{"text": "this article", "url": "https://example.com"}],
+    "mentions": [{"handle": "jlowin.dev", "display_text": "@jlowin.dev"}]
+})
+
+# Quote a post
+quote = await client.call_tool("quote_post", {
+    "text": "This is an important perspective on AI safety:",
+    "quoted_uri": "at://did:plc:xxx/app.bsky.feed.post/yyy"
+})
+
+# Post with images
+image_post = await client.call_tool("post_with_images", {
+    "text": "Beautiful sunset today! 🌅",
+    "image_urls": ["https://example.com/sunset.jpg"],
+    "alt_texts": ["A sunset over the ocean"]
+})
+```
+
+## AI Assistant Use Cases
+
+This MCP server is designed to enable powerful AI assistant interactions:
+
+- **"Reply to that post about climate change with these research findings"** - Uses reply_to_post with rich text links
+- **"Share this article with my thoughts"** - Uses quote_post or post_with_rich_text
+- **"Post this chart with an explanation"** - Uses post_with_images
+- **"Start a discussion about AI safety and mention @expert.bsky"** - Uses post_with_rich_text with mentions
 
 ## Architecture
 
