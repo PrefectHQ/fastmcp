@@ -331,11 +331,11 @@ When a client calls "child_tool", the request will flow through the parent's aut
 
 ## Built-in Middleware Examples
 
-FastMCP includes several production-ready middleware implementations that demonstrate best practices and provide immediately useful functionality. Let's explore how each type works by building simplified versions, then see how to use the full implementations.
+FastMCP includes several middleware implementations that demonstrate best practices and provide immediately useful functionality. Let's explore how each type works by building simplified versions, then see how to use the full implementations.
 
 ### Timing Middleware
 
-Performance monitoring is essential for understanding your server's behavior and identifying bottlenecks. FastMCP includes production-ready timing middleware at `fastmcp.server.middleware.timing`. 
+Performance monitoring is essential for understanding your server's behavior and identifying bottlenecks. FastMCP includes timing middleware at `fastmcp.server.middleware.timing`. 
 
 Here's an example of how it works:
 
@@ -358,7 +358,7 @@ class SimpleTimingMiddleware(Middleware):
             raise
 ```
 
-To use the full production version with proper logging and configuration:
+To use the full version with proper logging and configuration:
 
 ```python
 from fastmcp.server.middleware.timing import (
@@ -397,7 +397,7 @@ class SimpleLoggingMiddleware(Middleware):
             raise
 ```
 
-To use the full production versions with advanced features:
+To use the full versions with advanced features:
 
 ```python
 from fastmcp.server.middleware.logging import (
@@ -415,7 +415,7 @@ mcp.add_middleware(LoggingMiddleware(
 mcp.add_middleware(StructuredLoggingMiddleware(include_payloads=True))
 ```
 
-The production versions include payload logging, structured JSON output, custom logger support, payload size limits, and operation-specific hooks for granular control.
+The built-in versions include payload logging, structured JSON output, custom logger support, payload size limits, and operation-specific hooks for granular control.
 
 ### Rate Limiting Middleware
 
@@ -453,7 +453,7 @@ class SimpleRateLimitMiddleware(Middleware):
         return await call_next(context)
 ```
 
-To use the full production versions with advanced algorithms:
+To use the full versions with advanced algorithms:
 
 ```python
 from fastmcp.server.middleware.rate_limiting import (
@@ -474,7 +474,7 @@ mcp.add_middleware(SlidingWindowRateLimitingMiddleware(
 ))
 ```
 
-The production versions include token bucket algorithms, per-client identification, global rate limiting, and async-safe implementations with configurable client identification functions.
+The built-in versions include token bucket algorithms, per-client identification, global rate limiting, and async-safe implementations with configurable client identification functions.
 
 ### Error Handling Middleware
 
@@ -503,7 +503,7 @@ class SimpleErrorHandlingMiddleware(Middleware):
             raise
 ```
 
-To use the full production versions with advanced features:
+To use the full versions with advanced features:
 
 ```python
 from fastmcp.server.middleware.error_handling import (
@@ -525,7 +525,7 @@ mcp.add_middleware(RetryMiddleware(
 ))
 ```
 
-The production versions include error transformation, custom callbacks, configurable retry logic, and proper MCP error formatting.
+The built-in versions include error transformation, custom callbacks, configurable retry logic, and proper MCP error formatting.
 
 ### Combining Middleware
 
