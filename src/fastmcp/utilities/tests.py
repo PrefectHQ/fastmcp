@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 @contextmanager
 def temporary_settings(**kwargs: Any):
     """
-    Temporarily override ControlFlow setting values.
+    Temporarily override FastMCP setting values.
 
     Args:
         **kwargs: The settings to override, including nested settings.
