@@ -7,9 +7,6 @@ changelog:
     - title: New Features 🎉
       labels:
         - feature
-      exclude:
-        labels:
-          - breaking change
 
     - title: Enhancements 🔧
       labels:
@@ -32,6 +29,11 @@ changelog:
     - title: Docs 📚
       labels:
         - documentation
+
+    - title: Examples & Contrib 💡
+      labels:
+        - example
+        - contrib
 
     - title: Dependencies 📦
       labels:
