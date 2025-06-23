@@ -19,7 +19,7 @@ The [MCP specification](https://modelcontextprotocol.io/specification/2025-03-26
 
 Bearer Token authentication is a common way to secure HTTP-based APIs. In this model, the client sends a token (usually a JSON Web Token or JWT) in the `Authorization` header with the "Bearer" scheme. The server then validates this token to grant or deny access.
 
-FastMCP supports Bearer Token authentication for its HTTP-based transports (`streamable-http` and `sse`), allowing you to protect your server from unauthorized access.
+FastMCP supports Bearer Token authentication for its HTTP-based transports (`http` and `sse`), allowing you to protect your server from unauthorized access.
 
 ## Authentication Strategy
 
