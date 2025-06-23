@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 authors = [{ name = "zzstoatzz", email = "thrast36@gmail.com" }]
-requires-python = ">=3.12"
+requires-python = ">=3.10"
 dependencies = [
     "fastmcp>=0.8.0",
     "atproto@git+https://github.com/MarshalX/atproto.git@refs/pull/605/head",
