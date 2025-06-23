@@ -37,6 +37,7 @@ class Post(TypedDict):
     reposts: int
     replies: int
     uri: str
+    cid: str
 
 
 class TimelineResult(TypedDict):
@@ -64,8 +65,9 @@ class Notification(TypedDict):
     reason: str
     author: str | None
     is_read: bool
-    created_at: str
+    indexed_at: str
     uri: str
+    cid: str
 
 
 class NotificationsResult(TypedDict):
@@ -81,7 +83,7 @@ class FollowResult(TypedDict):
     """Result of following a user."""
 
     success: bool
-    followed: str | None
+    handle: str | None
     did: str | None
     uri: str | None
     error: str | None
@@ -105,17 +107,6 @@ class RepostResult(TypedDict):
     error: str | None
 
 
-class ReplyResult(TypedDict):
-    """Result of replying to a post."""
-
-    success: bool
-    uri: str | None
-    cid: str | None
-    parent_uri: str | None
-    root_uri: str | None
-    error: str | None
-
-
 class RichTextLink(TypedDict):
     """A link in rich text."""
 
@@ -128,23 +119,3 @@ class RichTextMention(TypedDict):
 
     handle: str
     display_text: str | None
-
-
-class QuotePostResult(TypedDict):
-    """Result of creating a quote post."""
-
-    success: bool
-    uri: str | None
-    cid: str | None
-    quoted_uri: str | None
-    error: str | None
-
-
-class ImagePostResult(TypedDict):
-    """Result of posting with images."""
-
-    success: bool
-    uri: str | None
-    cid: str | None
-    image_count: int
-    error: str | None

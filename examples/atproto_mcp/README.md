@@ -4,28 +4,19 @@ This example demonstrates a FastMCP server that provides tools and resources for
 
 ## Features
 
-The server provides two types of capabilities:
-
-### Resources (Read-only operations)
+### Resources (Read-only)
 
 - **atproto://profile/status**: Get connection status and profile information
-- **atproto://timeline**: Retrieve your timeline feed (last 10 posts)
+- **atproto://timeline**: Retrieve your timeline feed
 - **atproto://search/{query}**: Search for posts by keyword
-- **atproto://notifications**: Get recent notifications (last 10)
+- **atproto://notifications**: Get recent notifications
 
-### Tools (Actions that modify state)
+### Tools (Actions)
 
-Basic interactions:
-- **post_to_bluesky**: Create new posts on Bluesky
-- **follow_user**: Follow a user by handle
-- **like_post**: Like a post by URI
-- **repost**: Repost content by URI
-
-Advanced interactions:
-- **reply_to_post**: Reply to posts and create threaded conversations
-- **post_with_rich_text**: Create posts with clickable links and @mentions
-- **quote_post**: Quote and comment on other posts
-- **post_with_images**: Create posts with up to 4 images
+- **post**: Create posts with rich features (text, images, quotes, replies, links, mentions)
+- **follow**: Follow users by handle
+- **like**: Like posts by URI
+- **repost**: Share posts by URI
 
 ## Setup
 
@@ -41,15 +32,30 @@ ATPROTO_PDS_URL=https://bsky.social  # optional, defaults to bsky.social
 
 ```bash
 # Install dependencies
-pip install -e .
+uv pip install -e .
 
 # Run the server
-python -m atproto_mcp
+uv run atproto-mcp
 ```
 
-## Usage Examples
+## The Unified Post Tool
 
-### Basic Usage
+The `post` tool is a single, flexible interface for all posting needs:
+
+```python
+async def post(
+    text: str,                          # Required: Post content
+    images: list[str] = None,           # Optional: Image URLs (max 4)
+    image_alts: list[str] = None,       # Optional: Alt text for images
+    links: list[RichTextLink] = None,   # Optional: Embedded links
+    mentions: list[RichTextMention] = None,  # Optional: User mentions
+    reply_to: str = None,               # Optional: Reply to post URI
+    reply_root: str = None,             # Optional: Thread root URI
+    quote: str = None,                  # Optional: Quote post URI
+)
+```
+
+### Usage Examples
 
 ```python
 from fastmcp import Client
@@ -57,62 +63,83 @@ from atproto_mcp.server import atproto_mcp
 
 async def demo():
     async with Client(atproto_mcp) as client:
-        # Read resources
-        status = await client.read_resource("atproto://profile/status")
-        timeline = await client.read_resource("atproto://timeline")
-        
-        # Basic post
-        post = await client.call_tool("post_to_bluesky", {
+        # Simple post
+        await client.call_tool("post", {
             "text": "Hello from FastMCP!"
         })
-```
-
-### Advanced Usage
-
-```python
-# Reply to a post
-reply = await client.call_tool("reply_to_post", {
-    "parent_uri": "at://did:plc:xxx/app.bsky.feed.post/yyy",
-    "text": "Great point! Here's my perspective..."
-})
-
-# Post with rich text (links and mentions)
-rich_post = await client.call_tool("post_with_rich_text", {
-    "text": "Check out this article by @jlowin.dev",
-    "links": [{"text": "this article", "url": "https://example.com"}],
-    "mentions": [{"handle": "jlowin.dev", "display_text": "@jlowin.dev"}]
-})
-
-# Quote a post
-quote = await client.call_tool("quote_post", {
-    "text": "This is an important perspective on AI safety:",
-    "quoted_uri": "at://did:plc:xxx/app.bsky.feed.post/yyy"
-})
-
-# Post with images
-image_post = await client.call_tool("post_with_images", {
-    "text": "Beautiful sunset today! 🌅",
-    "image_urls": ["https://example.com/sunset.jpg"],
-    "alt_texts": ["A sunset over the ocean"]
-})
+        
+        # Post with image
+        await client.call_tool("post", {
+            "text": "Beautiful sunset! 🌅",
+            "images": ["https://example.com/sunset.jpg"],
+            "image_alts": ["Sunset over the ocean"]
+        })
+        
+        # Reply to a post
+        await client.call_tool("post", {
+            "text": "Great point!",
+            "reply_to": "at://did:plc:xxx/app.bsky.feed.post/yyy"
+        })
+        
+        # Quote post
+        await client.call_tool("post", {
+            "text": "This is important:",
+            "quote": "at://did:plc:xxx/app.bsky.feed.post/yyy"
+        })
+        
+        # Rich text with links and mentions
+        await client.call_tool("post", {
+            "text": "Check out FastMCP by @alternatebuild.dev",
+            "links": [{"text": "FastMCP", "url": "https://github.com/jlowin/fastmcp"}],
+            "mentions": [{"handle": "alternatebuild.dev", "display_text": "@alternatebuild.dev"}]
+        })
+        
+        # Advanced: Quote with image
+        await client.call_tool("post", {
+            "text": "Adding visual context:",
+            "quote": "at://did:plc:xxx/app.bsky.feed.post/yyy",
+            "images": ["https://example.com/chart.png"]
+        })
+        
+        # Advanced: Reply with rich text
+        await client.call_tool("post", {
+            "text": "I agree! See this article for more info",
+            "reply_to": "at://did:plc:xxx/app.bsky.feed.post/yyy",
+            "links": [{"text": "this article", "url": "https://example.com/article"}]
+        })
 ```
 
 ## AI Assistant Use Cases
 
-This MCP server is designed to enable powerful AI assistant interactions:
+The unified API enables natural AI assistant interactions:
 
-- **"Reply to that post about climate change with these research findings"** - Uses reply_to_post with rich text links
-- **"Share this article with my thoughts"** - Uses quote_post or post_with_rich_text
-- **"Post this chart with an explanation"** - Uses post_with_images
-- **"Start a discussion about AI safety and mention @expert.bsky"** - Uses post_with_rich_text with mentions
+- **"Reply to that post with these findings"** → Uses `reply_to` with rich text
+- **"Share this article with commentary"** → Uses `quote` with the article link
+- **"Post this chart with explanation"** → Uses `images` with descriptive text
+- **"Start a thread about AI safety"** → Chain multiple posts with `reply_to`
 
 ## Architecture
 
-The server is organized with:
-- `server.py` - Public API with resource and tool definitions
-- `_atproto.py` - Private implementation details
-- `types.py` - TypedDict definitions for structured responses
+The server is organized as:
+- `server.py` - Public API with resources and tools
+- `_atproto/` - Private implementation module
+  - `_client.py` - ATProto client management
+  - `_posts.py` - Unified posting logic
+  - `_profile.py` - Profile operations
+  - `_read.py` - Timeline, search, notifications
+  - `_social.py` - Follow, like, repost
+- `types.py` - TypedDict definitions
 - `settings.py` - Configuration management
+
+## Running the Demo
+
+```bash
+# Run demo (read-only)
+uv run python demo.py
+
+# Run demo with posting enabled
+uv run python demo.py --post
+```
 
 ## Security Note
 

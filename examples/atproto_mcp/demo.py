@@ -1,4 +1,4 @@
-"""Demo script showing ATProto MCP server capabilities."""
+"""Demo script showing all ATProto MCP server capabilities."""
 
 import argparse
 import asyncio
@@ -22,7 +22,7 @@ async def main(enable_posting: bool = False):
 
     async with Client(atproto_mcp) as client:
         # 1. Check connection status (resource)
-        print("1. Checking connection status (resource)...")
+        print("1. Checking connection status...")
         result = await client.read_resource("atproto://profile/status")
         status: ProfileInfo = (
             json.loads(result[0].text) if result else cast(ProfileInfo, {})
@@ -37,98 +37,178 @@ async def main(enable_posting: bool = False):
             print(f"❌ Connection failed: {status.get('error')}")
             return
 
-        # 2. Get timeline (resource with parameter)
-        print("\n2. Getting timeline (resource)...")
+        # 2. Get timeline
+        print("\n2. Getting timeline...")
         result = await client.read_resource("atproto://timeline")
         timeline: TimelineResult = (
             json.loads(result[0].text) if result else cast(TimelineResult, {})
         )
 
-        if timeline.get("success"):
-            print(f"✅ Found {timeline['count']} posts:")
-            for i, post in enumerate(timeline["posts"], 1):
-                print(f"\n   Post {i}:")
-                print(f"   Author: @{post['author']}")
-                print(
-                    f"   Text: {post['text'][:100]}..."
-                    if post["text"] and len(post["text"]) > 100
-                    else f"   Text: {post['text']}"
-                )
-                print(
-                    f"   Likes: {post['likes']} | Reposts: {post['reposts']} | Replies: {post['replies']}"
-                )
+        if timeline.get("success") and timeline["posts"]:
+            print(f"✅ Found {timeline['count']} posts")
+            post = timeline["posts"][0]
+            print(f"   Latest by @{post['author']}: {post['text'][:80]}...")
+            save_uri = post["uri"]  # Save for later interactions
         else:
-            print(f"❌ Failed to get timeline: {timeline.get('error')}")
+            print("❌ No posts in timeline")
+            save_uri = None
 
-        # 3. Search for posts (resource with template)
-        print("\n3. Searching for posts about 'Python' (template resource)...")
-        result = await client.read_resource("atproto://search/Python")
+        # 3. Search for posts
+        print("\n3. Searching for posts about 'Bluesky'...")
+        result = await client.read_resource("atproto://search/Bluesky")
         search: SearchResult = (
             json.loads(result[0].text) if result else cast(SearchResult, {})
         )
 
-        if search.get("success"):
-            print(f"✅ Found {search['count']} posts about Python")
-            if search["posts"]:
-                post = search["posts"][0]
-                print(
-                    f"   Latest by @{post['author']}: {post['text'][:100]}..."
-                    if post["text"] and len(post["text"]) > 100
-                    else f"   Latest by @{post['author']}: {post['text']}"
-                )
-        else:
-            print(f"❌ Search failed: {search.get('error')}")
+        if search.get("success") and search["posts"]:
+            print(f"✅ Found {search['count']} posts")
+            print(f"   Sample: {search['posts'][0]['text'][:80]}...")
 
-        # 4. Get notifications (resource)
-        print("\n4. Checking notifications (resource)...")
+        # 4. Get notifications
+        print("\n4. Checking notifications...")
         result = await client.read_resource("atproto://notifications")
         notifs: NotificationsResult = (
             json.loads(result[0].text) if result else cast(NotificationsResult, {})
         )
 
         if notifs.get("success"):
-            print(f"✅ You have {notifs['count']} recent notifications")
+            print(f"✅ You have {notifs['count']} notifications")
             unread = sum(1 for n in notifs["notifications"] if not n["is_read"])
             if unread:
                 print(f"   ({unread} unread)")
-        else:
-            print(f"❌ Failed to get notifications: {notifs.get('error')}")
 
-        # 5. Demo posting (tool)
+        # 5. Demo posting capabilities
         if enable_posting:
-            print("\n5. Creating a test post (tool)...")
-            post_result = await client.call_tool(
-                "post_to_bluesky",
+            print("\n5. Demonstrating posting capabilities...")
+
+            # a. Simple post
+            print("\n   a) Creating a simple post...")
+            result = await client.call_tool(
+                "post",
+                {"text": "🧪 Testing the unified ATProto MCP post tool! #FastMCP"},
+            )
+            post_result: PostResult = json.loads(result[0].text) if result else {}
+            if post_result.get("success"):
+                print("   ✅ Posted successfully!")
+                simple_uri = post_result["uri"]
+            else:
+                print(f"   ❌ Failed: {post_result.get('error')}")
+                simple_uri = None
+
+            # b. Post with rich text (link and mention)
+            print("\n   b) Creating a post with rich text...")
+            result = await client.call_tool(
+                "post",
                 {
-                    "text": "🧪 Testing the ATProto MCP server demo! This post was created programmatically using FastMCP. #FastMCP #ATProto"
+                    "text": "Check out FastMCP and follow @alternatebuild.dev for updates!",
+                    "links": [
+                        {"text": "FastMCP", "url": "https://github.com/jlowin/fastmcp"}
+                    ],
+                    "mentions": [
+                        {
+                            "handle": "alternatebuild.dev",
+                            "display_text": "@alternatebuild.dev",
+                        }
+                    ],
                 },
             )
-            result: PostResult = (
-                json.loads(post_result[0].text) if post_result else cast(PostResult, {})
+            if json.loads(result[0].text).get("success"):
+                print("   ✅ Rich text post created!")
+
+            # c. Reply to a post
+            if save_uri:
+                print("\n   c) Replying to a post...")
+                result = await client.call_tool(
+                    "post", {"text": "Great post! 👍", "reply_to": save_uri}
+                )
+                if json.loads(result[0].text).get("success"):
+                    print("   ✅ Reply posted!")
+
+            # d. Quote post
+            if simple_uri:
+                print("\n   d) Creating a quote post...")
+                result = await client.call_tool(
+                    "post",
+                    {
+                        "text": "Quoting my own test post for demo purposes 🔄",
+                        "quote": simple_uri,
+                    },
+                )
+                if json.loads(result[0].text).get("success"):
+                    print("   ✅ Quote post created!")
+
+            # e. Post with image
+            print("\n   e) Creating a post with image...")
+            result = await client.call_tool(
+                "post",
+                {
+                    "text": "Here's a test image post! 📸",
+                    "images": ["https://picsum.photos/400/300"],
+                    "image_alts": ["Random test image"],
+                },
             )
-            if result.get("success"):
-                print("✅ Posted successfully!")
-                print(f"   URI: {result['uri']}")
-                print(f"   Created at: {result['created_at']}")
-            else:
-                print(f"❌ Failed to post: {result.get('error')}")
+            if json.loads(result[0].text).get("success"):
+                print("   ✅ Image post created!")
+
+            # f. Quote with image (advanced)
+            if simple_uri:
+                print("\n   f) Creating a quote post with image...")
+                result = await client.call_tool(
+                    "post",
+                    {
+                        "text": "Quote + image combo! 🎨",
+                        "quote": simple_uri,
+                        "images": ["https://picsum.photos/300/200"],
+                        "image_alts": ["Another test image"],
+                    },
+                )
+                if json.loads(result[0].text).get("success"):
+                    print("   ✅ Quote with image created!")
+
+            # g. Social actions
+            if save_uri:
+                print("\n   g) Demonstrating social actions...")
+
+                # Like
+                result = await client.call_tool("like", {"uri": save_uri})
+                if json.loads(result[0].text).get("success"):
+                    print("   ✅ Liked a post!")
+
+                # Repost
+                result = await client.call_tool("repost", {"uri": save_uri})
+                if json.loads(result[0].text).get("success"):
+                    print("   ✅ Reposted!")
+
+                # Follow
+                result = await client.call_tool(
+                    "follow", {"handle": "alternatebuild.dev"}
+                )
+                if json.loads(result[0].text).get("success"):
+                    print("   ✅ Followed @alternatebuild.dev!")
         else:
-            print("\n5. Posting capability (tool):")
-            print("   To enable posting, run with --post flag")
+            print("\n5. Posting capabilities (not enabled):")
+            print("   To test posting, run with --post flag")
             print("   Example: python demo.py --post")
 
-        # 6. Show available resources and tools
+        # 6. Show available capabilities
         print("\n6. Available capabilities:")
-        print("   Resources (read-only):")
-        print("     - atproto://profile/status - Profile information")
-        print("     - atproto://timeline - Timeline feed")
-        print("     - atproto://search/{query} - Search posts")
-        print("     - atproto://notifications - Recent notifications")
-        print("   Tools (actions):")
-        print("     - post_to_bluesky - Create a new post")
-        print("     - follow_user - Follow a user")
-        print("     - like_post - Like a post")
-        print("     - repost - Repost content")
+        print("\n   Resources (read-only):")
+        print("     - atproto://profile/status")
+        print("     - atproto://timeline")
+        print("     - atproto://search/{query}")
+        print("     - atproto://notifications")
+
+        print("\n   Tools (actions):")
+        print("     - post: Unified posting with rich features")
+        print("       • Simple text posts")
+        print("       • Images (up to 4)")
+        print("       • Rich text (links, mentions)")
+        print("       • Replies and threads")
+        print("       • Quote posts")
+        print("       • Combinations (quote + image, reply + rich text, etc.)")
+        print("     - follow: Follow users")
+        print("     - like: Like posts")
+        print("     - repost: Share posts")
 
         print("\n✨ Demo complete!")
 
@@ -138,7 +218,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--post",
         action="store_true",
-        help="Enable posting a test message to Bluesky",
+        help="Enable posting test messages to Bluesky",
     )
     args = parser.parse_args()
 

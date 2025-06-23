@@ -7,13 +7,10 @@ from pydantic import Field
 from atproto_mcp import _atproto
 from atproto_mcp.types import (
     FollowResult,
-    ImagePostResult,
     LikeResult,
     NotificationsResult,
     PostResult,
     ProfileInfo,
-    QuotePostResult,
-    ReplyResult,
     RepostResult,
     RichTextLink,
     RichTextMention,
@@ -62,17 +59,47 @@ def get_notifications() -> NotificationsResult:
 
 # Tools - actions that modify state
 @atproto_mcp.tool
-def post_to_bluesky(
+def post(
     text: Annotated[
         str, Field(max_length=300, description="The text content of the post")
     ],
+    images: Annotated[
+        list[str] | None,
+        Field(max_length=4, description="URLs of images to attach (max 4)"),
+    ] = None,
+    image_alts: Annotated[
+        list[str] | None, Field(description="Alt text for each image")
+    ] = None,
+    links: Annotated[
+        list[RichTextLink] | None, Field(description="Links to embed in the text")
+    ] = None,
+    mentions: Annotated[
+        list[RichTextMention] | None, Field(description="User mentions to embed")
+    ] = None,
+    reply_to: Annotated[
+        str | None, Field(description="AT URI of post to reply to")
+    ] = None,
+    reply_root: Annotated[
+        str | None, Field(description="AT URI of thread root (defaults to reply_to)")
+    ] = None,
+    quote: Annotated[str | None, Field(description="AT URI of post to quote")] = None,
 ) -> PostResult:
-    """Create a new post on Bluesky."""
-    return _atproto.create_post(text)
+    """Create a post with optional rich features like images, quotes, replies, and rich text.
+
+    Examples:
+        - Simple post: post("Hello world!")
+        - With image: post("Check this out!", images=["https://example.com/img.jpg"])
+        - Reply: post("I agree!", reply_to="at://did/app.bsky.feed.post/123")
+        - Quote: post("Great point!", quote="at://did/app.bsky.feed.post/456")
+        - Rich text: post("Check out example.com", links=[{"text": "example.com", "url": "https://example.com"}])
+    """
+    return _atproto.create_post(
+        text, images, image_alts, links, mentions, reply_to, reply_root, quote
+    )
 
 
 @atproto_mcp.tool
-def follow_user(
+def follow(
     handle: Annotated[
         str,
         Field(
@@ -85,7 +112,7 @@ def follow_user(
 
 
 @atproto_mcp.tool
-def like_post(
+def like(
     uri: Annotated[str, Field(description="The AT URI of the post to like")],
 ) -> LikeResult:
     """Like a post by its AT URI."""
@@ -98,61 +125,3 @@ def repost(
 ) -> RepostResult:
     """Repost a post by its AT URI."""
     return _atproto.repost_by_uri(uri)
-
-
-# Advanced tools for richer interactions
-@atproto_mcp.tool
-def reply_to_post(
-    parent_uri: Annotated[str, Field(description="The AT URI of the post to reply to")],
-    text: Annotated[str, Field(max_length=300, description="The reply text")],
-    root_uri: Annotated[
-        str | None, Field(description="The AT URI of the thread root (optional)")
-    ] = None,
-) -> ReplyResult:
-    """Reply to a post, creating a threaded conversation."""
-    return _atproto.reply_to_post(parent_uri, text, root_uri)
-
-
-@atproto_mcp.tool
-def post_with_rich_text(
-    text: Annotated[
-        str,
-        Field(
-            max_length=300,
-            description="The post text with placeholders for links/mentions",
-        ),
-    ],
-    links: Annotated[
-        list[RichTextLink] | None, Field(description="Links to embed in the text")
-    ] = None,
-    mentions: Annotated[
-        list[RichTextMention] | None, Field(description="User mentions to embed")
-    ] = None,
-) -> PostResult:
-    """Create a post with rich text formatting including clickable links and mentions."""
-    return _atproto.create_post_with_rich_text(text, links, mentions)
-
-
-@atproto_mcp.tool
-def quote_post(
-    text: Annotated[
-        str, Field(max_length=300, description="Your commentary on the quoted post")
-    ],
-    quoted_uri: Annotated[str, Field(description="The AT URI of the post to quote")],
-) -> QuotePostResult:
-    """Create a quote post to share and comment on another post."""
-    return _atproto.create_quote_post(text, quoted_uri)
-
-
-@atproto_mcp.tool
-def post_with_images(
-    text: Annotated[str, Field(max_length=300, description="The post text")],
-    image_urls: Annotated[
-        list[str], Field(max_length=4, description="URLs of images to attach (max 4)")
-    ],
-    alt_texts: Annotated[
-        list[str] | None, Field(description="Alt text for each image")
-    ] = None,
-) -> ImagePostResult:
-    """Create a post with images attached."""
-    return _atproto.create_post_with_images(text, image_urls, alt_texts)
