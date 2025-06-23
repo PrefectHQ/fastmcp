@@ -49,9 +49,68 @@ The way you define your Python function dictates how the tool appears and behave
 Functions with `*args` or `**kwargs` are not supported as tools. This restriction exists because FastMCP needs to generate a complete parameter schema for the MCP protocol, which isn't possible with variable argument lists.
 </Tip>
 
-### Parameters
+#### Decorator Arguments
 
-#### Annotations
+While FastMCP infers the name and description from your function, you can override these and add additional metadata using arguments to the `@mcp.tool` decorator:
+
+```python
+@mcp.tool(
+    name="find_products",           # Custom tool name for the LLM
+    description="Search the product catalog with optional category filtering.", # Custom description
+    tags={"catalog", "search"},      # Optional tags for organization/filtering
+)
+def search_products_implementation(query: str, category: str | None = None) -> list[dict]:
+    """Internal function description (ignored if description is provided above)."""
+    # Implementation...
+    print(f"Searching for '{query}' in category '{category}'")
+    return [{"id": 2, "name": "Another Product"}]
+```
+
+<Card icon="code" title="@tool Decorator Arguments">
+<ParamField body="name" type="str | None">
+  Sets the explicit tool name exposed via MCP. If not provided, uses the function name
+</ParamField>
+
+<ParamField body="description" type="str | None">
+  Provides the description exposed via MCP. If set, the function's docstring is ignored for this purpose
+</ParamField>
+
+<ParamField body="tags" type="set[str] | None">
+  A set of strings to categorize the tool. Clients might use tags to filter or group available tools
+</ParamField>
+
+<ParamField body="enabled" type="bool" default="True">
+  A boolean to enable or disable the tool. See [Disabling Tools](#disabling-tools) for more information
+</ParamField>
+
+<ParamField body="exclude_args" type="list[str] | None">
+  A list of argument names to exclude from the tool schema shown to the LLM. See [Excluding Arguments](#excluding-arguments) for more information
+</ParamField>
+
+<ParamField body="annotations" type="ToolAnnotations | dict | None">
+    An optional `ToolAnnotations` object or dictionary to add additional metadata about the tool.
+  <Expandable title="ToolAnnotations attributes">
+    <ParamField body="title" type="str | None">
+      A human-readable title for the tool.
+    </ParamField>
+    <ParamField body="readOnlyHint" type="bool | None">
+      If true, the tool does not modify its environment.
+    </ParamField>
+    <ParamField body="destructiveHint" type="bool | None">
+      If true, the tool may perform destructive updates to its environment.
+    </ParamField>
+    <ParamField body="idempotentHint" type="bool | None">
+      If true, calling the tool repeatedly with the same arguments will have no additional effect on the its environment.
+    </ParamField>
+    <ParamField body="openWorldHint" type="bool | None">
+      If true, this tool may interact with an "open world" of external entities. If false, the tool's domain of interaction is closed.
+    </ParamField>
+  </Expandable>
+</ParamField>
+</Card>
+### Tool Parameters
+
+#### Type Annotations
 
 Type annotations for parameters are essential for proper tool functionality. They:
 1. Inform the LLM about the expected data types for each parameter
@@ -150,28 +209,6 @@ def search_products(
 
 In this example, the LLM must provide a `query` parameter, while `max_results`, `sort_by`, and `category` will use their default values if not explicitly provided.
 
-### Metadata
-
-While FastMCP infers the name and description from your function, you can override these and add tags using arguments to the `@mcp.tool` decorator:
-
-```python
-@mcp.tool(
-    name="find_products",           # Custom tool name for the LLM
-    description="Search the product catalog with optional category filtering.", # Custom description
-    tags={"catalog", "search"},      # Optional tags for organization/filtering
-)
-def search_products_implementation(query: str, category: str | None = None) -> list[dict]:
-    """Internal function description (ignored if description is provided above)."""
-    # Implementation...
-    print(f"Searching for '{query}' in category '{category}'")
-    return [{"id": 2, "name": "Another Product"}]
-```
-
-- **`name`**: Sets the explicit tool name exposed via MCP.
-- **`description`**: Provides the description exposed via MCP. If set, the function's docstring is ignored for this purpose.
-- **`tags`**: A set of strings to categorize the tool. Clients *might* use tags to filter or group available tools.
-- **`enabled`**: A boolean to enable or disable the tool (defaults to `True`). See [Disabling Tools](#disabling-tools) for more information.
-- **`exclude_args`**: A list of argument names to exclude from the tool schema shown to the LLM. See [Excluding Arguments](#excluding-arguments) for more information.
 
 ### Excluding Arguments
 
