@@ -2,6 +2,92 @@
 icon: "list-check"
 ---
 
+<Update label="v2.9.0" description="2024-06-23">
+
+## [v2.9.0: Stuck in the Middleware With You](https://github.com/jlowin/fastmcp/releases/tag/v2.9.0)
+
+FastMCP 2.9 introduces two important features that push beyond the basic MCP protocol: MCP Middleware and server-side type conversion.
+
+### MCP Middleware
+MCP middleware lets you intercept and modify requests and responses at the protocol level, giving you powerful capabilities for logging, authentication, validation, and more. This is particularly useful for building production-ready MCP servers that need sophisticated request handling.
+
+### Server-side Type Conversion
+This release also introduces server-side type conversion for prompt arguments, ensuring that data is properly formatted before being passed to your functions. This reduces the burden on individual tools and prompts to handle type validation and conversion.
+
+## What's Changed
+### New Features 🎉
+* Add File utility for binary data by [@jlowin](https://github.com/jlowin) in [#831](https://github.com/jlowin/fastmcp/pull/831)
+* Consolidate prefix logic into FastMCP methods by [@jlowin](https://github.com/jlowin) in [#832](https://github.com/jlowin/fastmcp/pull/832)
+* Introduce MCP Middleware by [@jlowin](https://github.com/jlowin) in [#833](https://github.com/jlowin/fastmcp/pull/833)
+* Server-side type conversion for prompt arguments by [@jlowin](https://github.com/jlowin) in [#838](https://github.com/jlowin/fastmcp/pull/838)
+### Enhancements 🔧
+* Fix tool description indentation by [@jlowin](https://github.com/jlowin) in [#802](https://github.com/jlowin/fastmcp/pull/802)
+* Add version parameter to FastMCP constructor by [@jlowin](https://github.com/jlowin) in [#803](https://github.com/jlowin/fastmcp/pull/803)
+* Add session_id property to Context by [@jlowin](https://github.com/jlowin) in [#816](https://github.com/jlowin/fastmcp/pull/816)
+* Improve CORS documentation by [@jlowin](https://github.com/jlowin) in [#821](https://github.com/jlowin/fastmcp/pull/821)
+* Add httpx.Auth support for authentication by [@jlowin](https://github.com/jlowin) in [#828](https://github.com/jlowin/fastmcp/pull/828)
+* Add client-side prompt argument serialization by [@jlowin](https://github.com/jlowin) in [#837](https://github.com/jlowin/fastmcp/pull/837)
+### Fixes 🐞
+* Fix report_progress issue in streaming-http by [@jlowin](https://github.com/jlowin) in [#813](https://github.com/jlowin/fastmcp/pull/813)
+* Fix JWT issuer validation by [@jlowin](https://github.com/jlowin) in [#819](https://github.com/jlowin/fastmcp/pull/819)
+* Fix BearerAuthProvider audience type annotations by [@jlowin](https://github.com/jlowin) in [#829](https://github.com/jlowin/fastmcp/pull/829)
+### Docs 📚
+* Add development guidelines by [@jlowin](https://github.com/jlowin) in [#804](https://github.com/jlowin/fastmcp/pull/804)
+* Update context documentation by [@jlowin](https://github.com/jlowin) in [#817](https://github.com/jlowin/fastmcp/pull/817)
+* Improve API reference by [@jlowin](https://github.com/jlowin) in [#822](https://github.com/jlowin/fastmcp/pull/822)
+* Add middleware examples by [@jlowin](https://github.com/jlowin) in [#834](https://github.com/jlowin/fastmcp/pull/834)
+* Update integration documentation by [@jlowin](https://github.com/jlowin) in [#835](https://github.com/jlowin/fastmcp/pull/835)
+### Examples & Contributions 💡
+* Add ATProto (Bluesky) MCP Server Example by [@alexsee](https://github.com/alexsee) in [#810](https://github.com/jlowin/fastmcp/pull/810)
+* MCP mixin support by [@zfflxx](https://github.com/zfflxx) in [#820](https://github.com/jlowin/fastmcp/pull/820)
+
+## New Contributors
+* [@alexsee](https://github.com/alexsee) made their first contribution in [#838](https://github.com/jlowin/fastmcp/pull/838)
+* [@zfflxx](https://github.com/zfflxx) made their first contribution in [#845](https://github.com/jlowin/fastmcp/pull/845)
+* [@mkyutani](https://github.com/mkyutani) made their first contribution in [#842](https://github.com/jlowin/fastmcp/pull/842)
+* [@gorocode](https://github.com/gorocode) made their first contribution in [#843](https://github.com/jlowin/fastmcp/pull/843)
+* [@rsp2k](https://github.com/rsp2k) made their first contribution in [#860](https://github.com/jlowin/fastmcp/pull/860)
+* [@owtaylor](https://github.com/owtaylor) made their first contribution in [#897](https://github.com/jlowin/fastmcp/pull/897)
+* [@Jason-CKY](https://github.com/Jason-CKY) made their first contribution in [#906](https://github.com/jlowin/fastmcp/pull/906)
+
+**Full Changelog**: [v2.8.1...v2.9.0](https://github.com/jlowin/fastmcp/compare/v2.8.1...v2.9.0)
+
+</Update>
+
+<Update label="v2.8.1" description="2024-06-15">
+
+## [v2.8.1: Sound Judgement](https://github.com/jlowin/fastmcp/releases/tag/v2.8.1)
+
+2.8.1 introduces audio support, as well as minor fixes and updates for deprecated features.
+
+### Audio Support
+This release adds support for audio content in MCP tools and resources, expanding FastMCP's multimedia capabilities beyond text and images.
+
+## What's Changed
+### New Features 🎉
+* Add audio support by [@jlowin](https://github.com/jlowin) in [#794](https://github.com/jlowin/fastmcp/pull/794)
+### Enhancements 🔧
+* Add flag for disabling deprecation warnings by [@jlowin](https://github.com/jlowin) in [#795](https://github.com/jlowin/fastmcp/pull/795)
+* Add examples to Tool Arg Param transformation by [@strawgate](https://github.com/strawgate) in [#796](https://github.com/jlowin/fastmcp/pull/796)
+### Fixes 🐞
+* Restore .settings access as deprecated by [@jlowin](https://github.com/jlowin) in [#797](https://github.com/jlowin/fastmcp/pull/797)
+* Handle false HTTP kwargs correctly by [@jlowin](https://github.com/jlowin) in [#798](https://github.com/jlowin/fastmcp/pull/798)
+* Bump MCP to version 1.9.4 by [@jlowin](https://github.com/jlowin) in [#799](https://github.com/jlowin/fastmcp/pull/799)
+### Docs 📚
+* Update changelog for 2.8.0 by [@jlowin](https://github.com/jlowin) in [#800](https://github.com/jlowin/fastmcp/pull/800)
+* Update welcome docs by [@jlowin](https://github.com/jlowin) in [#801](https://github.com/jlowin/fastmcp/pull/801)
+* Update documentation headers by [@zzstoatzz](https://github.com/zzstoatzz) in [#805](https://github.com/jlowin/fastmcp/pull/805)
+* Add MCP group to tutorials by [@jlowin](https://github.com/jlowin) in [#806](https://github.com/jlowin/fastmcp/pull/806)
+* Add Community section to documentation by [@jlowin](https://github.com/jlowin) in [#807](https://github.com/jlowin/fastmcp/pull/807)
+* Embed YouTube videos in community showcase by [@jlowin](https://github.com/jlowin) in [#808](https://github.com/jlowin/fastmcp/pull/808)
+### Other Changes 🦾
+* Ensure HTTP args are passed through by [@jlowin](https://github.com/jlowin) in [#809](https://github.com/jlowin/fastmcp/pull/809)
+* Fix install link in readme by [@jlowin](https://github.com/jlowin) in [#811](https://github.com/jlowin/fastmcp/pull/811)
+
+**Full Changelog**: [v2.8.0...v2.8.1](https://github.com/jlowin/fastmcp/compare/v2.8.0...v2.8.1)
+
+</Update>
+
 <Update label="v2.8.0" description="2024-06-10">
 
 ## [v2.8.0: Transform and Roll Out](https://github.com/jlowin/fastmcp/releases/tag/v2.8.0)
