@@ -35,9 +35,13 @@ def atproto_status() -> ProfileInfo:
 
 
 @atproto_mcp.resource("atproto://timeline")
-def get_timeline() -> TimelineResult:
+def get_timeline(
+    limit: Annotated[
+        int, Field(default=10, ge=1, le=100, description="Number of results to return")
+    ] = 10,
+) -> TimelineResult:
     """Get the authenticated user's timeline feed."""
-    return _atproto.fetch_timeline(10)
+    return _atproto.fetch_timeline(limit)
 
 
 @atproto_mcp.resource("atproto://search/{query}")
@@ -52,9 +56,13 @@ def search_posts(
 
 
 @atproto_mcp.resource("atproto://notifications")
-def get_notifications() -> NotificationsResult:
+def get_notifications(
+    limit: Annotated[
+        int, Field(default=10, ge=1, le=100, description="Number of results to return")
+    ] = 10,
+) -> NotificationsResult:
     """Get recent notifications for the authenticated user."""
-    return _atproto.fetch_notifications(10)
+    return _atproto.fetch_notifications(limit)
 
 
 # Tools - actions that modify state
