@@ -5,6 +5,7 @@ from typing import Annotated
 from pydantic import Field
 
 from atproto_mcp import _atproto
+from atproto_mcp.settings import settings
 from atproto_mcp.types import (
     FollowResult,
     LikeResult,
@@ -35,34 +36,32 @@ def atproto_status() -> ProfileInfo:
 
 
 @atproto_mcp.resource("atproto://timeline")
-def get_timeline(
-    limit: Annotated[
-        int, Field(default=10, ge=1, le=100, description="Number of results to return")
-    ] = 10,
-) -> TimelineResult:
+def get_timeline() -> TimelineResult:
     """Get the authenticated user's timeline feed."""
-    return _atproto.fetch_timeline(limit)
+    return _atproto.fetch_timeline(settings.atproto_timeline_default_limit)
 
 
 @atproto_mcp.resource("atproto://search/{query}")
 def search_posts(
     query: Annotated[str, Field(description="Search query for posts")],
     limit: Annotated[
-        int, Field(default=10, ge=1, le=100, description="Number of results to return")
-    ] = 10,
+        int,
+        Field(
+            default=settings.atproto_search_default_limit,
+            ge=1,
+            le=100,
+            description="Number of results to return",
+        ),
+    ],
 ) -> SearchResult:
     """Search for posts containing specific text."""
     return _atproto.search_for_posts(query, limit)
 
 
 @atproto_mcp.resource("atproto://notifications")
-def get_notifications(
-    limit: Annotated[
-        int, Field(default=10, ge=1, le=100, description="Number of results to return")
-    ] = 10,
-) -> NotificationsResult:
+def get_notifications() -> NotificationsResult:
     """Get recent notifications for the authenticated user."""
-    return _atproto.fetch_notifications(limit)
+    return _atproto.fetch_notifications(settings.atproto_notifications_default_limit)
 
 
 # Tools - actions that modify state
