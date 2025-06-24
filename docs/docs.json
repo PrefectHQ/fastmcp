@@ -257,7 +257,17 @@
                   "python-sdk/fastmcp-server-context",
                   "python-sdk/fastmcp-server-dependencies",
                   "python-sdk/fastmcp-server-http",
-                  "python-sdk/fastmcp-server-middleware",
+                  {
+                    "group": "middleware",
+                    "pages": [
+                      "python-sdk/fastmcp-server-middleware-__init__",
+                      "python-sdk/fastmcp-server-middleware-error_handling",
+                      "python-sdk/fastmcp-server-middleware-logging",
+                      "python-sdk/fastmcp-server-middleware-middleware",
+                      "python-sdk/fastmcp-server-middleware-rate_limiting",
+                      "python-sdk/fastmcp-server-middleware-timing"
+                    ]
+                  },
                   "python-sdk/fastmcp-server-openapi",
                   "python-sdk/fastmcp-server-proxy",
                   "python-sdk/fastmcp-server-server"
