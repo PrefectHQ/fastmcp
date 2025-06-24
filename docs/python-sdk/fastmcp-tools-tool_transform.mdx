@@ -7,58 +7,49 @@ sidebarTitle: tool_transform
 
 ## Classes
 
-### `ArgTransform`
+### `ArgTransform` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/tools/tool_transform.py#L85" target="_blank">↗</a></sup>
 
 
 Configuration for transforming a parent tool's argument.
 
-    This class allows fine-grained control over how individual arguments are transformed
-    when creating a new tool from an existing one. You can rename arguments, change their
-    descriptions, add default values, or hide them from clients while passing constants.
+This class allows fine-grained control over how individual arguments are transformed
+when creating a new tool from an existing one. You can rename arguments, change their
+descriptions, add default values, or hide them from clients while passing constants.
 
-    Attributes:
-        name: New name for the argument. Use None to keep original name, or ... for no change.
-        description: New description for the argument. Use None to remove description, or ... for no change.
-        default: New default value for the argument. Use ... for no change.
-        default_factory: Callable that returns a default value. Cannot be used with default.
-        type: New type for the argument. Use ... for no change.
-        hide: If True, hide this argument from clients but pass a constant value to parent.
-        required: If True, make argument required (remove default). Use ... for no change.
-        examples: Examples for the argument. Use ... for no change.
+**Examples:**
 
-    Examples:
-        # Rename argument 'old_name' to 'new_name'
-        ArgTransform(name="new_name")
+# Rename argument 'old_name' to 'new_name'
+ArgTransform(name="new_name")
 
-        # Change description only
-        ArgTransform(description="Updated description")
+# Change description only
+ArgTransform(description="Updated description")
 
-        # Add a default value (makes argument optional)
-        ArgTransform(default=42)
+# Add a default value (makes argument optional)
+ArgTransform(default=42)
 
-        # Add a default factory (makes argument optional)
-        ArgTransform(default_factory=lambda: time.time())
+# Add a default factory (makes argument optional)
+ArgTransform(default_factory=lambda: time.time())
 
-        # Change the type
-        ArgTransform(type=str)
+# Change the type
+ArgTransform(type=str)
 
-        # Hide the argument entirely from clients
-        ArgTransform(hide=True)
+# Hide the argument entirely from clients
+ArgTransform(hide=True)
 
-        # Hide argument but pass a constant value to parent
-        ArgTransform(hide=True, default="constant_value")
+# Hide argument but pass a constant value to parent
+ArgTransform(hide=True, default="constant_value")
 
-        # Hide argument but pass a factory-generated value to parent
-        ArgTransform(hide=True, default_factory=lambda: uuid.uuid4().hex)
+# Hide argument but pass a factory-generated value to parent
+ArgTransform(hide=True, default_factory=lambda: uuid.uuid4().hex)
 
-        # Make an optional parameter required (removes any default)
-        ArgTransform(required=True)
+# Make an optional parameter required (removes any default)
+ArgTransform(required=True)
 
-        # Combine multiple transformations
-        ArgTransform(name="new_name", description="New desc", default=None, type=int)
-    
+# Combine multiple transformations
+ArgTransform(name="new_name", description="New desc", default=None, type=int)
 
-### `TransformedTool`
+
+### `TransformedTool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/tools/tool_transform.py#L179" target="_blank">↗</a></sup>
 
 
 A tool that is transformed from another tool.
@@ -74,7 +65,7 @@ with transformed arguments.
 
 **Methods:**
 
-#### `from_tool`
+#### `from_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/tools/tool_transform.py#L260" target="_blank">↗</a></sup>
 
 ```python
 from_tool(cls, tool: Tool, name: str | None = None, description: str | None = None, tags: set[str] | None = None, transform_fn: Callable[..., Any] | None = None, transform_args: dict[str, ArgTransform] | None = None, annotations: ToolAnnotations | None = None, serializer: Callable[[Any], str] | None = None, enabled: bool | None = None) -> TransformedTool

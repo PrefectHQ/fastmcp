@@ -10,7 +10,7 @@ FastMCP - A more ergonomic interface for MCP servers.
 
 ## Functions
 
-### `add_resource_prefix`
+### `add_resource_prefix` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L1865" target="_blank">↗</a></sup>
 
 ```python
 add_resource_prefix(uri: str, prefix: str, prefix_format: Literal['protocol', 'path'] | None = None) -> str
@@ -19,26 +19,27 @@ add_resource_prefix(uri: str, prefix: str, prefix_format: Literal['protocol', 'p
 
 Add a prefix to a resource URI.
 
-    Args:
-        uri: The original resource URI
-        prefix: The prefix to add
+**Args:**
+- `uri`: The original resource URI
+- `prefix`: The prefix to add
 
-    Returns:
-        The resource URI with the prefix added
+**Returns:**
+- The resource URI with the prefix added
 
-    Examples:
-        >>> add_resource_prefix("resource://path/to/resource", "prefix")
-        "resource://prefix/path/to/resource"  # with new style
-        >>> add_resource_prefix("resource://path/to/resource", "prefix")
-        "prefix+resource://path/to/resource"  # with legacy style
-        >>> add_resource_prefix("resource:///absolute/path", "prefix")
-        "resource://prefix//absolute/path"  # with new style
+**Examples:**
 
-    Raises:
-        ValueError: If the URI doesn't match the expected protocol://path format
-    
+>>> add_resource_prefix("resource://path/to/resource", "prefix")
+"resource://prefix/path/to/resource"  # with new style
+>>> add_resource_prefix("resource://path/to/resource", "prefix")
+"prefix+resource://path/to/resource"  # with legacy style
+>>> add_resource_prefix("resource:///absolute/path", "prefix")
+"resource://prefix//absolute/path"  # with new style
 
-### `remove_resource_prefix`
+**Raises:**
+- `ValueError`: If the URI doesn't match the expected protocol\://path format
+
+
+### `remove_resource_prefix` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L1916" target="_blank">↗</a></sup>
 
 ```python
 remove_resource_prefix(uri: str, prefix: str, prefix_format: Literal['protocol', 'path'] | None = None) -> str
@@ -47,26 +48,28 @@ remove_resource_prefix(uri: str, prefix: str, prefix_format: Literal['protocol',
 
 Remove a prefix from a resource URI.
 
-    Args:
-        uri: The resource URI with a prefix
-        prefix: The prefix to remove
-        prefix_format: The format of the prefix to remove
-    Returns:
-        The resource URI with the prefix removed
+**Args:**
+- `uri`: The resource URI with a prefix
+- `prefix`: The prefix to remove
+- `prefix_format`: The format of the prefix to remove
 
-    Examples:
-        >>> remove_resource_prefix("resource://prefix/path/to/resource", "prefix")
-        "resource://path/to/resource"  # with new style
-        >>> remove_resource_prefix("prefix+resource://path/to/resource", "prefix")
-        "resource://path/to/resource"  # with legacy style
-        >>> remove_resource_prefix("resource://prefix//absolute/path", "prefix")
-        "resource:///absolute/path"  # with new style
+Returns:
+    The resource URI with the prefix removed
 
-    Raises:
-        ValueError: If the URI doesn't match the expected protocol://path format
-    
+**Examples:**
 
-### `has_resource_prefix`
+>>> remove_resource_prefix("resource://prefix/path/to/resource", "prefix")
+"resource://path/to/resource"  # with new style
+>>> remove_resource_prefix("prefix+resource://path/to/resource", "prefix")
+"resource://path/to/resource"  # with legacy style
+>>> remove_resource_prefix("resource://prefix//absolute/path", "prefix")
+"resource:///absolute/path"  # with new style
+
+**Raises:**
+- `ValueError`: If the URI doesn't match the expected protocol\://path format
+
+
+### `has_resource_prefix` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L1974" target="_blank">↗</a></sup>
 
 ```python
 has_resource_prefix(uri: str, prefix: str, prefix_format: Literal['protocol', 'path'] | None = None) -> bool
@@ -75,53 +78,54 @@ has_resource_prefix(uri: str, prefix: str, prefix_format: Literal['protocol', 'p
 
 Check if a resource URI has a specific prefix.
 
-    Args:
-        uri: The resource URI to check
-        prefix: The prefix to look for
+**Args:**
+- `uri`: The resource URI to check
+- `prefix`: The prefix to look for
 
-    Returns:
-        True if the URI has the specified prefix, False otherwise
+**Returns:**
+- True if the URI has the specified prefix, False otherwise
 
-    Examples:
-        >>> has_resource_prefix("resource://prefix/path/to/resource", "prefix")
-        True  # with new style
-        >>> has_resource_prefix("prefix+resource://path/to/resource", "prefix")
-        True  # with legacy style
-        >>> has_resource_prefix("resource://other/path/to/resource", "prefix")
-        False
+**Examples:**
 
-    Raises:
-        ValueError: If the URI doesn't match the expected protocol://path format
-    
+>>> has_resource_prefix("resource://prefix/path/to/resource", "prefix")
+True  # with new style
+>>> has_resource_prefix("prefix+resource://path/to/resource", "prefix")
+True  # with legacy style
+>>> has_resource_prefix("resource://other/path/to/resource", "prefix")
+False
+
+**Raises:**
+- `ValueError`: If the URI doesn't match the expected protocol\://path format
+
 
 ## Classes
 
-### `FastMCP`
+### `FastMCP` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L113" target="_blank">↗</a></sup>
 
 **Methods:**
 
-#### `settings`
+#### `settings` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L264" target="_blank">↗</a></sup>
 
 ```python
 settings(self) -> Settings
 ```
 
-#### `name`
+#### `name` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L275" target="_blank">↗</a></sup>
 
 ```python
 name(self) -> str
 ```
 
-#### `instructions`
+#### `instructions` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L279" target="_blank">↗</a></sup>
 
 ```python
 instructions(self) -> str | None
 ```
 
-#### `run`
+#### `run` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L304" target="_blank">↗</a></sup>
 
 ```python
-run(self, transport: Literal['stdio', 'streamable-http', 'sse'] | None = None, **transport_kwargs: Any) -> None
+run(self, transport: Transport | None = None, **transport_kwargs: Any) -> None
 ```
 
 Run the FastMCP server. Note this is a synchronous function.
@@ -130,13 +134,13 @@ Run the FastMCP server. Note this is a synchronous function.
 - `transport`: Transport protocol to use ("stdio", "sse", or "streamable-http")
 
 
-#### `add_middleware`
+#### `add_middleware` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L338" target="_blank">↗</a></sup>
 
 ```python
 add_middleware(self, middleware: Middleware) -> None
 ```
 
-#### `custom_route`
+#### `custom_route` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L383" target="_blank">↗</a></sup>
 
 ```python
 custom_route(self, path: str, methods: list[str], name: str | None = None, include_in_schema: bool = True)
@@ -157,7 +161,7 @@ Starlette's reverse URL lookup feature)
 - `include_in_schema`: Whether to include in OpenAPI schema, defaults to True
 
 
-#### `add_tool`
+#### `add_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L738" target="_blank">↗</a></sup>
 
 ```python
 add_tool(self, tool: Tool) -> None
@@ -172,7 +176,7 @@ with the Context type annotation. See the @tool decorator for examples.
 - `tool`: The Tool instance to register
 
 
-#### `remove_tool`
+#### `remove_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L750" target="_blank">↗</a></sup>
 
 ```python
 remove_tool(self, name: str) -> None
@@ -187,19 +191,19 @@ Remove a tool from the server.
 - `NotFoundError`: If the tool is not found
 
 
-#### `tool`
+#### `tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L763" target="_blank">↗</a></sup>
 
 ```python
 tool(self, name_or_fn: AnyFunction) -> FunctionTool
 ```
 
-#### `tool`
+#### `tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L776" target="_blank">↗</a></sup>
 
 ```python
 tool(self, name_or_fn: str | None = None) -> Callable[[AnyFunction], FunctionTool]
 ```
 
-#### `tool`
+#### `tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L788" target="_blank">↗</a></sup>
 
 ```python
 tool(self, name_or_fn: str | AnyFunction | None = None) -> Callable[[AnyFunction], FunctionTool] | FunctionTool
@@ -228,7 +232,7 @@ This decorator supports multiple calling patterns:
 - `enabled`: Optional boolean to enable or disable the tool
 
 
-#### `add_resource`
+#### `add_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L904" target="_blank">↗</a></sup>
 
 ```python
 add_resource(self, resource: Resource) -> None
@@ -240,7 +244,7 @@ Add a resource to the server.
 - `resource`: A Resource instance to add
 
 
-#### `add_template`
+#### `add_template` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L914" target="_blank">↗</a></sup>
 
 ```python
 add_template(self, template: ResourceTemplate) -> None
@@ -252,7 +256,7 @@ Add a resource template to the server.
 - `template`: A ResourceTemplate instance to add
 
 
-#### `add_resource_fn`
+#### `add_resource_fn` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L922" target="_blank">↗</a></sup>
 
 ```python
 add_resource_fn(self, fn: AnyFunction, uri: str, name: str | None = None, description: str | None = None, mime_type: str | None = None, tags: set[str] | None = None) -> None
@@ -272,7 +276,7 @@ has parameters, it will be registered as a template resource.
 - `tags`: Optional set of tags for categorizing the resource
 
 
-#### `resource`
+#### `resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L961" target="_blank">↗</a></sup>
 
 ```python
 resource(self, uri: str) -> Callable[[AnyFunction], Resource | ResourceTemplate]
@@ -302,7 +306,7 @@ has parameters, it will be registered as a template resource.
 - `enabled`: Optional boolean to enable or disable the resource
 
 
-#### `add_prompt`
+#### `add_prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L1081" target="_blank">↗</a></sup>
 
 ```python
 add_prompt(self, prompt: Prompt) -> None
@@ -314,19 +318,19 @@ Add a prompt to the server.
 - `prompt`: A Prompt instance to add
 
 
-#### `prompt`
+#### `prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L1091" target="_blank">↗</a></sup>
 
 ```python
 prompt(self, name_or_fn: AnyFunction) -> FunctionPrompt
 ```
 
-#### `prompt`
+#### `prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L1102" target="_blank">↗</a></sup>
 
 ```python
 prompt(self, name_or_fn: str | None = None) -> Callable[[AnyFunction], FunctionPrompt]
 ```
 
-#### `prompt`
+#### `prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L1112" target="_blank">↗</a></sup>
 
 ```python
 prompt(self, name_or_fn: str | AnyFunction | None = None) -> Callable[[AnyFunction], FunctionPrompt] | FunctionPrompt
@@ -400,7 +404,7 @@ Decorator to register a prompt.
             server.prompt(my_function, name="custom_name")
 
 
-#### `sse_app`
+#### `sse_app` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L1330" target="_blank">↗</a></sup>
 
 ```python
 sse_app(self, path: str | None = None, message_path: str | None = None, middleware: list[ASGIMiddleware] | None = None) -> StarletteWithLifespan
@@ -414,7 +418,7 @@ Create a Starlette app for the SSE server.
 - `middleware`: A list of middleware to apply to the app
 
 
-#### `streamable_http_app`
+#### `streamable_http_app` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L1361" target="_blank">↗</a></sup>
 
 ```python
 streamable_http_app(self, path: str | None = None, middleware: list[ASGIMiddleware] | None = None) -> StarletteWithLifespan
@@ -427,10 +431,10 @@ Create a Starlette app for the StreamableHTTP server.
 - `middleware`: A list of middleware to apply to the app
 
 
-#### `http_app`
+#### `http_app` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L1382" target="_blank">↗</a></sup>
 
 ```python
-http_app(self, path: str | None = None, middleware: list[ASGIMiddleware] | None = None, json_response: bool | None = None, stateless_http: bool | None = None, transport: Literal['streamable-http', 'sse'] = 'streamable-http') -> StarletteWithLifespan
+http_app(self, path: str | None = None, middleware: list[ASGIMiddleware] | None = None, json_response: bool | None = None, stateless_http: bool | None = None, transport: Literal['http', 'streamable-http', 'sse'] = 'http') -> StarletteWithLifespan
 ```
 
 Create a Starlette app using the specified HTTP transport.
@@ -444,7 +448,7 @@ Create a Starlette app using the specified HTTP transport.
 - A Starlette application configured with the specified transport
 
 
-#### `mount`
+#### `mount` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L1456" target="_blank">↗</a></sup>
 
 ```python
 mount(self, server: FastMCP[LifespanResultT], prefix: str | None = None, as_proxy: bool | None = None) -> None
@@ -498,7 +502,7 @@ automatically determined based on whether the server has a custom lifespan
 - `prompt_separator`: Deprecated. Separator character for prompt names.
 
 
-#### `from_openapi`
+#### `from_openapi` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L1706" target="_blank">↗</a></sup>
 
 ```python
 from_openapi(cls, openapi_spec: dict[str, Any], client: httpx.AsyncClient, route_maps: list[RouteMap] | None = None, route_map_fn: OpenAPIRouteMapFn | None = None, mcp_component_fn: OpenAPIComponentFn | None = None, mcp_names: dict[str, str] | None = None, tags: set[str] | None = None, **settings: Any) -> FastMCPOpenAPI
@@ -507,7 +511,7 @@ from_openapi(cls, openapi_spec: dict[str, Any], client: httpx.AsyncClient, route
 Create a FastMCP server from an OpenAPI specification.
 
 
-#### `from_fastapi`
+#### `from_fastapi` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L1734" target="_blank">↗</a></sup>
 
 ```python
 from_fastapi(cls, app: Any, name: str | None = None, route_maps: list[RouteMap] | None = None, route_map_fn: OpenAPIRouteMapFn | None = None, mcp_component_fn: OpenAPIComponentFn | None = None, mcp_names: dict[str, str] | None = None, httpx_client_kwargs: dict[str, Any] | None = None, tags: set[str] | None = None, **settings: Any) -> FastMCPOpenAPI
@@ -516,7 +520,7 @@ from_fastapi(cls, app: Any, name: str | None = None, route_maps: list[RouteMap] 
 Create a FastMCP server from a FastAPI application.
 
 
-#### `as_proxy`
+#### `as_proxy` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L1776" target="_blank">↗</a></sup>
 
 ```python
 as_proxy(cls, backend: Client[ClientTransportT] | ClientTransport | FastMCP[Any] | AnyUrl | Path | MCPConfig | dict[str, Any] | str, **settings: Any) -> FastMCPProxy
@@ -530,7 +534,7 @@ instance or any value accepted as the ``transport`` argument of
 ``Client`` constructor.
 
 
-#### `from_client`
+#### `from_client` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L1806" target="_blank">↗</a></sup>
 
 ```python
 from_client(cls, client: Client[ClientTransportT], **settings: Any) -> FastMCPProxy
@@ -539,4 +543,4 @@ from_client(cls, client: Client[ClientTransportT], **settings: Any) -> FastMCPPr
 Create a FastMCP proxy server from a FastMCP client.
 
 
-### `MountedServer`
+### `MountedServer` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L1859" target="_blank">↗</a></sup>
