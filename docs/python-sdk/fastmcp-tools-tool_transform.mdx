@@ -18,38 +18,58 @@ descriptions, add default values, or hide them from clients while passing consta
 
 **Examples:**
 
-# Rename argument 'old_name' to 'new_name'
+Rename argument 'old_name' to 'new_name'
+```python
 ArgTransform(name="new_name")
+```
 
-# Change description only
+Change description only
+```python
 ArgTransform(description="Updated description")
+```
 
-# Add a default value (makes argument optional)
+Add a default value (makes argument optional)
+```python
 ArgTransform(default=42)
+```
 
-# Add a default factory (makes argument optional)
+Add a default factory (makes argument optional)
+```python
 ArgTransform(default_factory=lambda: time.time())
+```
 
-# Change the type
+Change the type
+```python
 ArgTransform(type=str)
+```
 
-# Hide the argument entirely from clients
+Hide the argument entirely from clients
+```python
 ArgTransform(hide=True)
+```
 
-# Hide argument but pass a constant value to parent
+Hide argument but pass a constant value to parent
+```python
 ArgTransform(hide=True, default="constant_value")
+```
 
-# Hide argument but pass a factory-generated value to parent
+Hide argument but pass a factory-generated value to parent
+```python
 ArgTransform(hide=True, default_factory=lambda: uuid.uuid4().hex)
+```
 
-# Make an optional parameter required (removes any default)
+Make an optional parameter required (removes any default)
+```python
 ArgTransform(required=True)
+```
 
-# Combine multiple transformations
+Combine multiple transformations
+```python
 ArgTransform(name="new_name", description="New desc", default=None, type=int)
+```
 
 
-### `TransformedTool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/tools/tool_transform.py#L179"><Icon icon="github" size="14" /></a></sup>
+### `TransformedTool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/tools/tool_transform.py#L199"><Icon icon="github" size="14" /></a></sup>
 
 
 A tool that is transformed from another tool.
@@ -65,7 +85,7 @@ with transformed arguments.
 
 **Methods:**
 
-#### `from_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/tools/tool_transform.py#L260"><Icon icon="github" size="14" /></a></sup>
+#### `from_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/tools/tool_transform.py#L280"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 from_tool(cls, tool: Tool, name: str | None = None, description: str | None = None, tags: set[str] | None = None, transform_fn: Callable[..., Any] | None = None, transform_args: dict[str, ArgTransform] | None = None, annotations: ToolAnnotations | None = None, serializer: Callable[[Any], str] | None = None, enabled: bool | None = None) -> TransformedTool
@@ -81,9 +101,9 @@ argument names.
 - `name`: New name for the tool. Defaults to parent tool's name.
 - `transform_args`: Optional transformations for parent tool arguments.
 Only specified arguments are transformed, others pass through unchanged\:
-- str\: Simple rename
-- ArgTransform\: Complex transformation (rename/description/default/drop)
-- None\: Drop the argument
+- Simple rename (str)
+- Complex transformation (rename/description/default/drop) (ArgTransform)
+- Drop the argument (None)
 - `description`: New description. Defaults to parent's description.
 - `tags`: New tags. Defaults to parent's tags.
 - `annotations`: New annotations. Defaults to parent's annotations.
@@ -92,17 +112,28 @@ Only specified arguments are transformed, others pass through unchanged\:
 **Returns:**
 - TransformedTool with the specified transformations.
 
-Examples:
-- # Transform specific arguments only
-- Tool.from_tool(parent, transform_args={"old": "new"})  # Others unchanged
-- # Custom function with partial transforms
-- async def custom(x: int, y: int) -> str:
-result = await forward(x=x, y=y)
-return f"Custom: {result}"
-- Tool.from_tool(parent, transform_fn=custom, transform_args={"a": "x", "b": "y"})
-- # Using **kwargs (gets all args, transformed and untransformed)
-- async def flexible(**kwargs) -> str:
-result = await forward(**kwargs)
-return f"Got: {kwargs}"
-- Tool.from_tool(parent, transform_fn=flexible, transform_args={"a": "x"})
+**Examples:**
+
+# Transform specific arguments only
+```python
+Tool.from_tool(parent, transform_args={"old": "new"})  # Others unchanged
+```
+
+# Custom function with partial transforms
+```python
+async def custom(x: int, y: int) -> str:
+    result = await forward(x=x, y=y)
+    return f"Custom: {result}"
+
+Tool.from_tool(parent, transform_fn=custom, transform_args={"a": "x", "b": "y"})
+```
+
+# Using **kwargs (gets all args, transformed and untransformed)
+```python
+async def flexible(**kwargs) -> str:
+    result = await forward(**kwargs)
+    return f"Got: {kwargs}"
+
+Tool.from_tool(parent, transform_fn=flexible, transform_args={"a": "x"})
+```
 
