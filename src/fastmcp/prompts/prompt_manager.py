@@ -172,12 +172,12 @@ class PromptManager:
 
             # Pass through PromptErrors as-is
             except PromptError as e:
-                logger.exception(f"Error rendering prompt {name!r}: {e}")
+                logger.exception(f"Error rendering prompt {name!r}")
                 raise e
 
             # Handle other exceptions
             except Exception as e:
-                logger.exception(f"Error rendering prompt {name!r}: {e}")
+                logger.exception(f"Error rendering prompt {name!r}")
                 if self.mask_error_details:
                     # Mask internal details
                     raise PromptError(f"Error rendering prompt {name!r}") from e
