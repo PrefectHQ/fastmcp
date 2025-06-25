@@ -1,5 +1,4 @@
-from collections.abc import Awaitable, Coroutine
-from typing import Any, TypeAlias, Union
+from typing import TypeAlias
 
 import mcp.types
 from mcp.client.session import MessageHandlerFnT
@@ -11,7 +10,7 @@ Message: TypeAlias = (
     | Exception
 )
 
-MessageHandlerFn: TypeAlias = MessageHandlerFnT
+MessageHandlerT: TypeAlias = MessageHandlerFnT
 
 
 class MessageHandler:
@@ -20,8 +19,13 @@ class MessageHandler:
     requests, notifications, and exceptions. Users can override any of the hooks
     """
 
-    def __call__(self, message: Message) -> Coroutine[Any, Any, None]:
-        return self.dispatch(message)
+    async def __call__(
+        self,
+        message: RequestResponder[mcp.types.ServerRequest, mcp.types.ClientResult]
+        | mcp.types.ServerNotification
+        | Exception,
+    ) -> None:
+        return await self.dispatch(message)
 
     async def dispatch(self, message: Message) -> None:
         # handle all messages

@@ -24,7 +24,6 @@ from typing_extensions import Unpack
 import fastmcp
 from fastmcp.client.auth.bearer import BearerAuth
 from fastmcp.client.auth.oauth import OAuth
-from fastmcp.client.messages import MessageHandler
 from fastmcp.server.dependencies import get_http_headers
 from fastmcp.server.server import FastMCP
 from fastmcp.utilities.logging import get_logger
@@ -57,7 +56,7 @@ class SessionKwargs(TypedDict, total=False):
     sampling_callback: SamplingFnT | None
     list_roots_callback: ListRootsFnT | None
     logging_callback: LoggingFnT | None
-    message_handler: MessageHandlerFnT | MessageHandler | None
+    message_handler: MessageHandlerFnT | None
     client_info: mcp.types.Implementation | None
 
 
