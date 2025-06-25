@@ -363,6 +363,7 @@ class FastMCP(Generic[LifespanResultT]):
         return await self._resource_manager.get_resource_templates()
 
     async def get_resource_template(self, key: str) -> ResourceTemplate:
+        """Get a registered resource template by key."""
         templates = await self.get_resource_templates()
         if key not in templates:
             raise NotFoundError(f"Unknown resource template: {key}")
@@ -403,9 +404,12 @@ class FastMCP(Generic[LifespanResultT]):
             include_in_schema: Whether to include in OpenAPI schema, defaults to True
 
         Example:
+            Register a custom HTTP route for a health check endpoint:
+            ```python
             @server.custom_route("/health", methods=["GET"])
             async def health_check(request: Request) -> Response:
                 return JSONResponse({"status": "ok"})
+            ```
         """
 
         def decorator(
@@ -814,15 +818,18 @@ class FastMCP(Generic[LifespanResultT]):
             name: Optional name for the tool (keyword-only, alternative to name_or_fn)
             description: Optional description of what the tool does
             tags: Optional set of tags for categorizing the tool
-            annotations: Optional annotations about the tool's behavior (e.g. {"is_async": True})
+            annotations: Optional annotations about the tool's behavior
             exclude_args: Optional list of argument names to exclude from the tool schema
             enabled: Optional boolean to enable or disable the tool
 
-        Example:
+        Examples:
+            Register a tool with a custom name:
+            ```python
             @server.tool
             def my_tool(x: int) -> str:
                 return str(x)
 
+            # Register a tool with a custom name
             @server.tool
             def my_tool(x: int) -> str:
                 return str(x)
@@ -837,6 +844,7 @@ class FastMCP(Generic[LifespanResultT]):
 
             # Direct function call
             server.tool(my_function, name="custom_name")
+            ```
         """
         if isinstance(annotations, dict):
             annotations = ToolAnnotations(**annotations)
@@ -991,7 +999,9 @@ class FastMCP(Generic[LifespanResultT]):
             tags: Optional set of tags for categorizing the resource
             enabled: Optional boolean to enable or disable the resource
 
-        Example:
+        Examples:
+            Register a resource with a custom name:
+            ```python
             @server.resource("resource://my-resource")
             def get_data() -> str:
                 return "Hello, world!"
@@ -1014,6 +1024,7 @@ class FastMCP(Generic[LifespanResultT]):
             async def get_weather(city: str) -> str:
                 data = await fetch_weather(city)
                 return f"Weather for {city}: {data}"
+            ```
         """
         # Check if user passed function directly instead of calling decorator
         if inspect.isroutine(uri):
@@ -1138,7 +1149,9 @@ class FastMCP(Generic[LifespanResultT]):
             tags: Optional set of tags for categorizing the prompt
             enabled: Optional boolean to enable or disable the prompt
 
-        Example:
+        Examples:
+
+            ```python
             @server.prompt
             def analyze_table(table_name: str) -> list[Message]:
                 schema = read_table_schema(table_name)
@@ -1182,6 +1195,7 @@ class FastMCP(Generic[LifespanResultT]):
 
             # Direct function call
             server.prompt(my_function, name="custom_name")
+            ```
         """
 
         if isinstance(name_or_fn, classmethod):
@@ -1787,10 +1801,10 @@ class FastMCP(Generic[LifespanResultT]):
     ) -> FastMCPProxy:
         """Create a FastMCP proxy server for the given backend.
 
-        The ``backend`` argument can be either an existing :class:`~fastmcp.client.Client`
-        instance or any value accepted as the ``transport`` argument of
-        :class:`~fastmcp.client.Client`. This mirrors the convenience of the
-        ``Client`` constructor.
+        The `backend` argument can be either an existing `fastmcp.client.Client`
+        instance or any value accepted as the `transport` argument of
+        `fastmcp.client.Client`. This mirrors the convenience of the
+        `fastmcp.client.Client` constructor.
         """
         from fastmcp.client.client import Client
         from fastmcp.server.proxy import FastMCPProxy
@@ -1827,14 +1841,14 @@ class FastMCP(Generic[LifespanResultT]):
         Given a component, determine if it should be enabled. Returns True if it should be enabled; False if it should not.
 
         Rules:
-            • If the component's enabled property is False, always return False.
-            • If both include_tags and exclude_tags are None, return True.
-            • If exclude_tags is provided, check each exclude tag:
+            - If the component's enabled property is False, always return False.
+            - If both include_tags and exclude_tags are None, return True.
+            - If exclude_tags is provided, check each exclude tag:
                 - If the exclude tag is a string, it must be present in the input tags to exclude.
-            • If include_tags is provided, check each include tag:
+            - If include_tags is provided, check each include tag:
                 - If the include tag is a string, it must be present in the input tags to include.
-            • If include_tags is provided and none of the include tags match, return False.
-            • If include_tags is not provided, return True.
+            - If include_tags is provided and none of the include tags match, return False.
+            - If include_tags is not provided, return True.
         """
         if not component.enabled:
             return False
@@ -1875,12 +1889,21 @@ def add_resource_prefix(
         The resource URI with the prefix added
 
     Examples:
-        >>> add_resource_prefix("resource://path/to/resource", "prefix")
-        "resource://prefix/path/to/resource"  # with new style
-        >>> add_resource_prefix("resource://path/to/resource", "prefix")
-        "prefix+resource://path/to/resource"  # with legacy style
-        >>> add_resource_prefix("resource:///absolute/path", "prefix")
-        "resource://prefix//absolute/path"  # with new style
+        With new style:
+        ```python
+        add_resource_prefix("resource://path/to/resource", "prefix")
+        "resource://prefix/path/to/resource"
+        ```
+        With legacy style:
+        ```python
+        add_resource_prefix("resource://path/to/resource", "prefix")
+        "prefix+resource://path/to/resource"
+        ```
+        With absolute path:
+        ```python
+        add_resource_prefix("resource:///absolute/path", "prefix")
+        "resource://prefix//absolute/path"
+        ```
 
     Raises:
         ValueError: If the URI doesn't match the expected protocol://path format
@@ -1926,12 +1949,21 @@ def remove_resource_prefix(
         The resource URI with the prefix removed
 
     Examples:
-        >>> remove_resource_prefix("resource://prefix/path/to/resource", "prefix")
-        "resource://path/to/resource"  # with new style
-        >>> remove_resource_prefix("prefix+resource://path/to/resource", "prefix")
-        "resource://path/to/resource"  # with legacy style
-        >>> remove_resource_prefix("resource://prefix//absolute/path", "prefix")
-        "resource:///absolute/path"  # with new style
+        With new style:
+        ```python
+        remove_resource_prefix("resource://prefix/path/to/resource", "prefix")
+        "resource://path/to/resource"
+        ```
+        With legacy style:
+        ```python
+        remove_resource_prefix("prefix+resource://path/to/resource", "prefix")
+        "resource://path/to/resource"
+        ```
+        With absolute path:
+        ```python
+        remove_resource_prefix("resource://prefix//absolute/path", "prefix")
+        "resource:///absolute/path"
+        ```
 
     Raises:
         ValueError: If the URI doesn't match the expected protocol://path format
@@ -1984,12 +2016,21 @@ def has_resource_prefix(
         True if the URI has the specified prefix, False otherwise
 
     Examples:
-        >>> has_resource_prefix("resource://prefix/path/to/resource", "prefix")
-        True  # with new style
-        >>> has_resource_prefix("prefix+resource://path/to/resource", "prefix")
-        True  # with legacy style
-        >>> has_resource_prefix("resource://other/path/to/resource", "prefix")
+        With new style:
+        ```python
+        has_resource_prefix("resource://prefix/path/to/resource", "prefix")
+        True
+        ```
+        With legacy style:
+        ```python
+        has_resource_prefix("prefix+resource://path/to/resource", "prefix")
+        True
+        ```
+        With other path:
+        ```python
+        has_resource_prefix("resource://other/path/to/resource", "prefix")
         False
+        ```
 
     Raises:
         ValueError: If the URI doesn't match the expected protocol://path format
