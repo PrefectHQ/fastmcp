@@ -76,9 +76,7 @@
                   {
                     "group": "Authentication",
                     "icon": "shield-check",
-                    "pages": [
-                      "servers/auth/bearer"
-                    ]
+                    "pages": ["servers/auth/bearer"]
                   },
                   "servers/middleware",
                   "servers/openapi",
@@ -87,10 +85,7 @@
                   {
                     "group": "Deployment",
                     "icon": "upload",
-                    "pages": [
-                      "deployment/running-server",
-                      "deployment/asgi"
-                    ]
+                    "pages": ["deployment/running-server", "deployment/asgi"]
                   }
                 ]
               },
@@ -114,6 +109,7 @@
                       "clients/logging",
                       "clients/progress",
                       "clients/sampling",
+                      "clients/messages",
                       "clients/roots"
                     ]
                   },
@@ -121,10 +117,7 @@
                   {
                     "group": "Authentication",
                     "icon": "user-shield",
-                    "pages": [
-                      "clients/auth/oauth",
-                      "clients/auth/bearer"
-                    ]
+                    "pages": ["clients/auth/oauth", "clients/auth/bearer"]
                   }
                 ]
               },
@@ -163,17 +156,12 @@
           },
           {
             "anchor": "What's New",
-            "pages": [
-              "updates",
-              "changelog"
-            ]
+            "pages": ["updates", "changelog"]
           },
           {
             "anchor": "Community",
             "icon": "users",
-            "pages": [
-              "community/showcase"
-            ]
+            "pages": ["community/showcase"]
           }
         ]
       },

@@ -141,6 +141,7 @@ get_config.disable()
 get_config.enable()
 ```
 
+
 ### Accessing MCP Context
 
 <VersionBadge version="2.2.5" />
@@ -172,7 +173,7 @@ async def get_details(name: str, ctx: Context) -> dict:
 For full documentation on the Context object and all its capabilities, see the [Context documentation](/servers/context).
 
 
-### Asynchronous Resources
+### Async Resources
 
 Use `async def` for resource functions that perform I/O operations (e.g., reading from a database or network) to avoid blocking the server.
 
@@ -277,6 +278,27 @@ mcp.add_resource(special_resource, key="internal://data-v2")  # Will be stored a
 ```
 
 Note that this parameter is only available when using `add_resource()` directly and not through the `@resource` decorator, as URIs are provided explicitly when using the decorator.
+
+### Notifications
+
+<VersionBadge version="2.9.1" />
+
+FastMCP automatically sends `notifications/resources/list_changed` notifications to connected clients when resources or templates are added, enabled, or disabled. This allows clients to stay up-to-date with the current resource set without manually polling for changes.
+
+```python
+@mcp.resource("data://example")
+def example_resource() -> str:
+    return "Hello!"
+
+# These operations trigger notifications:
+mcp.add_resource(example_resource)  # Sends resources/list_changed notification
+example_resource.disable()          # Sends resources/list_changed notification  
+example_resource.enable()           # Sends resources/list_changed notification
+```
+
+Notifications are only sent when these operations occur within an active MCP request context (e.g., when called from within a tool or other MCP operation). Operations performed during server initialization do not trigger notifications.
+
+Clients can handle these notifications using a [message handler](/clients/messages) to automatically refresh their resource lists or update their interfaces.
 
 ## Resource Templates
 

@@ -15,10 +15,10 @@ from pydantic import AnyUrl
 import fastmcp
 from fastmcp.client.logging import (
     LogHandler,
-    MessageHandler,
     create_log_callback,
     default_log_handler,
 )
+from fastmcp.client.messages import MessageHandler, MessageHandlerFnT
 from fastmcp.client.progress import ProgressHandler, default_progress_handler
 from fastmcp.client.roots import (
     RootsHandler,
@@ -143,7 +143,7 @@ class Client(Generic[ClientTransportT]):
         roots: RootsList | RootsHandler | None = None,
         sampling_handler: SamplingHandler | None = None,
         log_handler: LogHandler | None = None,
-        message_handler: MessageHandler | None = None,
+        message_handler: MessageHandlerFnT | MessageHandler | None = None,
         progress_handler: ProgressHandler | None = None,
         timeout: datetime.timedelta | float | int | None = None,
         init_timeout: datetime.timedelta | float | int | None = None,
