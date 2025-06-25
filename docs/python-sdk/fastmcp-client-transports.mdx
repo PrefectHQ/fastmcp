@@ -7,7 +7,7 @@ sidebarTitle: transports
 
 ## Functions
 
-### `infer_transport` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/transports.py#L837" target="_blank">↗</a></sup>
+### `infer_transport` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/transports.py#L837"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 infer_transport(transport: ClientTransport | FastMCP | FastMCP1Server | AnyUrl | Path | MCPConfig | dict[str, Any] | str) -> ClientTransport
@@ -57,13 +57,13 @@ transport = infer_transport(config)
 
 ## Classes
 
-### `SessionKwargs` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/transports.py#L52" target="_blank">↗</a></sup>
+### `SessionKwargs` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/transports.py#L52"><Icon icon="github" size="14" /></a></sup>
 
 
 Keyword arguments for the MCP ClientSession constructor.
 
 
-### `ClientTransport` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/transports.py#L63" target="_blank">↗</a></sup>
+### `ClientTransport` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/transports.py#L63"><Icon icon="github" size="14" /></a></sup>
 
 
 Abstract base class for different MCP client transport mechanisms.
@@ -72,25 +72,25 @@ A Transport is responsible for establishing and managing connections
 to an MCP server, and providing a ClientSession within an async context.
 
 
-### `WSTransport` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/transports.py#L109" target="_blank">↗</a></sup>
+### `WSTransport` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/transports.py#L109"><Icon icon="github" size="14" /></a></sup>
 
 
 Transport implementation that connects to an MCP server via WebSockets.
 
 
-### `SSETransport` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/transports.py#L148" target="_blank">↗</a></sup>
+### `SSETransport` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/transports.py#L148"><Icon icon="github" size="14" /></a></sup>
 
 
 Transport implementation that connects to an MCP server via Server-Sent Events.
 
 
-### `StreamableHttpTransport` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/transports.py#L223" target="_blank">↗</a></sup>
+### `StreamableHttpTransport` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/transports.py#L223"><Icon icon="github" size="14" /></a></sup>
 
 
 Transport implementation that connects to an MCP server via Streamable HTTP Requests.
 
 
-### `StdioTransport` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/transports.py#L299" target="_blank">↗</a></sup>
+### `StdioTransport` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/transports.py#L299"><Icon icon="github" size="14" /></a></sup>
 
 
 Base transport for connecting to an MCP server via subprocess with stdio.
@@ -99,37 +99,37 @@ This is a base class that can be subclassed for specific command-based
 transports like Python, Node, Uvx, etc.
 
 
-### `PythonStdioTransport` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/transports.py#L416" target="_blank">↗</a></sup>
+### `PythonStdioTransport` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/transports.py#L416"><Icon icon="github" size="14" /></a></sup>
 
 
 Transport for running Python scripts.
 
 
-### `FastMCPStdioTransport` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/transports.py#L462" target="_blank">↗</a></sup>
+### `FastMCPStdioTransport` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/transports.py#L462"><Icon icon="github" size="14" /></a></sup>
 
 
 Transport for running FastMCP servers using the FastMCP CLI.
 
 
-### `NodeStdioTransport` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/transports.py#L489" target="_blank">↗</a></sup>
+### `NodeStdioTransport` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/transports.py#L489"><Icon icon="github" size="14" /></a></sup>
 
 
 Transport for running Node.js scripts.
 
 
-### `UvxStdioTransport` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/transports.py#L531" target="_blank">↗</a></sup>
+### `UvxStdioTransport` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/transports.py#L531"><Icon icon="github" size="14" /></a></sup>
 
 
 Transport for running commands via the uvx tool.
 
 
-### `NpxStdioTransport` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/transports.py#L597" target="_blank">↗</a></sup>
+### `NpxStdioTransport` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/transports.py#L597"><Icon icon="github" size="14" /></a></sup>
 
 
 Transport for running commands via the npx tool.
 
 
-### `FastMCPTransport` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/transports.py#L659" target="_blank">↗</a></sup>
+### `FastMCPTransport` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/transports.py#L659"><Icon icon="github" size="14" /></a></sup>
 
 
 In-memory transport for FastMCP servers.
@@ -140,7 +140,7 @@ servers from the low-level MCP SDK. This is particularly useful for unit
 tests or scenarios where client and server run in the same runtime.
 
 
-### `MCPConfigTransport` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/transports.py#L713" target="_blank">↗</a></sup>
+### `MCPConfigTransport` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/transports.py#L713"><Icon icon="github" size="14" /></a></sup>
 
 
 Transport for connecting to one or more MCP servers defined in an MCPConfig.
