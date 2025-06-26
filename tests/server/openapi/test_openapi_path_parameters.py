@@ -455,3 +455,28 @@ async def test_array_query_parameter_exploded_format(mock_client):
         json=None,
         timeout=None,
     )
+
+
+def test_parameter_location_enum_handling():
+    """Test that ParameterLocation enum values are handled correctly (issue #950)."""
+    from fastapi import FastAPI, Path, Query
+
+    from fastmcp import FastMCP
+
+    # Create FastAPI app with path and query parameters
+    app = FastAPI(title="Parameter Location Test")
+
+    @app.get("/tenants/{tenant_id}/data")
+    async def get_tenant_data(
+        tenant_id: str = Path(..., description="The tenant ID"),
+        limit: int = Query(10, description="Data limit"),
+    ):
+        return {"tenant_id": tenant_id, "limit": limit}
+
+    # This should not raise a validation error about ParameterLocation
+    mcp_server = FastMCP(
+        name="Test MCP", instructions="Test server for parameter location enum handling"
+    ).from_fastapi(app, name="Test MCP", tags={"test"})
+
+    # Verify the server was created successfully
+    assert mcp_server is not None

@@ -302,11 +302,15 @@ class OpenAPIParser(
 
                 # Extract parameter info - handle both 3.0 and 3.1 parameter models
                 param_in = parameter.param_in  # Both use param_in
-                param_location = self._convert_to_parameter_location(param_in)
+                # Handle enum or string parameter locations
+                param_in_str = (
+                    param_in.value if hasattr(param_in, "value") else param_in
+                )
+                param_location = self._convert_to_parameter_location(param_in_str)
                 param_schema_obj = parameter.param_schema  # Both use param_schema
 
                 # Skip duplicate parameters (same name and location)
-                param_key = (parameter.name, param_in)
+                param_key = (parameter.name, param_in_str)
                 if param_key in seen_params:
                     continue
                 seen_params[param_key] = True
