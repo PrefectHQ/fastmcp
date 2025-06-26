@@ -303,8 +303,10 @@ class OpenAPIParser(
                 # Extract parameter info - handle both 3.0 and 3.1 parameter models
                 param_in = parameter.param_in  # Both use param_in
                 # Handle enum or string parameter locations
+                from enum import Enum
+
                 param_in_str = (
-                    param_in.value if hasattr(param_in, "value") else param_in
+                    param_in.value if isinstance(param_in, Enum) else param_in
                 )
                 param_location = self._convert_to_parameter_location(param_in_str)
                 param_schema_obj = parameter.param_schema  # Both use param_schema
