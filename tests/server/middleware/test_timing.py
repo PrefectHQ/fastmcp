@@ -207,13 +207,15 @@ class TestTimingMiddlewareIntegration:
 
         log_text = caplog.text
 
-        # Should have timing logs for all three calls
+        # Should have timing logs for all three calls (plus any extra list_tools calls)
         timing_logs = [
             line
             for line in log_text.split("\n")
             if "completed in" in line and "ms" in line
         ]
-        assert len(timing_logs) == 3
+        assert (
+            len(timing_logs) >= 3
+        )  # At least 3 tool calls, may have additional list_tools calls
 
         # Verify that longer tasks show longer timing (roughly)
         assert "tools/call completed in" in log_text
@@ -282,9 +284,11 @@ class TestTimingMiddlewareIntegration:
 
         log_text = caplog.text
 
-        # Should have timing logs for all concurrent operations
+        # Should have timing logs for all concurrent operations (including extra list_tools calls)
         timing_logs = [line for line in log_text.split("\n") if "completed in" in line]
-        assert len(timing_logs) == 3
+        assert (
+            len(timing_logs) >= 3
+        )  # At least 3 tool calls, may have additional list_tools calls
 
     async def test_timing_middleware_custom_logger(self, timing_server):
         """Test timing middleware with custom logger configuration."""
