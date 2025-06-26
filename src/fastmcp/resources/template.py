@@ -15,7 +15,7 @@ from pydantic import (
     validate_call,
 )
 
-from fastmcp.resources.types import Resource
+from fastmcp.resources.resource import Resource
 from fastmcp.server.dependencies import get_context
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.json_schema import compress_schema
@@ -64,6 +64,22 @@ class ResourceTemplate(FastMCPComponent):
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(uri_template={self.uri_template!r}, name={self.name!r}, description={self.description!r}, tags={self.tags})"
+
+    def enable(self) -> None:
+        super().enable()
+        try:
+            context = get_context()
+            context._queue_resource_list_changed()  # type: ignore[private-use]
+        except RuntimeError:
+            pass  # No context available
+
+    def disable(self) -> None:
+        super().disable()
+        try:
+            context = get_context()
+            context._queue_resource_list_changed()  # type: ignore[private-use]
+        except RuntimeError:
+            pass  # No context available
 
     @staticmethod
     def from_function(

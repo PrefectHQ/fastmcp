@@ -499,7 +499,7 @@ class TestCallTools:
         mcp = FastMCP()
         context = Context(fastmcp=mcp)
 
-        with context:
+        async with context:
             result = await manager.call_tool(
                 "name_shrimp",
                 {
@@ -639,7 +639,7 @@ class TestContextHandling:
         mcp = FastMCP()
         context = Context(fastmcp=mcp)
 
-        with context:
+        async with context:
             result = await manager.call_tool("tool_with_context", {"x": 42})
             assert result[0].text == "42"  # type: ignore[attr-defined]
 
@@ -657,7 +657,7 @@ class TestContextHandling:
         mcp = FastMCP()
         context = Context(fastmcp=mcp)
 
-        with context:
+        async with context:
             result = await manager.call_tool("async_tool", {"x": 42})
             assert result[0].text == "42"  # type: ignore[attr-defined]
 
@@ -675,7 +675,7 @@ class TestContextHandling:
         mcp = FastMCP()
         context = Context(fastmcp=mcp)
 
-        with context:
+        async with context:
             result = await manager.call_tool("tool_with_context", {"x": 42})
             assert result[0].text == "42"  # type: ignore[attr-defined]
 
@@ -722,7 +722,7 @@ class TestContextHandling:
         mcp = FastMCP()
         context = Context(fastmcp=mcp)
 
-        with context:
+        async with context:
             with pytest.raises(
                 ToolError, match="Error calling tool 'tool_with_context'"
             ):

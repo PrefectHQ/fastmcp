@@ -44,6 +44,22 @@ class Resource(FastMCPComponent, abc.ABC):
         pattern=r"^[a-zA-Z0-9]+/[a-zA-Z0-9\-+.]+$",
     )
 
+    def enable(self) -> None:
+        super().enable()
+        try:
+            context = get_context()
+            context._queue_resource_list_changed()  # type: ignore[private-use]
+        except RuntimeError:
+            pass  # No context available
+
+    def disable(self) -> None:
+        super().disable()
+        try:
+            context = get_context()
+            context._queue_resource_list_changed()  # type: ignore[private-use]
+        except RuntimeError:
+            pass  # No context available
+
     @staticmethod
     def from_function(
         fn: Callable[[], Any],

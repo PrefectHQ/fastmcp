@@ -415,6 +415,28 @@ FastMCP supports these standard annotations:
 
 Remember that annotations help make better user experiences but should be treated as advisory hints. They help client applications present appropriate UI elements and safety controls, but won't enforce security boundaries on their own. Always focus on making your annotations accurately represent what your tool actually does.
 
+### Notifications
+
+<VersionBadge version="2.9.1" />
+
+FastMCP automatically sends `notifications/tools/list_changed` notifications to connected clients when tools are added, removed, enabled, or disabled. This allows clients to stay up-to-date with the current tool set without manually polling for changes.
+
+```python
+@mcp.tool
+def example_tool() -> str:
+    return "Hello!"
+
+# These operations trigger notifications:
+mcp.add_tool(example_tool)     # Sends tools/list_changed notification
+example_tool.disable()         # Sends tools/list_changed notification  
+example_tool.enable()          # Sends tools/list_changed notification
+mcp.remove_tool("example_tool") # Sends tools/list_changed notification
+```
+
+Notifications are only sent when these operations occur within an active MCP request context (e.g., when called from within a tool or other MCP operation). Operations performed during server initialization do not trigger notifications.
+
+Clients can handle these notifications using a [message handler](/clients/messages) to automatically refresh their tool lists or update their interfaces.
+
 ## MCP Context
 
 Tools can access MCP features like logging, reading resources, or reporting progress through the `Context` object. To use it, add a parameter to your tool function with the type hint `Context`.
