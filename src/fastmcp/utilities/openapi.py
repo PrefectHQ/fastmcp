@@ -274,6 +274,12 @@ class OpenAPIParser(
                 result = {}
 
             return _replace_ref_with_defs(result)
+        except ValueError as e:
+            # Re-raise ValueError for external reference errors and other validation issues
+            if "External or non-local reference not supported" in str(e):
+                raise
+            logger.error(f"Failed to extract schema as dict: {e}", exc_info=False)
+            return {}
         except Exception as e:
             logger.error(f"Failed to extract schema as dict: {e}", exc_info=False)
             return {}
@@ -400,12 +406,30 @@ class OpenAPIParser(
                             request_body_info.content_schema[media_type_str] = (
                                 schema_dict
                             )
+                        except ValueError as e:
+                            # Re-raise ValueError for external reference errors
+                            if "External or non-local reference not supported" in str(
+                                e
+                            ):
+                                raise
+                            logger.error(
+                                f"Failed to extract schema for media type '{media_type_str}': {e}"
+                            )
                         except Exception as e:
                             logger.error(
                                 f"Failed to extract schema for media type '{media_type_str}': {e}"
                             )
 
             return request_body_info
+        except ValueError as e:
+            # Re-raise ValueError for external reference errors
+            if "External or non-local reference not supported" in str(e):
+                raise
+            ref_name = getattr(request_body_or_ref, "ref", "unknown")
+            logger.error(
+                f"Failed to extract request body '{ref_name}': {e}", exc_info=False
+            )
+            return None
         except Exception as e:
             ref_name = getattr(request_body_or_ref, "ref", "unknown")
             logger.error(
@@ -449,6 +473,17 @@ class OpenAPIParser(
                                     media_type_obj.media_type_schema
                                 )
                                 resp_info.content_schema[media_type_str] = schema_dict
+                            except ValueError as e:
+                                # Re-raise ValueError for external reference errors
+                                if (
+                                    "External or non-local reference not supported"
+                                    in str(e)
+                                ):
+                                    raise
+                                logger.error(
+                                    f"Failed to extract schema for media type '{media_type_str}' "
+                                    f"in response {status_code}: {e}"
+                                )
                             except Exception as e:
                                 logger.error(
                                     f"Failed to extract schema for media type '{media_type_str}' "
@@ -456,6 +491,16 @@ class OpenAPIParser(
                                 )
 
                 extracted_responses[str(status_code)] = resp_info
+            except ValueError as e:
+                # Re-raise ValueError for external reference errors
+                if "External or non-local reference not supported" in str(e):
+                    raise
+                ref_name = getattr(resp_or_ref, "ref", "unknown")
+                logger.error(
+                    f"Failed to extract response for status code {status_code} "
+                    f"from reference '{ref_name}': {e}",
+                    exc_info=False,
+                )
             except Exception as e:
                 ref_name = getattr(resp_or_ref, "ref", "unknown")
                 logger.error(
@@ -555,6 +600,17 @@ class OpenAPIParser(
                         routes.append(route)
                         logger.info(
                             f"Successfully extracted route: {method_upper} {path_str}"
+                        )
+                    except ValueError as op_error:
+                        # Re-raise ValueError for external reference errors
+                        if "External or non-local reference not supported" in str(
+                            op_error
+                        ):
+                            raise
+                        op_id = getattr(operation, "operationId", "unknown")
+                        logger.error(
+                            f"Failed to process operation {method_upper} {path_str} (ID: {op_id}): {op_error}",
+                            exc_info=True,
                         )
                     except Exception as op_error:
                         op_id = getattr(operation, "operationId", "unknown")
@@ -901,6 +957,12 @@ def _replace_ref_with_defs(
         if ref_path.startswith("#/components/schemas/"):
             schema_name = ref_path.split("/")[-1]
             schema["$ref"] = f"#/$defs/{schema_name}"
+        elif not ref_path.startswith("#/"):
+            raise ValueError(
+                f"External or non-local reference not supported: {ref_path}. "
+                f"FastMCP only supports local schema references starting with '#/'. "
+                f"Please include all schema definitions within the OpenAPI document."
+            )
     elif properties := schema.get("properties"):
         if "$ref" in properties:
             schema["properties"] = _replace_ref_with_defs(properties)
