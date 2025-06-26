@@ -439,7 +439,6 @@ class FastMCP(Generic[LifespanResultT]):
         """
         List all available tools, in the format expected by the low-level MCP
         server.
-
         """
 
         async def _handler(
