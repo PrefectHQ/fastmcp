@@ -87,7 +87,7 @@ def setup_auth_middleware_and_routes(
     middleware = [
         Middleware(
             AuthenticationMiddleware,
-            backend=BearerAuthBackend(provider=auth),
+            backend=BearerAuthBackend(auth),
         ),
         Middleware(AuthContextMiddleware),
     ]
