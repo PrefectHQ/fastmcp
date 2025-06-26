@@ -1,6 +1,6 @@
 import time
 from dataclasses import dataclass
-from typing import Any, TypedDict
+from typing import Any
 
 import httpx
 from authlib.jose import JsonWebKey, JsonWebToken
@@ -18,6 +18,7 @@ from mcp.shared.auth import (
     OAuthToken,
 )
 from pydantic import AnyHttpUrl, SecretStr, ValidationError
+from typing_extensions import TypedDict
 
 from fastmcp.server.auth.auth import (
     ClientRegistrationOptions,
