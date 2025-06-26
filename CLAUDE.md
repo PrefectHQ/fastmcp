@@ -34,3 +34,4 @@ async with Client(transport=StreamableHttpTransport(server_url)) as client:
 - You must always run pre-commit if you open a PR, because it is run as part of a required check.
 - When opening PRs, apply labels appropriately for bugs/breaking changes/enhancements/features. Generally, improvements are enhancements (not features) unless told otherwise.
 - NEVER modify files in docs/python-sdk/**, as they are auto-generated.
+- Use # type: ignore[attr-defined] in unit tests when accessing an MCP result of indeterminate type instead of asserting its type

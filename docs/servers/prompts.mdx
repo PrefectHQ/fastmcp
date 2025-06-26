@@ -92,6 +92,7 @@ def data_analysis_prompt(
   A boolean to enable or disable the prompt. See [Disabling Prompts](#disabling-prompts) for more information
 </ParamField>
 </Card>
+
 ### Argument Types
 
 <VersionBadge version="2.9.0" />
@@ -237,7 +238,8 @@ def seasonal_prompt(): return "Happy Holidays!"
 seasonal_prompt.disable()
 seasonal_prompt.enable()
 ```
-### Asynchronous Prompts
+
+### Async Prompts
 
 FastMCP seamlessly supports both standard (`def`) and asynchronous (`async def`) functions as prompts.
 
@@ -280,7 +282,26 @@ async def generate_report_request(report_type: str, ctx: Context) -> str:
 
 For full documentation on the Context object and all its capabilities, see the [Context documentation](/servers/context).
 
+### Notifications
 
+<VersionBadge version="2.9.1" />
+
+FastMCP automatically sends `notifications/prompts/list_changed` notifications to connected clients when prompts are added, enabled, or disabled. This allows clients to stay up-to-date with the current prompt set without manually polling for changes.
+
+```python
+@mcp.prompt
+def example_prompt() -> str:
+    return "Hello!"
+
+# These operations trigger notifications:
+mcp.add_prompt(example_prompt)  # Sends prompts/list_changed notification
+example_prompt.disable()        # Sends prompts/list_changed notification  
+example_prompt.enable()         # Sends prompts/list_changed notification
+```
+
+Notifications are only sent when these operations occur within an active MCP request context (e.g., when called from within a tool or other MCP operation). Operations performed during server initialization do not trigger notifications.
+
+Clients can handle these notifications using a [message handler](/clients/messages) to automatically refresh their prompt lists or update their interfaces.
 
 ## Server Behavior
 

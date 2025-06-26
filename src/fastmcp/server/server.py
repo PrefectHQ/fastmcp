@@ -23,7 +23,6 @@ import mcp.types
 import uvicorn
 from mcp.server.lowlevel.helper_types import ReadResourceContents
 from mcp.server.lowlevel.server import LifespanResultT, NotificationOptions
-from mcp.server.lowlevel.server import Server as MCPServer
 from mcp.server.stdio import stdio_server
 from mcp.types import (
     AnyFunction,
@@ -55,6 +54,7 @@ from fastmcp.server.http import (
     create_sse_app,
     create_streamable_http_app,
 )
+from fastmcp.server.low_level import LowLevelServer
 from fastmcp.server.middleware import Middleware, MiddlewareContext
 from fastmcp.settings import Settings
 from fastmcp.tools import ToolManager
@@ -99,10 +99,12 @@ def _lifespan_wrapper(
         [FastMCP[LifespanResultT]], AbstractAsyncContextManager[LifespanResultT]
     ],
 ) -> Callable[
-    [MCPServer[LifespanResultT]], AbstractAsyncContextManager[LifespanResultT]
+    [LowLevelServer[LifespanResultT]], AbstractAsyncContextManager[LifespanResultT]
 ]:
     @asynccontextmanager
-    async def wrap(s: MCPServer[LifespanResultT]) -> AsyncIterator[LifespanResultT]:
+    async def wrap(
+        s: LowLevelServer[LifespanResultT],
+    ) -> AsyncIterator[LifespanResultT]:
         async with AsyncExitStack() as stack:
             context = await stack.enter_async_context(lifespan(app))
             yield context
@@ -179,7 +181,7 @@ class FastMCP(Generic[LifespanResultT]):
             lifespan = default_lifespan
         else:
             self._has_lifespan = True
-        self._mcp_server = MCPServer[LifespanResultT](
+        self._mcp_server = LowLevelServer[LifespanResultT](
             name=name or "FastMCP",
             version=version,
             instructions=instructions,
@@ -431,7 +433,7 @@ class FastMCP(Generic[LifespanResultT]):
     async def _mcp_list_tools(self) -> list[MCPTool]:
         logger.debug("Handler called: list_tools")
 
-        with fastmcp.server.context.Context(fastmcp=self):
+        async with fastmcp.server.context.Context(fastmcp=self):
             tools = await self._list_tools()
             return [tool.to_mcp_tool(name=tool.key) for tool in tools]
 
@@ -453,7 +455,7 @@ class FastMCP(Generic[LifespanResultT]):
 
             return mcp_tools
 
-        with fastmcp.server.context.Context(fastmcp=self) as fastmcp_ctx:
+        async with fastmcp.server.context.Context(fastmcp=self) as fastmcp_ctx:
             # Create the middleware context.
             mw_context = MiddlewareContext(
                 message=mcp.types.ListToolsRequest(method="tools/list"),
@@ -469,7 +471,7 @@ class FastMCP(Generic[LifespanResultT]):
     async def _mcp_list_resources(self) -> list[MCPResource]:
         logger.debug("Handler called: list_resources")
 
-        with fastmcp.server.context.Context(fastmcp=self):
+        async with fastmcp.server.context.Context(fastmcp=self):
             resources = await self._list_resources()
             return [
                 resource.to_mcp_resource(uri=resource.key) for resource in resources
@@ -494,7 +496,7 @@ class FastMCP(Generic[LifespanResultT]):
 
             return mcp_resources
 
-        with fastmcp.server.context.Context(fastmcp=self) as fastmcp_ctx:
+        async with fastmcp.server.context.Context(fastmcp=self) as fastmcp_ctx:
             # Create the middleware context.
             mw_context = MiddlewareContext(
                 message={},  # List resources doesn't have parameters
@@ -510,7 +512,7 @@ class FastMCP(Generic[LifespanResultT]):
     async def _mcp_list_resource_templates(self) -> list[MCPResourceTemplate]:
         logger.debug("Handler called: list_resource_templates")
 
-        with fastmcp.server.context.Context(fastmcp=self):
+        async with fastmcp.server.context.Context(fastmcp=self):
             templates = await self._list_resource_templates()
             return [
                 template.to_mcp_template(uriTemplate=template.key)
@@ -536,7 +538,7 @@ class FastMCP(Generic[LifespanResultT]):
 
             return mcp_templates
 
-        with fastmcp.server.context.Context(fastmcp=self) as fastmcp_ctx:
+        async with fastmcp.server.context.Context(fastmcp=self) as fastmcp_ctx:
             # Create the middleware context.
             mw_context = MiddlewareContext(
                 message={},  # List resource templates doesn't have parameters
@@ -552,7 +554,7 @@ class FastMCP(Generic[LifespanResultT]):
     async def _mcp_list_prompts(self) -> list[MCPPrompt]:
         logger.debug("Handler called: list_prompts")
 
-        with fastmcp.server.context.Context(fastmcp=self):
+        async with fastmcp.server.context.Context(fastmcp=self):
             prompts = await self._list_prompts()
             return [prompt.to_mcp_prompt(name=prompt.key) for prompt in prompts]
 
@@ -575,7 +577,7 @@ class FastMCP(Generic[LifespanResultT]):
 
             return mcp_prompts
 
-        with fastmcp.server.context.Context(fastmcp=self) as fastmcp_ctx:
+        async with fastmcp.server.context.Context(fastmcp=self) as fastmcp_ctx:
             # Create the middleware context.
             mw_context = MiddlewareContext(
                 message=mcp.types.ListPromptsRequest(method="prompts/list"),
@@ -605,7 +607,7 @@ class FastMCP(Generic[LifespanResultT]):
         """
         logger.debug("Handler called: call_tool %s with %s", key, arguments)
 
-        with fastmcp.server.context.Context(fastmcp=self):
+        async with fastmcp.server.context.Context(fastmcp=self):
             try:
                 return await self._call_tool(key, arguments)
             except DisabledError:
@@ -648,7 +650,7 @@ class FastMCP(Generic[LifespanResultT]):
         """
         logger.debug("Handler called: read_resource %s", uri)
 
-        with fastmcp.server.context.Context(fastmcp=self):
+        async with fastmcp.server.context.Context(fastmcp=self):
             try:
                 return await self._read_resource(uri)
             except DisabledError:
@@ -703,7 +705,7 @@ class FastMCP(Generic[LifespanResultT]):
         """
         logger.debug("Handler called: get_prompt %s with %s", name, arguments)
 
-        with fastmcp.server.context.Context(fastmcp=self):
+        async with fastmcp.server.context.Context(fastmcp=self):
             try:
                 return await self._get_prompt(name, arguments)
             except DisabledError:
@@ -752,6 +754,15 @@ class FastMCP(Generic[LifespanResultT]):
         self._tool_manager.add_tool(tool)
         self._cache.clear()
 
+        # Send notification if we're in a request context
+        try:
+            from fastmcp.server.dependencies import get_context
+
+            context = get_context()
+            context._queue_tool_list_changed()  # type: ignore[private-use]
+        except RuntimeError:
+            pass  # No context available
+
     def remove_tool(self, name: str) -> None:
         """Remove a tool from the server.
 
@@ -763,6 +774,15 @@ class FastMCP(Generic[LifespanResultT]):
         """
         self._tool_manager.remove_tool(name)
         self._cache.clear()
+
+        # Send notification if we're in a request context
+        try:
+            from fastmcp.server.dependencies import get_context
+
+            context = get_context()
+            context._queue_tool_list_changed()  # type: ignore[private-use]
+        except RuntimeError:
+            pass  # No context available
 
     @overload
     def tool(
@@ -920,6 +940,15 @@ class FastMCP(Generic[LifespanResultT]):
         self._resource_manager.add_resource(resource)
         self._cache.clear()
 
+        # Send notification if we're in a request context
+        try:
+            from fastmcp.server.dependencies import get_context
+
+            context = get_context()
+            context._queue_resource_list_changed()  # type: ignore[private-use]
+        except RuntimeError:
+            pass  # No context available
+
     def add_template(self, template: ResourceTemplate) -> None:
         """Add a resource template to the server.
 
@@ -927,6 +956,15 @@ class FastMCP(Generic[LifespanResultT]):
             template: A ResourceTemplate instance to add
         """
         self._resource_manager.add_template(template)
+
+        # Send notification if we're in a request context
+        try:
+            from fastmcp.server.dependencies import get_context
+
+            context = get_context()
+            context._queue_resource_list_changed()  # type: ignore[private-use]
+        except RuntimeError:
+            pass  # No context available
 
     def add_resource_fn(
         self,
@@ -1098,6 +1136,15 @@ class FastMCP(Generic[LifespanResultT]):
         """
         self._prompt_manager.add_prompt(prompt)
         self._cache.clear()
+
+        # Send notification if we're in a request context
+        try:
+            from fastmcp.server.dependencies import get_context
+
+            context = get_context()
+            context._queue_prompt_list_changed()  # type: ignore[private-use]
+        except RuntimeError:
+            pass  # No context available
 
     @overload
     def prompt(

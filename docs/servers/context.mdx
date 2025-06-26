@@ -275,6 +275,25 @@ async def generate_example(concept: str, ctx: Context) -> str:
 
 See [Client Sampling](/clients/client#llm-sampling) for more details on how clients handle these requests.
 
+### Component Changes
+
+<VersionBadge version="2.9.1" />
+
+FastMCP automatically sends list change notifications when components (such as tools, resources, or prompts) are added, removed, enabled, or disabled. In rare cases where you need to manually trigger these notifications, you can use the context methods:
+
+```python
+@mcp.tool
+async def custom_tool_management(ctx: Context) -> str:
+    """Example of manual notification after custom tool changes."""
+    # After making custom changes to tools
+    await ctx.send_tool_list_changed()
+    await ctx.send_resource_list_changed()
+    await ctx.send_prompt_list_changed()
+    return "Notifications sent"
+```
+
+These methods are primarily used internally by FastMCP's automatic notification system and most users will not need to invoke them directly.
+
 ### Request Information
 
 Access metadata about the current request and client.

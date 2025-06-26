@@ -1,12 +1,13 @@
 from __future__ import annotations as _annotations
 
+import asyncio
 import warnings
 from collections.abc import Generator
 from contextlib import contextmanager
 from contextvars import ContextVar, Token
 from dataclasses import dataclass
 
-from mcp import LoggingLevel
+from mcp import LoggingLevel, ServerSession
 from mcp.server.lowlevel.helper_types import ReadResourceContents
 from mcp.server.lowlevel.server import request_ctx
 from mcp.shared.context import RequestContext
@@ -30,6 +31,7 @@ from fastmcp.utilities.logging import get_logger
 logger = get_logger(__name__)
 
 _current_context: ContextVar[Context | None] = ContextVar("context", default=None)
+_flush_lock = asyncio.Lock()
 
 
 @contextmanager
@@ -80,16 +82,20 @@ class Context:
     def __init__(self, fastmcp: FastMCP):
         self.fastmcp = fastmcp
         self._tokens: list[Token] = []
+        self._notification_queue: set[str] = set()  # Dedupe notifications
 
-    def __enter__(self) -> Context:
+    async def __aenter__(self) -> Context:
         """Enter the context manager and set this context as the current context."""
         # Always set this context and save the token
         token = _current_context.set(self)
         self._tokens.append(token)
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
         """Exit the context manager and reset the most recent token."""
+        # Flush any remaining notifications before exiting
+        await self._flush_notifications()
+
         if self._tokens:
             token = self._tokens.pop()
             _current_context.reset(token)
@@ -124,7 +130,7 @@ class Context:
         if progress_token is None:
             return
 
-        await self.request_context.session.send_progress_notification(
+        await self.session.send_progress_notification(
             progress_token=progress_token,
             progress=progress,
             total=total,
@@ -160,7 +166,7 @@ class Context:
         """
         if level is None:
             level = "info"
-        await self.request_context.session.send_log_message(
+        await self.session.send_log_message(
             level=level, data=message, logger=logger_name
         )
 
@@ -210,7 +216,7 @@ class Context:
             return None
 
     @property
-    def session(self):
+    def session(self) -> ServerSession:
         """Access to the underlying session for advanced usage."""
         return self.request_context.session
 
@@ -233,8 +239,20 @@ class Context:
 
     async def list_roots(self) -> list[Root]:
         """List the roots available to the server, as indicated by the client."""
-        result = await self.request_context.session.list_roots()
+        result = await self.session.list_roots()
         return result.roots
+
+    async def send_tool_list_changed(self) -> None:
+        """Send a tool list changed notification to the client."""
+        await self.session.send_tool_list_changed()
+
+    async def send_resource_list_changed(self) -> None:
+        """Send a resource list changed notification to the client."""
+        await self.session.send_resource_list_changed()
+
+    async def send_prompt_list_changed(self) -> None:
+        """Send a prompt list changed notification to the client."""
+        await self.session.send_prompt_list_changed()
 
     async def sample(
         self,
@@ -269,7 +287,7 @@ class Context:
                 for m in messages
             ]
 
-        result: CreateMessageResult = await self.request_context.session.create_message(
+        result: CreateMessageResult = await self.session.create_message(
             messages=sampling_messages,
             system_prompt=system_prompt,
             temperature=temperature,
@@ -293,6 +311,52 @@ class Context:
             )
 
         return fastmcp.server.dependencies.get_http_request()
+
+    def _queue_tool_list_changed(self) -> None:
+        """Queue a tool list changed notification."""
+        self._notification_queue.add("notifications/tools/list_changed")
+        self._try_flush_notifications()
+
+    def _queue_resource_list_changed(self) -> None:
+        """Queue a resource list changed notification."""
+        self._notification_queue.add("notifications/resources/list_changed")
+        self._try_flush_notifications()
+
+    def _queue_prompt_list_changed(self) -> None:
+        """Queue a prompt list changed notification."""
+        self._notification_queue.add("notifications/prompts/list_changed")
+        self._try_flush_notifications()
+
+    def _try_flush_notifications(self) -> None:
+        """Synchronous method that attempts to flush notifications if we're in an async context."""
+        try:
+            # Check if we're in an async context
+            loop = asyncio.get_running_loop()
+            if loop and not loop.is_running():
+                return
+            # Schedule flush as a task (fire-and-forget)
+            asyncio.create_task(self._flush_notifications())
+        except RuntimeError:
+            # No event loop - will flush later
+            pass
+
+    async def _flush_notifications(self) -> None:
+        """Send all queued notifications."""
+        async with _flush_lock:
+            if not self._notification_queue:
+                return
+
+            try:
+                if "notifications/tools/list_changed" in self._notification_queue:
+                    await self.session.send_tool_list_changed()
+                if "notifications/resources/list_changed" in self._notification_queue:
+                    await self.session.send_resource_list_changed()
+                if "notifications/prompts/list_changed" in self._notification_queue:
+                    await self.session.send_prompt_list_changed()
+                self._notification_queue.clear()
+            except Exception:
+                # Don't let notification failures break the request
+                pass
 
     def _parse_model_preferences(
         self, model_preferences: ModelPreferences | str | list[str] | None

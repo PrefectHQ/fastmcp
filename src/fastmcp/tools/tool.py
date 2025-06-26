@@ -45,6 +45,22 @@ class Tool(FastMCPComponent):
         default=None, description="Optional custom serializer for tool results"
     )
 
+    def enable(self) -> None:
+        super().enable()
+        try:
+            context = get_context()
+            context._queue_tool_list_changed()  # type: ignore[private-use]
+        except RuntimeError:
+            pass  # No context available
+
+    def disable(self) -> None:
+        super().disable()
+        try:
+            context = get_context()
+            context._queue_tool_list_changed()  # type: ignore[private-use]
+        except RuntimeError:
+            pass  # No context available
+
     def to_mcp_tool(self, **overrides: Any) -> MCPTool:
         kwargs = {
             "name": self.name,
