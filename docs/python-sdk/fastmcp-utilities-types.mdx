@@ -10,7 +10,7 @@ Common types used across FastMCP.
 
 ## Functions
 
-### `get_cached_typeadapter`
+### `get_cached_typeadapter` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/types.py#L35"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 get_cached_typeadapter(cls: T) -> TypeAdapter[T]
@@ -23,7 +23,7 @@ However, this isn't feasible for user-generated functions. Instead, we use a
 cache to minimize the cost of creating them as much as possible.
 
 
-### `issubclass_safe`
+### `issubclass_safe` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/types.py#L45"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 issubclass_safe(cls: type, base: type) -> bool
@@ -33,7 +33,7 @@ issubclass_safe(cls: type, base: type) -> bool
 Check if cls is a subclass of base, even if cls is a type variable.
 
 
-### `is_class_member_of_type`
+### `is_class_member_of_type` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/types.py#L55"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 is_class_member_of_type(cls: type, base: type) -> bool
@@ -46,7 +46,7 @@ Base can be a type, a UnionType, or an Annotated type. Generic types are not
 considered members (e.g. T is not a member of list\[T]).
 
 
-### `find_kwarg_by_type`
+### `find_kwarg_by_type` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/types.py#L77"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 find_kwarg_by_type(fn: Callable, kwarg_type: type) -> str | None
@@ -60,13 +60,13 @@ Includes union types that contain the kwarg_type, as well as Annotated types.
 
 ## Classes
 
-### `FastMCPBaseModel`
+### `FastMCPBaseModel` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/types.py#L28"><Icon icon="github" size="14" /></a></sup>
 
 
 Base model for FastMCP models.
 
 
-### `Image`
+### `Image` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/types.py#L94"><Icon icon="github" size="14" /></a></sup>
 
 
 Helper class for returning images from tools.
@@ -74,7 +74,7 @@ Helper class for returning images from tools.
 
 **Methods:**
 
-#### `to_image_content`
+#### `to_image_content` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/types.py#L131"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 to_image_content(self, mime_type: str | None = None, annotations: Annotations | None = None) -> ImageContent
@@ -83,7 +83,7 @@ to_image_content(self, mime_type: str | None = None, annotations: Annotations | 
 Convert to MCP ImageContent.
 
 
-### `Audio`
+### `Audio` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/types.py#L153"><Icon icon="github" size="14" /></a></sup>
 
 
 Helper class for returning audio from tools.
@@ -91,13 +91,13 @@ Helper class for returning audio from tools.
 
 **Methods:**
 
-#### `to_audio_content`
+#### `to_audio_content` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/types.py#L190"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 to_audio_content(self, mime_type: str | None = None, annotations: Annotations | None = None) -> AudioContent
 ```
 
-### `File`
+### `File` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/types.py#L211"><Icon icon="github" size="14" /></a></sup>
 
 
 Helper class for returning audio from tools.
@@ -105,7 +105,7 @@ Helper class for returning audio from tools.
 
 **Methods:**
 
-#### `to_resource_content`
+#### `to_resource_content` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/types.py#L250"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 to_resource_content(self, mime_type: str | None = None, annotations: Annotations | None = None) -> EmbeddedResource

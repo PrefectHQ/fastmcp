@@ -1,17 +1,3 @@
-/* Code highlighting -- target only inline code elements, not code blocks */
-p code:not(pre code),
-table code:not(pre code),
-li code:not(pre code),
-h1 code:not(pre code),
-h2 code:not(pre code),
-h3 code:not(pre code),
-h4 code:not(pre code),
-h5 code:not(pre code),
-h6 code:not(pre code) {
-  color: #f72585 !important;
-  background-color: rgba(247, 37, 133, 0.09);
-}
-
 /* Banner styling -- improve readability with better contrast */
 #banner {
   background: #f1f5f9 !important;
@@ -79,41 +65,3 @@ h6 code:not(pre code) {
   color: #f1f5f9 !important;
 }
 
-/* Version badge -- display a badge with the current version of the documentation */
-.version-badge {
-  display: inline-block;
-  align-items: center;
-  gap: 0.3em;
-  font-size: 1em;
-  margin-top: 0px;
-  margin-bottom: 0px;
-  padding-top: 6px;
-  padding-bottom: 6px;
-  padding-left: 20px;
-  padding-right: 20px;
-  font-family: "Inter", sans-serif;
-  color: #ff5400;
-  background: #fef2f2;
-  border: 1px solid rgba(220, 38, 38, 0.3);
-  border-radius: 12px;
-  box-shadow: none;
-  vertical-align: middle;
-  position: relative;
-  transition: box-shadow 0.2s, transform 0.15s;
-}
-
-.version-badge-container {
-  margin: 0;
-  padding: 0;
-}
-
-.version-badge:hover {
-  box-shadow: 0 2px 8px 0 rgba(160, 132, 252, 0.1);
-  transform: translateY(-1px) scale(1.03);
-}
-
-.dark .version-badge {
-  color: #f1f5f9;
-  background: #334155;
-  border: 1px solid #64748b;
-}

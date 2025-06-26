@@ -154,23 +154,6 @@ class Settings(BaseSettings):
         ),
     ] = "path"
 
-    tool_attempt_parse_json_args: Annotated[
-        bool,
-        Field(
-            default=False,
-            description=inspect.cleandoc(
-                """
-                Note: this enables a legacy behavior. If True, will attempt to parse
-                stringified JSON lists and objects strings in tool arguments before
-                passing them to the tool. This is an old behavior that can create
-                unexpected type coercion issues, but may be helpful for less powerful
-                LLMs that stringify JSON instead of passing actual lists and objects.
-                Defaults to False.
-                """
-            ),
-        ),
-    ] = False
-
     client_init_timeout: Annotated[
         float | None,
         Field(

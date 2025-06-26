@@ -554,12 +554,12 @@ class TestToolParameters:
         async with Client(mcp) as client:
             with pytest.raises(
                 ToolError,
-                match="Error calling tool 'my_tool'",
+                match="Input validation error: 'not an int' is not of type 'integer'",
             ):
                 await client.call_tool("my_tool", {"x": "not an int"})
 
     async def test_tool_int_coercion(self):
-        """Test string-to-int type coercion."""
+        """Test that invalid int input raises validation error."""
         mcp = FastMCP()
 
         @mcp.tool
@@ -567,12 +567,15 @@ class TestToolParameters:
             return x + 1
 
         async with Client(mcp) as client:
-            # String with integer value should be coerced to int
-            result = await client.call_tool("add_one", {"x": "42"})
-            assert result[0].text == "43"  # type: ignore[attr-defined]
+            # String input should raise validation error (no coercion)
+            with pytest.raises(
+                ToolError,
+                match="Input validation error: '42' is not of type 'integer'",
+            ):
+                await client.call_tool("add_one", {"x": "42"})
 
     async def test_tool_bool_coercion(self):
-        """Test string-to-bool type coercion."""
+        """Test that invalid bool input raises validation error."""
         mcp = FastMCP()
 
         @mcp.tool
@@ -580,12 +583,18 @@ class TestToolParameters:
             return not flag
 
         async with Client(mcp) as client:
-            # String with boolean value should be coerced to bool
-            result = await client.call_tool("toggle", {"flag": "true"})
-            assert result[0].text == "false"  # type: ignore[attr-defined]
+            # String input should raise validation error (no coercion)
+            with pytest.raises(
+                ToolError,
+                match="Input validation error: 'true' is not of type 'boolean'",
+            ):
+                await client.call_tool("toggle", {"flag": "true"})
 
-            result = await client.call_tool("toggle", {"flag": "false"})
-            assert result[0].text == "true"  # type: ignore[attr-defined]
+            with pytest.raises(
+                ToolError,
+                match="Input validation error: 'false' is not of type 'boolean'",
+            ):
+                await client.call_tool("toggle", {"flag": "false"})
 
     async def test_annotated_field_validation(self):
         mcp = FastMCP()
@@ -595,7 +604,10 @@ class TestToolParameters:
             pass
 
         async with Client(mcp) as client:
-            with pytest.raises(ToolError, match="Error calling tool 'analyze'"):
+            with pytest.raises(
+                ToolError,
+                match="Input validation error: 0 is less than the minimum of 1",
+            ):
                 await client.call_tool("analyze", {"x": 0})
 
     async def test_default_field_validation(self):
@@ -606,7 +618,10 @@ class TestToolParameters:
             pass
 
         async with Client(mcp) as client:
-            with pytest.raises(ToolError, match="Error calling tool 'analyze'"):
+            with pytest.raises(
+                ToolError,
+                match="Input validation error: 0 is less than the minimum of 1",
+            ):
                 await client.call_tool("analyze", {"x": 0})
 
     async def test_default_field_is_still_required_if_no_default_specified(self):
@@ -617,7 +632,9 @@ class TestToolParameters:
             pass
 
         async with Client(mcp) as client:
-            with pytest.raises(ToolError, match="Error calling tool 'analyze'"):
+            with pytest.raises(
+                ToolError, match="Input validation error: 'x' is a required property"
+            ):
                 await client.call_tool("analyze", {})
 
     async def test_literal_type_validation_error(self):
@@ -628,7 +645,10 @@ class TestToolParameters:
             pass
 
         async with Client(mcp) as client:
-            with pytest.raises(ToolError, match="Error calling tool 'analyze'"):
+            with pytest.raises(
+                ToolError,
+                match=r"Input validation error: 'c' is not one of \['a', 'b'\]",
+            ):
                 await client.call_tool("analyze", {"x": "c"})
 
     async def test_literal_type_validation_success(self):
@@ -655,7 +675,10 @@ class TestToolParameters:
             return x.value
 
         async with Client(mcp) as client:
-            with pytest.raises(ToolError, match="Error calling tool 'analyze'"):
+            with pytest.raises(
+                ToolError,
+                match=r"Input validation error: 'some-color' is not one of \['red', 'green', 'blue'\]",
+            ):
                 await client.call_tool("analyze", {"x": "some-color"})
 
     async def test_enum_type_validation_success(self):
@@ -688,7 +711,10 @@ class TestToolParameters:
             result = await client.call_tool("analyze", {"x": 1.0})
             assert result[0].text == "1.0"  # type: ignore[attr-defined]
 
-            with pytest.raises(ToolError, match="Error calling tool 'analyze'"):
+            with pytest.raises(
+                ToolError,
+                match="Input validation error: 'not a number' is not valid under any of the given schemas",
+            ):
                 await client.call_tool("analyze", {"x": "not a number"})
 
     async def test_path_type(self):
@@ -714,7 +740,9 @@ class TestToolParameters:
             return str(path)
 
         async with Client(mcp) as client:
-            with pytest.raises(ToolError, match="Error calling tool 'send_path'"):
+            with pytest.raises(
+                ToolError, match="Input validation error: 1 is not of type 'string'"
+            ):
                 await client.call_tool("send_path", {"path": 1})
 
     async def test_uuid_type(self):
@@ -815,6 +843,7 @@ class TestToolParameters:
             assert result[0].text == "1 day, 0:00:00"  # type: ignore[attr-defined]
 
     async def test_timedelta_type_parse_int(self):
+        """Test that invalid timedelta input raises validation error."""
         mcp = FastMCP()
 
         @mcp.tool
@@ -822,8 +851,12 @@ class TestToolParameters:
             return str(x)
 
         async with Client(mcp) as client:
-            result = await client.call_tool("send_timedelta", {"x": 1000})
-            assert result[0].text == "0:16:40"  # type: ignore[attr-defined]
+            # Int input should raise validation error (no conversion)
+            with pytest.raises(
+                ToolError,
+                match="Input validation error: 1000 is not of type 'string'",
+            ):
+                await client.call_tool("send_timedelta", {"x": 1000})
 
 
 class TestToolOutputSchema:

@@ -10,19 +10,19 @@ Concrete resource implementations.
 
 ## Classes
 
-### `TextResource`
+### `TextResource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/types.py#L21"><Icon icon="github" size="14" /></a></sup>
 
 
 A resource that reads from a string.
 
 
-### `BinaryResource`
+### `BinaryResource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/types.py#L31"><Icon icon="github" size="14" /></a></sup>
 
 
 A resource that reads from bytes.
 
 
-### `FileResource`
+### `FileResource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/types.py#L41"><Icon icon="github" size="14" /></a></sup>
 
 
 A resource that reads from a file.
@@ -32,7 +32,7 @@ Set is_binary=True to read file as binary data instead of text.
 
 **Methods:**
 
-#### `validate_absolute_path`
+#### `validate_absolute_path` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/types.py#L59"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 validate_absolute_path(cls, path: Path) -> Path
@@ -41,7 +41,7 @@ validate_absolute_path(cls, path: Path) -> Path
 Ensure path is absolute.
 
 
-#### `set_binary_from_mime_type`
+#### `set_binary_from_mime_type` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/types.py#L67"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 set_binary_from_mime_type(cls, is_binary: bool, info: ValidationInfo) -> bool
@@ -50,13 +50,13 @@ set_binary_from_mime_type(cls, is_binary: bool, info: ValidationInfo) -> bool
 Set is_binary based on mime_type if not explicitly set.
 
 
-### `HttpResource`
+### `HttpResource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/types.py#L84"><Icon icon="github" size="14" /></a></sup>
 
 
 A resource that reads from an HTTP endpoint.
 
 
-### `DirectoryResource`
+### `DirectoryResource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/types.py#L100"><Icon icon="github" size="14" /></a></sup>
 
 
 A resource that lists files in a directory.
@@ -64,7 +64,7 @@ A resource that lists files in a directory.
 
 **Methods:**
 
-#### `validate_absolute_path`
+#### `validate_absolute_path` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/types.py#L116"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 validate_absolute_path(cls, path: Path) -> Path
@@ -73,7 +73,7 @@ validate_absolute_path(cls, path: Path) -> Path
 Ensure path is absolute.
 
 
-#### `list_files`
+#### `list_files` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/types.py#L122"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 list_files(self) -> list[Path]

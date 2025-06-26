@@ -31,13 +31,31 @@ mcp_with_instructions = FastMCP(
 
 The `FastMCP` constructor accepts several arguments:
 
-*   `name`: (Optional) A human-readable name for your server. Defaults to "FastMCP".
-*   `instructions`: (Optional) Description of how to interact with this server. These instructions help clients understand the server's purpose and available functionality.
-*   `lifespan`: (Optional) An async context manager function for server startup and shutdown logic.
-*   `tags`: (Optional) A set of strings to tag the server itself.
-*   `tools`: (Optional) A list of tools (or functions to convert to tools) to add to the server. In some cases, providing tools programmatically may be more convenient than using the `@mcp.tool` decorator.
-*   `**settings`: Keyword arguments corresponding to additional `ServerSettings` configuration
+<Card icon="code" title="FastMCP Constructor Parameters">
+<ParamField body="name" type="str" default="FastMCP">
+  A human-readable name for your server
+</ParamField>
 
+<ParamField body="instructions" type="str | None">
+  Description of how to interact with this server. These instructions help clients understand the server's purpose and available functionality
+</ParamField>
+
+<ParamField body="lifespan" type="AsyncContextManager | None">
+  An async context manager function for server startup and shutdown logic
+</ParamField>
+
+<ParamField body="tags" type="set[str] | None">
+  A set of strings to tag the server itself
+</ParamField>
+
+<ParamField body="tools" type="list[Tool | Callable] | None">
+  A list of tools (or functions to convert to tools) to add to the server. In some cases, providing tools programmatically may be more convenient than using the `@mcp.tool` decorator
+</ParamField>
+
+<ParamField body="**settings" type="Any">
+  Keyword arguments corresponding to additional `ServerSettings` configuration
+</ParamField>
+</Card>
 ## Components
 
 FastMCP servers expose several types of components to the client:
@@ -158,8 +176,8 @@ if __name__ == "__main__":
     # This runs the server, defaulting to STDIO transport
     mcp.run()
     
-    # To use a different transport, e.g., HTTP:
-    # mcp.run(transport="streamable-http", host="127.0.0.1", port=9000)
+    # To use a different transport, e.g., Streamable HTTP:
+    # mcp.run(transport="http", host="127.0.0.1", port=9000)
 ```
 
 FastMCP supports several transport options: 
@@ -235,6 +253,34 @@ mcp = FastMCP(
 )
 ```
 
+### Constructor Parameters
+
+<Card icon="code" title="AdditionalFastMCP Constructor Parameters">
+<ParamField body="dependencies" type="list[str] | None">
+  Optional server dependencies list with package specifications
+</ParamField>
+
+<ParamField body="include_tags" type="set[str] | None">
+  Only expose components with at least one matching tag
+</ParamField>
+
+<ParamField body="exclude_tags" type="set[str] | None">
+  Hide components with any matching tag
+</ParamField>
+
+<ParamField body="on_duplicate_tools" type='Literal["error", "warn", "replace"]' default="error">
+  How to handle duplicate tool registrations
+</ParamField>
+
+<ParamField body="on_duplicate_resources" type='Literal["error", "warn", "replace"]' default="warn">
+  How to handle duplicate resource registrations
+</ParamField>
+
+<ParamField body="on_duplicate_prompts" type='Literal["error", "warn", "replace"]' default="replace">
+  How to handle duplicate prompt registrations
+</ParamField>
+</Card>
+
 ### Global Settings
 
 Global settings affect all FastMCP servers and can be configured via environment variables (prefixed with `FASTMCP_`) or in a `.env` file:
@@ -260,7 +306,7 @@ Transport settings are provided when running the server and control network beha
 ```python
 # Configure transport when running
 mcp.run(
-    transport="streamable-http",
+    transport="http",
     host="0.0.0.0",           # Bind to all interfaces
     port=9000,                # Custom port
     log_level="DEBUG",        # Override global log level
@@ -268,7 +314,7 @@ mcp.run(
 
 # Or for async usage
 await mcp.run_async(
-    transport="streamable-http", 
+    transport="http", 
     host="127.0.0.1",
     port=8080,
 )

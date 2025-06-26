@@ -11,7 +11,7 @@ import { VersionBadge } from '/snippets/version-badge.mdx'
 
 MCP servers can emit log messages to clients. The client can handle these logs through a log handler callback.
 
-## Setting Up Log Handling
+## Log Handler
 
 Provide a `log_handler` function when creating the client:
 
@@ -31,13 +31,27 @@ client = Client(
 )
 ```
 
-## LogMessage Structure
+### Handler Parameters
 
-The `log_handler` receives a `LogMessage` object with:
+The `log_handler` is called every time a log message is received. It receives a `LogMessage` object:
 
-- **`level`**: Log level (e.g., "debug", "info", "warning", "error")
-- **`logger`**: Logger name (optional, may be None)
-- **`data`**: The actual log message content
+<Card icon="code" title="Log Handler Parameters">
+<ResponseField name="LogMessage" type="Log Message Object">
+  <Expandable title="attributes">
+    <ResponseField name="level" type='Literal["debug", "info", "notice", "warning", "error", "critical", "alert", "emergency"]'>
+      The log level
+    </ResponseField>
+
+    <ResponseField name="logger" type="str | None">
+      The logger name (optional, may be None)
+    </ResponseField>
+
+    <ResponseField name="data" type="Any">
+      The actual log message content
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+</Card>
 
 ```python
 async def detailed_log_handler(message: LogMessage):
@@ -51,13 +65,12 @@ async def detailed_log_handler(message: LogMessage):
 
 ## Default Log Handling
 
-If you don't provide a custom `log_handler`, FastMCP uses a default handler that emits DEBUG level logs:
+If you don't provide a custom `log_handler`, FastMCP uses a default handler that emits a DEBUG-level FastMCP log for every log message received from the server, which is useful for visibility without polluting your own logs.
 
 ```python
-# Without custom handler - uses default DEBUG logging
 client = Client("my_mcp_server.py")
 
 async with client:
-    # Server logs will be emitted at DEBUG level
+    # Server logs will be emitted at DEBUG level automatically
     await client.call_tool("some_tool")
 ```

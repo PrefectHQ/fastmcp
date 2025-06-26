@@ -7,7 +7,7 @@ sidebarTitle: settings
 
 ## Classes
 
-### `ExtendedEnvSettingsSource`
+### `ExtendedEnvSettingsSource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/settings.py#L26"><Icon icon="github" size="14" /></a></sup>
 
 
 A special EnvSettingsSource that allows for multiple env var prefixes to be used.
@@ -17,15 +17,15 @@ Raises a deprecation warning if the old `FASTMCP_SERVER_` prefix is used.
 
 **Methods:**
 
-#### `get_field_value`
+#### `get_field_value` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/settings.py#L33"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 get_field_value(self, field: FieldInfo, field_name: str) -> tuple[Any, str, bool]
 ```
 
-### `ExtendedSettingsConfigDict`
+### `ExtendedSettingsConfigDict` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/settings.py#L53"><Icon icon="github" size="14" /></a></sup>
 
-### `Settings`
+### `Settings` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/settings.py#L57"><Icon icon="github" size="14" /></a></sup>
 
 
 FastMCP settings.
@@ -33,13 +33,13 @@ FastMCP settings.
 
 **Methods:**
 
-#### `settings_customise_sources`
+#### `settings_customise_sources` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/settings.py#L69"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 settings_customise_sources(cls, settings_cls: type[BaseSettings], init_settings: PydanticBaseSettingsSource, env_settings: PydanticBaseSettingsSource, dotenv_settings: PydanticBaseSettingsSource, file_secret_settings: PydanticBaseSettingsSource) -> tuple[PydanticBaseSettingsSource, ...]
 ```
 
-#### `settings`
+#### `settings` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/settings.py#L87"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 settings(self) -> Self
@@ -49,7 +49,7 @@ This property is for backwards compatibility with FastMCP < 2.8.0,
 which accessed fastmcp.settings.settings
 
 
-#### `setup_logging`
+#### `setup_logging` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/settings.py#L182"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 setup_logging(self) -> Self

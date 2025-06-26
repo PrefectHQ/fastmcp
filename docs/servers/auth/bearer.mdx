@@ -19,7 +19,7 @@ The [MCP specification](https://modelcontextprotocol.io/specification/2025-03-26
 
 Bearer Token authentication is a common way to secure HTTP-based APIs. In this model, the client sends a token (usually a JSON Web Token or JWT) in the `Authorization` header with the "Bearer" scheme. The server then validates this token to grant or deny access.
 
-FastMCP supports Bearer Token authentication for its HTTP-based transports (`streamable-http` and `sse`), allowing you to protect your server from unauthorized access.
+FastMCP supports Bearer Token authentication for its HTTP-based transports (`http` and `sse`), allowing you to protect your server from unauthorized access.
 
 ## Authentication Strategy
 
@@ -61,13 +61,27 @@ mcp = FastMCP(name="My MCP Server", auth=auth)
 
 ### Configuration Parameters
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `public_key` | `str` | If `jwks_uri` is not provided | RSA public key in PEM format for static key validation |
-| `jwks_uri` | `str` | If `public_key` is not provided | URL for JSON Web Key Set endpoint |
-| `issuer` | `str` | No | Expected JWT `iss` claim value |
-| `audience` | `str` | No | Expected JWT `aud` claim value |
-| `required_scopes` | `list[str]` | No | Global scopes required for all requests |
+<Card icon="code" title="BearerAuthProvider Configuration">
+<ParamField body="public_key" type="str">
+  RSA public key in PEM format for static key validation. Required if `jwks_uri` is not provided
+</ParamField>
+
+<ParamField body="jwks_uri" type="str">
+  URL for JSON Web Key Set endpoint. Required if `public_key` is not provided
+</ParamField>
+
+<ParamField body="issuer" type="str | None">
+  Expected JWT `iss` claim value
+</ParamField>
+
+<ParamField body="audience" type="str | None">
+  Expected JWT `aud` claim value
+</ParamField>
+
+<ParamField body="required_scopes" type="list[str] | None">
+  Global scopes required for all requests
+</ParamField>
+</Card>
 
 #### Public Key
 
@@ -141,15 +155,35 @@ print(f"Test token: {token}")
 
 The `create_token()` method accepts these parameters:
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `subject` | `str` | `"fastmcp-user"` | JWT subject claim (usually user ID) |
-| `issuer` | `str` | `"https://fastmcp.example.com"` | JWT issuer claim |
-| `audience` | `str` | `None` | JWT audience claim |
-| `scopes` | `list[str]` | `None` | OAuth scopes to include |
-| `expires_in_seconds` | `int` | `3600` | Token expiration time |
-| `additional_claims` | `dict` | `None` | Extra claims to include |
-| `kid` | `str` | `None` | Key ID for JWKS lookup |
+<Card icon="code" title="create_token() Parameters">
+<ParamField body="subject" type="str" default="fastmcp-user">
+  JWT subject claim (usually user ID)
+</ParamField>
+
+<ParamField body="issuer" type="str" default="https://fastmcp.example.com">
+  JWT issuer claim
+</ParamField>
+
+<ParamField body="audience" type="str | None">
+  JWT audience claim
+</ParamField>
+
+<ParamField body="scopes" type="list[str] | None">
+  OAuth scopes to include
+</ParamField>
+
+<ParamField body="expires_in_seconds" type="int" default="3600">
+  Token expiration time in seconds
+</ParamField>
+
+<ParamField body="additional_claims" type="dict | None">
+  Extra claims to include in the token
+</ParamField>
+
+<ParamField body="kid" type="str | None">
+  Key ID for JWKS lookup
+</ParamField>
+</Card>
 
 
 ## Accessing Token Claims
@@ -179,10 +213,21 @@ async def get_my_data(ctx: Context) -> dict:
 
 ### AccessToken Properties
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `token` | `str` | The raw JWT string |
-| `client_id` | `str` | Authenticated principal identifier |
-| `scopes` | `list[str]` | Granted scopes |
-| `expires_at` | `datetime \| None` | Token expiration timestamp |
+<Card icon="code" title="AccessToken Properties">
+<ParamField body="token" type="str">
+  The raw JWT string
+</ParamField>
+
+<ParamField body="client_id" type="str">
+  Authenticated principal identifier
+</ParamField>
+
+<ParamField body="scopes" type="list[str]">
+  Granted scopes
+</ParamField>
+
+<ParamField body="expires_at" type="datetime | None">
+  Token expiration timestamp
+</ParamField>
+</Card>
 

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import inspect
-import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Annotated, Any
@@ -12,7 +11,6 @@ from mcp.types import ContentBlock, TextContent, ToolAnnotations
 from mcp.types import Tool as MCPTool
 from pydantic import Field, PydanticSchemaGenerationError
 
-import fastmcp
 from fastmcp.server.dependencies import get_context
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.json_schema import compress_schema
@@ -55,6 +53,22 @@ class Tool(FastMCPComponent):
         Callable[[Any], str] | None,
         Field(description="Optional custom serializer for tool results"),
     ] = None
+
+    def enable(self) -> None:
+        super().enable()
+        try:
+            context = get_context()
+            context._queue_tool_list_changed()  # type: ignore[private-use]
+        except RuntimeError:
+            pass  # No context available
+
+    def disable(self) -> None:
+        super().disable()
+        try:
+            context = get_context()
+            context._queue_tool_list_changed()  # type: ignore[private-use]
+        except RuntimeError:
+            pass  # No context available
 
     def to_mcp_tool(self, **overrides: Any) -> MCPTool:
         kwargs = {
@@ -170,35 +184,6 @@ class FunctionTool(Tool):
         context_kwarg = find_kwarg_by_type(self.fn, kwarg_type=Context)
         if context_kwarg and context_kwarg not in arguments:
             arguments[context_kwarg] = get_context()
-
-        if fastmcp.settings.tool_attempt_parse_json_args:
-            # Pre-parse data from JSON in order to handle cases like `["a", "b", "c"]`
-            # being passed in as JSON inside a string rather than an actual list.
-            #
-            # Claude desktop is prone to this - in fact it seems incapable of NOT doing
-            # this. For sub-models, it tends to pass dicts (JSON objects) as JSON strings,
-            # which can be pre-parsed here.
-            signature = inspect.signature(self.fn)
-            for param_name in self.parameters["properties"]:
-                arg = arguments.get(param_name, None)
-                # if not in signature, we won't have annotations, so skip logic
-                if param_name not in signature.parameters:
-                    continue
-                # if not a string, we won't have a JSON to parse, so skip logic
-                if not isinstance(arg, str):
-                    continue
-                # skip if the type is a simple type (int, float, bool)
-                if signature.parameters[param_name].annotation in (
-                    int,
-                    float,
-                    bool,
-                ):
-                    continue
-                try:
-                    arguments[param_name] = json.loads(arg)
-
-                except json.JSONDecodeError:
-                    pass
 
         type_adapter = get_cached_typeadapter(self.fn)
         result = type_adapter.validate_python(arguments)

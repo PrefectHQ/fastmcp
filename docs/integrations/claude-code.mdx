@@ -1,0 +1,60 @@
+---
+title: Claude Code + FastMCP
+sidebarTitle: Claude Code
+description: Connect FastMCP servers to Claude Code
+icon: message-smile
+tag: NEW
+---
+
+Claude Code supports MCP servers through multiple transport methods, allowing you to extend Claude's capabilities with custom tools, resources, and prompts from your FastMCP servers.
+
+<Note>
+Claude Code supports both local and remote MCP servers with flexible configuration options. See the [Claude Code MCP documentation](https://docs.anthropic.com/en/docs/claude-code/mcp) for other transport methods.
+</Note>
+
+<Tip>
+Claude Code provides built-in MCP management commands to easily add, configure, and authenticate your FastMCP servers.
+</Tip>
+
+## Create a Server
+
+You can create FastMCP servers using STDIO transport, remote HTTP servers, or local HTTP servers. This example shows one common approach: running an HTTP server locally for development.
+
+```python server.py
+import random
+from fastmcp import FastMCP
+
+mcp = FastMCP(name="Dice Roller")
+
+@mcp.tool
+def roll_dice(n_dice: int) -> list[int]:
+    """Roll `n_dice` 6-sided dice and return the results."""
+    return [random.randint(1, 6) for _ in range(n_dice)]
+
+if __name__ == "__main__":
+    mcp.run(transport="http", port=8000)
+```
+
+## Connect to Claude Code
+
+Start your server and add it to Claude Code:
+
+```bash
+# Start your server first
+python server.py
+```
+
+Then add it to Claude Code:
+```bash
+claude mcp add dice --transport http http://localhost:8000/mcp/
+```
+
+## Using Your Server
+
+Once connected, Claude Code will automatically discover and use your server's tools when relevant:
+
+```
+Roll some dice for me
+```
+
+Claude will call your `roll_dice` tool and provide the results. If your server provides resources, you can reference them with `@` mentions like `@dice:file://path/to/resource`.

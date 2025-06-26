@@ -391,7 +391,7 @@ class TestContextHandling:
         mcp = FastMCP()
         context = Context(fastmcp=mcp)
 
-        with context:
+        async with context:
             messages = await prompt.render(arguments={"x": 42})
 
         assert len(messages) == 1
@@ -411,7 +411,7 @@ class TestContextHandling:
         mcp = FastMCP()
         context = Context(fastmcp=mcp)
 
-        with context:
+        async with context:
             messages = await prompt.render(
                 arguments={"x": 42},
             )

@@ -56,7 +56,7 @@ def run_proxy_server(host: str, port: int, shttp_url: str, **kwargs) -> None:
 class TestClientHeaders:
     @pytest.fixture(scope="class")
     def shttp_server(self) -> Generator[str, None, None]:
-        with run_server_in_process(run_server, transport="streamable-http") as url:
+        with run_server_in_process(run_server, transport="http") as url:
             yield f"{url}/mcp/"
 
     @pytest.fixture(scope="class")
@@ -69,7 +69,7 @@ class TestClientHeaders:
         with run_server_in_process(
             run_proxy_server,
             shttp_url=shttp_server,
-            transport="streamable-http",
+            transport="http",
         ) as url:
             yield f"{url}/mcp/"
 

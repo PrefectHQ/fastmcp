@@ -235,7 +235,7 @@ def run(
         typer.Option(
             "--transport",
             "-t",
-            help="Transport protocol to use (stdio, streamable-http, or sse)",
+            help="Transport protocol to use (stdio, http, or sse)",
         ),
     ] = None,
     host: Annotated[

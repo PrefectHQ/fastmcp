@@ -4,13 +4,11 @@ import importlib.util
 import re
 import sys
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 from fastmcp.utilities.logging import get_logger
 
 logger = get_logger("cli.run")
-
-TransportType = Literal["stdio", "streamable-http", "sse"]
 
 
 def is_url(path: str) -> bool:

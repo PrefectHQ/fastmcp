@@ -10,7 +10,7 @@ Resource manager functionality.
 
 ## Classes
 
-### `ResourceManager`
+### `ResourceManager` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/resource_manager.py#L28"><Icon icon="github" size="14" /></a></sup>
 
 
 Manages FastMCP resources.
@@ -18,7 +18,7 @@ Manages FastMCP resources.
 
 **Methods:**
 
-#### `mount`
+#### `mount` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/resource_manager.py#L60"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 mount(self, server: MountedServer) -> None
@@ -27,7 +27,7 @@ mount(self, server: MountedServer) -> None
 Adds a mounted server as a source for resources and templates.
 
 
-#### `add_resource_or_template_from_fn`
+#### `add_resource_or_template_from_fn` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/resource_manager.py#L182"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 add_resource_or_template_from_fn(self, fn: Callable[..., Any], uri: str, name: str | None = None, description: str | None = None, mime_type: str | None = None, tags: set[str] | None = None) -> Resource | ResourceTemplate
@@ -48,7 +48,7 @@ Add a resource or template to the manager from a function.
 - returns the existing resource or template.
 
 
-#### `add_resource_from_fn`
+#### `add_resource_from_fn` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/resource_manager.py#L230"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 add_resource_from_fn(self, fn: Callable[..., Any], uri: str, name: str | None = None, description: str | None = None, mime_type: str | None = None, tags: set[str] | None = None) -> Resource
@@ -69,7 +69,7 @@ Add a resource to the manager from a function.
 - returns the existing resource.
 
 
-#### `add_resource`
+#### `add_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/resource_manager.py#L270"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 add_resource(self, resource: Resource) -> Resource
@@ -83,7 +83,7 @@ will be used as the storage key. To overwrite it, call
 Resource.with_key() before calling this method.
 
 
-#### `add_template_from_fn`
+#### `add_template_from_fn` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/resource_manager.py#L292"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 add_template_from_fn(self, fn: Callable[..., Any], uri_template: str, name: str | None = None, description: str | None = None, mime_type: str | None = None, tags: set[str] | None = None) -> ResourceTemplate
@@ -92,7 +92,7 @@ add_template_from_fn(self, fn: Callable[..., Any], uri_template: str, name: str 
 Create a template from a function.
 
 
-#### `add_template`
+#### `add_template` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/resource_manager.py#L319"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 add_template(self, template: ResourceTemplate) -> ResourceTemplate
