@@ -9,14 +9,11 @@ from urllib.parse import urljoin, urlparse
 
 import anyio
 import httpx
-from mcp.client.auth import OAuthClientProvider as _MCPOAuthClientProvider
-from mcp.client.auth import TokenStorage
+from mcp.client.auth import OAuthClientProvider, TokenStorage
 from mcp.shared.auth import (
     OAuthClientInformationFull,
     OAuthClientMetadata,
-)
-from mcp.shared.auth import (
-    OAuthMetadata as _MCPServerOAuthMetadata,
+    OAuthMetadata,
 )
 from mcp.shared.auth import (
     OAuthToken as OAuthToken,
@@ -37,80 +34,6 @@ logger = get_logger(__name__)
 
 def default_cache_dir() -> Path:
     return fastmcp_global_settings.home / "oauth-mcp-client-cache"
-
-
-# Flexible OAuth models for real-world compatibility
-class ServerOAuthMetadata(_MCPServerOAuthMetadata):
-    """
-    More flexible OAuth metadata model that accepts broader ranges of values
-    than the restrictive MCP standard model.
-
-    This handles real-world OAuth servers like PayPal that may support
-    additional methods not in the MCP specification.
-    """
-
-    # Allow any code challenge methods, not just S256
-    code_challenge_methods_supported: list[str] | None = None
-
-    # Allow any token endpoint auth methods
-    token_endpoint_auth_methods_supported: list[str] | None = None
-
-    # Allow any grant types
-    grant_types_supported: list[str] | None = None
-
-    # Allow any response types
-    response_types_supported: list[str] = ["code"]
-
-    # Allow any response modes
-    response_modes_supported: list[str] | None = None
-
-
-class OAuthClientProvider(_MCPOAuthClientProvider):
-    """
-    OAuth client provider with more flexible OAuth metadata discovery.
-    """
-
-    async def _discover_oauth_metadata(
-        self, server_url: str
-    ) -> ServerOAuthMetadata | None:
-        """
-        Discover OAuth metadata with flexible validation.
-
-        This is nearly identical to the parent implementation but uses
-        ServerOAuthMetadata instead of the restrictive MCP OAuthMetadata.
-        """
-        # Extract base URL per MCP spec
-        auth_base_url = self.context.get_authorization_base_url(server_url)
-        url = urljoin(auth_base_url, "/.well-known/oauth-authorization-server")
-
-        from mcp.types import LATEST_PROTOCOL_VERSION
-
-        headers = {"MCP-Protocol-Version": LATEST_PROTOCOL_VERSION}
-
-        async with httpx.AsyncClient() as client:
-            try:
-                response = await client.get(url, headers=headers)
-                if response.status_code == 404:
-                    return None
-                response.raise_for_status()
-                metadata_json = response.json()
-                logger.debug(f"OAuth metadata discovered: {metadata_json}")
-                return ServerOAuthMetadata.model_validate(metadata_json)
-            except Exception:
-                # Retry without MCP header for CORS compatibility
-                try:
-                    response = await client.get(url)
-                    if response.status_code == 404:
-                        return None
-                    response.raise_for_status()
-                    metadata_json = response.json()
-                    logger.debug(
-                        f"OAuth metadata discovered (no MCP header): {metadata_json}"
-                    )
-                    return ServerOAuthMetadata.model_validate(metadata_json)
-                except Exception:
-                    logger.exception("Failed to discover OAuth metadata")
-                    return None
 
 
 class FileTokenStorage(TokenStorage):
@@ -229,7 +152,7 @@ class FileTokenStorage(TokenStorage):
 
 async def discover_oauth_metadata(
     server_base_url: str, httpx_kwargs: dict[str, Any] | None = None
-) -> _MCPServerOAuthMetadata | None:
+) -> OAuthMetadata | None:
     """
     Discover OAuth metadata from the server using RFC 8414 well-known endpoint.
 
@@ -248,7 +171,7 @@ async def discover_oauth_metadata(
             response = await client.get(well_known_url, timeout=10.0)
             if response.status_code == 200:
                 logger.debug("Successfully discovered OAuth metadata")
-                return _MCPServerOAuthMetadata.model_validate(response.json())
+                return OAuthMetadata.model_validate(response.json())
             elif response.status_code == 404:
                 logger.debug(
                     "OAuth metadata not found (404) - server may not require auth"
@@ -298,7 +221,7 @@ def OAuth(
     client_name: str = "FastMCP Client",
     token_storage_cache_dir: Path | None = None,
     additional_client_metadata: dict[str, Any] | None = None,
-) -> _MCPOAuthClientProvider:
+) -> OAuthClientProvider:
     """
     Create an OAuthClientProvider for an MCP server.
 
