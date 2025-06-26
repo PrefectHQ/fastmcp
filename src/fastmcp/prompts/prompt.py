@@ -338,6 +338,6 @@ class FunctionPrompt(Prompt):
                     raise PromptError("Could not convert prompt result to message.")
 
             return messages
-        except Exception as e:
-            logger.exception(f"Error rendering prompt {self.name}: {e}")
+        except Exception:
+            logger.exception(f"Error rendering prompt {self.name}")
             raise PromptError(f"Error rendering prompt {self.name}.")

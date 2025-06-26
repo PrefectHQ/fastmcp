@@ -422,12 +422,12 @@ class ResourceManager:
 
             # raise ResourceErrors as-is
             except ResourceError as e:
-                logger.exception(f"Error reading resource {uri_str!r}: {e}")
+                logger.exception(f"Error reading resource {uri_str!r}")
                 raise e
 
             # Handle other exceptions
             except Exception as e:
-                logger.exception(f"Error reading resource {uri_str!r}: {e}")
+                logger.exception(f"Error reading resource {uri_str!r}")
                 if self.mask_error_details:
                     # Mask internal details
                     raise ResourceError(f"Error reading resource {uri_str!r}") from e
@@ -445,12 +445,12 @@ class ResourceManager:
                     return await resource.read()
                 except ResourceError as e:
                     logger.exception(
-                        f"Error reading resource from template {uri_str!r}: {e}"
+                        f"Error reading resource from template {uri_str!r}"
                     )
                     raise e
                 except Exception as e:
                     logger.exception(
-                        f"Error reading resource from template {uri_str!r}: {e}"
+                        f"Error reading resource from template {uri_str!r}"
                     )
                     if self.mask_error_details:
                         raise ResourceError(

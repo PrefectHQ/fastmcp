@@ -58,18 +58,9 @@ def get_config() -> dict:
     *   Resource Name: Taken from the function name (`get_greeting`).
     *   Resource Description: Taken from the function's docstring.
 
-### Return Values
+#### Decorator Arguments
 
-FastMCP automatically converts your function's return value into the appropriate MCP resource content:
-
--   **`str`**: Sent as `TextResourceContents` (with `mime_type="text/plain"` by default).
--   **`dict`, `list`, `pydantic.BaseModel`**: Automatically serialized to a JSON string and sent as `TextResourceContents` (with `mime_type="application/json"` by default).
--   **`bytes`**: Base64 encoded and sent as `BlobResourceContents`. You should specify an appropriate `mime_type` (e.g., `"image/png"`, `"application/octet-stream"`).
--   **`None`**: Results in an empty resource content list being returned.
-
-### Resource Metadata
-
-You can customize the resource's properties using arguments in the decorator:
+You can customize the resource's properties using arguments in the `@mcp.resource` decorator:
 
 ```python
 from fastmcp import FastMCP
@@ -89,12 +80,40 @@ def get_application_status() -> dict:
     return {"status": "ok", "uptime": 12345, "version": mcp.settings.version} # Example usage
 ```
 
-- **`uri`**: The unique identifier for the resource (required).
-- **`name`**: A human-readable name (defaults to function name).
-- **`description`**: Explanation of the resource (defaults to docstring).
-- **`mime_type`**: Specifies the content type (FastMCP often infers a default like `text/plain` or `application/json`, but explicit is better for non-text types).
-- **`tags`**: A set of strings for categorization, potentially used by clients for filtering.
-- **`enabled`**: A boolean to enable or disable the resource (defaults to `True`). See [Disabling Resources](#disabling-resources) for more information.
+<Card icon="code" title="@resource Decorator Arguments">
+<ParamField body="uri" type="str" required>
+  The unique identifier for the resource
+</ParamField>
+
+<ParamField body="name" type="str | None">
+  A human-readable name. If not provided, defaults to function name
+</ParamField>
+
+<ParamField body="description" type="str | None">
+  Explanation of the resource. If not provided, defaults to docstring
+</ParamField>
+
+<ParamField body="mime_type" type="str | None">
+  Specifies the content type. FastMCP often infers a default like `text/plain` or `application/json`, but explicit is better for non-text types
+</ParamField>
+
+<ParamField body="tags" type="set[str] | None">
+  A set of strings for categorization, potentially used by clients for filtering
+</ParamField>
+
+<ParamField body="enabled" type="bool" default="True">
+  A boolean to enable or disable the resource. See [Disabling Resources](#disabling-resources) for more information
+</ParamField>
+</Card>
+
+### Return Values
+
+FastMCP automatically converts your function's return value into the appropriate MCP resource content:
+
+-   **`str`**: Sent as `TextResourceContents` (with `mime_type="text/plain"` by default).
+-   **`dict`, `list`, `pydantic.BaseModel`**: Automatically serialized to a JSON string and sent as `TextResourceContents` (with `mime_type="application/json"` by default).
+-   **`bytes`**: Base64 encoded and sent as `BlobResourceContents`. You should specify an appropriate `mime_type` (e.g., `"image/png"`, `"application/octet-stream"`).
+-   **`None`**: Results in an empty resource content list being returned.
 
 ### Disabling Resources
 

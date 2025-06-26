@@ -349,7 +349,7 @@ mcp.run(transport="stdio")  # Default, so transport argument is optional
 **Streamable HTTP**: Recommended for web deployments.
 
 ```python
-mcp.run(transport="streamable-http", host="127.0.0.1", port=8000, path="/mcp")
+mcp.run(transport="http", host="127.0.0.1", port=8000, path="/mcp")
 ```
 
 **SSE**: For compatibility with existing SSE clients.

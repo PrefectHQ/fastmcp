@@ -15,7 +15,7 @@ and display styled responses to users.
 
 ## Functions
 
-### `create_callback_html`
+### `create_callback_html` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/oauth_callback.py#L25"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 create_callback_html(message: str, is_success: bool = True, title: str = 'FastMCP OAuth', server_url: str | None = None) -> str
@@ -25,7 +25,7 @@ create_callback_html(message: str, is_success: bool = True, title: str = 'FastMC
 Create a styled HTML response for OAuth callbacks.
 
 
-### `create_oauth_callback_server`
+### `create_oauth_callback_server` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/oauth_callback.py#L197"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 create_oauth_callback_server(port: int, callback_path: str = '/callback', server_url: str | None = None, response_future: asyncio.Future | None = None) -> Server
@@ -46,17 +46,17 @@ Create an OAuth callback server.
 
 ## Classes
 
-### `CallbackResponse`
+### `CallbackResponse` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/oauth_callback.py#L183"><Icon icon="github" size="14" /></a></sup>
 
 **Methods:**
 
-#### `from_dict`
+#### `from_dict` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/oauth_callback.py#L190"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 from_dict(cls, data: dict[str, str]) -> CallbackResponse
 ```
 
-#### `to_dict`
+#### `to_dict` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/oauth_callback.py#L193"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 to_dict(self) -> dict[str, str]

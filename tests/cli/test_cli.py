@@ -328,6 +328,41 @@ class TestRunCommand:
             assert result.exit_code == 0
             mock_server.run.assert_called_once_with(transport="sse")
 
+    def test_run_command_with_http_transports(self, temp_python_file):
+        """Test run command with both http and streamable-http transport options."""
+        # Test "http" transport
+        with (
+            patch("fastmcp.cli.run.parse_file_path") as mock_parse,
+            patch("fastmcp.cli.run.import_server") as mock_import,
+        ):
+            mock_parse.return_value = (temp_python_file, None)
+            mock_server = MagicMock()
+            mock_server.name = "test_server"
+            mock_import.return_value = mock_server
+
+            result = runner.invoke(
+                cli.app, ["run", str(temp_python_file), "--transport", "http"]
+            )
+            assert result.exit_code == 0
+            mock_server.run.assert_called_once_with(transport="http")
+
+        # Test "streamable-http" transport (alias for http)
+        with (
+            patch("fastmcp.cli.run.parse_file_path") as mock_parse,
+            patch("fastmcp.cli.run.import_server") as mock_import,
+        ):
+            mock_parse.return_value = (temp_python_file, None)
+            mock_server = MagicMock()
+            mock_server.name = "test_server"
+            mock_import.return_value = mock_server
+
+            result = runner.invoke(
+                cli.app,
+                ["run", str(temp_python_file), "--transport", "streamable-http"],
+            )
+            assert result.exit_code == 0
+            mock_server.run.assert_called_once_with(transport="streamable-http")
+
     def test_run_command_with_host(self, temp_python_file):
         """Test run command with host option."""
         with (

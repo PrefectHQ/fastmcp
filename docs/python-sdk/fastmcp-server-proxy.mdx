@@ -7,25 +7,25 @@ sidebarTitle: proxy
 
 ## Classes
 
-### `ProxyToolManager`
+### `ProxyToolManager` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/proxy.py#L36"><Icon icon="github" size="14" /></a></sup>
 
 
 A ToolManager that sources its tools from a remote client in addition to local and mounted tools.
 
 
-### `ProxyResourceManager`
+### `ProxyResourceManager` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/proxy.py#L81"><Icon icon="github" size="14" /></a></sup>
 
 
 A ResourceManager that sources its resources from a remote client in addition to local and mounted resources.
 
 
-### `ProxyPromptManager`
+### `ProxyPromptManager` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/proxy.py#L159"><Icon icon="github" size="14" /></a></sup>
 
 
 A PromptManager that sources its prompts from a remote client in addition to local and mounted prompts.
 
 
-### `ProxyTool`
+### `ProxyTool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/proxy.py#L209"><Icon icon="github" size="14" /></a></sup>
 
 
 A Tool that represents and executes a tool on a remote server.
@@ -33,7 +33,7 @@ A Tool that represents and executes a tool on a remote server.
 
 **Methods:**
 
-#### `from_mcp_tool`
+#### `from_mcp_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/proxy.py#L219"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 from_mcp_tool(cls, client: Client, mcp_tool: mcp.types.Tool) -> ProxyTool
@@ -42,7 +42,7 @@ from_mcp_tool(cls, client: Client, mcp_tool: mcp.types.Tool) -> ProxyTool
 Factory method to create a ProxyTool from a raw MCP tool schema.
 
 
-### `ProxyResource`
+### `ProxyResource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/proxy.py#L246"><Icon icon="github" size="14" /></a></sup>
 
 
 A Resource that represents and reads a resource from a remote server.
@@ -50,7 +50,7 @@ A Resource that represents and reads a resource from a remote server.
 
 **Methods:**
 
-#### `from_mcp_resource`
+#### `from_mcp_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/proxy.py#L260"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 from_mcp_resource(cls, client: Client, mcp_resource: mcp.types.Resource) -> ProxyResource
@@ -59,7 +59,7 @@ from_mcp_resource(cls, client: Client, mcp_resource: mcp.types.Resource) -> Prox
 Factory method to create a ProxyResource from a raw MCP resource schema.
 
 
-### `ProxyTemplate`
+### `ProxyTemplate` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/proxy.py#L287"><Icon icon="github" size="14" /></a></sup>
 
 
 A ResourceTemplate that represents and creates resources from a remote server template.
@@ -67,7 +67,7 @@ A ResourceTemplate that represents and creates resources from a remote server te
 
 **Methods:**
 
-#### `from_mcp_template`
+#### `from_mcp_template` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/proxy.py#L297"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 from_mcp_template(cls, client: Client, mcp_template: mcp.types.ResourceTemplate) -> ProxyTemplate
@@ -76,7 +76,7 @@ from_mcp_template(cls, client: Client, mcp_template: mcp.types.ResourceTemplate)
 Factory method to create a ProxyTemplate from a raw MCP template schema.
 
 
-### `ProxyPrompt`
+### `ProxyPrompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/proxy.py#L343"><Icon icon="github" size="14" /></a></sup>
 
 
 A Prompt that represents and renders a prompt from a remote server.
@@ -84,7 +84,7 @@ A Prompt that represents and renders a prompt from a remote server.
 
 **Methods:**
 
-#### `from_mcp_prompt`
+#### `from_mcp_prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/proxy.py#L355"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 from_mcp_prompt(cls, client: Client, mcp_prompt: mcp.types.Prompt) -> ProxyPrompt
@@ -93,7 +93,7 @@ from_mcp_prompt(cls, client: Client, mcp_prompt: mcp.types.Prompt) -> ProxyPromp
 Factory method to create a ProxyPrompt from a raw MCP prompt schema.
 
 
-### `FastMCPProxy`
+### `FastMCPProxy` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/proxy.py#L381"><Icon icon="github" size="14" /></a></sup>
 
 
 A FastMCP server that acts as a proxy to a remote MCP-compliant server.

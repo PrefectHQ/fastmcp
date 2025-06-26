@@ -100,35 +100,55 @@ class ArgTransform:
         examples: Examples for the argument. Use ... for no change.
 
     Examples:
-        # Rename argument 'old_name' to 'new_name'
+        Rename argument 'old_name' to 'new_name'
+        ```python
         ArgTransform(name="new_name")
+        ```
 
-        # Change description only
+        Change description only
+        ```python
         ArgTransform(description="Updated description")
+        ```
 
-        # Add a default value (makes argument optional)
+        Add a default value (makes argument optional)
+        ```python
         ArgTransform(default=42)
+        ```
 
-        # Add a default factory (makes argument optional)
+        Add a default factory (makes argument optional)
+        ```python
         ArgTransform(default_factory=lambda: time.time())
+        ```
 
-        # Change the type
+        Change the type
+        ```python
         ArgTransform(type=str)
+        ```
 
-        # Hide the argument entirely from clients
+        Hide the argument entirely from clients
+        ```python
         ArgTransform(hide=True)
+        ```
 
-        # Hide argument but pass a constant value to parent
+        Hide argument but pass a constant value to parent
+        ```python
         ArgTransform(hide=True, default="constant_value")
+        ```
 
-        # Hide argument but pass a factory-generated value to parent
+        Hide argument but pass a factory-generated value to parent
+        ```python
         ArgTransform(hide=True, default_factory=lambda: uuid.uuid4().hex)
+        ```
 
-        # Make an optional parameter required (removes any default)
+        Make an optional parameter required (removes any default)
+        ```python
         ArgTransform(required=True)
+        ```
 
-        # Combine multiple transformations
+        Combine multiple transformations
+        ```python
         ArgTransform(name="new_name", description="New desc", default=None, type=int)
+        ```
     """
 
     name: str | EllipsisType = NotSet
@@ -279,9 +299,9 @@ class TransformedTool(Tool):
             name: New name for the tool. Defaults to parent tool's name.
             transform_args: Optional transformations for parent tool arguments.
                 Only specified arguments are transformed, others pass through unchanged:
-                - str: Simple rename
-                - ArgTransform: Complex transformation (rename/description/default/drop)
-                - None: Drop the argument
+                - Simple rename (str)
+                - Complex transformation (rename/description/default/drop) (ArgTransform)
+                - Drop the argument (None)
             description: New description. Defaults to parent's description.
             tags: New tags. Defaults to parent's tags.
             annotations: New annotations. Defaults to parent's annotations.
@@ -290,23 +310,29 @@ class TransformedTool(Tool):
         Returns:
             TransformedTool with the specified transformations.
 
-                Examples:
+        Examples:
             # Transform specific arguments only
+            ```python
             Tool.from_tool(parent, transform_args={"old": "new"})  # Others unchanged
+            ```
 
             # Custom function with partial transforms
+            ```python
             async def custom(x: int, y: int) -> str:
                 result = await forward(x=x, y=y)
                 return f"Custom: {result}"
 
             Tool.from_tool(parent, transform_fn=custom, transform_args={"a": "x", "b": "y"})
+            ```
 
             # Using **kwargs (gets all args, transformed and untransformed)
+            ```python
             async def flexible(**kwargs) -> str:
                 result = await forward(**kwargs)
                 return f"Got: {kwargs}"
 
             Tool.from_tool(parent, transform_fn=flexible, transform_args={"a": "x"})
+            ```
         """
         transform_args = transform_args or {}
 
@@ -423,8 +449,8 @@ class TransformedTool(Tool):
 
         Returns:
             A tuple containing:
-            - dict: The new JSON schema for the transformed tool
-            - Callable: Async function that validates and forwards calls to the parent tool
+            - The new JSON schema for the transformed tool as a dictionary
+            - Async function that validates and forwards calls to the parent tool
         """
 
         # Build transformed schema and mapping

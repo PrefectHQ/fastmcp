@@ -42,10 +42,11 @@ This command runs the server directly in your current Python environment. You ar
 
 | Option | Flag | Description |
 | ------ | ---- | ----------- |
-| Transport | `--transport`, `-t` | Transport protocol to use (`stdio`, `streamable-http`, or `sse`) |
+| Transport | `--transport`, `-t` | Transport protocol to use (`stdio`, `http`, or `sse`) |
 | Host | `--host` | Host to bind to when using http transport (default: 127.0.0.1) |
 | Port | `--port`, `-p` | Port to bind to when using http transport (default: 8000) |
 | Log Level | `--log-level`, `-l` | Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL) |
+
 
 #### Server Specification
 <VersionBadge version="2.3.5" />
@@ -79,14 +80,14 @@ if __name__ == "__main__":
 You can run it with Streamable HTTP transport regardless of what's in the `__main__` block:
 
 ```bash
-fastmcp run server.py --transport streamable-http --port 8000
+fastmcp run server.py --transport http --port 8000
 ```
 
 **Examples**
 
 ```bash
 # Run a local server with Streamable HTTP transport on a custom port
-fastmcp run server.py --transport streamable-http --port 8000
+fastmcp run server.py --transport http --port 8000
 
 # Connect to a remote server and proxy as a stdio server
 fastmcp run https://example.com/mcp-server
@@ -112,14 +113,14 @@ The `dev` command is a shortcut for testing a server over STDIO only. When the I
 1. Select "STDIO" from the transport dropdown
 2. Connect manually
 
-This command does not support HTTP testing. To test a server over HTTP:
-1. Start your server manually with HTTP transport using either:
+This command does not support HTTP testing. To test a server over Streamable HTTP or SSE:
+1. Start your server manually with the appropriate transport using either the command line:
    ```bash
-   fastmcp run server.py --transport streamable-http
+   fastmcp run server.py --transport http
    ```
-   or
+   or by setting the transport in your code:
    ```bash
-   python server.py  # Assuming your __main__ block sets HTTP transport
+   python server.py  # Assuming your __main__ block sets Streamable HTTP transport
    ```
 2. Open the MCP Inspector separately and connect to your running server
 </Warning>

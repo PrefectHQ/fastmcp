@@ -614,3 +614,52 @@ def test_http_trace_method_path(parsed_http_methods_routes):
 
     assert trace_route is not None
     assert trace_route.path == "/resource"
+
+
+@pytest.fixture
+def schema_with_external_reference() -> dict[str, Any]:
+    """Fixture that returns a schema with external schema references like in issue #926."""
+    return {
+        "openapi": "3.0.0",
+        "info": {"title": "External Reference API", "version": "1.0.0"},
+        "paths": {
+            "/products": {
+                "post": {
+                    "summary": "Create a product",
+                    "operationId": "createProduct",
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "obj": {
+                                            "$ref": "http://cyaninc.com/json-schemas/market-v1/product-constraints"
+                                        }
+                                    },
+                                }
+                            }
+                        },
+                    },
+                    "responses": {"201": {"description": "Product created"}},
+                }
+            }
+        },
+    }
+
+
+# --- Tests for external schema reference handling --- #
+
+
+def test_external_reference_raises_clear_error(schema_with_external_reference):
+    """Test that external schema references raise a clear, helpful error message."""
+    with pytest.raises(ValueError) as exc_info:
+        parse_openapi_to_http_routes(schema_with_external_reference)
+
+    error_message = str(exc_info.value)
+    assert "External or non-local reference not supported" in error_message
+    assert (
+        "http://cyaninc.com/json-schemas/market-v1/product-constraints" in error_message
+    )
+    assert "FastMCP only supports local schema references" in error_message

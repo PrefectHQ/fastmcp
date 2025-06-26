@@ -11,7 +11,7 @@ import { VersionBadge } from '/snippets/version-badge.mdx'
 
 MCP servers can report progress during long-running operations. The client can receive these updates through a progress handler.
 
-## Setting Up Progress Handling
+## Progress Handler
 
 Set a progress handler when creating the client:
 
@@ -35,6 +35,26 @@ client = Client(
 )
 ```
 
+### Handler Parameters
+
+The progress handler receives three parameters:
+
+
+<Card icon="code" title="Progress Handler Parameters">
+<ResponseField name="progress" type="float">
+  Current progress value
+</ResponseField>
+
+<ResponseField name="total" type="float | None">
+  Expected total value (may be None)
+</ResponseField>
+
+<ResponseField name="message" type="str | None">
+  Optional status message (may be None)
+</ResponseField>
+</Card>
+
+
 ## Per-Call Progress Handler
 
 Override the progress handler for specific tool calls:
@@ -48,12 +68,3 @@ async with client:
         progress_handler=my_progress_handler
     )
 ```
-
-## Handler Parameters
-
-The progress handler receives:
-
-- **`progress`** (float): Current progress value
-- **`total`** (float | None): Expected total value (may be None)
-- **`message`** (str | None): Optional status message (may be None)
-

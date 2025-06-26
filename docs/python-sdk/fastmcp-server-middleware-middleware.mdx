@@ -1,0 +1,56 @@
+---
+title: middleware
+sidebarTitle: middleware
+---
+
+# `fastmcp.server.middleware.middleware`
+
+## Functions
+
+### `make_middleware_wrapper` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/middleware.py#L106"><Icon icon="github" size="14" /></a></sup>
+
+```python
+make_middleware_wrapper(middleware: Middleware, call_next: CallNext[T, R]) -> CallNext[T, R]
+```
+
+
+Create a wrapper that applies a single middleware to a context. The
+closure bakes in the middleware and call_next function, so it can be
+passed to other functions that expect a call_next function.
+
+
+## Classes
+
+### `CallNext` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/middleware.py#L36"><Icon icon="github" size="14" /></a></sup>
+
+### `CallToolResult` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/middleware.py#L56"><Icon icon="github" size="14" /></a></sup>
+
+### `ListToolsResult` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/middleware.py#L62"><Icon icon="github" size="14" /></a></sup>
+
+### `ListResourcesResult` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/middleware.py#L67"><Icon icon="github" size="14" /></a></sup>
+
+### `ListResourceTemplatesResult` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/middleware.py#L72"><Icon icon="github" size="14" /></a></sup>
+
+### `ListPromptsResult` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/middleware.py#L77"><Icon icon="github" size="14" /></a></sup>
+
+### `ServerResultProtocol` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/middleware.py#L82"><Icon icon="github" size="14" /></a></sup>
+
+### `MiddlewareContext` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/middleware.py#L87"><Icon icon="github" size="14" /></a></sup>
+
+
+Unified context for all middleware operations.
+
+
+**Methods:**
+
+#### `copy` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/middleware.py#L102"><Icon icon="github" size="14" /></a></sup>
+
+```python
+copy(self, **kwargs: Any) -> MiddlewareContext[T]
+```
+
+### `Middleware` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/middleware.py#L119"><Icon icon="github" size="14" /></a></sup>
+
+
+Base class for FastMCP middleware with dispatching hooks.
+

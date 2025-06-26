@@ -187,12 +187,12 @@ class ToolManager:
 
             # raise ToolErrors as-is
             except ToolError as e:
-                logger.exception(f"Error calling tool {key!r}: {e}")
+                logger.exception(f"Error calling tool {key!r}")
                 raise e
 
             # Handle other exceptions
             except Exception as e:
-                logger.exception(f"Error calling tool {key!r}: {e}")
+                logger.exception(f"Error calling tool {key!r}")
                 if self.mask_error_details:
                     # Mask internal details
                     raise ToolError(f"Error calling tool {key!r}") from e

@@ -7,7 +7,7 @@ sidebarTitle: tool
 
 ## Functions
 
-### `default_serializer`
+### `default_serializer` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/tools/tool.py#L34"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 default_serializer(data: Any) -> str
@@ -15,7 +15,7 @@ default_serializer(data: Any) -> str
 
 ## Classes
 
-### `Tool`
+### `Tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/tools/tool.py#L38"><Icon icon="github" size="14" /></a></sup>
 
 
 Internal tool registration info.
@@ -23,13 +23,13 @@ Internal tool registration info.
 
 **Methods:**
 
-#### `to_mcp_tool`
+#### `to_mcp_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/tools/tool.py#L49"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 to_mcp_tool(self, **overrides: Any) -> MCPTool
 ```
 
-#### `from_function`
+#### `from_function` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/tools/tool.py#L59"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 from_function(fn: Callable[..., Any], name: str | None = None, description: str | None = None, tags: set[str] | None = None, annotations: ToolAnnotations | None = None, exclude_args: list[str] | None = None, serializer: Callable[[Any], str] | None = None, enabled: bool | None = None) -> FunctionTool
@@ -38,17 +38,17 @@ from_function(fn: Callable[..., Any], name: str | None = None, description: str 
 Create a Tool from a function.
 
 
-#### `from_tool`
+#### `from_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/tools/tool.py#L86"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 from_tool(cls, tool: Tool, transform_fn: Callable[..., Any] | None = None, name: str | None = None, transform_args: dict[str, ArgTransform] | None = None, description: str | None = None, tags: set[str] | None = None, annotations: ToolAnnotations | None = None, serializer: Callable[[Any], str] | None = None, enabled: bool | None = None) -> TransformedTool
 ```
 
-### `FunctionTool`
+### `FunctionTool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/tools/tool.py#L113"><Icon icon="github" size="14" /></a></sup>
 
 **Methods:**
 
-#### `from_function`
+#### `from_function` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/tools/tool.py#L117"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 from_function(cls, fn: Callable[..., Any], name: str | None = None, description: str | None = None, tags: set[str] | None = None, annotations: ToolAnnotations | None = None, exclude_args: list[str] | None = None, serializer: Callable[[Any], str] | None = None, enabled: bool | None = None) -> FunctionTool
@@ -57,11 +57,11 @@ from_function(cls, fn: Callable[..., Any], name: str | None = None, description:
 Create a Tool from a function.
 
 
-### `ParsedFunction`
+### `ParsedFunction` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/tools/tool.py#L194"><Icon icon="github" size="14" /></a></sup>
 
 **Methods:**
 
-#### `from_function`
+#### `from_function` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/tools/tool.py#L201"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 from_function(cls, fn: Callable[..., Any], exclude_args: list[str] | None = None, validate: bool = True) -> ParsedFunction

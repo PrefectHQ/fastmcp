@@ -1,0 +1,24 @@
+[project]
+name = "atproto-mcp"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [{ name = "zzstoatzz", email = "thrast36@gmail.com" }]
+requires-python = ">=3.10"
+dependencies = [
+    "fastmcp>=0.8.0",
+    "atproto@git+https://github.com/MarshalX/atproto.git@refs/pull/605/head",
+    "pydantic-settings>=2.0.0",
+    "websockets>=15.0.1",
+    "httpx>=0.27.0",
+]
+
+[project.scripts]
+atproto-mcp = "atproto_mcp.__main__:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.metadata]
+allow-direct-references = true
