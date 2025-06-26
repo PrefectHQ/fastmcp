@@ -43,3 +43,18 @@ class OAuthProvider(
         self.client_registration_options = client_registration_options
         self.revocation_options = revocation_options
         self.required_scopes = required_scopes
+
+    async def verify_token(self, token: str) -> AccessToken | None:
+        """
+        Verify a bearer token and return access info if valid.
+
+        This method implements the TokenVerifier protocol by delegating
+        to our existing load_access_token method.
+
+        Args:
+            token: The token string to validate
+
+        Returns:
+            AccessToken object if valid, None if invalid or expired
+        """
+        return await self.load_access_token(token)

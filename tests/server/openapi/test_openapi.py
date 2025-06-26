@@ -223,6 +223,8 @@ class TestTools:
 
         assert tools[0].model_dump() == dict(
             name="create_user_users_post",
+            meta=None,
+            title=None,
             annotations=None,
             description=IsStr(regex=r"^Create a new user\..*$", regex_flags=re.DOTALL),
             inputSchema={
@@ -233,9 +235,12 @@ class TestTools:
                 },
                 "required": ["name", "active"],
             },
+            outputSchema=None,
         )
         assert tools[1].model_dump() == dict(
             name="update_user_name_users",
+            meta=None,
+            title=None,
             annotations=None,
             description=IsStr(
                 regex=r"^Update a user's name\..*$", regex_flags=re.DOTALL
@@ -248,6 +253,7 @@ class TestTools:
                 },
                 "required": ["user_id", "name"],
             },
+            outputSchema=None,
         )
 
     async def test_call_create_user_tool(
@@ -979,7 +985,9 @@ async def test_none_path_parameters_rejected(
     # Create a client and try to call a tool with a None path parameter
     async with Client(mcp_server) as client:
         # get_user has a required path parameter user_id
-        with pytest.raises(ToolError, match="Missing required path parameters"):
+        with pytest.raises(
+            ToolError, match="Input validation error|Missing required path parameters"
+        ):
             await client.call_tool(
                 "update_user_name_users",
                 {

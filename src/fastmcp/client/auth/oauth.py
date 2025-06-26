@@ -80,7 +80,7 @@ class OAuthClientProvider(_MCPOAuthClientProvider):
         ServerOAuthMetadata instead of the restrictive MCP OAuthMetadata.
         """
         # Extract base URL per MCP spec
-        auth_base_url = self._get_authorization_base_url(server_url)
+        auth_base_url = self.context.get_authorization_base_url(server_url)
         url = urljoin(auth_base_url, "/.well-known/oauth-authorization-server")
 
         from mcp.types import LATEST_PROTOCOL_VERSION

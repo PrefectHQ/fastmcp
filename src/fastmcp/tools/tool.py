@@ -1,17 +1,15 @@
 from __future__ import annotations
 
 import inspect
-import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import pydantic_core
-from mcp.types import TextContent, ToolAnnotations
+from mcp.types import ContentBlock, TextContent, ToolAnnotations
 from mcp.types import Tool as MCPTool
 from pydantic import Field
 
-import fastmcp
 from fastmcp.server.dependencies import get_context
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.json_schema import compress_schema
@@ -20,7 +18,6 @@ from fastmcp.utilities.types import (
     Audio,
     File,
     Image,
-    MCPContent,
     find_kwarg_by_type,
     get_cached_typeadapter,
 )
@@ -94,7 +91,7 @@ class Tool(FastMCPComponent):
             enabled=enabled,
         )
 
-    async def run(self, arguments: dict[str, Any]) -> list[MCPContent]:
+    async def run(self, arguments: dict[str, Any]) -> list[ContentBlock]:
         """Run the tool with arguments."""
         raise NotImplementedError("Subclasses must implement run()")
 
@@ -159,7 +156,7 @@ class FunctionTool(Tool):
             enabled=enabled if enabled is not None else True,
         )
 
-    async def run(self, arguments: dict[str, Any]) -> list[MCPContent]:
+    async def run(self, arguments: dict[str, Any]) -> list[ContentBlock]:
         """Run the tool with arguments."""
         from fastmcp.server.context import Context
 
@@ -168,35 +165,6 @@ class FunctionTool(Tool):
         context_kwarg = find_kwarg_by_type(self.fn, kwarg_type=Context)
         if context_kwarg and context_kwarg not in arguments:
             arguments[context_kwarg] = get_context()
-
-        if fastmcp.settings.tool_attempt_parse_json_args:
-            # Pre-parse data from JSON in order to handle cases like `["a", "b", "c"]`
-            # being passed in as JSON inside a string rather than an actual list.
-            #
-            # Claude desktop is prone to this - in fact it seems incapable of NOT doing
-            # this. For sub-models, it tends to pass dicts (JSON objects) as JSON strings,
-            # which can be pre-parsed here.
-            signature = inspect.signature(self.fn)
-            for param_name in self.parameters["properties"]:
-                arg = arguments.get(param_name, None)
-                # if not in signature, we won't have annotations, so skip logic
-                if param_name not in signature.parameters:
-                    continue
-                # if not a string, we won't have a JSON to parse, so skip logic
-                if not isinstance(arg, str):
-                    continue
-                # skip if the type is a simple type (int, float, bool)
-                if signature.parameters[param_name].annotation in (
-                    int,
-                    float,
-                    bool,
-                ):
-                    continue
-                try:
-                    arguments[param_name] = json.loads(arg)
-
-                except json.JSONDecodeError:
-                    pass
 
         type_adapter = get_cached_typeadapter(self.fn)
         result = type_adapter.validate_python(arguments)
@@ -280,12 +248,12 @@ def _convert_to_content(
     result: Any,
     serializer: Callable[[Any], str] | None = None,
     _process_as_single_item: bool = False,
-) -> list[MCPContent]:
+) -> list[ContentBlock]:
     """Convert a result to a sequence of content objects."""
     if result is None:
         return []
 
-    if isinstance(result, MCPContent):
+    if isinstance(result, ContentBlock):
         return [result]
 
     if isinstance(result, Image):
@@ -308,7 +276,7 @@ def _convert_to_content(
         other_content = []
 
         for item in result:
-            if isinstance(item, MCPContent | Image | Audio | File):
+            if isinstance(item, ContentBlock | Image | Audio | File):
                 mcp_types.append(_convert_to_content(item)[0])
             else:
                 other_content.append(item)

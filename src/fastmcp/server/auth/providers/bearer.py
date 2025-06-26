@@ -1,6 +1,6 @@
 import time
 from dataclasses import dataclass
-from typing import Any, TypedDict
+from typing import Any
 
 import httpx
 from authlib.jose import JsonWebKey, JsonWebToken
@@ -18,6 +18,7 @@ from mcp.shared.auth import (
     OAuthToken,
 )
 from pydantic import AnyHttpUrl, SecretStr, ValidationError
+from typing_extensions import TypedDict
 
 from fastmcp.server.auth.auth import (
     ClientRegistrationOptions,
@@ -383,6 +384,21 @@ class BearerAuthProvider(OAuthProvider):
         elif isinstance(scope_claim, list):
             return scope_claim
         return []
+
+    async def verify_token(self, token: str) -> AccessToken | None:
+        """
+        Verify a bearer token and return access info if valid.
+
+        This method implements the TokenVerifier protocol by delegating
+        to our existing load_access_token method.
+
+        Args:
+            token: The JWT token string to validate
+
+        Returns:
+            AccessToken object if valid, None if invalid or expired
+        """
+        return await self.load_access_token(token)
 
     # --- Unused OAuth server methods ---
     async def get_client(self, client_id: str) -> OAuthClientInformationFull | None:

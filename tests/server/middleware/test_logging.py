@@ -238,7 +238,7 @@ class TestLoggingMiddlewareIntegration:
         """Test that logging middleware captures successful operations."""
         from fastmcp.client import Client
 
-        logging_server.add_middleware(LoggingMiddleware())
+        logging_server.add_middleware(LoggingMiddleware(methods=["tools/call"]))
 
         with caplog.at_level(logging.INFO):
             async with Client(logging_server) as client:
@@ -263,7 +263,7 @@ class TestLoggingMiddlewareIntegration:
         """Test that logging middleware captures failed operations."""
         from fastmcp.client import Client
 
-        logging_server.add_middleware(LoggingMiddleware())
+        logging_server.add_middleware(LoggingMiddleware(methods=["tools/call"]))
 
         with caplog.at_level(logging.INFO):
             async with Client(logging_server) as client:
@@ -284,7 +284,9 @@ class TestLoggingMiddlewareIntegration:
         from fastmcp.client import Client
 
         logging_server.add_middleware(
-            LoggingMiddleware(include_payloads=True, max_payload_length=500)
+            LoggingMiddleware(
+                include_payloads=True, max_payload_length=500, methods=["tools/call"]
+            )
         )
 
         with caplog.at_level(logging.INFO):
@@ -306,7 +308,7 @@ class TestLoggingMiddlewareIntegration:
         from fastmcp.client import Client
 
         logging_server.add_middleware(
-            StructuredLoggingMiddleware(include_payloads=True)
+            StructuredLoggingMiddleware(include_payloads=True, methods=["tools/call"])
         )
 
         with caplog.at_level(logging.INFO):
@@ -339,7 +341,9 @@ class TestLoggingMiddlewareIntegration:
 
         from fastmcp.client import Client
 
-        logging_server.add_middleware(StructuredLoggingMiddleware())
+        logging_server.add_middleware(
+            StructuredLoggingMiddleware(methods=["tools/call"])
+        )
 
         with caplog.at_level(logging.INFO):
             async with Client(logging_server) as client:
@@ -376,7 +380,16 @@ class TestLoggingMiddlewareIntegration:
         """Test logging middleware with various MCP operations."""
         from fastmcp.client import Client
 
-        logging_server.add_middleware(LoggingMiddleware())
+        logging_server.add_middleware(
+            LoggingMiddleware(
+                methods=[
+                    "tools/call",
+                    "resources/list",
+                    "prompts/get",
+                    "resources/read",
+                ]
+            )
+        )
 
         with caplog.at_level(logging.INFO):
             async with Client(logging_server) as client:
@@ -384,7 +397,7 @@ class TestLoggingMiddlewareIntegration:
                 await client.call_tool("simple_operation", {"data": "test"})
                 await client.read_resource("log://test")
                 await client.get_prompt("test_prompt")
-                await client.list_tools()
+                await client.list_resources()
 
         log_text = caplog.text
 
@@ -413,7 +426,10 @@ class TestLoggingMiddlewareIntegration:
 
         logging_server.add_middleware(
             LoggingMiddleware(
-                logger=custom_logger, log_level=logging.DEBUG, include_payloads=True
+                logger=custom_logger,
+                log_level=logging.DEBUG,
+                include_payloads=True,
+                methods=["tools/call"],
             )
         )
 

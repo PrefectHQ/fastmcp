@@ -9,9 +9,9 @@ from collections.abc import Awaitable, Callable, Sequence
 from typing import Any
 
 import pydantic_core
+from mcp.types import ContentBlock, PromptMessage, Role, TextContent
 from mcp.types import Prompt as MCPPrompt
 from mcp.types import PromptArgument as MCPPromptArgument
-from mcp.types import PromptMessage, Role, TextContent
 from pydantic import Field, TypeAdapter
 
 from fastmcp.exceptions import PromptError
@@ -21,7 +21,6 @@ from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import (
     FastMCPBaseModel,
-    MCPContent,
     find_kwarg_by_type,
     get_cached_typeadapter,
 )
@@ -30,7 +29,7 @@ logger = get_logger(__name__)
 
 
 def Message(
-    content: str | MCPContent, role: Role | None = None, **kwargs: Any
+    content: str | ContentBlock, role: Role | None = None, **kwargs: Any
 ) -> PromptMessage:
     """A user-friendly constructor for PromptMessage."""
     if isinstance(content, str):
