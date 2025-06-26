@@ -385,6 +385,21 @@ class BearerAuthProvider(OAuthProvider):
             return scope_claim
         return []
 
+    async def verify_token(self, token: str) -> AccessToken | None:
+        """
+        Verify a bearer token and return access info if valid.
+
+        This method implements the TokenVerifier protocol by delegating
+        to our existing load_access_token method.
+
+        Args:
+            token: The JWT token string to validate
+
+        Returns:
+            AccessToken object if valid, None if invalid or expired
+        """
+        return await self.load_access_token(token)
+
     # --- Unused OAuth server methods ---
     async def get_client(self, client_id: str) -> OAuthClientInformationFull | None:
         raise NotImplementedError("Client management not supported")
