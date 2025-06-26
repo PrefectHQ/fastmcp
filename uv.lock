@@ -472,7 +472,7 @@ requires-dist = [
     { name = "authlib", specifier = ">=1.5.2" },
     { name = "exceptiongroup", specifier = ">=1.2.2" },
     { name = "httpx", specifier = ">=0.28.1" },
-    { name = "mcp", specifier = ">=1.9.4,<2.0.0" },
+    { name = "mcp", specifier = ">=1.9.4,<1.10.0" },
     { name = "openapi-pydantic", specifier = ">=0.5.1" },
     { name = "python-dotenv", specifier = ">=1.1.0" },
     { name = "rich", specifier = ">=13.9.4" },
