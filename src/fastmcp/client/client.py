@@ -676,7 +676,7 @@ class Client(Generic[ClientTransportT]):
         arguments: dict[str, Any] | None = None,
         timeout: datetime.timedelta | float | int | None = None,
         progress_handler: ProgressHandler | None = None,
-    ) -> list[ContentBlock] | dict[str, Any] | type:
+    ) -> list[ContentBlock] | dict[str, Any] | Any:
         """Call a tool on the server.
 
         Unlike call_tool_mcp, this method raises a ToolError if the tool call results in an error.
@@ -688,10 +688,11 @@ class Client(Generic[ClientTransportT]):
             progress_handler (ProgressHandler | None, optional): The progress handler to use for the tool call. Defaults to None.
 
         Returns:
-            list[ContentBlock] | dict[str, Any]:
+            list[ContentBlock] | dict[str, Any] | Any:
                 The content returned by the tool. If the tool returns structured
-                outputs, they are returned as a dictionary; otherwise, a list of
-                content blocks is returned. Note: to receive both structured and
+                outputs, they are returned as a dataclass (if an output schema
+                is available) or a dictionary; otherwise, a list of content
+                blocks is returned. Note: to receive both structured and
                 unstructured outputs, use call_tool_mcp instead and access the
                 raw result object.
 

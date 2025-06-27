@@ -6,10 +6,10 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from mcp.types import ContentBlock, ToolAnnotations
+from mcp.types import ToolAnnotations
 from pydantic import ConfigDict
 
-from fastmcp.tools.tool import ParsedFunction, Tool
+from fastmcp.tools.tool import ParsedFunction, Tool, ToolResult
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import NotSet, NotSetT, get_cached_typeadapter
 
@@ -22,7 +22,7 @@ _current_tool: ContextVar[TransformedTool | None] = ContextVar(
 )
 
 
-async def forward(**kwargs) -> Any:
+async def forward(**kwargs) -> ToolResult:
     """Forward to parent tool with argument transformation applied.
 
     This function can only be called from within a transformed tool's custom
@@ -38,7 +38,7 @@ async def forward(**kwargs) -> Any:
         **kwargs: Arguments to forward to the parent tool (using transformed names).
 
     Returns:
-        The result from the parent tool execution.
+        The ToolResult from the parent tool execution.
 
     Raises:
         RuntimeError: If called outside a transformed tool context.
@@ -219,7 +219,7 @@ class TransformedTool(Tool):
     forwarding_fn: Callable[..., Any]  # Always present, handles arg transformation
     transform_args: dict[str, ArgTransform]
 
-    async def run(self, arguments: dict[str, Any]) -> list[ContentBlock]:
+    async def run(self, arguments: dict[str, Any]) -> ToolResult:
         """Run the tool with context set for forward() functions.
 
         This method executes the tool's function while setting up the context
@@ -230,8 +230,7 @@ class TransformedTool(Tool):
             arguments: Dictionary of arguments to pass to the tool's function.
 
         Returns:
-            List of content objects (text, image, or embedded resources) representing
-            the tool's output.
+            ToolResult object containing content and optional structured output.
         """
         from fastmcp.tools.tool import _convert_to_content
 
@@ -269,7 +268,15 @@ class TransformedTool(Tool):
         token = _current_tool.set(self)
         try:
             result = await self.fn(**arguments)
-            return _convert_to_content(result, serializer=self.serializer)
+            
+            # If transform function returns ToolResult, use it directly
+            if isinstance(result, ToolResult):
+                return result
+            
+            # Otherwise convert to content and create basic ToolResult
+            from fastmcp.tools.tool import _convert_to_content
+            unstructured_result = _convert_to_content(result, serializer=self.serializer)
+            return ToolResult(content=unstructured_result)
         finally:
             _current_tool.reset(token)
 

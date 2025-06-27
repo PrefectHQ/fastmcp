@@ -58,7 +58,7 @@ from fastmcp.server.low_level import LowLevelServer
 from fastmcp.server.middleware import Middleware, MiddlewareContext
 from fastmcp.settings import Settings
 from fastmcp.tools import ToolManager
-from fastmcp.tools.tool import FunctionTool, Tool
+from fastmcp.tools.tool import FunctionTool, Tool, ToolResult
 from fastmcp.utilities.cache import TimedCache
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.logging import get_logger
@@ -593,7 +593,7 @@ class FastMCP(Generic[LifespanResultT]):
 
     async def _mcp_call_tool(
         self, key: str, arguments: dict[str, Any]
-    ) -> list[ContentBlock]:
+    ) -> list[ContentBlock] | tuple[list[ContentBlock], dict[str, Any]]:
         """
         Handle MCP 'callTool' requests.
 
@@ -610,22 +610,21 @@ class FastMCP(Generic[LifespanResultT]):
 
         async with fastmcp.server.context.Context(fastmcp=self):
             try:
-                return await self._call_tool(key, arguments)
+                result = await self._call_tool(key, arguments)
+                return result.to_mcp_result()
             except DisabledError:
                 raise NotFoundError(f"Unknown tool: {key}")
             except NotFoundError:
                 raise NotFoundError(f"Unknown tool: {key}")
 
-    async def _call_tool(
-        self, key: str, arguments: dict[str, Any]
-    ) -> list[ContentBlock]:
+    async def _call_tool(self, key: str, arguments: dict[str, Any]) -> ToolResult:
         """
         Applies this server's middleware and delegates the filtered call to the manager.
         """
 
         async def _handler(
             context: MiddlewareContext[mcp.types.CallToolRequestParams],
-        ) -> list[ContentBlock]:
+        ) -> ToolResult:
             tool = await self._tool_manager.get_tool(context.message.name)
             if not self._should_enable_component(tool):
                 raise NotFoundError(f"Unknown tool: {context.message.name!r}")

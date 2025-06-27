@@ -23,7 +23,7 @@ from fastmcp.resources import Resource, ResourceTemplate
 from fastmcp.resources.resource_manager import ResourceManager
 from fastmcp.server.context import Context
 from fastmcp.server.server import FastMCP
-from fastmcp.tools.tool import Tool
+from fastmcp.tools.tool import Tool, ToolResult
 from fastmcp.tools.tool_manager import ToolManager
 from fastmcp.utilities.logging import get_logger
 
@@ -232,7 +232,7 @@ class ProxyTool(Tool):
         self,
         arguments: dict[str, Any],
         context: Context | None = None,
-    ) -> list[ContentBlock]:
+    ) -> ToolResult:
         """Executes the tool by making a call through the client."""
         # This is where the remote execution logic lives.
         async with self._client:
@@ -242,7 +242,10 @@ class ProxyTool(Tool):
             )
         if result.isError:
             raise ToolError(cast(mcp.types.TextContent, result.content[0]).text)
-        return result.content
+        return ToolResult(
+            content=result.content,
+            structured_output=result.structuredContent,
+        )
 
 
 class ProxyResource(Resource):

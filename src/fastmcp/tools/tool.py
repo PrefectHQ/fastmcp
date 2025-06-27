@@ -5,7 +5,6 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Annotated, Any
 
-import mcp.types
 import pydantic_core
 from mcp.types import ContentBlock, TextContent, ToolAnnotations
 from mcp.types import Tool as MCPTool
@@ -24,7 +23,6 @@ from fastmcp.utilities.types import (
     StructuredOutput,
     find_kwarg_by_type,
     get_cached_typeadapter,
-    replace_type,
 )
 
 if TYPE_CHECKING:
@@ -35,6 +33,19 @@ logger = get_logger(__name__)
 
 def default_serializer(data: Any) -> str:
     return pydantic_core.to_json(data, fallback=str, indent=2).decode()
+
+
+@dataclass
+class ToolResult:
+    content: list[ContentBlock]
+    structured_output: dict[str, Any] | None = None
+
+    def to_mcp_result(
+        self,
+    ) -> list[ContentBlock] | tuple[list[ContentBlock], dict[str, Any]]:
+        if self.structured_output is None:
+            return self.content
+        return self.content, self.structured_output
 
 
 class Tool(FastMCPComponent):
@@ -106,9 +117,7 @@ class Tool(FastMCPComponent):
             enabled=enabled,
         )
 
-    async def run(
-        self, arguments: dict[str, Any]
-    ) -> list[ContentBlock] | tuple[list[ContentBlock], dict[str, Any]]:
+    async def run(self, arguments: dict[str, Any]) -> ToolResult:
         """
         Run the tool with arguments.
 
@@ -150,6 +159,18 @@ class Tool(FastMCPComponent):
 
 class FunctionTool(Tool):
     fn: Callable[..., Any]
+    wrap_primitive_output: bool = Field(
+        default=False,
+        description="""Whether to wrap the function's return value in a {"value": result} object.
+        
+        This is automatically set to True when a function has a primitive return type
+        annotation (int, str, bool, etc.) and FastMCP auto-generates an object schema
+        with a single "value" property to enable structured output support.
+        
+        When True, the function's raw return value gets wrapped as {"value": raw_result}
+        in the structured output, allowing clients to receive properly typed objects
+        even for primitive return types.""",
+    )
 
     @classmethod
     def from_function(
@@ -171,8 +192,18 @@ class FunctionTool(Tool):
         if name is None and parsed_fn.name == "<lambda>":
             raise ValueError("You must provide a name for lambda functions")
 
+        wrap_primitive_output = False
         if isinstance(output_schema, NotSetT):
             output_schema = parsed_fn.output_schema
+            # convert primitive types to object with a single "value" property
+            if output_schema and output_schema.get("type") != "object":
+                wrap_primitive_output = True
+                output_schema = {
+                    "type": "object",
+                    "properties": {"value": output_schema | {"title": "Value"}},
+                    "required": ["value"],
+                    "title": "Result",
+                }
 
         return cls(
             fn=parsed_fn.fn,
@@ -184,11 +215,10 @@ class FunctionTool(Tool):
             tags=tags or set(),
             serializer=serializer,
             enabled=enabled if enabled is not None else True,
+            wrap_primitive_output=wrap_primitive_output,
         )
 
-    async def run(
-        self, arguments: dict[str, Any]
-    ) -> list[ContentBlock] | tuple[list[ContentBlock], dict[str, Any]]:
+    async def run(self, arguments: dict[str, Any]) -> ToolResult:
         """Run the tool with arguments."""
         from fastmcp.server.context import Context
 
@@ -205,18 +235,20 @@ class FunctionTool(Tool):
 
         unstructured_result = _convert_to_content(result, serializer=self.serializer)
 
-        structured_result = None
+        structured_output = None
         if isinstance(result, StructuredOutput):
-            structured_result = result.to_structured_output()
+            structured_output = result.to_structured_output()
         elif self.output_schema is not None:
-            structured_result = pydantic_core.to_jsonable_python(result, fallback=str)
+            raw_result = pydantic_core.to_jsonable_python(result, fallback=str)
+            if self.wrap_primitive_output:
+                structured_output = {"value": raw_result}
+            else:
+                structured_output = raw_result
 
-        # return only the unstructured result if there is no structured output
-        if structured_result is None:
-            return unstructured_result
-
-        # return both the unstructured and structured results if there is structured output
-        return (unstructured_result, structured_result)
+        return ToolResult(
+            content=unstructured_result,
+            structured_output=structured_output,
+        )
 
 
 @dataclass
@@ -284,17 +316,9 @@ class ParsedFunction:
 
         output_schema = None
         output_type = inspect.signature(fn).return_annotation
-        if output_type is not inspect._empty:
+        if output_type not in (inspect._empty, Image, Audio, File, StructuredOutput):
             try:
-                replaced_output_type = replace_type(
-                    output_type,
-                    {
-                        Image: mcp.types.ImageContent,
-                        Audio: mcp.types.AudioContent,
-                        File: mcp.types.EmbeddedResource,
-                    },
-                )
-                output_type_adapter = get_cached_typeadapter(replaced_output_type)
+                output_type_adapter = get_cached_typeadapter(output_type)
                 output_schema = output_type_adapter.json_schema()
             except PydanticSchemaGenerationError:
                 logger.debug(f"Unable to generate schema for type {output_type!r}")
