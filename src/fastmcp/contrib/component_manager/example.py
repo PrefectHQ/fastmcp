@@ -19,7 +19,7 @@ mcp_token = key_pair.create_token(
     scopes=["mcp:write", "mcp:read"],
 )
 mcp = FastMCP(
-    "Component Manager",
+    name="Component Manager",
     instructions="This is a test server with component manager.",
     auth=auth,
 )
@@ -35,7 +35,7 @@ mounted_token = key_pair.create_token(
     scopes=["mounted:write", "mcp:read"],
 )
 mounted = FastMCP(
-    "Component Manager",
+    name="Component Manager",
     instructions="This is a test server with component manager.",
     auth=auth,
 )

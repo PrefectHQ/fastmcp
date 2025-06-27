@@ -28,7 +28,7 @@ This module is part of the `fastmcp.contrib` package. No separate installation i
 from fastmcp import FastMCP
 from fastmcp.contrib.component_manager import set_up_component_manager
 
-mcp = FastMCP("Component Manager", instructions="This is a test server with component manager.")
+mcp = FastMCP(name="Component Manager", instructions="This is a test server with component manager.")
 set_up_component_manager(server=mcp)
 ```
 
@@ -95,7 +95,7 @@ set_up_component_manager(server=mcp, path="/admin")
 If your server uses authentication:
 
 ```python
-mcp = FastMCP("Component Manager", instructions="This is a test server with component manager.", auth=auth)
+mcp = FastMCP(name="Component Manager", instructions="This is a test server with component manager.", auth=auth)
 set_up_component_manager(server=mcp, required_scopes=["write", "read"])
 ```
 
@@ -117,10 +117,10 @@ curl -X POST \
 You can also combine different configurations when working with mounted servers — for example, using different scopes:
 
 ```python
-mcp = FastMCP("Component Manager", instructions="This is a test server with component manager.", auth=auth)
+mcp = FastMCP(name="Component Manager", instructions="This is a test server with component manager.", auth=auth)
 set_up_component_manager(server=mcp, required_scopes=["mcp:write"])
 
-mounted = FastMCP("Component Manager", instructions="This is a test server with component manager.", auth=auth)
+mounted = FastMCP(name="Component Manager", instructions="This is a test server with component manager.", auth=auth)
 set_up_component_manager(server=mounted, required_scopes=["mounted:write"])
 
 mcp.mount(server=mounted, prefix="mo")
