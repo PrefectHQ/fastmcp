@@ -45,8 +45,13 @@ async def echo_tool(arg1: str) -> str:
 def echo_tool_result_factory(arg1: str) -> CallToolRequestResult:
     """A tool that returns a result based on the input arguments."""
     return CallToolRequestResult(
-        isError=False,
-        content=[TextContent(text=f"{arg1}", type="text")],
+        isError=True,
+        content=[
+            TextContent(
+                text="Output validation error: outputSchema defined but no structured output returned",
+                type="text",
+            )
+        ],
         tool="echo_tool",
         arguments={"arg1": arg1},
     )
@@ -59,7 +64,15 @@ async def no_return_tool(arg1: str) -> None:
 def no_return_tool_result_factory(arg1: str) -> CallToolRequestResult:
     """A tool that returns a result based on the input arguments."""
     return CallToolRequestResult(
-        isError=False, content=[], tool="no_return_tool", arguments={"arg1": arg1}
+        isError=True,
+        content=[
+            TextContent(
+                text="Output validation error: outputSchema defined but no structured output returned",
+                type="text",
+            )
+        ],
+        tool="no_return_tool",
+        arguments={"arg1": arg1},
     )
 
 
