@@ -44,6 +44,7 @@ class TestComponentManagementRoutes:
         mcp = FastMCP("TestServer")
         mcp.mount(mounted_mcp, prefix="sub")
         set_up_component_manager(server=mcp)
+
         # Add a test tool
         @mcp.tool
         def test_tool() -> str:
@@ -345,7 +346,9 @@ class TestAuthComponentManagementRoutes:
             audience="my-dev-server",
         )
         self.mcp = FastMCP("TestServerWithAuth", auth=self.auth)
-        set_up_component_manager(server=self.mcp, required_scopes=["tool:write", "tool:read"])
+        set_up_component_manager(
+            server=self.mcp, required_scopes=["tool:write", "tool:read"]
+        )
         self.token = key_pair.create_token(
             subject="dev-user",
             issuer="https://dev.example.com",
@@ -445,7 +448,7 @@ class TestAuthComponentManagementRoutes:
         assert response.status_code == 200
         assert response.json() == {"message": "Enabled resource: data://test_resource"}
         assert resource.enabled is True
-        
+
     async def test_unauthorized_disable_resource(self):
         """Test that unauthenticated requests to disable a resource are rejected."""
         resource = await self.mcp._resource_manager.get_resource("data://test_resource")

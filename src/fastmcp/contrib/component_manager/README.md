@@ -26,7 +26,7 @@ This module is part of the `fastmcp.contrib` package. No separate installation i
 
 ```python
 from fastmcp import FastMCP
-from fastmcp.contrib.component_manager.component_manager import set_up_component_manager
+from fastmcp.contrib.component_manager import set_up_component_manager
 
 mcp = FastMCP("Component Manager", instructions="This is a test server with component manager.")
 set_up_component_manager(server=mcp)
@@ -36,7 +36,7 @@ set_up_component_manager(server=mcp)
 
 ## 🔗 API Endpoints
 
-By default, all endpoints are registered at `/` by default, or under the custom path if one is provided.
+All endpoints are registered at `/` by default, or under the custom path if one is provided.
 
 ### Tools
 
@@ -52,7 +52,7 @@ POST /resources/{uri:path}/enable
 POST /resources/{uri:path}/disable
 ```
 
- * Works with template URIs too
+ * Supports template URIs as well
 ```http
 POST /resources/example://test/{id}/enable
 POST /resources/example://test/{id}/disable
@@ -63,6 +63,19 @@ POST /resources/example://test/{id}/disable
 ```http
 POST /prompts/{prompt_name}/enable
 POST /prompts/{prompt_name}/disable
+```
+---
+
+#### 🧪 Example Response
+
+```http
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+{
+  "message": "Disabled tool: example_tool"
+}
+
 ```
 
 ---
@@ -83,7 +96,7 @@ If your server uses authentication:
 
 ```python
 mcp = FastMCP("Component Manager", instructions="This is a test server with component manager.", auth=auth)
-set_up_component_manager(server=mcp, required_scopes=["tools:write", "tools:read"])
+set_up_component_manager(server=mcp, required_scopes=["write", "read"])
 ```
 
 ---
@@ -95,6 +108,38 @@ curl -X POST \
   -H "Authorization: Bearer YOUR_TOKEN_HERE" \
   -H "Content-Type: application/json" \
   http://localhost:8001/tools/example_tool/enable
+```
+
+---
+
+## 🧱 Working with Mounted Servers
+
+You can also combine different configurations when working with mounted servers — for example, using different scopes:
+
+```python
+mcp = FastMCP("Component Manager", instructions="This is a test server with component manager.", auth=auth)
+set_up_component_manager(server=mcp, required_scopes=["mcp:write"])
+
+mounted = FastMCP("Component Manager", instructions="This is a test server with component manager.", auth=auth)
+set_up_component_manager(server=mounted, required_scopes=["mounted:write"])
+
+mcp.mount(server=mounted, prefix="mo")
+```
+
+This allows you to grant different levels of access:
+
+```bash
+# Accessing the main server gives you control over both local and mounted components
+curl -X POST \
+  -H "Authorization: Bearer YOUR_TOKEN_HERE" \
+  -H "Content-Type: application/json" \
+  http://localhost:8001/tools/mo_example_tool/enable
+
+# Accessing the mounted server gives you control only over its own components
+curl -X POST \
+  -H "Authorization: Bearer YOUR_TOKEN_HERE" \
+  -H "Content-Type: application/json" \
+  http://localhost:8002/tools/example_tool/enable
 ```
 
 ---

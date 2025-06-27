@@ -1,16 +1,22 @@
+"""
+ComponentService: Provides async management of tools, resources, and prompts for FastMCP servers.
+Handles enabling/disabling components both locally and across mounted servers.
+"""
+
 from fastmcp.exceptions import NotFoundError
 from fastmcp.prompts.prompt import Prompt
 from fastmcp.resources.resource import Resource
 from fastmcp.resources.template import ResourceTemplate
-from fastmcp.tools.tool import Tool
-
-from fastmcp.utilities.logging import get_logger
 from fastmcp.server.server import FastMCP, has_resource_prefix, remove_resource_prefix
+from fastmcp.tools.tool import Tool
+from fastmcp.utilities.logging import get_logger
 
 logger = get_logger(__name__)
-    
-class ComponentService:    
+
+
+class ComponentService:
     """Service for managing components like tools, resources, and prompts."""
+
     def __init__(self, server: FastMCP):
         self._server = server
         self._tool_manager = server._tool_manager
@@ -33,7 +39,7 @@ class ComponentService:
             tool: Tool = await self._server.get_tool(key)
             tool.enable()
             return tool
-        
+
         # 2. Check mounted servers using the filtered protocol path.
         for mounted in reversed(self._tool_manager._mounted_servers):
             if mounted.prefix:
@@ -63,7 +69,7 @@ class ComponentService:
             tool: Tool = await self._server.get_tool(key)
             tool.disable()
             return tool
-        
+
         # 2. Check mounted servers using the filtered protocol path.
         for mounted in reversed(self._tool_manager._mounted_servers):
             if mounted.prefix:
@@ -112,11 +118,13 @@ class ComponentService:
                         mounted.resource_prefix_format,
                     )
                     mounted_service = ComponentService(mounted.server)
-                    mounted_resource: Resource | ResourceTemplate = await mounted_service._enable_resource(key)
+                    mounted_resource: (
+                        Resource | ResourceTemplate
+                    ) = await mounted_service._enable_resource(key)
                     mounted_resource.enable()
                     return mounted_resource
             else:
-                continue     
+                continue
         raise NotFoundError(f"Unknown resource: {key}")
 
     async def _disable_resource(self, key: str) -> Resource | ResourceTemplate:
@@ -154,11 +162,13 @@ class ComponentService:
                         mounted.resource_prefix_format,
                     )
                     mounted_service = ComponentService(mounted.server)
-                    mounted_resource: Resource | ResourceTemplate = await mounted_service._disable_resource(key)
+                    mounted_resource: (
+                        Resource | ResourceTemplate
+                    ) = await mounted_service._disable_resource(key)
                     mounted_resource.disable()
                     return mounted_resource
             else:
-                continue     
+                continue
         raise NotFoundError(f"Unknown resource: {key}")
 
     async def _enable_prompt(self, key: str) -> Prompt:
@@ -177,7 +187,7 @@ class ComponentService:
             prompt: Prompt = await self._server.get_prompt(key)
             prompt.enable()
             return prompt
-        
+
         # 2. Check mounted servers using the filtered protocol path.
         for mounted in reversed(self._prompt_manager._mounted_servers):
             if mounted.prefix:
@@ -190,7 +200,7 @@ class ComponentService:
                 else:
                     continue
         raise NotFoundError(f"Unknown prompt: {key}")
-    
+
     async def _disable_prompt(self, key: str) -> Prompt:
         """Handle 'disablePrompt' requests.
 
@@ -206,7 +216,7 @@ class ComponentService:
             prompt: Prompt = await self._server.get_prompt(key)
             prompt.disable()
             return prompt
-        
+
         # 2. Check mounted servers using the filtered protocol path.
         for mounted in reversed(self._prompt_manager._mounted_servers):
             if mounted.prefix:
