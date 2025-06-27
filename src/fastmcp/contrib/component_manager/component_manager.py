@@ -9,7 +9,7 @@ from fastmcp.contrib.component_manager.component_service import ComponentService
 from fastmcp.exceptions import NotFoundError
 
 from mcp.server.auth.middleware.bearer_auth import RequireAuthMiddleware
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from fastmcp.server.server import FastMCP
 
@@ -25,7 +25,8 @@ def set_up_component_manager(
     """
 
     service = ComponentService(server)
-    routes: list[Route] | list[Mount] = []
+    routes: list[Route] = []
+    mounts: list[Mount] = []
     route_configs = {
         "tool": {
             "param": "tool_name",
@@ -50,28 +51,29 @@ def set_up_component_manager(
         )        
     else:
         if root_path != "/":
-            routes.append(
-                build_component_manager_enpoints(
+            mounts.append(
+                build_component_manager_mount(
                     route_configs, root_path, required_scopes
             ))
         else:
-            routes.append(
-                build_component_manager_enpoints(
+            mounts.append(
+                build_component_manager_mount(
                     {"tool": route_configs["tool"]}, "/tools", required_scopes
             ))
-            routes.append(
-                build_component_manager_enpoints(
+            mounts.append(
+                build_component_manager_mount(
                     {"resource": route_configs["resource"]}, "/resources", required_scopes
             ))
-            routes.append(
-                build_component_manager_enpoints(
+            mounts.append(
+                build_component_manager_mount(
                     {"prompt": route_configs["prompt"]}, "/prompts", required_scopes
             ))
 
     server._additional_http_routes.extend(routes)
+    server._additional_http_routes.extend(mounts)
 
 
-def build_component_manager_enpoints(route_configs, root_path, required_scopes=None) -> list[Route] | Mount:
+def build_component_manager_enpoints(route_configs, root_path, required_scopes=None) -> list[Route]:
     component_management_routes: list[Route] = []
 
     for component in route_configs:
@@ -105,11 +107,44 @@ def build_component_manager_enpoints(route_configs, root_path, required_scopes=N
             route = Route(path, endpoint=endpoint, methods=["POST"])
             component_management_routes.append(route)
 
-    if required_scopes is None:
-        return component_management_routes
-    else:
-        return Mount(
-            f"{root_path}",
-            app=RequireAuthMiddleware(Starlette(routes=component_management_routes),
-            required_scopes)
-        )
+    return component_management_routes
+
+def build_component_manager_mount(route_configs, root_path, required_scopes) -> Mount:
+    component_management_routes: list[Route] = []
+
+    for component in route_configs:
+        config: dict[str, Any] = route_configs[component]
+        for action in ["enable", "disable"]:
+
+            async def endpoint(
+                request: Request,
+                action: str = action,
+                component: str = component,
+                config: dict[str, Any] = config,
+            ):
+                name = request.path_params[config["param"].split(":")[0]]
+
+                try:
+                    await config[action](name)
+                    return JSONResponse(
+                        {"message": f"{action.capitalize()}d {component}: {name}"}
+                    )
+                except NotFoundError:
+                    raise StarletteHTTPException(
+                        status_code=404,
+                        detail=f"Unknown {component}: {name}",
+                    )
+
+            if required_scopes is not None and root_path in ["/tools", "/resources", "/prompts"]:
+                path = f"/{{{config['param']}}}/{action}"
+            else:
+                path = f"/{component}s/{{{config['param']}}}/{action}"
+
+            route = Route(path, endpoint=endpoint, methods=["POST"])
+            component_management_routes.append(route)
+
+    return Mount(
+        f"{root_path}",
+        app=RequireAuthMiddleware(Starlette(routes=component_management_routes),
+        required_scopes)
+    )

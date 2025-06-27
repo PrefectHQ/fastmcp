@@ -41,7 +41,7 @@ class ComponentService:
                     tool_key = key.removeprefix(f"{mounted.prefix}_")
                     mounted_service = ComponentService(mounted.server)
                     tool = await mounted_service._enable_tool(tool_key)
-                    tool.disable()
+                    tool.enable()
                     return tool
                 else:
                     continue
@@ -112,9 +112,9 @@ class ComponentService:
                         mounted.resource_prefix_format,
                     )
                     mounted_service = ComponentService(mounted.server)
-                    resource = await mounted_service._enable_resource(key)
-                    resource.enable()
-                    return resource
+                    mounted_resource: Resource | ResourceTemplate = await mounted_service._enable_resource(key)
+                    mounted_resource.enable()
+                    return mounted_resource
             else:
                 continue     
         raise NotFoundError(f"Unknown resource: {key}")
@@ -154,9 +154,9 @@ class ComponentService:
                         mounted.resource_prefix_format,
                     )
                     mounted_service = ComponentService(mounted.server)
-                    resource = await mounted_service._disable_resource(key)
-                    resource.disable()
-                    return resource
+                    mounted_resource: Resource | ResourceTemplate = await mounted_service._disable_resource(key)
+                    mounted_resource.disable()
+                    return mounted_resource
             else:
                 continue     
         raise NotFoundError(f"Unknown resource: {key}")
