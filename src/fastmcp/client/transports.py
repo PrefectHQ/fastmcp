@@ -8,7 +8,7 @@ import sys
 import warnings
 from collections.abc import AsyncIterator, Callable
 from pathlib import Path
-from typing import Any, Literal, TypedDict, TypeVar, cast, overload
+from typing import Any, Literal, TypeVar, cast, overload
 from urllib.parse import urlparse, urlunparse
 
 import anyio
@@ -19,7 +19,7 @@ from mcp.client.session import ListRootsFnT, LoggingFnT, MessageHandlerFnT, Samp
 from mcp.server.fastmcp import FastMCP as FastMCP1Server
 from mcp.shared.memory import create_client_server_memory_streams
 from pydantic import AnyUrl
-from typing_extensions import Unpack
+from typing_extensions import TypedDict, Unpack
 
 import fastmcp
 from fastmcp.client.auth.bearer import BearerAuth

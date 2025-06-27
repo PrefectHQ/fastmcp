@@ -32,6 +32,7 @@ class LoggingMiddleware(Middleware):
         log_level: int = logging.INFO,
         include_payloads: bool = False,
         max_payload_length: int = 1000,
+        methods: list[str] | None = None,
     ):
         """Initialize logging middleware.
 
@@ -40,11 +41,13 @@ class LoggingMiddleware(Middleware):
             log_level: Log level for messages (default: INFO)
             include_payloads: Whether to include message payloads in logs
             max_payload_length: Maximum length of payload to log (prevents huge logs)
+            methods: List of methods to log. If None, logs all methods.
         """
         self.logger = logger or logging.getLogger("fastmcp.requests")
         self.log_level = log_level
         self.include_payloads = include_payloads
         self.max_payload_length = max_payload_length
+        self.methods = methods
 
     def _format_message(self, context: MiddlewareContext) -> str:
         """Format a message for logging."""
@@ -68,6 +71,8 @@ class LoggingMiddleware(Middleware):
     async def on_message(self, context: MiddlewareContext, call_next: CallNext) -> Any:
         """Log all messages."""
         message_info = self._format_message(context)
+        if self.methods and context.method not in self.methods:
+            return await call_next(context)
 
         self.logger.log(self.log_level, f"Processing message: {message_info}")
 
@@ -105,6 +110,7 @@ class StructuredLoggingMiddleware(Middleware):
         logger: logging.Logger | None = None,
         log_level: int = logging.INFO,
         include_payloads: bool = False,
+        methods: list[str] | None = None,
     ):
         """Initialize structured logging middleware.
 
@@ -112,10 +118,12 @@ class StructuredLoggingMiddleware(Middleware):
             logger: Logger instance to use. If None, creates a logger named 'fastmcp.structured'
             log_level: Log level for messages (default: INFO)
             include_payloads: Whether to include message payloads in logs
+            methods: List of methods to log. If None, logs all methods.
         """
         self.logger = logger or logging.getLogger("fastmcp.structured")
         self.log_level = log_level
         self.include_payloads = include_payloads
+        self.methods = methods
 
     def _create_log_entry(
         self, context: MiddlewareContext, event: str, **extra_fields
@@ -141,6 +149,9 @@ class StructuredLoggingMiddleware(Middleware):
     async def on_message(self, context: MiddlewareContext, call_next: CallNext) -> Any:
         """Log structured message information."""
         start_entry = self._create_log_entry(context, "request_start")
+        if self.methods and context.method not in self.methods:
+            return await call_next(context)
+
         self.logger.log(self.log_level, json.dumps(start_entry))
 
         try:

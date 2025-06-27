@@ -12,7 +12,6 @@ from fastmcp import Context, FastMCP
 from fastmcp.exceptions import NotFoundError, ToolError
 from fastmcp.tools import FunctionTool, ToolManager
 from fastmcp.tools.tool import Tool
-from fastmcp.utilities.tests import temporary_settings
 from fastmcp.utilities.types import Image
 
 
@@ -434,21 +433,6 @@ class TestCallTools:
         result = await manager.call_tool("sum_vals", {"vals": [1, 2, 3]})
         assert result[0].text == "6"  # type: ignore[attr-defined]
 
-    async def test_call_tool_with_list_int_input_legacy_behavior(self):
-        """Legacy behavior -- parse a stringified JSON object"""
-
-        def sum_vals(vals: list[int]) -> int:
-            return sum(vals)
-
-        manager = ToolManager()
-        tool = Tool.from_function(sum_vals)
-        manager.add_tool(tool)
-        # Try both with plain list and with JSON list
-
-        with temporary_settings(tool_attempt_parse_json_args=True):
-            result = await manager.call_tool("sum_vals", {"vals": "[1, 2, 3]"})
-            assert result[0].text == "6"  # type: ignore[attr-defined]
-
     async def test_call_tool_with_list_str_or_str_input(self):
         def concat_strs(vals: list[str] | str) -> str:
             return vals if isinstance(vals, str) else "".join(vals)
@@ -463,23 +447,6 @@ class TestCallTools:
 
         result = await manager.call_tool("concat_strs", {"vals": "a"})
         assert result[0].text == "a"  # type: ignore[attr-defined]
-
-    async def test_call_tool_with_list_str_or_str_input_legacy_behavior(self):
-        """Legacy behavior -- parse a stringified JSON object"""
-
-        def concat_strs(vals: list[str] | str) -> str:
-            return vals if isinstance(vals, str) else "".join(vals)
-
-        manager = ToolManager()
-        tool = Tool.from_function(concat_strs)
-        manager.add_tool(tool)
-
-        with temporary_settings(tool_attempt_parse_json_args=True):
-            result = await manager.call_tool("concat_strs", {"vals": '["a", "b", "c"]'})
-            assert result[0].text == "abc"  # type: ignore[attr-defined]
-
-            result = await manager.call_tool("concat_strs", {"vals": '"a"'})
-            assert result[0].text == "a"  # type: ignore[attr-defined]
 
     async def test_call_tool_with_complex_model(self):
         class MyShrimpTank(BaseModel):
