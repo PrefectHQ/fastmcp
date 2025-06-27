@@ -30,6 +30,7 @@ from fastmcp.client.sampling import SamplingHandler, create_sampling_callback
 from fastmcp.exceptions import ToolError
 from fastmcp.server import FastMCP
 from fastmcp.utilities.exceptions import get_catch_handlers
+from fastmcp.utilities.json_schema_type import json_schema_to_type
 from fastmcp.utilities.mcp_config import MCPConfig
 
 from .transports import (
@@ -675,7 +676,7 @@ class Client(Generic[ClientTransportT]):
         arguments: dict[str, Any] | None = None,
         timeout: datetime.timedelta | float | int | None = None,
         progress_handler: ProgressHandler | None = None,
-    ) -> list[ContentBlock]:
+    ) -> list[ContentBlock] | dict[str, Any] | type:
         """Call a tool on the server.
 
         Unlike call_tool_mcp, this method raises a ToolError if the tool call results in an error.
@@ -687,8 +688,12 @@ class Client(Generic[ClientTransportT]):
             progress_handler (ProgressHandler | None, optional): The progress handler to use for the tool call. Defaults to None.
 
         Returns:
-            list[mcp.types.TextContent | mcp.types.ImageContent | mcp.types.AudioContent | mcp.types.EmbeddedResource]:
-                The content returned by the tool.
+            list[ContentBlock] | dict[str, Any]:
+                The content returned by the tool. If the tool returns structured
+                outputs, they are returned as a dictionary; otherwise, a list of
+                content blocks is returned. Note: to receive both structured and
+                unstructured outputs, use call_tool_mcp instead and access the
+                raw result object.
 
         Raises:
             ToolError: If the tool call results in an error.
@@ -703,4 +708,16 @@ class Client(Generic[ClientTransportT]):
         if result.isError:
             msg = cast(mcp.types.TextContent, result.content[0]).text
             raise ToolError(msg)
-        return result.content
+        elif result.structuredContent:
+            if name not in self.session._tool_output_schemas:
+                # refresh output schema cache
+                await self.session.list_tools()
+            if name in self.session._tool_output_schemas:
+                output_schema = self.session._tool_output_schemas.get(name)
+                if output_schema:
+                    output_type = json_schema_to_type(output_schema)
+                    return output_type(**result.structuredContent)
+
+            return result.structuredContent
+        else:
+            return result.content

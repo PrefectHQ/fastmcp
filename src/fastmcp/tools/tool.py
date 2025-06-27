@@ -21,6 +21,7 @@ from fastmcp.utilities.types import (
     Image,
     NotSet,
     NotSetT,
+    StructuredOutput,
     find_kwarg_by_type,
     get_cached_typeadapter,
     replace_type,
@@ -105,8 +106,18 @@ class Tool(FastMCPComponent):
             enabled=enabled,
         )
 
-    async def run(self, arguments: dict[str, Any]) -> list[ContentBlock]:
-        """Run the tool with arguments."""
+    async def run(
+        self, arguments: dict[str, Any]
+    ) -> list[ContentBlock] | tuple[list[ContentBlock], dict[str, Any]]:
+        """
+        Run the tool with arguments.
+
+        This method is not implemented in the base Tool class and must be
+        implemented by subclasses.
+
+        `run()` can EITHER return a list of ContentBlocks, or a tuple of
+        (list of ContentBlocks, dict of structured output).
+        """
         raise NotImplementedError("Subclasses must implement run()")
 
     @classmethod
@@ -175,7 +186,9 @@ class FunctionTool(Tool):
             enabled=enabled if enabled is not None else True,
         )
 
-    async def run(self, arguments: dict[str, Any]) -> list[ContentBlock]:
+    async def run(
+        self, arguments: dict[str, Any]
+    ) -> list[ContentBlock] | tuple[list[ContentBlock], dict[str, Any]]:
         """Run the tool with arguments."""
         from fastmcp.server.context import Context
 
@@ -190,7 +203,20 @@ class FunctionTool(Tool):
         if inspect.isawaitable(result):
             result = await result
 
-        return _convert_to_content(result, serializer=self.serializer)
+        unstructured_result = _convert_to_content(result, serializer=self.serializer)
+
+        structured_result = None
+        if isinstance(result, StructuredOutput):
+            structured_result = result.to_structured_output()
+        elif self.output_schema is not None:
+            structured_result = pydantic_core.to_jsonable_python(result, fallback=str)
+
+        # return only the unstructured result if there is no structured output
+        if structured_result is None:
+            return unstructured_result
+
+        # return both the unstructured and structured results if there is structured output
+        return (unstructured_result, structured_result)
 
 
 @dataclass

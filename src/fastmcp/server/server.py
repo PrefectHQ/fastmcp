@@ -63,6 +63,7 @@ from fastmcp.utilities.cache import TimedCache
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.mcp_config import MCPConfig
+from fastmcp.utilities.types import NotSet, NotSetT
 
 if TYPE_CHECKING:
     from fastmcp.client import Client
@@ -792,7 +793,7 @@ class FastMCP(Generic[LifespanResultT]):
         name: str | None = None,
         description: str | None = None,
         tags: set[str] | None = None,
-        output_schema: dict[str, Any] | None = None,
+        output_schema: dict[str, Any] | NotSetT = NotSet,
         annotations: ToolAnnotations | dict[str, Any] | None = None,
         exclude_args: list[str] | None = None,
         enabled: bool | None = None,
@@ -806,7 +807,7 @@ class FastMCP(Generic[LifespanResultT]):
         name: str | None = None,
         description: str | None = None,
         tags: set[str] | None = None,
-        output_schema: dict[str, Any] | None = None,
+        output_schema: dict[str, Any] | NotSetT = NotSet,
         annotations: ToolAnnotations | dict[str, Any] | None = None,
         exclude_args: list[str] | None = None,
         enabled: bool | None = None,
@@ -819,7 +820,7 @@ class FastMCP(Generic[LifespanResultT]):
         name: str | None = None,
         description: str | None = None,
         tags: set[str] | None = None,
-        output_schema: dict[str, Any] | None = None,
+        output_schema: dict[str, Any] | NotSetT = NotSet,
         annotations: ToolAnnotations | dict[str, Any] | None = None,
         exclude_args: list[str] | None = None,
         enabled: bool | None = None,
