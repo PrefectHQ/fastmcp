@@ -130,7 +130,7 @@
                   "integrations/claude-desktop",
                   "integrations/gemini",
                   "integrations/openai",
-                  "integrations/eunomia-middleware",
+                  "integrations/eunomia-authorization",
                   "integrations/contrib"
                 ]
               },
