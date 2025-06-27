@@ -127,7 +127,10 @@ def make_route(action, component, config, required_scopes, root_path) -> Route:
     ]:
         path = f"/{{{config['param']}}}/{action}"
     else:
-        path = f"/{component}s/{{{config['param']}}}/{action}"
+        if root_path != "/" and required_scopes is None:
+            path = f"{root_path}/{component}s/{{{config['param']}}}/{action}"
+        else:
+            path = f"/{component}s/{{{config['param']}}}/{action}"
 
     return Route(path, endpoint=endpoint, methods=["POST"])
 

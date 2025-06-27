@@ -538,3 +538,206 @@ class TestAuthComponentManagementRoutes:
         assert response.status_code == 200
         assert response.json() == {"message": "Disabled prompt: test_prompt"}
         assert prompt.enabled is False
+
+
+class TestComponentManagerWithPath:
+    """Test component manager routes when mounted at a custom path."""
+
+    @pytest.fixture
+    def mcp_with_path(self):
+        mcp = FastMCP("TestServerWithPath")
+        set_up_component_manager(server=mcp, path="/test")
+
+        @mcp.tool
+        def test_tool() -> str:
+            return "test_tool_result"
+
+        @mcp.resource("data://test_resource")
+        def test_resource() -> str:
+            return "test_resource_result"
+
+        @mcp.prompt
+        def test_prompt() -> str:
+            return "test_prompt_result"
+
+        return mcp
+
+    @pytest.fixture
+    def client_with_path(self, mcp_with_path):
+        return TestClient(mcp_with_path.http_app())
+
+    @pytest.mark.asyncio
+    async def test_enable_tool_route_with_path(self, client_with_path, mcp_with_path):
+        tool = await mcp_with_path._tool_manager.get_tool("test_tool")
+        tool.enabled = False
+        response = client_with_path.post("/test/tools/test_tool/enable")
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == {"message": "Enabled tool: test_tool"}
+        tool = await mcp_with_path._tool_manager.get_tool("test_tool")
+        assert tool.enabled is True
+
+    @pytest.mark.asyncio
+    async def test_disable_resource_route_with_path(
+        self, client_with_path, mcp_with_path
+    ):
+        resource = await mcp_with_path._resource_manager.get_resource(
+            "data://test_resource"
+        )
+        resource.enabled = True
+        response = client_with_path.post("/test/resources/data://test_resource/disable")
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == {"message": "Disabled resource: data://test_resource"}
+        resource = await mcp_with_path._resource_manager.get_resource(
+            "data://test_resource"
+        )
+        assert resource.enabled is False
+
+    @pytest.mark.asyncio
+    async def test_enable_prompt_route_with_path(self, client_with_path, mcp_with_path):
+        prompt = await mcp_with_path._prompt_manager.get_prompt("test_prompt")
+        prompt.enabled = False
+        response = client_with_path.post("/test/prompts/test_prompt/enable")
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == {"message": "Enabled prompt: test_prompt"}
+        prompt = await mcp_with_path._prompt_manager.get_prompt("test_prompt")
+        assert prompt.enabled is True
+
+
+class TestComponentManagerWithPathAuth:
+    """Test component manager routes with auth when mounted at a custom path."""
+
+    def setup_method(self):
+        # Generate a key pair and create an auth provider
+        key_pair = RSAKeyPair.generate()
+        self.auth = BearerAuthProvider(
+            public_key=key_pair.public_key,
+            issuer="https://dev.example.com",
+            audience="my-dev-server",
+            required_scopes=["tool:write", "tool:read"],
+        )
+        self.mcp = FastMCP("TestServerWithPathAuth", auth=self.auth)
+        set_up_component_manager(
+            server=self.mcp, path="/test", required_scopes=["tool:write", "tool:read"]
+        )
+        self.token = key_pair.create_token(
+            subject="dev-user",
+            issuer="https://dev.example.com",
+            audience="my-dev-server",
+            scopes=["tool:read", "tool:write"],
+        )
+        self.token_without_scopes = key_pair.create_token(
+            subject="dev-user",
+            issuer="https://dev.example.com",
+            audience="my-dev-server",
+            scopes=[],
+        )
+
+        @self.mcp.tool
+        def test_tool() -> str:
+            return "test_tool_result"
+
+        @self.mcp.resource("data://test_resource")
+        def test_resource() -> str:
+            return "test_resource_result"
+
+        @self.mcp.prompt
+        def test_prompt() -> str:
+            return "test_prompt_result"
+
+        self.client = TestClient(self.mcp.http_app())
+
+    @pytest.mark.asyncio
+    async def test_unauthorized_enable_tool(self):
+        tool = await self.mcp._tool_manager.get_tool("test_tool")
+        tool.enabled = False
+        response = self.client.post("/test/tools/test_tool/enable")
+        assert response.status_code == 401
+        assert tool.enabled is False
+
+    @pytest.mark.asyncio
+    async def test_forbidden_enable_tool(self):
+        tool = await self.mcp._tool_manager.get_tool("test_tool")
+        tool.enabled = False
+        response = self.client.post(
+            "/test/tools/test_tool/enable",
+            headers={"Authorization": "Bearer " + self.token_without_scopes},
+        )
+        assert response.status_code == 403
+        assert tool.enabled is False
+
+    @pytest.mark.asyncio
+    async def test_authorized_enable_tool(self):
+        tool = await self.mcp._tool_manager.get_tool("test_tool")
+        tool.enabled = False
+        response = self.client.post(
+            "/test/tools/test_tool/enable",
+            headers={"Authorization": "Bearer " + self.token},
+        )
+        assert response.status_code == 200
+        assert response.json() == {"message": "Enabled tool: test_tool"}
+        tool = await self.mcp._tool_manager.get_tool("test_tool")
+        assert tool.enabled is True
+
+    @pytest.mark.asyncio
+    async def test_unauthorized_disable_resource(self):
+        resource = await self.mcp._resource_manager.get_resource("data://test_resource")
+        resource.enabled = True
+        response = self.client.post("/test/resources/data://test_resource/disable")
+        assert response.status_code == 401
+        assert resource.enabled is True
+
+    @pytest.mark.asyncio
+    async def test_forbidden_disable_resource(self):
+        resource = await self.mcp._resource_manager.get_resource("data://test_resource")
+        resource.enabled = True
+        response = self.client.post(
+            "/test/resources/data://test_resource/disable",
+            headers={"Authorization": "Bearer " + self.token_without_scopes},
+        )
+        assert response.status_code == 403
+        assert resource.enabled is True
+
+    @pytest.mark.asyncio
+    async def test_authorized_disable_resource(self):
+        resource = await self.mcp._resource_manager.get_resource("data://test_resource")
+        resource.enabled = True
+        response = self.client.post(
+            "/test/resources/data://test_resource/disable",
+            headers={"Authorization": "Bearer " + self.token},
+        )
+        assert response.status_code == 200
+        assert response.json() == {"message": "Disabled resource: data://test_resource"}
+        resource = await self.mcp._resource_manager.get_resource("data://test_resource")
+        assert resource.enabled is False
+
+    @pytest.mark.asyncio
+    async def test_unauthorized_enable_prompt(self):
+        prompt = await self.mcp._prompt_manager.get_prompt("test_prompt")
+        prompt.enabled = False
+        response = self.client.post("/test/prompts/test_prompt/enable")
+        assert response.status_code == 401
+        assert prompt.enabled is False
+
+    @pytest.mark.asyncio
+    async def test_forbidden_enable_prompt(self):
+        prompt = await self.mcp._prompt_manager.get_prompt("test_prompt")
+        prompt.enabled = False
+        response = self.client.post(
+            "/test/prompts/test_prompt/enable",
+            headers={"Authorization": "Bearer " + self.token_without_scopes},
+        )
+        assert response.status_code == 403
+        assert prompt.enabled is False
+
+    @pytest.mark.asyncio
+    async def test_authorized_enable_prompt(self):
+        prompt = await self.mcp._prompt_manager.get_prompt("test_prompt")
+        prompt.enabled = False
+        response = self.client.post(
+            "/test/prompts/test_prompt/enable",
+            headers={"Authorization": "Bearer " + self.token},
+        )
+        assert response.status_code == 200
+        assert response.json() == {"message": "Enabled prompt: test_prompt"}
+        prompt = await self.mcp._prompt_manager.get_prompt("test_prompt")
+        assert prompt.enabled is True
