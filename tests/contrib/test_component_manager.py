@@ -3,7 +3,7 @@ from starlette import status
 from starlette.testclient import TestClient
 
 from fastmcp import FastMCP
-from fastmcp.contrib.component_manager.component_manager import set_up_component_manager
+from fastmcp.contrib.component_manager import set_up_component_manager
 from fastmcp.server.auth.providers.bearer import BearerAuthProvider, RSAKeyPair
 
 

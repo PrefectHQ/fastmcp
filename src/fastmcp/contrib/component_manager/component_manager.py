@@ -14,11 +14,12 @@ from typing import Any
 from fastmcp.server.server import FastMCP
 
 def set_up_component_manager(
-    server: FastMCP, root_path: str = "/", required_scopes: list[str] | None = None
+    server: FastMCP, path: str = "/", required_scopes: list[str] | None = None
 ):
     """Set up routes for enabling/disabling tools, resources, and prompts.
     Args:
         server: The FastMCP server instance
+        root_path: Path used to mount all component-related routes on the server
         required_scopes: Optional list of scopes required for these routes
     Returns:
         A list of routes or mounts for component management
@@ -47,13 +48,13 @@ def set_up_component_manager(
 
     if required_scopes is None:
         routes.extend(
-            build_component_manager_enpoints(route_configs, root_path)
+            build_component_manager_endpoints(route_configs, path)
         )        
     else:
-        if root_path != "/":
+        if path != "/":
             mounts.append(
                 build_component_manager_mount(
-                    route_configs, root_path, required_scopes
+                    route_configs, path, required_scopes
             ))
         else:
             mounts.append(
@@ -73,41 +74,42 @@ def set_up_component_manager(
     server._additional_http_routes.extend(mounts)
 
 
-def build_component_manager_enpoints(route_configs, root_path, required_scopes=None) -> list[Route]:
+def make_endpoint(action, component, config):
+    async def endpoint(request: Request):
+        name = request.path_params[config["param"].split(":")[0]]
+
+        try:
+            await config[action](name)
+            return JSONResponse(
+                {"message": f"{action.capitalize()}d {component}: {name}"}
+            )
+        except NotFoundError:
+            raise StarletteHTTPException(
+                status_code=404,
+                detail=f"Unknown {component}: {name}",
+            )
+    return endpoint
+
+def make_route(action, component, config, required_scopes, root_path) -> Route:
+    endpoint = make_endpoint(action, component, config)
+
+    if required_scopes is not None and root_path in ["/tools", "/resources", "/prompts"]:
+        path = f"/{{{config['param']}}}/{action}"
+    else:
+        path = f"/{component}s/{{{config['param']}}}/{action}"
+
+    return Route(path, endpoint=endpoint, methods=["POST"])
+    
+def build_component_manager_endpoints(route_configs, root_path, required_scopes=None) -> list[Route]:
     component_management_routes: list[Route] = []
 
     for component in route_configs:
         config: dict[str, Any] = route_configs[component]
         for action in ["enable", "disable"]:
-
-            async def endpoint(
-                request: Request,
-                action: str = action,
-                component: str = component,
-                config: dict[str, Any] = config,
-            ):
-                name = request.path_params[config["param"].split(":")[0]]
-
-                try:
-                    await config[action](name)
-                    return JSONResponse(
-                        {"message": f"{action.capitalize()}d {component}: {name}"}
-                    )
-                except NotFoundError:
-                    raise StarletteHTTPException(
-                        status_code=404,
-                        detail=f"Unknown {component}: {name}",
-                    )
-
-            if required_scopes is not None and root_path in ["/tools", "/resources", "/prompts"]:
-                path = f"/{{{config['param']}}}/{action}"
-            else:
-                path = f"/{component}s/{{{config['param']}}}/{action}"
-
-            route = Route(path, endpoint=endpoint, methods=["POST"])
-            component_management_routes.append(route)
+            component_management_routes.append(make_route(action, component, config, required_scopes, root_path))
 
     return component_management_routes
+
 
 def build_component_manager_mount(route_configs, root_path, required_scopes) -> Mount:
     component_management_routes: list[Route] = []
@@ -115,36 +117,9 @@ def build_component_manager_mount(route_configs, root_path, required_scopes) -> 
     for component in route_configs:
         config: dict[str, Any] = route_configs[component]
         for action in ["enable", "disable"]:
-
-            async def endpoint(
-                request: Request,
-                action: str = action,
-                component: str = component,
-                config: dict[str, Any] = config,
-            ):
-                name = request.path_params[config["param"].split(":")[0]]
-
-                try:
-                    await config[action](name)
-                    return JSONResponse(
-                        {"message": f"{action.capitalize()}d {component}: {name}"}
-                    )
-                except NotFoundError:
-                    raise StarletteHTTPException(
-                        status_code=404,
-                        detail=f"Unknown {component}: {name}",
-                    )
-
-            if required_scopes is not None and root_path in ["/tools", "/resources", "/prompts"]:
-                path = f"/{{{config['param']}}}/{action}"
-            else:
-                path = f"/{component}s/{{{config['param']}}}/{action}"
-
-            route = Route(path, endpoint=endpoint, methods=["POST"])
-            component_management_routes.append(route)
+            component_management_routes.append(make_route(action, component, config, required_scopes, root_path))
 
     return Mount(
         f"{root_path}",
-        app=RequireAuthMiddleware(Starlette(routes=component_management_routes),
-        required_scopes)
+        app=RequireAuthMiddleware(Starlette(routes=component_management_routes), required_scopes)
     )
