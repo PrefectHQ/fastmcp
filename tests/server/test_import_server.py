@@ -224,7 +224,7 @@ async def test_call_imported_custom_named_tool():
 
     async with Client(main_app) as client:
         result = await client.call_tool("api_get_data", {"query": "test"})
-        assert result[0].text == "Data for query: test"  # type: ignore[attr-defined]
+        assert result.data == "Data for query: test"
 
 
 async def test_first_level_importing_with_custom_name():
@@ -278,7 +278,7 @@ async def test_call_nested_imported_tool():
 
     async with Client(main_app) as client:
         result = await client.call_tool("service_provider_compute", {"input": 21})
-        assert result[0].text == "42"  # type: ignore[attr-defined]
+        assert result.data == "42"
 
 
 async def test_import_with_proxy_tools():
@@ -302,7 +302,7 @@ async def test_import_with_proxy_tools():
 
     async with Client(main_app) as client:
         result = await client.call_tool("api_get_data", {"query": "test"})
-        assert result[0].text == "Data for query: test"  # type: ignore[attr-defined]
+        assert result.data == "Data for query: test"
 
 
 async def test_import_with_proxy_prompts():
@@ -443,7 +443,7 @@ async def test_import_with_no_prefix():
     async with Client(main_app) as client:
         # Test tool
         tool_result = await client.call_tool("sub_tool", {})
-        assert tool_result[0].text == "Sub tool result"  # type: ignore[attr-defined]
+        assert tool_result.data == "Sub tool result"
 
         # Test resource
         resource_result = await client.read_resource("data://config")
@@ -485,7 +485,7 @@ async def test_import_conflict_resolution_tools():
         assert tool_names.count("shared_tool") == 1  # Should only appear once
 
         result = await client.call_tool("shared_tool", {})
-        assert result[0].text == "Second app tool"  # type: ignore[attr-defined]
+        assert result.data == "Second app tool"
 
 
 async def test_import_conflict_resolution_resources():
@@ -604,4 +604,4 @@ async def test_import_conflict_resolution_with_prefix():
         assert tool_names.count("api_shared_tool") == 1  # Should only appear once
 
         result = await client.call_tool("api_shared_tool", {})
-        assert result[0].text == "Second app tool"  # type: ignore[attr-defined]
+        assert result.data == "Second app tool"

@@ -7,7 +7,7 @@ from collections.abc import Callable
 from functools import lru_cache
 from pathlib import Path
 from types import EllipsisType, UnionType
-from typing import Annotated, Any, TypeAlias, TypeVar, Union, get_args, get_origin
+from typing import Annotated, TypeAlias, TypeVar, Union, get_args, get_origin
 
 import mcp.types
 from mcp.types import Annotations
@@ -287,16 +287,6 @@ class File:
             resource=resource,
             annotations=annotations or self.annotations,
         )
-
-
-class StructuredOutput:
-    """Helper class for returning structured output from tools."""
-
-    def __init__(self, data: dict[str, Any]):
-        self.data = data
-
-    def to_structured_output(self) -> dict[str, Any]:
-        return self.data
 
 
 def replace_type(type_, type_map: dict[type, type]):

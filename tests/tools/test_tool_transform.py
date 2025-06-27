@@ -52,7 +52,8 @@ async def test_tool_defaults_are_maintained_on_unmapped_args(add_tool):
         add_tool, transform_args={"old_x": ArgTransform(name="new_x")}
     )
     result = await new_tool.run(arguments={"new_x": 1})
-    assert result[0].text == "11"  # type: ignore[attr-defined]
+    # The parent tool returns int which gets wrapped as structured output
+    assert result.structured_content == {"value": 11}
 
 
 async def test_tool_defaults_are_maintained_on_mapped_args(add_tool):
@@ -60,7 +61,8 @@ async def test_tool_defaults_are_maintained_on_mapped_args(add_tool):
         add_tool, transform_args={"old_y": ArgTransform(name="new_y")}
     )
     result = await new_tool.run(arguments={"old_x": 1})
-    assert result[0].text == "11"  # type: ignore[attr-defined]
+    # The parent tool returns int which gets wrapped as structured output
+    assert result.structured_content == {"value": 11}
 
 
 def test_tool_change_arg_name(add_tool):
@@ -87,7 +89,7 @@ async def test_tool_drop_arg(add_tool):
     )
     assert sorted(new_tool.parameters["properties"]) == ["old_x"]
     result = await new_tool.run(arguments={"old_x": 1})
-    assert result[0].text == "11"  # type: ignore[attr-defined]
+    assert result.structured_content == {"value": 11}
 
 
 async def test_dropped_args_error_if_provided(add_tool):
@@ -109,7 +111,7 @@ async def test_hidden_arg_with_constant_default(add_tool):
     assert sorted(new_tool.parameters["properties"]) == ["old_x"]
     # Should pass old_x=5 and old_y=20 to parent
     result = await new_tool.run(arguments={"old_x": 5})
-    assert result[0].text == "25"  # type: ignore[attr-defined]
+    assert result.structured_content == {"value": 25}
 
 
 async def test_hidden_arg_without_default_uses_parent_default(add_tool):
@@ -121,7 +123,8 @@ async def test_hidden_arg_without_default_uses_parent_default(add_tool):
     assert sorted(new_tool.parameters["properties"]) == ["old_x"]
     # Should pass old_x=3 and let parent use its default old_y=10
     result = await new_tool.run(arguments={"old_x": 3})
-    assert result[0].text == "13"  # type: ignore[attr-defined]
+    assert result.content[0].text == "13"  # type: ignore[attr-defined]
+    assert result.structured_content == {"value": 13}
 
 
 async def test_mixed_hidden_args_with_custom_function(add_tool):
@@ -146,7 +149,8 @@ async def test_mixed_hidden_args_with_custom_function(add_tool):
     assert sorted(new_tool.parameters["properties"]) == ["visible_x"]
     # Should pass visible_x=7 as old_x=7 and old_y=25 to parent
     result = await new_tool.run(arguments={"visible_x": 7})
-    assert result[0].text == "32"  # type: ignore[attr-defined]
+    assert result.content[0].text == "32"  # type: ignore[attr-defined]
+    assert result.structured_content == {"value": 32}
 
 
 async def test_hide_required_param_without_default_raises_error():
@@ -184,7 +188,7 @@ async def test_hide_required_param_with_user_default_works():
     assert sorted(new_tool.parameters["properties"]) == ["optional_param"]
     # Should pass required_param=5 and optional_param=20 to parent
     result = await new_tool.run(arguments={"optional_param": 20})
-    assert result[0].text == "25"  # type: ignore[attr-defined]
+    assert result.structured_content == {"value": 25}
 
 
 async def test_forward_with_argument_mapping(add_tool):
@@ -203,7 +207,8 @@ async def test_forward_with_argument_mapping(add_tool):
     )
 
     result = await new_tool.run(arguments={"new_x": 2, "new_y": 3})
-    assert result[0].text == "5"  # type: ignore[attr-defined]
+    assert result.content[0].text == "5"  # type: ignore[attr-defined]
+    assert result.structured_content == {"value": 5}
 
 
 async def test_forward_with_incorrect_args_raises_error(add_tool):
@@ -243,7 +248,8 @@ async def test_forward_raw_without_argument_mapping(add_tool):
     )
 
     result = await new_tool.run(arguments={"new_x": 2, "new_y": 3})
-    assert result[0].text == "5"  # type: ignore[attr-defined]
+    assert result.content[0].text == "5"  # type: ignore[attr-defined]
+    assert result.structured_content == {"value": 5}
 
 
 async def test_custom_fn_with_kwargs_and_no_transform_args(add_tool):
@@ -253,7 +259,8 @@ async def test_custom_fn_with_kwargs_and_no_transform_args(add_tool):
 
     new_tool = Tool.from_tool(add_tool, transform_fn=custom_fn)
     result = await new_tool.run(arguments={"extra": 1, "old_x": 2, "old_y": 3})
-    assert result[0].text == "6"  # type: ignore[attr-defined]
+    assert result.content[0].text == "6"  # type: ignore[attr-defined]
+    assert result.structured_content == {"value": 6}
     assert new_tool.parameters["required"] == IsList(
         "extra", "old_x", check_order=False
     )
@@ -270,7 +277,8 @@ async def test_fn_with_kwargs_passes_through_original_args(add_tool):
 
     new_tool = Tool.from_tool(add_tool, transform_fn=custom_fn)
     result = await new_tool.run(arguments={"new_y": 2, "old_y": 3})
-    assert result[0].text == "5"  # type: ignore[attr-defined]
+    assert result.content[0].text == "5"  # type: ignore[attr-defined]
+    assert result.structured_content == {"value": 5}
 
 
 async def test_fn_with_kwargs_receives_transformed_arg_names(add_tool):
@@ -288,7 +296,8 @@ async def test_fn_with_kwargs_receives_transformed_arg_names(add_tool):
         transform_args={"old_x": ArgTransform(name="new_x")},
     )
     result = await new_tool.run(arguments={"new_x": 2, "old_y": 3})
-    assert result[0].text == "5"  # type: ignore[attr-defined]
+    assert result.content[0].text == "5"  # type: ignore[attr-defined]
+    assert result.structured_content == {"value": 5}
 
 
 async def test_fn_with_kwargs_handles_partial_explicit_args(add_tool):
@@ -308,7 +317,8 @@ async def test_fn_with_kwargs_handles_partial_explicit_args(add_tool):
     result = await new_tool.run(
         arguments={"new_x": 3, "old_y": 7, "some_other_param": "test"}
     )
-    assert result[0].text == "10"  # type: ignore[attr-defined]
+    assert result.content[0].text == "10"  # type: ignore[attr-defined]
+    assert result.structured_content == {"value": 10}
 
 
 async def test_fn_with_kwargs_mixed_mapped_and_unmapped_args(add_tool):
@@ -326,7 +336,8 @@ async def test_fn_with_kwargs_mixed_mapped_and_unmapped_args(add_tool):
         transform_args={"old_x": ArgTransform(name="new_x")},
     )  # only map 'a'
     result = await new_tool.run(arguments={"new_x": 1, "old_y": 5})
-    assert result[0].text == "6"  # type: ignore[attr-defined]
+    assert result.content[0].text == "6"  # type: ignore[attr-defined]
+    assert result.structured_content == {"value": 6}
 
 
 async def test_fn_with_kwargs_dropped_args_not_in_kwargs(add_tool):

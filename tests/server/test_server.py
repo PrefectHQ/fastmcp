@@ -45,9 +45,7 @@ class TestCreateServer:
             assert "🎉" in tool.description
 
             result = await client.call_tool("hello_world", {})
-            assert len(result) == 1
-            content = result[0]
-            assert content.text == "¡Hola, 世界! 👋"  # type: ignore[attr-defined]
+            assert result.data == "¡Hola, 世界! 👋"
 
 
 class TestTools:

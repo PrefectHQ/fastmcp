@@ -5,6 +5,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Annotated, Any
 
+import mcp.types
 import pydantic_core
 from mcp.types import ContentBlock, TextContent, ToolAnnotations
 from mcp.types import Tool as MCPTool
@@ -20,9 +21,9 @@ from fastmcp.utilities.types import (
     Image,
     NotSet,
     NotSetT,
-    StructuredOutput,
     find_kwarg_by_type,
     get_cached_typeadapter,
+    replace_type,
 )
 
 if TYPE_CHECKING:
@@ -31,21 +32,47 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
+class _UnserializableType:
+    pass
+
+
 def default_serializer(data: Any) -> str:
     return pydantic_core.to_json(data, fallback=str, indent=2).decode()
 
 
-@dataclass
 class ToolResult:
-    content: list[ContentBlock]
-    structured_output: dict[str, Any] | None = None
+    def __init__(
+        self,
+        content: list[ContentBlock] | Any | None = None,
+        structured_content: dict[str, Any] | Any | None = None,
+    ):
+        if content is None and structured_content is None:
+            raise ValueError("Either content or structured_content must be provided")
+        elif content is None:
+            content = structured_content
+
+        self.content = _convert_to_content(content)
+
+        if structured_content is not None:
+            try:
+                structured_content = pydantic_core.to_jsonable_python(
+                    structured_content
+                )
+            except pydantic_core.PydanticSerializationError:
+                logger.error(
+                    "Could not serialize structured content. If this is unexpected, set your tool's output_schema to None to disable automatic serialization:"
+                )
+                raise
+            if not isinstance(structured_content, dict):
+                structured_content = {"result": structured_content}
+        self.structured_content: dict[str, Any] | None = structured_content
 
     def to_mcp_result(
         self,
     ) -> list[ContentBlock] | tuple[list[ContentBlock], dict[str, Any]]:
-        if self.structured_output is None:
+        if self.structured_content is None:
             return self.content
-        return self.content, self.structured_output
+        return self.content, self.structured_content
 
 
 class Tool(FastMCPComponent):
@@ -159,18 +186,6 @@ class Tool(FastMCPComponent):
 
 class FunctionTool(Tool):
     fn: Callable[..., Any]
-    wrap_primitive_output: bool = Field(
-        default=False,
-        description="""Whether to wrap the function's return value in a {"value": result} object.
-        
-        This is automatically set to True when a function has a primitive return type
-        annotation (int, str, bool, etc.) and FastMCP auto-generates an object schema
-        with a single "value" property to enable structured output support.
-        
-        When True, the function's raw return value gets wrapped as {"value": raw_result}
-        in the structured output, allowing clients to receive properly typed objects
-        even for primitive return types.""",
-    )
 
     @classmethod
     def from_function(
@@ -192,17 +207,14 @@ class FunctionTool(Tool):
         if name is None and parsed_fn.name == "<lambda>":
             raise ValueError("You must provide a name for lambda functions")
 
-        wrap_primitive_output = False
         if isinstance(output_schema, NotSetT):
             output_schema = parsed_fn.output_schema
-            # convert primitive types to object with a single "value" property
+
             if output_schema and output_schema.get("type") != "object":
-                wrap_primitive_output = True
                 output_schema = {
                     "type": "object",
-                    "properties": {"value": output_schema | {"title": "Value"}},
-                    "required": ["value"],
-                    "title": "Result",
+                    "properties": {"result": output_schema},
+                    "x-fastmcp-wrap-result": True,
                 }
 
         return cls(
@@ -215,7 +227,6 @@ class FunctionTool(Tool):
             tags=tags or set(),
             serializer=serializer,
             enabled=enabled if enabled is not None else True,
-            wrap_primitive_output=wrap_primitive_output,
         )
 
     async def run(self, arguments: dict[str, Any]) -> ToolResult:
@@ -233,21 +244,22 @@ class FunctionTool(Tool):
         if inspect.isawaitable(result):
             result = await result
 
+        if isinstance(result, ToolResult):
+            return result
+
         unstructured_result = _convert_to_content(result, serializer=self.serializer)
 
-        structured_output = None
-        if isinstance(result, StructuredOutput):
-            structured_output = result.to_structured_output()
-        elif self.output_schema is not None:
-            raw_result = pydantic_core.to_jsonable_python(result, fallback=str)
-            if self.wrap_primitive_output:
-                structured_output = {"value": raw_result}
+        if self.output_schema is not None:
+            if self.output_schema.get("x-fastmcp-wrap-result"):
+                structured_output = {"result": result}
             else:
-                structured_output = raw_result
+                structured_output = result
+        else:
+            structured_output = None
 
         return ToolResult(
             content=unstructured_result,
-            structured_output=structured_output,
+            structured_content=structured_output,
         )
 
 
@@ -264,6 +276,7 @@ class ParsedFunction:
         cls,
         fn: Callable[..., Any],
         exclude_args: list[str] | None = None,
+        ignore_response_types: list[type] | None = None,
         validate: bool = True,
     ) -> ParsedFunction:
         from fastmcp.server.context import Context
@@ -316,11 +329,34 @@ class ParsedFunction:
 
         output_schema = None
         output_type = inspect.signature(fn).return_annotation
-        if output_type not in (inspect._empty, Image, Audio, File, StructuredOutput):
-            try:
-                output_type_adapter = get_cached_typeadapter(output_type)
-                output_schema = output_type_adapter.json_schema()
-            except PydanticSchemaGenerationError:
+
+        # there are a variety of types that we don't want to attempt to
+        # serialize because they are either used by FastMCP internally,
+        # or are MCP content types that explicitly don't form structured
+        # content. By replacing them with an explicitly unserializable type,
+        # we ensure that no output schema is automatically generated.
+
+        output_type = replace_type(
+            output_type,
+            {
+                inspect._empty: _UnserializableType,
+                Image: _UnserializableType,
+                Audio: _UnserializableType,
+                File: _UnserializableType,
+                ToolResult: _UnserializableType,
+                mcp.types.TextContent: _UnserializableType,
+                mcp.types.ImageContent: _UnserializableType,
+                mcp.types.AudioContent: _UnserializableType,
+                mcp.types.ResourceLink: _UnserializableType,
+                mcp.types.EmbeddedResource: _UnserializableType,
+            },
+        )
+
+        try:
+            output_type_adapter = get_cached_typeadapter(output_type)
+            output_schema = output_type_adapter.json_schema()
+        except PydanticSchemaGenerationError as e:
+            if "_UnserializableType" not in str(e):
                 logger.debug(f"Unable to generate schema for type {output_type!r}")
 
         return cls(

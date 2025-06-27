@@ -13,7 +13,7 @@ from re import Pattern
 from typing import TYPE_CHECKING, Any, Literal
 
 import httpx
-from mcp.types import ContentBlock, ToolAnnotations
+from mcp.types import ToolAnnotations
 from pydantic.networks import AnyUrl
 
 import fastmcp
@@ -21,7 +21,7 @@ from fastmcp.exceptions import ToolError
 from fastmcp.resources import Resource, ResourceTemplate
 from fastmcp.server.dependencies import get_http_headers
 from fastmcp.server.server import FastMCP
-from fastmcp.tools.tool import Tool, _convert_to_content
+from fastmcp.tools.tool import Tool, ToolResult
 from fastmcp.utilities import openapi
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.openapi import (
@@ -254,7 +254,7 @@ class OpenAPITool(Tool):
         """Custom representation to prevent recursion errors when printing."""
         return f"OpenAPITool(name={self.name!r}, method={self._route.method}, path={self._route.path})"
 
-    async def run(self, arguments: dict[str, Any]) -> list[ContentBlock]:
+    async def run(self, arguments: dict[str, Any]) -> ToolResult:
         """Execute the HTTP request based on the route configuration."""
 
         # Prepare URL
@@ -450,10 +450,9 @@ class OpenAPITool(Tool):
             # Try to parse as JSON first
             try:
                 result = response.json()
+                return ToolResult(structured_content=result)
             except (json.JSONDecodeError, ValueError):
-                # Return text content if not JSON
-                result = response.text
-            return _convert_to_content(result)
+                return ToolResult(content=response.text)
 
         except httpx.HTTPStatusError as e:
             # Handle HTTP errors (4xx, 5xx)

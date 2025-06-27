@@ -53,6 +53,8 @@ from typing import (
 
 from pydantic import (
     AnyUrl,
+    BaseModel,
+    ConfigDict,
     EmailStr,
     Field,
     Json,
@@ -167,6 +169,13 @@ def json_schema_to_type(
     """
     # Always use the top-level schema for references
     if schema.get("type") == "object":
+        # If no properties defined but additionalProperties is True, return dict[str, Any]
+        if not schema.get("properties") and schema.get("additionalProperties") is True:
+            return dict[str, Any]  # type: ignore
+        # If has properties AND additionalProperties is True, use Pydantic BaseModel
+        elif schema.get("properties") and schema.get("additionalProperties") is True:
+            return _create_pydantic_model(schema, name, schemas=schema)
+        # Otherwise use fast dataclass
         return _create_dataclass(schema, name, schemas=schema)
     elif name:
         raise ValueError(f"Can not apply name to non-object schema: {name}")
@@ -285,7 +294,11 @@ def _get_from_type_handler(
         "boolean": lambda _: bool,  # type: ignore
         "null": lambda _: type(None),  # type: ignore
         "array": lambda s: _create_array_type(s, schemas),  # type: ignore
-        "object": lambda s: _create_dataclass(s, s.get("title"), schemas),  # type: ignore
+        "object": lambda s: (
+            _create_pydantic_model(s, s.get("title"), schemas)
+            if s.get("properties") and s.get("additionalProperties") is True
+            else _create_dataclass(s, s.get("title"), schemas)
+        ),  # type: ignore
     }
     return type_handlers.get(schema.get("type", None), _return_Any)
 
@@ -329,7 +342,10 @@ def _schema_to_type(
         has_null = type(None) in types
         types = [t for t in types if t is not type(None)]
         if has_null:
-            return Optional[tuple(types) if len(types) > 1 else types[0]]  # type: ignore # noqa: UP007
+            if len(types) == 1:
+                return Optional[types[0]]  # type: ignore # noqa: UP007
+            else:
+                return Union[tuple(types + [type(None)])]  # type: ignore # noqa: UP007
         return Union[tuple(types)]  # type: ignore # noqa: UP007
 
     return _get_from_type_handler(schema, schemas)(schema)
@@ -376,6 +392,62 @@ def _create_field_with_default(
 
     # For simple types, use the value directly
     return field(default=default_value)
+
+
+def _create_pydantic_model(
+    schema: Mapping[str, Any],
+    name: str | None = None,
+    schemas: Mapping[str, Any] | None = None,
+) -> type:
+    """Create Pydantic BaseModel from object schema with additionalProperties."""
+    name = name or schema.get("title", "Root")
+    sanitized_name = _sanitize_name(name)
+    schema_hash = _hash_schema(schema)
+    cache_key = (schema_hash, sanitized_name)
+
+    # Return existing class if already built
+    if cache_key in _classes:
+        existing = _classes[cache_key]
+        if existing is None:
+            return ForwardRef(sanitized_name)
+        return existing
+
+    # Place placeholder for recursive references
+    _classes[cache_key] = None
+
+    properties = schema.get("properties", {})
+    required = schema.get("required", [])
+
+    # Build field annotations and defaults
+    annotations = {}
+    defaults = {}
+
+    for prop_name, prop_schema in properties.items():
+        field_type = _schema_to_type(prop_schema, schemas or {})
+
+        # Handle defaults
+        default_value = prop_schema.get("default", MISSING)
+        if default_value is not MISSING:
+            defaults[prop_name] = default_value
+            annotations[prop_name] = field_type
+        elif prop_name in required:
+            annotations[prop_name] = field_type
+        else:
+            annotations[prop_name] = Optional[field_type]
+            defaults[prop_name] = None
+
+    # Create Pydantic model class
+    cls_dict = {
+        "__annotations__": annotations,
+        "model_config": ConfigDict(extra="allow"),
+        **defaults,
+    }
+
+    cls = type(sanitized_name, (BaseModel,), cls_dict)
+
+    # Store completed class
+    _classes[cache_key] = cls
+    return cls
 
 
 def _create_dataclass(

@@ -31,7 +31,15 @@ class TestToolFromFunction:
         assert len(tool.parameters["properties"]) == 2
         assert tool.parameters["properties"]["a"]["type"] == "integer"
         assert tool.parameters["properties"]["b"]["type"] == "integer"
-        assert tool.output_schema == {"type": "integer"}
+        # With primitive wrapping, int return type becomes object with value property
+        expected_schema = {
+            "type": "object",
+            "properties": {"value": {"title": "Value", "type": "integer"}},
+            "required": ["value"],
+            "title": "Result",
+            "x-fastmcp-wrap-result": True,
+        }
+        assert tool.output_schema == expected_schema
 
     async def test_async_function(self):
         """Test registering and running an async function."""
@@ -103,7 +111,7 @@ class TestToolFromFunction:
 
         result = await tool.run({"data": "test.png"})
         assert tool.parameters["properties"]["data"]["type"] == "string"
-        assert isinstance(result[0], ImageContent)
+        assert isinstance(result.content[0], ImageContent)
 
     async def test_tool_with_audio_return(self):
         def audio_tool(data: bytes) -> Audio:
@@ -113,7 +121,7 @@ class TestToolFromFunction:
 
         result = await tool.run({"data": "test.wav"})
         assert tool.parameters["properties"]["data"]["type"] == "string"
-        assert isinstance(result[0], AudioContent)
+        assert isinstance(result.content[0], AudioContent)
 
     async def test_tool_with_file_return(self):
         def file_tool(data: bytes) -> File:
@@ -123,11 +131,11 @@ class TestToolFromFunction:
 
         result = await tool.run({"data": "test.bin"})
         assert tool.parameters["properties"]["data"]["type"] == "string"
-        assert len(result) == 1
-        assert isinstance(result[0], EmbeddedResource)
-        assert result[0].type == "resource"
-        assert hasattr(result[0], "resource")
-        resource = result[0].resource
+        assert len(result.content) == 1
+        assert isinstance(result.content[0], EmbeddedResource)
+        assert result.content[0].type == "resource"
+        assert hasattr(result.content[0], "resource")
+        resource = result.content[0].resource
         assert resource.mimeType == "application/octet-stream"
 
     def test_non_callable_fn(self):
@@ -239,8 +247,11 @@ class TestToolFromFunction:
         tool = Tool.from_function(process_list, serializer=custom_serializer)
 
         result = await tool.run(arguments={"items": [1, 2, 3, 4, 5]})
-        assert isinstance(result[0], TextContent)
-        assert result[0].text == "Custom serializer: 15"
+        # Custom serializer affects unstructured content
+        assert isinstance(result.content[0], TextContent)
+        assert result.content[0].text == "Custom serializer: 15"
+        # Structured output should have the raw value
+        assert result.structured_content == {"value": 15}
 
 
 class TestToolFromFunctionOutputSchema:
@@ -273,7 +284,31 @@ class TestToolFromFunctionOutputSchema:
             return 1
 
         tool = Tool.from_function(func)
-        assert tool.output_schema == TypeAdapter(annotation).json_schema()
+
+        base_schema = TypeAdapter(annotation).json_schema()
+
+        # Only pure primitives (just type + optional title) get wrapped
+        primitive_types = {"string", "number", "integer", "boolean", "null"}
+        schema_type = base_schema.get("type")
+        is_pure_primitive = (
+            schema_type in primitive_types
+            and len(base_schema) <= 2  # Only 'type' and optionally 'title'
+            and all(key in {"type", "title"} for key in base_schema.keys())
+        )
+
+        if is_pure_primitive:
+            # Pure primitives get wrapped
+            expected_schema = {
+                "type": "object",
+                "properties": {"value": base_schema | {"title": "Value"}},
+                "required": ["value"],
+                "title": "Result",
+                "x-fastmcp-wrap-result": True,
+            }
+            assert tool.output_schema == expected_schema
+        else:
+            # Complex types (objects, unions, constrained types) remain unwrapped
+            assert tool.output_schema == base_schema
 
     @pytest.mark.parametrize(
         "annotation",
@@ -289,7 +324,10 @@ class TestToolFromFunctionOutputSchema:
             return 1
 
         tool = Tool.from_function(func)
-        assert tool.output_schema == TypeAdapter(annotation).json_schema()
+        base_schema = TypeAdapter(annotation).json_schema()
+
+        # Complex types with constraints are not wrapped - they remain as-is
+        assert tool.output_schema == base_schema
 
     @pytest.mark.parametrize(
         "annotation, expected",
@@ -307,7 +345,8 @@ class TestToolFromFunctionOutputSchema:
             return 1
 
         tool = Tool.from_function(func)
-        assert tool.output_schema == TypeAdapter(expected).json_schema()
+        # Image, Audio, File types don't generate output schemas since they're converted to content directly
+        assert tool.output_schema is None
 
     async def test_dataclass_return_annotation(self):
         @dataclass

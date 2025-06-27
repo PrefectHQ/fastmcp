@@ -8,7 +8,6 @@ from mcp.shared.exceptions import McpError
 from mcp.types import (
     METHOD_NOT_FOUND,
     BlobResourceContents,
-    ContentBlock,
     GetPromptResult,
     TextResourceContents,
 )
@@ -67,9 +66,7 @@ class ProxyToolManager(ToolManager):
         tools_dict = await self.get_tools()
         return list(tools_dict.values())
 
-    async def call_tool(
-        self, key: str, arguments: dict[str, Any]
-    ) -> list[ContentBlock]:
+    async def call_tool(self, key: str, arguments: dict[str, Any]) -> ToolResult:
         """Calls a tool, trying local/mounted first, then proxy if not found."""
         try:
             # First try local and mounted tools
@@ -77,7 +74,11 @@ class ProxyToolManager(ToolManager):
         except NotFoundError:
             # If not found locally, try proxy
             async with self.client:
-                return await self.client.call_tool(key, arguments)
+                result = await self.client.call_tool(key, arguments)
+                return ToolResult(
+                    content=result.content,
+                    structured_content=result.structured_content,
+                )
 
 
 class ProxyResourceManager(ResourceManager):
@@ -226,6 +227,7 @@ class ProxyTool(Tool):
             description=mcp_tool.description,
             parameters=mcp_tool.inputSchema,
             annotations=mcp_tool.annotations,
+            output_schema=mcp_tool.outputSchema,
         )
 
     async def run(
@@ -244,7 +246,7 @@ class ProxyTool(Tool):
             raise ToolError(cast(mcp.types.TextContent, result.content[0]).text)
         return ToolResult(
             content=result.content,
-            structured_output=result.structuredContent,
+            structured_content=result.structuredContent,
         )
 
 
