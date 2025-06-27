@@ -47,7 +47,6 @@ class ComponentService:
                     tool_key = key.removeprefix(f"{mounted.prefix}_")
                     mounted_service = ComponentService(mounted.server)
                     tool = await mounted_service._enable_tool(tool_key)
-                    tool.enable()
                     return tool
                 else:
                     continue
@@ -77,7 +76,6 @@ class ComponentService:
                     tool_key = key.removeprefix(f"{mounted.prefix}_")
                     mounted_service = ComponentService(mounted.server)
                     tool = await mounted_service._disable_tool(tool_key)
-                    tool.disable()
                     return tool
                 else:
                     continue
@@ -121,7 +119,6 @@ class ComponentService:
                     mounted_resource: (
                         Resource | ResourceTemplate
                     ) = await mounted_service._enable_resource(key)
-                    mounted_resource.enable()
                     return mounted_resource
             else:
                 continue
@@ -165,7 +162,6 @@ class ComponentService:
                     mounted_resource: (
                         Resource | ResourceTemplate
                     ) = await mounted_service._disable_resource(key)
-                    mounted_resource.disable()
                     return mounted_resource
             else:
                 continue
@@ -195,7 +191,6 @@ class ComponentService:
                     prompt_key = key.removeprefix(f"{mounted.prefix}_")
                     mounted_service = ComponentService(mounted.server)
                     prompt = await mounted_service._enable_prompt(prompt_key)
-                    prompt.enable()
                     return prompt
                 else:
                     continue
@@ -224,7 +219,6 @@ class ComponentService:
                     prompt_key = key.removeprefix(f"{mounted.prefix}_")
                     mounted_service = ComponentService(mounted.server)
                     prompt = await mounted_service._disable_prompt(prompt_key)
-                    prompt.disable()
                     return prompt
                 else:
                     continue
