@@ -254,7 +254,7 @@ async def test_forward_raw_without_argument_mapping(add_tool):
 
 
 async def test_custom_fn_with_kwargs_and_no_transform_args(add_tool):
-    async def custom_fn(extra: int, **kwargs) -> ToolResult:
+    async def custom_fn(extra: int, **kwargs) -> int:
         sum = await forward(**kwargs)
         return int(sum.content[0].text) + extra  # type: ignore[attr-defined]
 
@@ -1216,10 +1216,10 @@ class TestTransformToolOutputSchema:
     ):
         """Test transformation handling of mixed content types."""
 
-        async def custom_fn(x: int) -> ToolResult:
+        async def custom_fn(x: int):
             # Return mixed content including ToolResult
             if x == 1:
-                return ["text", {"data": x}]  # type: ignore[return-value]
+                return ["text", {"data": x}]
             else:
                 # Return ToolResult directly
                 return ToolResult(

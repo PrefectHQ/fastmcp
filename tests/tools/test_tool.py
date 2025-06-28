@@ -1,6 +1,6 @@
 import json
 from dataclasses import dataclass
-from typing import Annotated, Any, TypedDict
+from typing import Annotated, Any
 
 import pytest
 from mcp.types import (
@@ -11,6 +11,7 @@ from mcp.types import (
     TextResourceContents,
 )
 from pydantic import AnyUrl, BaseModel, Field, TypeAdapter
+from typing_extensions import TypedDict
 
 from fastmcp.tools.tool import Tool, _convert_to_content
 from fastmcp.utilities.types import Audio, File, Image
