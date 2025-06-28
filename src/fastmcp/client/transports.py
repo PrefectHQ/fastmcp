@@ -9,7 +9,6 @@ import warnings
 from collections.abc import AsyncIterator, Callable
 from pathlib import Path
 from typing import Any, Literal, TypeVar, cast, overload
-from urllib.parse import urlparse, urlunparse
 
 import anyio
 import httpx
@@ -161,11 +160,8 @@ class SSETransport(ClientTransport):
         if not isinstance(url, str) or not url.startswith("http"):
             raise ValueError("Invalid HTTP/S URL provided for SSE.")
 
-        # Ensure the URL path ends with a trailing slash to avoid automatic redirects
-        parsed = urlparse(url)
-        if not parsed.path.endswith("/"):
-            parsed = parsed._replace(path=parsed.path + "/")
-            url = urlunparse(parsed)
+        # Don't modify the URL path - respect the exact URL provided by the user
+        # Some servers are strict about trailing slashes (e.g., PayPal MCP)
 
         self.url = url
         self.headers = headers or {}
@@ -236,11 +232,8 @@ class StreamableHttpTransport(ClientTransport):
         if not isinstance(url, str) or not url.startswith("http"):
             raise ValueError("Invalid HTTP/S URL provided for Streamable HTTP.")
 
-        # Ensure the URL path ends with a trailing slash to avoid automatic redirects
-        parsed = urlparse(url)
-        if not parsed.path.endswith("/"):
-            parsed = parsed._replace(path=parsed.path + "/")
-            url = urlunparse(parsed)
+        # Don't modify the URL path - respect the exact URL provided by the user
+        # Some servers are strict about trailing slashes (e.g., PayPal MCP)
 
         self.url = url
         self.headers = headers or {}
