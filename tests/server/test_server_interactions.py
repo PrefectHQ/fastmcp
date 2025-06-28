@@ -947,12 +947,14 @@ class TestToolOutputSchema:
             assert result.data == {"message": "Hello, world!"}
 
     async def test_output_schema_false_full_handshake(self):
-        """Test that output_schema=False works through full client/server handshake."""
+        """Test that output_schema=False works through full client/server
+        handshake. We test this by returning a scalar, which requires an output
+        schema to serialize."""
         mcp = FastMCP()
 
         @mcp.tool(output_schema=False)  # type: ignore[arg-type]
-        def simple_tool() -> dict[str, str]:
-            return {"message": "Hello from disabled schema"}
+        def simple_tool() -> int:
+            return 42
 
         async with Client(mcp) as client:
             # List tools and verify output schema is None
@@ -964,9 +966,7 @@ class TestToolOutputSchema:
             result = await client.call_tool("simple_tool", {})
             assert result.structured_content is None
             assert result.data is None
-            assert json.loads(result.content[0].text) == {  # type: ignore[attr-defined]
-                "message": "Hello from disabled schema"
-            }
+            assert result.content[0].text == "42"  # type: ignore[attr-defined]
 
     async def test_output_schema_explicit_object_full_handshake(self):
         """Test explicit object output schema through full client/server handshake."""
