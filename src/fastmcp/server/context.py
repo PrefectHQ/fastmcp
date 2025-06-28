@@ -6,7 +6,8 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from contextvars import ContextVar, Token
 from dataclasses import dataclass
-from typing import TypeVar, cast
+from enum import Enum
+from typing import Literal, TypeVar, cast, get_origin
 
 from mcp import LoggingLevel, ServerSession
 from mcp.server.lowlevel.helper_types import ReadResourceContents
@@ -314,7 +315,7 @@ class Context:
     async def elicit(
         self,
         message: str,
-        response_type: type[T] | None = None,
+        response_type: type[T] | list[str] | None = None,
     ) -> AcceptedElicitation[T] | DeclinedElicitation | CancelledElicitation:
         """
         Send an elicitation request to the client and await the response.
@@ -338,10 +339,29 @@ class Context:
         if response_type is None:
             response_type = str  # type: ignore
 
-        if response_type in {bool, int, float, str}:
+        # if the user provided a list of strings, treat it as a Literal
+        if isinstance(response_type, list):
+            if not all(isinstance(item, str) for item in response_type):
+                raise ValueError(
+                    "List of options must be a list of strings. Received: "
+                    f"{response_type}"
+                )
+            # Convert list of options to Literal type and wrap
+            choice_literal = Literal[*tuple(response_type)]  # type: ignore
+            response_type = ScalarElicitationType[choice_literal]  # type: ignore
+        # if the user provided a primitive scalar, wrap it in an object schema
+        elif response_type in {bool, int, float, str}:
+            response_type = ScalarElicitationType[response_type]  # type: ignore
+        # if the user provided a Literal type, wrap it in an object schema
+        elif get_origin(response_type) is Literal:
+            response_type = ScalarElicitationType[response_type]  # type: ignore
+        # if the user provided an Enum type, wrap it in an object schema
+        elif isinstance(response_type, type) and issubclass(response_type, Enum):
             response_type = ScalarElicitationType[response_type]  # type: ignore
 
-        requested_schema = get_elicitation_schema(response_type)  # type: ignore
+        response_type = cast(type[T], response_type)
+
+        requested_schema = get_elicitation_schema(response_type)
 
         result = await self.session.elicit(
             message=message,
