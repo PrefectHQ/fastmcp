@@ -15,7 +15,13 @@ import anyio
 import httpx
 import mcp.types
 from mcp import ClientSession, StdioServerParameters
-from mcp.client.session import ListRootsFnT, LoggingFnT, MessageHandlerFnT, SamplingFnT
+from mcp.client.session import (
+    ElicitationFnT,
+    ListRootsFnT,
+    LoggingFnT,
+    MessageHandlerFnT,
+    SamplingFnT,
+)
 from mcp.server.fastmcp import FastMCP as FastMCP1Server
 from mcp.shared.memory import create_client_server_memory_streams
 from pydantic import AnyUrl
@@ -56,6 +62,7 @@ class SessionKwargs(TypedDict, total=False):
     sampling_callback: SamplingFnT | None
     list_roots_callback: ListRootsFnT | None
     logging_callback: LoggingFnT | None
+    elicitation_callback: ElicitationFnT | None
     message_handler: MessageHandlerFnT | None
     client_info: mcp.types.Implementation | None
 

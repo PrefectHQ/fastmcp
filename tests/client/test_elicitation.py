@@ -5,6 +5,7 @@ from mcp.types import ElicitResult
 
 from fastmcp import Context, FastMCP
 from fastmcp.client.client import Client
+from fastmcp.exceptions import ToolError
 from fastmcp.server.elicitation import (
     AcceptedElicitation,
     CancelledElicitation,
@@ -38,6 +39,14 @@ def fastmcp_server():
     return mcp
 
 
+async def test_elicitation_with_no_handler(fastmcp_server):
+    """Test that elicitation works without a handler."""
+
+    async with Client(fastmcp_server) as client:
+        with pytest.raises(ToolError, match="Elicitation not supported"):
+            await client.call_tool("ask_for_name", {})
+
+
 async def test_elicitation_accept_content(fastmcp_server):
     """Test basic elicitation functionality."""
 
@@ -49,7 +58,7 @@ async def test_elicitation_accept_content(fastmcp_server):
         fastmcp_server, elicitation_handler=elicitation_handler
     ) as client:
         result = await client.call_tool("ask_for_name", {})
-        assert result[0].text == "Hello, Alice!"  # type: ignore[attr-defined]
+        assert result.data == "Hello, Alice!"
 
 
 async def test_elicitation_decline(fastmcp_server):
@@ -62,7 +71,7 @@ async def test_elicitation_decline(fastmcp_server):
         fastmcp_server, elicitation_handler=elicitation_handler
     ) as client:
         result = await client.call_tool("ask_for_name", {})
-        assert result[0].text == "No name provided."  # type: ignore[attr-defined]
+        assert result.data == "No name provided."
 
 
 async def test_default_response_type(fastmcp_server):
@@ -86,7 +95,7 @@ async def test_default_response_type(fastmcp_server):
 
     async with Client(mcp, elicitation_handler=elicitation_handler) as client:
         result = await client.call_tool("ask_for_color", {})
-        assert result[0].text == "Your favorite color is blue!"  # type: ignore[attr-defined]
+        assert result.data == "Your favorite color is blue!"
 
 
 async def test_elicitation_handler_parameters():
@@ -148,7 +157,7 @@ async def test_elicitation_default_string_schema():
 
     async with Client(mcp, elicitation_handler=elicitation_handler) as client:
         result = await client.call_tool("ask_for_input", {})
-        assert result[0].text == "You said: Hello world!"  # type: ignore[attr-defined]
+        assert result.data == "You said: Hello world!"
 
 
 async def test_elicitation_cancel_action():
@@ -172,7 +181,7 @@ async def test_elicitation_cancel_action():
 
     async with Client(mcp, elicitation_handler=elicitation_handler) as client:
         result = await client.call_tool("ask_for_optional_info", {})
-        assert result[0].text == "Request was canceled"  # type: ignore[attr-defined]
+        assert result.data == "Request was canceled"
 
 
 async def test_elicitation_number_schema():
@@ -198,7 +207,7 @@ async def test_elicitation_number_schema():
 
     async with Client(mcp, elicitation_handler=elicitation_handler) as client:
         result = await client.call_tool("get_age", {})
-        assert result[0].text == "You are 25 years old"  # type: ignore[attr-defined]
+        assert result.data == "You are 25 years old"
 
 
 async def test_elicitation_handler_error():
@@ -219,7 +228,7 @@ async def test_elicitation_handler_error():
 
     async with Client(mcp, elicitation_handler=elicitation_handler) as client:
         result = await client.call_tool("failing_elicit", {})
-        assert "Error:" in result[0].text  # type: ignore[attr-defined]
+        assert "Error:" in result.data
 
 
 async def test_elicitation_multiple_calls():
@@ -272,7 +281,7 @@ async def test_elicitation_multiple_calls():
 
     async with Client(mcp, elicitation_handler=elicitation_handler) as client:
         result = await client.call_tool("multi_step_form", {})
-        assert result[0].text == "Hello Bob, you are 25 years old"  # type: ignore[attr-defined]
+        assert result.data == "Hello Bob, you are 25 years old"
         assert call_count == 2
 
 
@@ -307,7 +316,7 @@ async def test_dataclass_response_type():
 
     async with Client(mcp, elicitation_handler=elicitation_handler) as client:
         result = await client.call_tool("get_user_info", {})
-        assert result[0].text == "User: Alice, age: 30"  # type: ignore[attr-defined]
+        assert result.data == "User: Alice, age: 30"
 
 
 async def test_primitive_type_string():
@@ -326,7 +335,7 @@ async def test_primitive_type_string():
 
     async with Client(mcp, elicitation_handler=elicitation_handler) as client:
         result = await client.call_tool("test_string", {})
-        assert result[0].text == "Got: hello"  # type: ignore[attr-defined]
+        assert result.data == "Got: hello"
 
 
 async def test_primitive_type_int():
@@ -345,7 +354,7 @@ async def test_primitive_type_int():
 
     async with Client(mcp, elicitation_handler=elicitation_handler) as client:
         result = await client.call_tool("test_int", {})
-        assert result[0].text == "Got: 42"  # type: ignore[attr-defined]
+        assert result.data == "Got: 42"
 
 
 async def test_primitive_type_float():
@@ -364,7 +373,7 @@ async def test_primitive_type_float():
 
     async with Client(mcp, elicitation_handler=elicitation_handler) as client:
         result = await client.call_tool("test_float", {})
-        assert result[0].text == "Got: 3.14"  # type: ignore[attr-defined]
+        assert result.data == "Got: 3.14"
 
 
 async def test_primitive_type_bool():
@@ -383,7 +392,7 @@ async def test_primitive_type_bool():
 
     async with Client(mcp, elicitation_handler=elicitation_handler) as client:
         result = await client.call_tool("test_bool", {})
-        assert result[0].text == "Got: True"  # type: ignore[attr-defined]
+        assert result.data == "Got: True"
 
 
 async def test_schema_validation_rejects_non_object():
@@ -458,7 +467,7 @@ async def test_pattern_matching_accept():
 
     async with Client(mcp, elicitation_handler=elicitation_handler) as client:
         result = await client.call_tool("pattern_match_tool", {})
-        assert result[0].text == "Hello Alice!"  # type: ignore[attr-defined]
+        assert result.data == "Hello Alice!"
 
 
 async def test_pattern_matching_decline():
@@ -482,7 +491,7 @@ async def test_pattern_matching_decline():
 
     async with Client(mcp, elicitation_handler=elicitation_handler) as client:
         result = await client.call_tool("pattern_match_tool", {})
-        assert result[0].text == "You declined"  # type: ignore[attr-defined]
+        assert result.data == "You declined"
 
 
 async def test_pattern_matching_cancel():
@@ -506,4 +515,4 @@ async def test_pattern_matching_cancel():
 
     async with Client(mcp, elicitation_handler=elicitation_handler) as client:
         result = await client.call_tool("pattern_match_tool", {})
-        assert result[0].text == "Cancelled"  # type: ignore[attr-defined]
+        assert result.data == "Cancelled"

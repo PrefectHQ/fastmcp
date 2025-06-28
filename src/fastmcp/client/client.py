@@ -252,7 +252,9 @@ class Client(Generic[ClientTransportT]):
             sampling_callback
         )
 
-    def set_elicitation_callback(self, elicitation_callback: ElicitationHandler) -> None:
+    def set_elicitation_callback(
+        self, elicitation_callback: ElicitationHandler
+    ) -> None:
         """Set the elicitation callback for the client."""
         self._session_kwargs["elicitation_callback"] = create_elicitation_callback(
             elicitation_callback

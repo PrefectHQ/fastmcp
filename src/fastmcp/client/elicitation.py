@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import inspect
 from collections.abc import Awaitable, Callable
 from typing import Any, TypeAlias
 
@@ -19,7 +18,7 @@ ElicitationHandler: TypeAlias = Callable[
         dict[str, Any],  # requested_schema
         RequestContext[ClientSession, LifespanContextT],
     ],
-    ElicitResult | Awaitable[ElicitResult],
+    Awaitable[ElicitResult],
 ]
 
 
@@ -31,12 +30,9 @@ def create_elicitation_callback(
         params: ElicitRequestParams,
     ) -> ElicitResult | mcp.types.ErrorData:
         try:
-            result = elicitation_handler(
+            result = await elicitation_handler(
                 params.message, params.requestedSchema, context
             )
-            if inspect.isawaitable(result):
-                result = await result
-
             return result
         except Exception as e:
             return mcp.types.ErrorData(
