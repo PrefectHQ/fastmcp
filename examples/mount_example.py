@@ -9,6 +9,7 @@ the ToolManager's import_tools functionality. It shows how to:
 """
 
 import asyncio
+from urllib.parse import urlparse
 
 from fastmcp import FastMCP
 
@@ -65,17 +66,17 @@ def check_app_status() -> dict[str, str]:
 
 
 # Mount sub-applications
-app.mount("weather", weather_app)
+app.mount(server=weather_app, prefix="weather")
 
-app.mount("news", news_app)
+app.mount(server=news_app, prefix="news")
 
 
 async def get_server_details():
     """Print information about mounted resources."""
     # Print available tools
-    tools = app._tool_manager.list_tools()
+    tools = await app.get_tools()
     print(f"\nAvailable tools ({len(tools)}):")
-    for tool in tools:
+    for _, tool in tools.items():
         print(f"  - {tool.name}: {tool.description}")
 
     # Print available resources
@@ -83,18 +84,21 @@ async def get_server_details():
 
     # Distinguish between native and imported resources
     # Native resources would be those directly in the main app (not prefixed)
+
+    resources = await app.get_resources()
+
     native_resources = [
         uri
-        for uri in app._resource_manager._resources
-        if not (uri.startswith("weather+") or uri.startswith("news+"))
+        for uri, _ in resources.items()
+        if urlparse(uri).netloc not in ("weather", "news")
     ]
 
     # Imported resources - categorized by source app
     weather_resources = [
-        uri for uri in app._resource_manager._resources if uri.startswith("weather+")
+        uri for uri, _ in resources.items() if urlparse(uri).netloc == "weather"
     ]
     news_resources = [
-        uri for uri in app._resource_manager._resources if uri.startswith("news+")
+        uri for uri, _ in resources.items() if urlparse(uri).netloc == "news"
     ]
 
     print(f"  - Native app resources: {native_resources}")
@@ -102,7 +106,7 @@ async def get_server_details():
     print(f"  - Imported from news app: {news_resources}")
 
     # Let's try to access resources using the prefixed URI
-    weather_data = await app.read_resource("weather+weather://forecast")
+    weather_data = await app._mcp_read_resource(uri="weather://weather/forecast")
     print(f"\nWeather data from prefixed URI: {weather_data}")
 
 

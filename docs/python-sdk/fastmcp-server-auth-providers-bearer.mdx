@@ -7,23 +7,23 @@ sidebarTitle: bearer
 
 ## Classes
 
-### `JWKData`
+### `JWKData` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/bearer.py#L29"><Icon icon="github" size="14" /></a></sup>
 
 
 JSON Web Key data structure.
 
 
-### `JWKSData`
+### `JWKSData` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/bearer.py#L42"><Icon icon="github" size="14" /></a></sup>
 
 
 JSON Web Key Set data structure.
 
 
-### `RSAKeyPair`
+### `RSAKeyPair` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/bearer.py#L49"><Icon icon="github" size="14" /></a></sup>
 
 **Methods:**
 
-#### `generate`
+#### `generate` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/bearer.py#L54"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 generate(cls) -> 'RSAKeyPair'
@@ -35,7 +35,7 @@ Generate an RSA key pair for testing.
 - (private_key_pem, public_key_pem)
 
 
-#### `create_token`
+#### `create_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/bearer.py#L88"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 create_token(self, subject: str = 'fastmcp-user', issuer: str = 'https://fastmcp.example.com', audience: str | list[str] | None = None, scopes: list[str] | None = None, expires_in_seconds: int = 3600, additional_claims: dict[str, Any] | None = None, kid: str | None = None) -> str
@@ -57,7 +57,7 @@ Generate a test JWT token for testing purposes.
 - Signed JWT token string
 
 
-### `BearerAuthProvider`
+### `BearerAuthProvider` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/bearer.py#L149"><Icon icon="github" size="14" /></a></sup>
 
 
 Simple JWT Bearer Token validator for hosted MCP servers.

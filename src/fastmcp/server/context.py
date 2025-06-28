@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import warnings
 from collections.abc import Generator
 from contextlib import contextmanager
@@ -40,6 +41,7 @@ logger = get_logger(__name__)
 
 T = TypeVar("T")
 _current_context: ContextVar[Context | None] = ContextVar("context", default=None)
+_flush_lock = asyncio.Lock()
 
 
 @contextmanager
@@ -90,16 +92,20 @@ class Context:
     def __init__(self, fastmcp: FastMCP):
         self.fastmcp = fastmcp
         self._tokens: list[Token] = []
+        self._notification_queue: set[str] = set()  # Dedupe notifications
 
-    def __enter__(self) -> Context:
+    async def __aenter__(self) -> Context:
         """Enter the context manager and set this context as the current context."""
         # Always set this context and save the token
         token = _current_context.set(self)
         self._tokens.append(token)
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
         """Exit the context manager and reset the most recent token."""
+        # Flush any remaining notifications before exiting
+        await self._flush_notifications()
+
         if self._tokens:
             token = self._tokens.pop()
             _current_context.reset(token)
@@ -114,56 +120,6 @@ class Context:
             return request_ctx.get()
         except LookupError:
             raise ValueError("Context is not available outside of a request")
-
-    @property
-    def session(self) -> ServerSession:
-        """Access to the underlying session for advanced usage."""
-        return self.request_context.session
-
-    @property
-    def client_id(self) -> str | None:
-        """Get the client ID if available."""
-        return (
-            getattr(self.request_context.meta, "client_id", None)
-            if self.request_context.meta
-            else None
-        )
-
-    @property
-    def request_id(self) -> str:
-        """Get the unique ID for this request."""
-        return str(self.request_context.request_id)
-
-    @property
-    def session_id(self) -> str | None:
-        """Get the MCP session ID for HTTP transports.
-
-        Returns the session ID that can be used as a key for session-based
-        data storage (e.g., Redis) to share data between tool calls within
-        the same client session.
-
-        Returns:
-            The session ID for HTTP transports (SSE, StreamableHTTP), or None
-            for stdio and in-memory transports which don't use session IDs.
-
-        Example:
-            ```python
-            @server.tool
-            def store_data(data: dict, ctx: Context) -> str:
-                if session_id := ctx.session_id:
-                    redis_client.set(f"session:{session_id}:data", json.dumps(data))
-                    return f"Data stored for session {session_id}"
-                return "No session ID available (stdio/memory transport)"
-            ```
-        """
-        try:
-            from fastmcp.server.dependencies import get_http_headers
-
-            headers = get_http_headers(include_all=True)
-            return headers.get("mcp-session-id")
-        except RuntimeError:
-            # No HTTP context available (stdio/in-memory transport)
-            return None
 
     async def report_progress(
         self, progress: float, total: float | None = None, message: str | None = None
@@ -227,6 +183,56 @@ class Context:
             related_request_id=self.request_id,
         )
 
+    @property
+    def client_id(self) -> str | None:
+        """Get the client ID if available."""
+        return (
+            getattr(self.request_context.meta, "client_id", None)
+            if self.request_context.meta
+            else None
+        )
+
+    @property
+    def request_id(self) -> str:
+        """Get the unique ID for this request."""
+        return str(self.request_context.request_id)
+
+    @property
+    def session_id(self) -> str | None:
+        """Get the MCP session ID for HTTP transports.
+
+        Returns the session ID that can be used as a key for session-based
+        data storage (e.g., Redis) to share data between tool calls within
+        the same client session.
+
+        Returns:
+            The session ID for HTTP transports (SSE, StreamableHTTP), or None
+            for stdio and in-memory transports which don't use session IDs.
+
+        Example:
+            ```python
+            @server.tool
+            def store_data(data: dict, ctx: Context) -> str:
+                if session_id := ctx.session_id:
+                    redis_client.set(f"session:{session_id}:data", json.dumps(data))
+                    return f"Data stored for session {session_id}"
+                return "No session ID available (stdio/memory transport)"
+            ```
+        """
+        try:
+            from fastmcp.server.dependencies import get_http_headers
+
+            headers = get_http_headers(include_all=True)
+            return headers.get("mcp-session-id")
+        except RuntimeError:
+            # No HTTP context available (stdio/in-memory transport)
+            return None
+
+    @property
+    def session(self) -> ServerSession:
+        """Access to the underlying session for advanced usage."""
+        return self.request_context.session
+
     # Convenience methods for common log levels
     async def debug(self, message: str, logger_name: str | None = None) -> None:
         """Send a debug log message."""
@@ -248,6 +254,18 @@ class Context:
         """List the roots available to the server, as indicated by the client."""
         result = await self.session.list_roots()
         return result.roots
+
+    async def send_tool_list_changed(self) -> None:
+        """Send a tool list changed notification to the client."""
+        await self.session.send_tool_list_changed()
+
+    async def send_resource_list_changed(self) -> None:
+        """Send a resource list changed notification to the client."""
+        await self.session.send_resource_list_changed()
+
+    async def send_prompt_list_changed(self) -> None:
+        """Send a prompt list changed notification to the client."""
+        await self.session.send_prompt_list_changed()
 
     async def sample(
         self,
@@ -363,6 +381,52 @@ class Context:
             )
 
         return fastmcp.server.dependencies.get_http_request()
+
+    def _queue_tool_list_changed(self) -> None:
+        """Queue a tool list changed notification."""
+        self._notification_queue.add("notifications/tools/list_changed")
+        self._try_flush_notifications()
+
+    def _queue_resource_list_changed(self) -> None:
+        """Queue a resource list changed notification."""
+        self._notification_queue.add("notifications/resources/list_changed")
+        self._try_flush_notifications()
+
+    def _queue_prompt_list_changed(self) -> None:
+        """Queue a prompt list changed notification."""
+        self._notification_queue.add("notifications/prompts/list_changed")
+        self._try_flush_notifications()
+
+    def _try_flush_notifications(self) -> None:
+        """Synchronous method that attempts to flush notifications if we're in an async context."""
+        try:
+            # Check if we're in an async context
+            loop = asyncio.get_running_loop()
+            if loop and not loop.is_running():
+                return
+            # Schedule flush as a task (fire-and-forget)
+            asyncio.create_task(self._flush_notifications())
+        except RuntimeError:
+            # No event loop - will flush later
+            pass
+
+    async def _flush_notifications(self) -> None:
+        """Send all queued notifications."""
+        async with _flush_lock:
+            if not self._notification_queue:
+                return
+
+            try:
+                if "notifications/tools/list_changed" in self._notification_queue:
+                    await self.session.send_tool_list_changed()
+                if "notifications/resources/list_changed" in self._notification_queue:
+                    await self.session.send_resource_list_changed()
+                if "notifications/prompts/list_changed" in self._notification_queue:
+                    await self.session.send_prompt_list_changed()
+                self._notification_queue.clear()
+            except Exception:
+                # Don't let notification failures break the request
+                pass
 
     def _parse_model_preferences(
         self, model_preferences: ModelPreferences | str | list[str] | None

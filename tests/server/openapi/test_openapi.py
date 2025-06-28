@@ -235,6 +235,7 @@ class TestTools:
                 },
                 "required": ["name", "active"],
             },
+            outputSchema=None,
         )
         assert tools[1].model_dump() == dict(
             name="update_user_name_users",
@@ -252,6 +253,7 @@ class TestTools:
                 },
                 "required": ["user_id", "name"],
             },
+            outputSchema=None,
         )
 
     async def test_call_create_user_tool(
@@ -267,9 +269,8 @@ class TestTools:
                 "create_user_users_post", {"name": "David", "active": False}
             )
 
-        response_data = json.loads(tool_response[0].text)  # type: ignore[attr-defined]
         expected_user = User(id=4, name="David", active=False).model_dump()
-        assert response_data == expected_user
+        assert tool_response.data == expected_user
 
         # Check that the user was created via API
         response = await api_client.get("/users")
@@ -296,9 +297,8 @@ class TestTools:
                 {"user_id": 1, "name": "XYZ"},
             )
 
-        response_data = json.loads(tool_response[0].text)  # type: ignore[attr-defined]
         expected_data = dict(id=1, name="XYZ", active=True)
-        assert response_data == expected_data
+        assert tool_response.data == expected_data
 
         # Check that the user was updated via API
         response = await api_client.get("/users")
@@ -330,10 +330,12 @@ class TestTools:
         )
         async with Client(mcp_server) as client:
             tool_response = await client.call_tool("get_users_users_get", {})
-            assert json.loads(tool_response[0].text) == [  # type: ignore[attr-defined]
-                user.model_dump()
-                for user in sorted(users_db.values(), key=lambda x: x.id)
-            ]
+            assert tool_response.data == {
+                "result": [
+                    user.model_dump()
+                    for user in sorted(users_db.values(), key=lambda x: x.id)
+                ]
+            }
 
 
 class TestResources:
@@ -727,11 +729,21 @@ class TestOpenAPI30Compatibility:
                 "createProduct", {"name": "New Product", "price": 39.99}
             )
             # Result should be a text content
-            assert len(result) == 1
-            product = json.loads(result[0].text)  # type: ignore[attr-defined]
+            assert len(result.content) == 1
+            product = json.loads(result.content[0].text)  # type: ignore[attr-defined]
             assert product["id"] == "p3"
             assert product["name"] == "New Product"
             assert product["price"] == 39.99
+
+            assert result.structured_content is not None
+            assert result.structured_content["id"] == "p3"
+            assert result.structured_content["name"] == "New Product"
+            assert result.structured_content["price"] == 39.99
+
+            assert result.data is not None
+            assert result.data["id"] == "p3"
+            assert result.data["name"] == "New Product"
+            assert result.data["price"] == 39.99
 
 
 class TestOpenAPI31Compatibility:
@@ -903,11 +915,21 @@ class TestOpenAPI31Compatibility:
                 "createOrder", {"customer": "Charlie", "items": ["item4", "item5"]}
             )
             # Result should be a text content
-            assert len(result) == 1
-            order = json.loads(result[0].text)  # type: ignore[attr-dict]
+            assert len(result.content) == 1
+            order = json.loads(result.content[0].text)  # type: ignore[attr-dict]
             assert order["id"] == "o3"
             assert order["customer"] == "Charlie"
             assert order["items"] == ["item4", "item5"]
+
+            assert result.structured_content is not None
+            assert result.structured_content["id"] == "o3"
+            assert result.structured_content["customer"] == "Charlie"
+            assert result.structured_content["items"] == ["item4", "item5"]
+
+            assert result.data is not None
+            assert result.data["id"] == "o3"
+            assert result.data["customer"] == "Charlie"
+            assert result.data["items"] == ["item4", "item5"]
 
 
 async def test_empty_query_parameters_not_sent(
@@ -983,7 +1005,9 @@ async def test_none_path_parameters_rejected(
     # Create a client and try to call a tool with a None path parameter
     async with Client(mcp_server) as client:
         # get_user has a required path parameter user_id
-        with pytest.raises(ToolError, match="Missing required path parameters"):
+        with pytest.raises(
+            ToolError, match="Input validation error|Missing required path parameters"
+        ):
             await client.call_tool(
                 "update_user_name_users",
                 {

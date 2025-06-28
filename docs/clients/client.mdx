@@ -102,14 +102,14 @@ config = {
     "mcpServers": {
         "server_name": {
             # Remote HTTP/SSE server
-            "transport": "streamable-http",  # or "sse" 
+            "transport": "http",  # or "sse" 
             "url": "https://api.example.com/mcp",
             "headers": {"Authorization": "Bearer token"},
             "auth": "oauth"  # or bearer token string
         },
         "local_server": {
             # Local stdio server
-            "transport": "stdio"
+            "transport": "stdio",
             "command": "python",
             "args": ["./server.py", "--verbose"],
             "env": {"DEBUG": "true"},

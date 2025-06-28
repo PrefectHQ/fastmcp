@@ -7,7 +7,7 @@ sidebarTitle: tool_manager
 
 ## Classes
 
-### `ToolManager`
+### `ToolManager` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/tools/tool_manager.py#L22"><Icon icon="github" size="14" /></a></sup>
 
 
 Manages FastMCP tools.
@@ -15,7 +15,7 @@ Manages FastMCP tools.
 
 **Methods:**
 
-#### `mount`
+#### `mount` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/tools/tool_manager.py#L46"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 mount(self, server: MountedServer) -> None
@@ -24,7 +24,7 @@ mount(self, server: MountedServer) -> None
 Adds a mounted server as a source for tools.
 
 
-#### `add_tool_from_fn`
+#### `add_tool_from_fn` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/tools/tool_manager.py#L113"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 add_tool_from_fn(self, fn: Callable[..., Any], name: str | None = None, description: str | None = None, tags: set[str] | None = None, annotations: ToolAnnotations | None = None, serializer: Callable[[Any], str] | None = None, exclude_args: list[str] | None = None) -> Tool
@@ -33,7 +33,7 @@ add_tool_from_fn(self, fn: Callable[..., Any], name: str | None = None, descript
 Add a tool to the server.
 
 
-#### `add_tool`
+#### `add_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/tools/tool_manager.py#L142"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 add_tool(self, tool: Tool) -> Tool
@@ -42,7 +42,7 @@ add_tool(self, tool: Tool) -> Tool
 Register a tool with the server.
 
 
-#### `remove_tool`
+#### `remove_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/tools/tool_manager.py#L159"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 remove_tool(self, key: str) -> None

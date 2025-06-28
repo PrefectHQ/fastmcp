@@ -271,6 +271,21 @@ class InMemoryOAuthProvider(OAuthProvider):
             return token_obj
         return None
 
+    async def verify_token(self, token: str) -> AccessToken | None:
+        """
+        Verify a bearer token and return access info if valid.
+
+        This method implements the TokenVerifier protocol by delegating
+        to our existing load_access_token method.
+
+        Args:
+            token: The token string to validate
+
+        Returns:
+            AccessToken object if valid, None if invalid or expired
+        """
+        return await self.load_access_token(token)
+
     def _revoke_internal(
         self, access_token_str: str | None = None, refresh_token_str: str | None = None
     ):

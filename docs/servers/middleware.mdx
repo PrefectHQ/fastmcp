@@ -78,10 +78,13 @@ When a request comes in, **multiple hooks may be called for the same request**, 
 2. **`on_request` or `on_notification`** - Called based on the message type
 3. **Operation-specific hooks** - Called for specific MCP operations like `on_call_tool`
 
-For example, when a client calls a tool, your middleware will receive **three separate hook calls**:
-1. First: `on_message` (because it's any MCP message)
-2. Second: `on_request` (because tool calls expect responses)
-3. Third: `on_call_tool` (because it's specifically a tool execution)
+For example, when a client calls a tool, your middleware will receive **multiple hook calls**:
+1. `on_message` and `on_request` for any initial tool discovery operations (list_tools)
+2. `on_message` (because it's any MCP message) for the tool call itself
+3. `on_request` (because tool calls expect responses) for the tool call itself
+4. `on_call_tool` (because it's specifically a tool execution) for the tool call itself
+
+Note that the MCP SDK may perform additional operations like listing tools for caching purposes, which will trigger additional middleware calls beyond just the direct tool execution.
 
 This hierarchy allows you to target your middleware logic with the right level of specificity. Use `on_message` for broad concerns like logging, `on_request` for authentication, and `on_call_tool` for tool-specific logic like performance monitoring.
 
@@ -329,93 +332,246 @@ parent.mount(child, prefix="child")
 
 When a client calls "child_tool", the request will flow through the parent's authentication middleware first, then route to the child server where it will go through the child's logging middleware.
 
-## Examples
+## Built-in Middleware Examples
 
-### Authentication Middleware
+FastMCP includes several middleware implementations that demonstrate best practices and provide immediately useful functionality. Let's explore how each type works by building simplified versions, then see how to use the full implementations.
 
-This middleware checks for a valid authorization token on all requests:
+### Timing Middleware
 
-```python
-from fastmcp.server.middleware import Middleware, MiddlewareContext
-from fastmcp.exceptions import ToolError
+Performance monitoring is essential for understanding your server's behavior and identifying bottlenecks. FastMCP includes timing middleware at `fastmcp.server.middleware.timing`. 
 
-class AuthenticationMiddleware(Middleware):
-    def __init__(self, required_token: str):
-        self.required_token = required_token
-    
-    async def on_request(self, context: MiddlewareContext, call_next):
-        if hasattr(context, 'fastmcp_context') and context.fastmcp_context:
-            try:
-                request = context.fastmcp_context.get_http_request()
-                auth_header = request.headers.get("Authorization")
-                
-                if not auth_header or not auth_header.startswith("Bearer "):
-                    raise ToolError("Missing or invalid authorization header")
-                
-                token = auth_header.split(" ", 1)[1]
-                if token != self.required_token:
-                    raise ToolError("Invalid authentication token")
-                    
-            except Exception:
-                pass
-        
-        return await call_next(context)
-
-# Usage
-mcp = FastMCP("SecureServer")
-mcp.add_middleware(AuthenticationMiddleware("secret-token-123"))
-```
-
-### Performance Monitoring Middleware
-
-This middleware tracks how long tools take to execute:
+Here's an example of how it works:
 
 ```python
 import time
-import logging
+from fastmcp.server.middleware import Middleware, MiddlewareContext
 
-class PerformanceMiddleware(Middleware):
-    def __init__(self):
-        self.logger = logging.getLogger("performance")
-    
-    async def on_call_tool(self, context: MiddlewareContext, call_next):
-        tool_name = context.message.name
-        start_time = time.time()
+class SimpleTimingMiddleware(Middleware):
+    async def on_request(self, context: MiddlewareContext, call_next):
+        start_time = time.perf_counter()
         
         try:
             result = await call_next(context)
-            execution_time = time.time() - start_time
-            
-            self.logger.info(
-                f"Tool {tool_name} completed in {execution_time:.3f}s"
-            )
-            
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            print(f"Request {context.method} completed in {duration_ms:.2f}ms")
             return result
-            
         except Exception as e:
-            execution_time = time.time() - start_time
-            self.logger.error(
-                f"Tool {tool_name} failed after {execution_time:.3f}s: {e}"
-            )
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            print(f"Request {context.method} failed after {duration_ms:.2f}ms: {e}")
             raise
 ```
 
-### Request Transformation Middleware
-
-This middleware adds metadata to tool calls:
+To use the full version with proper logging and configuration:
 
 ```python
-class TransformationMiddleware(Middleware):
-    async def on_call_tool(self, context: MiddlewareContext, call_next):
-        if hasattr(context.message, 'arguments'):
-            args = context.message.arguments or {}
-            args['_middleware_timestamp'] = context.timestamp.isoformat()
-            
-            modified_context = context.copy(
-                message=context.message.model_copy(update={'arguments': args})
-            )
-        else:
-            modified_context = context
+from fastmcp.server.middleware.timing import (
+    TimingMiddleware, 
+    DetailedTimingMiddleware
+)
+
+# Basic timing for all requests
+mcp.add_middleware(TimingMiddleware())
+
+# Detailed per-operation timing (tools, resources, prompts)
+mcp.add_middleware(DetailedTimingMiddleware())
+```
+
+The built-in versions include custom logger support, proper formatting, and **DetailedTimingMiddleware** provides operation-specific hooks like `on_call_tool` and `on_read_resource` for granular timing.
+
+### Logging Middleware
+
+Request and response logging is crucial for debugging, monitoring, and understanding usage patterns in your MCP server. FastMCP provides comprehensive logging middleware at `fastmcp.server.middleware.logging`. 
+
+Here's an example of how it works:
+
+```python
+from fastmcp.server.middleware import Middleware, MiddlewareContext
+
+class SimpleLoggingMiddleware(Middleware):
+    async def on_message(self, context: MiddlewareContext, call_next):
+        print(f"Processing {context.method} from {context.source}")
         
-        return await call_next(modified_context)
+        try:
+            result = await call_next(context)
+            print(f"Completed {context.method}")
+            return result
+        except Exception as e:
+            print(f"Failed {context.method}: {e}")
+            raise
+```
+
+To use the full versions with advanced features:
+
+```python
+from fastmcp.server.middleware.logging import (
+    LoggingMiddleware, 
+    StructuredLoggingMiddleware
+)
+
+# Human-readable logging with payload support
+mcp.add_middleware(LoggingMiddleware(
+    include_payloads=True,
+    max_payload_length=1000
+))
+
+# JSON-structured logging for log aggregation tools
+mcp.add_middleware(StructuredLoggingMiddleware(include_payloads=True))
+```
+
+The built-in versions include payload logging, structured JSON output, custom logger support, payload size limits, and operation-specific hooks for granular control.
+
+### Rate Limiting Middleware
+
+Rate limiting is essential for protecting your server from abuse, ensuring fair resource usage, and maintaining performance under load. FastMCP includes sophisticated rate limiting middleware at `fastmcp.server.middleware.rate_limiting`. 
+
+Here's an example of how it works:
+
+```python
+import time
+from collections import defaultdict
+from fastmcp.server.middleware import Middleware, MiddlewareContext
+from mcp import McpError
+from mcp.types import ErrorData
+
+class SimpleRateLimitMiddleware(Middleware):
+    def __init__(self, requests_per_minute: int = 60):
+        self.requests_per_minute = requests_per_minute
+        self.client_requests = defaultdict(list)
+    
+    async def on_request(self, context: MiddlewareContext, call_next):
+        current_time = time.time()
+        client_id = "default"  # In practice, extract from headers or context
+        
+        # Clean old requests and check limit
+        cutoff_time = current_time - 60
+        self.client_requests[client_id] = [
+            req_time for req_time in self.client_requests[client_id]
+            if req_time > cutoff_time
+        ]
+        
+        if len(self.client_requests[client_id]) >= self.requests_per_minute:
+            raise McpError(ErrorData(code=-32000, message="Rate limit exceeded"))
+        
+        self.client_requests[client_id].append(current_time)
+        return await call_next(context)
+```
+
+To use the full versions with advanced algorithms:
+
+```python
+from fastmcp.server.middleware.rate_limiting import (
+    RateLimitingMiddleware, 
+    SlidingWindowRateLimitingMiddleware
+)
+
+# Token bucket rate limiting (allows controlled bursts)
+mcp.add_middleware(RateLimitingMiddleware(
+    max_requests_per_second=10.0,
+    burst_capacity=20
+))
+
+# Sliding window rate limiting (precise time-based control)
+mcp.add_middleware(SlidingWindowRateLimitingMiddleware(
+    max_requests=100,
+    window_minutes=1
+))
+```
+
+The built-in versions include token bucket algorithms, per-client identification, global rate limiting, and async-safe implementations with configurable client identification functions.
+
+### Error Handling Middleware
+
+Consistent error handling and recovery is critical for robust MCP servers. FastMCP provides comprehensive error handling middleware at `fastmcp.server.middleware.error_handling`.
+
+Here's an example of how it works:
+
+```python
+import logging
+from fastmcp.server.middleware import Middleware, MiddlewareContext
+
+class SimpleErrorHandlingMiddleware(Middleware):
+    def __init__(self):
+        self.logger = logging.getLogger("errors")
+        self.error_counts = {}
+    
+    async def on_message(self, context: MiddlewareContext, call_next):
+        try:
+            return await call_next(context)
+        except Exception as error:
+            # Log the error and track statistics
+            error_key = f"{type(error).__name__}:{context.method}"
+            self.error_counts[error_key] = self.error_counts.get(error_key, 0) + 1
+            
+            self.logger.error(f"Error in {context.method}: {type(error).__name__}: {error}")
+            raise
+```
+
+To use the full versions with advanced features:
+
+```python
+from fastmcp.server.middleware.error_handling import (
+    ErrorHandlingMiddleware, 
+    RetryMiddleware
+)
+
+# Comprehensive error logging and transformation
+mcp.add_middleware(ErrorHandlingMiddleware(
+    include_traceback=True,
+    transform_errors=True,
+    error_callback=my_error_callback
+))
+
+# Automatic retry with exponential backoff
+mcp.add_middleware(RetryMiddleware(
+    max_retries=3,
+    retry_exceptions=(ConnectionError, TimeoutError)
+))
+```
+
+The built-in versions include error transformation, custom callbacks, configurable retry logic, and proper MCP error formatting.
+
+### Combining Middleware
+
+These middleware work together seamlessly:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.middleware.timing import TimingMiddleware
+from fastmcp.server.middleware.logging import LoggingMiddleware
+from fastmcp.server.middleware.rate_limiting import RateLimitingMiddleware
+from fastmcp.server.middleware.error_handling import ErrorHandlingMiddleware
+
+mcp = FastMCP("Production Server")
+
+# Add middleware in logical order
+mcp.add_middleware(ErrorHandlingMiddleware())  # Handle errors first
+mcp.add_middleware(RateLimitingMiddleware(max_requests_per_second=50))
+mcp.add_middleware(TimingMiddleware())  # Time actual execution
+mcp.add_middleware(LoggingMiddleware())  # Log everything
+
+@mcp.tool
+def my_tool(data: str) -> str:
+    return f"Processed: {data}"
+```
+
+This configuration provides comprehensive monitoring, protection, and observability for your MCP server.
+
+### Custom Middleware Example
+
+You can also create custom middleware by extending the base class:
+
+```python
+from fastmcp.server.middleware import Middleware, MiddlewareContext
+
+class CustomHeaderMiddleware(Middleware):
+    async def on_request(self, context: MiddlewareContext, call_next):
+        # Add custom logic here
+        print(f"Processing {context.method}")
+        
+        result = await call_next(context)
+        
+        print(f"Completed {context.method}")
+        return result
+
+mcp.add_middleware(CustomHeaderMiddleware())
 ```

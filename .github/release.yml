@@ -9,7 +9,7 @@ changelog:
         - feature
       exclude:
         labels:
-          - breaking change
+          - contrib
 
     - title: Enhancements 🔧
       labels:
@@ -17,21 +17,30 @@ changelog:
       exclude:
         labels:
           - breaking change
+          - contrib
 
     - title: Fixes 🐞
       labels:
         - bug
       exclude:
         labels:
-          - breaking change
+          - contrib
 
     - title: Breaking Changes 🛫
       labels:
         - breaking change
+      exclude:
+        labels:
+          - contrib
 
     - title: Docs 📚
       labels:
         - documentation
+
+    - title: Examples & Contrib 💡
+      labels:
+        - example
+        - contrib
 
     - title: Dependencies 📦
       labels:

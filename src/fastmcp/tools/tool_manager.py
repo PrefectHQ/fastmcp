@@ -4,12 +4,12 @@ import warnings
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
-from mcp.types import ContentBlock, ToolAnnotations
+from mcp.types import ToolAnnotations
 
 from fastmcp import settings
 from fastmcp.exceptions import NotFoundError, ToolError
 from fastmcp.settings import DuplicateBehavior
-from fastmcp.tools.tool import Tool
+from fastmcp.tools.tool import Tool, ToolResult
 from fastmcp.utilities.logging import get_logger
 
 if TYPE_CHECKING:
@@ -169,9 +169,7 @@ class ToolManager:
         else:
             raise NotFoundError(f"Tool {key!r} not found")
 
-    async def call_tool(
-        self, key: str, arguments: dict[str, Any]
-    ) -> list[ContentBlock]:
+    async def call_tool(self, key: str, arguments: dict[str, Any]) -> ToolResult:
         """
         Internal API for servers: Finds and calls a tool, respecting the
         filtered protocol path.
@@ -187,12 +185,12 @@ class ToolManager:
 
             # raise ToolErrors as-is
             except ToolError as e:
-                logger.exception(f"Error calling tool {key!r}: {e}")
+                logger.exception(f"Error calling tool {key!r}")
                 raise e
 
             # Handle other exceptions
             except Exception as e:
-                logger.exception(f"Error calling tool {key!r}: {e}")
+                logger.exception(f"Error calling tool {key!r}")
                 if self.mask_error_details:
                     # Mask internal details
                     raise ToolError(f"Error calling tool {key!r}") from e

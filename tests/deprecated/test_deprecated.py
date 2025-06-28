@@ -85,7 +85,7 @@ async def test_run_streamable_http_async_deprecation_warning():
         # Verify the mock was called with the right transport
         mock_run.assert_called_once()
         call_kwargs = mock_run.call_args.kwargs
-        assert call_kwargs.get("transport") == "streamable-http"
+        assert call_kwargs.get("transport") == "http"
 
 
 def test_http_app_with_sse_transport():

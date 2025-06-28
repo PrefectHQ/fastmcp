@@ -7,7 +7,7 @@ sidebarTitle: context
 
 ## Functions
 
-### `set_context`
+### `set_context` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L36"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 set_context(context: Context) -> Generator[Context, None, None]
@@ -15,7 +15,7 @@ set_context(context: Context) -> Generator[Context, None, None]
 
 ## Classes
 
-### `Context`
+### `Context` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L45"><Icon icon="github" size="14" /></a></sup>
 
 
 Context object providing access to MCP capabilities.
@@ -53,7 +53,7 @@ The context is optional - tools that don't need it can omit the parameter.
 
 **Methods:**
 
-#### `request_context`
+#### `request_context` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L98"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 request_context(self) -> RequestContext
@@ -64,7 +64,7 @@ Access to the underlying request context.
 If called outside of a request context, this will raise a ValueError.
 
 
-#### `client_id`
+#### `client_id` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L168"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 client_id(self) -> str | None
@@ -73,7 +73,7 @@ client_id(self) -> str | None
 Get the client ID if available.
 
 
-#### `request_id`
+#### `request_id` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L177"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 request_id(self) -> str
@@ -82,7 +82,7 @@ request_id(self) -> str
 Get the unique ID for this request.
 
 
-#### `session_id`
+#### `session_id` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L182"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 session_id(self) -> str | None
@@ -99,7 +99,7 @@ the same client session.
 - for stdio and in-memory transports which don't use session IDs.
 
 
-#### `session`
+#### `session` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L213"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 session(self)
@@ -108,7 +108,7 @@ session(self)
 Access to the underlying session for advanced usage.
 
 
-#### `get_http_request`
+#### `get_http_request` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/context.py#L282"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 get_http_request(self) -> Request

@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 
 def infer_transport_type_from_url(
     url: str | AnyUrl,
-) -> Literal["streamable-http", "sse"]:
+) -> Literal["http", "sse"]:
     """
     Infer the appropriate transport type from the given URL.
     """
@@ -34,7 +34,7 @@ def infer_transport_type_from_url(
     if re.search(r"/sse(/|\?|&|$)", path):
         return "sse"
     else:
-        return "streamable-http"
+        return "http"
 
 
 class StdioMCPServer(FastMCPBaseModel):
@@ -58,7 +58,7 @@ class StdioMCPServer(FastMCPBaseModel):
 class RemoteMCPServer(FastMCPBaseModel):
     url: str
     headers: dict[str, str] = Field(default_factory=dict)
-    transport: Literal["streamable-http", "sse"] | None = None
+    transport: Literal["http", "streamable-http", "sse"] | None = None
     auth: Annotated[
         str | Literal["oauth"] | httpx.Auth | None,
         Field(
@@ -79,6 +79,7 @@ class RemoteMCPServer(FastMCPBaseModel):
         if transport == "sse":
             return SSETransport(self.url, headers=self.headers, auth=self.auth)
         else:
+            # Both "http" and "streamable-http" map to StreamableHttpTransport
             return StreamableHttpTransport(
                 self.url, headers=self.headers, auth=self.auth
             )

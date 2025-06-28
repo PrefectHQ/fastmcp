@@ -57,6 +57,42 @@ def generate_code_request(language: str, task_description: str) -> PromptMessage
 Functions with `*args` or `**kwargs` are not supported as prompts. This restriction exists because FastMCP needs to generate a complete parameter schema for the MCP protocol, which isn't possible with variable argument lists.
 </Tip>
 
+#### Decorator Arguments
+
+While FastMCP infers the name and description from your function, you can override these and add additional metadata using arguments to the `@mcp.prompt` decorator:
+
+```python
+@mcp.prompt(
+    name="analyze_data_request",          # Custom prompt name
+    description="Creates a request to analyze data with specific parameters",  # Custom description
+    tags={"analysis", "data"}             # Optional categorization tags
+)
+def data_analysis_prompt(
+    data_uri: str = Field(description="The URI of the resource containing the data."),
+    analysis_type: str = Field(default="summary", description="Type of analysis.")
+) -> str:
+    """This docstring is ignored when description is provided."""
+    return f"Please perform a '{analysis_type}' analysis on the data found at {data_uri}."
+```
+
+<Card icon="code" title="@prompt Decorator Arguments">
+<ParamField body="name" type="str | None">
+  Sets the explicit prompt name exposed via MCP. If not provided, uses the function name
+</ParamField>
+
+<ParamField body="description" type="str | None">
+  Provides the description exposed via MCP. If set, the function's docstring is ignored for this purpose
+</ParamField>
+
+<ParamField body="tags" type="set[str] | None">
+  A set of strings used to categorize the prompt. Clients might use tags to filter or group available prompts
+</ParamField>
+
+<ParamField body="enabled" type="bool" default="True">
+  A boolean to enable or disable the prompt. See [Disabling Prompts](#disabling-prompts) for more information
+</ParamField>
+</Card>
+
 ### Argument Types
 
 <VersionBadge version="2.9.0" />
@@ -177,28 +213,6 @@ def data_analysis_prompt(
 
 In this example, the client *must* provide `data_uri`. If `analysis_type` or `include_charts` are omitted, their default values will be used.
 
-### Prompt Metadata
-
-While FastMCP infers the name and description from your function, you can override these and add tags using arguments to the `@mcp.prompt` decorator:
-
-```python
-@mcp.prompt(
-    name="analyze_data_request",          # Custom prompt name
-    description="Creates a request to analyze data with specific parameters",  # Custom description
-    tags={"analysis", "data"}             # Optional categorization tags
-)
-def data_analysis_prompt(
-    data_uri: str = Field(description="The URI of the resource containing the data."),
-    analysis_type: str = Field(default="summary", description="Type of analysis.")
-) -> str:
-    """This docstring is ignored when description is provided."""
-    return f"Please perform a '{analysis_type}' analysis on the data found at {data_uri}."
-```
-
-- **`name`**: Sets the explicit prompt name exposed via MCP.
-- **`description`**: Provides the description exposed via MCP. If set, the function's docstring is ignored for this purpose.
-- **`tags`**: A set of strings used to categorize the prompt. Clients *might* use tags to filter or group available prompts.
-- **`enabled`**: A boolean to enable or disable the prompt (defaults to `True`). See [Disabling Prompts](#disabling-prompts) for more information.
 ### Disabling Prompts
 
 <VersionBadge version="2.8.0" />
@@ -224,7 +238,8 @@ def seasonal_prompt(): return "Happy Holidays!"
 seasonal_prompt.disable()
 seasonal_prompt.enable()
 ```
-### Asynchronous Prompts
+
+### Async Prompts
 
 FastMCP seamlessly supports both standard (`def`) and asynchronous (`async def`) functions as prompts.
 
@@ -267,7 +282,26 @@ async def generate_report_request(report_type: str, ctx: Context) -> str:
 
 For full documentation on the Context object and all its capabilities, see the [Context documentation](/servers/context).
 
+### Notifications
 
+<VersionBadge version="2.9.1" />
+
+FastMCP automatically sends `notifications/prompts/list_changed` notifications to connected clients when prompts are added, enabled, or disabled. This allows clients to stay up-to-date with the current prompt set without manually polling for changes.
+
+```python
+@mcp.prompt
+def example_prompt() -> str:
+    return "Hello!"
+
+# These operations trigger notifications:
+mcp.add_prompt(example_prompt)  # Sends prompts/list_changed notification
+example_prompt.disable()        # Sends prompts/list_changed notification  
+example_prompt.enable()         # Sends prompts/list_changed notification
+```
+
+Notifications are only sent when these operations occur within an active MCP request context (e.g., when called from within a tool or other MCP operation). Operations performed during server initialization do not trigger notifications.
+
+Clients can handle these notifications using a [message handler](/clients/messages) to automatically refresh their prompt lists or update their interfaces.
 
 ## Server Behavior
 

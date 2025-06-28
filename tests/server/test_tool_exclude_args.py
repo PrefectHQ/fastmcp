@@ -1,7 +1,6 @@
 from typing import Any
 
 import pytest
-from mcp.types import TextContent
 
 from fastmcp import Client, FastMCP
 from fastmcp.tools.tool import Tool
@@ -92,9 +91,4 @@ async def test_tool_functionality_with_exclude_args():
         result = await client.call_tool(
             "create_item", {"name": "test_item", "value": 42}
         )
-        assert len(result) == 1
-        assert isinstance(result[0], TextContent)
-
-        # The result should contain the expected JSON
-        assert '"name": "test_item"' in result[0].text
-        assert '"value": 42' in result[0].text
+        assert result.data == {"name": "test_item", "value": 42}

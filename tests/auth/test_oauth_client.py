@@ -43,7 +43,7 @@ def run_server(host: str, port: int, **kwargs) -> None:
 
 @pytest.fixture(scope="module")
 def streamable_http_server() -> Generator[str, None, None]:
-    with run_server_in_process(run_server, transport="streamable-http") as url:
+    with run_server_in_process(run_server, transport="http") as url:
         yield f"{url}/mcp/"
 
 
@@ -226,7 +226,9 @@ async def test_call_tool(client_with_headless_oauth: Client):
     """Test that we can call a tool."""
     async with client_with_headless_oauth:
         result = await client_with_headless_oauth.call_tool("add", {"a": 5, "b": 3})
-        assert result[0].text == "8"  # type: ignore[attr-defined]
+        # The add tool returns int which gets wrapped as structured output
+        # Client unwraps it and puts the actual int in the data field
+        assert result.data == 8
 
 
 async def test_list_resources(client_with_headless_oauth: Client):

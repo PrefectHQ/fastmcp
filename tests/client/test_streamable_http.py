@@ -7,7 +7,6 @@ from unittest.mock import AsyncMock
 import pytest
 import uvicorn
 from mcp import McpError
-from mcp.types import TextContent
 from starlette.applications import Starlette
 from starlette.routing import Mount
 
@@ -103,8 +102,19 @@ async def streamable_http_server(
     stateless_http: bool = False,
 ) -> AsyncGenerator[str, None]:
     with run_server_in_process(
-        run_server, stateless_http=stateless_http, transport="streamable-http"
+        run_server, stateless_http=stateless_http, transport="http"
     ) as url:
+        async with Client(transport=StreamableHttpTransport(f"{url}/mcp/")) as client:
+            assert await client.ping()
+        yield f"{url}/mcp/"
+
+
+@pytest.fixture()
+async def streamable_http_server_with_streamable_http_alias() -> AsyncGenerator[
+    str, None
+]:
+    """Test that the "streamable-http" transport alias works."""
+    with run_server_in_process(run_server, transport="streamable-http") as url:
         async with Client(transport=StreamableHttpTransport(f"{url}/mcp/")) as client:
             assert await client.ping()
         yield f"{url}/mcp/"
@@ -114,6 +124,19 @@ async def test_ping(streamable_http_server: str):
     """Test pinging the server."""
     async with Client(
         transport=StreamableHttpTransport(streamable_http_server)
+    ) as client:
+        result = await client.ping()
+        assert result is True
+
+
+async def test_ping_with_streamable_http_alias(
+    streamable_http_server_with_streamable_http_alias: str,
+):
+    """Test pinging the server."""
+    async with Client(
+        transport=StreamableHttpTransport(
+            streamable_http_server_with_streamable_http_alias
+        )
     ) as client:
         result = await client.ping()
         assert result is True
@@ -142,10 +165,7 @@ async def test_greet_with_progress_tool(streamable_http_server: str):
         progress_handler=progress_handler,
     ) as client:
         result = await client.call_tool("greet_with_progress", {"name": "Alice"})
-
-        assert isinstance(result, list)
-        assert isinstance(result[0], TextContent)
-        assert result[0].text == "Hello, Alice!"
+        assert result.data == "Hello, Alice!"
 
         progress_handler.assert_called_once_with(0.5, 1.0, "Greeting in progress")
 

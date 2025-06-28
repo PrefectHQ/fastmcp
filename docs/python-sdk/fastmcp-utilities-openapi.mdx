@@ -7,7 +7,7 @@ sidebarTitle: openapi
 
 ## Functions
 
-### `parse_openapi_to_http_routes`
+### `parse_openapi_to_http_routes` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/openapi.py#L112"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 parse_openapi_to_http_routes(openapi_dict: dict[str, Any]) -> list[HTTPRoute]
@@ -20,7 +20,7 @@ using the openapi-pydantic library.
 Supports both OpenAPI 3.0.x and 3.1.x versions.
 
 
-### `clean_schema_for_display`
+### `clean_schema_for_display` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/openapi.py#L570"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 clean_schema_for_display(schema: JsonSchema | None) -> JsonSchema | None
@@ -30,7 +30,7 @@ clean_schema_for_display(schema: JsonSchema | None) -> JsonSchema | None
 Clean up a schema dictionary for display by removing internal/complex fields.
 
 
-### `generate_example_from_schema`
+### `generate_example_from_schema` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/openapi.py#L630"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 generate_example_from_schema(schema: JsonSchema | None) -> Any
@@ -41,7 +41,7 @@ Generate a simple example value from a JSON schema dictionary.
 Very basic implementation focusing on types.
 
 
-### `format_json_for_description`
+### `format_json_for_description` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/openapi.py#L713"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 format_json_for_description(data: Any, indent: int = 2) -> str
@@ -51,7 +51,7 @@ format_json_for_description(data: Any, indent: int = 2) -> str
 Formats Python data as a JSON string block for markdown.
 
 
-### `format_description_with_responses`
+### `format_description_with_responses` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/openapi.py#L722"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 format_description_with_responses(base_description: str, responses: dict[str, Any], parameters: list[ParameterInfo] | None = None, request_body: RequestBodyInfo | None = None) -> str
@@ -76,31 +76,31 @@ including its description, whether it is required, and its content schema.
 
 ## Classes
 
-### `ParameterInfo`
+### `ParameterInfo` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/openapi.py#L42"><Icon icon="github" size="14" /></a></sup>
 
 
 Represents a single parameter for an HTTP operation in our IR.
 
 
-### `RequestBodyInfo`
+### `RequestBodyInfo` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/openapi.py#L52"><Icon icon="github" size="14" /></a></sup>
 
 
 Represents the request body for an HTTP operation in our IR.
 
 
-### `ResponseInfo`
+### `ResponseInfo` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/openapi.py#L62"><Icon icon="github" size="14" /></a></sup>
 
 
 Represents response information in our IR.
 
 
-### `HTTPRoute`
+### `HTTPRoute` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/openapi.py#L70"><Icon icon="github" size="14" /></a></sup>
 
 
 Intermediate Representation for a single OpenAPI operation.
 
 
-### `OpenAPIParser`
+### `OpenAPIParser` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/openapi.py#L164"><Icon icon="github" size="14" /></a></sup>
 
 
 Unified parser for OpenAPI schemas with generic type parameters to handle both 3.0 and 3.1.
@@ -108,7 +108,7 @@ Unified parser for OpenAPI schemas with generic type parameters to handle both 3
 
 **Methods:**
 
-#### `parse`
+#### `parse` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/openapi.py#L469"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 parse(self) -> list[HTTPRoute]

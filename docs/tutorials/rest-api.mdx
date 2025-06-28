@@ -82,7 +82,7 @@ mcp = FastMCP.from_openapi(
 )
 
 if __name__ == "__main__":
-    mcp.run(transport="streamable-http", port=8000)
+    mcp.run(transport="http", port=8000)
 ```
 
 And that's it! With just a few lines of code, you've created an MCP server that exposes the entire JSONPlaceholder API as a collection of tools.
@@ -195,7 +195,7 @@ mcp = FastMCP.from_openapi(
 )
 
 if __name__ == "__main__":
-    mcp.run(transport="streamable-http", port=8000)
+    mcp.run(transport="http", port=8000)
 ```
 With this configuration:
 - `GET /users/{id}` becomes a `ResourceTemplate`.

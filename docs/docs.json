@@ -109,6 +109,7 @@
                       "clients/logging",
                       "clients/progress",
                       "clients/sampling",
+                      "clients/messages",
                       "clients/roots"
                     ]
                   },
@@ -124,9 +125,11 @@
                 "group": "Integrations",
                 "pages": [
                   "integrations/anthropic",
+                  "integrations/chatgpt",
+                  "integrations/claude-code",
                   "integrations/claude-desktop",
-                  "integrations/openai",
                   "integrations/gemini",
+                  "integrations/openai",
                   "integrations/contrib"
                 ]
               },
@@ -155,7 +158,6 @@
             "anchor": "What's New",
             "pages": ["updates", "changelog"]
           },
-
           {
             "anchor": "Community",
             "icon": "users",
@@ -243,7 +245,17 @@
                   "python-sdk/fastmcp-server-context",
                   "python-sdk/fastmcp-server-dependencies",
                   "python-sdk/fastmcp-server-http",
-                  "python-sdk/fastmcp-server-middleware",
+                  {
+                    "group": "middleware",
+                    "pages": [
+                      "python-sdk/fastmcp-server-middleware-__init__",
+                      "python-sdk/fastmcp-server-middleware-error_handling",
+                      "python-sdk/fastmcp-server-middleware-logging",
+                      "python-sdk/fastmcp-server-middleware-middleware",
+                      "python-sdk/fastmcp-server-middleware-rate_limiting",
+                      "python-sdk/fastmcp-server-middleware-timing"
+                    ]
+                  },
                   "python-sdk/fastmcp-server-openapi",
                   "python-sdk/fastmcp-server-proxy",
                   "python-sdk/fastmcp-server-server"
@@ -266,10 +278,12 @@
                   "python-sdk/fastmcp-utilities-components",
                   "python-sdk/fastmcp-utilities-exceptions",
                   "python-sdk/fastmcp-utilities-http",
+                  "python-sdk/fastmcp-utilities-inspect",
                   "python-sdk/fastmcp-utilities-json_schema",
                   "python-sdk/fastmcp-utilities-logging",
                   "python-sdk/fastmcp-utilities-mcp_config",
                   "python-sdk/fastmcp-utilities-openapi",
+                  "python-sdk/fastmcp-utilities-tests",
                   "python-sdk/fastmcp-utilities-types"
                 ]
               }

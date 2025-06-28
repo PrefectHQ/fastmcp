@@ -7,7 +7,7 @@ sidebarTitle: prompt_manager
 
 ## Classes
 
-### `PromptManager`
+### `PromptManager` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/prompts/prompt_manager.py#L21"><Icon icon="github" size="14" /></a></sup>
 
 
 Manages FastMCP prompts.
@@ -15,7 +15,7 @@ Manages FastMCP prompts.
 
 **Methods:**
 
-#### `mount`
+#### `mount` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/prompts/prompt_manager.py#L45"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 mount(self, server: MountedServer) -> None
@@ -24,7 +24,7 @@ mount(self, server: MountedServer) -> None
 Adds a mounted server as a source for prompts.
 
 
-#### `add_prompt_from_fn`
+#### `add_prompt_from_fn` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/prompts/prompt_manager.py#L114"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 add_prompt_from_fn(self, fn: Callable[..., PromptResult | Awaitable[PromptResult]], name: str | None = None, description: str | None = None, tags: set[str] | None = None) -> FunctionPrompt
@@ -33,7 +33,7 @@ add_prompt_from_fn(self, fn: Callable[..., PromptResult | Awaitable[PromptResult
 Create a prompt from a function.
 
 
-#### `add_prompt`
+#### `add_prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/prompts/prompt_manager.py#L134"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 add_prompt(self, prompt: Prompt) -> Prompt

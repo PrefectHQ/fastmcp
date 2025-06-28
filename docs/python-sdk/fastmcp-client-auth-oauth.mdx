@@ -7,13 +7,13 @@ sidebarTitle: oauth
 
 ## Functions
 
-### `default_cache_dir`
+### `default_cache_dir` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/auth/oauth.py#L38"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 default_cache_dir() -> Path
 ```
 
-### `OAuth`
+### `OAuth` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/auth/oauth.py#L295"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 OAuth(mcp_url: str, scopes: str | list[str] | None = None, client_name: str = 'FastMCP Client', token_storage_cache_dir: Path | None = None, additional_client_metadata: dict[str, Any] | None = None) -> _MCPOAuthClientProvider
@@ -38,7 +38,7 @@ httpx.AsyncClient (or appropriate FastMCP client/transport instance)
 
 ## Classes
 
-### `ServerOAuthMetadata`
+### `ServerOAuthMetadata` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/auth/oauth.py#L43"><Icon icon="github" size="14" /></a></sup>
 
 
 More flexible OAuth metadata model that accepts broader ranges of values
@@ -48,13 +48,13 @@ This handles real-world OAuth servers like PayPal that may support
 additional methods not in the MCP specification.
 
 
-### `OAuthClientProvider`
+### `OAuthClientProvider` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/auth/oauth.py#L68"><Icon icon="github" size="14" /></a></sup>
 
 
 OAuth client provider with more flexible OAuth metadata discovery.
 
 
-### `FileTokenStorage`
+### `FileTokenStorage` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/auth/oauth.py#L116"><Icon icon="github" size="14" /></a></sup>
 
 
 File-based token storage implementation for OAuth credentials and tokens.
@@ -65,7 +65,7 @@ Each instance is tied to a specific server URL for proper token isolation.
 
 **Methods:**
 
-#### `get_base_url`
+#### `get_base_url` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/auth/oauth.py#L131"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 get_base_url(url: str) -> str
@@ -74,7 +74,7 @@ get_base_url(url: str) -> str
 Extract the base URL (scheme + host) from a URL.
 
 
-#### `get_cache_key`
+#### `get_cache_key` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/auth/oauth.py#L136"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 get_cache_key(self) -> str
@@ -83,7 +83,7 @@ get_cache_key(self) -> str
 Generate a safe filesystem key from the server's base URL.
 
 
-#### `clear`
+#### `clear` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/auth/oauth.py#L208"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 clear(self) -> None
@@ -92,7 +92,7 @@ clear(self) -> None
 Clear all cached data for this server.
 
 
-#### `clear_all`
+#### `clear_all` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/auth/oauth.py#L217"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 clear_all(cls, cache_dir: Path | None = None) -> None

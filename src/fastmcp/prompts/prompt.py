@@ -69,6 +69,22 @@ class Prompt(FastMCPComponent, ABC):
         default=None, description="Arguments that can be passed to the prompt"
     )
 
+    def enable(self) -> None:
+        super().enable()
+        try:
+            context = get_context()
+            context._queue_prompt_list_changed()  # type: ignore[private-use]
+        except RuntimeError:
+            pass  # No context available
+
+    def disable(self) -> None:
+        super().disable()
+        try:
+            context = get_context()
+            context._queue_prompt_list_changed()  # type: ignore[private-use]
+        except RuntimeError:
+            pass  # No context available
+
     def to_mcp_prompt(self, **overrides: Any) -> MCPPrompt:
         """Convert the prompt to an MCP prompt."""
         arguments = [
@@ -338,6 +354,6 @@ class FunctionPrompt(Prompt):
                     raise PromptError("Could not convert prompt result to message.")
 
             return messages
-        except Exception as e:
-            logger.exception(f"Error rendering prompt {self.name}: {e}")
+        except Exception:
+            logger.exception(f"Error rendering prompt {self.name}")
             raise PromptError(f"Error rendering prompt {self.name}.")

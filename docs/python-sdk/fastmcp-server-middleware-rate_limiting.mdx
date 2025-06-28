@@ -1,0 +1,47 @@
+---
+title: rate_limiting
+sidebarTitle: rate_limiting
+---
+
+# `fastmcp.server.middleware.rate_limiting`
+
+
+Rate limiting middleware for protecting FastMCP servers from abuse.
+
+## Classes
+
+### `RateLimitError` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/rate_limiting.py#L15"><Icon icon="github" size="14" /></a></sup>
+
+
+Error raised when rate limit is exceeded.
+
+
+### `TokenBucketRateLimiter` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/rate_limiting.py#L22"><Icon icon="github" size="14" /></a></sup>
+
+
+Token bucket implementation for rate limiting.
+
+
+### `SlidingWindowRateLimiter` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/rate_limiting.py#L61"><Icon icon="github" size="14" /></a></sup>
+
+
+Sliding window rate limiter implementation.
+
+
+### `RateLimitingMiddleware` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/rate_limiting.py#L92"><Icon icon="github" size="14" /></a></sup>
+
+
+Middleware that implements rate limiting to prevent server abuse.
+
+Uses a token bucket algorithm by default, allowing for burst traffic
+while maintaining a sustainable long-term rate.
+
+
+### `SlidingWindowRateLimitingMiddleware` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/rate_limiting.py#L170"><Icon icon="github" size="14" /></a></sup>
+
+
+Middleware that implements sliding window rate limiting.
+
+Uses a sliding window approach which provides more precise rate limiting
+but uses more memory to track individual request timestamps.
+

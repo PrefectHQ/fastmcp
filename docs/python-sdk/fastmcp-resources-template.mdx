@@ -10,13 +10,13 @@ Resource template functionality.
 
 ## Functions
 
-### `build_regex`
+### `build_regex` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/template.py#L28"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 build_regex(template: str) -> re.Pattern
 ```
 
-### `match_uri_template`
+### `match_uri_template` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/template.py#L44"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 match_uri_template(uri: str, uri_template: str) -> dict[str, str] | None
@@ -24,7 +24,7 @@ match_uri_template(uri: str, uri_template: str) -> dict[str, str] | None
 
 ## Classes
 
-### `ResourceTemplate`
+### `ResourceTemplate` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/template.py#L52"><Icon icon="github" size="14" /></a></sup>
 
 
 A template for dynamically creating resources.
@@ -32,13 +32,13 @@ A template for dynamically creating resources.
 
 **Methods:**
 
-#### `from_function`
+#### `from_function` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/template.py#L69"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 from_function(fn: Callable[..., Any], uri_template: str, name: str | None = None, description: str | None = None, mime_type: str | None = None, tags: set[str] | None = None, enabled: bool | None = None) -> FunctionResourceTemplate
 ```
 
-#### `set_default_mime_type`
+#### `set_default_mime_type` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/template.py#L90"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 set_default_mime_type(cls, mime_type: str | None) -> str
@@ -47,7 +47,7 @@ set_default_mime_type(cls, mime_type: str | None) -> str
 Set default MIME type if not provided.
 
 
-#### `matches`
+#### `matches` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/template.py#L96"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 matches(self, uri: str) -> dict[str, Any] | None
@@ -56,7 +56,7 @@ matches(self, uri: str) -> dict[str, Any] | None
 Check if URI matches template and extract parameters.
 
 
-#### `to_mcp_template`
+#### `to_mcp_template` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/template.py#L124"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 to_mcp_template(self, **overrides: Any) -> MCPResourceTemplate
@@ -65,7 +65,7 @@ to_mcp_template(self, **overrides: Any) -> MCPResourceTemplate
 Convert the resource template to an MCPResourceTemplate.
 
 
-#### `from_mcp_template`
+#### `from_mcp_template` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/template.py#L135"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 from_mcp_template(cls, mcp_template: MCPResourceTemplate) -> ResourceTemplate
@@ -74,7 +74,7 @@ from_mcp_template(cls, mcp_template: MCPResourceTemplate) -> ResourceTemplate
 Creates a FastMCP ResourceTemplate from a raw MCP ResourceTemplate object.
 
 
-#### `key`
+#### `key` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/template.py#L148"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 key(self) -> str
@@ -86,7 +86,7 @@ keys having a certain value, as the same tool loaded from different
 hierarchies of servers may have different keys.
 
 
-### `FunctionResourceTemplate`
+### `FunctionResourceTemplate` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/template.py#L158"><Icon icon="github" size="14" /></a></sup>
 
 
 A template for dynamically creating resources.
@@ -94,7 +94,7 @@ A template for dynamically creating resources.
 
 **Methods:**
 
-#### `from_function`
+#### `from_function` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/template.py#L179"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 from_function(cls, fn: Callable[..., Any], uri_template: str, name: str | None = None, description: str | None = None, mime_type: str | None = None, tags: set[str] | None = None, enabled: bool | None = None) -> FunctionResourceTemplate

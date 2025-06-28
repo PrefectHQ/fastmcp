@@ -56,7 +56,7 @@ def run_proxy_server(host: str, port: int, shttp_url: str, **kwargs) -> None:
 class TestClientHeaders:
     @pytest.fixture(scope="class")
     def shttp_server(self) -> Generator[str, None, None]:
-        with run_server_in_process(run_server, transport="streamable-http") as url:
+        with run_server_in_process(run_server, transport="http") as url:
             yield f"{url}/mcp/"
 
     @pytest.fixture(scope="class")
@@ -69,7 +69,7 @@ class TestClientHeaders:
         with run_server_in_process(
             run_proxy_server,
             shttp_url=shttp_server,
-            transport="streamable-http",
+            transport="http",
         ) as url:
             yield f"{url}/mcp/"
 
@@ -118,7 +118,7 @@ class TestClientHeaders:
             transport=SSETransport(sse_server, headers={"X-TEST": "test-123"})
         ) as client:
             result = await client.call_tool("post_headers_headers_post")
-            headers = json.loads(result[0].text)  # type: ignore[attr-defined]
+            headers: dict[str, str] = result.data
             assert headers["x-test"] == "test-123"
 
     async def test_client_headers_shttp_tool(self, shttp_server: str):
@@ -128,7 +128,7 @@ class TestClientHeaders:
             )
         ) as client:
             result = await client.call_tool("post_headers_headers_post")
-            headers = json.loads(result[0].text)  # type: ignore[attr-defined]
+            headers: dict[str, str] = result.data
             assert headers["x-test"] == "test-123"
 
     async def test_client_overrides_server_headers(self, shttp_server: str):

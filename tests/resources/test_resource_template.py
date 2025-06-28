@@ -670,7 +670,7 @@ class TestContextHandling:
         mcp = FastMCP()
         context = Context(fastmcp=mcp)
 
-        with context:
+        async with context:
             resource = await template.create_resource(
                 "test://42",
                 {"x": 42},
@@ -698,7 +698,7 @@ class TestContextHandling:
         mcp = FastMCP()
         context = Context(fastmcp=mcp)
 
-        with context:
+        async with context:
             resource = await template.create_resource(
                 "test://42",
                 {"x": 42},

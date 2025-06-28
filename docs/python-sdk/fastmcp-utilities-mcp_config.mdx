@@ -7,10 +7,10 @@ sidebarTitle: mcp_config
 
 ## Functions
 
-### `infer_transport_type_from_url`
+### `infer_transport_type_from_url` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/mcp_config.py#L20"><Icon icon="github" size="14" /></a></sup>
 
 ```python
-infer_transport_type_from_url(url: str | AnyUrl) -> Literal['streamable-http', 'sse']
+infer_transport_type_from_url(url: str | AnyUrl) -> Literal['http', 'sse']
 ```
 
 
@@ -19,31 +19,31 @@ Infer the appropriate transport type from the given URL.
 
 ## Classes
 
-### `StdioMCPServer`
+### `StdioMCPServer` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/mcp_config.py#L40"><Icon icon="github" size="14" /></a></sup>
 
 **Methods:**
 
-#### `to_transport`
+#### `to_transport` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/mcp_config.py#L47"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 to_transport(self) -> StdioTransport
 ```
 
-### `RemoteMCPServer`
+### `RemoteMCPServer` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/mcp_config.py#L58"><Icon icon="github" size="14" /></a></sup>
 
 **Methods:**
 
-#### `to_transport`
+#### `to_transport` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/mcp_config.py#L71"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 to_transport(self) -> StreamableHttpTransport | SSETransport
 ```
 
-### `MCPConfig`
+### `MCPConfig` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/mcp_config.py#L88"><Icon icon="github" size="14" /></a></sup>
 
 **Methods:**
 
-#### `from_dict`
+#### `from_dict` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/mcp_config.py#L92"><Icon icon="github" size="14" /></a></sup>
 
 ```python
 from_dict(cls, config: dict[str, Any]) -> MCPConfig

@@ -12,7 +12,6 @@ from fastmcp import Context, FastMCP
 from fastmcp.exceptions import NotFoundError, ToolError
 from fastmcp.tools import FunctionTool, ToolManager
 from fastmcp.tools.tool import Tool
-from fastmcp.utilities.tests import temporary_settings
 from fastmcp.utilities.types import Image
 
 
@@ -126,7 +125,8 @@ class TestAddTools:
         tool = await manager.get_tool("image_tool")
         result = await tool.run({"data": "test.png"})
         assert tool.parameters["properties"]["data"]["type"] == "string"
-        assert isinstance(result[0], ImageContent)
+        assert isinstance(result.content[0], ImageContent)
+        assert result.structured_content is None
 
     def test_add_noncallable_tool(self):
         manager = ToolManager()
@@ -354,7 +354,8 @@ class TestCallTools:
         manager.add_tool(tool)
         result = await manager.call_tool("add", {"a": 1, "b": 2})
 
-        assert result[0].text == "3"  # type: ignore[attr-defined]
+        assert result.content[0].text == "3"  # type: ignore[attr-defined]
+        assert result.structured_content == {"result": 3}
 
     async def test_call_async_tool(self):
         async def double(n: int) -> int:
@@ -365,7 +366,8 @@ class TestCallTools:
         tool = Tool.from_function(double)
         manager.add_tool(tool)
         result = await manager.call_tool("double", {"n": 5})
-        assert result[0].text == "10"  # type: ignore[attr-defined]
+        assert result.content[0].text == "10"  # type: ignore[attr-defined]
+        assert result.structured_content == {"result": 10}
 
     async def test_call_tool_callable_object(self):
         class Adder:
@@ -379,7 +381,8 @@ class TestCallTools:
         tool = Tool.from_function(Adder())
         manager.add_tool(tool)
         result = await manager.call_tool("Adder", {"x": 1, "y": 2})
-        assert result[0].text == "3"  # type: ignore[attr-defined]
+        assert result.content[0].text == "3"  # type: ignore[attr-defined]
+        assert result.structured_content == {"result": 3}
 
     async def test_call_tool_callable_object_async(self):
         class Adder:
@@ -393,7 +396,8 @@ class TestCallTools:
         tool = Tool.from_function(Adder())
         manager.add_tool(tool)
         result = await manager.call_tool("Adder", {"x": 1, "y": 2})
-        assert result[0].text == "3"  # type: ignore[attr-defined]
+        assert result.content[0].text == "3"  # type: ignore[attr-defined]
+        assert result.structured_content == {"result": 3}
 
     async def test_call_tool_with_default_args(self):
         def add(a: int, b: int = 1) -> int:
@@ -405,7 +409,8 @@ class TestCallTools:
         manager.add_tool(tool)
         result = await manager.call_tool("add", {"a": 1})
 
-        assert result[0].text == "2"  # type: ignore[attr-defined]
+        assert result.content[0].text == "2"  # type: ignore[attr-defined]
+        assert result.structured_content == {"result": 2}
 
     async def test_call_tool_with_missing_args(self):
         def add(a: int, b: int) -> int:
@@ -432,22 +437,8 @@ class TestCallTools:
         manager.add_tool(tool)
 
         result = await manager.call_tool("sum_vals", {"vals": [1, 2, 3]})
-        assert result[0].text == "6"  # type: ignore[attr-defined]
-
-    async def test_call_tool_with_list_int_input_legacy_behavior(self):
-        """Legacy behavior -- parse a stringified JSON object"""
-
-        def sum_vals(vals: list[int]) -> int:
-            return sum(vals)
-
-        manager = ToolManager()
-        tool = Tool.from_function(sum_vals)
-        manager.add_tool(tool)
-        # Try both with plain list and with JSON list
-
-        with temporary_settings(tool_attempt_parse_json_args=True):
-            result = await manager.call_tool("sum_vals", {"vals": "[1, 2, 3]"})
-            assert result[0].text == "6"  # type: ignore[attr-defined]
+        assert result.content[0].text == "6"  # type: ignore[attr-defined]
+        assert result.structured_content == {"result": 6}
 
     async def test_call_tool_with_list_str_or_str_input(self):
         def concat_strs(vals: list[str] | str) -> str:
@@ -459,27 +450,12 @@ class TestCallTools:
 
         # Try both with plain python object and with JSON list
         result = await manager.call_tool("concat_strs", {"vals": ["a", "b", "c"]})
-        assert result[0].text == "abc"  # type: ignore[attr-defined]
+        assert result.content[0].text == "abc"  # type: ignore[attr-defined]
+        assert result.structured_content == {"result": "abc"}
 
         result = await manager.call_tool("concat_strs", {"vals": "a"})
-        assert result[0].text == "a"  # type: ignore[attr-defined]
-
-    async def test_call_tool_with_list_str_or_str_input_legacy_behavior(self):
-        """Legacy behavior -- parse a stringified JSON object"""
-
-        def concat_strs(vals: list[str] | str) -> str:
-            return vals if isinstance(vals, str) else "".join(vals)
-
-        manager = ToolManager()
-        tool = Tool.from_function(concat_strs)
-        manager.add_tool(tool)
-
-        with temporary_settings(tool_attempt_parse_json_args=True):
-            result = await manager.call_tool("concat_strs", {"vals": '["a", "b", "c"]'})
-            assert result[0].text == "abc"  # type: ignore[attr-defined]
-
-            result = await manager.call_tool("concat_strs", {"vals": '"a"'})
-            assert result[0].text == "a"  # type: ignore[attr-defined]
+        assert result.content[0].text == "a"  # type: ignore[attr-defined]
+        assert result.structured_content == {"result": "a"}
 
     async def test_call_tool_with_complex_model(self):
         class MyShrimpTank(BaseModel):
@@ -499,7 +475,7 @@ class TestCallTools:
         mcp = FastMCP()
         context = Context(fastmcp=mcp)
 
-        with context:
+        async with context:
             result = await manager.call_tool(
                 "name_shrimp",
                 {
@@ -510,7 +486,8 @@ class TestCallTools:
                 },
             )
 
-        assert result[0].text == '[\n  "rex",\n  "gertrude"\n]'  # type: ignore[attr-defined]
+        assert result.content[0].text == '[\n  "rex",\n  "gertrude"\n]'  # type: ignore[attr-defined]
+        assert result.structured_content == {"result": ["rex", "gertrude"]}
 
     async def test_call_tool_with_custom_serializer(self):
         """Test that a custom serializer provided to FastMCP is used by tools."""
@@ -529,7 +506,8 @@ class TestCallTools:
             return {"key": "value", "number": 123}
 
         result = await manager.call_tool("get_data", {})
-        assert result[0].text == 'CUSTOM:{"key": "value", "number": 123}'  # type: ignore[attr-defined]
+        assert result.content[0].text == 'CUSTOM:{"key": "value", "number": 123}'  # type: ignore[attr-defined]
+        assert result.structured_content == {"key": "value", "number": 123}
 
     async def test_call_tool_with_list_result_custom_serializer(self):
         """Test that a custom serializer provided to FastMCP is used by tools that return lists."""
@@ -551,9 +529,15 @@ class TestCallTools:
 
         result = await manager.call_tool("get_data", {})
         assert (
-            result[0].text  # type: ignore[attr-defined]
+            result.content[0].text  # type: ignore[attr-defined]
             == 'CUSTOM:[{"key": "value", "number": 123}, {"key": "value2", "number": 456}]'  # type: ignore[attr-defined]
         )
+        assert result.structured_content == {
+            "result": [
+                {"key": "value", "number": 123},
+                {"key": "value2", "number": 456},
+            ]
+        }
 
     async def test_custom_serializer_fallback_on_error(self):
         """Test that a broken custom serializer gracefully falls back."""
@@ -571,7 +555,11 @@ class TestCallTools:
             return uuid_result
 
         result = await manager.call_tool("get_data", {})
-        assert result[0].text == pydantic_core.to_json(uuid_result).decode()  # type: ignore[attr-defined]
+        assert (
+            result.content[0].text  # type: ignore[attr-defined]
+            == pydantic_core.to_json(uuid_result).decode()
+        )
+        assert result.structured_content == {"result": str(uuid_result)}
 
 
 class TestToolSchema:
@@ -639,9 +627,10 @@ class TestContextHandling:
         mcp = FastMCP()
         context = Context(fastmcp=mcp)
 
-        with context:
+        async with context:
             result = await manager.call_tool("tool_with_context", {"x": 42})
-            assert result[0].text == "42"  # type: ignore[attr-defined]
+            assert result.content[0].text == "42"  # type: ignore[attr-defined]
+            assert result.structured_content == {"result": "42"}
 
     async def test_context_injection_async(self):
         """Test that context is properly injected in async tools."""
@@ -657,9 +646,10 @@ class TestContextHandling:
         mcp = FastMCP()
         context = Context(fastmcp=mcp)
 
-        with context:
+        async with context:
             result = await manager.call_tool("async_tool", {"x": 42})
-            assert result[0].text == "42"  # type: ignore[attr-defined]
+            assert result.content[0].text == "42"  # type: ignore[attr-defined]
+            assert result.structured_content == {"result": "42"}
 
     async def test_context_optional(self):
         """Test that context is optional when calling tools."""
@@ -675,9 +665,10 @@ class TestContextHandling:
         mcp = FastMCP()
         context = Context(fastmcp=mcp)
 
-        with context:
+        async with context:
             result = await manager.call_tool("tool_with_context", {"x": 42})
-            assert result[0].text == "42"  # type: ignore[attr-defined]
+            assert result.content[0].text == "42"  # type: ignore[attr-defined]
+            assert result.structured_content == {"result": 42}
 
     def test_parameterized_context_parameter_detection(self):
         """Test that context parameters are properly detected in
@@ -722,7 +713,7 @@ class TestContextHandling:
         mcp = FastMCP()
         context = Context(fastmcp=mcp)
 
-        with context:
+        async with context:
             with pytest.raises(
                 ToolError, match="Error calling tool 'tool_with_context'"
             ):
@@ -785,7 +776,8 @@ class TestCustomToolNames:
 
         # Tool should be callable by its custom name
         result = await manager.call_tool("custom_multiply", {"a": 5, "b": 3})
-        assert result[0].text == "15"  # type: ignore[attr-defined]
+        assert result.content[0].text == "15"  # type: ignore[attr-defined]
+        assert result.structured_content == {"result": 15}
 
         # Original name should not be registered
         with pytest.raises(NotFoundError, match="Tool 'multiply' not found"):

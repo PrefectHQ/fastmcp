@@ -47,7 +47,7 @@ FastMCP root path:            ~/Developer/fastmcp
 Upgrading from the official MCP SDK's FastMCP 1.0 to FastMCP 2.0 is generally straightforward. The core server API is highly compatible, and in many cases, changing your import statement from `from mcp.server.fastmcp import FastMCP` to `from fastmcp import FastMCP` will be sufficient. 
 
 
-```python {1-5}
+```python {5}
 # Before
 # from mcp.server.fastmcp import FastMCP
 
@@ -56,8 +56,9 @@ from fastmcp import FastMCP
 
 mcp = FastMCP("My MCP Server")
 ```
+
 <Warning>
-Prior to `fastmcp==2.3.0` and `mcp==1.8.0`, the 2.x API always mirrored the 1.0 API. However, as the projects diverge, this can not be guaranteed. You may see deprecation warnings if you attempt to use 1.0 APIs in FastMCP 2.x. Please refer to this documentation for details on new capabilities.
+Prior to `fastmcp==2.3.0` and `mcp==1.8.0`, the 2.x API always mirrored the official 1.0 API. However, as the projects diverge, this can not be guaranteed. You may see deprecation warnings if you attempt to use 1.0 APIs in FastMCP 2.x. Please refer to this documentation for details on new capabilities.
 </Warning>
 
 ## Versioning and Breaking Changes
