@@ -106,6 +106,7 @@
                     "group": "Advanced Features",
                     "icon": "stars",
                     "pages": [
+                      "clients/elicitation",
                       "clients/logging",
                       "clients/progress",
                       "clients/sampling",

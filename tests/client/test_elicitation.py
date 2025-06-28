@@ -1,16 +1,19 @@
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
+from enum import Enum
+from typing import Literal
 
 import pytest
-from mcp.types import ElicitResult
 
 from fastmcp import Context, FastMCP
 from fastmcp.client.client import Client
+from fastmcp.client.elicitation import ElicitResult
 from fastmcp.exceptions import ToolError
 from fastmcp.server.elicitation import (
     AcceptedElicitation,
     CancelledElicitation,
     DeclinedElicitation,
 )
+from fastmcp.utilities.types import TypeAdapter
 
 
 @pytest.fixture
@@ -50,9 +53,9 @@ async def test_elicitation_with_no_handler(fastmcp_server):
 async def test_elicitation_accept_content(fastmcp_server):
     """Test basic elicitation functionality."""
 
-    async def elicitation_handler(message, schema, ctx):
+    async def elicitation_handler(message, response_type, params, ctx):
         # Mock user providing their name
-        return ElicitResult(action="accept", content={"name": "Alice"})
+        return ElicitResult(action="accept", content=response_type(name="Alice"))
 
     async with Client(
         fastmcp_server, elicitation_handler=elicitation_handler
@@ -64,7 +67,7 @@ async def test_elicitation_accept_content(fastmcp_server):
 async def test_elicitation_decline(fastmcp_server):
     """Test that elicitation handler receives correct parameters."""
 
-    async def elicitation_handler(message, schema, ctx):
+    async def elicitation_handler(message, response_type, params, ctx):
         return ElicitResult(action="decline")
 
     async with Client(
@@ -89,7 +92,7 @@ async def test_default_response_type(fastmcp_server):
             return f"Your favorite color is {result.data}!"
         return "No color provided"
 
-    async def elicitation_handler(message, schema, ctx):
+    async def elicitation_handler(message, response_type, params, ctx):
         # Mock user providing their favorite color as string in content dict
         return ElicitResult(action="accept", content={"value": "blue"})
 
@@ -111,9 +114,10 @@ async def test_elicitation_handler_parameters():
         )
         return "done"
 
-    async def elicitation_handler(message, schema, ctx):
+    async def elicitation_handler(message, response_type, params, ctx):
         captured_params["message"] = message
-        captured_params["schema"] = schema
+        captured_params["response_type"] = str(response_type)
+        captured_params["params"] = params
         captured_params["ctx"] = ctx
         return ElicitResult(action="accept", content={"value": 42})
 
@@ -121,43 +125,14 @@ async def test_elicitation_handler_parameters():
         await client.call_tool("test_tool", {})
 
         assert captured_params["message"] == "Test message"
-        assert captured_params["schema"] == {
+        assert "ScalarElicitationType" in str(captured_params["response_type"])
+        assert captured_params["params"].requestedSchema == {
             "properties": {"value": {"title": "Value", "type": "integer"}},
             "required": ["value"],
-            "title": "PrimitiveElicitationType",
+            "title": "ScalarElicitationType",
             "type": "object",
         }
         assert captured_params["ctx"] is not None
-
-
-async def test_elicitation_default_string_schema():
-    """Test elicitation with default string schema."""
-    mcp = FastMCP("TestServer")
-
-    @mcp.tool
-    async def ask_for_input(context: Context) -> str:
-        result = await context.elicit(
-            message="Please provide some input"
-            # No schema provided - should default to string
-        )
-        if result.action == "accept":
-            return f"You said: {result.data}"
-        return "No input provided"
-
-    async def elicitation_handler(message, schema, ctx):
-        # Verify default schema is wrapped string object
-        expected_schema = {
-            "properties": {"value": {"title": "Value", "type": "string"}},
-            "required": ["value"],
-            "title": "PrimitiveElicitationType",
-            "type": "object",
-        }
-        assert schema == expected_schema
-        return ElicitResult(action="accept", content={"value": "Hello world!"})
-
-    async with Client(mcp, elicitation_handler=elicitation_handler) as client:
-        result = await client.call_tool("ask_for_input", {})
-        assert result.data == "You said: Hello world!"
 
 
 async def test_elicitation_cancel_action():
@@ -176,7 +151,7 @@ async def test_elicitation_cancel_action():
         else:
             return "No response provided"
 
-    async def elicitation_handler(message, schema, ctx):
+    async def elicitation_handler(message, response_type, params, ctx):
         return ElicitResult(action="cancel")
 
     async with Client(mcp, elicitation_handler=elicitation_handler) as client:
@@ -195,15 +170,8 @@ async def test_elicitation_number_schema():
             return f"You are {result.data} years old"
         return "No age provided"
 
-    async def elicitation_handler(message, schema, ctx):
-        expected_schema = {
-            "properties": {"value": {"title": "Value", "type": "integer"}},
-            "required": ["value"],
-            "title": "PrimitiveElicitationType",
-            "type": "object",
-        }
-        assert schema == expected_schema
-        return ElicitResult(action="accept", content={"value": 25})
+    async def elicitation_handler(message, response_type, params, ctx):
+        return ElicitResult(action="accept", content=response_type(value=25))
 
     async with Client(mcp, elicitation_handler=elicitation_handler) as client:
         result = await client.call_tool("get_age", {})
@@ -223,7 +191,7 @@ async def test_elicitation_handler_error():
         except Exception as e:
             return f"Error: {str(e)}"
 
-    async def elicitation_handler(message, schema, ctx):
+    async def elicitation_handler(message, response_type, params, ctx):
         raise ValueError("Handler failed!")
 
     async with Client(mcp, elicitation_handler=elicitation_handler) as client:
@@ -253,28 +221,12 @@ async def test_elicitation_multiple_calls():
 
     call_count = 0
 
-    async def elicitation_handler(message, schema, ctx):
+    async def elicitation_handler(message, response_type, params, ctx):
         nonlocal call_count
         call_count += 1
         if call_count == 1:
-            assert "name" in message.lower()
-            expected_schema = {
-                "properties": {"value": {"title": "Value", "type": "string"}},
-                "required": ["value"],
-                "title": "PrimitiveElicitationType",
-                "type": "object",
-            }
-            assert schema == expected_schema
             return ElicitResult(action="accept", content={"value": "Bob"})
         elif call_count == 2:
-            assert "age" in message.lower()
-            expected_schema = {
-                "properties": {"value": {"title": "Value", "type": "integer"}},
-                "required": ["value"],
-                "title": "PrimitiveElicitationType",
-                "type": "object",
-            }
-            assert schema == expected_schema
             return ElicitResult(action="accept", content={"value": 25})
         else:
             raise ValueError("Unexpected call")
@@ -300,150 +252,139 @@ async def test_dataclass_response_type():
             message="Please provide your information", response_type=UserInfo
         )
         if result.action == "accept":
-            user = result.data
-            return f"User: {user.name}, age: {user.age}"
+            return f"User: {result.data.name}, age: {result.data.age}"
         return "No user info provided"
 
-    async def elicitation_handler(message, schema, ctx):
-        # Verify the schema has the dataclass fields
+    async def elicitation_handler(message, response_type, params, ctx):
+        # Verify we get the dataclass type
+        assert (
+            TypeAdapter(response_type).json_schema()
+            == TypeAdapter(UserInfo).json_schema()
+        )
+
+        # Verify the schema has the dataclass fields (available in params)
+        schema = params.requestedSchema
         assert schema["type"] == "object"
         assert "name" in schema["properties"]
         assert "age" in schema["properties"]
         assert schema["properties"]["name"]["type"] == "string"
         assert schema["properties"]["age"]["type"] == "integer"
 
-        return ElicitResult(action="accept", content={"name": "Alice", "age": 30})
+        return ElicitResult(action="accept", content=UserInfo(name="Alice", age=30))
 
     async with Client(mcp, elicitation_handler=elicitation_handler) as client:
         result = await client.call_tool("get_user_info", {})
         assert result.data == "User: Alice, age: 30"
 
 
-async def test_primitive_type_string():
-    """Test elicitation with string primitive type."""
+async def test_all_primitive_field_types():
+    class DataEnum(Enum):
+        X = "x"
+        Y = "y"
+
+    @dataclass
+    class Data:
+        integer: int
+        float_: float
+        number: int | float
+        boolean: bool
+        string: str
+        constant: Literal["x"]
+        union: Literal["x"] | Literal["y"]
+        choice: Literal["x", "y"]
+        enum: DataEnum
+
     mcp = FastMCP("TestServer")
 
     @mcp.tool
-    async def test_string(context: Context) -> str:
-        result = await context.elicit("Enter text:", response_type=str)
-        assert result.action == "accept"
-        return f"Got: {result.data}"
+    async def get_data(context: Context) -> Data:
+        result = await context.elicit(message="Enter data", response_type=Data)
+        return result.data  # type: ignore[attr-defined]
 
-    async def elicitation_handler(message, schema, ctx):
-        assert schema["properties"]["value"]["type"] == "string"
-        return ElicitResult(action="accept", content={"value": "hello"})
-
-    async with Client(mcp, elicitation_handler=elicitation_handler) as client:
-        result = await client.call_tool("test_string", {})
-        assert result.data == "Got: hello"
-
-
-async def test_primitive_type_int():
-    """Test elicitation with integer primitive type."""
-    mcp = FastMCP("TestServer")
-
-    @mcp.tool
-    async def test_int(context: Context) -> str:
-        result = await context.elicit("Enter number:", response_type=int)
-        assert result.action == "accept"
-        return f"Got: {result.data}"
-
-    async def elicitation_handler(message, schema, ctx):
-        assert schema["properties"]["value"]["type"] == "integer"
-        return ElicitResult(action="accept", content={"value": 42})
-
-    async with Client(mcp, elicitation_handler=elicitation_handler) as client:
-        result = await client.call_tool("test_int", {})
-        assert result.data == "Got: 42"
-
-
-async def test_primitive_type_float():
-    """Test elicitation with float primitive type."""
-    mcp = FastMCP("TestServer")
-
-    @mcp.tool
-    async def test_float(context: Context) -> str:
-        result = await context.elicit("Enter decimal:", response_type=float)
-        assert result.action == "accept"
-        return f"Got: {result.data}"
-
-    async def elicitation_handler(message, schema, ctx):
-        assert schema["properties"]["value"]["type"] == "number"
-        return ElicitResult(action="accept", content={"value": 3.14})
-
-    async with Client(mcp, elicitation_handler=elicitation_handler) as client:
-        result = await client.call_tool("test_float", {})
-        assert result.data == "Got: 3.14"
-
-
-async def test_primitive_type_bool():
-    """Test elicitation with boolean primitive type."""
-    mcp = FastMCP("TestServer")
-
-    @mcp.tool
-    async def test_bool(context: Context) -> str:
-        result = await context.elicit("Enter true/false:", response_type=bool)
-        assert result.action == "accept"
-        return f"Got: {result.data}"
-
-    async def elicitation_handler(message, schema, ctx):
-        assert schema["properties"]["value"]["type"] == "boolean"
-        return ElicitResult(action="accept", content={"value": True})
-
-    async with Client(mcp, elicitation_handler=elicitation_handler) as client:
-        result = await client.call_tool("test_bool", {})
-        assert result.data == "Got: True"
-
-
-async def test_schema_validation_rejects_non_object():
-    """Test that non-object schemas are rejected."""
-    from fastmcp.server.elicitation import validate_elicitation_json_schema
-
-    with pytest.raises(TypeError, match="must be an object schema"):
-        validate_elicitation_json_schema({"type": "string"})
-
-
-async def test_schema_validation_rejects_empty_object():
-    """Test that object schemas without properties are rejected."""
-    from fastmcp.server.elicitation import validate_elicitation_json_schema
-
-    with pytest.raises(TypeError, match="must have at least one property"):
-        validate_elicitation_json_schema({"type": "object"})
-
-
-async def test_schema_validation_rejects_nested_objects():
-    """Test that nested object schemas are rejected."""
-    from fastmcp.server.elicitation import validate_elicitation_json_schema
-
-    with pytest.raises(
-        TypeError, match="has type 'object' which is not a primitive type"
-    ):
-        validate_elicitation_json_schema(
-            {
-                "type": "object",
-                "properties": {
-                    "user": {
-                        "type": "object",
-                        "properties": {"name": {"type": "string"}},
-                    }
-                },
-            }
+    async def elicitation_handler(message, response_type, params, ctx):
+        return ElicitResult(
+            action="accept",
+            content=Data(
+                integer=1,
+                float_=1.0,
+                number=1.0,
+                boolean=True,
+                string="hello",
+                constant="x",
+                union="x",
+                choice="x",
+                enum=DataEnum.X,
+            ),
         )
 
+    async with Client(mcp, elicitation_handler=elicitation_handler) as client:
+        result = await client.call_tool("get_data", {})
 
-async def test_schema_validation_rejects_arrays():
-    """Test that array schemas are rejected."""
-    from fastmcp.server.elicitation import validate_elicitation_json_schema
+        # Now all literal/enum fields should be preserved as strings
+        result_data = asdict(result.data)
+        result_data_enum = result_data.pop("enum")
+        assert result_data_enum == "x"  # Should be a string now, not an enum
+        assert result_data == {
+            "integer": 1,
+            "float_": 1.0,
+            "number": 1.0,
+            "boolean": True,
+            "string": "hello",
+            "constant": "x",
+            "union": "x",
+            "choice": "x",
+        }
 
-    with pytest.raises(
-        TypeError, match="has type 'array' which is not a primitive type"
-    ):
-        validate_elicitation_json_schema(
-            {
-                "type": "object",
-                "properties": {"users": {"type": "array", "items": {"type": "string"}}},
-            }
-        )
+
+class TestValidation:
+    async def test_schema_validation_rejects_non_object(self):
+        """Test that non-object schemas are rejected."""
+        from fastmcp.server.elicitation import validate_elicitation_json_schema
+
+        with pytest.raises(TypeError, match="must be an object schema"):
+            validate_elicitation_json_schema({"type": "string"})
+
+    async def test_schema_validation_rejects_empty_object(self):
+        """Test that object schemas without properties are rejected."""
+        from fastmcp.server.elicitation import validate_elicitation_json_schema
+
+        with pytest.raises(TypeError, match="must have at least one property"):
+            validate_elicitation_json_schema({"type": "object"})
+
+    async def test_schema_validation_rejects_nested_objects(self):
+        """Test that nested object schemas are rejected."""
+        from fastmcp.server.elicitation import validate_elicitation_json_schema
+
+        with pytest.raises(
+            TypeError, match="has type 'object' which is not a primitive type"
+        ):
+            validate_elicitation_json_schema(
+                {
+                    "type": "object",
+                    "properties": {
+                        "user": {
+                            "type": "object",
+                            "properties": {"name": {"type": "string"}},
+                        }
+                    },
+                }
+            )
+
+    async def test_schema_validation_rejects_arrays(self):
+        """Test that array schemas are rejected."""
+        from fastmcp.server.elicitation import validate_elicitation_json_schema
+
+        with pytest.raises(
+            TypeError, match="has type 'array' which is not a primitive type"
+        ):
+            validate_elicitation_json_schema(
+                {
+                    "type": "object",
+                    "properties": {
+                        "users": {"type": "array", "items": {"type": "string"}}
+                    },
+                }
+            )
 
 
 async def test_pattern_matching_accept():
@@ -462,7 +403,7 @@ async def test_pattern_matching_accept():
             case CancelledElicitation():
                 return "Cancelled"
 
-    async def elicitation_handler(message, schema, ctx):
+    async def elicitation_handler(message, response_type, params, ctx):
         return ElicitResult(action="accept", content={"value": "Alice"})
 
     async with Client(mcp, elicitation_handler=elicitation_handler) as client:
@@ -486,7 +427,7 @@ async def test_pattern_matching_decline():
             case CancelledElicitation():
                 return "Cancelled"
 
-    async def elicitation_handler(message, schema, ctx):
+    async def elicitation_handler(message, response_type, params, ctx):
         return ElicitResult(action="decline")
 
     async with Client(mcp, elicitation_handler=elicitation_handler) as client:
@@ -510,7 +451,7 @@ async def test_pattern_matching_cancel():
             case CancelledElicitation():
                 return "Cancelled"
 
-    async def elicitation_handler(message, schema, ctx):
+    async def elicitation_handler(message, response_type, params, ctx):
         return ElicitResult(action="cancel")
 
     async with Client(mcp, elicitation_handler=elicitation_handler) as client:

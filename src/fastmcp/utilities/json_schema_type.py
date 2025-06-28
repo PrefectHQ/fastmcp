@@ -41,7 +41,6 @@ from collections.abc import Callable, Mapping
 from copy import deepcopy
 from dataclasses import MISSING, field, make_dataclass
 from datetime import datetime
-from enum import Enum
 from typing import (
     Annotated,
     Any,
@@ -254,8 +253,7 @@ def _create_numeric_type(
 
 def _create_enum(name: str, values: list[Any]) -> type:
     """Create enum type from list of values."""
-    if all(isinstance(v, str) for v in values):
-        return Enum(name, {v.upper(): v for v in values})  # type: ignore[return-value]
+    # Always return Literal for enum fields to preserve the literal nature
     return Literal[tuple(values)]  # type: ignore[return-value]
 
 
@@ -399,15 +397,19 @@ def _schema_to_type(
 
 def _sanitize_name(name: str) -> str:
     """Convert string to valid Python identifier."""
+    original_name = name
     # Step 1: replace everything except [0-9a-zA-Z_] with underscores
     cleaned = re.sub(r"[^0-9a-zA-Z_]", "_", name)
     # Step 2: deduplicate underscores
     cleaned = re.sub(r"__+", "_", cleaned)
-    # Step 3: if the first char of original name isn't a letter, prepend field_
-    if not name or not re.match(r"[a-zA-Z]", name[0]):
+    # Step 3: if the first char of original name isn't a letter or underscore, prepend field_
+    if not name or not re.match(r"[a-zA-Z_]", name[0]):
         cleaned = f"field_{cleaned}"
-    # Step 4: deduplicate again and strip trailing underscores
-    cleaned = re.sub(r"__+", "_", cleaned).strip("_")
+    # Step 4: deduplicate again
+    cleaned = re.sub(r"__+", "_", cleaned)
+    # Step 5: only strip trailing underscores if they weren't in the original name
+    if not original_name.endswith("_"):
+        cleaned = cleaned.rstrip("_")
     return cleaned
 
 

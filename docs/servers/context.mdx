@@ -16,6 +16,7 @@ The `Context` object provides a clean interface to access MCP features within yo
 - **Progress Reporting**: Update the client on the progress of long-running operations
 - **Resource Access**: Read data from resources registered with the server
 - **LLM Sampling**: Request the client's LLM to generate text based on provided messages
+- **User Elicitation**: Request structured input from users during tool execution
 - **Request Information**: Access metadata about the current request
 - **Server Access**: When needed, access the underlying FastMCP server instance
 
@@ -274,6 +275,116 @@ async def generate_example(concept: str, ctx: Context) -> str:
 ```
 
 See [Client Sampling](/clients/client#llm-sampling) for more details on how clients handle these requests.
+
+### User Elicitation
+
+<VersionBadge version="2.10.0" />
+
+Request structured input from users during tool execution. This allows tools to interactively ask for missing parameters, clarification, or additional context as needed.
+
+```python
+from dataclasses import dataclass
+
+@dataclass
+class UserInfo:
+    name: str
+    age: int
+
+@mcp.tool
+async def collect_user_info(ctx: Context) -> str:
+    """Collect user information through interactive prompts."""
+    # Request structured user information
+    result = await ctx.elicit(
+        message="Please provide your information",
+        response_type=UserInfo
+    )
+    
+    if result.action == "accept":
+        user = result.data
+        return f"Hello {user.name}, you are {user.age} years old"
+    elif result.action == "decline":
+        return "Information not provided"
+    else:  # cancel
+        return "Operation cancelled"
+```
+
+**Method signature:**
+
+- **`ctx.elicit(message: str, response_type: type = str) -> ElicitationResult`**
+  - `message`: The prompt message to display to the user
+  - `response_type`: The Python type defining the expected response structure (dataclass, primitive type, etc.)
+  - Returns an `ElicitationResult` with `action` ("accept", "decline", "cancel") and `data` (when accepted)
+
+**Supported Response Types:**
+
+- **Primitive types**: `str`, `int`, `float`, `bool`
+- **Literal types**: `Literal["option1", "option2"]` for constrained choices
+- **Enum types**: Python enums for predefined options
+- **Dataclass types**: Custom structured data with multiple fields
+
+```python
+from typing import Literal
+from enum import Enum
+
+class Priority(Enum):
+    LOW = "low"
+    MEDIUM = "medium"  
+    HIGH = "high"
+
+@dataclass
+class TaskInfo:
+    title: str
+    priority: Priority
+    urgent: bool
+
+@mcp.tool
+async def create_task(ctx: Context) -> str:
+    """Create a task with user-provided details."""
+    # Multiple elicitation calls for different information
+    
+    # Simple string input
+    title_result = await ctx.elicit("What's the task title?", response_type=str)
+    if title_result.action != "accept":
+        return "Task creation cancelled"
+    
+    # Enum selection
+    priority_result = await ctx.elicit("What's the priority?", response_type=Priority)
+    if priority_result.action != "accept":
+        return "Task creation cancelled"
+    
+    # Boolean choice
+    urgent_result = await ctx.elicit("Is this urgent?", response_type=bool)
+    if urgent_result.action != "accept":
+        return "Task creation cancelled"
+    
+    return f"Created task: {title_result.data} (Priority: {priority_result.data.value}, Urgent: {urgent_result.data})"
+```
+
+**Pattern Matching Support:**
+
+FastMCP provides typed result classes for pattern matching:
+
+```python
+from fastmcp.server.elicitation import (
+    AcceptedElicitation, 
+    DeclinedElicitation, 
+    CancelledElicitation
+)
+
+@mcp.tool
+async def pattern_example(ctx: Context) -> str:
+    result = await ctx.elicit("Enter your name:", response_type=str)
+    
+    match result:
+        case AcceptedElicitation(data=name):
+            return f"Hello {name}!"
+        case DeclinedElicitation():
+            return "No name provided"
+        case CancelledElicitation():
+            return "Operation cancelled"
+```
+
+Elicitation requires the client to provide an elicitation handler. If the client doesn't support elicitation, the request will fail. See [Client Elicitation](/clients/elicitation) for details on implementing client-side handlers.
 
 ### Component Changes
 

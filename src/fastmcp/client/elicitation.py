@@ -1,24 +1,35 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from typing import Any, TypeAlias
+from typing import Any, Generic, TypeAlias, TypeVar
 
 import mcp.types
 from mcp import ClientSession
 from mcp.client.session import ElicitationFnT
 from mcp.shared.context import LifespanContextT, RequestContext
-from mcp.types import ElicitRequestParams, ElicitResult
+from mcp.types import ElicitRequestParams
+from mcp.types import ElicitResult as MCPElicitResult
+from pydantic_core import to_jsonable_python
+
+from fastmcp.utilities.json_schema_type import json_schema_to_type
 
 __all__ = ["ElicitRequestParams", "ElicitResult", "ElicitationHandler"]
+
+T = TypeVar("T")
+
+
+class ElicitResult(MCPElicitResult, Generic[T]):
+    content: T | None = None
 
 
 ElicitationHandler: TypeAlias = Callable[
     [
         str,  # message
-        dict[str, Any],  # requested_schema
+        type[T],  # a class for creating a structured response
+        ElicitRequestParams,
         RequestContext[ClientSession, LifespanContextT],
     ],
-    Awaitable[ElicitResult],
+    Awaitable[ElicitResult[T | dict[str, Any]]],
 ]
 
 
@@ -28,12 +39,15 @@ def create_elicitation_callback(
     async def _elicitation_handler(
         context: RequestContext[ClientSession, LifespanContextT],
         params: ElicitRequestParams,
-    ) -> ElicitResult | mcp.types.ErrorData:
+    ) -> MCPElicitResult | mcp.types.ErrorData:
         try:
+            response_type = json_schema_to_type(params.requestedSchema)
+
             result = await elicitation_handler(
-                params.message, params.requestedSchema, context
+                params.message, response_type, params, context
             )
-            return result
+            content = to_jsonable_python(result.content)
+            return MCPElicitResult(**result.model_dump() | {"content": content})
         except Exception as e:
             return mcp.types.ErrorData(
                 code=mcp.types.INTERNAL_ERROR,

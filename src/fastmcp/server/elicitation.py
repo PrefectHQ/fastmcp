@@ -18,7 +18,7 @@ __all__ = [
     "CancelledElicitation",
     "DeclinedElicitation",
     "get_elicitation_schema",
-    "PrimitiveElicitationType",
+    "ScalarElicitationType",
 ]
 
 logger = get_logger(__name__)
@@ -35,7 +35,7 @@ class AcceptedElicitation(BaseModel, Generic[T]):
 
 
 @dataclass
-class PrimitiveElicitationType(Generic[T]):
+class ScalarElicitationType(Generic[T]):
     value: T
 
 
@@ -62,6 +62,7 @@ def validate_elicitation_json_schema(schema: dict[str, Any]) -> None:
     - Must be an object schema
     - Must only contain primitive field types (string, number, integer, boolean)
     - Must be flat (no nested objects or arrays of objects)
+    - Allows const fields (for Literal types) and enum fields (for Enum types)
     - Only primitive types and their nullable variants are allowed
 
     Args:
@@ -98,10 +99,41 @@ def validate_elicitation_json_schema(schema: dict[str, Any]) -> None:
         elif prop_schema.get("nullable", False):
             continue  # Nullable with no other type is fine
 
+        # Handle const fields (Literal types)
+        if "const" in prop_schema:
+            continue  # const fields are allowed regardless of type
+
+        # Handle enum fields (Enum types)
+        if "enum" in prop_schema:
+            continue  # enum fields are allowed regardless of type
+
+        # Handle references to definitions (like Enum types)
+        if "$ref" in prop_schema:
+            # Get the referenced definition
+            ref_path = prop_schema["$ref"]
+            if ref_path.startswith("#/$defs/"):
+                def_name = ref_path[8:]  # Remove "#/$defs/" prefix
+                ref_def = schema.get("$defs", {}).get(def_name, {})
+                # If the referenced definition has an enum, it's allowed
+                if "enum" in ref_def:
+                    continue
+                # If the referenced definition has a type that's allowed, it's allowed
+                ref_type = ref_def.get("type")
+                if ref_type in ALLOWED_TYPES:
+                    continue
+            # If we can't determine what the ref points to, reject it for safety
+            raise TypeError(
+                f"Elicitation schema field '{prop_name}' contains a reference '{ref_path}' "
+                "that could not be validated. Only references to enum types or primitive types are allowed."
+            )
+
         # Handle union types (oneOf/anyOf)
         if "oneOf" in prop_schema or "anyOf" in prop_schema:
             union_schemas = prop_schema.get("oneOf", []) + prop_schema.get("anyOf", [])
             for union_schema in union_schemas:
+                # Allow const and enum in unions
+                if "const" in union_schema or "enum" in union_schema:
+                    continue
                 union_type = union_schema.get("type")
                 if union_type not in ALLOWED_TYPES:
                     raise TypeError(

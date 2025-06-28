@@ -1,5 +1,7 @@
+from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Union
+from enum import Enum
+from typing import Any, Literal, Union
 
 import pytest
 from pydantic import AnyUrl, BaseModel, TypeAdapter, ValidationError
@@ -104,6 +106,65 @@ class TestSimpleTypes:
         validator = TypeAdapter(simple_null)
         with pytest.raises(ValidationError):
             validator.validate_python(False)
+
+
+class TestConstrainedTypes:
+    def test_constant(self):
+        validator = TypeAdapter(Literal["x"])
+        schema = validator.json_schema()
+        type_ = json_schema_to_type(schema)
+        assert type_ == Literal["x"]
+        assert TypeAdapter(type_).validate_python("x") == "x"
+        with pytest.raises(ValidationError):
+            TypeAdapter(type_).validate_python("y")
+
+    def test_union_constants(self):
+        validator = TypeAdapter(Literal["x"] | Literal["y"])
+        schema = validator.json_schema()
+        type_ = json_schema_to_type(schema)
+        assert type_ == Literal["x"] | Literal["y"]
+        assert TypeAdapter(type_).validate_python("x") == "x"
+        assert TypeAdapter(type_).validate_python("y") == "y"
+        with pytest.raises(ValidationError):
+            TypeAdapter(type_).validate_python("z")
+
+    def test_enum_str(self):
+        class MyEnum(Enum):
+            X = "x"
+            Y = "y"
+
+        validator = TypeAdapter(MyEnum)
+        schema = validator.json_schema()
+        type_ = json_schema_to_type(schema)
+        assert type_ == Literal["x", "y"]
+        assert TypeAdapter(type_).validate_python("x") == "x"
+        assert TypeAdapter(type_).validate_python("y") == "y"
+        with pytest.raises(ValidationError):
+            TypeAdapter(type_).validate_python("z")
+
+    def test_enum_int(self):
+        class MyEnum(Enum):
+            X = 1
+            Y = 2
+
+        validator = TypeAdapter(MyEnum)
+        schema = validator.json_schema()
+        type_ = json_schema_to_type(schema)
+        assert type_ == Literal[1, 2]
+        assert TypeAdapter(type_).validate_python(1) == 1
+        assert TypeAdapter(type_).validate_python(2) == 2
+        with pytest.raises(ValidationError):
+            TypeAdapter(type_).validate_python(3)
+
+    def test_choice(self):
+        validator = TypeAdapter(Literal["x", "y"])
+        schema = validator.json_schema()
+        type_ = json_schema_to_type(schema)
+        assert type_ == Literal["x", "y"]
+        assert TypeAdapter(type_).validate_python("x") == "x"
+        assert TypeAdapter(type_).validate_python("y") == "y"
+        with pytest.raises(ValidationError):
+            TypeAdapter(type_).validate_python("z")
 
 
 class TestStringConstraints:
@@ -385,6 +446,29 @@ class TestObjectTypes:
         validator = TypeAdapter(nested_object)
         with pytest.raises(ValidationError):
             validator.validate_python({"user": {"age": 30}})
+
+    def test_object_with_underscore_names(self):
+        @dataclass
+        class Data:
+            x: int
+            x_: int
+            _x: int
+
+        schema = TypeAdapter(Data).json_schema()
+        assert schema == {
+            "title": "Data",
+            "type": "object",
+            "properties": {
+                "x": {"type": "integer", "title": "X"},
+                "x_": {"type": "integer", "title": "X"},
+                "_x": {"type": "integer", "title": "X"},
+            },
+            "required": ["x", "x_", "_x"],
+        }
+
+        object = json_schema_to_type(schema)
+        object_schema = TypeAdapter(object).json_schema()
+        assert object_schema == schema
 
 
 class TestDefaultValues:

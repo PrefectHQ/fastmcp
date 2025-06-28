@@ -30,7 +30,7 @@ from fastmcp.server.elicitation import (
     AcceptedElicitation,
     CancelledElicitation,
     DeclinedElicitation,
-    PrimitiveElicitationType,
+    ScalarElicitationType,
     get_elicitation_schema,
 )
 from fastmcp.server.server import FastMCP
@@ -339,7 +339,7 @@ class Context:
             response_type = str  # type: ignore
 
         if response_type in {bool, int, float, str}:
-            response_type = PrimitiveElicitationType[response_type]  # type: ignore
+            response_type = ScalarElicitationType[response_type]  # type: ignore
 
         requested_schema = get_elicitation_schema(response_type)  # type: ignore
 
@@ -352,10 +352,10 @@ class Context:
         if result.action == "accept" and result.content:
             type_adapter = get_cached_typeadapter(response_type)
             validated_data = cast(
-                T | PrimitiveElicitationType[T],
+                T | ScalarElicitationType[T],
                 type_adapter.validate_python(result.content),
             )
-            if isinstance(validated_data, PrimitiveElicitationType):
+            if isinstance(validated_data, ScalarElicitationType):
                 return AcceptedElicitation[T](data=validated_data.value)
             else:
                 return AcceptedElicitation[T](data=validated_data)
