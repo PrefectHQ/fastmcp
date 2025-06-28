@@ -1,4 +1,4 @@
-from __future__ import annotations as _annotations
+from __future__ import annotations
 
 import asyncio
 import warnings
@@ -6,6 +6,8 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from contextvars import ContextVar, Token
 from dataclasses import dataclass
+from enum import Enum
+from typing import Literal, TypeVar, cast, get_origin
 
 from mcp import LoggingLevel, ServerSession
 from mcp.server.lowlevel.helper_types import ReadResourceContents
@@ -25,11 +27,20 @@ from starlette.requests import Request
 
 import fastmcp.server.dependencies
 from fastmcp import settings
+from fastmcp.server.elicitation import (
+    AcceptedElicitation,
+    CancelledElicitation,
+    DeclinedElicitation,
+    ScalarElicitationType,
+    get_elicitation_schema,
+)
 from fastmcp.server.server import FastMCP
 from fastmcp.utilities.logging import get_logger
+from fastmcp.utilities.types import get_cached_typeadapter
 
 logger = get_logger(__name__)
 
+T = TypeVar("T")
 _current_context: ContextVar[Context | None] = ContextVar("context", default=None)
 _flush_lock = asyncio.Lock()
 
@@ -167,7 +178,10 @@ class Context:
         if level is None:
             level = "info"
         await self.session.send_log_message(
-            level=level, data=message, logger=logger_name
+            level=level,
+            data=message,
+            logger=logger_name,
+            related_request_id=self.request_id,
         )
 
     @property
@@ -293,9 +307,85 @@ class Context:
             temperature=temperature,
             max_tokens=max_tokens,
             model_preferences=self._parse_model_preferences(model_preferences),
+            related_request_id=self.request_id,
         )
 
         return result.content
+
+    async def elicit(
+        self,
+        message: str,
+        response_type: type[T] | list[str] | None = None,
+    ) -> AcceptedElicitation[T] | DeclinedElicitation | CancelledElicitation:
+        """
+        Send an elicitation request to the client and await the response.
+
+        Call this method at any time to request additional information from
+        the user through the client. The client must support elicitation,
+        or the request will error.
+
+        Note that the MCP protocol only supports simple object schemas with
+        primitive types. You can provide a dataclass, TypedDict, or BaseModel to
+        comply. If you provide a primitive type, an object schema with a single
+        "value" field will be generated for the MCP interaction and
+        automatically deconstructed into the primitive type upon response.
+
+        Args:
+            message: A human-readable message explaining what information is needed
+            response_type: The type of the response, which should be a primitive
+                type or dataclass or BaseModel. If it is a primitive type, an
+                object schema with a single "value" field will be generated.
+        """
+        if response_type is None:
+            response_type = str  # type: ignore
+
+        # if the user provided a list of strings, treat it as a Literal
+        if isinstance(response_type, list):
+            if not all(isinstance(item, str) for item in response_type):
+                raise ValueError(
+                    "List of options must be a list of strings. Received: "
+                    f"{response_type}"
+                )
+            # Convert list of options to Literal type and wrap
+            choice_literal = Literal[tuple(response_type)]  # type: ignore
+            response_type = ScalarElicitationType[choice_literal]  # type: ignore
+        # if the user provided a primitive scalar, wrap it in an object schema
+        elif response_type in {bool, int, float, str}:
+            response_type = ScalarElicitationType[response_type]  # type: ignore
+        # if the user provided a Literal type, wrap it in an object schema
+        elif get_origin(response_type) is Literal:
+            response_type = ScalarElicitationType[response_type]  # type: ignore
+        # if the user provided an Enum type, wrap it in an object schema
+        elif isinstance(response_type, type) and issubclass(response_type, Enum):
+            response_type = ScalarElicitationType[response_type]  # type: ignore
+
+        response_type = cast(type[T], response_type)
+
+        requested_schema = get_elicitation_schema(response_type)
+
+        result = await self.session.elicit(
+            message=message,
+            requestedSchema=requested_schema,
+            related_request_id=self.request_id,
+        )
+
+        if result.action == "accept" and result.content:
+            type_adapter = get_cached_typeadapter(response_type)
+            validated_data = cast(
+                T | ScalarElicitationType[T],
+                type_adapter.validate_python(result.content),
+            )
+            if isinstance(validated_data, ScalarElicitationType):
+                return AcceptedElicitation[T](data=validated_data.value)
+            else:
+                return AcceptedElicitation[T](data=validated_data)
+        elif result.action == "decline":
+            return DeclinedElicitation()
+        elif result.action == "cancel":
+            return CancelledElicitation()
+        else:
+            # This should never happen, but handle it just in case
+            raise ValueError(f"Unexpected elicitation action: {result.action}")
 
     def get_http_request(self) -> Request:
         """Get the active starlette request."""

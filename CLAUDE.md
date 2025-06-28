@@ -1,5 +1,10 @@
 # FastMCP Development Guidelines
 
+## Documentation
+
+- Documentation uses the Mintlify framework
+- Files must be present in docs.json to be included in the documentation
+
 ## Testing and Investigation
 
 ### In-Memory Transport - Always Preferred

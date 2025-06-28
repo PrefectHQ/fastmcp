@@ -69,8 +69,18 @@
                     "pages": [
                       "servers/tools",
                       "servers/resources",
-                      "servers/prompts",
-                      "servers/context"
+                      "servers/prompts"
+                    ]
+                  },
+                  {
+                    "group": "Advanced Features",
+                    "icon": "stars",
+                    "pages": [
+                      "servers/context",
+                      "servers/elicitation",
+                      "servers/logging",
+                      "servers/progress",
+                      "servers/sampling"
                     ]
                   },
                   {
@@ -106,6 +116,7 @@
                     "group": "Advanced Features",
                     "icon": "stars",
                     "pages": [
+                      "clients/elicitation",
                       "clients/logging",
                       "clients/progress",
                       "clients/sampling",
