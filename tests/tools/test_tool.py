@@ -540,7 +540,7 @@ class TestToolFromFunctionOutputSchema:
         result = await tool.run({})
         assert result.structured_content is None
         assert len(result.content) == 1
-        assert result.content[0].text == '{\n  "message": "Hello, world!"\n}'
+        assert result.content[0].text == '{\n  "message": "Hello, world!"\n}'  # type: ignore[attr-defined]
 
     async def test_output_schema_none_disables_structured_content(self):
         """Test that output_schema=None explicitly disables structured content."""
@@ -554,7 +554,7 @@ class TestToolFromFunctionOutputSchema:
         result = await tool.run({})
         assert result.structured_content is None
         assert len(result.content) == 1
-        assert result.content[0].text == "42"
+        assert result.content[0].text == "42"  # type: ignore[attr-defined]
 
     async def test_output_schema_inferred_when_not_specified(self):
         """Test that output schema is inferred when not explicitly specified."""
@@ -587,12 +587,12 @@ class TestToolFromFunctionOutputSchema:
         }
         tool = Tool.from_function(func, output_schema=explicit_schema)
         assert tool.output_schema == explicit_schema  # Schema not wrapped
-        assert "x-fastmcp-wrap-result" not in tool.output_schema
+        assert tool.output_schema and "x-fastmcp-wrap-result" not in tool.output_schema
 
         result = await tool.run({})
         # Dict result with object schema is used directly
         assert result.structured_content == {"value": 42}
-        assert result.content[0].text == '{\n  "value": 42\n}'
+        assert result.content[0].text == '{\n  "value": 42\n}'  # type: ignore[attr-defined]
 
     async def test_explicit_object_schema_with_non_dict_return_fails(self):
         """Test that explicit object schemas fail when function returns non-dict."""
@@ -621,7 +621,7 @@ class TestToolFromFunctionOutputSchema:
         tool = Tool.from_function(func)
         expected_schema = TypeAdapter(dict[str, int]).json_schema()
         assert tool.output_schema == expected_schema  # Not wrapped
-        assert "x-fastmcp-wrap-result" not in tool.output_schema
+        assert tool.output_schema and "x-fastmcp-wrap-result" not in tool.output_schema
 
         result = await tool.run({})
         assert result.structured_content == {"value": 42}  # Direct value
@@ -644,7 +644,7 @@ class TestToolFromFunctionOutputSchema:
         result = await tool.run({})
         # Unstructured content
         assert len(result.content) == 1
-        assert result.content[0].text == "hello"
+        assert result.content[0].text == "hello"  # type: ignore[attr-defined]
         # Structured content should be wrapped
         assert result.structured_content == {"result": "hello"}
 
@@ -706,7 +706,7 @@ class TestToolFromFunctionOutputSchema:
 
         assert result_none.structured_content is None
         assert result_false.structured_content is None
-        assert result_none.content[0].text == result_false.content[0].text == "123"
+        assert result_none.content[0].text == result_false.content[0].text == "123"  # type: ignore[attr-defined]
 
     async def test_non_object_output_schema_raises_error(self):
         """Test that providing a non-object output schema raises a ValueError."""

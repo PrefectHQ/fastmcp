@@ -131,7 +131,7 @@ async def test_hidden_arg_without_default_uses_parent_default(add_tool):
 async def test_mixed_hidden_args_with_custom_function(add_tool):
     """Test custom function with both hidden constant and hidden default parameters."""
 
-    async def custom_fn(visible_x: int) -> int:
+    async def custom_fn(visible_x: int) -> ToolResult:
         # This custom function should receive the transformed visible parameter
         # and the hidden parameters should be automatically handled
         result = await forward(visible_x=visible_x)
@@ -195,7 +195,7 @@ async def test_hide_required_param_with_user_default_works():
 async def test_forward_with_argument_mapping(add_tool):
     """Test that forward() applies argument mapping correctly."""
 
-    async def custom_fn(new_x: int, new_y: int = 5) -> int:
+    async def custom_fn(new_x: int, new_y: int = 5) -> ToolResult:
         return await forward(new_x=new_x, new_y=new_y)
 
     new_tool = Tool.from_tool(
@@ -213,7 +213,7 @@ async def test_forward_with_argument_mapping(add_tool):
 
 
 async def test_forward_with_incorrect_args_raises_error(add_tool):
-    async def custom_fn(new_x: int, new_y: int = 5) -> int:
+    async def custom_fn(new_x: int, new_y: int = 5) -> ToolResult:
         # the forward should use the new args, not the old ones
         return await forward(old_x=new_x, old_y=new_y)
 
@@ -234,7 +234,7 @@ async def test_forward_with_incorrect_args_raises_error(add_tool):
 async def test_forward_raw_without_argument_mapping(add_tool):
     """Test that forward_raw() calls parent directly without mapping."""
 
-    async def custom_fn(new_x: int, new_y: int = 5) -> int:
+    async def custom_fn(new_x: int, new_y: int = 5) -> ToolResult:
         # Call parent directly with original argument names
         result = await forward_raw(old_x=new_x, old_y=new_y)
         return result
@@ -254,7 +254,7 @@ async def test_forward_raw_without_argument_mapping(add_tool):
 
 
 async def test_custom_fn_with_kwargs_and_no_transform_args(add_tool):
-    async def custom_fn(extra: int, **kwargs) -> int:
+    async def custom_fn(extra: int, **kwargs) -> ToolResult:
         sum = await forward(**kwargs)
         return int(sum.content[0].text) + extra  # type: ignore[attr-defined]
 
@@ -271,7 +271,7 @@ async def test_custom_fn_with_kwargs_and_no_transform_args(add_tool):
 
 
 async def test_fn_with_kwargs_passes_through_original_args(add_tool):
-    async def custom_fn(new_y: int = 5, **kwargs) -> int:
+    async def custom_fn(new_y: int = 5, **kwargs) -> ToolResult:
         assert kwargs == {"old_y": 3}
         result = await forward(old_x=new_y, **kwargs)
         return result
@@ -285,7 +285,7 @@ async def test_fn_with_kwargs_passes_through_original_args(add_tool):
 async def test_fn_with_kwargs_receives_transformed_arg_names(add_tool):
     """Test that **kwargs receives arguments with their transformed names from transform_args."""
 
-    async def custom_fn(new_x: int, **kwargs) -> int:
+    async def custom_fn(new_x: int, **kwargs) -> ToolResult:
         # kwargs should contain 'old_y': 3 (transformed name), not 'old_y': 3 (original name)
         assert kwargs == {"old_y": 3}
         result = await forward(new_x=new_x, **kwargs)
@@ -304,7 +304,9 @@ async def test_fn_with_kwargs_receives_transformed_arg_names(add_tool):
 async def test_fn_with_kwargs_handles_partial_explicit_args(add_tool):
     """Test that function can explicitly handle some transformed args while others pass through kwargs."""
 
-    async def custom_fn(new_x: int, some_other_param: str = "default", **kwargs) -> int:
+    async def custom_fn(
+        new_x: int, some_other_param: str = "default", **kwargs
+    ) -> ToolResult:
         # x is explicitly handled, y should come through kwargs with transformed name
         assert kwargs == {"old_y": 7}
         result = await forward(new_x=new_x, **kwargs)
@@ -325,7 +327,7 @@ async def test_fn_with_kwargs_handles_partial_explicit_args(add_tool):
 async def test_fn_with_kwargs_mixed_mapped_and_unmapped_args(add_tool):
     """Test **kwargs behavior with mix of mapped and unmapped arguments."""
 
-    async def custom_fn(new_x: int, **kwargs) -> int:
+    async def custom_fn(new_x: int, **kwargs) -> ToolResult:
         # new_x is explicitly handled, old_y should pass through kwargs with original name (unmapped)
         assert kwargs == {"old_y": 5}
         result = await forward(new_x=new_x, **kwargs)
@@ -344,7 +346,7 @@ async def test_fn_with_kwargs_mixed_mapped_and_unmapped_args(add_tool):
 async def test_fn_with_kwargs_dropped_args_not_in_kwargs(add_tool):
     """Test that dropped arguments don't appear in **kwargs."""
 
-    async def custom_fn(new_x: int, **kwargs) -> int:
+    async def custom_fn(new_x: int, **kwargs) -> ToolResult:
         # 'b' was dropped, so kwargs should be empty
         assert kwargs == {}
         # Can't use 'old_y' since it was dropped, so just use 'old_x' mapped to 'new_x'
@@ -486,7 +488,7 @@ async def test_tool_transform_chaining(add_tool):
     # Transform tool1 with custom function that handles all parameters
     async def custom(final_x: int, **kwargs) -> str:
         result = await forward(final_x=final_x, **kwargs)
-        return f"custom {result.content[0].text}"  # Extract text from content
+        return f"custom {result.content[0].text}"  # Extract text from content # type: ignore[attr-defined]
 
     tool3 = Tool.from_tool(
         tool1, transform_fn=custom, transform_args={"x": ArgTransform(name="final_x")}
@@ -620,7 +622,7 @@ async def test_arg_transform_precedence_over_function_with_kwargs():
     # Function signature has different types/defaults than ArgTransform
     async def custom_fn(x: str = "function_default", **kwargs) -> str:
         result = await forward(x=x, **kwargs)
-        return f"custom: {result.content[0].text}"
+        return f"custom: {result.content[0].text}"  # type: ignore[attr-defined]
 
     tool = Tool.from_tool(
         base,
@@ -1168,7 +1170,7 @@ class TestTransformToolOutputSchema:
         """Test custom function returning object type."""
 
         async def custom_fn(x: int) -> dict[str, int]:
-            result = await forward(x=x)
+            await forward(x=x)
             return {"original": x, "transformed": x * 2}
 
         new_tool = Tool.from_tool(base_string_tool, transform_fn=custom_fn)
@@ -1176,7 +1178,7 @@ class TestTransformToolOutputSchema:
         # Object types should not be wrapped
         expected_schema = TypeAdapter(dict[str, int]).json_schema()
         assert new_tool.output_schema == expected_schema
-        assert "x-fastmcp-wrap-result" not in new_tool.output_schema
+        assert "x-fastmcp-wrap-result" not in new_tool.output_schema  # type: ignore[attr-defined]
 
         result = await new_tool.run({"x": 4})
         # Direct value, not wrapped
@@ -1189,7 +1191,7 @@ class TestTransformToolOutputSchema:
         result = await new_tool.run({"x": 7})
         # Should wrap because parent schema has wrap marker
         assert result.structured_content == {"result": "Result: 7"}
-        assert "x-fastmcp-wrap-result" in new_tool.output_schema
+        assert "x-fastmcp-wrap-result" in new_tool.output_schema  # type: ignore[attr-defined]
 
     def test_transform_chained_output_schema_inheritance(self, base_string_tool):
         """Test output schema inheritance through multiple transformations."""
@@ -1214,10 +1216,10 @@ class TestTransformToolOutputSchema:
     ):
         """Test transformation handling of mixed content types."""
 
-        async def custom_fn(x: int) -> list:
+        async def custom_fn(x: int) -> ToolResult:
             # Return mixed content including ToolResult
             if x == 1:
-                return ["text", {"data": x}]
+                return ["text", {"data": x}]  # type: ignore[return-value]
             else:
                 # Return ToolResult directly
                 return ToolResult(
@@ -1271,7 +1273,7 @@ class TestTransformToolOutputSchema:
             "result": "Result: 5"
         }  # Inherits wrapping
         assert result_false.structured_content is None  # Disabled
-        assert result_none.content[0].text == result_false.content[0].text
+        assert result_none.content[0].text == result_false.content[0].text  # type: ignore[attr-defined]
 
     async def test_transform_output_schema_with_tool_result_return(
         self, base_string_tool

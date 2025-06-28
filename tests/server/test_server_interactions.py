@@ -906,7 +906,7 @@ class TestToolOutputSchema:
         mcp = FastMCP()
 
         @mcp.tool
-        def f() -> annotation:
+        def f() -> annotation:  # type: ignore[valid-type]
             return {"name": "John", "age": 30}
 
         async with Client(mcp) as client:
@@ -950,7 +950,7 @@ class TestToolOutputSchema:
         """Test that output_schema=False works through full client/server handshake."""
         mcp = FastMCP()
 
-        @mcp.tool(output_schema=False)
+        @mcp.tool(output_schema=False)  # type: ignore[arg-type]
         def simple_tool() -> dict[str, str]:
             return {"message": "Hello from disabled schema"}
 
@@ -964,9 +964,9 @@ class TestToolOutputSchema:
             result = await client.call_tool("simple_tool", {})
             assert result.structured_content is None
             assert result.data is None
-            assert json.loads(result.content[0].text) == {
+            assert json.loads(result.content[0].text) == {  # type: ignore[attr-defined]
                 "message": "Hello from disabled schema"
-            }  # type: ignore[attr-defined]
+            }
 
     async def test_output_schema_explicit_object_full_handshake(self):
         """Test explicit object output schema through full client/server handshake."""
@@ -1076,7 +1076,9 @@ class TestToolOutputSchema:
             tool = next(t for t in tools if t.name == "dataclass_tool")
             expected_schema = TypeAdapter(User).json_schema()
             assert tool.outputSchema == expected_schema
-            assert "x-fastmcp-wrap-result" not in tool.outputSchema
+            assert (
+                tool.outputSchema and "x-fastmcp-wrap-result" not in tool.outputSchema
+            )
 
             # Call tool and verify structured content is direct
             result = await client.call_tool("dataclass_tool", {})
@@ -1131,7 +1133,7 @@ class TestToolOutputSchema:
             tool = next(t for t in tools if t.name == "edge_case_tool")
 
             # Tuples should be wrapped since they're not object type
-            assert "x-fastmcp-wrap-result" in tool.outputSchema
+            assert tool.outputSchema and "x-fastmcp-wrap-result" in tool.outputSchema
 
             result = await client.call_tool("edge_case_tool", {})
             # Should be wrapped with result key
