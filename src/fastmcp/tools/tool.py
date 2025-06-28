@@ -3,7 +3,7 @@ from __future__ import annotations
 import inspect
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Annotated, Any
+from typing import TYPE_CHECKING, Annotated, Any, Literal
 
 import mcp.types
 import pydantic_core
@@ -40,6 +40,27 @@ def default_serializer(data: Any) -> str:
     return pydantic_core.to_json(data, fallback=str, indent=2).decode()
 
 
+def _wrap_schema_if_needed(schema: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Wrap non-object schemas with result property for structured output.
+
+    This wrapping allows primitive types (int, str, etc.) to be returned as
+    structured content by placing them under a "result" key.
+
+    Args:
+        schema: The JSON schema to potentially wrap
+
+    Returns:
+        Wrapped schema if needed, or original schema if already an object type
+    """
+    if schema and schema.get("type") != "object":
+        return {
+            "type": "object",
+            "properties": {"result": schema},
+            "x-fastmcp-wrap-result": True,
+        }
+    return schema
+
+
 class ToolResult:
     def __init__(
         self,
@@ -64,7 +85,11 @@ class ToolResult:
                 )
                 raise
             if not isinstance(structured_content, dict):
-                structured_content = {"result": structured_content}
+                raise ValueError(
+                    "structured_content must be a dict or None. "
+                    f"Got {type(structured_content).__name__}: {structured_content!r}. "
+                    "Tools should wrap non-dict values based on their output_schema."
+                )
         self.structured_content: dict[str, Any] | None = structured_content
 
     def to_mcp_result(
@@ -127,7 +152,7 @@ class Tool(FastMCPComponent):
         tags: set[str] | None = None,
         annotations: ToolAnnotations | None = None,
         exclude_args: list[str] | None = None,
-        output_schema: dict[str, Any] | None | NotSetT = NotSet,
+        output_schema: dict[str, Any] | None | NotSetT | Literal[False] = NotSet,
         serializer: Callable[[Any], str] | None = None,
         enabled: bool | None = None,
     ) -> FunctionTool:
@@ -166,6 +191,7 @@ class Tool(FastMCPComponent):
         description: str | None = None,
         tags: set[str] | None = None,
         annotations: ToolAnnotations | None = None,
+        output_schema: dict[str, Any] | None | Literal[False] = None,
         serializer: Callable[[Any], str] | None = None,
         enabled: bool | None = None,
     ) -> TransformedTool:
@@ -179,6 +205,7 @@ class Tool(FastMCPComponent):
             description=description,
             tags=tags,
             annotations=annotations,
+            output_schema=output_schema,
             serializer=serializer,
             enabled=enabled,
         )
@@ -196,7 +223,7 @@ class FunctionTool(Tool):
         tags: set[str] | None = None,
         annotations: ToolAnnotations | None = None,
         exclude_args: list[str] | None = None,
-        output_schema: dict[str, Any] | None | NotSetT = NotSet,
+        output_schema: dict[str, Any] | None | NotSetT | Literal[False] = NotSet,
         serializer: Callable[[Any], str] | None = None,
         enabled: bool | None = None,
     ) -> FunctionTool:
@@ -208,14 +235,10 @@ class FunctionTool(Tool):
             raise ValueError("You must provide a name for lambda functions")
 
         if isinstance(output_schema, NotSetT):
-            output_schema = parsed_fn.output_schema
-
-            if output_schema and output_schema.get("type") != "object":
-                output_schema = {
-                    "type": "object",
-                    "properties": {"result": output_schema},
-                    "x-fastmcp-wrap-result": True,
-                }
+            output_schema = _wrap_schema_if_needed(parsed_fn.output_schema)
+        elif output_schema is False:
+            output_schema = None
+        # Note: explicit schemas (dict) are used as-is without auto-wrapping
 
         return cls(
             fn=parsed_fn.fn,
@@ -249,6 +272,7 @@ class FunctionTool(Tool):
 
         unstructured_result = _convert_to_content(result, serializer=self.serializer)
 
+        # Handle structured content based on output schema
         if self.output_schema is not None:
             if self.output_schema.get("x-fastmcp-wrap-result"):
                 structured_output = {"result": result}

@@ -255,7 +255,7 @@ async def test_forward_raw_without_argument_mapping(add_tool):
 async def test_custom_fn_with_kwargs_and_no_transform_args(add_tool):
     async def custom_fn(extra: int, **kwargs) -> int:
         sum = await forward(**kwargs)
-        return int(sum[0].text) + extra  # type: ignore[attr-defined]
+        return int(sum.content[0].text) + extra  # type: ignore[attr-defined]
 
     new_tool = Tool.from_tool(add_tool, transform_fn=custom_fn)
     result = await new_tool.run(arguments={"extra": 1, "old_x": 2, "old_y": 3})
@@ -360,7 +360,7 @@ async def test_fn_with_kwargs_dropped_args_not_in_kwargs(add_tool):
     )  # drop 'old_y'
     result = await new_tool.run(arguments={"new_x": 8})
     # 8 + 10 (default value of b in parent)
-    assert result[0].text == "18"  # type: ignore[attr-defined]
+    assert result.content[0].text == "18"  # type: ignore[attr-defined]
 
 
 async def test_forward_outside_context_raises_error():
@@ -480,18 +480,18 @@ async def test_tool_transform_chaining(add_tool):
     tool2 = Tool.from_tool(tool1, transform_args={"x": ArgTransform(name="final_x")})
 
     result = await tool2.run(arguments={"final_x": 5})
-    assert result[0].text == "15"  # type: ignore[attr-defined]
+    assert result.content[0].text == "15"  # type: ignore[attr-defined]
 
     # Transform tool1 with custom function that handles all parameters
     async def custom(final_x: int, **kwargs) -> str:
         result = await forward(final_x=final_x, **kwargs)
-        return f"custom {result[0].text}"  # Extract text from content
+        return f"custom {result.content[0].text}"  # Extract text from content
 
     tool3 = Tool.from_tool(
         tool1, transform_fn=custom, transform_args={"x": ArgTransform(name="final_x")}
     )
     result = await tool3.run(arguments={"final_x": 3, "old_y": 5})
-    assert result[0].text == "custom 8"  # type: ignore[attr-defined]
+    assert result.content[0].text == "custom 8"  # type: ignore[attr-defined]
 
 
 class MyModel(BaseModel):
@@ -619,7 +619,7 @@ async def test_arg_transform_precedence_over_function_with_kwargs():
     # Function signature has different types/defaults than ArgTransform
     async def custom_fn(x: str = "function_default", **kwargs) -> str:
         result = await forward(x=x, **kwargs)
-        return f"custom: {result}"
+        return f"custom: {result.content[0].text}"
 
     tool = Tool.from_tool(
         base,
@@ -646,7 +646,7 @@ async def test_arg_transform_precedence_over_function_with_kwargs():
     # Test it works at runtime
     result = await tool.run(arguments={"y": "test"})
     # Should use ArgTransform default of 42
-    assert "42: test" in result[0].text  # type: ignore[attr-defined]
+    assert "42: test" in result.content[0].text  # type: ignore[attr-defined]
 
 
 def test_arg_transform_combined_attributes():
@@ -691,7 +691,7 @@ async def test_arg_transform_type_precedence_runtime():
         # Convert string back to int for the original function
         result = await forward_raw(x=int(x), y=y)
         # Extract the text from the result
-        result_text = result[0].text
+        result_text = result.content[0].text
         return f"String input '{x}' converted to result: {result_text}"
 
     tool = Tool.from_tool(
@@ -703,8 +703,8 @@ async def test_arg_transform_type_precedence_runtime():
 
     # Test it works with string input
     result = await tool.run(arguments={"x": "5", "y": 3})
-    assert "String input '5'" in result[0].text  # type: ignore[attr-defined]
-    assert "result: 8" in result[0].text  # type: ignore[attr-defined]
+    assert "String input '5'" in result.content[0].text  # type: ignore[attr-defined]
+    assert "result: 8" in result.content[0].text  # type: ignore[attr-defined]
 
 
 class TestProxy:
@@ -739,7 +739,7 @@ class TestProxy:
         async with Client(proxy_server) as client:
             # The tool should be registered with its transformed name
             result = await client.call_tool("add_transformed", {"new_x": 1, "old_y": 2})
-            assert result[0].text == "3"  # type: ignore[attr-defined]
+            assert result.content[0].text == "3"  # type: ignore[attr-defined]
 
 
 async def test_arg_transform_default_factory():
@@ -762,7 +762,7 @@ async def test_arg_transform_default_factory():
 
     # Should work without providing timestamp (gets value from factory)
     result = await new_tool.run(arguments={"x": 42})
-    assert result[0].text == "42_12345.0"  # type: ignore[attr-defined]
+    assert result.content[0].text == "42_12345.0"  # type: ignore[attr-defined]
 
 
 async def test_arg_transform_default_factory_called_each_time():
@@ -790,11 +790,11 @@ async def test_arg_transform_default_factory_called_each_time():
 
     # First call
     result1 = await new_tool.run(arguments={"x": 1})
-    assert result1[0].text == "1_1"  # type: ignore[attr-defined]
+    assert result1.content[0].text == "1_1"  # type: ignore[attr-defined]
 
     # Second call should get a different value
     result2 = await new_tool.run(arguments={"x": 2})
-    assert result2[0].text == "2_2"  # type: ignore[attr-defined]
+    assert result2.content[0].text == "2_2"  # type: ignore[attr-defined]
 
 
 async def test_arg_transform_hidden_with_default_factory():
@@ -819,7 +819,7 @@ async def test_arg_transform_hidden_with_default_factory():
 
     # Should pass hidden request_id with factory value
     result = await new_tool.run(arguments={"x": 42})
-    assert result[0].text == "42_req_123"  # type: ignore[attr-defined]
+    assert result.content[0].text == "42_req_123"  # type: ignore[attr-defined]
 
 
 async def test_arg_transform_default_and_factory_raises_error():
@@ -856,7 +856,7 @@ async def test_arg_transform_required_true():
 
     # Should work when parameter is provided
     result = await new_tool.run(arguments={"optional_param": 100})
-    assert result[0].text == "value: 100"  # type: ignore
+    assert result.content[0].text == "value: 100"  # type: ignore
 
     # Should fail when parameter is not provided
     with pytest.raises(TypeError, match="Missing required argument"):
@@ -903,7 +903,7 @@ async def test_arg_transform_required_with_rename():
 
     # Should work with new name
     result = await new_tool.run(arguments={"new_param": 200})
-    assert result[0].text == "value: 200"  # type: ignore
+    assert result.content[0].text == "value: 200"  # type: ignore
 
 
 async def test_arg_transform_required_true_with_default_raises_error():
@@ -945,7 +945,7 @@ async def test_arg_transform_required_no_change():
 
     # Should work as expected
     result = await new_tool.run(arguments={"req": 1})
-    assert result[0].text == "values: 1, 42"  # type: ignore
+    assert result.content[0].text == "values: 1, 42"  # type: ignore
 
 
 async def test_arg_transform_hide_and_required_raises_error():
@@ -977,7 +977,7 @@ class TestEnableDisable:
             assert {tool.name for tool in tools} == {"new_add"}
 
             result = await client.call_tool("new_add", {"x": 1, "y": 2})
-            assert result[0].text == "3"  # type: ignore[attr-defined]
+            assert result.content[0].text == "3"  # type: ignore[attr-defined]
 
             with pytest.raises(ToolError):
                 await client.call_tool("add", {"x": 1, "y": 2})

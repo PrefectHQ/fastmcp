@@ -31,12 +31,10 @@ class TestToolFromFunction:
         assert len(tool.parameters["properties"]) == 2
         assert tool.parameters["properties"]["a"]["type"] == "integer"
         assert tool.parameters["properties"]["b"]["type"] == "integer"
-        # With primitive wrapping, int return type becomes object with value property
+        # With primitive wrapping, int return type becomes object with result property
         expected_schema = {
             "type": "object",
-            "properties": {"value": {"title": "Value", "type": "integer"}},
-            "required": ["value"],
-            "title": "Result",
+            "properties": {"result": {"type": "integer"}},
             "x-fastmcp-wrap-result": True,
         }
         assert tool.output_schema == expected_schema
@@ -251,7 +249,7 @@ class TestToolFromFunction:
         assert isinstance(result.content[0], TextContent)
         assert result.content[0].text == "Custom serializer: 15"
         # Structured output should have the raw value
-        assert result.structured_content == {"value": 15}
+        assert result.structured_content == {"result": 15}
 
 
 class TestToolFromFunctionOutputSchema:
@@ -287,27 +285,20 @@ class TestToolFromFunctionOutputSchema:
 
         base_schema = TypeAdapter(annotation).json_schema()
 
-        # Only pure primitives (just type + optional title) get wrapped
-        primitive_types = {"string", "number", "integer", "boolean", "null"}
+        # Non-object types get wrapped
         schema_type = base_schema.get("type")
-        is_pure_primitive = (
-            schema_type in primitive_types
-            and len(base_schema) <= 2  # Only 'type' and optionally 'title'
-            and all(key in {"type", "title"} for key in base_schema.keys())
-        )
+        is_object_type = schema_type == "object"
 
-        if is_pure_primitive:
-            # Pure primitives get wrapped
+        if not is_object_type:
+            # Non-object types get wrapped
             expected_schema = {
                 "type": "object",
-                "properties": {"value": base_schema | {"title": "Value"}},
-                "required": ["value"],
-                "title": "Result",
+                "properties": {"result": base_schema},
                 "x-fastmcp-wrap-result": True,
             }
             assert tool.output_schema == expected_schema
         else:
-            # Complex types (objects, unions, constrained types) remain unwrapped
+            # Object types remain unwrapped
             assert tool.output_schema == base_schema
 
     @pytest.mark.parametrize(
@@ -326,8 +317,17 @@ class TestToolFromFunctionOutputSchema:
         tool = Tool.from_function(func)
         base_schema = TypeAdapter(annotation).json_schema()
 
-        # Complex types with constraints are not wrapped - they remain as-is
-        assert tool.output_schema == base_schema
+        # Special case for Any type - it generates an empty schema and doesn't get wrapped
+        if annotation is Any:
+            assert tool.output_schema == base_schema  # Should be {}
+        else:
+            # All other non-object types get wrapped, including complex constrained types
+            expected_schema = {
+                "type": "object",
+                "properties": {"result": base_schema},
+                "x-fastmcp-wrap-result": True,
+            }
+            assert tool.output_schema == expected_schema
 
     @pytest.mark.parametrize(
         "annotation, expected",
