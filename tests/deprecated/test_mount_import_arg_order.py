@@ -36,7 +36,7 @@ class TestDeprecatedMountArgOrder:
         # Test functionality
         async with Client(main_app) as client:
             result = await client.call_tool("sub_sub_tool", {})
-            assert result[0].text == "Sub tool result"  # type: ignore[attr-defined]
+            assert result.data == "Sub tool result"
 
     async def test_mount_new_arg_order_no_warning(self):
         """Test that mount(server, prefix) works without deprecation warning."""
@@ -122,7 +122,7 @@ class TestDeprecatedImportArgOrder:
         # Test functionality
         async with Client(main_app) as client:
             result = await client.call_tool("sub_sub_tool", {})
-            assert result[0].text == "Sub tool result"  # type: ignore[attr-defined]
+            assert result.data == "Sub tool result"
 
     async def test_import_new_arg_order_no_warning(self):
         """Test that import_server(server, prefix) works without deprecation warning."""

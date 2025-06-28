@@ -226,7 +226,9 @@ async def test_call_tool(client_with_headless_oauth: Client):
     """Test that we can call a tool."""
     async with client_with_headless_oauth:
         result = await client_with_headless_oauth.call_tool("add", {"a": 5, "b": 3})
-        assert result[0].text == "8"  # type: ignore[attr-defined]
+        # The add tool returns int which gets wrapped as structured output
+        # Client unwraps it and puts the actual int in the data field
+        assert result.data == 8
 
 
 async def test_list_resources(client_with_headless_oauth: Client):

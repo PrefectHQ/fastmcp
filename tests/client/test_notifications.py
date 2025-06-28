@@ -126,7 +126,7 @@ class TestToolNotifications:
 
             # Enable the target tool
             result = await client.call_tool("enable_target_tool", {})
-            assert result[0].text == "Target tool enabled"  # type: ignore[attr-defined]
+            assert result.data == "Target tool enabled"
 
             # Check that notification was sent
             recording_message_handler.assert_notification_sent(
@@ -147,7 +147,7 @@ class TestToolNotifications:
 
             # Disable the target tool
             result = await client.call_tool("disable_target_tool", {})
-            assert result[0].text == "Target tool disabled"  # type: ignore[attr-defined]
+            assert result.data == "Target tool disabled"
 
             # Check that notification was sent
             recording_message_handler.assert_notification_sent(
@@ -231,7 +231,7 @@ class TestResourceNotifications:
 
             # Enable the target resource
             result = await client.call_tool("enable_target_resource", {})
-            assert result[0].text == "Target resource enabled"  # type: ignore[attr-defined]
+            assert result.data == "Target resource enabled"
 
             # Check that notification was sent
             recording_message_handler.assert_notification_sent(
@@ -252,7 +252,7 @@ class TestResourceNotifications:
 
             # Disable the target resource
             result = await client.call_tool("disable_target_resource", {})
-            assert result[0].text == "Target resource disabled"  # type: ignore[attr-defined]
+            assert result.data == "Target resource disabled"
 
             # Check that notification was sent
             recording_message_handler.assert_notification_sent(
@@ -313,7 +313,7 @@ class TestPromptNotifications:
 
             # Enable the target prompt
             result = await client.call_tool("enable_target_prompt", {})
-            assert result[0].text == "Target prompt enabled"  # type: ignore[attr-defined]
+            assert result.data == "Target prompt enabled"
 
             # Check that notification was sent
             recording_message_handler.assert_notification_sent(
@@ -334,7 +334,7 @@ class TestPromptNotifications:
 
             # Disable the target prompt
             result = await client.call_tool("disable_target_prompt", {})
-            assert result[0].text == "Target prompt disabled"  # type: ignore[attr-defined]
+            assert result.data == "Target prompt disabled"
 
             # Check that notification was sent
             recording_message_handler.assert_notification_sent(

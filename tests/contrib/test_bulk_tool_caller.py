@@ -59,7 +59,10 @@ async def no_return_tool(arg1: str) -> None:
 def no_return_tool_result_factory(arg1: str) -> CallToolRequestResult:
     """A tool that returns a result based on the input arguments."""
     return CallToolRequestResult(
-        isError=False, content=[], tool="no_return_tool", arguments={"arg1": arg1}
+        isError=False,
+        content=[],
+        tool="no_return_tool",
+        arguments={"arg1": arg1},
     )
 
 
