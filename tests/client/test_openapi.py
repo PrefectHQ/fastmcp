@@ -118,7 +118,7 @@ class TestClientHeaders:
             transport=SSETransport(sse_server, headers={"X-TEST": "test-123"})
         ) as client:
             result = await client.call_tool("post_headers_headers_post")
-            headers = json.loads(result[0].text)  # type: ignore[attr-defined]
+            headers: dict[str, str] = result.data
             assert headers["x-test"] == "test-123"
 
     async def test_client_headers_shttp_tool(self, shttp_server: str):
@@ -128,7 +128,7 @@ class TestClientHeaders:
             )
         ) as client:
             result = await client.call_tool("post_headers_headers_post")
-            headers = json.loads(result[0].text)  # type: ignore[attr-defined]
+            headers: dict[str, str] = result.data
             assert headers["x-test"] == "test-123"
 
     async def test_client_overrides_server_headers(self, shttp_server: str):

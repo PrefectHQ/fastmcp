@@ -1,4 +1,6 @@
 import json
+from dataclasses import dataclass
+from typing import Annotated, Any
 
 import pytest
 from mcp.types import (
@@ -8,7 +10,8 @@ from mcp.types import (
     TextContent,
     TextResourceContents,
 )
-from pydantic import AnyUrl, BaseModel
+from pydantic import AnyUrl, BaseModel, Field, TypeAdapter
+from typing_extensions import TypedDict
 
 from fastmcp.tools.tool import Tool, _convert_to_content
 from fastmcp.utilities.types import Audio, File, Image
@@ -29,6 +32,13 @@ class TestToolFromFunction:
         assert len(tool.parameters["properties"]) == 2
         assert tool.parameters["properties"]["a"]["type"] == "integer"
         assert tool.parameters["properties"]["b"]["type"] == "integer"
+        # With primitive wrapping, int return type becomes object with result property
+        expected_schema = {
+            "type": "object",
+            "properties": {"result": {"type": "integer"}},
+            "x-fastmcp-wrap-result": True,
+        }
+        assert tool.output_schema == expected_schema
 
     async def test_async_function(self):
         """Test registering and running an async function."""
@@ -100,7 +110,7 @@ class TestToolFromFunction:
 
         result = await tool.run({"data": "test.png"})
         assert tool.parameters["properties"]["data"]["type"] == "string"
-        assert isinstance(result[0], ImageContent)
+        assert isinstance(result.content[0], ImageContent)
 
     async def test_tool_with_audio_return(self):
         def audio_tool(data: bytes) -> Audio:
@@ -110,7 +120,7 @@ class TestToolFromFunction:
 
         result = await tool.run({"data": "test.wav"})
         assert tool.parameters["properties"]["data"]["type"] == "string"
-        assert isinstance(result[0], AudioContent)
+        assert isinstance(result.content[0], AudioContent)
 
     async def test_tool_with_file_return(self):
         def file_tool(data: bytes) -> File:
@@ -120,11 +130,11 @@ class TestToolFromFunction:
 
         result = await tool.run({"data": "test.bin"})
         assert tool.parameters["properties"]["data"]["type"] == "string"
-        assert len(result) == 1
-        assert isinstance(result[0], EmbeddedResource)
-        assert result[0].type == "resource"
-        assert hasattr(result[0], "resource")
-        resource = result[0].resource
+        assert len(result.content) == 1
+        assert isinstance(result.content[0], EmbeddedResource)
+        assert result.content[0].type == "resource"
+        assert hasattr(result.content[0], "resource")
+        resource = result.content[0].resource
         assert resource.mimeType == "application/octet-stream"
 
     def test_non_callable_fn(self):
@@ -236,8 +246,490 @@ class TestToolFromFunction:
         tool = Tool.from_function(process_list, serializer=custom_serializer)
 
         result = await tool.run(arguments={"items": [1, 2, 3, 4, 5]})
-        assert isinstance(result[0], TextContent)
-        assert result[0].text == "Custom serializer: 15"
+        # Custom serializer affects unstructured content
+        assert isinstance(result.content[0], TextContent)
+        assert result.content[0].text == "Custom serializer: 15"
+        # Structured output should have the raw value
+        assert result.structured_content == {"result": 15}
+
+
+class TestToolFromFunctionOutputSchema:
+    async def test_no_return_annotation(self):
+        def func():
+            pass
+
+        tool = Tool.from_function(func)
+        assert tool.output_schema is None
+
+    @pytest.mark.parametrize(
+        "annotation",
+        [
+            int,
+            float,
+            bool,
+            str,
+            int | float,
+            list,
+            list[int],
+            list[int | float],
+            dict,
+            dict[str, Any],
+            dict[str, int | None],
+            tuple[int, str],
+            set[int],
+            list[tuple[int, str]],
+        ],
+    )
+    async def test_simple_return_annotation(self, annotation):
+        def func() -> annotation:  # type: ignore
+            return 1
+
+        tool = Tool.from_function(func)
+
+        base_schema = TypeAdapter(annotation).json_schema()
+
+        # Non-object types get wrapped
+        schema_type = base_schema.get("type")
+        is_object_type = schema_type == "object"
+
+        if not is_object_type:
+            # Non-object types get wrapped
+            expected_schema = {
+                "type": "object",
+                "properties": {"result": base_schema},
+                "x-fastmcp-wrap-result": True,
+            }
+            assert tool.output_schema == expected_schema
+        else:
+            # Object types remain unwrapped
+            assert tool.output_schema == base_schema
+
+    @pytest.mark.parametrize(
+        "annotation",
+        [
+            AnyUrl,
+            Annotated[int, Field(ge=1)],
+            Annotated[int, Field(ge=1)],
+        ],
+    )
+    async def test_complex_return_annotation(self, annotation):
+        def func() -> annotation:  # type: ignore
+            return 1
+
+        tool = Tool.from_function(func)
+        base_schema = TypeAdapter(annotation).json_schema()
+
+        expected_schema = {
+            "type": "object",
+            "properties": {"result": base_schema},
+            "x-fastmcp-wrap-result": True,
+        }
+        assert tool.output_schema == expected_schema
+
+    async def test_none_return_annotation(self):
+        def func() -> None:
+            pass
+
+        tool = Tool.from_function(func)
+        assert tool.output_schema is None
+
+    async def test_any_return_annotation(self):
+        def func() -> Any:
+            return 1
+
+        tool = Tool.from_function(func)
+        assert tool.output_schema is None
+
+    @pytest.mark.parametrize(
+        "annotation, expected",
+        [
+            (Image, ImageContent),
+            (Audio, AudioContent),
+            (File, EmbeddedResource),
+            (Image | int, ImageContent | int),
+            (Image | Audio, ImageContent | AudioContent),
+            (list[Image | Audio], list[ImageContent | AudioContent]),
+        ],
+    )
+    async def test_converted_return_annotation(self, annotation, expected):
+        def func() -> annotation:  # type: ignore
+            return 1
+
+        tool = Tool.from_function(func)
+        # Image, Audio, File types don't generate output schemas since they're converted to content directly
+        assert tool.output_schema is None
+
+    async def test_dataclass_return_annotation(self):
+        @dataclass
+        class Person:
+            name: str
+            age: int
+
+        def func() -> Person:
+            return Person(name="John", age=30)
+
+        tool = Tool.from_function(func)
+        assert tool.output_schema == TypeAdapter(Person).json_schema()
+
+    async def test_base_model_return_annotation(self):
+        class Person(BaseModel):
+            name: str
+            age: int
+
+        def func() -> Person:
+            return Person(name="John", age=30)
+
+        tool = Tool.from_function(func)
+        assert tool.output_schema == TypeAdapter(Person).json_schema()
+
+    async def test_typeddict_return_annotation(self):
+        class Person(TypedDict):
+            name: str
+            age: int
+
+        def func() -> Person:
+            return Person(name="John", age=30)
+
+        tool = Tool.from_function(func)
+        assert tool.output_schema == TypeAdapter(Person).json_schema()
+
+    async def test_unserializable_return_annotation(self):
+        class Unserializable:
+            def __init__(self, data: Any):
+                self.data = data
+
+        def func() -> Unserializable:
+            return Unserializable(data="test")
+
+        tool = Tool.from_function(func)
+        assert tool.output_schema is None
+
+    async def test_mixed_unserializable_return_annotation(self):
+        class Unserializable:
+            def __init__(self, data: Any):
+                self.data = data
+
+        def func() -> Unserializable | int:
+            return Unserializable(data="test")
+
+        tool = Tool.from_function(func)
+        assert tool.output_schema is None
+
+    async def test_provided_output_schema_takes_precedence_over_json_compatible_annotation(
+        self,
+    ):
+        """Test that provided output_schema takes precedence over inferred schema from JSON-compatible annotation."""
+
+        def func() -> dict[str, int]:
+            return {"a": 1, "b": 2}
+
+        # Provide a custom output schema that differs from the inferred one
+        custom_schema = {"type": "object", "description": "Custom schema"}
+
+        tool = Tool.from_function(func, output_schema=custom_schema)
+        assert tool.output_schema == custom_schema
+
+    async def test_provided_output_schema_takes_precedence_over_complex_annotation(
+        self,
+    ):
+        """Test that provided output_schema takes precedence over inferred schema from complex annotation."""
+
+        def func() -> list[dict[str, int | float]]:
+            return [{"a": 1, "b": 2.5}]
+
+        # Provide a custom output schema that differs from the inferred one
+        custom_schema = {"type": "object", "properties": {"custom": {"type": "string"}}}
+
+        tool = Tool.from_function(func, output_schema=custom_schema)
+        assert tool.output_schema == custom_schema
+
+    async def test_provided_output_schema_takes_precedence_over_unserializable_annotation(
+        self,
+    ):
+        """Test that provided output_schema takes precedence over None schema from unserializable annotation."""
+
+        class Unserializable:
+            def __init__(self, data: Any):
+                self.data = data
+
+        def func() -> Unserializable:
+            return Unserializable(data="test")
+
+        # Provide a custom output schema even though the annotation is unserializable
+        custom_schema = {
+            "type": "object",
+            "properties": {"items": {"type": "array", "items": {"type": "string"}}},
+        }
+
+        tool = Tool.from_function(func, output_schema=custom_schema)
+        assert tool.output_schema == custom_schema
+
+    async def test_provided_output_schema_takes_precedence_over_no_annotation(self):
+        """Test that provided output_schema takes precedence over None schema from no annotation."""
+
+        def func():
+            return "hello"
+
+        # Provide a custom output schema even though there's no return annotation
+        custom_schema = {
+            "type": "object",
+            "properties": {"value": {"type": "number", "minimum": 0}},
+        }
+
+        tool = Tool.from_function(func, output_schema=custom_schema)
+        assert tool.output_schema == custom_schema
+
+    async def test_provided_output_schema_takes_precedence_over_converted_annotation(
+        self,
+    ):
+        """Test that provided output_schema takes precedence over converted schema from Image/Audio/File annotations."""
+
+        def func() -> Image:
+            return Image(data=b"test")
+
+        # Provide a custom output schema that differs from the converted ImageContent schema
+        custom_schema = {
+            "type": "object",
+            "properties": {"custom_image": {"type": "string"}},
+        }
+
+        tool = Tool.from_function(func, output_schema=custom_schema)
+        assert tool.output_schema == custom_schema
+
+    async def test_provided_output_schema_takes_precedence_over_union_annotation(self):
+        """Test that provided output_schema takes precedence over inferred schema from union annotation."""
+
+        def func() -> str | int | None:
+            return "hello"
+
+        # Provide a custom output schema that differs from the inferred union schema
+        custom_schema = {"type": "object", "properties": {"flag": {"type": "boolean"}}}
+
+        tool = Tool.from_function(func, output_schema=custom_schema)
+        assert tool.output_schema == custom_schema
+
+    async def test_provided_output_schema_takes_precedence_over_pydantic_annotation(
+        self,
+    ):
+        """Test that provided output_schema takes precedence over inferred schema from Pydantic model annotation."""
+
+        class Person(BaseModel):
+            name: str
+            age: int
+
+        def func() -> Person:
+            return Person(name="John", age=30)
+
+        # Provide a custom output schema that differs from the inferred Person schema
+        custom_schema = {
+            "type": "object",
+            "properties": {"numbers": {"type": "array", "items": {"type": "number"}}},
+        }
+
+        tool = Tool.from_function(func, output_schema=custom_schema)
+        assert tool.output_schema == custom_schema
+
+    async def test_output_schema_false_allows_automatic_structured_content(self):
+        """Test that output_schema=False still allows automatic structured content for dict-like objects."""
+
+        def func() -> dict[str, str]:
+            return {"message": "Hello, world!"}
+
+        tool = Tool.from_function(func, output_schema=False)
+        assert tool.output_schema is None
+
+        result = await tool.run({})
+        # Dict objects automatically become structured content even without schema
+        assert result.structured_content == {"message": "Hello, world!"}
+        assert len(result.content) == 1
+        assert result.content[0].text == '{\n  "message": "Hello, world!"\n}'  # type: ignore[attr-defined]
+
+    async def test_output_schema_none_disables_structured_content(self):
+        """Test that output_schema=None explicitly disables structured content."""
+
+        def func() -> int:
+            return 42
+
+        tool = Tool.from_function(func, output_schema=None)
+        assert tool.output_schema is None
+
+        result = await tool.run({})
+        assert result.structured_content is None
+        assert len(result.content) == 1
+        assert result.content[0].text == "42"  # type: ignore[attr-defined]
+
+    async def test_output_schema_inferred_when_not_specified(self):
+        """Test that output schema is inferred when not explicitly specified."""
+
+        def func() -> int:
+            return 42
+
+        # Don't specify output_schema - should infer and wrap
+        tool = Tool.from_function(func)
+        expected_schema = {
+            "type": "object",
+            "properties": {"result": {"type": "integer"}},
+            "x-fastmcp-wrap-result": True,
+        }
+        assert tool.output_schema == expected_schema
+
+        result = await tool.run({})
+        assert result.structured_content == {"result": 42}
+
+    async def test_explicit_object_schema_with_dict_return(self):
+        """Test that explicit object schemas work when function returns a dict."""
+
+        def func() -> dict[str, int]:
+            return {"value": 42}
+
+        # Provide explicit object schema
+        explicit_schema = {
+            "type": "object",
+            "properties": {"value": {"type": "integer", "minimum": 0}},
+        }
+        tool = Tool.from_function(func, output_schema=explicit_schema)
+        assert tool.output_schema == explicit_schema  # Schema not wrapped
+        assert tool.output_schema and "x-fastmcp-wrap-result" not in tool.output_schema
+
+        result = await tool.run({})
+        # Dict result with object schema is used directly
+        assert result.structured_content == {"value": 42}
+        assert result.content[0].text == '{\n  "value": 42\n}'  # type: ignore[attr-defined]
+
+    async def test_explicit_object_schema_with_non_dict_return_fails(self):
+        """Test that explicit object schemas fail when function returns non-dict."""
+
+        def func() -> int:
+            return 42
+
+        # Provide explicit object schema but return non-dict
+        explicit_schema = {
+            "type": "object",
+            "properties": {"value": {"type": "integer"}},
+        }
+        tool = Tool.from_function(func, output_schema=explicit_schema)
+
+        # Should fail because int is not dict-compatible with object schema
+        with pytest.raises(ValueError, match="structured_content must be a dict"):
+            await tool.run({})
+
+    async def test_object_output_schema_not_wrapped(self):
+        """Test that object-type output schemas are never wrapped."""
+
+        def func() -> dict[str, int]:
+            return {"value": 42}
+
+        # Object schemas should never be wrapped, even when inferred
+        tool = Tool.from_function(func)
+        expected_schema = TypeAdapter(dict[str, int]).json_schema()
+        assert tool.output_schema == expected_schema  # Not wrapped
+        assert tool.output_schema and "x-fastmcp-wrap-result" not in tool.output_schema
+
+        result = await tool.run({})
+        assert result.structured_content == {"value": 42}  # Direct value
+
+    async def test_structured_content_interaction_with_wrapping(self):
+        """Test that structured content works correctly with schema wrapping."""
+
+        def func() -> str:
+            return "hello"
+
+        # Inferred schema should wrap string type
+        tool = Tool.from_function(func)
+        expected_schema = {
+            "type": "object",
+            "properties": {"result": {"type": "string"}},
+            "x-fastmcp-wrap-result": True,
+        }
+        assert tool.output_schema == expected_schema
+
+        result = await tool.run({})
+        # Unstructured content
+        assert len(result.content) == 1
+        assert result.content[0].text == "hello"  # type: ignore[attr-defined]
+        # Structured content should be wrapped
+        assert result.structured_content == {"result": "hello"}
+
+    async def test_structured_content_with_explicit_object_schema(self):
+        """Test structured content with explicit object schema."""
+
+        def func() -> dict[str, str]:
+            return {"greeting": "hello"}
+
+        # Provide explicit object schema
+        explicit_schema = {
+            "type": "object",
+            "properties": {"greeting": {"type": "string"}},
+            "required": ["greeting"],
+        }
+        tool = Tool.from_function(func, output_schema=explicit_schema)
+        assert tool.output_schema == explicit_schema
+
+        result = await tool.run({})
+        # Should use direct value since explicit schema doesn't have wrap marker
+        assert result.structured_content == {"greeting": "hello"}
+
+    async def test_structured_content_with_custom_wrapper_schema(self):
+        """Test structured content with custom schema that includes wrap marker."""
+
+        def func() -> str:
+            return "world"
+
+        # Custom schema with wrap marker
+        custom_schema = {
+            "type": "object",
+            "properties": {"message": {"type": "string"}},
+            "x-fastmcp-wrap-result": True,
+        }
+        tool = Tool.from_function(func, output_schema=custom_schema)
+        assert tool.output_schema == custom_schema
+
+        result = await tool.run({})
+        # Should wrap with "result" key due to wrap marker
+        assert result.structured_content == {"result": "world"}
+
+    async def test_none_vs_false_output_schema_behavior(self):
+        """Test the difference between None and False for output_schema."""
+
+        def func() -> int:
+            return 123
+
+        # None should disable
+        tool_none = Tool.from_function(func, output_schema=None)
+        assert tool_none.output_schema is None
+
+        # False should also disable
+        tool_false = Tool.from_function(func, output_schema=False)
+        assert tool_false.output_schema is None
+
+        # Both should have same behavior
+        result_none = await tool_none.run({})
+        result_false = await tool_false.run({})
+
+        assert result_none.structured_content is None
+        assert result_false.structured_content is None
+        assert result_none.content[0].text == result_false.content[0].text == "123"  # type: ignore[attr-defined]
+
+    async def test_non_object_output_schema_raises_error(self):
+        """Test that providing a non-object output schema raises a ValueError."""
+
+        def func() -> int:
+            return 42
+
+        # Test various non-object schemas that should raise errors
+        non_object_schemas = [
+            {"type": "string"},
+            {"type": "integer", "minimum": 0},
+            {"type": "number"},
+            {"type": "boolean"},
+            {"type": "array", "items": {"type": "string"}},
+        ]
+
+        for schema in non_object_schemas:
+            with pytest.raises(
+                ValueError, match='Output schemas must have "type" set to "object"'
+            ):
+                Tool.from_function(func, output_schema=schema)
 
 
 class TestConvertResultToContent:
@@ -537,3 +1029,199 @@ class TestConvertResultToContent:
             1,
             {"type": "text", "text": "hello", "annotations": None, "_meta": None},
         ]
+
+
+class TestAutomaticStructuredContent:
+    """Tests for automatic structured content generation based on return types."""
+
+    async def test_dict_return_creates_structured_content_without_schema(self):
+        """Test that dict returns automatically create structured content even without output schema."""
+
+        def get_user_data(user_id: str) -> dict:
+            return {"name": "Alice", "age": 30, "active": True}
+
+        # No explicit output schema provided
+        tool = Tool.from_function(get_user_data)
+
+        result = await tool.run({"user_id": "123"})
+
+        # Should have both content and structured content
+        assert len(result.content) == 1
+        assert isinstance(result.content[0], TextContent)
+        assert result.structured_content == {"name": "Alice", "age": 30, "active": True}
+
+    async def test_dataclass_return_creates_structured_content_without_schema(self):
+        """Test that dataclass returns automatically create structured content even without output schema."""
+
+        @dataclass
+        class UserProfile:
+            name: str
+            age: int
+            email: str
+
+        def get_profile(user_id: str) -> UserProfile:
+            return UserProfile(name="Bob", age=25, email="bob@example.com")
+
+        # No explicit output schema, but dataclass should still create structured content
+        tool = Tool.from_function(get_profile, output_schema=False)
+
+        result = await tool.run({"user_id": "456"})
+
+        # Should have both content and structured content
+        assert len(result.content) == 1
+        assert isinstance(result.content[0], TextContent)
+        # Dataclass should serialize to dict
+        assert result.structured_content == {
+            "name": "Bob",
+            "age": 25,
+            "email": "bob@example.com",
+        }
+
+    async def test_pydantic_model_return_creates_structured_content_without_schema(
+        self,
+    ):
+        """Test that Pydantic model returns automatically create structured content even without output schema."""
+
+        class UserData(BaseModel):
+            username: str
+            score: int
+            verified: bool
+
+        def get_user_stats(user_id: str) -> UserData:
+            return UserData(username="charlie", score=100, verified=True)
+
+        # Explicitly disable output schema to test automatic structured content
+        tool = Tool.from_function(get_user_stats, output_schema=False)
+
+        result = await tool.run({"user_id": "789"})
+
+        # Should have both content and structured content
+        assert len(result.content) == 1
+        assert isinstance(result.content[0], TextContent)
+        # Pydantic model should serialize to dict
+        assert result.structured_content == {
+            "username": "charlie",
+            "score": 100,
+            "verified": True,
+        }
+
+    async def test_int_return_no_structured_content_without_schema(self):
+        """Test that int returns don't create structured content without output schema."""
+
+        def calculate_sum(a: int, b: int):
+            """No return annotation."""
+            return a + b
+
+        # No output schema
+        tool = Tool.from_function(calculate_sum)
+
+        result = await tool.run({"a": 5, "b": 3})
+
+        # Should only have content, no structured content
+        assert len(result.content) == 1
+        assert isinstance(result.content[0], TextContent)
+        assert result.content[0].text == "8"
+        assert result.structured_content is None
+
+    async def test_str_return_no_structured_content_without_schema(self):
+        """Test that str returns don't create structured content without output schema."""
+
+        def get_greeting(name: str):
+            """No return annotation."""
+            return f"Hello, {name}!"
+
+        # No output schema
+        tool = Tool.from_function(get_greeting)
+
+        result = await tool.run({"name": "World"})
+
+        # Should only have content, no structured content
+        assert len(result.content) == 1
+        assert isinstance(result.content[0], TextContent)
+        assert result.content[0].text == "Hello, World!"
+        assert result.structured_content is None
+
+    async def test_list_return_no_structured_content_without_schema(self):
+        """Test that list returns don't create structured content without output schema."""
+
+        def get_numbers():
+            """No return annotation."""
+            return [1, 2, 3, 4, 5]
+
+        # No output schema
+        tool = Tool.from_function(get_numbers)
+
+        result = await tool.run({})
+
+        # Should only have content, no structured content
+        assert len(result.content) == 1
+        assert isinstance(result.content[0], TextContent)
+        assert result.structured_content is None
+
+    async def test_int_return_with_schema_creates_structured_content(self):
+        """Test that int returns DO create structured content when there's an output schema."""
+
+        def calculate_sum(a: int, b: int) -> int:
+            """With return annotation."""
+            return a + b
+
+        # Output schema should be auto-generated from annotation
+        tool = Tool.from_function(calculate_sum)
+        assert tool.output_schema is not None
+
+        result = await tool.run({"a": 5, "b": 3})
+
+        # Should have both content and structured content
+        assert len(result.content) == 1
+        assert isinstance(result.content[0], TextContent)
+        assert result.content[0].text == "8"
+        assert result.structured_content == {"result": 8}
+
+    async def test_client_automatic_deserialization_with_dict_result(self):
+        """Test that clients automatically deserialize dict results from structured content."""
+        from fastmcp import FastMCP
+        from fastmcp.client import Client
+
+        mcp = FastMCP()
+
+        @mcp.tool
+        def get_user_info(user_id: str) -> dict:
+            return {"name": "Alice", "age": 30, "active": True}
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("get_user_info", {"user_id": "123"})
+
+            # Client should provide the deserialized data
+            assert result.data == {"name": "Alice", "age": 30, "active": True}
+            assert result.structured_content == {
+                "name": "Alice",
+                "age": 30,
+                "active": True,
+            }
+            assert len(result.content) == 1
+
+    async def test_client_automatic_deserialization_with_dataclass_result(self):
+        """Test that clients automatically deserialize dataclass results from structured content."""
+        from fastmcp import FastMCP
+        from fastmcp.client import Client
+
+        mcp = FastMCP()
+
+        @dataclass
+        class UserProfile:
+            name: str
+            age: int
+            verified: bool
+
+        @mcp.tool
+        def get_profile(user_id: str) -> UserProfile:
+            return UserProfile(name="Bob", age=25, verified=True)
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("get_profile", {"user_id": "456"})
+
+            # Client should deserialize back to a dataclass (type name will match)
+            assert result.data.__class__.__name__ == "UserProfile"
+            assert result.data.name == "Bob"
+            assert result.data.age == 25
+            assert result.data.verified is True

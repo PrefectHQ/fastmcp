@@ -7,7 +7,6 @@ from unittest.mock import AsyncMock
 import pytest
 import uvicorn
 from mcp import McpError
-from mcp.types import TextContent
 from starlette.applications import Starlette
 from starlette.routing import Mount
 
@@ -166,10 +165,7 @@ async def test_greet_with_progress_tool(streamable_http_server: str):
         progress_handler=progress_handler,
     ) as client:
         result = await client.call_tool("greet_with_progress", {"name": "Alice"})
-
-        assert isinstance(result, list)
-        assert isinstance(result[0], TextContent)
-        assert result[0].text == "Hello, Alice!"
+        assert result.data == "Hello, Alice!"
 
         progress_handler.assert_called_once_with(0.5, 1.0, "Greeting in progress")
 

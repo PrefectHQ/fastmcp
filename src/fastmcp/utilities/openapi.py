@@ -84,6 +84,7 @@ class HTTPRoute(FastMCPBaseModel):
     schema_definitions: dict[str, JsonSchema] = Field(
         default_factory=dict
     )  # Store component schemas
+    extensions: dict[str, Any] = Field(default_factory=dict)
 
 
 # Export public symbols
@@ -591,6 +592,14 @@ class OpenAPIParser(
                             getattr(operation, "responses", None)
                         )
 
+                        extensions = {}
+                        if hasattr(operation, "model_extra") and operation.model_extra:
+                            extensions = {
+                                k: v
+                                for k, v in operation.model_extra.items()
+                                if k.startswith("x-")
+                            }
+
                         route = HTTPRoute(
                             path=path_str,
                             method=method_upper,  # type: ignore[arg-type]  # Known valid HTTP method
@@ -602,6 +611,7 @@ class OpenAPIParser(
                             request_body=request_body_info,
                             responses=responses,
                             schema_definitions=schema_definitions,
+                            extensions=extensions,
                         )
                         routes.append(route)
                         logger.info(

@@ -136,8 +136,8 @@ async def test_multi_client(tmp_path: Path):
 
         result_1 = await client.call_tool("test_1_add", {"a": 1, "b": 2})
         result_2 = await client.call_tool("test_2_add", {"a": 1, "b": 2})
-        assert result_1[0].text == "3"  # type: ignore[attr-dict]
-        assert result_2[0].text == "3"  # type: ignore[attr-dict]
+        assert result_1.data == 3
+        assert result_2.data == 3
 
 
 async def test_remote_config_default_no_auth():

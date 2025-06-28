@@ -12,6 +12,7 @@ from fastmcp.utilities.types import (
     find_kwarg_by_type,
     is_class_member_of_type,
     issubclass_safe,
+    replace_type,
 )
 
 
@@ -536,3 +537,29 @@ class TestFindKwargByType:
             pass
 
         assert find_kwarg_by_type(func, str) == "c"
+
+
+class TestReplaceType:
+    @pytest.mark.parametrize(
+        "input,type_map,expected",
+        [
+            (int, {}, int),
+            (int, {int: str}, str),
+            (int, {int: int}, int),
+            (int, {int: float, bool: str}, float),
+            (bool, {int: float, bool: str}, str),
+            (int, {int: list[int]}, list[int]),
+            (list[int], {int: str}, list[str]),
+            (list[int], {int: list[str]}, list[list[str]]),
+            (
+                list[int],
+                {int: float, list[int]: bool},
+                bool,
+            ),  # list[int] will match before int
+            (list[int | bool], {int: str}, list[str | bool]),
+            (list[list[int]], {int: str}, list[list[str]]),
+        ],
+    )
+    def test_replace_type(self, input, type_map, expected):
+        """Test replacing a type with another type."""
+        assert replace_type(input, type_map) == expected

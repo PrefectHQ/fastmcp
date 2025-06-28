@@ -4,19 +4,16 @@ import inspect
 from collections.abc import Callable
 from contextvars import ContextVar
 from dataclasses import dataclass
-from types import EllipsisType
 from typing import Any, Literal
 
-from mcp.types import ContentBlock, ToolAnnotations
+from mcp.types import ToolAnnotations
 from pydantic import ConfigDict
 
-from fastmcp.tools.tool import ParsedFunction, Tool
+from fastmcp.tools.tool import ParsedFunction, Tool, ToolResult, _wrap_schema_if_needed
 from fastmcp.utilities.logging import get_logger
-from fastmcp.utilities.types import get_cached_typeadapter
+from fastmcp.utilities.types import NotSet, NotSetT, get_cached_typeadapter
 
 logger = get_logger(__name__)
-
-NotSet = ...
 
 
 # Context variable to store current transformed tool
@@ -25,7 +22,7 @@ _current_tool: ContextVar[TransformedTool | None] = ContextVar(
 )
 
 
-async def forward(**kwargs) -> Any:
+async def forward(**kwargs) -> ToolResult:
     """Forward to parent tool with argument transformation applied.
 
     This function can only be called from within a transformed tool's custom
@@ -41,7 +38,7 @@ async def forward(**kwargs) -> Any:
         **kwargs: Arguments to forward to the parent tool (using transformed names).
 
     Returns:
-        The result from the parent tool execution.
+        The ToolResult from the parent tool execution.
 
     Raises:
         RuntimeError: If called outside a transformed tool context.
@@ -55,7 +52,7 @@ async def forward(**kwargs) -> Any:
     return await tool.forwarding_fn(**kwargs)
 
 
-async def forward_raw(**kwargs) -> Any:
+async def forward_raw(**kwargs) -> ToolResult:
     """Forward directly to parent tool without transformation.
 
     This function bypasses all argument transformation and validation, calling the parent
@@ -69,7 +66,7 @@ async def forward_raw(**kwargs) -> Any:
         **kwargs: Arguments to pass directly to the parent tool (using original names).
 
     Returns:
-        The result from the parent tool execution.
+        The ToolResult from the parent tool execution.
 
     Raises:
         RuntimeError: If called outside a transformed tool context.
@@ -151,14 +148,14 @@ class ArgTransform:
         ```
     """
 
-    name: str | EllipsisType = NotSet
-    description: str | EllipsisType = NotSet
-    default: Any | EllipsisType = NotSet
-    default_factory: Callable[[], Any] | EllipsisType = NotSet
-    type: Any | EllipsisType = NotSet
+    name: str | NotSetT = NotSet
+    description: str | NotSetT = NotSet
+    default: Any | NotSetT = NotSet
+    default_factory: Callable[[], Any] | NotSetT = NotSet
+    type: Any | NotSetT = NotSet
     hide: bool = False
-    required: Literal[True] | EllipsisType = NotSet
-    examples: Any | EllipsisType = NotSet
+    required: Literal[True] | NotSetT = NotSet
+    examples: Any | NotSetT = NotSet
 
     def __post_init__(self):
         """Validate that only one of default or default_factory is provided."""
@@ -201,11 +198,12 @@ class TransformedTool(Tool):
 
     This class represents a tool that has been created by transforming another tool.
     It supports argument renaming, schema modification, custom function injection,
-    and provides context for the forward() and forward_raw() functions.
+    structured output control, and provides context for the forward() and forward_raw() functions.
 
     The transformation can be purely schema-based (argument renaming, dropping, etc.)
     or can include a custom function that uses forward() to call the parent tool
-    with transformed arguments.
+    with transformed arguments. Output schemas and structured outputs are automatically
+    inherited from the parent tool but can be overridden or disabled.
 
     Attributes:
         parent_tool: The original tool that this tool was transformed from.
@@ -222,7 +220,7 @@ class TransformedTool(Tool):
     forwarding_fn: Callable[..., Any]  # Always present, handles arg transformation
     transform_args: dict[str, ArgTransform]
 
-    async def run(self, arguments: dict[str, Any]) -> list[ContentBlock]:
+    async def run(self, arguments: dict[str, Any]) -> ToolResult:
         """Run the tool with context set for forward() functions.
 
         This method executes the tool's function while setting up the context
@@ -233,8 +231,7 @@ class TransformedTool(Tool):
             arguments: Dictionary of arguments to pass to the tool's function.
 
         Returns:
-            List of content objects (text, image, or embedded resources) representing
-            the tool's output.
+            ToolResult object containing content and optional structured output.
         """
         from fastmcp.tools.tool import _convert_to_content
 
@@ -272,7 +269,57 @@ class TransformedTool(Tool):
         token = _current_tool.set(self)
         try:
             result = await self.fn(**arguments)
-            return _convert_to_content(result, serializer=self.serializer)
+
+            # If transform function returns ToolResult, respect our output_schema setting
+            if isinstance(result, ToolResult):
+                if self.output_schema is None:
+                    # Check if this is from a custom function that returns ToolResult
+                    import inspect
+
+                    return_annotation = inspect.signature(self.fn).return_annotation
+                    if return_annotation is ToolResult:
+                        # Custom function returns ToolResult - preserve its content
+                        return result
+                    else:
+                        # Forwarded call with disabled schema - strip structured content
+                        return ToolResult(
+                            content=result.content,
+                            structured_content=None,
+                        )
+                elif self.output_schema.get(
+                    "type"
+                ) != "object" and not self.output_schema.get("x-fastmcp-wrap-result"):
+                    # Non-object explicit schemas disable structured content
+                    return ToolResult(
+                        content=result.content,
+                        structured_content=None,
+                    )
+                else:
+                    return result
+
+            # Otherwise convert to content and create ToolResult with proper structured content
+            from fastmcp.tools.tool import _convert_to_content
+
+            unstructured_result = _convert_to_content(
+                result, serializer=self.serializer
+            )
+
+            # Handle structured content based on output schema
+            if self.output_schema is not None:
+                if self.output_schema.get("x-fastmcp-wrap-result"):
+                    # Schema says wrap - always wrap in result key
+                    structured_output = {"result": result}
+                else:
+                    # Object schemas - use result directly
+                    # User is responsible for returning dict-compatible data
+                    structured_output = result
+            else:
+                structured_output = None
+
+            return ToolResult(
+                content=unstructured_result,
+                structured_content=structured_output,
+            )
         finally:
             _current_tool.reset(token)
 
@@ -286,6 +333,7 @@ class TransformedTool(Tool):
         transform_fn: Callable[..., Any] | None = None,
         transform_args: dict[str, ArgTransform] | None = None,
         annotations: ToolAnnotations | None = None,
+        output_schema: dict[str, Any] | None | Literal[False] = None,
         serializer: Callable[[Any], str] | None = None,
         enabled: bool | None = None,
     ) -> TransformedTool:
@@ -305,6 +353,10 @@ class TransformedTool(Tool):
             description: New description. Defaults to parent's description.
             tags: New tags. Defaults to parent's tags.
             annotations: New annotations. Defaults to parent's annotations.
+            output_schema: Control output schema for structured outputs:
+                - None (default): Inherit from transform_fn if available, then parent tool
+                - dict: Use custom output schema
+                - False: Disable output schema and structured outputs
             serializer: New serializer. Defaults to parent's serializer.
 
         Returns:
@@ -333,6 +385,26 @@ class TransformedTool(Tool):
 
             Tool.from_tool(parent, transform_fn=flexible, transform_args={"a": "x"})
             ```
+
+            # Control structured outputs and schemas
+            ```python
+            # Custom output schema
+            Tool.from_tool(parent, output_schema={
+                "type": "object",
+                "properties": {"status": {"type": "string"}}
+            })
+
+            # Disable structured outputs
+            Tool.from_tool(parent, output_schema=False)
+
+            # Return ToolResult for full control
+            async def custom_output(**kwargs) -> ToolResult:
+                result = await forward(**kwargs)
+                return ToolResult(
+                    content=[TextContent(text="Summary")],
+                    structured_content={"processed": True}
+                )
+            ```
         """
         transform_args = transform_args or {}
 
@@ -348,19 +420,45 @@ class TransformedTool(Tool):
         # Always create the forwarding transform
         schema, forwarding_fn = cls._create_forwarding_transform(tool, transform_args)
 
+        # Handle output schema with smart fallback
+        if output_schema is False:
+            final_output_schema = None
+        elif output_schema is not None:
+            # Explicit schema provided - use as-is
+            final_output_schema = output_schema
+        else:
+            # Smart fallback: try custom function, then parent, then None
+            if transform_fn is not None:
+                parsed_fn = ParsedFunction.from_function(transform_fn, validate=False)
+                final_output_schema = _wrap_schema_if_needed(parsed_fn.output_schema)
+                if final_output_schema is None:
+                    # Check if function returns ToolResult - if so, don't fall back to parent
+                    import inspect
+
+                    return_annotation = inspect.signature(
+                        transform_fn
+                    ).return_annotation
+                    if return_annotation is ToolResult:
+                        final_output_schema = None
+                    else:
+                        final_output_schema = tool.output_schema
+            else:
+                final_output_schema = tool.output_schema
+
         if transform_fn is None:
             # User wants pure transformation - use forwarding_fn as the main function
             final_fn = forwarding_fn
             final_schema = schema
         else:
             # User provided custom function - merge schemas
-            parsed_fn = ParsedFunction.from_function(transform_fn, validate=False)
+            if "parsed_fn" not in locals():
+                parsed_fn = ParsedFunction.from_function(transform_fn, validate=False)
             final_fn = transform_fn
 
             has_kwargs = cls._function_has_kwargs(transform_fn)
 
             # Validate function parameters against transformed schema
-            fn_params = set(parsed_fn.parameters.get("properties", {}).keys())
+            fn_params = set(parsed_fn.input_schema.get("properties", {}).keys())
             transformed_params = set(schema.get("properties", {}).keys())
 
             if not has_kwargs:
@@ -377,7 +475,7 @@ class TransformedTool(Tool):
                 # ArgTransform takes precedence over function signature
                 # Start with function schema as base, then override with transformed schema
                 final_schema = cls._merge_schema_with_precedence(
-                    parsed_fn.parameters, schema
+                    parsed_fn.input_schema, schema
                 )
             else:
                 # With **kwargs, function can access all transformed params
@@ -386,7 +484,7 @@ class TransformedTool(Tool):
 
                 # Start with function schema as base, then override with transformed schema
                 final_schema = cls._merge_schema_with_precedence(
-                    parsed_fn.parameters, schema
+                    parsed_fn.input_schema, schema
                 )
 
         # Additional validation: check for naming conflicts after transformation
@@ -422,6 +520,7 @@ class TransformedTool(Tool):
             name=name or tool.name,
             description=final_description,
             parameters=final_schema,
+            output_schema=final_output_schema,
             tags=tags or tool.tags,
             annotations=annotations or tool.annotations,
             serializer=serializer or tool.serializer,

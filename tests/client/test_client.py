@@ -121,9 +121,10 @@ async def test_call_tool(fastmcp_server):
     async with client:
         result = await client.call_tool("greet", {"name": "World"})
 
-        # The result content should contain our greeting
-        content_str = str(result[0])
-        assert "Hello, World!" in content_str
+        assert result.content[0].text == "Hello, World!"  # type: ignore[attr-defined]
+        assert result.structured_content == {"result": "Hello, World!"}
+        assert result.data == "Hello, World!"
+        assert result.is_error is False
 
 
 async def test_call_tool_mcp(fastmcp_server):

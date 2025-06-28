@@ -1,5 +1,3 @@
-import json
-
 import pytest
 
 from fastmcp import Client, Context, FastMCP
@@ -40,7 +38,7 @@ class TestClientRoots:
     async def test_valid_roots(self, fastmcp_server: FastMCP, roots: list[str]):
         async with Client(fastmcp_server, roots=roots) as client:
             result = await client.call_tool("list_roots", {})
-            assert json.loads(result[0].text) == [  # type: ignore[attr-defined]
+            assert result.data == [
                 "file://x/y/z",
                 "file://x/y/z",
             ]
