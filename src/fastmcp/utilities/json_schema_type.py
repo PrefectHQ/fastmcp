@@ -47,7 +47,6 @@ from typing import (
     Any,
     ForwardRef,
     Literal,
-    Optional,
     Union,
 )
 
@@ -188,7 +187,8 @@ def json_schema_to_type(
         return _create_dataclass(schema, name, schemas=schema)
     elif name:
         raise ValueError(f"Can not apply name to non-object schema: {name}")
-    return _schema_to_type(schema, schemas=schema)
+    result = _schema_to_type(schema, schemas=schema)
+    return result  # type: ignore[return-value]
 
 
 def _hash_schema(schema: Mapping[str, Any]) -> str:
@@ -252,11 +252,11 @@ def _create_numeric_type(
     return Annotated[base, Field(**constraints)] if constraints else base
 
 
-def _create_enum(name: str, values: list[Any]) -> type | Enum:
+def _create_enum(name: str, values: list[Any]) -> type:
     """Create enum type from list of values."""
     if all(isinstance(v, str) for v in values):
-        return Enum(name, {v.upper(): v for v in values})
-    return Literal[tuple(values)]  # type: ignore
+        return Enum(name, {v.upper(): v for v in values})  # type: ignore[return-value]
+    return Literal[tuple(values)]  # type: ignore[return-value]
 
 
 def _create_array_type(
@@ -272,8 +272,8 @@ def _create_array_type(
     else:
         # Handle single item schema
         item_type = _schema_to_type(items, schemas)
-        base = set if schema.get("uniqueItems") else list
-        base = base[item_type]
+        base_class = set if schema.get("uniqueItems") else list
+        base = base_class[item_type]  # type: ignore[misc]
 
     constraints = {
         k: v
@@ -315,7 +315,7 @@ def _get_from_type_handler(
 def _schema_to_type(
     schema: Mapping[str, Any],
     schemas: Mapping[str, Any],
-) -> type:
+) -> type | ForwardRef:
     """Convert schema to appropriate Python type."""
     if not schema:
         return object
@@ -328,7 +328,7 @@ def _schema_to_type(
         ref = schema["$ref"]
         # Handle self-reference
         if ref == "#":
-            return ForwardRef(schema.get("title", "Root"))
+            return ForwardRef(schema.get("title", "Root"))  # type: ignore[return-value]
         return _schema_to_type(_resolve_ref(ref, schemas), schemas)
 
     if "const" in schema:
@@ -365,7 +365,7 @@ def _schema_to_type(
             return type(None)
         elif len(types) == 1:
             if has_null:
-                return Optional[types[0]]  # type: ignore # noqa: UP007
+                return types[0] | None  # type: ignore
             else:
                 return types[0]
         else:
@@ -376,20 +376,20 @@ def _schema_to_type(
 
     schema_type = schema.get("type")
     if not schema_type:
-        return Any
+        return Any  # type: ignore[return-value]
 
     if isinstance(schema_type, list):
         # Create a copy of the schema for each type, but keep all constraints
         types: list[type | Any] = []
         for t in schema_type:
-            type_schema = schema.copy()
+            type_schema = dict(schema)
             type_schema["type"] = t
             types.append(_schema_to_type(type_schema, schemas))
         has_null = type(None) in types
         types = [t for t in types if t is not type(None)]
         if has_null:
             if len(types) == 1:
-                return Optional[types[0]]  # type: ignore # noqa: UP007
+                return types[0] | None  # type: ignore
             else:
                 return Union[tuple(types + [type(None)])]  # type: ignore # noqa: UP007
         return Union[tuple(types)]  # type: ignore # noqa: UP007
@@ -447,6 +447,7 @@ def _create_pydantic_model(
 ) -> type:
     """Create Pydantic BaseModel from object schema with additionalProperties."""
     name = name or schema.get("title", "Root")
+    assert name is not None  # Should not be None after the or operation
     sanitized_name = _sanitize_name(name)
     schema_hash = _hash_schema(schema)
     cache_key = (schema_hash, sanitized_name)
@@ -455,7 +456,7 @@ def _create_pydantic_model(
     if cache_key in _classes:
         existing = _classes[cache_key]
         if existing is None:
-            return ForwardRef(sanitized_name)
+            return ForwardRef(sanitized_name)  # type: ignore[return-value]
         return existing
 
     # Place placeholder for recursive references
@@ -479,7 +480,7 @@ def _create_pydantic_model(
         elif prop_name in required:
             annotations[prop_name] = field_type
         else:
-            annotations[prop_name] = Optional[field_type]
+            annotations[prop_name] = Union[field_type, type(None)]  # type: ignore[misc]  # noqa: UP007
             defaults[prop_name] = None
 
     # Create Pydantic model class
@@ -504,6 +505,7 @@ def _create_dataclass(
     """Create dataclass from object schema."""
     name = name or schema.get("title", "Root")
     # Sanitize name for class creation
+    assert name is not None  # Should not be None after the or operation
     sanitized_name = _sanitize_name(name)
     schema_hash = _hash_schema(schema)
     cache_key = (schema_hash, sanitized_name)
@@ -513,7 +515,7 @@ def _create_dataclass(
     if cache_key in _classes:
         existing = _classes[cache_key]
         if existing is None:
-            return ForwardRef(sanitized_name)
+            return ForwardRef(sanitized_name)  # type: ignore[return-value]
         return existing
 
     # Place placeholder for recursive references
@@ -522,7 +524,7 @@ def _create_dataclass(
     if "$ref" in schema:
         ref = schema["$ref"]
         if ref == "#":
-            return ForwardRef(sanitized_name)
+            return ForwardRef(sanitized_name)  # type: ignore[return-value]
         schema = _resolve_ref(ref, schemas or {})
 
     properties = schema.get("properties", {})
@@ -536,7 +538,7 @@ def _create_dataclass(
         if prop_schema.get("$ref") == "#":
             field_type = ForwardRef(sanitized_name)
         else:
-            field_type = _schema_to_type(prop_schema, schemas)
+            field_type = _schema_to_type(prop_schema, schemas or {})
 
         default_val = prop_schema.get("default", MISSING)
         is_required = prop_name in required
@@ -562,7 +564,7 @@ def _create_dataclass(
         elif is_required:
             fields.append((field_name, field_type, field_def))
         else:
-            fields.append((field_name, Optional[field_type], field_def))
+            fields.append((field_name, Union[field_type, type(None)], field_def))  # type: ignore[misc]  # noqa: UP007
 
     cls = make_dataclass(sanitized_name, fields, kw_only=True)
 
