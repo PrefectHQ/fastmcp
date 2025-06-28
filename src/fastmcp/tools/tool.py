@@ -240,6 +240,13 @@ class FunctionTool(Tool):
             output_schema = None
         # Note: explicit schemas (dict) are used as-is without auto-wrapping
 
+        # Validate that explicit schemas are object type for structured content
+        if output_schema is not None and isinstance(output_schema, dict):
+            if output_schema.get("type") != "object":
+                raise ValueError(
+                    f'Output schemas must have "type" set to "object" due to MCP spec limitations. Received: {output_schema!r}'
+                )
+
         return cls(
             fn=parsed_fn.fn,
             name=name or parsed_fn.name,
@@ -264,6 +271,7 @@ class FunctionTool(Tool):
 
         type_adapter = get_cached_typeadapter(self.fn)
         result = type_adapter.validate_python(arguments)
+
         if inspect.isawaitable(result):
             result = await result
 
@@ -275,6 +283,7 @@ class FunctionTool(Tool):
         # Handle structured content based on output schema
         if self.output_schema is not None:
             if self.output_schema.get("x-fastmcp-wrap-result"):
+                # Schema says wrap - always wrap in result key
                 structured_output = {"result": result}
             else:
                 structured_output = result
@@ -354,26 +363,43 @@ class ParsedFunction:
         output_schema = None
         output_type = inspect.signature(fn).return_annotation
 
-        # there are a variety of types that we don't want to attempt to
-        # serialize because they are either used by FastMCP internally,
-        # or are MCP content types that explicitly don't form structured
-        # content. By replacing them with an explicitly unserializable type,
-        # we ensure that no output schema is automatically generated.
+        if output_type not in (inspect._empty, None, Any, ...):
+            # there are a variety of types that we don't want to attempt to
+            # serialize because they are either used by FastMCP internally,
+            # or are MCP content types that explicitly don't form structured
+            # content. By replacing them with an explicitly unserializable type,
+            # we ensure that no output schema is automatically generated.
+            output_type = replace_type(
+                output_type,
+                {
+                    t: _UnserializableType
+                    for t in (
+                        Image,
+                        Audio,
+                        File,
+                        ToolResult,
+                        mcp.types.TextContent,
+                        mcp.types.ImageContent,
+                        mcp.types.AudioContent,
+                        mcp.types.ResourceLink,
+                        mcp.types.EmbeddedResource,
+                    )
+                },
+            )
 
-        output_type = replace_type(
-            output_type,
-            {
-                inspect._empty: _UnserializableType,
-                Image: _UnserializableType,
-                Audio: _UnserializableType,
-                File: _UnserializableType,
-                ToolResult: _UnserializableType,
-                mcp.types.TextContent: _UnserializableType,
-                mcp.types.ImageContent: _UnserializableType,
-                mcp.types.AudioContent: _UnserializableType,
-                mcp.types.ResourceLink: _UnserializableType,
-                mcp.types.EmbeddedResource: _UnserializableType,
-            },
+            try:
+                output_type_adapter = get_cached_typeadapter(output_type)
+                output_schema = output_type_adapter.json_schema()
+            except PydanticSchemaGenerationError as e:
+                if "_UnserializableType" not in str(e):
+                    logger.debug(f"Unable to generate schema for type {output_type!r}")
+
+        return cls(
+            fn=fn,
+            name=fn_name,
+            description=fn_doc,
+            input_schema=input_schema,
+            output_schema=output_schema or None,
         )
 
         try:
@@ -388,7 +414,7 @@ class ParsedFunction:
             name=fn_name,
             description=fn_doc,
             input_schema=input_schema,
-            output_schema=output_schema,
+            output_schema=output_schema or None,
         )
 
 

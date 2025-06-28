@@ -4,14 +4,15 @@ from typing import Annotated, Any
 
 import pytest
 from dirty_equals import IsList
-from pydantic import BaseModel, Field
+from mcp.types import TextContent
+from pydantic import BaseModel, Field, TypeAdapter
 from typing_extensions import TypedDict
 
 from fastmcp import FastMCP
 from fastmcp.client.client import Client
 from fastmcp.exceptions import ToolError
 from fastmcp.tools import Tool, forward, forward_raw
-from fastmcp.tools.tool import FunctionTool
+from fastmcp.tools.tool import FunctionTool, ToolResult
 from fastmcp.tools.tool_transform import ArgTransform, TransformedTool
 
 
@@ -691,7 +692,7 @@ async def test_arg_transform_type_precedence_runtime():
         # Convert string back to int for the original function
         result = await forward_raw(x=int(x), y=y)
         # Extract the text from the result
-        result_text = result.content[0].text
+        result_text = result.content[0].text  # type: ignore[attr-defined]
         return f"String input '{x}' converted to result: {result_text}"
 
     tool = Tool.from_tool(
@@ -1030,3 +1031,266 @@ def test_arg_transform_examples_in_schema(add_tool):
     )
     prop3 = get_property(new_tool3, "old_x")
     assert "examples" not in prop3
+
+
+class TestTransformToolOutputSchema:
+    """Test output schema handling in transformed tools."""
+
+    @pytest.fixture
+    def base_string_tool(self) -> FunctionTool:
+        """Tool that returns a string (gets wrapped)."""
+
+        def string_tool(x: int) -> str:
+            return f"Result: {x}"
+
+        return Tool.from_function(string_tool)
+
+    @pytest.fixture
+    def base_dict_tool(self) -> FunctionTool:
+        """Tool that returns a dict (object type, not wrapped)."""
+
+        def dict_tool(x: int) -> dict[str, int]:
+            return {"value": x}
+
+        return Tool.from_function(dict_tool)
+
+    def test_transform_inherits_parent_output_schema(self, base_string_tool):
+        """Test that transformed tool inherits parent's output schema by default."""
+        new_tool = Tool.from_tool(base_string_tool)
+
+        # Should inherit parent's wrapped string schema
+        expected_schema = {
+            "type": "object",
+            "properties": {"result": {"type": "string"}},
+            "x-fastmcp-wrap-result": True,
+        }
+        assert new_tool.output_schema == expected_schema
+        assert new_tool.output_schema == base_string_tool.output_schema
+
+    def test_transform_with_explicit_output_schema_false(self, base_string_tool):
+        """Test that output_schema=False disables structured output."""
+        new_tool = Tool.from_tool(base_string_tool, output_schema=False)
+
+        assert new_tool.output_schema is None
+
+    async def test_transform_output_schema_false_runtime(self, base_string_tool):
+        """Test runtime behavior with output_schema=False."""
+        new_tool = Tool.from_tool(base_string_tool, output_schema=False)
+
+        # Debug: check that output_schema is actually None
+        assert new_tool.output_schema is None, (
+            f"Expected None, got {new_tool.output_schema}"
+        )
+
+        result = await new_tool.run({"x": 5})
+        assert result.structured_content is None
+        assert result.content[0].text == "Result: 5"  # type: ignore[attr-defined]
+
+    def test_transform_with_explicit_output_schema_dict(self, base_string_tool):
+        """Test that explicit output schema overrides parent."""
+        custom_schema = {
+            "type": "object",
+            "properties": {"message": {"type": "string"}},
+        }
+        new_tool = Tool.from_tool(base_string_tool, output_schema=custom_schema)
+
+        assert new_tool.output_schema == custom_schema
+        assert new_tool.output_schema != base_string_tool.output_schema
+
+    async def test_transform_explicit_schema_runtime(self, base_string_tool):
+        """Test runtime behavior with explicit output schema."""
+        custom_schema = {"type": "string", "minLength": 1}
+        new_tool = Tool.from_tool(base_string_tool, output_schema=custom_schema)
+
+        result = await new_tool.run({"x": 10})
+        # Non-object explicit schemas disable structured content
+        assert result.structured_content is None
+        assert result.content[0].text == "Result: 10"  # type: ignore[attr-defined]
+
+    def test_transform_with_custom_function_inferred_schema(self, base_dict_tool):
+        """Test that custom function's output schema is inferred."""
+
+        async def custom_fn(x: int) -> str:
+            result = await forward(x=x)
+            return f"Custom: {result.content[0].text}"  # type: ignore[attr-defined]
+
+        new_tool = Tool.from_tool(base_dict_tool, transform_fn=custom_fn)
+
+        # Should infer string schema from custom function and wrap it
+        expected_schema = {
+            "type": "object",
+            "properties": {"result": {"type": "string"}},
+            "x-fastmcp-wrap-result": True,
+        }
+        assert new_tool.output_schema == expected_schema
+
+    async def test_transform_custom_function_runtime(self, base_dict_tool):
+        """Test runtime behavior with custom function that has inferred schema."""
+
+        async def custom_fn(x: int) -> str:
+            result = await forward(x=x)
+            return f"Custom: {result.content[0].text}"  # type: ignore[attr-defined]
+
+        new_tool = Tool.from_tool(base_dict_tool, transform_fn=custom_fn)
+
+        result = await new_tool.run({"x": 3})
+        # Should wrap string result
+        assert result.structured_content == {"result": 'Custom: {\n  "value": 3\n}'}
+
+    def test_transform_custom_function_fallback_to_parent(self, base_string_tool):
+        """Test that custom function without output annotation falls back to parent."""
+
+        async def custom_fn(x: int):
+            # No return annotation - should fallback to parent schema
+            result = await forward(x=x)
+            return result
+
+        new_tool = Tool.from_tool(base_string_tool, transform_fn=custom_fn)
+
+        # Should use parent's schema since custom function has no annotation
+        assert new_tool.output_schema == base_string_tool.output_schema
+
+    def test_transform_custom_function_explicit_overrides(self, base_string_tool):
+        """Test that explicit output_schema overrides both custom function and parent."""
+
+        async def custom_fn(x: int) -> dict[str, str]:
+            return {"custom": "value"}
+
+        explicit_schema = {"type": "array", "items": {"type": "number"}}
+        new_tool = Tool.from_tool(
+            base_string_tool, transform_fn=custom_fn, output_schema=explicit_schema
+        )
+
+        # Explicit schema should win
+        assert new_tool.output_schema == explicit_schema
+
+    async def test_transform_custom_function_object_return(self, base_string_tool):
+        """Test custom function returning object type."""
+
+        async def custom_fn(x: int) -> dict[str, int]:
+            result = await forward(x=x)
+            return {"original": x, "transformed": x * 2}
+
+        new_tool = Tool.from_tool(base_string_tool, transform_fn=custom_fn)
+
+        # Object types should not be wrapped
+        expected_schema = TypeAdapter(dict[str, int]).json_schema()
+        assert new_tool.output_schema == expected_schema
+        assert "x-fastmcp-wrap-result" not in new_tool.output_schema
+
+        result = await new_tool.run({"x": 4})
+        # Direct value, not wrapped
+        assert result.structured_content == {"original": 4, "transformed": 8}
+
+    async def test_transform_preserves_wrap_marker_behavior(self, base_string_tool):
+        """Test that wrap marker behavior is preserved through transformation."""
+        new_tool = Tool.from_tool(base_string_tool)
+
+        result = await new_tool.run({"x": 7})
+        # Should wrap because parent schema has wrap marker
+        assert result.structured_content == {"result": "Result: 7"}
+        assert "x-fastmcp-wrap-result" in new_tool.output_schema
+
+    def test_transform_chained_output_schema_inheritance(self, base_string_tool):
+        """Test output schema inheritance through multiple transformations."""
+        # First transformation keeps parent schema
+        tool1 = Tool.from_tool(base_string_tool)
+        assert tool1.output_schema == base_string_tool.output_schema
+
+        # Second transformation also inherits
+        tool2 = Tool.from_tool(tool1)
+        assert (
+            tool2.output_schema == tool1.output_schema == base_string_tool.output_schema
+        )
+
+        # Third transformation with explicit override
+        custom_schema = {"type": "number"}
+        tool3 = Tool.from_tool(tool2, output_schema=custom_schema)
+        assert tool3.output_schema == custom_schema
+        assert tool3.output_schema != tool2.output_schema
+
+    async def test_transform_mixed_structured_unstructured_content(
+        self, base_string_tool
+    ):
+        """Test transformation handling of mixed content types."""
+
+        async def custom_fn(x: int) -> list:
+            # Return mixed content including ToolResult
+            if x == 1:
+                return ["text", {"data": x}]
+            else:
+                # Return ToolResult directly
+                return ToolResult(
+                    content=[TextContent(type="text", text=f"Custom: {x}")],
+                    structured_content={"custom_value": x},
+                )
+
+        new_tool = Tool.from_tool(base_string_tool, transform_fn=custom_fn)
+
+        # Test mixed content return
+        result1 = await new_tool.run({"x": 1})
+        assert result1.structured_content == {"result": ["text", {"data": 1}]}
+
+        # Test ToolResult return
+        result2 = await new_tool.run({"x": 2})
+        assert result2.structured_content == {"custom_value": 2}
+        assert result2.content[0].text == "Custom: 2"  # type: ignore[attr-defined]
+
+    def test_transform_output_schema_with_arg_transforms(self, base_string_tool):
+        """Test that output schema works correctly with argument transformations."""
+
+        async def custom_fn(new_x: int) -> dict[str, str]:
+            result = await forward(new_x=new_x)
+            return {"transformed": result.content[0].text}  # type: ignore[attr-defined]
+
+        new_tool = Tool.from_tool(
+            base_string_tool,
+            transform_fn=custom_fn,
+            transform_args={"x": ArgTransform(name="new_x")},
+        )
+
+        # Should infer object schema from custom function
+        expected_schema = TypeAdapter(dict[str, str]).json_schema()
+        assert new_tool.output_schema == expected_schema
+
+    async def test_transform_output_schema_none_vs_false(self, base_string_tool):
+        """Test None vs False behavior for output_schema in transforms."""
+        # None (default) should use smart fallback (inherit from parent)
+        tool_none = Tool.from_tool(base_string_tool)  # default output_schema=None
+        assert tool_none.output_schema == base_string_tool.output_schema  # Inherits
+
+        # False should explicitly disable
+        tool_false = Tool.from_tool(base_string_tool, output_schema=False)
+        assert tool_false.output_schema is None
+
+        # Different behavior at runtime
+        result_none = await tool_none.run({"x": 5})
+        result_false = await tool_false.run({"x": 5})
+
+        assert result_none.structured_content == {
+            "result": "Result: 5"
+        }  # Inherits wrapping
+        assert result_false.structured_content is None  # Disabled
+        assert result_none.content[0].text == result_false.content[0].text
+
+    async def test_transform_output_schema_with_tool_result_return(
+        self, base_string_tool
+    ):
+        """Test transform when custom function returns ToolResult directly."""
+
+        async def custom_fn(x: int) -> ToolResult:
+            # Custom function returns ToolResult - should bypass schema handling
+            return ToolResult(
+                content=[TextContent(type="text", text=f"Direct: {x}")],
+                structured_content={"direct_value": x, "doubled": x * 2},
+            )
+
+        new_tool = Tool.from_tool(base_string_tool, transform_fn=custom_fn)
+
+        # ToolResult return type should result in None output schema
+        assert new_tool.output_schema is None
+
+        result = await new_tool.run({"x": 6})
+        # Should use ToolResult content directly
+        assert result.content[0].text == "Direct: 6"  # type: ignore[attr-defined]
+        assert result.structured_content == {"direct_value": 6, "doubled": 12}

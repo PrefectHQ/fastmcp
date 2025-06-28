@@ -278,7 +278,7 @@ async def test_call_nested_imported_tool():
 
     async with Client(main_app) as client:
         result = await client.call_tool("service_provider_compute", {"input": 21})
-        assert result.data == "42"
+        assert result.data == 42
 
 
 async def test_import_with_proxy_tools():

@@ -269,9 +269,32 @@ class TransformedTool(Tool):
         try:
             result = await self.fn(**arguments)
 
-            # If transform function returns ToolResult, use it directly
+            # If transform function returns ToolResult, respect our output_schema setting
             if isinstance(result, ToolResult):
-                return result
+                if self.output_schema is None:
+                    # Check if this is from a custom function that returns ToolResult
+                    import inspect
+
+                    return_annotation = inspect.signature(self.fn).return_annotation
+                    if return_annotation is ToolResult:
+                        # Custom function returns ToolResult - preserve its content
+                        return result
+                    else:
+                        # Forwarded call with disabled schema - strip structured content
+                        return ToolResult(
+                            content=result.content,
+                            structured_content=None,
+                        )
+                elif self.output_schema.get(
+                    "type"
+                ) != "object" and not self.output_schema.get("x-fastmcp-wrap-result"):
+                    # Non-object explicit schemas disable structured content
+                    return ToolResult(
+                        content=result.content,
+                        structured_content=None,
+                    )
+                else:
+                    return result
 
             # Otherwise convert to content and create ToolResult with proper structured content
             from fastmcp.tools.tool import _convert_to_content
@@ -283,8 +306,11 @@ class TransformedTool(Tool):
             # Handle structured content based on output schema
             if self.output_schema is not None:
                 if self.output_schema.get("x-fastmcp-wrap-result"):
+                    # Schema says wrap - always wrap in result key
                     structured_output = {"result": result}
                 else:
+                    # Object schemas - use result directly
+                    # User is responsible for returning dict-compatible data
                     structured_output = result
             else:
                 structured_output = None
@@ -381,7 +407,16 @@ class TransformedTool(Tool):
                 parsed_fn = ParsedFunction.from_function(transform_fn, validate=False)
                 final_output_schema = _wrap_schema_if_needed(parsed_fn.output_schema)
                 if final_output_schema is None:
-                    final_output_schema = tool.output_schema
+                    # Check if function returns ToolResult - if so, don't fall back to parent
+                    import inspect
+
+                    return_annotation = inspect.signature(
+                        transform_fn
+                    ).return_annotation
+                    if return_annotation is ToolResult:
+                        final_output_schema = None
+                    else:
+                        final_output_schema = tool.output_schema
             else:
                 final_output_schema = tool.output_schema
 

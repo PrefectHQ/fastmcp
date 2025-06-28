@@ -450,8 +450,10 @@ class OpenAPITool(Tool):
             # Try to parse as JSON first
             try:
                 result = response.json()
+                if not isinstance(result, dict):
+                    result = {"result": result}
                 return ToolResult(structured_content=result)
-            except (json.JSONDecodeError, ValueError):
+            except json.JSONDecodeError:
                 return ToolResult(content=response.text)
 
         except httpx.HTTPStatusError as e:

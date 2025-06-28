@@ -263,14 +263,16 @@ class TestToolFromFunctionOutputSchema:
     @pytest.mark.parametrize(
         "annotation",
         [
-            None,
             int,
             float,
             bool,
             str,
             int | float,
+            list,
             list[int],
             list[int | float],
+            dict,
+            dict[str, Any],
             dict[str, int | None],
             tuple[int, str],
             set[int],
@@ -304,7 +306,6 @@ class TestToolFromFunctionOutputSchema:
     @pytest.mark.parametrize(
         "annotation",
         [
-            Any,
             AnyUrl,
             Annotated[int, Field(ge=1)],
             Annotated[int, Field(ge=1)],
@@ -317,17 +318,26 @@ class TestToolFromFunctionOutputSchema:
         tool = Tool.from_function(func)
         base_schema = TypeAdapter(annotation).json_schema()
 
-        # Special case for Any type - it generates an empty schema and doesn't get wrapped
-        if annotation is Any:
-            assert tool.output_schema == base_schema  # Should be {}
-        else:
-            # All other non-object types get wrapped, including complex constrained types
-            expected_schema = {
-                "type": "object",
-                "properties": {"result": base_schema},
-                "x-fastmcp-wrap-result": True,
-            }
-            assert tool.output_schema == expected_schema
+        expected_schema = {
+            "type": "object",
+            "properties": {"result": base_schema},
+            "x-fastmcp-wrap-result": True,
+        }
+        assert tool.output_schema == expected_schema
+
+    async def test_none_return_annotation(self):
+        def func() -> None:
+            pass
+
+        tool = Tool.from_function(func)
+        assert tool.output_schema is None
+
+    async def test_any_return_annotation(self):
+        def func() -> Any:
+            return 1
+
+        tool = Tool.from_function(func)
+        assert tool.output_schema is None
 
     @pytest.mark.parametrize(
         "annotation, expected",
@@ -413,7 +423,7 @@ class TestToolFromFunctionOutputSchema:
             return {"a": 1, "b": 2}
 
         # Provide a custom output schema that differs from the inferred one
-        custom_schema = {"type": "string", "description": "Custom schema"}
+        custom_schema = {"type": "object", "description": "Custom schema"}
 
         tool = Tool.from_function(func, output_schema=custom_schema)
         assert tool.output_schema == custom_schema
@@ -445,7 +455,10 @@ class TestToolFromFunctionOutputSchema:
             return Unserializable(data="test")
 
         # Provide a custom output schema even though the annotation is unserializable
-        custom_schema = {"type": "array", "items": {"type": "string"}}
+        custom_schema = {
+            "type": "object",
+            "properties": {"items": {"type": "array", "items": {"type": "string"}}},
+        }
 
         tool = Tool.from_function(func, output_schema=custom_schema)
         assert tool.output_schema == custom_schema
@@ -457,7 +470,10 @@ class TestToolFromFunctionOutputSchema:
             return "hello"
 
         # Provide a custom output schema even though there's no return annotation
-        custom_schema = {"type": "number", "minimum": 0}
+        custom_schema = {
+            "type": "object",
+            "properties": {"value": {"type": "number", "minimum": 0}},
+        }
 
         tool = Tool.from_function(func, output_schema=custom_schema)
         assert tool.output_schema == custom_schema
@@ -486,7 +502,7 @@ class TestToolFromFunctionOutputSchema:
             return "hello"
 
         # Provide a custom output schema that differs from the inferred union schema
-        custom_schema = {"type": "boolean"}
+        custom_schema = {"type": "object", "properties": {"flag": {"type": "boolean"}}}
 
         tool = Tool.from_function(func, output_schema=custom_schema)
         assert tool.output_schema == custom_schema
@@ -504,10 +520,214 @@ class TestToolFromFunctionOutputSchema:
             return Person(name="John", age=30)
 
         # Provide a custom output schema that differs from the inferred Person schema
-        custom_schema = {"type": "array", "items": {"type": "number"}}
+        custom_schema = {
+            "type": "object",
+            "properties": {"numbers": {"type": "array", "items": {"type": "number"}}},
+        }
 
         tool = Tool.from_function(func, output_schema=custom_schema)
         assert tool.output_schema == custom_schema
+
+    async def test_output_schema_false_disables_structured_content(self):
+        """Test that output_schema=False disables structured content generation."""
+
+        def func() -> dict[str, str]:
+            return {"message": "Hello, world!"}
+
+        tool = Tool.from_function(func, output_schema=False)
+        assert tool.output_schema is None
+
+        result = await tool.run({})
+        assert result.structured_content is None
+        assert len(result.content) == 1
+        assert result.content[0].text == '{\n  "message": "Hello, world!"\n}'
+
+    async def test_output_schema_none_disables_structured_content(self):
+        """Test that output_schema=None explicitly disables structured content."""
+
+        def func() -> int:
+            return 42
+
+        tool = Tool.from_function(func, output_schema=None)
+        assert tool.output_schema is None
+
+        result = await tool.run({})
+        assert result.structured_content is None
+        assert len(result.content) == 1
+        assert result.content[0].text == "42"
+
+    async def test_output_schema_inferred_when_not_specified(self):
+        """Test that output schema is inferred when not explicitly specified."""
+
+        def func() -> int:
+            return 42
+
+        # Don't specify output_schema - should infer and wrap
+        tool = Tool.from_function(func)
+        expected_schema = {
+            "type": "object",
+            "properties": {"result": {"type": "integer"}},
+            "x-fastmcp-wrap-result": True,
+        }
+        assert tool.output_schema == expected_schema
+
+        result = await tool.run({})
+        assert result.structured_content == {"result": 42}
+
+    async def test_explicit_object_schema_with_dict_return(self):
+        """Test that explicit object schemas work when function returns a dict."""
+
+        def func() -> dict[str, int]:
+            return {"value": 42}
+
+        # Provide explicit object schema
+        explicit_schema = {
+            "type": "object",
+            "properties": {"value": {"type": "integer", "minimum": 0}},
+        }
+        tool = Tool.from_function(func, output_schema=explicit_schema)
+        assert tool.output_schema == explicit_schema  # Schema not wrapped
+        assert "x-fastmcp-wrap-result" not in tool.output_schema
+
+        result = await tool.run({})
+        # Dict result with object schema is used directly
+        assert result.structured_content == {"value": 42}
+        assert result.content[0].text == '{\n  "value": 42\n}'
+
+    async def test_explicit_object_schema_with_non_dict_return_fails(self):
+        """Test that explicit object schemas fail when function returns non-dict."""
+
+        def func() -> int:
+            return 42
+
+        # Provide explicit object schema but return non-dict
+        explicit_schema = {
+            "type": "object",
+            "properties": {"value": {"type": "integer"}},
+        }
+        tool = Tool.from_function(func, output_schema=explicit_schema)
+
+        # Should fail because int is not dict-compatible with object schema
+        with pytest.raises(ValueError, match="structured_content must be a dict"):
+            await tool.run({})
+
+    async def test_object_output_schema_not_wrapped(self):
+        """Test that object-type output schemas are never wrapped."""
+
+        def func() -> dict[str, int]:
+            return {"value": 42}
+
+        # Object schemas should never be wrapped, even when inferred
+        tool = Tool.from_function(func)
+        expected_schema = TypeAdapter(dict[str, int]).json_schema()
+        assert tool.output_schema == expected_schema  # Not wrapped
+        assert "x-fastmcp-wrap-result" not in tool.output_schema
+
+        result = await tool.run({})
+        assert result.structured_content == {"value": 42}  # Direct value
+
+    async def test_structured_content_interaction_with_wrapping(self):
+        """Test that structured content works correctly with schema wrapping."""
+
+        def func() -> str:
+            return "hello"
+
+        # Inferred schema should wrap string type
+        tool = Tool.from_function(func)
+        expected_schema = {
+            "type": "object",
+            "properties": {"result": {"type": "string"}},
+            "x-fastmcp-wrap-result": True,
+        }
+        assert tool.output_schema == expected_schema
+
+        result = await tool.run({})
+        # Unstructured content
+        assert len(result.content) == 1
+        assert result.content[0].text == "hello"
+        # Structured content should be wrapped
+        assert result.structured_content == {"result": "hello"}
+
+    async def test_structured_content_with_explicit_object_schema(self):
+        """Test structured content with explicit object schema."""
+
+        def func() -> dict[str, str]:
+            return {"greeting": "hello"}
+
+        # Provide explicit object schema
+        explicit_schema = {
+            "type": "object",
+            "properties": {"greeting": {"type": "string"}},
+            "required": ["greeting"],
+        }
+        tool = Tool.from_function(func, output_schema=explicit_schema)
+        assert tool.output_schema == explicit_schema
+
+        result = await tool.run({})
+        # Should use direct value since explicit schema doesn't have wrap marker
+        assert result.structured_content == {"greeting": "hello"}
+
+    async def test_structured_content_with_custom_wrapper_schema(self):
+        """Test structured content with custom schema that includes wrap marker."""
+
+        def func() -> str:
+            return "world"
+
+        # Custom schema with wrap marker
+        custom_schema = {
+            "type": "object",
+            "properties": {"message": {"type": "string"}},
+            "x-fastmcp-wrap-result": True,
+        }
+        tool = Tool.from_function(func, output_schema=custom_schema)
+        assert tool.output_schema == custom_schema
+
+        result = await tool.run({})
+        # Should wrap with "result" key due to wrap marker
+        assert result.structured_content == {"result": "world"}
+
+    async def test_none_vs_false_output_schema_behavior(self):
+        """Test the difference between None and False for output_schema."""
+
+        def func() -> int:
+            return 123
+
+        # None should disable
+        tool_none = Tool.from_function(func, output_schema=None)
+        assert tool_none.output_schema is None
+
+        # False should also disable
+        tool_false = Tool.from_function(func, output_schema=False)
+        assert tool_false.output_schema is None
+
+        # Both should have same behavior
+        result_none = await tool_none.run({})
+        result_false = await tool_false.run({})
+
+        assert result_none.structured_content is None
+        assert result_false.structured_content is None
+        assert result_none.content[0].text == result_false.content[0].text == "123"
+
+    async def test_non_object_output_schema_raises_error(self):
+        """Test that providing a non-object output schema raises a ValueError."""
+
+        def func() -> int:
+            return 42
+
+        # Test various non-object schemas that should raise errors
+        non_object_schemas = [
+            {"type": "string"},
+            {"type": "integer", "minimum": 0},
+            {"type": "number"},
+            {"type": "boolean"},
+            {"type": "array", "items": {"type": "string"}},
+        ]
+
+        for schema in non_object_schemas:
+            with pytest.raises(
+                ValueError, match='Output schemas must have "type" set to "object"'
+            ):
+                Tool.from_function(func, output_schema=schema)
 
 
 class TestConvertResultToContent:

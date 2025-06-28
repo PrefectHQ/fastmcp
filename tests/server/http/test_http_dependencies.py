@@ -86,9 +86,8 @@ async def test_http_headers_tool_shttp(shttp_server: str):
         )
     ) as client:
         result = await client.call_tool("get_headers_tool")
-        json_result = json.loads(result[0].text)  # type: ignore[attr-defined]
-        assert "x-demo-header" in json_result
-        assert json_result["x-demo-header"] == "ABC"
+        assert "x-demo-header" in result.data
+        assert result.data["x-demo-header"] == "ABC"
 
 
 async def test_http_headers_tool_sse(sse_server: str):
@@ -96,9 +95,8 @@ async def test_http_headers_tool_sse(sse_server: str):
         transport=SSETransport(sse_server, headers={"X-DEMO-HEADER": "ABC"})
     ) as client:
         result = await client.call_tool("get_headers_tool")
-        json_result = json.loads(result[0].text)  # type: ignore[attr-defined]
-        assert "x-demo-header" in json_result
-        assert json_result["x-demo-header"] == "ABC"
+        assert "x-demo-header" in result.data
+        assert result.data["x-demo-header"] == "ABC"
 
 
 async def test_http_headers_prompt_shttp(shttp_server: str):

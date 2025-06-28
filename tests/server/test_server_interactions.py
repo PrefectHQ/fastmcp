@@ -5,7 +5,7 @@ import uuid
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 import pytest
 from mcp import McpError
@@ -945,6 +945,198 @@ class TestToolOutputSchema:
             assert result.content[0].text == "Hello, world!"  # type: ignore[attr-defined]
             assert result.structured_content == {"message": "Hello, world!"}
             assert result.data == {"message": "Hello, world!"}
+
+    async def test_output_schema_false_full_handshake(self):
+        """Test that output_schema=False works through full client/server handshake."""
+        mcp = FastMCP()
+
+        @mcp.tool(output_schema=False)
+        def simple_tool() -> dict[str, str]:
+            return {"message": "Hello from disabled schema"}
+
+        async with Client(mcp) as client:
+            # List tools and verify output schema is None
+            tools = await client.list_tools()
+            tool = next(t for t in tools if t.name == "simple_tool")
+            assert tool.outputSchema is None
+
+            # Call tool and verify no structured content
+            result = await client.call_tool("simple_tool", {})
+            assert result.structured_content is None
+            assert result.data is None
+            assert json.loads(result.content[0].text) == {
+                "message": "Hello from disabled schema"
+            }  # type: ignore[attr-defined]
+
+    async def test_output_schema_explicit_object_full_handshake(self):
+        """Test explicit object output schema through full client/server handshake."""
+        mcp = FastMCP()
+
+        @mcp.tool(
+            output_schema={
+                "type": "object",
+                "properties": {
+                    "greeting": {"type": "string"},
+                    "count": {"type": "integer"},
+                },
+                "required": ["greeting"],
+            }
+        )
+        def explicit_tool() -> dict[str, Any]:
+            return {"greeting": "Hello", "count": 42}
+
+        async with Client(mcp) as client:
+            # List tools and verify exact schema is preserved
+            tools = await client.list_tools()
+            tool = next(t for t in tools if t.name == "explicit_tool")
+            expected_schema = {
+                "type": "object",
+                "properties": {
+                    "greeting": {"type": "string"},
+                    "count": {"type": "integer"},
+                },
+                "required": ["greeting"],
+            }
+            assert tool.outputSchema == expected_schema
+
+            # Call tool and verify structured content matches return value directly
+            result = await client.call_tool("explicit_tool", {})
+            assert result.structured_content == {"greeting": "Hello", "count": 42}
+            # Client deserializes according to schema, so check fields
+            assert result.data.greeting == "Hello"  # type: ignore[attr-defined]
+            assert result.data.count == 42  # type: ignore[attr-defined]
+
+    async def test_output_schema_wrapped_primitive_full_handshake(self):
+        """Test wrapped primitive output schema through full client/server handshake."""
+        mcp = FastMCP()
+
+        @mcp.tool
+        def primitive_tool() -> str:
+            return "Hello, primitives!"
+
+        async with Client(mcp) as client:
+            # List tools and verify schema shows wrapped structure
+            tools = await client.list_tools()
+            tool = next(t for t in tools if t.name == "primitive_tool")
+            expected_schema = {
+                "type": "object",
+                "properties": {"result": {"type": "string"}},
+                "x-fastmcp-wrap-result": True,
+            }
+            assert tool.outputSchema == expected_schema
+
+            # Call tool and verify structured content is wrapped
+            result = await client.call_tool("primitive_tool", {})
+            assert result.structured_content == {"result": "Hello, primitives!"}
+            assert result.data == "Hello, primitives!"  # Client unwraps for convenience
+
+    async def test_output_schema_complex_type_full_handshake(self):
+        """Test complex type output schema through full client/server handshake."""
+        mcp = FastMCP()
+
+        @mcp.tool
+        def complex_tool() -> list[dict[str, int]]:
+            return [{"a": 1, "b": 2}, {"c": 3, "d": 4}]
+
+        async with Client(mcp) as client:
+            # List tools and verify schema shows wrapped array
+            tools = await client.list_tools()
+            tool = next(t for t in tools if t.name == "complex_tool")
+            expected_inner_schema = TypeAdapter(list[dict[str, int]]).json_schema()
+            expected_schema = {
+                "type": "object",
+                "properties": {"result": expected_inner_schema},
+                "x-fastmcp-wrap-result": True,
+            }
+            assert tool.outputSchema == expected_schema
+
+            # Call tool and verify structured content is wrapped
+            result = await client.call_tool("complex_tool", {})
+            expected_data = [{"a": 1, "b": 2}, {"c": 3, "d": 4}]
+            assert result.structured_content == {"result": expected_data}
+            # Client deserializes - just verify we got data back
+            assert result.data is not None
+
+    async def test_output_schema_dataclass_full_handshake(self):
+        """Test dataclass output schema through full client/server handshake."""
+        mcp = FastMCP()
+
+        @dataclass
+        class User:
+            name: str
+            age: int
+
+        @mcp.tool
+        def dataclass_tool() -> User:
+            return User(name="Alice", age=30)
+
+        async with Client(mcp) as client:
+            # List tools and verify schema is object type (not wrapped)
+            tools = await client.list_tools()
+            tool = next(t for t in tools if t.name == "dataclass_tool")
+            expected_schema = TypeAdapter(User).json_schema()
+            assert tool.outputSchema == expected_schema
+            assert "x-fastmcp-wrap-result" not in tool.outputSchema
+
+            # Call tool and verify structured content is direct
+            result = await client.call_tool("dataclass_tool", {})
+            assert result.structured_content == {"name": "Alice", "age": 30}
+            # Client deserializes according to schema
+            assert result.data.name == "Alice"  # type: ignore[attr-defined]
+            assert result.data.age == 30  # type: ignore[attr-defined]
+
+    async def test_output_schema_mixed_content_types(self):
+        """Test tools with mixed content and output schemas."""
+        mcp = FastMCP()
+
+        @mcp.tool
+        def mixed_output() -> list[Any]:
+            # Return mixed content that includes MCP types and regular data
+            return [
+                "text message",
+                {"structured": "data"},
+                TextContent(type="text", text="direct MCP content"),
+            ]
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("mixed_output", {})
+
+            # Should have multiple content blocks
+            assert len(result.content) >= 2
+
+            # Should have structured output with wrapped result
+            expected_data = [
+                "text message",
+                {"structured": "data"},
+                {
+                    "type": "text",
+                    "text": "direct MCP content",
+                    "annotations": None,
+                    "_meta": None,
+                },
+            ]
+            assert result.structured_content == {"result": expected_data}
+
+    async def test_output_schema_serialization_edge_cases(self):
+        """Test edge cases in output schema serialization."""
+        mcp = FastMCP()
+
+        @mcp.tool
+        def edge_case_tool() -> tuple[int, str]:
+            return (42, "hello")
+
+        async with Client(mcp) as client:
+            # Verify tuple gets proper schema
+            tools = await client.list_tools()
+            tool = next(t for t in tools if t.name == "edge_case_tool")
+
+            # Tuples should be wrapped since they're not object type
+            assert "x-fastmcp-wrap-result" in tool.outputSchema
+
+            result = await client.call_tool("edge_case_tool", {})
+            # Should be wrapped with result key
+            assert result.structured_content == {"result": [42, "hello"]}
+            assert result.data == [42, "hello"]
 
 
 class TestToolContextInjection:

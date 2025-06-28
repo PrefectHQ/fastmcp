@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Union
+from typing import Any, Union
 
 import pytest
 from pydantic import AnyUrl, BaseModel, TypeAdapter, ValidationError
@@ -325,6 +325,29 @@ class TestObjectTypes:
                 },
             }
         )
+
+    @pytest.mark.parametrize(
+        "input_type, expected_type",
+        [
+            # Plain dict becomes dict[str, Any] (JSON Schema accurate)
+            (dict, dict[str, Any]),
+            # dict[str, Any] stays the same
+            (dict[str, Any], dict[str, Any]),
+            # Simple typed dicts work correctly
+            (dict[str, str], dict[str, str]),
+            (dict[str, int], dict[str, int]),
+            # Union value types work
+            (dict[str, str | int], dict[str, str | int]),
+            # Key types are constrained to str in JSON Schema
+            (dict[int, list[str]], dict[str, list[str]]),
+            # Union key types become str (JSON Schema limitation)
+            (dict[str | int, str | None], dict[str, str | None]),
+        ],
+    )
+    def test_dict_types_are_generated_correctly(self, input_type, expected_type):
+        schema = TypeAdapter(input_type).json_schema()
+        generated_type = json_schema_to_type(schema)
+        assert generated_type == expected_type
 
     def test_object_accepts_valid(self, simple_object):
         validator = TypeAdapter(simple_object)
