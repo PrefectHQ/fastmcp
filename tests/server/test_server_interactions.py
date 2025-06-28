@@ -920,12 +920,12 @@ class TestToolOutputSchema:
         mcp = FastMCP()
 
         @mcp.tool(output_schema=None)
-        def f() -> dict[str, str]:
-            return {"message": "Hello, world!"}
+        def f() -> int:
+            return 42
 
         async with Client(mcp) as client:
             result = await client.call_tool("f", {})
-            assert json.loads(result.content[0].text) == {"message": "Hello, world!"}  # type: ignore[attr-defined]
+            assert result.content[0].text == "42"  # type: ignore[attr-defined]
             assert result.structured_content is None
             assert result.data is None
 

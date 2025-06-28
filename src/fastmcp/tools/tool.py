@@ -79,9 +79,9 @@ class ToolResult:
                 structured_content = pydantic_core.to_jsonable_python(
                     structured_content
                 )
-            except pydantic_core.PydanticSerializationError:
+            except pydantic_core.PydanticSerializationError as e:
                 logger.error(
-                    "Could not serialize structured content. If this is unexpected, set your tool's output_schema to None to disable automatic serialization:"
+                    f"Could not serialize structured content. If this is unexpected, set your tool's output_schema to None to disable automatic serialization: {e}"
                 )
                 raise
             if not isinstance(structured_content, dict):
@@ -280,15 +280,23 @@ class FunctionTool(Tool):
 
         unstructured_result = _convert_to_content(result, serializer=self.serializer)
 
-        # Handle structured content based on output schema
+        structured_output = None
+        # First handle structured content based on output schema, if any
         if self.output_schema is not None:
             if self.output_schema.get("x-fastmcp-wrap-result"):
                 # Schema says wrap - always wrap in result key
                 structured_output = {"result": result}
             else:
                 structured_output = result
-        else:
-            structured_output = None
+        # If no output schema, try to serialize the result. If it is a dict, use
+        # it as structured content. If it is not a dict, ignore it.
+        if structured_output is None:
+            try:
+                structured_output = pydantic_core.to_jsonable_python(result)
+                if not isinstance(structured_output, dict):
+                    structured_output = None
+            except Exception:
+                pass
 
         return ToolResult(
             content=unstructured_result,

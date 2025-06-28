@@ -198,11 +198,12 @@ class TransformedTool(Tool):
 
     This class represents a tool that has been created by transforming another tool.
     It supports argument renaming, schema modification, custom function injection,
-    and provides context for the forward() and forward_raw() functions.
+    structured output control, and provides context for the forward() and forward_raw() functions.
 
     The transformation can be purely schema-based (argument renaming, dropping, etc.)
     or can include a custom function that uses forward() to call the parent tool
-    with transformed arguments.
+    with transformed arguments. Output schemas and structured outputs are automatically
+    inherited from the parent tool but can be overridden or disabled.
 
     Attributes:
         parent_tool: The original tool that this tool was transformed from.
@@ -352,6 +353,10 @@ class TransformedTool(Tool):
             description: New description. Defaults to parent's description.
             tags: New tags. Defaults to parent's tags.
             annotations: New annotations. Defaults to parent's annotations.
+            output_schema: Control output schema for structured outputs:
+                - None (default): Inherit from transform_fn if available, then parent tool
+                - dict: Use custom output schema
+                - False: Disable output schema and structured outputs
             serializer: New serializer. Defaults to parent's serializer.
 
         Returns:
@@ -379,6 +384,26 @@ class TransformedTool(Tool):
                 return f"Got: {kwargs}"
 
             Tool.from_tool(parent, transform_fn=flexible, transform_args={"a": "x"})
+            ```
+
+            # Control structured outputs and schemas
+            ```python
+            # Custom output schema
+            Tool.from_tool(parent, output_schema={
+                "type": "object",
+                "properties": {"status": {"type": "string"}}
+            })
+
+            # Disable structured outputs
+            Tool.from_tool(parent, output_schema=False)
+
+            # Return ToolResult for full control
+            async def custom_output(**kwargs) -> ToolResult:
+                result = await forward(**kwargs)
+                return ToolResult(
+                    content=[TextContent(text="Summary")],
+                    structured_content={"processed": True}
+                )
             ```
         """
         transform_args = transform_args or {}

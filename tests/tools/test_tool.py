@@ -529,8 +529,8 @@ class TestToolFromFunctionOutputSchema:
         tool = Tool.from_function(func, output_schema=custom_schema)
         assert tool.output_schema == custom_schema
 
-    async def test_output_schema_false_disables_structured_content(self):
-        """Test that output_schema=False disables structured content generation."""
+    async def test_output_schema_false_allows_automatic_structured_content(self):
+        """Test that output_schema=False still allows automatic structured content for dict-like objects."""
 
         def func() -> dict[str, str]:
             return {"message": "Hello, world!"}
@@ -539,7 +539,8 @@ class TestToolFromFunctionOutputSchema:
         assert tool.output_schema is None
 
         result = await tool.run({})
-        assert result.structured_content is None
+        # Dict objects automatically become structured content even without schema
+        assert result.structured_content == {"message": "Hello, world!"}
         assert len(result.content) == 1
         assert result.content[0].text == '{\n  "message": "Hello, world!"\n}'  # type: ignore[attr-defined]
 
@@ -1028,3 +1029,199 @@ class TestConvertResultToContent:
             1,
             {"type": "text", "text": "hello", "annotations": None, "_meta": None},
         ]
+
+
+class TestAutomaticStructuredContent:
+    """Tests for automatic structured content generation based on return types."""
+
+    async def test_dict_return_creates_structured_content_without_schema(self):
+        """Test that dict returns automatically create structured content even without output schema."""
+
+        def get_user_data(user_id: str) -> dict:
+            return {"name": "Alice", "age": 30, "active": True}
+
+        # No explicit output schema provided
+        tool = Tool.from_function(get_user_data)
+
+        result = await tool.run({"user_id": "123"})
+
+        # Should have both content and structured content
+        assert len(result.content) == 1
+        assert isinstance(result.content[0], TextContent)
+        assert result.structured_content == {"name": "Alice", "age": 30, "active": True}
+
+    async def test_dataclass_return_creates_structured_content_without_schema(self):
+        """Test that dataclass returns automatically create structured content even without output schema."""
+
+        @dataclass
+        class UserProfile:
+            name: str
+            age: int
+            email: str
+
+        def get_profile(user_id: str) -> UserProfile:
+            return UserProfile(name="Bob", age=25, email="bob@example.com")
+
+        # No explicit output schema, but dataclass should still create structured content
+        tool = Tool.from_function(get_profile, output_schema=False)
+
+        result = await tool.run({"user_id": "456"})
+
+        # Should have both content and structured content
+        assert len(result.content) == 1
+        assert isinstance(result.content[0], TextContent)
+        # Dataclass should serialize to dict
+        assert result.structured_content == {
+            "name": "Bob",
+            "age": 25,
+            "email": "bob@example.com",
+        }
+
+    async def test_pydantic_model_return_creates_structured_content_without_schema(
+        self,
+    ):
+        """Test that Pydantic model returns automatically create structured content even without output schema."""
+
+        class UserData(BaseModel):
+            username: str
+            score: int
+            verified: bool
+
+        def get_user_stats(user_id: str) -> UserData:
+            return UserData(username="charlie", score=100, verified=True)
+
+        # Explicitly disable output schema to test automatic structured content
+        tool = Tool.from_function(get_user_stats, output_schema=False)
+
+        result = await tool.run({"user_id": "789"})
+
+        # Should have both content and structured content
+        assert len(result.content) == 1
+        assert isinstance(result.content[0], TextContent)
+        # Pydantic model should serialize to dict
+        assert result.structured_content == {
+            "username": "charlie",
+            "score": 100,
+            "verified": True,
+        }
+
+    async def test_int_return_no_structured_content_without_schema(self):
+        """Test that int returns don't create structured content without output schema."""
+
+        def calculate_sum(a: int, b: int):
+            """No return annotation."""
+            return a + b
+
+        # No output schema
+        tool = Tool.from_function(calculate_sum)
+
+        result = await tool.run({"a": 5, "b": 3})
+
+        # Should only have content, no structured content
+        assert len(result.content) == 1
+        assert isinstance(result.content[0], TextContent)
+        assert result.content[0].text == "8"
+        assert result.structured_content is None
+
+    async def test_str_return_no_structured_content_without_schema(self):
+        """Test that str returns don't create structured content without output schema."""
+
+        def get_greeting(name: str):
+            """No return annotation."""
+            return f"Hello, {name}!"
+
+        # No output schema
+        tool = Tool.from_function(get_greeting)
+
+        result = await tool.run({"name": "World"})
+
+        # Should only have content, no structured content
+        assert len(result.content) == 1
+        assert isinstance(result.content[0], TextContent)
+        assert result.content[0].text == "Hello, World!"
+        assert result.structured_content is None
+
+    async def test_list_return_no_structured_content_without_schema(self):
+        """Test that list returns don't create structured content without output schema."""
+
+        def get_numbers():
+            """No return annotation."""
+            return [1, 2, 3, 4, 5]
+
+        # No output schema
+        tool = Tool.from_function(get_numbers)
+
+        result = await tool.run({})
+
+        # Should only have content, no structured content
+        assert len(result.content) == 1
+        assert isinstance(result.content[0], TextContent)
+        assert result.structured_content is None
+
+    async def test_int_return_with_schema_creates_structured_content(self):
+        """Test that int returns DO create structured content when there's an output schema."""
+
+        def calculate_sum(a: int, b: int) -> int:
+            """With return annotation."""
+            return a + b
+
+        # Output schema should be auto-generated from annotation
+        tool = Tool.from_function(calculate_sum)
+        assert tool.output_schema is not None
+
+        result = await tool.run({"a": 5, "b": 3})
+
+        # Should have both content and structured content
+        assert len(result.content) == 1
+        assert isinstance(result.content[0], TextContent)
+        assert result.content[0].text == "8"
+        assert result.structured_content == {"result": 8}
+
+    async def test_client_automatic_deserialization_with_dict_result(self):
+        """Test that clients automatically deserialize dict results from structured content."""
+        from fastmcp import FastMCP
+        from fastmcp.client import Client
+
+        mcp = FastMCP()
+
+        @mcp.tool
+        def get_user_info(user_id: str) -> dict:
+            return {"name": "Alice", "age": 30, "active": True}
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("get_user_info", {"user_id": "123"})
+
+            # Client should provide the deserialized data
+            assert result.data == {"name": "Alice", "age": 30, "active": True}
+            assert result.structured_content == {
+                "name": "Alice",
+                "age": 30,
+                "active": True,
+            }
+            assert len(result.content) == 1
+
+    async def test_client_automatic_deserialization_with_dataclass_result(self):
+        """Test that clients automatically deserialize dataclass results from structured content."""
+        from fastmcp import FastMCP
+        from fastmcp.client import Client
+
+        mcp = FastMCP()
+
+        @dataclass
+        class UserProfile:
+            name: str
+            age: int
+            verified: bool
+
+        @mcp.tool
+        def get_profile(user_id: str) -> UserProfile:
+            return UserProfile(name="Bob", age=25, verified=True)
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("get_profile", {"user_id": "456"})
+
+            # Client should deserialize back to a dataclass (type name will match)
+            assert result.data.__class__.__name__ == "UserProfile"
+            assert result.data.name == "Bob"
+            assert result.data.age == 25
+            assert result.data.verified is True
