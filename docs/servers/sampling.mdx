@@ -60,7 +60,7 @@ async def analyze_sentiment(text: str, ctx: Context) -> dict:
 <ResponseField name="ctx.sample" type="async method">
   Request text generation from the client's LLM
   
-  <Expandable title="parameters">
+  <Expandable title="Parameters">
     <ResponseField name="messages" type="str | list[str | SamplingMessage]">
       A string or list of strings/message objects to send to the LLM
     </ResponseField>
@@ -82,7 +82,7 @@ async def analyze_sentiment(text: str, ctx: Context) -> dict:
     </ResponseField>
   </Expandable>
   
-  <Expandable title="returns">
+  <Expandable title="Response">
     <ResponseField name="response" type="TextContent | ImageContent">
       The LLM's response content (typically TextContent with a .text attribute)
     </ResponseField>
