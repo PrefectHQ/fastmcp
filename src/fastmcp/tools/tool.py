@@ -142,12 +142,16 @@ class Tool(FastMCPComponent):
             "outputSchema": self.output_schema,
             "annotations": self.annotations,
         }
+        # Add title field if provided
+        if self.title is not None:
+            kwargs["title"] = self.title
         return MCPTool(**kwargs | overrides)
 
     @staticmethod
     def from_function(
         fn: Callable[..., Any],
         name: str | None = None,
+        title: str | None = None,
         description: str | None = None,
         tags: set[str] | None = None,
         annotations: ToolAnnotations | None = None,
@@ -160,6 +164,7 @@ class Tool(FastMCPComponent):
         return FunctionTool.from_function(
             fn=fn,
             name=name,
+            title=title,
             description=description,
             tags=tags,
             annotations=annotations,
@@ -219,6 +224,7 @@ class FunctionTool(Tool):
         cls,
         fn: Callable[..., Any],
         name: str | None = None,
+        title: str | None = None,
         description: str | None = None,
         tags: set[str] | None = None,
         annotations: ToolAnnotations | None = None,
@@ -250,6 +256,7 @@ class FunctionTool(Tool):
         return cls(
             fn=parsed_fn.fn,
             name=name or parsed_fn.name,
+            title=title,
             description=description or parsed_fn.description,
             parameters=parsed_fn.input_schema,
             output_schema=output_schema,

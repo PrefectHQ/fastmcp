@@ -86,6 +86,7 @@ class ResourceTemplate(FastMCPComponent):
         fn: Callable[..., Any],
         uri_template: str,
         name: str | None = None,
+        title: str | None = None,
         description: str | None = None,
         mime_type: str | None = None,
         tags: set[str] | None = None,
@@ -95,6 +96,7 @@ class ResourceTemplate(FastMCPComponent):
             fn=fn,
             uri_template=uri_template,
             name=name,
+            title=title,
             description=description,
             mime_type=mime_type,
             tags=tags,
@@ -145,6 +147,9 @@ class ResourceTemplate(FastMCPComponent):
             "description": self.description,
             "mimeType": self.mime_type,
         }
+        # Add title field if provided
+        if self.title is not None:
+            kwargs["title"] = self.title
         return MCPResourceTemplate(**kwargs | overrides)
 
     @classmethod
@@ -197,6 +202,7 @@ class FunctionResourceTemplate(ResourceTemplate):
         fn: Callable[..., Any],
         uri_template: str,
         name: str | None = None,
+        title: str | None = None,
         description: str | None = None,
         mime_type: str | None = None,
         tags: set[str] | None = None,
@@ -278,6 +284,7 @@ class FunctionResourceTemplate(ResourceTemplate):
         return cls(
             uri_template=uri_template,
             name=func_name,
+            title=title,
             description=description,
             mime_type=mime_type or "text/plain",
             fn=fn,

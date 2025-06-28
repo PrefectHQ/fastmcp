@@ -1225,3 +1225,50 @@ class TestAutomaticStructuredContent:
             assert result.data.name == "Bob"
             assert result.data.age == 25
             assert result.data.verified is True
+
+
+class TestToolTitle:
+    """Tests for tool title functionality."""
+
+    def test_tool_with_title(self):
+        """Test that tools can have titles and they appear in MCP conversion."""
+
+        def calculate(x: int, y: int) -> int:
+            """Calculate the sum of two numbers."""
+            return x + y
+
+        tool = Tool.from_function(
+            calculate,
+            name="calc",
+            title="Advanced Calculator Tool",
+            description="Custom description",
+        )
+
+        assert tool.name == "calc"
+        assert tool.title == "Advanced Calculator Tool"
+        assert tool.description == "Custom description"
+        assert tool.get_display_name() == "Advanced Calculator Tool"
+
+        # Test MCP conversion includes title
+        mcp_tool = tool.to_mcp_tool()
+        assert mcp_tool.name == "calc"
+        assert (
+            hasattr(mcp_tool, "title") and mcp_tool.title == "Advanced Calculator Tool"
+        )
+
+    def test_tool_without_title(self):
+        """Test that tools without titles use name as display name."""
+
+        def multiply(a: int, b: int) -> int:
+            return a * b
+
+        tool = Tool.from_function(multiply)
+
+        assert tool.name == "multiply"
+        assert tool.title is None
+        assert tool.get_display_name() == "multiply"
+
+        # Test MCP conversion doesn't include title when None
+        mcp_tool = tool.to_mcp_tool()
+        assert mcp_tool.name == "multiply"
+        assert not hasattr(mcp_tool, "title") or mcp_tool.title is None
