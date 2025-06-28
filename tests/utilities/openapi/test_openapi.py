@@ -687,6 +687,29 @@ def test_multiple_tags_preserved(bookstore_schema):
     assert len(get_books.tags) == 3
 
 
+def test_openapi_extensions(petstore_schema):
+    """Test that OpenAPI extensions (x-*) are correctly parsed from operations."""
+    # Add extensions to a route
+    petstore_schema["paths"]["/pets"]["get"]["x-rate-limit"] = 100
+    petstore_schema["paths"]["/pets"]["get"]["x-custom-auth"] = "bearer"
+    petstore_schema["paths"]["/pets"]["get"]["x-internal"] = True
+
+    # Parse the modified schema
+    routes = parse_openapi_to_http_routes(petstore_schema)
+
+    # Find the GET /pets route
+    get_pets = next(
+        (r for r in routes if r.method == "GET" and r.path == "/pets"), None
+    )
+    assert get_pets is not None
+
+    # Should have extensions
+    assert get_pets.extensions["x-rate-limit"] == 100
+    assert get_pets.extensions["x-custom-auth"] == "bearer"
+    assert get_pets.extensions["x-internal"] is True
+    assert len(get_pets.extensions) == 3
+
+
 # --- Tests for BookStore schema --- #
 
 
