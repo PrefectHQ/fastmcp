@@ -347,7 +347,7 @@ class Context:
                     f"{response_type}"
                 )
             # Convert list of options to Literal type and wrap
-            choice_literal = Literal[*tuple(response_type)]  # type: ignore
+            choice_literal = Literal[tuple(response_type)]  # type: ignore
             response_type = ScalarElicitationType[choice_literal]  # type: ignore
         # if the user provided a primitive scalar, wrap it in an object schema
         elif response_type in {bool, int, float, str}:
