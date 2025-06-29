@@ -294,7 +294,9 @@ class Client(Generic[ClientTransportT]):
             and not self._session_task.cancelled()
         ):
             exception = self._session_task.exception()
-            if exception is not None:
+            if isinstance(exception, httpx.HTTPStatusError):
+                raise exception
+            elif exception is not None:
                 raise RuntimeError(
                     f"Client failed to connect: {exception}"
                 ) from exception
