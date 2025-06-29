@@ -24,6 +24,10 @@ class FastMCPComponent(FastMCPBaseModel):
     name: str = Field(
         description="The name of the component.",
     )
+    title: str | None = Field(
+        default=None,
+        description="The title of the component for display purposes.",
+    )
     description: str | None = Field(
         default=None,
         description="The description of the component.",
@@ -64,7 +68,7 @@ class FastMCPComponent(FastMCPBaseModel):
         return self.model_dump() == other.model_dump()
 
     def __repr__(self) -> str:
-        return f"{self.__class__.__name__}(name={self.name!r}, description={self.description!r}, tags={self.tags}, enabled={self.enabled})"
+        return f"{self.__class__.__name__}(name={self.name!r}, title={self.title!r}, description={self.description!r}, tags={self.tags}, enabled={self.enabled})"
 
     def enable(self) -> None:
         """Enable the component."""
@@ -73,3 +77,7 @@ class FastMCPComponent(FastMCPBaseModel):
     def disable(self) -> None:
         """Disable the component."""
         self.enabled = False
+
+    def get_display_name(self) -> str:
+        """Get the display name for this component, preferring title over name."""
+        return self.title if self.title is not None else self.name

@@ -135,12 +135,20 @@ class Tool(FastMCPComponent):
             pass  # No context available
 
     def to_mcp_tool(self, **overrides: Any) -> MCPTool:
+        if self.title:
+            title = self.title
+        elif self.annotations and self.annotations.title:
+            title = self.annotations.title
+        else:
+            title = None
+
         kwargs = {
             "name": self.name,
             "description": self.description,
             "inputSchema": self.parameters,
             "outputSchema": self.output_schema,
             "annotations": self.annotations,
+            "title": title,
         }
         return MCPTool(**kwargs | overrides)
 
@@ -148,6 +156,7 @@ class Tool(FastMCPComponent):
     def from_function(
         fn: Callable[..., Any],
         name: str | None = None,
+        title: str | None = None,
         description: str | None = None,
         tags: set[str] | None = None,
         annotations: ToolAnnotations | None = None,
@@ -160,6 +169,7 @@ class Tool(FastMCPComponent):
         return FunctionTool.from_function(
             fn=fn,
             name=name,
+            title=title,
             description=description,
             tags=tags,
             annotations=annotations,
@@ -219,6 +229,7 @@ class FunctionTool(Tool):
         cls,
         fn: Callable[..., Any],
         name: str | None = None,
+        title: str | None = None,
         description: str | None = None,
         tags: set[str] | None = None,
         annotations: ToolAnnotations | None = None,
@@ -250,6 +261,7 @@ class FunctionTool(Tool):
         return cls(
             fn=parsed_fn.fn,
             name=name or parsed_fn.name,
+            title=title,
             description=description or parsed_fn.description,
             parameters=parsed_fn.input_schema,
             output_schema=output_schema,
