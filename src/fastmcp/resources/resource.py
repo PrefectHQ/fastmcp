@@ -62,7 +62,7 @@ class Resource(FastMCPComponent, abc.ABC):
 
     @staticmethod
     def from_function(
-        fn: Callable[[], Any],
+        fn: Callable[..., Any],
         uri: str | AnyUrl,
         name: str | None = None,
         title: str | None = None,
@@ -144,12 +144,12 @@ class FunctionResource(Resource):
     - other types will be converted to JSON
     """
 
-    fn: Callable[[], Any]
+    fn: Callable[..., Any]
 
     @classmethod
     def from_function(
         cls,
-        fn: Callable[[], Any],
+        fn: Callable[..., Any],
         uri: str | AnyUrl,
         name: str | None = None,
         title: str | None = None,
