@@ -115,3 +115,14 @@ class TestKeepAlive:
             await client.close()
             with pytest.raises(RuntimeError, match="Client is not connected"):
                 await client.call_tool("pid")
+
+    async def test_session_task_failure_raises_immediately_on_enter(self):
+        # Use a command that will fail to start
+        client = Client(
+            transport=StdioTransport(command="nonexistent_command", args=[])
+        )
+
+        # Should raise RuntimeError immediately, not defer until first use
+        with pytest.raises(RuntimeError, match="Client failed to connect"):
+            async with client:
+                pass

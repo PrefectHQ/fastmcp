@@ -361,33 +361,47 @@ class StdioTransport(ClientTransport):
         async def _connect_task():
             from mcp.client.stdio import stdio_client
 
-            async with contextlib.AsyncExitStack() as stack:
-                try:
-                    server_params = StdioServerParameters(
-                        command=self.command, args=self.args, env=self.env, cwd=self.cwd
-                    )
-                    transport = await stack.enter_async_context(
-                        stdio_client(server_params)
-                    )
-                    read_stream, write_stream = transport
-                    self._session = await stack.enter_async_context(
-                        ClientSession(read_stream, write_stream, **session_kwargs)
-                    )
+            try:
+                async with contextlib.AsyncExitStack() as stack:
+                    try:
+                        server_params = StdioServerParameters(
+                            command=self.command,
+                            args=self.args,
+                            env=self.env,
+                            cwd=self.cwd,
+                        )
+                        transport = await stack.enter_async_context(
+                            stdio_client(server_params)
+                        )
+                        read_stream, write_stream = transport
+                        self._session = await stack.enter_async_context(
+                            ClientSession(read_stream, write_stream, **session_kwargs)
+                        )
 
-                    logger.debug("Stdio transport connected")
-                    self._ready_event.set()
+                        logger.debug("Stdio transport connected")
+                        self._ready_event.set()
 
-                    # Wait until disconnect is requested (stop_event is set)
-                    await self._stop_event.wait()
-                finally:
-                    # Clean up client on exit
-                    self._session = None
-                    logger.debug("Stdio transport disconnected")
+                        # Wait until disconnect is requested (stop_event is set)
+                        await self._stop_event.wait()
+                    finally:
+                        # Clean up client on exit
+                        self._session = None
+                        logger.debug("Stdio transport disconnected")
+            except Exception:
+                # Ensure ready event is set even if connection fails
+                self._ready_event.set()
+                raise
 
         # start the connection task
         self._connect_task = asyncio.create_task(_connect_task())
         # wait for the client to be ready before returning
         await self._ready_event.wait()
+
+        # Check if connect task completed with an exception (early failure)
+        if self._connect_task.done():
+            exception = self._connect_task.exception()
+            if exception is not None:
+                raise exception
 
     async def disconnect(self):
         if self._connect_task is None:

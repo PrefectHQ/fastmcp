@@ -286,6 +286,19 @@ class Client(Generic[ClientTransportT]):
 
     async def __aenter__(self):
         await self._connect()
+
+        # Check if session task failed and raise error immediately
+        if (
+            self._session_task is not None
+            and self._session_task.done()
+            and not self._session_task.cancelled()
+        ):
+            exception = self._session_task.exception()
+            if exception is not None:
+                raise RuntimeError(
+                    f"Client failed to connect: {exception}"
+                ) from exception
+
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
@@ -336,16 +349,21 @@ class Client(Generic[ClientTransportT]):
         self._initialize_result = None
 
     async def _session_runner(self):
-        async with AsyncExitStack() as stack:
-            try:
-                await stack.enter_async_context(self._context_manager())
-                # Session/context is now ready
-                self._ready_event.set()
-                # Wait until disconnect/stop is requested
-                await self._stop_event.wait()
-            finally:
-                # On exit, ensure ready event is set (idempotent)
-                self._ready_event.set()
+        try:
+            async with AsyncExitStack() as stack:
+                try:
+                    await stack.enter_async_context(self._context_manager())
+                    # Session/context is now ready
+                    self._ready_event.set()
+                    # Wait until disconnect/stop is requested
+                    await self._stop_event.wait()
+                finally:
+                    # On exit, ensure ready event is set (idempotent)
+                    self._ready_event.set()
+        except Exception:
+            # Ensure ready event is set even if context manager entry fails
+            self._ready_event.set()
+            raise
 
     async def close(self):
         await self._disconnect(force=True)
