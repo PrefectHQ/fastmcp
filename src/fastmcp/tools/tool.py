@@ -135,16 +135,21 @@ class Tool(FastMCPComponent):
             pass  # No context available
 
     def to_mcp_tool(self, **overrides: Any) -> MCPTool:
+        if self.title:
+            title = self.title
+        elif self.annotations and self.annotations.title:
+            title = self.annotations.title
+        else:
+            title = None
+
         kwargs = {
             "name": self.name,
             "description": self.description,
             "inputSchema": self.parameters,
             "outputSchema": self.output_schema,
             "annotations": self.annotations,
+            "title": title,
         }
-        # Add title field if provided
-        if self.title is not None:
-            kwargs["title"] = self.title
         return MCPTool(**kwargs | overrides)
 
     @staticmethod

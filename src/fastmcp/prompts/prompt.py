@@ -99,10 +99,8 @@ class Prompt(FastMCPComponent, ABC):
             "name": self.name,
             "description": self.description,
             "arguments": arguments,
+            "title": self.title,
         }
-        # Add title field if provided
-        if self.title is not None:
-            kwargs["title"] = self.title
         return MCPPrompt(**kwargs | overrides)
 
     @staticmethod

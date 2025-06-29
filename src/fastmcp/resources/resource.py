@@ -113,10 +113,8 @@ class Resource(FastMCPComponent, abc.ABC):
             "name": self.name,
             "description": self.description,
             "mimeType": self.mime_type,
+            "title": self.title,
         }
-        # Add title field if provided
-        if self.title is not None:
-            kwargs["title"] = self.title
         return MCPResource(**kwargs | overrides)
 
     def __repr__(self) -> str:
