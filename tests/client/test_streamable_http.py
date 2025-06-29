@@ -33,7 +33,7 @@ def fastmcp_server():
         """Elicit a response from the user."""
         result = await ctx.elicit("What is your name?", response_type=str)
         if result.action == "accept":
-            return f"Hello, {result.data}!"
+            return f"You said your name was: {result.data}!"
         else:
             return "No name provided"
 
@@ -190,8 +190,8 @@ async def test_elicitation_tool(streamable_http_server: str):
         transport=StreamableHttpTransport(streamable_http_server),
         elicitation_handler=elicitation_handler,
     ) as client:
-        result = await client.call_tool("greet_with_progress", {"name": "Alice"})
-        assert result.data == "Hello, Alice!"
+        result = await client.call_tool("elicit")
+        assert result.data == "You said your name was: Alice!"
 
 
 async def test_nested_streamable_http_server_resolves_correctly():
