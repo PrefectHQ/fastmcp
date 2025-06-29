@@ -28,6 +28,15 @@ def fastmcp_server():
         """Greet someone by name."""
         return f"Hello, {name}!"
 
+    @server.tool
+    async def elicit(ctx: Context) -> str:
+        """Elicit a response from the user."""
+        result = await ctx.elicit("What is your name?", response_type=str)
+        if result.action == "accept":
+            return f"You said your name was: {result.data}!"
+        else:
+            return "No name provided"
+
     # Add a second tool
     @server.tool
     def add(a: int, b: int) -> int:
@@ -168,6 +177,21 @@ async def test_greet_with_progress_tool(streamable_http_server: str):
         assert result.data == "Hello, Alice!"
 
         progress_handler.assert_called_once_with(0.5, 1.0, "Greeting in progress")
+
+
+@pytest.mark.parametrize("streamable_http_server", [True, False], indirect=True)
+async def test_elicitation_tool(streamable_http_server: str):
+    """Test calling the elicitation tool in both stateless and stateful modes."""
+
+    async def elicitation_handler(message, response_type, params, ctx):
+        return {"value": "Alice"}
+
+    async with Client(
+        transport=StreamableHttpTransport(streamable_http_server),
+        elicitation_handler=elicitation_handler,
+    ) as client:
+        result = await client.call_tool("elicit")
+        assert result.data == "You said your name was: Alice!"
 
 
 async def test_nested_streamable_http_server_resolves_correctly():

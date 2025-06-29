@@ -29,7 +29,7 @@ ElicitationHandler: TypeAlias = Callable[
         ElicitRequestParams,
         RequestContext[ClientSession, LifespanContextT],
     ],
-    Awaitable[ElicitResult[T | dict[str, Any]]],
+    Awaitable[T | dict[str, Any] | ElicitResult[T | dict[str, Any]]],
 ]
 
 
@@ -46,6 +46,9 @@ def create_elicitation_callback(
             result = await elicitation_handler(
                 params.message, response_type, params, context
             )
+            # if the user returns data, we assume they've accepted the elicitation
+            if not isinstance(result, ElicitResult):
+                result = ElicitResult(action="accept", content=result)
             content = to_jsonable_python(result.content)
             return MCPElicitResult(**result.model_dump() | {"content": content})
         except Exception as e:
