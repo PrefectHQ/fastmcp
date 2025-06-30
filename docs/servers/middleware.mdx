@@ -181,7 +181,7 @@ class ComponentAccessMiddleware(Middleware):
 
 ### Working with Listing Results
 
-For listing operations, you can inspect and modify the FastMCP components directly:
+For listing operations, the middleware `call_next` function returns a special object that contains the full list of FastMCP components prior to being converted to MCP format. You can modify this object and return it to the client. Specifically, the `ListToolsResult`, `ListResourcesResult`, `ListResourceTemplatesResult`, and `ListPromptsResult` objects can all be imported from fastmcp.server.middleware for this purpose. For example:
 
 ```python
 from fastmcp.server.middleware import Middleware, MiddlewareContext, ListToolsResult
