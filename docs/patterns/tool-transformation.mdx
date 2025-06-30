@@ -89,6 +89,7 @@ The `Tool.from_tool()` class method is the primary way to create a transformed t
 - `description`: An optional description for the new tool.
 - `transform_args`: A dictionary of `ArgTransform` objects, one for each argument you want to modify.
 - `transform_fn`: An optional function that will be called instead of the parent tool's logic.
+- `output_schema`: Control output schema and structured outputs (see [Output Schema Control](#output-schema-control)).
 - `tags`: An optional set of tags for the new tool.
 - `annotations`: An optional set of `ToolAnnotations` for the new tool.
 - `serializer`: An optional function that will be called to serialize the result of the new tool.
@@ -439,7 +440,44 @@ mcp.add_tool(new_tool)
 
 <Tip>
 In the above example, `**kwargs` receives the renamed argument `b`, not the original argument `y`. It is therefore recommended to use with `forward()`, not `forward_raw()`.
-</Tip> 
+</Tip>
+
+## Output Schema Control
+
+<VersionBadge version="2.10.0" />
+
+Transformed tools inherit output schemas from their parent by default, but you can control this behavior:
+
+**Inherit from Parent (Default)**
+```python
+Tool.from_tool(parent_tool, name="renamed_tool")
+```
+The transformed tool automatically uses the parent tool's output schema and structured output behavior.
+
+**Custom Output Schema**
+```python
+Tool.from_tool(parent_tool, output_schema={
+    "type": "object", 
+    "properties": {"status": {"type": "string"}}
+})
+```
+Provide your own schema that differs from the parent. The tool must return data matching this schema.
+
+**Remove Output Schema**
+```python
+Tool.from_tool(parent_tool, output_schema=False)
+```
+Removes the output schema declaration. Automatic structured content still works for object-like returns (dict, dataclass, Pydantic models) but primitive types won't be structured.
+
+**Full Control with Transform Functions**
+```python
+async def custom_output(**kwargs) -> ToolResult:
+    result = await forward(**kwargs)
+    return ToolResult(content=[...], structured_content={...})
+
+Tool.from_tool(parent_tool, transform_fn=custom_output)
+```
+Use a transform function returning `ToolResult` for complete control over both content blocks and structured outputs.
 
 ## Common Patterns
 

@@ -8,7 +8,6 @@ from mcp.shared.exceptions import McpError
 from mcp.types import (
     METHOD_NOT_FOUND,
     BlobResourceContents,
-    ContentBlock,
     GetPromptResult,
     TextResourceContents,
 )
@@ -23,7 +22,7 @@ from fastmcp.resources import Resource, ResourceTemplate
 from fastmcp.resources.resource_manager import ResourceManager
 from fastmcp.server.context import Context
 from fastmcp.server.server import FastMCP
-from fastmcp.tools.tool import Tool
+from fastmcp.tools.tool import Tool, ToolResult
 from fastmcp.tools.tool_manager import ToolManager
 from fastmcp.utilities.logging import get_logger
 
@@ -67,9 +66,7 @@ class ProxyToolManager(ToolManager):
         tools_dict = await self.get_tools()
         return list(tools_dict.values())
 
-    async def call_tool(
-        self, key: str, arguments: dict[str, Any]
-    ) -> list[ContentBlock]:
+    async def call_tool(self, key: str, arguments: dict[str, Any]) -> ToolResult:
         """Calls a tool, trying local/mounted first, then proxy if not found."""
         try:
             # First try local and mounted tools
@@ -77,7 +74,11 @@ class ProxyToolManager(ToolManager):
         except NotFoundError:
             # If not found locally, try proxy
             async with self.client:
-                return await self.client.call_tool(key, arguments)
+                result = await self.client.call_tool(key, arguments)
+                return ToolResult(
+                    content=result.content,
+                    structured_content=result.structured_content,
+                )
 
 
 class ProxyResourceManager(ResourceManager):
@@ -226,13 +227,14 @@ class ProxyTool(Tool):
             description=mcp_tool.description,
             parameters=mcp_tool.inputSchema,
             annotations=mcp_tool.annotations,
+            output_schema=mcp_tool.outputSchema,
         )
 
     async def run(
         self,
         arguments: dict[str, Any],
         context: Context | None = None,
-    ) -> list[ContentBlock]:
+    ) -> ToolResult:
         """Executes the tool by making a call through the client."""
         # This is where the remote execution logic lives.
         async with self._client:
@@ -242,7 +244,10 @@ class ProxyTool(Tool):
             )
         if result.isError:
             raise ToolError(cast(mcp.types.TextContent, result.content[0]).text)
-        return result.content
+        return ToolResult(
+            content=result.content,
+            structured_content=result.structuredContent,
+        )
 
 
 class ProxyResource(Resource):

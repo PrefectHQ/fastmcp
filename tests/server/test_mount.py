@@ -33,7 +33,7 @@ class TestBasicMount:
 
         async with Client(main_app) as client:
             result = await client.call_tool("sub_sub_tool", {})
-            assert result[0].text == "This is from the sub app"  # type: ignore[attr-defined]
+            assert result.data == "This is from the sub app"
 
     async def test_mount_with_custom_separator(self):
         """Test mounting with a custom tool separator (deprecated but still supported)."""
@@ -52,8 +52,9 @@ class TestBasicMount:
         assert "sub_greet" in tools
 
         # Call the tool
-        result = await main_app._mcp_call_tool("sub_greet", {"name": "World"})
-        assert result[0].text == "Hello, World!"  # type: ignore[attr-defined]
+        async with Client(main_app) as client:
+            result = await client.call_tool("sub_greet", {"name": "World"})
+            assert result.data == "Hello, World!"
 
     async def test_mount_invalid_resource_prefix(self):
         main_app = FastMCP("MainApp")
@@ -104,8 +105,9 @@ class TestBasicMount:
         assert "sub_tool" in tools
 
         # Call the tool to verify it works
-        result = await main_app._mcp_call_tool("sub_tool", {})
-        assert result[0].text == "This is from the sub app"  # type: ignore[attr-defined]
+        async with Client(main_app) as client:
+            result = await client.call_tool("sub_tool", {})
+            assert result.data == "This is from the sub app"
 
     async def test_mount_tools_no_prefix(self):
         """Test mounting a server with tools without prefix."""
@@ -124,8 +126,9 @@ class TestBasicMount:
         assert "sub_tool" in tools
 
         # Test actual functionality
-        tool_result = await main_app._mcp_call_tool("sub_tool", {})
-        assert tool_result[0].text == "Sub tool result"  # type: ignore[attr-defined]
+        async with Client(main_app) as client:
+            tool_result = await client.call_tool("sub_tool", {})
+            assert tool_result.data == "Sub tool result"
 
     async def test_mount_resources_no_prefix(self):
         """Test mounting a server with resources without prefix."""
@@ -144,8 +147,9 @@ class TestBasicMount:
         assert "data://config" in resources
 
         # Test actual functionality
-        resource_result = await main_app._mcp_read_resource("data://config")
-        assert resource_result[0].content == "Sub resource data"  # type: ignore[attr-defined]
+        async with Client(main_app) as client:
+            resource_result = await client.read_resource("data://config")
+            assert resource_result[0].text == "Sub resource data"  # type: ignore[attr-defined]
 
     async def test_mount_resource_templates_no_prefix(self):
         """Test mounting a server with resource templates without prefix."""
@@ -164,8 +168,9 @@ class TestBasicMount:
         assert "users://{user_id}/info" in templates
 
         # Test actual functionality
-        template_result = await main_app._mcp_read_resource("users://123/info")
-        assert template_result[0].content == "Sub template for user 123"  # type: ignore[attr-defined]
+        async with Client(main_app) as client:
+            template_result = await client.read_resource("users://123/info")
+            assert template_result[0].text == "Sub template for user 123"  # type: ignore[attr-defined]
 
     async def test_mount_prompts_no_prefix(self):
         """Test mounting a server with prompts without prefix."""
@@ -184,8 +189,9 @@ class TestBasicMount:
         assert "sub_prompt" in prompts
 
         # Test actual functionality
-        prompt_result = await main_app._mcp_get_prompt("sub_prompt", {})
-        assert prompt_result.messages is not None
+        async with Client(main_app) as client:
+            prompt_result = await client.get_prompt("sub_prompt", {})
+            assert prompt_result.messages is not None
 
 
 class TestMultipleServerMount:
@@ -215,11 +221,11 @@ class TestMultipleServerMount:
         assert "news_get_headlines" in tools
 
         # Call tools from both mounted servers
-        result1 = await main_app._mcp_call_tool("weather_get_forecast", {})
-        assert result1[0].text == "Weather forecast"  # type: ignore[attr-defined]
-
-        result2 = await main_app._mcp_call_tool("news_get_headlines", {})
-        assert result2[0].text == "News headlines"  # type: ignore[attr-defined]
+        async with Client(main_app) as client:
+            result1 = await client.call_tool("weather_get_forecast", {})
+            assert result1.data == "Weather forecast"
+            result2 = await client.call_tool("news_get_headlines", {})
+            assert result2.data == "News headlines"
 
     async def test_mount_same_prefix(self):
         """Test that mounting with the same prefix replaces the previous mount."""
@@ -292,7 +298,7 @@ class TestMultipleServerMount:
 
             # Test calling a tool
             result = await client.call_tool("working_working_tool", {})
-            assert result[0].text == "Working tool"  # type: ignore[attr-defined]
+            assert result.data == "Working tool"
 
             # Test resources
             resources = await client.list_resources()
@@ -352,7 +358,7 @@ class TestPrefixConflictResolution:
 
             # Test that calling the tool uses the later server's implementation
             result = await client.call_tool("shared_tool", {})
-            assert result[0].text == "Second app tool"  # type: ignore[attr-defined]
+            assert result.data == "Second app tool"
 
     async def test_later_server_wins_tools_same_prefix(self):
         """Test that later mounted server wins for tools when same prefix is used."""
@@ -381,7 +387,7 @@ class TestPrefixConflictResolution:
 
             # Test that calling the tool uses the later server's implementation
             result = await client.call_tool("api_shared_tool", {})
-            assert result[0].text == "Second app tool"  # type: ignore[attr-defined]
+            assert result.data == "Second app tool"
 
     async def test_later_server_wins_resources_no_prefix(self):
         """Test that later mounted server wins for resources when no prefix is used."""
@@ -593,8 +599,9 @@ class TestDynamicChanges:
         assert "sub_dynamic_tool" in tools
 
         # Call the dynamically added tool
-        result = await main_app._mcp_call_tool("sub_dynamic_tool", {})
-        assert result[0].text == "Added after mounting"  # type: ignore[attr-defined]
+        async with Client(main_app) as client:
+            result = await client.call_tool("sub_dynamic_tool", {})
+            assert result.data == "Added after mounting"
 
     async def test_removing_tool_after_mounting(self):
         """Test that tools removed from mounted servers are no longer accessible."""
@@ -726,8 +733,9 @@ class TestPrompts:
         assert "assistant_greeting" in prompts
 
         # Render the prompt
-        result = await main_app._mcp_get_prompt("assistant_greeting", {"name": "World"})
-        assert result.messages is not None
+        async with Client(main_app) as client:
+            result = await client.get_prompt("assistant_greeting", {"name": "World"})
+            assert result.messages is not None
         # The message should contain our greeting text
 
     async def test_adding_prompt_after_mounting(self):
@@ -748,8 +756,9 @@ class TestPrompts:
         assert "assistant_farewell" in prompts
 
         # Render the prompt
-        result = await main_app._mcp_get_prompt("assistant_farewell", {"name": "World"})
-        assert result.messages is not None
+        async with Client(main_app) as client:
+            result = await client.get_prompt("assistant_farewell", {"name": "World"})
+            assert result.messages is not None
         # The message should contain our farewell text
 
 
@@ -779,8 +788,9 @@ class TestProxyServer:
         assert "proxy_get_data" in tools
 
         # Call the tool
-        result = await main_app._mcp_call_tool("proxy_get_data", {"query": "test"})
-        assert result[0].text == "Data for test"  # type: ignore[attr-defined]
+        async with Client(main_app) as client:
+            result = await client.call_tool("proxy_get_data", {"query": "test"})
+            assert result.data == "Data for test"
 
     async def test_dynamically_adding_to_proxied_server(self):
         """Test that changes to the original server are reflected in the mounted proxy."""
@@ -806,8 +816,9 @@ class TestProxyServer:
         assert "proxy_dynamic_data" in tools
 
         # Call the tool
-        result = await main_app._mcp_call_tool("proxy_dynamic_data", {})
-        assert result[0].text == "Dynamic data"  # type: ignore[attr-defined]
+        async with Client(main_app) as client:
+            result = await client.call_tool("proxy_dynamic_data", {})
+            assert result.data == "Dynamic data"
 
     async def test_proxy_server_with_resources(self):
         """Test mounting a proxy server with resources."""
@@ -828,9 +839,10 @@ class TestProxyServer:
         main_app.mount(proxy_server, "proxy")
 
         # Resource should be accessible through main app
-        result = await main_app._mcp_read_resource("config://proxy/settings")
-        config = json.loads(result[0].content)  # type: ignore[attr-defined]
-        assert config["api_key"] == "12345"
+        async with Client(main_app) as client:
+            result = await client.read_resource("config://proxy/settings")
+            config = json.loads(result[0].text)  # type: ignore[attr-defined]
+            assert config["api_key"] == "12345"
 
     async def test_proxy_server_with_prompts(self):
         """Test mounting a proxy server with prompts."""
@@ -851,8 +863,9 @@ class TestProxyServer:
         main_app.mount(proxy_server, "proxy")
 
         # Prompt should be accessible through main app
-        result = await main_app._mcp_get_prompt("proxy_welcome", {"name": "World"})
-        assert result.messages is not None
+        async with Client(main_app) as client:
+            result = await client.get_prompt("proxy_welcome", {"name": "World"})
+            assert result.messages is not None
         # The message should contain our welcome text
 
 

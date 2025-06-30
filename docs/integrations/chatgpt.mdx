@@ -13,7 +13,7 @@ MCP integration with ChatGPT is currently limited to **Deep Research** functiona
 </Note>
 
 <Tip>
-OpenAI's official MCP documentation and examples are built with **FastMCP v2**! Check out their [sample MCP server](https://github.com/openai/mcp-server-sample) which demonstrates FastMCP in action.
+OpenAI's official MCP documentation and examples are built with **FastMCP v2**! Check out their [sample Deep Research style MCP server](https://github.com/openai/sample-deep-research-mcp) which demonstrates FastMCP in action.
 </Tip>
 
 ## Deep Research
@@ -42,7 +42,7 @@ A Deep Research-compatible server must implement these two required tools:
 
 The `search` tool should take a query (of any kind!) and return IDs. The `fetch` tool should take an ID and return the record.
 
-Here's a reference server implementation you can adapt (see also [OpenAI's sample server](https://github.com/openai/mcp-server-sample) for comparison):
+Here's a reference server implementation you can adapt (see also [OpenAI's sample server](https://github.com/openai/sample-deep-research-mcp) for comparison):
 
 ```python server.py [expandable]
 import json

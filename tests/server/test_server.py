@@ -45,9 +45,7 @@ class TestCreateServer:
             assert "🎉" in tool.description
 
             result = await client.call_tool("hello_world", {})
-            assert len(result) == 1
-            content = result[0]
-            assert content.text == "¡Hola, 世界! 👋"  # type: ignore[attr-defined]
+            assert result.data == "¡Hola, 世界! 👋"
 
 
 class TestTools:
@@ -129,8 +127,9 @@ class TestToolDecorator:
         def add(x: int, y: int) -> int:
             return x + y
 
-        result = await mcp._mcp_call_tool("add", {"x": 1, "y": 2})
-        assert result[0].text == "3"  # type: ignore[attr-defined]
+        async with Client(mcp) as client:
+            result = await client.call_tool("add", {"x": 1, "y": 2})
+            assert result.data == 3
 
     async def test_tool_decorator_without_parentheses(self):
         """Test that @tool decorator works without parentheses."""
@@ -146,8 +145,9 @@ class TestToolDecorator:
         assert "add" in tools
 
         # Verify it can be called
-        result = await mcp._mcp_call_tool("add", {"x": 1, "y": 2})
-        assert result[0].text == "3"  # type: ignore[attr-defined]
+        async with Client(mcp) as client:
+            result = await client.call_tool("add", {"x": 1, "y": 2})
+            assert result.data == 3
 
     async def test_tool_decorator_with_name(self):
         mcp = FastMCP()
@@ -156,8 +156,9 @@ class TestToolDecorator:
         def add(x: int, y: int) -> int:
             return x + y
 
-        result = await mcp._mcp_call_tool("custom-add", {"x": 1, "y": 2})
-        assert result[0].text == "3"  # type: ignore[attr-defined]
+        async with Client(mcp) as client:
+            result = await client.call_tool("custom-add", {"x": 1, "y": 2})
+            assert result.data == 3
 
     async def test_tool_decorator_with_description(self):
         mcp = FastMCP()
@@ -183,8 +184,9 @@ class TestToolDecorator:
 
         obj = MyClass(10)
         mcp.add_tool(Tool.from_function(obj.add))
-        result = await mcp._mcp_call_tool("add", {"y": 2})
-        assert result[0].text == "12"  # type: ignore[attr-defined]
+        async with Client(mcp) as client:
+            result = await client.call_tool("add", {"y": 2})
+            assert result.data == 12
 
     async def test_tool_decorator_classmethod(self):
         mcp = FastMCP()
@@ -197,8 +199,9 @@ class TestToolDecorator:
                 return cls.x + y
 
         mcp.add_tool(Tool.from_function(MyClass.add))
-        result = await mcp._mcp_call_tool("add", {"y": 2})
-        assert result[0].text == "12"  # type: ignore[attr-defined]
+        async with Client(mcp) as client:
+            result = await client.call_tool("add", {"y": 2})
+            assert result.data == 12
 
     async def test_tool_decorator_staticmethod(self):
         mcp = FastMCP()
@@ -209,8 +212,9 @@ class TestToolDecorator:
             def add(x: int, y: int) -> int:
                 return x + y
 
-        result = await mcp._mcp_call_tool("add", {"x": 1, "y": 2})
-        assert result[0].text == "3"  # type: ignore[attr-defined]
+        async with Client(mcp) as client:
+            result = await client.call_tool("add", {"x": 1, "y": 2})
+            assert result.data == 3
 
     async def test_tool_decorator_async_function(self):
         mcp = FastMCP()
@@ -219,8 +223,9 @@ class TestToolDecorator:
         async def add(x: int, y: int) -> int:
             return x + y
 
-        result = await mcp._mcp_call_tool("add", {"x": 1, "y": 2})
-        assert result[0].text == "3"  # type: ignore[attr-defined]
+        async with Client(mcp) as client:
+            result = await client.call_tool("add", {"x": 1, "y": 2})
+            assert result.data == 3
 
     async def test_tool_decorator_classmethod_error(self):
         mcp = FastMCP()
@@ -244,8 +249,9 @@ class TestToolDecorator:
                 return cls.x + y
 
         mcp.add_tool(Tool.from_function(MyClass.add))
-        result = await mcp._mcp_call_tool("add", {"y": 2})
-        assert result[0].text == "12"  # type: ignore[attr-defined]
+        async with Client(mcp) as client:
+            result = await client.call_tool("add", {"y": 2})
+            assert result.data == 12
 
     async def test_tool_decorator_staticmethod_async_function(self):
         mcp = FastMCP()
@@ -256,8 +262,9 @@ class TestToolDecorator:
                 return x + y
 
         mcp.add_tool(Tool.from_function(MyClass.add))
-        result = await mcp._mcp_call_tool("add", {"x": 1, "y": 2})
-        assert result[0].text == "3"  # type: ignore[attr-defined]
+        async with Client(mcp) as client:
+            result = await client.call_tool("add", {"x": 1, "y": 2})
+            assert result.data == 3
 
     async def test_tool_decorator_staticmethod_order(self):
         """Test that the recommended decorator order works for static methods"""
@@ -270,8 +277,9 @@ class TestToolDecorator:
                 return x + y
 
         # Test that the recommended order works
-        result = await mcp._mcp_call_tool("add_v1", {"x": 1, "y": 2})
-        assert result[0].text == "3"  # type: ignore[attr-defined]
+        async with Client(mcp) as client:
+            result = await client.call_tool("add_v1", {"x": 1, "y": 2})
+            assert result.data == 3
 
     async def test_tool_decorator_with_tags(self):
         """Test that the tool decorator properly sets tags."""
@@ -301,8 +309,9 @@ class TestToolDecorator:
         assert "custom_multiply" in tools
 
         # Call the tool by its custom name
-        result = await mcp._mcp_call_tool("custom_multiply", {"a": 5, "b": 3})
-        assert result[0].text == "15"  # type: ignore[attr-defined]
+        async with Client(mcp) as client:
+            result = await client.call_tool("custom_multiply", {"a": 5, "b": 3})
+            assert result.data == 15
 
         # Original name should not be registered
         assert "multiply" not in tools
@@ -356,8 +365,9 @@ class TestToolDecorator:
         assert tools["direct_call_tool"] is result_fn
 
         # Verify it can be called
-        result = await mcp._mcp_call_tool("direct_call_tool", {"x": 5, "y": 3})
-        assert result[0].text == "8"  # type: ignore[attr-defined]
+        async with Client(mcp) as client:
+            result = await client.call_tool("direct_call_tool", {"x": 5, "y": 3})
+            assert result.data == 8
 
     async def test_tool_decorator_with_string_name(self):
         """Test that @tool("custom_name") syntax works correctly."""
@@ -374,8 +384,9 @@ class TestToolDecorator:
         assert "my_function" not in tools  # Original name should not be registered
 
         # Verify it can be called
-        result = await mcp._mcp_call_tool("string_named_tool", {"x": 42})
-        assert result[0].text == "Result: 42"  # type: ignore[attr-defined]
+        async with Client(mcp) as client:
+            result = await client.call_tool("string_named_tool", {"x": 42})
+            assert result.data == "Result: 42"
 
     async def test_tool_decorator_conflicting_names_error(self):
         """Test that providing both positional and keyword name raises an error."""
@@ -387,6 +398,17 @@ class TestToolDecorator:
         ):
 
             @mcp.tool("positional_name", name="keyword_name")
+            def my_function(x: int) -> str:
+                return f"Result: {x}"
+
+    async def test_tool_decorator_with_output_schema(self):
+        mcp = FastMCP()
+
+        with pytest.raises(
+            ValueError, match='Output schemas must have "type" set to "object"'
+        ):
+
+            @mcp.tool(output_schema={"type": "integer"})
             def my_function(x: int) -> str:
                 return f"Result: {x}"
 

@@ -99,6 +99,7 @@ class Prompt(FastMCPComponent, ABC):
             "name": self.name,
             "description": self.description,
             "arguments": arguments,
+            "title": self.title,
         }
         return MCPPrompt(**kwargs | overrides)
 
@@ -106,6 +107,7 @@ class Prompt(FastMCPComponent, ABC):
     def from_function(
         fn: Callable[..., PromptResult | Awaitable[PromptResult]],
         name: str | None = None,
+        title: str | None = None,
         description: str | None = None,
         tags: set[str] | None = None,
         enabled: bool | None = None,
@@ -119,7 +121,12 @@ class Prompt(FastMCPComponent, ABC):
         - A sequence of any of the above
         """
         return FunctionPrompt.from_function(
-            fn=fn, name=name, description=description, tags=tags, enabled=enabled
+            fn=fn,
+            name=name,
+            title=title,
+            description=description,
+            tags=tags,
+            enabled=enabled,
         )
 
     @abstractmethod
@@ -141,6 +148,7 @@ class FunctionPrompt(Prompt):
         cls,
         fn: Callable[..., PromptResult | Awaitable[PromptResult]],
         name: str | None = None,
+        title: str | None = None,
         description: str | None = None,
         tags: set[str] | None = None,
         enabled: bool | None = None,
@@ -232,6 +240,7 @@ class FunctionPrompt(Prompt):
 
         return cls(
             name=func_name,
+            title=title,
             description=description,
             arguments=arguments,
             tags=tags or set(),

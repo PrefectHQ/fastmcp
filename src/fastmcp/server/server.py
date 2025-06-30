@@ -58,11 +58,12 @@ from fastmcp.server.low_level import LowLevelServer
 from fastmcp.server.middleware import Middleware, MiddlewareContext
 from fastmcp.settings import Settings
 from fastmcp.tools import ToolManager
-from fastmcp.tools.tool import FunctionTool, Tool
+from fastmcp.tools.tool import FunctionTool, Tool, ToolResult
 from fastmcp.utilities.cache import TimedCache
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.mcp_config import MCPConfig
+from fastmcp.utilities.types import NotSet, NotSetT
 
 if TYPE_CHECKING:
     from fastmcp.client import Client
@@ -592,7 +593,7 @@ class FastMCP(Generic[LifespanResultT]):
 
     async def _mcp_call_tool(
         self, key: str, arguments: dict[str, Any]
-    ) -> list[ContentBlock]:
+    ) -> list[ContentBlock] | tuple[list[ContentBlock], dict[str, Any]]:
         """
         Handle MCP 'callTool' requests.
 
@@ -609,22 +610,21 @@ class FastMCP(Generic[LifespanResultT]):
 
         async with fastmcp.server.context.Context(fastmcp=self):
             try:
-                return await self._call_tool(key, arguments)
+                result = await self._call_tool(key, arguments)
+                return result.to_mcp_result()
             except DisabledError:
                 raise NotFoundError(f"Unknown tool: {key}")
             except NotFoundError:
                 raise NotFoundError(f"Unknown tool: {key}")
 
-    async def _call_tool(
-        self, key: str, arguments: dict[str, Any]
-    ) -> list[ContentBlock]:
+    async def _call_tool(self, key: str, arguments: dict[str, Any]) -> ToolResult:
         """
         Applies this server's middleware and delegates the filtered call to the manager.
         """
 
         async def _handler(
             context: MiddlewareContext[mcp.types.CallToolRequestParams],
-        ) -> list[ContentBlock]:
+        ) -> ToolResult:
             tool = await self._tool_manager.get_tool(context.message.name)
             if not self._should_enable_component(tool):
                 raise NotFoundError(f"Unknown tool: {context.message.name!r}")
@@ -790,8 +790,10 @@ class FastMCP(Generic[LifespanResultT]):
         name_or_fn: AnyFunction,
         *,
         name: str | None = None,
+        title: str | None = None,
         description: str | None = None,
         tags: set[str] | None = None,
+        output_schema: dict[str, Any] | None | NotSetT = NotSet,
         annotations: ToolAnnotations | dict[str, Any] | None = None,
         exclude_args: list[str] | None = None,
         enabled: bool | None = None,
@@ -803,8 +805,10 @@ class FastMCP(Generic[LifespanResultT]):
         name_or_fn: str | None = None,
         *,
         name: str | None = None,
+        title: str | None = None,
         description: str | None = None,
         tags: set[str] | None = None,
+        output_schema: dict[str, Any] | None | NotSetT = NotSet,
         annotations: ToolAnnotations | dict[str, Any] | None = None,
         exclude_args: list[str] | None = None,
         enabled: bool | None = None,
@@ -815,8 +819,10 @@ class FastMCP(Generic[LifespanResultT]):
         name_or_fn: str | AnyFunction | None = None,
         *,
         name: str | None = None,
+        title: str | None = None,
         description: str | None = None,
         tags: set[str] | None = None,
+        output_schema: dict[str, Any] | None | NotSetT = NotSet,
         annotations: ToolAnnotations | dict[str, Any] | None = None,
         exclude_args: list[str] | None = None,
         enabled: bool | None = None,
@@ -839,6 +845,7 @@ class FastMCP(Generic[LifespanResultT]):
             name: Optional name for the tool (keyword-only, alternative to name_or_fn)
             description: Optional description of what the tool does
             tags: Optional set of tags for categorizing the tool
+            output_schema: Optional JSON schema for the tool's output
             annotations: Optional annotations about the tool's behavior
             exclude_args: Optional list of argument names to exclude from the tool schema
             enabled: Optional boolean to enable or disable the tool
@@ -893,8 +900,10 @@ class FastMCP(Generic[LifespanResultT]):
             tool = Tool.from_function(
                 fn,
                 name=tool_name,
+                title=title,
                 description=description,
                 tags=tags,
+                output_schema=output_schema,
                 annotations=annotations,
                 exclude_args=exclude_args,
                 serializer=self._tool_serializer,
@@ -923,8 +932,10 @@ class FastMCP(Generic[LifespanResultT]):
         return partial(
             self.tool,
             name=tool_name,
+            title=title,
             description=description,
             tags=tags,
+            output_schema=output_schema,
             annotations=annotations,
             exclude_args=exclude_args,
             enabled=enabled,
@@ -1010,6 +1021,7 @@ class FastMCP(Generic[LifespanResultT]):
         uri: str,
         *,
         name: str | None = None,
+        title: str | None = None,
         description: str | None = None,
         mime_type: str | None = None,
         tags: set[str] | None = None,
@@ -1101,6 +1113,7 @@ class FastMCP(Generic[LifespanResultT]):
                     fn=fn,
                     uri_template=uri,
                     name=name,
+                    title=title,
                     description=description,
                     mime_type=mime_type,
                     tags=tags,
@@ -1113,6 +1126,7 @@ class FastMCP(Generic[LifespanResultT]):
                     fn=fn,
                     uri=uri,
                     name=name,
+                    title=title,
                     description=description,
                     mime_type=mime_type,
                     tags=tags,
@@ -1152,6 +1166,7 @@ class FastMCP(Generic[LifespanResultT]):
         name_or_fn: AnyFunction,
         *,
         name: str | None = None,
+        title: str | None = None,
         description: str | None = None,
         tags: set[str] | None = None,
         enabled: bool | None = None,
@@ -1163,6 +1178,7 @@ class FastMCP(Generic[LifespanResultT]):
         name_or_fn: str | None = None,
         *,
         name: str | None = None,
+        title: str | None = None,
         description: str | None = None,
         tags: set[str] | None = None,
         enabled: bool | None = None,
@@ -1173,6 +1189,7 @@ class FastMCP(Generic[LifespanResultT]):
         name_or_fn: str | AnyFunction | None = None,
         *,
         name: str | None = None,
+        title: str | None = None,
         description: str | None = None,
         tags: set[str] | None = None,
         enabled: bool | None = None,
@@ -1269,6 +1286,7 @@ class FastMCP(Generic[LifespanResultT]):
             prompt = Prompt.from_function(
                 fn=fn,
                 name=prompt_name,
+                title=title,
                 description=description,
                 tags=tags,
                 enabled=enabled,
@@ -1297,6 +1315,7 @@ class FastMCP(Generic[LifespanResultT]):
         return partial(
             self.prompt,
             name=prompt_name,
+            title=title,
             description=description,
             tags=tags,
             enabled=enabled,

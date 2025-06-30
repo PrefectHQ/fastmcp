@@ -89,15 +89,17 @@ async def test_create_proxy(fastmcp_server):
 async def test_as_proxy_with_server(fastmcp_server):
     """FastMCP.as_proxy should accept a FastMCP instance."""
     proxy = FastMCP.as_proxy(fastmcp_server)
-    result = await proxy._mcp_call_tool("greet", {"name": "Test"})
-    assert result[0].text == "Hello, Test!"  # type: ignore[attr-defined]
+    async with Client(proxy) as client:
+        result = await client.call_tool("greet", {"name": "Test"})
+        assert result.data == "Hello, Test!"
 
 
 async def test_as_proxy_with_transport(fastmcp_server):
     """FastMCP.as_proxy should accept a ClientTransport."""
     proxy = FastMCP.as_proxy(FastMCPTransport(fastmcp_server))
-    result = await proxy._mcp_call_tool("greet", {"name": "Test"})
-    assert result[0].text == "Hello, Test!"  # type: ignore[attr-defined]
+    async with Client(proxy) as client:
+        result = await client.call_tool("greet", {"name": "Test"})
+        assert result.data == "Hello, Test!"
 
 
 def test_as_proxy_with_url():
@@ -137,7 +139,7 @@ class TestTools:
     async def test_call_tool_calls_tool(self, proxy_server):
         async with Client(proxy_server) as client:
             proxy_result = await client.call_tool("add", {"a": 1, "b": 2})
-        assert proxy_result[0].text == "3"  # type: ignore[attr-defined]
+        assert proxy_result.data == 3
 
     async def test_error_tool_raises_error(self, proxy_server):
         with pytest.raises(ToolError, match="This is a test error"):
@@ -155,7 +157,7 @@ class TestTools:
 
         async with Client(proxy_server) as client:
             result = await client.call_tool("greet", {"name": "Marvin", "extra": "abc"})
-        assert result[0].text == "Overwritten, Marvin! abc"  # type: ignore[attr-defined]
+        assert result.data == "Overwritten, Marvin! abc"
 
     async def test_proxy_errors_if_overwritten_tool_is_disabled(self, proxy_server):
         """

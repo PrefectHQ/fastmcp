@@ -62,9 +62,10 @@ class Resource(FastMCPComponent, abc.ABC):
 
     @staticmethod
     def from_function(
-        fn: Callable[[], Any],
+        fn: Callable[..., Any],
         uri: str | AnyUrl,
         name: str | None = None,
+        title: str | None = None,
         description: str | None = None,
         mime_type: str | None = None,
         tags: set[str] | None = None,
@@ -74,6 +75,7 @@ class Resource(FastMCPComponent, abc.ABC):
             fn=fn,
             uri=uri,
             name=name,
+            title=title,
             description=description,
             mime_type=mime_type,
             tags=tags,
@@ -111,6 +113,7 @@ class Resource(FastMCPComponent, abc.ABC):
             "name": self.name,
             "description": self.description,
             "mimeType": self.mime_type,
+            "title": self.title,
         }
         return MCPResource(**kwargs | overrides)
 
@@ -141,14 +144,15 @@ class FunctionResource(Resource):
     - other types will be converted to JSON
     """
 
-    fn: Callable[[], Any]
+    fn: Callable[..., Any]
 
     @classmethod
     def from_function(
         cls,
-        fn: Callable[[], Any],
+        fn: Callable[..., Any],
         uri: str | AnyUrl,
         name: str | None = None,
+        title: str | None = None,
         description: str | None = None,
         mime_type: str | None = None,
         tags: set[str] | None = None,
@@ -161,6 +165,7 @@ class FunctionResource(Resource):
             fn=fn,
             uri=uri,
             name=name or fn.__name__,
+            title=title,
             description=description or inspect.getdoc(fn),
             mime_type=mime_type or "text/plain",
             tags=tags or set(),

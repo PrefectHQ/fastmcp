@@ -9,13 +9,18 @@ import warnings
 from collections.abc import AsyncIterator, Callable
 from pathlib import Path
 from typing import Any, Literal, TypeVar, cast, overload
-from urllib.parse import urlparse, urlunparse
 
 import anyio
 import httpx
 import mcp.types
 from mcp import ClientSession, StdioServerParameters
-from mcp.client.session import ListRootsFnT, LoggingFnT, MessageHandlerFnT, SamplingFnT
+from mcp.client.session import (
+    ElicitationFnT,
+    ListRootsFnT,
+    LoggingFnT,
+    MessageHandlerFnT,
+    SamplingFnT,
+)
 from mcp.server.fastmcp import FastMCP as FastMCP1Server
 from mcp.shared.memory import create_client_server_memory_streams
 from pydantic import AnyUrl
@@ -56,6 +61,7 @@ class SessionKwargs(TypedDict, total=False):
     sampling_callback: SamplingFnT | None
     list_roots_callback: ListRootsFnT | None
     logging_callback: LoggingFnT | None
+    elicitation_callback: ElicitationFnT | None
     message_handler: MessageHandlerFnT | None
     client_info: mcp.types.Implementation | None
 
@@ -161,11 +167,8 @@ class SSETransport(ClientTransport):
         if not isinstance(url, str) or not url.startswith("http"):
             raise ValueError("Invalid HTTP/S URL provided for SSE.")
 
-        # Ensure the URL path ends with a trailing slash to avoid automatic redirects
-        parsed = urlparse(url)
-        if not parsed.path.endswith("/"):
-            parsed = parsed._replace(path=parsed.path + "/")
-            url = urlunparse(parsed)
+        # Don't modify the URL path - respect the exact URL provided by the user
+        # Some servers are strict about trailing slashes (e.g., PayPal MCP)
 
         self.url = url
         self.headers = headers or {}
@@ -236,11 +239,8 @@ class StreamableHttpTransport(ClientTransport):
         if not isinstance(url, str) or not url.startswith("http"):
             raise ValueError("Invalid HTTP/S URL provided for Streamable HTTP.")
 
-        # Ensure the URL path ends with a trailing slash to avoid automatic redirects
-        parsed = urlparse(url)
-        if not parsed.path.endswith("/"):
-            parsed = parsed._replace(path=parsed.path + "/")
-            url = urlunparse(parsed)
+        # Don't modify the URL path - respect the exact URL provided by the user
+        # Some servers are strict about trailing slashes (e.g., PayPal MCP)
 
         self.url = url
         self.headers = headers or {}
@@ -361,33 +361,47 @@ class StdioTransport(ClientTransport):
         async def _connect_task():
             from mcp.client.stdio import stdio_client
 
-            async with contextlib.AsyncExitStack() as stack:
-                try:
-                    server_params = StdioServerParameters(
-                        command=self.command, args=self.args, env=self.env, cwd=self.cwd
-                    )
-                    transport = await stack.enter_async_context(
-                        stdio_client(server_params)
-                    )
-                    read_stream, write_stream = transport
-                    self._session = await stack.enter_async_context(
-                        ClientSession(read_stream, write_stream, **session_kwargs)
-                    )
+            try:
+                async with contextlib.AsyncExitStack() as stack:
+                    try:
+                        server_params = StdioServerParameters(
+                            command=self.command,
+                            args=self.args,
+                            env=self.env,
+                            cwd=self.cwd,
+                        )
+                        transport = await stack.enter_async_context(
+                            stdio_client(server_params)
+                        )
+                        read_stream, write_stream = transport
+                        self._session = await stack.enter_async_context(
+                            ClientSession(read_stream, write_stream, **session_kwargs)
+                        )
 
-                    logger.debug("Stdio transport connected")
-                    self._ready_event.set()
+                        logger.debug("Stdio transport connected")
+                        self._ready_event.set()
 
-                    # Wait until disconnect is requested (stop_event is set)
-                    await self._stop_event.wait()
-                finally:
-                    # Clean up client on exit
-                    self._session = None
-                    logger.debug("Stdio transport disconnected")
+                        # Wait until disconnect is requested (stop_event is set)
+                        await self._stop_event.wait()
+                    finally:
+                        # Clean up client on exit
+                        self._session = None
+                        logger.debug("Stdio transport disconnected")
+            except Exception:
+                # Ensure ready event is set even if connection fails
+                self._ready_event.set()
+                raise
 
         # start the connection task
         self._connect_task = asyncio.create_task(_connect_task())
         # wait for the client to be ready before returning
         await self._ready_event.wait()
+
+        # Check if connect task completed with an exception (early failure)
+        if self._connect_task.done():
+            exception = self._connect_task.exception()
+            if exception is not None:
+                raise exception
 
     async def disconnect(self):
         if self._connect_task is None:

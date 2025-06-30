@@ -47,8 +47,7 @@ async def test_simple_sampling(fastmcp_server: FastMCP):
 
     async with Client(fastmcp_server, sampling_handler=sampling_handler) as client:
         result = await client.call_tool("simple_sample", {"message": "Hello, world!"})
-        reply = cast(TextContent, result[0])
-        assert reply.text == "This is the sample message!"
+        assert result.data == "This is the sample message!"
 
 
 async def test_sampling_with_system_prompt(fastmcp_server: FastMCP):
@@ -62,8 +61,7 @@ async def test_sampling_with_system_prompt(fastmcp_server: FastMCP):
         result = await client.call_tool(
             "sample_with_system_prompt", {"message": "Hello, world!"}
         )
-        reply = cast(TextContent, result[0])
-        assert reply.text == "You love FastMCP"
+        assert result.data == "You love FastMCP"
 
 
 async def test_sampling_with_messages(fastmcp_server: FastMCP):
@@ -81,5 +79,4 @@ async def test_sampling_with_messages(fastmcp_server: FastMCP):
         result = await client.call_tool(
             "sample_with_messages", {"message": "Hello, world!"}
         )
-        reply = cast(TextContent, result[0])
-        assert reply.text == "I need to think."
+        assert result.data == "I need to think."

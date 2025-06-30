@@ -39,7 +39,7 @@ def test_parse_single_remote_config():
     mcp_config = MCPConfig.from_dict(config)
     transport = mcp_config.mcpServers["test_server"].to_transport()
     assert isinstance(transport, StreamableHttpTransport)
-    assert transport.url == "http://localhost:8000/"
+    assert transport.url == "http://localhost:8000"
 
 
 def test_parse_remote_config_with_transport():
@@ -54,7 +54,7 @@ def test_parse_remote_config_with_transport():
     mcp_config = MCPConfig.from_dict(config)
     transport = mcp_config.mcpServers["test_server"].to_transport()
     assert isinstance(transport, SSETransport)
-    assert transport.url == "http://localhost:8000/"
+    assert transport.url == "http://localhost:8000"
 
 
 def test_parse_remote_config_with_url_inference():
@@ -136,8 +136,8 @@ async def test_multi_client(tmp_path: Path):
 
         result_1 = await client.call_tool("test_1_add", {"a": 1, "b": 2})
         result_2 = await client.call_tool("test_2_add", {"a": 1, "b": 2})
-        assert result_1[0].text == "3"  # type: ignore[attr-dict]
-        assert result_2[0].text == "3"  # type: ignore[attr-dict]
+        assert result_1.data == 3
+        assert result_2.data == 3
 
 
 async def test_remote_config_default_no_auth():

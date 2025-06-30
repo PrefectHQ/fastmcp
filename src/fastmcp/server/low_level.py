@@ -4,12 +4,14 @@ from mcp.server.lowlevel.server import (
     LifespanResultT,
     NotificationOptions,
     RequestT,
-    Server,
+)
+from mcp.server.lowlevel.server import (
+    Server as _Server,
 )
 from mcp.server.models import InitializationOptions
 
 
-class LowLevelServer(Server[LifespanResultT, RequestT]):
+class LowLevelServer(_Server[LifespanResultT, RequestT]):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # FastMCP servers support notifications for all components

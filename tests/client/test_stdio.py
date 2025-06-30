@@ -48,11 +48,11 @@ class TestKeepAlive:
 
         async with client:
             result1 = await client.call_tool("pid")
-            pid1 = int(result1[0].text)  # type: ignore[attr-defined]
+            pid1: int = result1.data
 
         async with client:
             result2 = await client.call_tool("pid")
-            pid2 = int(result2[0].text)  # type: ignore[attr-defined]
+            pid2: int = result2.data
 
         assert pid1 == pid2
 
@@ -66,11 +66,11 @@ class TestKeepAlive:
 
         async with client:
             result1 = await client.call_tool("pid")
-            pid1 = int(result1[0].text)  # type: ignore[attr-defined]
+            pid1: int = result1.data
 
         async with client:
             result2 = await client.call_tool("pid")
-            pid2 = int(result2[0].text)  # type: ignore[attr-defined]
+            pid2: int = result2.data
 
         assert pid1 != pid2
 
@@ -80,13 +80,13 @@ class TestKeepAlive:
 
         async with client:
             result1 = await client.call_tool("pid")
-            pid1 = int(result1[0].text)  # type: ignore[attr-defined]
+            pid1: int = result1.data
 
         await client.close()
 
         async with client:
             result2 = await client.call_tool("pid")
-            pid2 = int(result2[0].text)  # type: ignore[attr-defined]
+            pid2: int = result2.data
 
         assert pid1 != pid2
 
@@ -96,14 +96,14 @@ class TestKeepAlive:
 
         async with client:
             result1 = await client.call_tool("pid")
-            pid1 = int(result1[0].text)  # type: ignore[attr-defined]
+            pid1: int = result1.data
 
             async with client:
                 result2 = await client.call_tool("pid")
-                pid2 = int(result2[0].text)  # type: ignore[attr-defined]
+                pid2: int = result2.data
 
             result3 = await client.call_tool("pid")
-            pid3 = int(result3[0].text)  # type: ignore[attr-defined]
+            pid3: int = result3.data
 
         assert pid1 == pid2 == pid3
 
@@ -115,3 +115,14 @@ class TestKeepAlive:
             await client.close()
             with pytest.raises(RuntimeError, match="Client is not connected"):
                 await client.call_tool("pid")
+
+    async def test_session_task_failure_raises_immediately_on_enter(self):
+        # Use a command that will fail to start
+        client = Client(
+            transport=StdioTransport(command="nonexistent_command", args=[])
+        )
+
+        # Should raise RuntimeError immediately, not defer until first use
+        with pytest.raises(RuntimeError, match="Client failed to connect"):
+            async with client:
+                pass
