@@ -1,6 +1,6 @@
 from dataclasses import asdict, dataclass
 from enum import Enum
-from typing import Any, Literal
+from typing import Literal
 
 import pytest
 from mcp.types import ElicitRequestParams
@@ -153,7 +153,7 @@ class TestScalarResponseTypes:
             message, response_type, params: ElicitRequestParams, ctx
         ):
             assert params.requestedSchema == {"type": "object", "properties": {}}
-            assert response_type == dict[str, Any]
+            assert response_type is None
             return ElicitResult(action="accept")
 
         async with Client(mcp, elicitation_handler=elicitation_handler) as client:
