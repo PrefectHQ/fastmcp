@@ -1063,7 +1063,9 @@ class TestTransformToolOutputSchema:
         # Should inherit parent's wrapped string schema
         expected_schema = {
             "type": "object",
-            "properties": {"result": {"type": "string"}},
+            "properties": {"result": {"type": "string", "title": "Result"}},
+            "required": ["result"],
+            "title": "_WrappedResult",
             "x-fastmcp-wrap-result": True,
         }
         assert new_tool.output_schema == expected_schema
@@ -1121,7 +1123,9 @@ class TestTransformToolOutputSchema:
         # Should infer string schema from custom function and wrap it
         expected_schema = {
             "type": "object",
-            "properties": {"result": {"type": "string"}},
+            "properties": {"result": {"type": "string", "title": "Result"}},
+            "required": ["result"],
+            "title": "_WrappedResult",
             "x-fastmcp-wrap-result": True,
         }
         assert new_tool.output_schema == expected_schema

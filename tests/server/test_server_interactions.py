@@ -27,6 +27,7 @@ from fastmcp.prompts.prompt import Prompt, PromptMessage
 from fastmcp.resources import FileResource, ResourceTemplate
 from fastmcp.resources.resource import FunctionResource
 from fastmcp.tools.tool import Tool, ToolResult
+from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.types import Audio, File, Image
 
 
@@ -894,7 +895,9 @@ class TestToolOutputSchema:
             # this line will fail until MCP adds output schemas!!
             assert tools[0].outputSchema == {
                 "type": "object",
-                "properties": {"result": type_schema},
+                "properties": {"result": {**type_schema, "title": "Result"}},
+                "required": ["result"],
+                "title": "_WrappedResult",
                 "x-fastmcp-wrap-result": True,
             }
 
@@ -912,7 +915,7 @@ class TestToolOutputSchema:
         async with Client(mcp) as client:
             tools = await client.list_tools()
 
-            type_schema = TypeAdapter(annotation).json_schema()
+            type_schema = compress_schema(TypeAdapter(annotation).json_schema())
             assert len(tools) == 1
             assert tools[0].outputSchema == type_schema
 
@@ -1020,7 +1023,9 @@ class TestToolOutputSchema:
             tool = next(t for t in tools if t.name == "primitive_tool")
             expected_schema = {
                 "type": "object",
-                "properties": {"result": {"type": "string"}},
+                "properties": {"result": {"type": "string", "title": "Result"}},
+                "required": ["result"],
+                "title": "_WrappedResult",
                 "x-fastmcp-wrap-result": True,
             }
             assert tool.outputSchema == expected_schema
@@ -1045,7 +1050,9 @@ class TestToolOutputSchema:
             expected_inner_schema = TypeAdapter(list[dict[str, int]]).json_schema()
             expected_schema = {
                 "type": "object",
-                "properties": {"result": expected_inner_schema},
+                "properties": {"result": {**expected_inner_schema, "title": "Result"}},
+                "required": ["result"],
+                "title": "_WrappedResult",
                 "x-fastmcp-wrap-result": True,
             }
             assert tool.outputSchema == expected_schema
@@ -1074,7 +1081,7 @@ class TestToolOutputSchema:
             # List tools and verify schema is object type (not wrapped)
             tools = await client.list_tools()
             tool = next(t for t in tools if t.name == "dataclass_tool")
-            expected_schema = TypeAdapter(User).json_schema()
+            expected_schema = compress_schema(TypeAdapter(User).json_schema())
             assert tool.outputSchema == expected_schema
             assert (
                 tool.outputSchema and "x-fastmcp-wrap-result" not in tool.outputSchema

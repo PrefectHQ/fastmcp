@@ -9,7 +9,7 @@ from typing import Any, Literal
 from mcp.types import ToolAnnotations
 from pydantic import ConfigDict
 
-from fastmcp.tools.tool import ParsedFunction, Tool, ToolResult, _wrap_schema_if_needed
+from fastmcp.tools.tool import ParsedFunction, Tool, ToolResult
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import NotSet, NotSetT, get_cached_typeadapter
 
@@ -430,7 +430,7 @@ class TransformedTool(Tool):
             # Smart fallback: try custom function, then parent, then None
             if transform_fn is not None:
                 parsed_fn = ParsedFunction.from_function(transform_fn, validate=False)
-                final_output_schema = _wrap_schema_if_needed(parsed_fn.output_schema)
+                final_output_schema = parsed_fn.output_schema
                 if final_output_schema is None:
                     # Check if function returns ToolResult - if so, don't fall back to parent
                     import inspect
