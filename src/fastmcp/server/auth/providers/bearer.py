@@ -1,6 +1,6 @@
 import time
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any
 
 import httpx
 from authlib.jose import JsonWebKey, JsonWebToken
@@ -26,7 +26,6 @@ from fastmcp.server.auth.auth import (
     RevocationOptions,
 )
 from fastmcp.utilities.logging import get_logger
-
 
 
 class JWKData(TypedDict, total=False):
@@ -114,7 +113,7 @@ class RSAKeyPair:
         Returns:
             Signed JWT token string
         """
-        #TODO : Add support for configurable algorithms
+        # TODO : Add support for configurable algorithms
         jwt = JsonWebToken(["RS256"])
 
         now = int(time.time())
@@ -159,7 +158,7 @@ class BearerAuthProvider(OAuthProvider):
     Note that this provider DOES NOT permit client registration or revocation, or any OAuth flows.
     It is intended to be used with a control plane that manages clients and tokens.
     """
-    
+
     def __init__(
         self,
         public_key: str | None = None,
@@ -184,12 +183,25 @@ class BearerAuthProvider(OAuthProvider):
             raise ValueError("Either public_key or jwks_uri must be provided")
         if public_key and jwks_uri:
             raise ValueError("Provide either public_key or jwks_uri, not both")
-        
+
         if not algorithm:
             algorithm = "RS256"
-        if algorithm not in {"HS256","HS384","HS512","RS256","RS384","RS512", "ES256", "ES384","ES512","PS256","PS384", "PS512"}:
+        if algorithm not in {
+            "HS256",
+            "HS384",
+            "HS512",
+            "RS256",
+            "RS384",
+            "RS512",
+            "ES256",
+            "ES384",
+            "ES512",
+            "PS256",
+            "PS384",
+            "PS512",
+        }:
             raise ValueError(f"Unsupported algorithm: {algorithm}.")
-          
+
         # Only pass issuer to parent if it's a valid URL, otherwise use default
         # This allows the issuer claim validation to work with string issuers per RFC 7519
         try:
