@@ -159,7 +159,7 @@ class BearerAuthProvider(OAuthProvider):
     Note that this provider DOES NOT permit client registration or revocation, or any OAuth flows.
     It is intended to be used with a control plane that manages clients and tokens.
     """
-    #TODO: Add support for configurable algorithms 'e.g. algorithm= HS256, ES256, etc.'
+    
     def __init__(
         self,
         public_key: str | None = None,
@@ -210,8 +210,6 @@ class BearerAuthProvider(OAuthProvider):
         self.audience = audience
         self.public_key = public_key
         self.jwks_uri = jwks_uri
-        
-        # TODO : Add support for configurable algorithms
         self.jwt = JsonWebToken([self.algorithm])  # Use RS256 by default
         self.logger = get_logger(__name__)
 
