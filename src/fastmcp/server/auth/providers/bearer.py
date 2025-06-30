@@ -1,6 +1,6 @@
 import time
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 import httpx
 from authlib.jose import JsonWebKey, JsonWebToken
@@ -26,6 +26,7 @@ from fastmcp.server.auth.auth import (
     RevocationOptions,
 )
 from fastmcp.utilities.logging import get_logger
+
 
 
 class JWKData(TypedDict, total=False):
@@ -113,6 +114,7 @@ class RSAKeyPair:
         Returns:
             Signed JWT token string
         """
+        #TODO : Add support for configurable algorithms
         jwt = JsonWebToken(["RS256"])
 
         now = int(time.time())
@@ -151,18 +153,19 @@ class RSAKeyPair:
 class BearerAuthProvider(OAuthProvider):
     """
     Simple JWT Bearer Token validator for hosted MCP servers.
-    Uses RS256 asymmetric encryption. Supports either static public key
+    Uses RS256 asymmetric encryption by default but supports all JWA algorithms. Supports either static public key
     or JWKS URI for key rotation.
 
     Note that this provider DOES NOT permit client registration or revocation, or any OAuth flows.
     It is intended to be used with a control plane that manages clients and tokens.
     """
-
+    #TODO: Add support for configurable algorithms 'e.g. algorithm= HS256, ES256, etc.'
     def __init__(
         self,
         public_key: str | None = None,
         jwks_uri: str | None = None,
         issuer: str | None = None,
+        algorithm: str | None = None,
         audience: str | list[str] | None = None,
         required_scopes: list[str] | None = None,
     ):
@@ -173,6 +176,7 @@ class BearerAuthProvider(OAuthProvider):
             public_key: RSA public key in PEM format (for static key)
             jwks_uri: URI to fetch keys from (for key rotation)
             issuer: Expected issuer claim (optional)
+            algorithm: Algorithm to use for verification (optional, defaults to RS256)
             audience: Expected audience claim - can be a string or list of strings (optional)
             required_scopes: List of required scopes for access (optional)
         """
@@ -180,7 +184,12 @@ class BearerAuthProvider(OAuthProvider):
             raise ValueError("Either public_key or jwks_uri must be provided")
         if public_key and jwks_uri:
             raise ValueError("Provide either public_key or jwks_uri, not both")
-
+        
+        if not algorithm:
+            algorithm = "RS256"
+        if algorithm not in {"HS256","HS384","HS512","RS256","RS384","RS512", "ES256", "ES384","ES512","PS256","PS384", "PS512"}:
+            raise ValueError(f"Unsupported algorithm: {algorithm}.")
+          
         # Only pass issuer to parent if it's a valid URL, otherwise use default
         # This allows the issuer claim validation to work with string issuers per RFC 7519
         try:
@@ -196,11 +205,14 @@ class BearerAuthProvider(OAuthProvider):
             required_scopes=required_scopes,
         )
 
+        self.algorithm = algorithm
         self.issuer = issuer
         self.audience = audience
         self.public_key = public_key
         self.jwks_uri = jwks_uri
-        self.jwt = JsonWebToken(["RS256"])
+        
+        # TODO : Add support for configurable algorithms
+        self.jwt = JsonWebToken([self.algorithm])  # Use RS256 by default
         self.logger = get_logger(__name__)
 
         # Simple JWKS cache
