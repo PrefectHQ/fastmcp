@@ -4,4 +4,4 @@ docs/changelog.mdx
 docs/python-sdk/
 examples/
 src/fastmcp/contrib/
-tests/contrib
+tests/contrib/
