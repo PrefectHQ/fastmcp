@@ -53,6 +53,7 @@ from fastmcp.server.auth import BearerAuthProvider
 auth = BearerAuthProvider(
     jwks_uri="https://my-identity-provider.com/.well-known/jwks.json",
     issuer="https://my-identity-provider.com/",
+    algorithm="RS512",
     audience="my-mcp-server"
 )
 
@@ -72,6 +73,10 @@ mcp = FastMCP(name="My MCP Server", auth=auth)
 
 <ParamField body="issuer" type="str | None">
   Expected JWT `iss` claim value
+</ParamField>
+
+<ParamField body="algorithm" type="str | None">
+  Algorithm for decoding JWT token. Defaults to 'RS256'
 </ParamField>
 
 <ParamField body="audience" type="str | None">

@@ -17,6 +17,7 @@ class EnvBearerAuthProviderSettings(BaseSettings):
     public_key: str | None = None
     jwks_uri: str | None = None
     issuer: str | None = None
+    algorithm: str | None = None
     audience: str | None = None
     required_scopes: list[str] | None = None
 
@@ -33,6 +34,7 @@ class EnvBearerAuthProvider(BearerAuthProvider):
         public_key: str | None | EllipsisType = ...,
         jwks_uri: str | None | EllipsisType = ...,
         issuer: str | None | EllipsisType = ...,
+        algorithm: str | None | EllipsisType = ...,
         audience: str | None | EllipsisType = ...,
         required_scopes: list[str] | None | EllipsisType = ...,
     ):
@@ -43,6 +45,7 @@ class EnvBearerAuthProvider(BearerAuthProvider):
             public_key: RSA public key in PEM format (for static key)
             jwks_uri: URI to fetch keys from (for key rotation)
             issuer: Expected issuer claim (optional)
+            algorithm: Algorithm to use for verification (optional)
             audience: Expected audience claim (optional)
             required_scopes: List of required scopes for access (optional)
         """
@@ -50,6 +53,7 @@ class EnvBearerAuthProvider(BearerAuthProvider):
             "public_key": public_key,
             "jwks_uri": jwks_uri,
             "issuer": issuer,
+            "algorithm": algorithm,
             "audience": audience,
             "required_scopes": required_scopes,
         }
