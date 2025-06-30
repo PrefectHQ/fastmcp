@@ -41,7 +41,10 @@ def create_elicitation_callback(
         params: ElicitRequestParams,
     ) -> MCPElicitResult | mcp.types.ErrorData:
         try:
-            response_type = json_schema_to_type(params.requestedSchema)
+            if params.requestedSchema == {"type": "object", "properties": {}}:
+                response_type = None
+            else:
+                response_type = json_schema_to_type(params.requestedSchema)
 
             result = await elicitation_handler(
                 params.message, response_type, params, context

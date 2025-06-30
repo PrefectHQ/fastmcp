@@ -1,8 +1,9 @@
 from dataclasses import asdict, dataclass
 from enum import Enum
-from typing import Literal
+from typing import Any, Literal
 
 import pytest
+from mcp.types import ElicitRequestParams
 from pydantic import BaseModel
 from typing_extensions import TypedDict
 
@@ -14,6 +15,7 @@ from fastmcp.server.elicitation import (
     AcceptedElicitation,
     CancelledElicitation,
     DeclinedElicitation,
+    validate_elicitation_json_schema,
 )
 from fastmcp.utilities.types import TypeAdapter
 
@@ -79,30 +81,6 @@ async def test_elicitation_decline(fastmcp_server):
         assert result.data == "No name provided."
 
 
-async def test_default_response_type(fastmcp_server):
-    """Test elicitation with string content."""
-    mcp = FastMCP("TestServer")
-
-    @mcp.tool
-    async def ask_for_color(context: Context) -> str:
-        result = await context.elicit(
-            message="What is your favorite color?"
-            # Default schema should be string
-        )
-        if result.action == "accept":
-            assert isinstance(result.data, str)
-            return f"Your favorite color is {result.data}!"
-        return "No color provided"
-
-    async def elicitation_handler(message, response_type, params, ctx):
-        # Mock user providing their favorite color as string in content dict
-        return ElicitResult(action="accept", content={"value": "blue"})
-
-    async with Client(mcp, elicitation_handler=elicitation_handler) as client:
-        result = await client.call_tool("ask_for_color", {})
-        assert result.data == "Your favorite color is blue!"
-
-
 async def test_elicitation_handler_parameters():
     """Test that elicitation handler receives correct parameters."""
     mcp = FastMCP("TestServer")
@@ -162,6 +140,62 @@ async def test_elicitation_cancel_action():
 
 
 class TestScalarResponseTypes:
+    async def test_elicitation_no_response(self):
+        """Test elicitation with no response type."""
+        mcp = FastMCP("TestServer")
+
+        @mcp.tool
+        async def my_tool(context: Context) -> None:
+            result = await context.elicit(message="", response_type=None)
+            return result.data  # type: ignore[attr-defined]
+
+        async def elicitation_handler(
+            message, response_type, params: ElicitRequestParams, ctx
+        ):
+            assert params.requestedSchema == {"type": "object", "properties": {}}
+            assert response_type == dict[str, Any]
+            return ElicitResult(action="accept")
+
+        async with Client(mcp, elicitation_handler=elicitation_handler) as client:
+            result = await client.call_tool("my_tool", {})
+            assert result.data is None
+
+    async def test_elicitation_empty_response(self):
+        """Test elicitation with empty response type."""
+        mcp = FastMCP("TestServer")
+
+        @mcp.tool
+        async def my_tool(context: Context) -> None:
+            result = await context.elicit(message="", response_type=None)
+            return result.data  # type: ignore[attr-defined]
+
+        async def elicitation_handler(
+            message, response_type, params: ElicitRequestParams, ctx
+        ):
+            return ElicitResult(action="accept", content={})
+
+        async with Client(mcp, elicitation_handler=elicitation_handler) as client:
+            result = await client.call_tool("my_tool", {})
+            assert result.data is None
+
+    async def test_elicitation_response_when_no_response_requested(self):
+        """Test elicitation with no response type."""
+        mcp = FastMCP("TestServer")
+
+        @mcp.tool
+        async def my_tool(context: Context) -> None:
+            result = await context.elicit(message="", response_type=None)
+            return result.data  # type: ignore[attr-defined]
+
+        async def elicitation_handler(message, response_type, params, ctx):
+            return ElicitResult(action="accept", content={"value": "hello"})
+
+        async with Client(mcp, elicitation_handler=elicitation_handler) as client:
+            with pytest.raises(
+                ToolError, match="Elicitation expected an empty response"
+            ):
+                await client.call_tool("my_tool", {})
+
     async def test_elicitation_str_response(self):
         """Test elicitation with string schema."""
         mcp = FastMCP("TestServer")
@@ -262,7 +296,7 @@ class TestScalarResponseTypes:
             result = await client.call_tool("my_tool", {})
             assert result.data == "x"
 
-    async def test_elicitation_list_response(self):
+    async def test_elicitation_list_of_strings_response(self):
         """Test elicitation with list schema."""
         mcp = FastMCP("TestServer")
 
@@ -459,21 +493,12 @@ async def test_all_primitive_field_types():
 class TestValidation:
     async def test_schema_validation_rejects_non_object(self):
         """Test that non-object schemas are rejected."""
-        from fastmcp.server.elicitation import validate_elicitation_json_schema
 
         with pytest.raises(TypeError, match="must be an object schema"):
             validate_elicitation_json_schema({"type": "string"})
 
-    async def test_schema_validation_rejects_empty_object(self):
-        """Test that object schemas without properties are rejected."""
-        from fastmcp.server.elicitation import validate_elicitation_json_schema
-
-        with pytest.raises(TypeError, match="must have at least one property"):
-            validate_elicitation_json_schema({"type": "object"})
-
     async def test_schema_validation_rejects_nested_objects(self):
         """Test that nested object schemas are rejected."""
-        from fastmcp.server.elicitation import validate_elicitation_json_schema
 
         with pytest.raises(
             TypeError, match="has type 'object' which is not a primitive type"
@@ -492,7 +517,6 @@ class TestValidation:
 
     async def test_schema_validation_rejects_arrays(self):
         """Test that array schemas are rejected."""
-        from fastmcp.server.elicitation import validate_elicitation_json_schema
 
         with pytest.raises(
             TypeError, match="has type 'array' which is not a primitive type"

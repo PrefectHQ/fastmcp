@@ -65,7 +65,7 @@ The elicitation handler receives four parameters:
 </ResponseField>
 
 <ResponseField name="response_type" type="type">
-  A Python dataclass type that FastMCP created from the server's JSON schema. Use this to construct your response with proper typing and IDE support.
+  A Python dataclass type that FastMCP created from the server's JSON schema. Use this to construct your response with proper typing and IDE support. If the server requests an empty object (indicating no response), this will be `None`.
 </ResponseField>
 
 <ResponseField name="params" type="ElicitRequestParams">

@@ -7,7 +7,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar, Token
 from dataclasses import dataclass
 from enum import Enum
-from typing import Literal, TypeVar, cast, get_origin
+from typing import Any, Literal, TypeVar, cast, get_origin, overload
 
 from mcp import LoggingLevel, ServerSession
 from mcp.server.lowlevel.helper_types import ReadResourceContents
@@ -312,11 +312,49 @@ class Context:
 
         return result.content
 
+    @overload
+    async def elicit(
+        self,
+        message: str,
+        response_type: None,
+    ) -> (
+        AcceptedElicitation[dict[str, Any]] | DeclinedElicitation | CancelledElicitation
+    ): ...
+
+    """When response_type is None, the accepted elicitaiton will contain an
+    empty dict"""
+
+    @overload
+    async def elicit(
+        self,
+        message: str,
+        response_type: type[T],
+    ) -> AcceptedElicitation[T] | DeclinedElicitation | CancelledElicitation: ...
+
+    """When response_type is not None, the accepted elicitaiton will contain the
+    response data"""
+
+    @overload
+    async def elicit(
+        self,
+        message: str,
+        response_type: list[str],
+    ) -> AcceptedElicitation[str] | DeclinedElicitation | CancelledElicitation: ...
+
+    """When response_type is a list of strings, the accepted elicitaiton will
+    contain the selected string response"""
+
     async def elicit(
         self,
         message: str,
         response_type: type[T] | list[str] | None = None,
-    ) -> AcceptedElicitation[T] | DeclinedElicitation | CancelledElicitation:
+    ) -> (
+        AcceptedElicitation[T]
+        | AcceptedElicitation[dict[str, Any]]
+        | AcceptedElicitation[str]
+        | DeclinedElicitation
+        | CancelledElicitation
+    ):
         """
         Send an elicitation request to the client and await the response.
 
@@ -330,6 +368,10 @@ class Context:
         "value" field will be generated for the MCP interaction and
         automatically deconstructed into the primitive type upon response.
 
+        If the response_type is None, the generated schema will be that of an
+        empty object in order to comply with the MCP protocol requirements.
+        Clients must send an empty object ("{}")in response.
+
         Args:
             message: A human-readable message explaining what information is needed
             response_type: The type of the response, which should be a primitive
@@ -337,48 +379,56 @@ class Context:
                 object schema with a single "value" field will be generated.
         """
         if response_type is None:
-            response_type = str  # type: ignore
+            schema = {"type": "object", "properties": {}}
+        else:
+            # if the user provided a list of strings, treat it as a Literal
+            if isinstance(response_type, list):
+                if not all(isinstance(item, str) for item in response_type):
+                    raise ValueError(
+                        "List of options must be a list of strings. Received: "
+                        f"{response_type}"
+                    )
+                # Convert list of options to Literal type and wrap
+                choice_literal = Literal[tuple(response_type)]  # type: ignore
+                response_type = ScalarElicitationType[choice_literal]  # type: ignore
+            # if the user provided a primitive scalar, wrap it in an object schema
+            elif response_type in {bool, int, float, str}:
+                response_type = ScalarElicitationType[response_type]  # type: ignore
+            # if the user provided a Literal type, wrap it in an object schema
+            elif get_origin(response_type) is Literal:
+                response_type = ScalarElicitationType[response_type]  # type: ignore
+            # if the user provided an Enum type, wrap it in an object schema
+            elif isinstance(response_type, type) and issubclass(response_type, Enum):
+                response_type = ScalarElicitationType[response_type]  # type: ignore
 
-        # if the user provided a list of strings, treat it as a Literal
-        if isinstance(response_type, list):
-            if not all(isinstance(item, str) for item in response_type):
-                raise ValueError(
-                    "List of options must be a list of strings. Received: "
-                    f"{response_type}"
-                )
-            # Convert list of options to Literal type and wrap
-            choice_literal = Literal[tuple(response_type)]  # type: ignore
-            response_type = ScalarElicitationType[choice_literal]  # type: ignore
-        # if the user provided a primitive scalar, wrap it in an object schema
-        elif response_type in {bool, int, float, str}:
-            response_type = ScalarElicitationType[response_type]  # type: ignore
-        # if the user provided a Literal type, wrap it in an object schema
-        elif get_origin(response_type) is Literal:
-            response_type = ScalarElicitationType[response_type]  # type: ignore
-        # if the user provided an Enum type, wrap it in an object schema
-        elif isinstance(response_type, type) and issubclass(response_type, Enum):
-            response_type = ScalarElicitationType[response_type]  # type: ignore
+            response_type = cast(type[T], response_type)
 
-        response_type = cast(type[T], response_type)
-
-        requested_schema = get_elicitation_schema(response_type)
+            schema = get_elicitation_schema(response_type)
 
         result = await self.session.elicit(
             message=message,
-            requestedSchema=requested_schema,
+            requestedSchema=schema,
             related_request_id=self.request_id,
         )
 
-        if result.action == "accept" and result.content:
-            type_adapter = get_cached_typeadapter(response_type)
-            validated_data = cast(
-                T | ScalarElicitationType[T],
-                type_adapter.validate_python(result.content),
-            )
-            if isinstance(validated_data, ScalarElicitationType):
-                return AcceptedElicitation[T](data=validated_data.value)
+        if result.action == "accept":
+            if response_type is not None:
+                type_adapter = get_cached_typeadapter(response_type)
+                validated_data = cast(
+                    T | ScalarElicitationType[T],
+                    type_adapter.validate_python(result.content),
+                )
+                if isinstance(validated_data, ScalarElicitationType):
+                    return AcceptedElicitation[T](data=validated_data.value)
+                else:
+                    return AcceptedElicitation[T](data=validated_data)
+            elif result.content:
+                raise ValueError(
+                    "Elicitation expected an empty response, but received: "
+                    f"{result.content}"
+                )
             else:
-                return AcceptedElicitation[T](data=validated_data)
+                return AcceptedElicitation[dict[str, Any]](data={})
         elif result.action == "decline":
             return DeclinedElicitation()
         elif result.action == "cancel":
