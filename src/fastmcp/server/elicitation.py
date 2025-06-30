@@ -81,11 +81,6 @@ def validate_elicitation_json_schema(schema: dict[str, Any]) -> None:
         )
 
     properties = schema.get("properties", {})
-    if not properties:
-        raise TypeError(
-            "Elicitation schema must have at least one property. "
-            "Empty object schemas are not allowed."
-        )
 
     for prop_name, prop_schema in properties.items():
         prop_type = prop_schema.get("type")

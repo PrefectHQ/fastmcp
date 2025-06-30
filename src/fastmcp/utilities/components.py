@@ -77,7 +77,3 @@ class FastMCPComponent(FastMCPBaseModel):
     def disable(self) -> None:
         """Disable the component."""
         self.enabled = False
-
-    def get_display_name(self) -> str:
-        """Get the display name for this component, preferring title over name."""
-        return self.title if self.title is not None else self.name

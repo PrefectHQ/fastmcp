@@ -68,8 +68,8 @@ async def collect_user_info(ctx: Context) -> str:
       The prompt message to display to the user
     </ResponseField>
     
-    <ResponseField name="response_type" type="type" default="str">
-      The Python type defining the expected response structure (dataclass, primitive type, etc.) Note that elicitation responses are subject to a restricted subset of JSON Schema types. See [Supported Response Types](#supported-response-types) for more details.
+    <ResponseField name="response_type" type="type" default="None">
+      The Python type defining the expected response structure (dataclass, primitive type, etc.) Note that elicitation responses are subject to a restricted subset of JSON Schema types. See [Supported Response Types](#supported-response-types) for more details. 
     </ResponseField>
   </Expandable>
   
@@ -140,7 +140,7 @@ The server must send a schema to the client indicating the type of data it expec
 
 The MCP spec only supports a limited subset of JSON Schema types for elicitation responses. Specifically, it only supports JSON  **objects** with **primitive** properties including `string`, `number` (or `integer`), `boolean` and `enum` fields.
 
-FastMCP makes it easy to request a broader range of types, including scalars (e.g. `str`), by automatically wrapping them in MCP-compatible object schemas.
+FastMCP makes it easy to request a broader range of types, including scalars (e.g. `str`) or no response at all, by automatically wrapping them in MCP-compatible object schemas.
 
 
 ### Scalar Types
@@ -183,6 +183,22 @@ async def pick_a_boolean(ctx: Context) -> str:
     return "No boolean provided"
 ```
 </CodeGroup>
+
+### No Response
+
+Sometimes, the goal of an elicitation is to simply get a user to approve or reject an action. In this case, you can pass `None` as the response type to indicate that no response is expected. In order to comply with the MCP spec, the client will see a schema requesting an empty object in response. In this case, the `data` field of the `ElicitationResult` object will be `None` when the user accepts the elicitation.
+
+```python {4} title="No response"
+@mcp.tool
+async def approve_action(ctx: Context) -> str:
+    """Approve an action."""
+    result = await ctx.elicit("Approve this action?", response_type=None)
+
+    if result.action == "accept":
+        return do_action()
+    else:
+        raise ValueError("Action rejected")
+```
 
 ### Constrained Options
 
