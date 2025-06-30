@@ -1,0 +1,7 @@
+.pre-commit-config.yaml
+.github/
+docs/changelog.mdx
+docs/python-sdk/
+examples/
+src/fastmcp/contrib/
+tests/contrib/
