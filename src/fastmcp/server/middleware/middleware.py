@@ -25,6 +25,16 @@ from fastmcp.tools.tool import Tool
 if TYPE_CHECKING:
     from fastmcp.server.context import Context
 
+__all__ = [
+    "Middleware",
+    "MiddlewareContext",
+    "CallNext",
+    "ListToolsResult",
+    "ListResourcesResult",
+    "ListResourceTemplatesResult",
+    "ListPromptsResult",
+]
+
 logger = logging.getLogger(__name__)
 
 
@@ -50,12 +60,6 @@ ServerResultT = TypeVar(
     | mt.CallToolResult
     | mt.ListToolsResult,
 )
-
-
-@dataclass(kw_only=True)
-class CallToolResult:
-    content: list[mt.Content]
-    isError: bool = False
 
 
 @dataclass(kw_only=True)

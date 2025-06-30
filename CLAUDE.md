@@ -1,5 +1,9 @@
 # FastMCP Development Guidelines
 
+## Git
+
+This project uses `pre-commit` to run checks on all commits. If your commit doesn't pass the checks, it will not be created. Do not attempt to amend commits to pass checks.
+
 ## Documentation
 
 - Documentation uses the Mintlify framework
