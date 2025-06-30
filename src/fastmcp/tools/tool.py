@@ -3,7 +3,7 @@ from __future__ import annotations
 import inspect
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Annotated, Any, Literal
+from typing import TYPE_CHECKING, Annotated, Any, Generic, Literal, TypeVar
 
 import mcp.types
 import pydantic_core
@@ -31,6 +31,15 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
+T = TypeVar("T")
+
+
+@dataclass
+class _WrappedResult(Generic[T]):
+    """Generic wrapper for non-object return types."""
+
+    result: T
+
 
 class _UnserializableType:
     pass
@@ -38,27 +47,6 @@ class _UnserializableType:
 
 def default_serializer(data: Any) -> str:
     return pydantic_core.to_json(data, fallback=str, indent=2).decode()
-
-
-def _wrap_schema_if_needed(schema: dict[str, Any] | None) -> dict[str, Any] | None:
-    """Wrap non-object schemas with result property for structured output.
-
-    This wrapping allows primitive types (int, str, etc.) to be returned as
-    structured content by placing them under a "result" key.
-
-    Args:
-        schema: The JSON schema to potentially wrap
-
-    Returns:
-        Wrapped schema if needed, or original schema if already an object type
-    """
-    if schema and schema.get("type") != "object":
-        return {
-            "type": "object",
-            "properties": {"result": schema},
-            "x-fastmcp-wrap-result": True,
-        }
-    return schema
 
 
 class ToolResult:
@@ -246,7 +234,7 @@ class FunctionTool(Tool):
             raise ValueError("You must provide a name for lambda functions")
 
         if isinstance(output_schema, NotSetT):
-            output_schema = _wrap_schema_if_needed(parsed_fn.output_schema)
+            output_schema = parsed_fn.output_schema
         elif output_schema is False:
             output_schema = None
         # Note: explicit schemas (dict) are used as-is without auto-wrapping
@@ -329,8 +317,8 @@ class ParsedFunction:
         cls,
         fn: Callable[..., Any],
         exclude_args: list[str] | None = None,
-        ignore_response_types: list[type] | None = None,
         validate: bool = True,
+        wrap_non_object_output_schema: bool = True,
     ) -> ParsedFunction:
         from fastmcp.server.context import Context
 
@@ -389,7 +377,7 @@ class ParsedFunction:
             # or are MCP content types that explicitly don't form structured
             # content. By replacing them with an explicitly unserializable type,
             # we ensure that no output schema is automatically generated.
-            output_type = replace_type(
+            clean_output_type = replace_type(
                 output_type,
                 {
                     t: _UnserializableType
@@ -408,26 +396,28 @@ class ParsedFunction:
             )
 
             try:
-                output_type_adapter = get_cached_typeadapter(output_type)
-                output_schema = output_type_adapter.json_schema()
+                type_adapter = get_cached_typeadapter(clean_output_type)
+                base_schema = type_adapter.json_schema()
+
+                # Generate schema for wrapped type if it's non-object
+                # because MCP requires that output schemas are objects
+                if (
+                    wrap_non_object_output_schema
+                    and base_schema.get("type") != "object"
+                ):
+                    # Use the wrapped result schema directly
+                    wrapped_type = _WrappedResult[clean_output_type]
+                    wrapped_adapter = get_cached_typeadapter(wrapped_type)
+                    output_schema = wrapped_adapter.json_schema()
+                    output_schema["x-fastmcp-wrap-result"] = True
+                else:
+                    output_schema = base_schema
+
+                output_schema = compress_schema(output_schema)
+
             except PydanticSchemaGenerationError as e:
                 if "_UnserializableType" not in str(e):
                     logger.debug(f"Unable to generate schema for type {output_type!r}")
-
-        return cls(
-            fn=fn,
-            name=fn_name,
-            description=fn_doc,
-            input_schema=input_schema,
-            output_schema=output_schema or None,
-        )
-
-        try:
-            output_type_adapter = get_cached_typeadapter(output_type)
-            output_schema = output_type_adapter.json_schema()
-        except PydanticSchemaGenerationError as e:
-            if "_UnserializableType" not in str(e):
-                logger.debug(f"Unable to generate schema for type {output_type!r}")
 
         return cls(
             fn=fn,

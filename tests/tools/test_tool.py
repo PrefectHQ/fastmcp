@@ -14,6 +14,7 @@ from pydantic import AnyUrl, BaseModel, Field, TypeAdapter
 from typing_extensions import TypedDict
 
 from fastmcp.tools.tool import Tool, _convert_to_content
+from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.types import Audio, File, Image
 
 
@@ -35,7 +36,9 @@ class TestToolFromFunction:
         # With primitive wrapping, int return type becomes object with result property
         expected_schema = {
             "type": "object",
-            "properties": {"result": {"type": "integer"}},
+            "properties": {"result": {"type": "integer", "title": "Result"}},
+            "required": ["result"],
+            "title": "_WrappedResult",
             "x-fastmcp-wrap-result": True,
         }
         assert tool.output_schema == expected_schema
@@ -296,7 +299,9 @@ class TestToolFromFunctionOutputSchema:
             # Non-object types get wrapped
             expected_schema = {
                 "type": "object",
-                "properties": {"result": base_schema},
+                "properties": {"result": {**base_schema, "title": "Result"}},
+                "required": ["result"],
+                "title": "_WrappedResult",
                 "x-fastmcp-wrap-result": True,
             }
             assert tool.output_schema == expected_schema
@@ -321,7 +326,9 @@ class TestToolFromFunctionOutputSchema:
 
         expected_schema = {
             "type": "object",
-            "properties": {"result": base_schema},
+            "properties": {"result": {**base_schema, "title": "Result"}},
+            "required": ["result"],
+            "title": "_WrappedResult",
             "x-fastmcp-wrap-result": True,
         }
         assert tool.output_schema == expected_schema
@@ -369,7 +376,8 @@ class TestToolFromFunctionOutputSchema:
             return Person(name="John", age=30)
 
         tool = Tool.from_function(func)
-        assert tool.output_schema == TypeAdapter(Person).json_schema()
+        expected_schema = compress_schema(TypeAdapter(Person).json_schema())
+        assert tool.output_schema == expected_schema
 
     async def test_base_model_return_annotation(self):
         class Person(BaseModel):
@@ -380,7 +388,8 @@ class TestToolFromFunctionOutputSchema:
             return Person(name="John", age=30)
 
         tool = Tool.from_function(func)
-        assert tool.output_schema == TypeAdapter(Person).json_schema()
+        expected_schema = compress_schema(TypeAdapter(Person).json_schema())
+        assert tool.output_schema == expected_schema
 
     async def test_typeddict_return_annotation(self):
         class Person(TypedDict):
@@ -391,7 +400,8 @@ class TestToolFromFunctionOutputSchema:
             return Person(name="John", age=30)
 
         tool = Tool.from_function(func)
-        assert tool.output_schema == TypeAdapter(Person).json_schema()
+        expected_schema = compress_schema(TypeAdapter(Person).json_schema())
+        assert tool.output_schema == expected_schema
 
     async def test_unserializable_return_annotation(self):
         class Unserializable:
@@ -568,7 +578,9 @@ class TestToolFromFunctionOutputSchema:
         tool = Tool.from_function(func)
         expected_schema = {
             "type": "object",
-            "properties": {"result": {"type": "integer"}},
+            "properties": {"result": {"type": "integer", "title": "Result"}},
+            "required": ["result"],
+            "title": "_WrappedResult",
             "x-fastmcp-wrap-result": True,
         }
         assert tool.output_schema == expected_schema
@@ -638,7 +650,9 @@ class TestToolFromFunctionOutputSchema:
         tool = Tool.from_function(func)
         expected_schema = {
             "type": "object",
-            "properties": {"result": {"type": "string"}},
+            "properties": {"result": {"type": "string", "title": "Result"}},
+            "required": ["result"],
+            "title": "_WrappedResult",
             "x-fastmcp-wrap-result": True,
         }
         assert tool.output_schema == expected_schema
@@ -1220,11 +1234,37 @@ class TestAutomaticStructuredContent:
         async with Client(mcp) as client:
             result = await client.call_tool("get_profile", {"user_id": "456"})
 
-            # Client should deserialize back to a dataclass (type name will match)
+            # Client should deserialize back to a dataclass (type name preserved with new compression)
             assert result.data.__class__.__name__ == "UserProfile"
             assert result.data.name == "Bob"
             assert result.data.age == 25
             assert result.data.verified is True
+
+
+class TestUnionReturnTypes:
+    """Tests for tools with union return types."""
+
+    async def test_dataclass_union_string_works(self):
+        """Test that union of dataclass and string works correctly."""
+
+        @dataclass
+        class Data:
+            value: int
+
+        def get_data(return_error: bool) -> Data | str:
+            if return_error:
+                return "error occurred"
+            return Data(value=42)
+
+        tool = Tool.from_function(get_data)
+
+        # Test returning dataclass
+        result1 = await tool.run({"return_error": False})
+        assert result1.structured_content == {"result": {"value": 42}}
+
+        # Test returning string
+        result2 = await tool.run({"return_error": True})
+        assert result2.structured_content == {"result": "error occurred"}
 
 
 class TestToolTitle:
