@@ -355,10 +355,10 @@ class OpenAPITool(Tool):
                 # Format array query parameters as comma-separated strings
                 # following OpenAPI form style (default for query parameters)
                 if isinstance(param_value, list) and p.schema_.get("type") == "array":
-                    # Get explode parameter from schema, default is True for query parameters
+                    # Get explode parameter from the parameter info, default is True for query parameters
                     # If explode is True, the array is serialized as separate parameters
                     # If explode is False, the array is serialized as a comma-separated string
-                    explode = p.schema_.get("explode", True)
+                    explode = p.explode if p.explode is not None else True
 
                     if explode:
                         # When explode=True, we pass the array directly, which HTTPX will serialize

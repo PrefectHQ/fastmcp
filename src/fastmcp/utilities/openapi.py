@@ -47,6 +47,7 @@ class ParameterInfo(FastMCPBaseModel):
     required: bool = False
     schema_: JsonSchema = Field(..., alias="schema")  # Target name in IR
     description: str | None = None
+    explode: bool | None = None  # OpenAPI explode property for array parameters
 
 
 class RequestBodyInfo(FastMCPBaseModel):
@@ -359,6 +360,9 @@ class OpenAPIParser(
                         ):
                             param_schema_dict["default"] = resolved_media_schema.default
 
+                # Extract explode property if present
+                explode = getattr(parameter, "explode", None)
+
                 # Create parameter info object
                 param_info = ParameterInfo(
                     name=parameter.name,
@@ -366,6 +370,7 @@ class OpenAPIParser(
                     required=parameter.required,
                     schema=param_schema_dict,
                     description=parameter.description,
+                    explode=explode,
                 )
                 extracted_params.append(param_info)
             except Exception as e:

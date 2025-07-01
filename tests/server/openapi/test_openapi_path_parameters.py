@@ -320,9 +320,9 @@ async def test_array_query_parameter_format(mock_client):
                 name="days",
                 location="query",  # This is a query parameter
                 required=True,
+                explode=False,  # Set explode=False to test comma-separated formatting
                 schema={
                     "type": "array",
-                    "explode": False,  # Set explode=False to test comma-separated formatting
                     "items": {
                         "type": "string",
                         "enum": [
@@ -390,9 +390,9 @@ async def test_array_query_parameter_exploded_format(mock_client):
                 name="days",
                 location="query",  # This is a query parameter
                 required=True,
+                explode=True,  # Set explode=True for separate parameter serialization
                 schema={
                     "type": "array",
-                    "explode": True,  # Set explode=True for separate parameter serialization
                     "items": {
                         "type": "string",
                         "enum": [
