@@ -209,9 +209,9 @@ class TestDevCommand:
             assert result.exit_code == 0
             mock_run.assert_called_once()
 
-            # Check dependencies were passed correctly
+            # Check dependencies were passed correctly with no_banner=True
             mock_build_uv.assert_called_once_with(
-                str(temp_python_file), None, ["extra_dep"]
+                str(temp_python_file), None, ["extra_dep"], no_banner=True
             )
 
     def test_dev_command_with_ui_port(self, temp_python_file):
@@ -468,4 +468,5 @@ class TestRunCommand:
                 port=None,
                 log_level=None,
                 server_args=["--config", "config.json"],
+                show_banner=True,
             )
