@@ -39,6 +39,60 @@ ParameterLocation = Literal["path", "query", "header", "cookie"]
 JsonSchema = dict[str, Any]
 
 
+def format_array_parameter(
+    values: list, parameter_name: str, is_query_parameter: bool = False
+) -> str | list:
+    """
+    Format an array parameter according to OpenAPI specifications.
+
+    Args:
+        values: List of values to format
+        parameter_name: Name of the parameter (for error messages)
+        is_query_parameter: If True, can return list for explode=True behavior
+
+    Returns:
+        String (comma-separated) or list (for query params with explode=True)
+    """
+    # For arrays of simple types (strings, numbers, etc.), join with commas
+    if all(isinstance(item, str | int | float | bool) for item in values):
+        return ",".join(str(v) for v in values)
+
+    # For complex types, try to create a simpler representation
+    try:
+        # Try to create a simple string representation
+        formatted_parts = []
+        for item in values:
+            if isinstance(item, dict):
+                # For objects, serialize key-value pairs
+                item_parts = []
+                for k, v in item.items():
+                    item_parts.append(f"{k}:{v}")
+                formatted_parts.append(".".join(item_parts))
+            else:
+                formatted_parts.append(str(item))
+
+        return ",".join(formatted_parts)
+    except Exception as e:
+        param_type = "query" if is_query_parameter else "path"
+        logger.warning(
+            f"Failed to format complex array {param_type} parameter '{parameter_name}': {e}"
+        )
+
+        if is_query_parameter:
+            # For query parameters, fallback to original list
+            return values
+        else:
+            # For path parameters, fallback to string representation without Python syntax
+            str_value = (
+                str(values)
+                .replace("[", "")
+                .replace("]", "")
+                .replace("'", "")
+                .replace('"', "")
+            )
+            return str_value
+
+
 class ParameterInfo(FastMCPBaseModel):
     """Represents a single parameter for an HTTP operation in our IR."""
 
