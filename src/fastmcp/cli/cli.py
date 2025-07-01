@@ -64,6 +64,7 @@ def _build_uv_command(
     server_spec: str,
     with_editable: Path | None = None,
     with_packages: list[str] | None = None,
+    no_banner: bool = False,
 ) -> list[str]:
     """Build the uv run command that runs a MCP server through mcp run."""
     cmd = ["uv"]
@@ -80,6 +81,10 @@ def _build_uv_command(
 
     # Add mcp run command
     cmd.extend(["fastmcp", "run", server_spec])
+
+    if no_banner:
+        cmd.append("--no-banner")
+
     return cmd
 
 
@@ -192,7 +197,9 @@ def dev(
         if inspector_version:
             inspector_cmd += f"@{inspector_version}"
 
-        uv_cmd = _build_uv_command(server_spec, with_editable, with_packages)
+        uv_cmd = _build_uv_command(
+            server_spec, with_editable, with_packages, no_banner=True
+        )
 
         # Run the MCP Inspector command with shell=True on Windows
         shell = sys.platform == "win32"
@@ -261,6 +268,13 @@ def run(
             help="Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)",
         ),
     ] = None,
+    no_banner: Annotated[
+        bool,
+        typer.Option(
+            "--no-banner",
+            help="Don't show the server banner",
+        ),
+    ] = False,
 ) -> None:
     """Run a MCP server or connect to a remote one.
 
@@ -297,6 +311,7 @@ def run(
             port=port,
             log_level=log_level,
             server_args=server_args,
+            show_banner=not no_banner,
         )
     except Exception as e:
         logger.error(
