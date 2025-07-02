@@ -1342,6 +1342,7 @@ class FastMCP(Generic[LifespanResultT]):
         path: str | None = None,
         uvicorn_config: dict[str, Any] | None = None,
         middleware: list[ASGIMiddleware] | None = None,
+        stateless_http: bool | None = None,
     ) -> None:
         """Run the server using HTTP transport.
 
@@ -1352,6 +1353,8 @@ class FastMCP(Generic[LifespanResultT]):
             log_level: Log level for the server (defaults to settings.log_level)
             path: Path for the endpoint (defaults to settings.streamable_http_path or settings.sse_path)
             uvicorn_config: Additional configuration for the Uvicorn server
+            middleware: A list of middleware to apply to the app
+            stateless_http: Whether to use stateless HTTP (defaults to settings.stateless_http)
         """
         host = host or self._deprecated_settings.host
         port = port or self._deprecated_settings.port
@@ -1359,7 +1362,12 @@ class FastMCP(Generic[LifespanResultT]):
             log_level or self._deprecated_settings.log_level
         ).lower()
 
-        app = self.http_app(path=path, transport=transport, middleware=middleware)
+        app = self.http_app(
+            path=path,
+            transport=transport,
+            middleware=middleware,
+            stateless_http=stateless_http,
+        )
 
         _uvicorn_config_from_user = uvicorn_config or {}
 
