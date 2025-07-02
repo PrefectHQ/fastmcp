@@ -60,7 +60,6 @@ from fastmcp.settings import Settings
 from fastmcp.tools import ToolManager
 from fastmcp.tools.tool import FunctionTool, Tool, ToolResult
 from fastmcp.utilities.cache import TimedCache
-from fastmcp.utilities.cli import print_server_banner
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.mcp_config import MCPConfig
@@ -286,7 +285,6 @@ class FastMCP(Generic[LifespanResultT]):
     async def run_async(
         self,
         transport: Transport | None = None,
-        show_banner: bool = True,
         **transport_kwargs: Any,
     ) -> None:
         """Run the FastMCP server asynchronously.
@@ -300,23 +298,15 @@ class FastMCP(Generic[LifespanResultT]):
             raise ValueError(f"Unknown transport: {transport}")
 
         if transport == "stdio":
-            await self.run_stdio_async(
-                show_banner=show_banner,
-                **transport_kwargs,
-            )
+            await self.run_stdio_async(**transport_kwargs)
         elif transport in {"http", "sse", "streamable-http"}:
-            await self.run_http_async(
-                transport=transport,
-                show_banner=show_banner,
-                **transport_kwargs,
-            )
+            await self.run_http_async(transport=transport, **transport_kwargs)
         else:
             raise ValueError(f"Unknown transport: {transport}")
 
     def run(
         self,
         transport: Transport | None = None,
-        show_banner: bool = True,
         **transport_kwargs: Any,
     ) -> None:
         """Run the FastMCP server. Note this is a synchronous function.
@@ -325,14 +315,7 @@ class FastMCP(Generic[LifespanResultT]):
             transport: Transport protocol to use ("stdio", "sse", or "streamable-http")
         """
 
-        anyio.run(
-            partial(
-                self.run_async,
-                transport,
-                show_banner=show_banner,
-                **transport_kwargs,
-            )
-        )
+        anyio.run(partial(self.run_async, transport, **transport_kwargs))
 
     def _setup_handlers(self) -> None:
         """Set up core MCP protocol handlers."""
@@ -1338,16 +1321,8 @@ class FastMCP(Generic[LifespanResultT]):
             enabled=enabled,
         )
 
-    async def run_stdio_async(self, show_banner: bool = True) -> None:
+    async def run_stdio_async(self) -> None:
         """Run the server using stdio transport."""
-
-        # Display server banner
-        if show_banner:
-            print_server_banner(
-                server=self,
-                transport="stdio",
-            )
-
         async with stdio_server() as (read_stream, write_stream):
             logger.info(f"Starting MCP server {self.name!r} with transport 'stdio'")
             await self._mcp_server.run(
@@ -1360,7 +1335,6 @@ class FastMCP(Generic[LifespanResultT]):
 
     async def run_http_async(
         self,
-        show_banner: bool = True,
         transport: Literal["http", "streamable-http", "sse"] = "http",
         host: str | None = None,
         port: int | None = None,
@@ -1379,7 +1353,6 @@ class FastMCP(Generic[LifespanResultT]):
             path: Path for the endpoint (defaults to settings.streamable_http_path or settings.sse_path)
             uvicorn_config: Additional configuration for the Uvicorn server
         """
-
         host = host or self._deprecated_settings.host
         port = port or self._deprecated_settings.port
         default_log_level_to_use = (
@@ -1387,23 +1360,6 @@ class FastMCP(Generic[LifespanResultT]):
         ).lower()
 
         app = self.http_app(path=path, transport=transport, middleware=middleware)
-
-        # Get the path for the server URL
-        server_path = (
-            app.state.path.lstrip("/")
-            if hasattr(app, "state") and hasattr(app.state, "path")
-            else path or ""
-        )
-
-        # Display server banner
-        if show_banner:
-            print_server_banner(
-                server=self,
-                transport=transport,
-                host=host,
-                port=port,
-                path=server_path,
-            )
 
         _uvicorn_config_from_user = uvicorn_config or {}
 
@@ -1422,7 +1378,6 @@ class FastMCP(Generic[LifespanResultT]):
         logger.info(
             f"Starting MCP server {self.name!r} with transport {transport!r} on http://{host}:{port}/{path}"
         )
-
         await server.serve()
 
     async def run_sse_async(
