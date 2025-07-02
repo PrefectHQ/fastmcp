@@ -169,6 +169,7 @@ def run_command(
     port: int | None = None,
     log_level: str | None = None,
     server_args: list[str] | None = None,
+    show_banner: bool = True,
 ) -> None:
     """Run a MCP server or connect to a remote one.
 
@@ -200,6 +201,9 @@ def run_command(
         kwargs["port"] = port
     if log_level:
         kwargs["log_level"] = log_level
+
+    if not show_banner:
+        kwargs["show_banner"] = False
 
     try:
         server.run(**kwargs)
