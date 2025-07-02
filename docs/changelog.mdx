@@ -2,6 +2,108 @@
 icon: "list-check"
 ---
 
+<Update label="v2.10.0" description="2024-07-01">
+
+## [v2.10.0: Great Spec-tations](https://github.com/jlowin/fastmcp/releases/tag/v2.10.0)
+
+FastMCP 2.10 brings full compliance with the 6/18/2025 MCP spec update, introducing elicitation support for dynamic server-client communication and output schemas for structured tool responses. Please note that due to these changes, this release also includes a breaking change to the return signature of `client.call_tool()`.
+
+### Elicitation Support
+Elicitation allows MCP servers to request additional information from clients during tool execution, enabling more interactive and dynamic server behavior. This opens up new possibilities for tools that need user input or confirmation during execution.
+
+### Output Schemas
+Tools can now define structured output schemas, ensuring that responses conform to expected formats and making tool integration more predictable and type-safe.
+
+## What's Changed
+### New Features 🎉
+* MCP 6/18/25: Add output schema to tools by [@jlowin](https://github.com/jlowin) in [#901](https://github.com/jlowin/fastmcp/pull/901)
+* MCP 6/18/25: Elicitation support by [@jlowin](https://github.com/jlowin) in [#889](https://github.com/jlowin/fastmcp/pull/889)
+### Enhancements 🔧
+* Update types + tests for SDK changes by [@jlowin](https://github.com/jlowin) in [#888](https://github.com/jlowin/fastmcp/pull/888)
+* MCP 6/18/25: Update auth primitives by [@jlowin](https://github.com/jlowin) in [#966](https://github.com/jlowin/fastmcp/pull/966)
+* Add OpenAPI extensions support to HTTPRoute by [@maddymanu](https://github.com/maddymanu) in [#977](https://github.com/jlowin/fastmcp/pull/977)
+* Add title field support to FastMCP components by [@jlowin](https://github.com/jlowin) in [#982](https://github.com/jlowin/fastmcp/pull/982)
+* Support implicit Elicitation acceptance by [@jlowin](https://github.com/jlowin) in [#983](https://github.com/jlowin/fastmcp/pull/983)
+* Support 'no response' elicitation requests by [@jlowin](https://github.com/jlowin) in [#992](https://github.com/jlowin/fastmcp/pull/992)
+* Add Support for Configurable Algorithms by [@sstene1](https://github.com/sstene1) in [#997](https://github.com/jlowin/fastmcp/pull/997)
+### Fixes 🐞
+* Improve stdio error handling to raise connection failures immediately by [@jlowin](https://github.com/jlowin) in [#984](https://github.com/jlowin/fastmcp/pull/984)
+* Fix type hints for FunctionResource:fn by [@CfirTsabari](https://github.com/CfirTsabari) in [#986](https://github.com/jlowin/fastmcp/pull/986)
+* Update link to OpenAI MCP example by [@mossbanay](https://github.com/mossbanay) in [#985](https://github.com/jlowin/fastmcp/pull/985)
+* Fix output schema generation edge case by [@jlowin](https://github.com/jlowin) in [#995](https://github.com/jlowin/fastmcp/pull/995)
+* Refactor array parameter formatting to reduce code duplication by [@jlowin](https://github.com/jlowin) in [#1007](https://github.com/jlowin/fastmcp/pull/1007)
+* Fix OpenAPI array parameter explode handling by [@jlowin](https://github.com/jlowin) in [#1008](https://github.com/jlowin/fastmcp/pull/1008)
+### Breaking Changes 🛫
+* MCP 6/18/25: Upgrade to mcp 1.10 by [@jlowin](https://github.com/jlowin) in [#887](https://github.com/jlowin/fastmcp/pull/887)
+### Docs 📚
+* Update middleware imports and documentation by [@jlowin](https://github.com/jlowin) in [#999](https://github.com/jlowin/fastmcp/pull/999)
+* Update OpenAI docs by [@jlowin](https://github.com/jlowin) in [#1001](https://github.com/jlowin/fastmcp/pull/1001)
+* Add CLI banner by [@jlowin](https://github.com/jlowin) in [#1005](https://github.com/jlowin/fastmcp/pull/1005)
+### Examples & Contrib 💡
+* Component Manager by [@gorocode](https://github.com/gorocode) in [#976](https://github.com/jlowin/fastmcp/pull/976)
+### Other Changes 🦾
+* Minor auth improvements by [@jlowin](https://github.com/jlowin) in [#967](https://github.com/jlowin/fastmcp/pull/967)
+* Add .ccignore for copychat by [@jlowin](https://github.com/jlowin) in [#1000](https://github.com/jlowin/fastmcp/pull/1000)
+
+## New Contributors
+* [@maddymanu](https://github.com/maddymanu) made their first contribution in [#977](https://github.com/jlowin/fastmcp/pull/977)
+* [@github0hello](https://github.com/github0hello) made their first contribution in [#979](https://github.com/jlowin/fastmcp/pull/979)
+* [@tommitt](https://github.com/tommitt) made their first contribution in [#975](https://github.com/jlowin/fastmcp/pull/975)
+* [@CfirTsabari](https://github.com/CfirTsabari) made their first contribution in [#986](https://github.com/jlowin/fastmcp/pull/986)
+* [@mossbanay](https://github.com/mossbanay) made their first contribution in [#985](https://github.com/jlowin/fastmcp/pull/985)
+* [@sstene1](https://github.com/sstene1) made their first contribution in [#997](https://github.com/jlowin/fastmcp/pull/997)
+
+**Full Changelog**: [v2.9.2...v2.10.0](https://github.com/jlowin/fastmcp/compare/v2.9.2...v2.10.0)
+
+</Update>
+
+<Update label="v2.9.2" description="2024-06-26">
+
+## [v2.9.2: Safety Pin](https://github.com/jlowin/fastmcp/releases/tag/v2.9.2)
+
+This is a patch release to pin `mcp` below 1.10, which includes changes related to the 6/18/2025 MCP spec update and could potentially break functionality for some FastMCP users.
+
+## What's Changed
+### Docs 📚
+* Fix version badge for messages by [@jlowin](https://github.com/jlowin) in [#960](https://github.com/jlowin/fastmcp/pull/960)
+### Dependencies 📦
+* Pin mcp dependency by [@jlowin](https://github.com/jlowin) in [#962](https://github.com/jlowin/fastmcp/pull/962)
+
+**Full Changelog**: [v2.9.1...v2.9.2](https://github.com/jlowin/fastmcp/compare/v2.9.1...v2.9.2)
+
+</Update>
+
+<Update label="v2.9.1" description="2024-06-26">
+
+## [v2.9.1: Call Me Maybe](https://github.com/jlowin/fastmcp/releases/tag/v2.9.1)
+
+FastMCP 2.9.1 introduces automatic MCP list change notifications, allowing servers to notify clients when tools, resources, or prompts are dynamically updated. This enables more responsive and adaptive MCP integrations.
+
+## What's Changed
+### New Features 🎉
+* Add automatic MCP list change notifications and client message handling by [@jlowin](https://github.com/jlowin) in [#939](https://github.com/jlowin/fastmcp/pull/939)
+### Enhancements 🔧
+* Add debug logging to bearer token authentication by [@jlowin](https://github.com/jlowin) in [#952](https://github.com/jlowin/fastmcp/pull/952)
+### Fixes 🐞
+* Fix duplicate error logging in exception handlers by [@jlowin](https://github.com/jlowin) in [#938](https://github.com/jlowin/fastmcp/pull/938)
+* Fix parameter location enum handling in OpenAPI parser by [@jlowin](https://github.com/jlowin) in [#953](https://github.com/jlowin/fastmcp/pull/953)
+* Fix external schema reference handling in OpenAPI parser by [@jlowin](https://github.com/jlowin) in [#954](https://github.com/jlowin/fastmcp/pull/954)
+### Docs 📚
+* Update changelog for 2.9 release by [@jlowin](https://github.com/jlowin) in [#929](https://github.com/jlowin/fastmcp/pull/929)
+* Regenerate API references by [@zzstoatzz](https://github.com/zzstoatzz) in [#935](https://github.com/jlowin/fastmcp/pull/935)
+* Regenerate API references by [@zzstoatzz](https://github.com/zzstoatzz) in [#947](https://github.com/jlowin/fastmcp/pull/947)
+* Regenerate API references by [@zzstoatzz](https://github.com/zzstoatzz) in [#949](https://github.com/jlowin/fastmcp/pull/949)
+### Examples & Contrib 💡
+* Add `create_thread` tool to bsky MCP server by [@zzstoatzz](https://github.com/zzstoatzz) in [#927](https://github.com/jlowin/fastmcp/pull/927)
+* Update `mount_example.py` to work with current fastmcp API by [@rajephon](https://github.com/rajephon) in [#957](https://github.com/jlowin/fastmcp/pull/957)
+
+## New Contributors
+* [@rajephon](https://github.com/rajephon) made their first contribution in [#957](https://github.com/jlowin/fastmcp/pull/957)
+
+**Full Changelog**: [v2.9.0...v2.9.1](https://github.com/jlowin/fastmcp/compare/v2.9.0...v2.9.1)
+
+</Update>
+
 <Update label="v2.9.0" description="2024-06-23">
 
 ## [v2.9.0: Stuck in the Middleware With You](https://github.com/jlowin/fastmcp/releases/tag/v2.9.0)
