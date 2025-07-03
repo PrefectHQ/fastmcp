@@ -176,7 +176,7 @@ async with client:
     
     # Execute a tool
     result = await client.call_tool("multiply", {"a": 5, "b": 3})
-    print(result[0].text)  # "15"
+    print(result.data)  # 15
 ```
 
 See [Tools](/clients/tools) for detailed documentation.

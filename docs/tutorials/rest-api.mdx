@@ -114,7 +114,7 @@ async def main():
         # Call one of the generated tools
         print("\n\nCalling tool 'get_user_by_id'...")
         user = await client.call_tool("get_user_by_id", {"id": 1})
-        print(f"Result:\n{user[0].text}")
+        print(f"Result:\n{user.data}")
 
 if __name__ == "__main__":
     asyncio.run(main())
