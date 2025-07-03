@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, Annotated, Any, Literal
 from urllib.parse import urlparse
+import datetime
 
 import httpx
 from pydantic import AnyUrl, ConfigDict, Field
@@ -65,6 +66,7 @@ class RemoteMCPServer(FastMCPBaseModel):
             description='Either a string representing a Bearer token, the literal "oauth" to use OAuth authentication, or an httpx.Auth instance for custom authentication.',
         ),
     ] = None
+    sse_read_timeout: datetime.timedelta | int | float | None = None
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -77,11 +79,19 @@ class RemoteMCPServer(FastMCPBaseModel):
             transport = self.transport
 
         if transport == "sse":
-            return SSETransport(self.url, headers=self.headers, auth=self.auth)
+            return SSETransport(
+                self.url,
+                headers=self.headers,
+                auth=self.auth,
+                sse_read_timeout=self.sse_read_timeout,
+            )
         else:
             # Both "http" and "streamable-http" map to StreamableHttpTransport
             return StreamableHttpTransport(
-                self.url, headers=self.headers, auth=self.auth
+                self.url,
+                headers=self.headers,
+                auth=self.auth,
+                sse_read_timeout=self.sse_read_timeout,
             )
 
 
