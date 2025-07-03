@@ -36,3 +36,13 @@ async def test_tool_functionality(mcp_server):
 ```
 
 This pattern creates a direct connection between the client and server, allowing you to test your server's functionality efficiently.
+
+<Tip>
+If you're using pytest for async tests, as shown above, you may need to configure appropriate markers or set `asyncio_mode = "auto"` in your pytest configuration in order to handle async test functions automatically.
+</Tip> 
+
+
+## Mocking
+
+FastMCP servers are designed to work seamlessly with standard Python testing tools and patterns. There's nothing special about testing FastMCP servers - you can use all the familiar Python mocking, patching, and testing techniques you already know.
+
