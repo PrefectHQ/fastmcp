@@ -1,6 +1,7 @@
 from __future__ import annotations as _annotations
 
 import inspect
+import warnings
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
@@ -258,4 +259,21 @@ class Settings(BaseSettings):
     ] = None
 
 
-settings = Settings()
+def __getattr__(name: str):
+    """
+    Used to deprecate the module-level Image class; can be removed once it is no longer imported to root.
+    """
+    if name == "settings":
+        import fastmcp
+
+        settings = fastmcp.settings
+        # Deprecated in 2.10.2
+        if settings.deprecation_warnings:
+            warnings.warn(
+                "`from fastmcp.settings import settings` is deprecated. use `fasmtpc.settings` instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        return settings
+
+    raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
