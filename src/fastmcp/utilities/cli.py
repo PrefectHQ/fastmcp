@@ -98,7 +98,7 @@ def create_server_banner(
         title=title,
         title_align="left",
         border_style="dim",
-        padding=(2, 10),
+        padding=(2, 5),
         expand=False,
     )
 
