@@ -2,7 +2,7 @@ import asyncio
 import json
 import sys
 from collections.abc import AsyncGenerator
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, call
 
 import pytest
 import uvicorn
@@ -53,6 +53,7 @@ def fastmcp_server():
     async def greet_with_progress(name: str, ctx: Context) -> str:
         """Report progress for a greeting."""
         await ctx.report_progress(0.5, 1.0, "Greeting in progress")
+        await ctx.report_progress(0.75, 1.0, "Almost there!")
         return f"Hello, {name}!"
 
     # Add a resource
@@ -108,8 +109,9 @@ def run_nested_server(host: str, port: int) -> None:
 
 @pytest.fixture()
 async def streamable_http_server(
-    stateless_http: bool = False,
+    request,
 ) -> AsyncGenerator[str, None]:
+    stateless_http = getattr(request, "param", False)
     with run_server_in_process(
         run_server, stateless_http=stateless_http, transport="http"
     ) as url:
@@ -176,15 +178,24 @@ async def test_greet_with_progress_tool(streamable_http_server: str):
         result = await client.call_tool("greet_with_progress", {"name": "Alice"})
         assert result.data == "Hello, Alice!"
 
-        progress_handler.assert_called_once_with(0.5, 1.0, "Greeting in progress")
+        progress_handler.assert_has_calls(
+            [
+                call(0.5, 1.0, "Greeting in progress"),
+                call(0.75, 1.0, "Almost there!"),
+            ]
+        )
 
 
 @pytest.mark.parametrize("streamable_http_server", [True, False], indirect=True)
-async def test_elicitation_tool(streamable_http_server: str):
+async def test_elicitation_tool(streamable_http_server: str, request):
     """Test calling the elicitation tool in both stateless and stateful modes."""
 
     async def elicitation_handler(message, response_type, params, ctx):
         return {"value": "Alice"}
+
+    stateless_http = request.node.callspec.params.get("streamable_http_server", False)
+    if stateless_http:
+        pytest.xfail("Elicitation is not supported in stateless HTTP mode")
 
     async with Client(
         transport=StreamableHttpTransport(streamable_http_server),
