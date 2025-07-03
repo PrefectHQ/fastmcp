@@ -180,7 +180,7 @@ async def test_dynamic_mount():
     
     async with Client(main_mcp) as client:
         result = await client.call_tool("dynamic_added_later")
-        print("Result:", result[0].text)
+        print("Result:", result.data)
         # Shows: "Tool Added Dynamically!"
 
 if __name__ == "__main__":
