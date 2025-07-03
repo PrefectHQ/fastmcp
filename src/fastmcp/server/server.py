@@ -60,7 +60,7 @@ from fastmcp.settings import Settings
 from fastmcp.tools import ToolManager
 from fastmcp.tools.tool import FunctionTool, Tool, ToolResult
 from fastmcp.utilities.cache import TimedCache
-from fastmcp.utilities.cli import print_server_banner
+from fastmcp.utilities.cli import create_server_banner
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.mcp_config import MCPConfig
@@ -1343,9 +1343,11 @@ class FastMCP(Generic[LifespanResultT]):
 
         # Display server banner
         if show_banner:
-            print_server_banner(
-                server=self,
-                transport="stdio",
+            logger.info(
+                create_server_banner(
+                    server=self,
+                    transport="stdio",
+                )
             )
 
         async with stdio_server() as (read_stream, write_stream):
@@ -1397,14 +1399,15 @@ class FastMCP(Generic[LifespanResultT]):
 
         # Display server banner
         if show_banner:
-            print_server_banner(
-                server=self,
-                transport=transport,
-                host=host,
-                port=port,
-                path=server_path,
+            logger.info(
+                create_server_banner(
+                    server=self,
+                    transport=transport,
+                    host=host,
+                    port=port,
+                    path=server_path,
+                )
             )
-
         _uvicorn_config_from_user = uvicorn_config or {}
 
         config_kwargs: dict[str, Any] = {

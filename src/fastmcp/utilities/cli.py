@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from importlib.metadata import version
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from rich.console import Console, Group
 from rich.panel import Panel
@@ -11,8 +11,6 @@ from rich.text import Text
 import fastmcp
 
 if TYPE_CHECKING:
-    from typing import Literal
-
     from fastmcp import FastMCP
 
 LOGO_ASCII = r"""
@@ -25,15 +23,15 @@ _ __ ___ /_/    \__,_/____/\__/_/  /_/\____/_/         /_____(_)____/
 """.lstrip("\n")
 
 
-def print_server_banner(
+def create_server_banner(
     server: FastMCP[Any],
     transport: Literal["stdio", "http", "sse", "streamable-http"],
     *,
     host: str | None = None,
     port: int | None = None,
     path: str | None = None,
-) -> None:
-    """Print a formatted banner with server information and logo.
+) -> str:
+    """Creates a formatted banner (as a string) with server information and logo.
 
     Args:
         transport: The transport protocol being used
@@ -41,9 +39,10 @@ def print_server_banner(
         host: Host address (for HTTP transports)
         port: Port number (for HTTP transports)
         path: Server path (for HTTP transports)
-    """
 
-    console = Console()
+    Returns:
+        A string representation of the banner.
+    """
 
     # Create the logo text
     logo_text = Text(LOGO_ASCII, style="bold green")
@@ -103,4 +102,8 @@ def print_server_banner(
         expand=False,
     )
 
-    console.print(panel)
+    console = Console()
+    with console.capture() as capture:
+        console.print(panel)
+    rendered = capture.get()
+    return f"\n\n{rendered}"
