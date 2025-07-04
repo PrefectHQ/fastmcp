@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+import datetime
 import re
 from typing import TYPE_CHECKING, Annotated, Any, Literal
 from urllib.parse import urlparse
-import datetime
 
 import httpx
 from pydantic import AnyUrl, ConfigDict, Field
