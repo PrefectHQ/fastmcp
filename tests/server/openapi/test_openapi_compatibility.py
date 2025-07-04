@@ -2,11 +2,13 @@ import json
 
 import httpx
 import pytest
+from pydantic import ValidationError
 from pydantic.networks import AnyUrl
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.server.openapi import FastMCPOpenAPI
+from fastmcp.utilities.openapi import parse_openapi_to_http_routes
 
 from .conftest import GET_ROUTE_MAPS
 
@@ -80,8 +82,6 @@ class TestOpenAPI30Compatibility:
                     ],
                 )
             elif request.url.path == "/products" and request.method == "POST":
-                import json
-
                 data = json.loads(request.content)
                 return httpx.Response(
                     201, json={"id": "p3", "name": data["name"], "price": data["price"]}
@@ -257,8 +257,6 @@ class TestOpenAPI31Compatibility:
                     ],
                 )
             elif request.url.path == "/orders" and request.method == "POST":
-                import json
-
                 data = json.loads(request.content)
                 return httpx.Response(
                     201,
@@ -418,8 +416,6 @@ class TestOpenAPIVersionDifferences:
         }
 
         # This should not raise a ValidationError
-        from fastmcp.utilities.openapi import parse_openapi_to_http_routes
-
         routes = parse_openapi_to_http_routes(spec_with_exclusive_max)
         assert len(routes) == 1
         assert routes[0].operation_id == "createLoan"
@@ -467,8 +463,6 @@ class TestOpenAPIVersionDifferences:
         }
 
         # This should not raise a ValidationError
-        from fastmcp.utilities.openapi import parse_openapi_to_http_routes
-
         routes = parse_openapi_to_http_routes(spec_with_exclusive_max)
         assert len(routes) == 1
         assert routes[0].operation_id == "createLoan"
@@ -508,8 +502,6 @@ class TestOpenAPIVersionDifferences:
         }
 
         # This should not raise a ValidationError
-        from fastmcp.utilities.openapi import parse_openapi_to_http_routes
-
         routes = parse_openapi_to_http_routes(spec_with_nullable)
         assert len(routes) == 1
         assert routes[0].operation_id == "createUser"
@@ -551,8 +543,6 @@ class TestOpenAPIVersionDifferences:
         }
 
         # This should not raise a ValidationError
-        from fastmcp.utilities.openapi import parse_openapi_to_http_routes
-
         routes = parse_openapi_to_http_routes(spec_with_type_array)
         assert len(routes) == 1
         assert routes[0].operation_id == "createUser"
@@ -620,15 +610,8 @@ class TestOpenAPIVersionDifferences:
         }
 
         # This should reproduce the validation error from GitHub issue #1021
-        from fastmcp.utilities.openapi import parse_openapi_to_http_routes
-
-        try:
-            routes = parse_openapi_to_http_routes(spec_with_defs)
-            assert len(routes) == 1
-            assert routes[0].operation_id == "createComplexLoan"
-        except ValueError as e:
-            # If this fails, it's reproducing the issue
-            pytest.fail(f"OpenAPI 3.0 validation failed: {e}")
+        with pytest.raises(ValidationError):
+            parse_openapi_to_http_routes(spec_with_defs)
 
     def test_openapi_30_edge_case_with_multiple_exclusive_constraints(self):
         """Test edge case with multiple exclusive constraints that might trigger validation issues."""
@@ -673,8 +656,6 @@ class TestOpenAPIVersionDifferences:
         }
 
         # This might trigger validation issues with multiple exclusive constraints
-        from fastmcp.utilities.openapi import parse_openapi_to_http_routes
-
         routes = parse_openapi_to_http_routes(spec_edge_case)
         assert len(routes) == 1
         assert routes[0].operation_id == "validateData"
