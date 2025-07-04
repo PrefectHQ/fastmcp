@@ -2,7 +2,6 @@ import json
 
 import httpx
 import pytest
-from pydantic import ValidationError
 from pydantic.networks import AnyUrl
 
 from fastmcp import FastMCP
@@ -609,9 +608,10 @@ class TestOpenAPIVersionDifferences:
             },
         }
 
-        # This should reproduce the validation error from GitHub issue #1021
-        with pytest.raises(ValidationError):
-            parse_openapi_to_http_routes(spec_with_defs)
+        # This should not raise a ValidationError (GitHub issue #1021 should be fixed)
+        routes = parse_openapi_to_http_routes(spec_with_defs)
+        assert len(routes) == 1
+        assert routes[0].operation_id == "createComplexLoan"
 
     def test_openapi_30_edge_case_with_multiple_exclusive_constraints(self):
         """Test edge case with multiple exclusive constraints that might trigger validation issues."""
