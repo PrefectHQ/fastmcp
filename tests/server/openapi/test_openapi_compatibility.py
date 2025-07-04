@@ -369,3 +369,312 @@ class TestOpenAPI31Compatibility:
             assert result.data["id"] == "o3"
             assert result.data["customer"] == "Charlie"
             assert result.data["items"] == ["item4", "item5"]
+
+
+class TestOpenAPIVersionDifferences:
+    """Test specific differences between OpenAPI 3.0 and 3.1 that can cause compatibility issues."""
+
+    def test_openapi_30_exclusive_maximum_boolean_format(self):
+        """Test OpenAPI 3.0 format with boolean exclusiveMaximum (reproduces GitHub issue #1021)."""
+        spec_with_exclusive_max = {
+            "openapi": "3.0.0",
+            "info": {"title": "Loan API", "version": "1.0.0"},
+            "paths": {
+                "/loans": {
+                    "post": {
+                        "operationId": "createLoan",
+                        "summary": "Create a loan",
+                        "requestBody": {
+                            "required": True,
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "$ref": "#/components/schemas/LoanDetails"
+                                    }
+                                }
+                            },
+                        },
+                        "responses": {"201": {"description": "Loan created"}},
+                    }
+                }
+            },
+            "components": {
+                "schemas": {
+                    "LoanDetails": {
+                        "type": "object",
+                        "properties": {
+                            "amount": {"type": "number", "minimum": 0},
+                            "interest_rate": {
+                                "type": "number",
+                                "minimum": 0,
+                                "maximum": 100,
+                                "exclusiveMaximum": True,  # OpenAPI 3.0 boolean format
+                            },
+                        },
+                        "required": ["amount", "interest_rate"],
+                    }
+                }
+            },
+        }
+
+        # This should not raise a ValidationError
+        from fastmcp.utilities.openapi import parse_openapi_to_http_routes
+
+        routes = parse_openapi_to_http_routes(spec_with_exclusive_max)
+        assert len(routes) == 1
+        assert routes[0].operation_id == "createLoan"
+
+    def test_openapi_31_exclusive_maximum_numeric_format(self):
+        """Test OpenAPI 3.1 format with numeric exclusiveMaximum."""
+        spec_with_exclusive_max = {
+            "openapi": "3.1.0",
+            "info": {"title": "Loan API", "version": "1.0.0"},
+            "paths": {
+                "/loans": {
+                    "post": {
+                        "operationId": "createLoan",
+                        "summary": "Create a loan",
+                        "requestBody": {
+                            "required": True,
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "$ref": "#/components/schemas/LoanDetails"
+                                    }
+                                }
+                            },
+                        },
+                        "responses": {"201": {"description": "Loan created"}},
+                    }
+                }
+            },
+            "components": {
+                "schemas": {
+                    "LoanDetails": {
+                        "type": "object",
+                        "properties": {
+                            "amount": {"type": "number", "minimum": 0},
+                            "interest_rate": {
+                                "type": "number",
+                                "minimum": 0,
+                                "exclusiveMaximum": 100,  # OpenAPI 3.1 numeric format
+                            },
+                        },
+                        "required": ["amount", "interest_rate"],
+                    }
+                }
+            },
+        }
+
+        # This should not raise a ValidationError
+        from fastmcp.utilities.openapi import parse_openapi_to_http_routes
+
+        routes = parse_openapi_to_http_routes(spec_with_exclusive_max)
+        assert len(routes) == 1
+        assert routes[0].operation_id == "createLoan"
+
+    def test_openapi_30_nullable_format(self):
+        """Test OpenAPI 3.0 nullable format."""
+        spec_with_nullable = {
+            "openapi": "3.0.0",
+            "info": {"title": "User API", "version": "1.0.0"},
+            "paths": {
+                "/users": {
+                    "post": {
+                        "operationId": "createUser",
+                        "summary": "Create a user",
+                        "requestBody": {
+                            "required": True,
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {
+                                            "name": {"type": "string"},
+                                            "email": {
+                                                "type": "string",
+                                                "nullable": True,  # OpenAPI 3.0 nullable format
+                                            },
+                                        },
+                                        "required": ["name"],
+                                    }
+                                }
+                            },
+                        },
+                        "responses": {"201": {"description": "User created"}},
+                    }
+                }
+            },
+        }
+
+        # This should not raise a ValidationError
+        from fastmcp.utilities.openapi import parse_openapi_to_http_routes
+
+        routes = parse_openapi_to_http_routes(spec_with_nullable)
+        assert len(routes) == 1
+        assert routes[0].operation_id == "createUser"
+
+    def test_openapi_31_type_array_format(self):
+        """Test OpenAPI 3.1 type array format for nullable values."""
+        spec_with_type_array = {
+            "openapi": "3.1.0",
+            "info": {"title": "User API", "version": "1.0.0"},
+            "paths": {
+                "/users": {
+                    "post": {
+                        "operationId": "createUser",
+                        "summary": "Create a user",
+                        "requestBody": {
+                            "required": True,
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {
+                                            "name": {"type": "string"},
+                                            "email": {
+                                                "type": [
+                                                    "string",
+                                                    "null",
+                                                ],  # OpenAPI 3.1 type array format
+                                            },
+                                        },
+                                        "required": ["name"],
+                                    }
+                                }
+                            },
+                        },
+                        "responses": {"201": {"description": "User created"}},
+                    }
+                }
+            },
+        }
+
+        # This should not raise a ValidationError
+        from fastmcp.utilities.openapi import parse_openapi_to_http_routes
+
+        routes = parse_openapi_to_http_routes(spec_with_type_array)
+        assert len(routes) == 1
+        assert routes[0].operation_id == "createUser"
+
+    def test_openapi_30_with_defs_and_exclusive_maximum(self):
+        """Test OpenAPI 3.0 with $defs and exclusiveMaximum (complex case from GitHub issue #1021)."""
+        spec_with_defs = {
+            "openapi": "3.0.0",
+            "info": {"title": "Complex Loan API", "version": "1.0.0"},
+            "paths": {
+                "/loans": {
+                    "post": {
+                        "operationId": "createComplexLoan",
+                        "summary": "Create a complex loan",
+                        "requestBody": {
+                            "required": True,
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {
+                                            "loanDetails": {
+                                                "$ref": "#/components/schemas/LoanDetails"
+                                            }
+                                        },
+                                        "required": ["loanDetails"],
+                                        "$defs": {
+                                            "LoanDetails": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "interest_rate": {
+                                                        "type": "number",
+                                                        "minimum": 0,
+                                                        "maximum": 100,
+                                                        "exclusiveMaximum": True,  # This should trigger the issue
+                                                    },
+                                                },
+                                                "required": ["interest_rate"],
+                                            }
+                                        },
+                                    }
+                                }
+                            },
+                        },
+                        "responses": {"201": {"description": "Complex loan created"}},
+                    }
+                }
+            },
+            "components": {
+                "schemas": {
+                    "LoanDetails": {
+                        "type": "object",
+                        "properties": {
+                            "interest_rate": {
+                                "type": "number",
+                                "minimum": 0,
+                                "maximum": 100,
+                                "exclusiveMaximum": True,
+                            },
+                        },
+                        "required": ["interest_rate"],
+                    }
+                }
+            },
+        }
+
+        # This should reproduce the validation error from GitHub issue #1021
+        from fastmcp.utilities.openapi import parse_openapi_to_http_routes
+
+        try:
+            routes = parse_openapi_to_http_routes(spec_with_defs)
+            assert len(routes) == 1
+            assert routes[0].operation_id == "createComplexLoan"
+        except ValueError as e:
+            # If this fails, it's reproducing the issue
+            pytest.fail(f"OpenAPI 3.0 validation failed: {e}")
+
+    def test_openapi_30_edge_case_with_multiple_exclusive_constraints(self):
+        """Test edge case with multiple exclusive constraints that might trigger validation issues."""
+        spec_edge_case = {
+            "openapi": "3.0.0",
+            "info": {"title": "Edge Case API", "version": "1.0.0"},
+            "paths": {
+                "/validate": {
+                    "post": {
+                        "operationId": "validateData",
+                        "summary": "Validate data with edge case constraints",
+                        "requestBody": {
+                            "required": True,
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {
+                                            "percentage": {
+                                                "type": "number",
+                                                "minimum": 0,
+                                                "maximum": 100,
+                                                "exclusiveMaximum": True,
+                                                "exclusiveMinimum": True,  # Both exclusive constraints
+                                            },
+                                            "rating": {
+                                                "type": "integer",
+                                                "minimum": 1,
+                                                "maximum": 10,
+                                                "exclusiveMaximum": True,
+                                            },
+                                        },
+                                        "required": ["percentage", "rating"],
+                                    }
+                                }
+                            },
+                        },
+                        "responses": {"200": {"description": "Data validated"}},
+                    }
+                }
+            },
+        }
+
+        # This might trigger validation issues with multiple exclusive constraints
+        from fastmcp.utilities.openapi import parse_openapi_to_http_routes
+
+        routes = parse_openapi_to_http_routes(spec_edge_case)
+        assert len(routes) == 1
+        assert routes[0].operation_id == "validateData"
