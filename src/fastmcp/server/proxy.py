@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import quote
 
 import mcp.types
+from mcp.client.session import ClientSession
+from mcp.shared.context import LifespanContextT, RequestContext
 from mcp.shared.exceptions import McpError
 from mcp.types import (
     METHOD_NOT_FOUND,
@@ -14,6 +17,10 @@ from mcp.types import (
 from pydantic.networks import AnyUrl
 
 from fastmcp.client import Client
+from fastmcp.client.elicitation import ElicitResult
+from fastmcp.client.logging import LogMessage
+from fastmcp.client.roots import RootsList
+from fastmcp.client.transports import ClientTransportT
 from fastmcp.exceptions import NotFoundError, ResourceError, ToolError
 from fastmcp.prompts import Prompt, PromptMessage
 from fastmcp.prompts.prompt import PromptArgument
@@ -21,10 +28,12 @@ from fastmcp.prompts.prompt_manager import PromptManager
 from fastmcp.resources import Resource, ResourceTemplate
 from fastmcp.resources.resource_manager import ResourceManager
 from fastmcp.server.context import Context
+from fastmcp.server.dependencies import get_context
 from fastmcp.server.server import FastMCP
 from fastmcp.tools.tool import Tool, ToolResult
 from fastmcp.tools.tool_manager import ToolManager
 from fastmcp.utilities.logging import get_logger
+from fastmcp.utilities.mcp_config import MCPConfig
 
 if TYPE_CHECKING:
     from fastmcp.server import Context
@@ -406,3 +415,110 @@ class FastMCPProxy(FastMCP):
         self._tool_manager = ProxyToolManager(client=self.client)
         self._resource_manager = ProxyResourceManager(client=self.client)
         self._prompt_manager = ProxyPromptManager(client=self.client)
+
+
+async def default_proxy_roots_handler(
+    context: RequestContext[ClientSession, LifespanContextT],
+) -> RootsList:
+    """
+    A handler that forwards the list roots request from the remote server to the proxy's connected clients and relays the response back to the remote server.
+    """
+    ctx = get_context()
+    return await ctx.list_roots()
+
+
+class ProxyClient(Client[ClientTransportT]):
+    """
+    A proxy client that forwards advanced interactions between a remote MCP server and the proxy's connected clients.
+    Supports forwarding roots, sampling, elicitation, logging, and progress.
+    """
+
+    def __init__(
+        self,
+        transport: (
+            ClientTransportT
+            | FastMCP
+            | AnyUrl
+            | Path
+            | MCPConfig
+            | dict[str, Any]
+            | str
+        ),
+        **kwargs,
+    ):
+        if "roots" not in kwargs:
+            kwargs["roots"] = default_proxy_roots_handler
+        if "sampling_handler" not in kwargs:
+            kwargs["sampling_handler"] = ProxyClient.default_sampling_handler
+        if "elicitation_handler" not in kwargs:
+            kwargs["elicitation_handler"] = ProxyClient.default_elicitation_handler
+        if "log_handler" not in kwargs:
+            kwargs["log_handler"] = ProxyClient.default_log_handler
+        if "progress_handler" not in kwargs:
+            kwargs["progress_handler"] = ProxyClient.default_progress_handler
+        super().__init__(transport, **kwargs)
+
+    @classmethod
+    async def default_sampling_handler(
+        cls,
+        messages: list[mcp.types.SamplingMessage],
+        params: mcp.types.CreateMessageRequestParams,
+        context: RequestContext[ClientSession, LifespanContextT],
+    ) -> mcp.types.CreateMessageResult:
+        """
+        A handler that forwards the sampling request from the remote server to the proxy's connected clients and relays the response back to the remote server.
+        """
+        ctx = get_context()
+        content = await ctx.sample(
+            [msg for msg in messages],
+            system_prompt=params.systemPrompt,
+            temperature=params.temperature,
+            max_tokens=params.maxTokens,
+            model_preferences=params.modelPreferences,
+        )
+        if isinstance(content, mcp.types.ResourceLink | mcp.types.EmbeddedResource):
+            raise RuntimeError("Content is not supported")
+        return mcp.types.CreateMessageResult(
+            role="assistant",
+            model="fastmcp-client",
+            content=content,
+        )
+
+    @classmethod
+    async def default_elicitation_handler(
+        cls,
+        message: str,
+        response_type: type,
+        params: mcp.types.ElicitRequestParams,
+        context: RequestContext[ClientSession, LifespanContextT],
+    ) -> ElicitResult:
+        """
+        A handler that forwards the elicitation request from the remote server to the proxy's connected clients and relays the response back to the remote server.
+        """
+        ctx = get_context()
+        result = await ctx.elicit(message, response_type)
+        if result.action == "accept":
+            return result.data
+        else:
+            return ElicitResult(action=result.action)
+
+    @classmethod
+    async def default_log_handler(cls, message: LogMessage) -> None:
+        """
+        A handler that forwards the log notification from the remote server to the proxy's connected clients.
+        """
+        ctx = get_context()
+        await ctx.log(message.data, level=message.level, logger_name=message.logger)
+
+    @classmethod
+    async def default_progress_handler(
+        cls,
+        progress: float,
+        total: float | None,
+        message: str | None,
+    ) -> None:
+        """
+        A handler that forwards the progress notification from the remote server to the proxy's connected clients.
+        """
+        ctx = get_context()
+        await ctx.report_progress(progress, total, message)

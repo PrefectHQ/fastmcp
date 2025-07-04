@@ -162,6 +162,12 @@ composite_proxy = FastMCP.as_proxy(config, name="Composite Proxy")
 # - weather://weather/icons/sunny, calendar://calendar/events/today
 ```
 
+## Forwarding Interactions
+
+`ProxyClient` is a subclass of `Client` that implements a set of default handlers to forward advanced interactions between the backend server and the client connected to the proxy. These handlers receive requests or notifications from the backend server and forward them to the client through the related request context, relaying the response back to the backend server if needed. This setup enables the proxy to support advanced MCP features, including roots, sampling, elicitation, logging, and progress.
+
+To prevent the forwarding of any interaction, pass `None` to the corresponding handler when creating the `ProxyClient`. Typically, you should use `ProxyClient` to establish a proxy unless there is a specific reason not to. If the `transport` parameter is not an instance of `Client`, `FastMCP.as_proxy()` will automatically instantiate a `ProxyClient`.
+
 ## `FastMCPProxy` Class
 
 Internally, `FastMCP.as_proxy()` uses the `FastMCPProxy` class. You generally don't need to interact with this class directly, but it's available if needed.

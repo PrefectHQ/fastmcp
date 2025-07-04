@@ -11,7 +11,7 @@ from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.client.transports import FastMCPTransport, StreamableHttpTransport
 from fastmcp.exceptions import ToolError
-from fastmcp.server.proxy import FastMCPProxy
+from fastmcp.server.proxy import FastMCPProxy, ProxyClient
 
 USERS = [
     {"id": "1", "name": "Alice", "active": True},
@@ -71,13 +71,13 @@ def fastmcp_server():
 @pytest.fixture
 async def proxy_server(fastmcp_server):
     """Fixture that creates a FastMCP proxy server."""
-    return FastMCP.as_proxy(Client(transport=FastMCPTransport(fastmcp_server)))
+    return FastMCP.as_proxy(ProxyClient(transport=FastMCPTransport(fastmcp_server)))
 
 
 async def test_create_proxy(fastmcp_server):
     """Test that the proxy server properly forwards requests to the original server."""
     # Create a client
-    client = Client(transport=FastMCPTransport(fastmcp_server))
+    client = ProxyClient(transport=FastMCPTransport(fastmcp_server))
 
     server = FastMCPProxy.as_proxy(client)
 
