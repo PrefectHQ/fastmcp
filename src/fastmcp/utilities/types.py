@@ -3,6 +3,7 @@
 import base64
 import inspect
 import mimetypes
+import os
 from collections.abc import Callable
 from functools import lru_cache
 from pathlib import Path
@@ -101,7 +102,7 @@ class Image:
         if path is not None and data is not None:
             raise ValueError("Only one of path or data can be provided")
 
-        self.path = Path(path) if path else None
+        self.path = Path(os.path.expandvars(str(path))).expanduser() if path else None
         self.data = data
         self._format = format
         self._mime_type = self._get_mime_type()
@@ -160,7 +161,7 @@ class Audio:
         if path is not None and data is not None:
             raise ValueError("Only one of path or data can be provided")
 
-        self.path = Path(path) if path else None
+        self.path = Path(os.path.expandvars(str(path))).expanduser() if path else None
         self.data = data
         self._format = format
         self._mime_type = self._get_mime_type()
@@ -219,7 +220,7 @@ class File:
         if path is not None and data is not None:
             raise ValueError("Only one of path or data can be provided")
 
-        self.path = Path(path) if path else None
+        self.path = Path(os.path.expandvars(str(path))).expanduser() if path else None
         self.data = data
         self._format = format
         self._mime_type = self._get_mime_type()
