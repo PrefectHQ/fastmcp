@@ -399,12 +399,21 @@ class BearerAuthProvider(OAuthProvider):
             return None
 
     def _extract_scopes(self, claims: dict[str, Any]) -> list[str]:
-        """Extract scopes from JWT claims."""
-        scope_claim = claims.get("scope", "")
-        if isinstance(scope_claim, str):
-            return scope_claim.split()
-        elif isinstance(scope_claim, list):
-            return scope_claim
+        """
+        Extract scopes from JWT claims. Supports both 'scope' and 'scp'
+        claims.
+
+        Checks the `scope` claim first (standard OAuth2 claim), then the `scp`
+        claim (used by some Identity Providers).
+        """
+
+        for claim in ["scope", "scp"]:
+            if claim in claims:
+                if isinstance(claims[claim], str):
+                    return claims[claim].split()
+                elif isinstance(claims[claim], list):
+                    return claims[claim]
+
         return []
 
     async def verify_token(self, token: str) -> AccessToken | None:
