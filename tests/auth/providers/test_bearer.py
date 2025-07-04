@@ -533,6 +533,59 @@ class TestBearerToken:
         assert access_token is not None
         assert access_token.scopes == []
 
+    async def test_scp_claim_extraction_string(
+        self, rsa_key_pair: RSAKeyPair, bearer_provider: BearerAuthProvider
+    ):
+        """Test scope extraction from 'scp' claim with space-separated string."""
+        token = rsa_key_pair.create_token(
+            subject="test-user",
+            issuer="https://test.example.com",
+            audience="https://api.example.com",
+            additional_claims={"scp": "read write admin"},  # 'scp' claim as string
+        )
+
+        access_token = await bearer_provider.load_access_token(token)
+
+        assert access_token is not None
+        assert set(access_token.scopes) == {"read", "write", "admin"}
+
+    async def test_scp_claim_extraction_list(
+        self, rsa_key_pair: RSAKeyPair, bearer_provider: BearerAuthProvider
+    ):
+        """Test scope extraction from 'scp' claim with list format."""
+        token = rsa_key_pair.create_token(
+            subject="test-user",
+            issuer="https://test.example.com",
+            audience="https://api.example.com",
+            additional_claims={
+                "scp": ["read", "write", "admin"]
+            },  # 'scp' claim as list
+        )
+
+        access_token = await bearer_provider.load_access_token(token)
+
+        assert access_token is not None
+        assert set(access_token.scopes) == {"read", "write", "admin"}
+
+    async def test_scope_precedence_over_scp(
+        self, rsa_key_pair: RSAKeyPair, bearer_provider: BearerAuthProvider
+    ):
+        """Test that 'scope' claim takes precedence over 'scp' claim when both are present."""
+        token = rsa_key_pair.create_token(
+            subject="test-user",
+            issuer="https://test.example.com",
+            audience="https://api.example.com",
+            additional_claims={
+                "scope": "read write",  # Standard OAuth2 claim
+                "scp": "admin delete",  # Should be ignored when 'scope' is present
+            },
+        )
+
+        access_token = await bearer_provider.load_access_token(token)
+
+        assert access_token is not None
+        assert set(access_token.scopes) == {"read", "write"}  # Only 'scope' claim used
+
     async def test_malformed_token_rejection(self, bearer_provider: BearerAuthProvider):
         """Test rejection of malformed tokens."""
         malformed_tokens = [
