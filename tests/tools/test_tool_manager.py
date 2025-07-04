@@ -12,6 +12,7 @@ from fastmcp import Context, FastMCP
 from fastmcp.exceptions import NotFoundError, ToolError
 from fastmcp.tools import FunctionTool, ToolManager
 from fastmcp.tools.tool import Tool
+from fastmcp.utilities.tests import caplog_for_fastmcp
 from fastmcp.utilities.types import Image
 
 
@@ -178,8 +179,10 @@ class TestAddTools:
 
         tool1 = Tool.from_function(test_fn, name="test_tool")
         manager.add_tool(tool1)
-        tool2 = Tool.from_function(test_fn, name="test_tool")
-        manager.add_tool(tool2)
+
+        with caplog_for_fastmcp(caplog):
+            tool2 = Tool.from_function(test_fn, name="test_tool")
+            manager.add_tool(tool2)
 
         assert "Tool already exists: test_tool" in caplog.text
         # Should have the tool

@@ -15,6 +15,7 @@ from typing_extensions import TypedDict
 
 from fastmcp.tools.tool import Tool, _convert_to_content
 from fastmcp.utilities.json_schema import compress_schema
+from fastmcp.utilities.tests import caplog_for_fastmcp
 from fastmcp.utilities.types import Audio, File, Image
 
 
@@ -1007,12 +1008,11 @@ class TestConvertResultToContent:
 
     def test_custom_serializer_error_fallback(self, caplog):
         """Test that if a custom serializer fails, it falls back to the default."""
-        import logging
 
         def custom_serializer_that_fails(data):
             raise ValueError("Serialization failed")
 
-        with caplog.at_level(logging.WARNING):
+        with caplog_for_fastmcp(caplog):
             result = _convert_to_content(
                 {"a": 1}, serializer=custom_serializer_that_fails
             )

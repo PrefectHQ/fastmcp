@@ -7,6 +7,7 @@ from fastmcp.exceptions import NotFoundError, PromptError
 from fastmcp.prompts import Prompt
 from fastmcp.prompts.prompt import FunctionPrompt, PromptMessage, TextContent
 from fastmcp.prompts.prompt_manager import PromptManager
+from fastmcp.utilities.tests import caplog_for_fastmcp
 
 
 class TestPromptManager:
@@ -31,7 +32,10 @@ class TestPromptManager:
         manager = PromptManager(duplicate_behavior="warn")
         prompt = Prompt.from_function(fn)
         first = manager.add_prompt(prompt)
-        second = manager.add_prompt(prompt)
+
+        with caplog_for_fastmcp(caplog):
+            second = manager.add_prompt(prompt)
+
         assert first == second
         assert "Prompt already exists" in caplog.text
 
@@ -58,7 +62,9 @@ class TestPromptManager:
         prompt = Prompt.from_function(test_fn, name="test_prompt")
 
         manager.add_prompt(prompt)
-        manager.add_prompt(prompt)
+
+        with caplog_for_fastmcp(caplog):
+            manager.add_prompt(prompt)
 
         assert "Prompt already exists: test_prompt" in caplog.text
         # Should have the prompt

@@ -11,6 +11,7 @@ from fastmcp.resources import (
     ResourceTemplate,
 )
 from fastmcp.resources.resource import FunctionResource
+from fastmcp.utilities.tests import caplog_for_fastmcp
 
 
 @pytest.fixture
@@ -78,7 +79,9 @@ class TestResourceManager:
         )
 
         manager.add_resource(resource)
-        manager.add_resource(resource)
+
+        with caplog_for_fastmcp(caplog):
+            manager.add_resource(resource)
 
         assert "Resource already exists" in caplog.text
         # Should have the resource
@@ -181,7 +184,9 @@ class TestResourceManager:
         )
 
         manager.add_template(template)
-        manager.add_template(template)
+
+        with caplog_for_fastmcp(caplog):
+            manager.add_template(template)
 
         assert "Template already exists" in caplog.text
         # Should have the template

@@ -50,3 +50,6 @@ def configure_logging(
         logger.removeHandler(hdlr)
 
     logger.addHandler(handler)
+
+    # Don't propagate to the root logger
+    logger.propagate = False

@@ -6,6 +6,7 @@ import pytest
 
 from fastmcp import FastMCP
 from fastmcp.settings import Settings
+from fastmcp.utilities.tests import caplog_for_fastmcp
 
 # reset deprecation warnings for this module
 pytestmark = pytest.mark.filterwarnings("default::DeprecationWarning")
@@ -313,7 +314,8 @@ class TestDeprecatedEnvironmentVariables:
         try:
             os.environ[env_var_name] = "192.168.1.1"
 
-            settings = Settings()
+            with caplog_for_fastmcp(caplog):
+                settings = Settings()
 
             # Check that a warning was logged
             assert any(
@@ -341,8 +343,9 @@ class TestDeprecatedSettingsProperty:
         """Test that accessing fastmcp.settings.settings logs a deprecation warning."""
         from fastmcp import settings
 
-        # Access the deprecated property
-        deprecated_settings = settings.settings
+        with caplog_for_fastmcp(caplog):
+            # Access the deprecated property
+            deprecated_settings = settings.settings
 
         # Check that a warning was logged
         assert any(

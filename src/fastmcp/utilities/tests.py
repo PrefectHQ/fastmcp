@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import logging
 import multiprocessing
 import socket
 import time
@@ -129,3 +130,15 @@ def run_server_in_process(
         proc.join(timeout=2)
         if proc.is_alive():
             raise RuntimeError("Server process failed to terminate even after kill")
+
+
+@contextmanager
+def caplog_for_fastmcp(caplog):
+    """Context manager to capture logs from FastMCP loggers even when propagation is disabled."""
+    caplog.clear()
+    logger = logging.getLogger("FastMCP")
+    logger.addHandler(caplog.handler)
+    try:
+        yield
+    finally:
+        logger.removeHandler(caplog.handler)
