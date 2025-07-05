@@ -777,9 +777,7 @@ class TestProxyServer:
             return f"Data for {query}"
 
         # Create proxy server
-        proxy_server = FastMCP.as_proxy(
-            Client(transport=FastMCPTransport(original_server))
-        )
+        proxy_server = FastMCP.as_proxy(FastMCPTransport(original_server))
 
         # Mount proxy server
         main_app = FastMCP("MainApp")
@@ -800,9 +798,7 @@ class TestProxyServer:
         original_server = FastMCP("OriginalServer")
 
         # Create proxy server
-        proxy_server = FastMCP.as_proxy(
-            Client(transport=FastMCPTransport(original_server))
-        )
+        proxy_server = FastMCP.as_proxy(FastMCPTransport(original_server))
 
         # Mount proxy server
         main_app = FastMCP("MainApp")
@@ -832,9 +828,7 @@ class TestProxyServer:
             return {"api_key": "12345"}
 
         # Create proxy server
-        proxy_server = FastMCP.as_proxy(
-            Client(transport=FastMCPTransport(original_server))
-        )
+        proxy_server = FastMCP.as_proxy(FastMCPTransport(original_server))
 
         # Mount proxy server
         main_app = FastMCP("MainApp")
@@ -856,9 +850,7 @@ class TestProxyServer:
             return f"Welcome, {name}!"
 
         # Create proxy server
-        proxy_server = FastMCP.as_proxy(
-            Client(transport=FastMCPTransport(original_server))
-        )
+        proxy_server = FastMCP.as_proxy(FastMCPTransport(original_server))
 
         # Mount proxy server
         main_app = FastMCP("MainApp")
@@ -914,7 +906,7 @@ class TestAsProxyKwarg:
     async def test_as_proxy_ignored_for_proxy_mounts_default(self):
         mcp = FastMCP("Main")
         sub = FastMCP("Sub")
-        sub_proxy = FastMCP.as_proxy(Client(transport=FastMCPTransport(sub)))
+        sub_proxy = FastMCP.as_proxy(FastMCPTransport(sub))
 
         mcp.mount(sub_proxy, "sub")
 
@@ -923,7 +915,7 @@ class TestAsProxyKwarg:
     async def test_as_proxy_ignored_for_proxy_mounts_false(self):
         mcp = FastMCP("Main")
         sub = FastMCP("Sub")
-        sub_proxy = FastMCP.as_proxy(Client(transport=FastMCPTransport(sub)))
+        sub_proxy = FastMCP.as_proxy(FastMCPTransport(sub))
 
         mcp.mount(sub_proxy, "sub", as_proxy=False)
 
@@ -932,7 +924,7 @@ class TestAsProxyKwarg:
     async def test_as_proxy_ignored_for_proxy_mounts_true(self):
         mcp = FastMCP("Main")
         sub = FastMCP("Sub")
-        sub_proxy = FastMCP.as_proxy(Client(transport=FastMCPTransport(sub)))
+        sub_proxy = FastMCP.as_proxy(FastMCPTransport(sub))
 
         mcp.mount(sub_proxy, "sub", as_proxy=True)
 

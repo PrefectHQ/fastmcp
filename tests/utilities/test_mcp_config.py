@@ -4,6 +4,7 @@ from pathlib import Path
 from fastmcp.client.auth.bearer import BearerAuth
 from fastmcp.client.auth.oauth import OAuthClientProvider
 from fastmcp.client.client import Client
+from fastmcp.client.logging import LogMessage
 from fastmcp.client.transports import (
     SSETransport,
     StdioTransport,
@@ -195,3 +196,91 @@ async def test_remote_config_with_oauth_literal():
     client = Client(config)
     assert isinstance(client.transport.transport, StreamableHttpTransport)
     assert isinstance(client.transport.transport.auth, OAuthClientProvider)
+
+
+async def test_multi_client_with_logging(tmp_path: Path):
+    """
+    Tests that logging is properly forwarded to the ultimate client.
+    """
+    server_script = inspect.cleandoc("""
+        from fastmcp import FastMCP, Context
+
+        mcp = FastMCP()
+
+        @mcp.tool
+        async def log_test(message: str, ctx: Context) -> int:
+            await ctx.log(message)
+            return 42
+
+        if __name__ == '__main__':
+            mcp.run()
+        """)
+
+    script_path = tmp_path / "test.py"
+    script_path.write_text(server_script)
+
+    config = {
+        "mcpServers": {
+            "test_server": {
+                "command": "python",
+                "args": [str(script_path)],
+            },
+            "test_server_2": {
+                "command": "python",
+                "args": [str(script_path)],
+            },
+        }
+    }
+
+    MESSAGES = []
+
+    async def log_handler(message: LogMessage):
+        MESSAGES.append(message)
+
+    async with Client(config, log_handler=log_handler) as client:
+        result = await client.call_tool("test_server_log_test", {"message": "test 42"})
+        assert result.data == 42
+        assert len(MESSAGES) == 1
+        assert MESSAGES[0].data == "test 42"
+
+
+async def test_multi_client_with_elicitation(tmp_path: Path):
+    """
+    Tests that elicitation is properly forwarded to the ultimate client.
+    """
+    server_script = inspect.cleandoc("""
+        from fastmcp import FastMCP, Context
+
+        mcp = FastMCP()
+
+        @mcp.tool
+        async def elicit_test(ctx: Context) -> int:
+            result = await ctx.elicit('Pick a number', response_type=int)
+            return result.data
+
+        if __name__ == '__main__':
+            mcp.run()
+        """)
+
+    script_path = tmp_path / "test.py"
+    script_path.write_text(server_script)
+
+    config = {
+        "mcpServers": {
+            "test_server": {
+                "command": "python",
+                "args": [str(script_path)],
+            },
+            "test_server_2": {
+                "command": "python",
+                "args": [str(script_path)],
+            },
+        }
+    }
+
+    async def elicitation_handler(message, response_type, params, ctx):
+        return response_type(value=42)
+
+    async with Client(config, elicitation_handler=elicitation_handler) as client:
+        result = await client.call_tool("test_server_elicit_test", {})
+        assert result.data == 42

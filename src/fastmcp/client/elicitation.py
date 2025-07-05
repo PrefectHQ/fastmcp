@@ -53,6 +53,11 @@ def create_elicitation_callback(
             if not isinstance(result, ElicitResult):
                 result = ElicitResult(action="accept", content=result)
             content = to_jsonable_python(result.content)
+            if not isinstance(content, dict | None):
+                raise ValueError(
+                    "Elicitation responses must be serializable as a JSON object (dict). Received: "
+                    f"{result.content!r}"
+                )
             return MCPElicitResult(**result.model_dump() | {"content": content})
         except Exception as e:
             return mcp.types.ErrorData(

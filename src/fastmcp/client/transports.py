@@ -773,8 +773,6 @@ class MCPConfigTransport(ClientTransport):
     """
 
     def __init__(self, config: MCPConfig | dict):
-        from fastmcp.client.client import Client
-
         if isinstance(config, dict):
             config = MCPConfig.from_dict(config)
         self.config = config
@@ -792,9 +790,9 @@ class MCPConfigTransport(ClientTransport):
             composite_server = FastMCP()
 
             for name, server in self.config.mcpServers.items():
-                server_client = Client(transport=server.to_transport())
                 composite_server.mount(
-                    prefix=name, server=FastMCP.as_proxy(server_client)
+                    prefix=name,
+                    server=FastMCP.as_proxy(backend=server.to_transport()),
                 )
 
             self.transport = FastMCPTransport(mcp=composite_server)

@@ -725,7 +725,7 @@ class TestProxy:
     def proxy_server(self, mcp_server: FastMCP) -> FastMCP:
         from fastmcp.client.transports import FastMCPTransport
 
-        proxy = FastMCP.as_proxy(Client(transport=FastMCPTransport(mcp_server)))
+        proxy = FastMCP.as_proxy(FastMCPTransport(mcp_server))
         return proxy
 
     async def test_transform_proxy(self, proxy_server: FastMCP):

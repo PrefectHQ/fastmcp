@@ -48,8 +48,7 @@ def run_server(host: str, port: int, **kwargs) -> None:
 
 
 def run_proxy_server(host: str, port: int, shttp_url: str, **kwargs) -> None:
-    client = Client(transport=StreamableHttpTransport(shttp_url))
-    app = FastMCP.as_proxy(client)
+    app = FastMCP.as_proxy(StreamableHttpTransport(shttp_url))
     app.run(host=host, port=port, **kwargs)
 
 

@@ -51,7 +51,7 @@ async def test_elicitation_with_no_handler(fastmcp_server):
 
     async with Client(fastmcp_server) as client:
         with pytest.raises(ToolError, match="Elicitation not supported"):
-            await client.call_tool("ask_for_name", {})
+            await client.call_tool("ask_for_name")
 
 
 async def test_elicitation_accept_content(fastmcp_server):
@@ -64,7 +64,7 @@ async def test_elicitation_accept_content(fastmcp_server):
     async with Client(
         fastmcp_server, elicitation_handler=elicitation_handler
     ) as client:
-        result = await client.call_tool("ask_for_name", {})
+        result = await client.call_tool("ask_for_name")
         assert result.data == "Hello, Alice!"
 
 
@@ -77,7 +77,7 @@ async def test_elicitation_decline(fastmcp_server):
     async with Client(
         fastmcp_server, elicitation_handler=elicitation_handler
     ) as client:
-        result = await client.call_tool("ask_for_name", {})
+        result = await client.call_tool("ask_for_name")
         assert result.data == "No name provided."
 
 
@@ -600,3 +600,36 @@ class TestPatternMatching:
         async with Client(mcp, elicitation_handler=elicitation_handler) as client:
             result = await client.call_tool("pattern_match_tool", {})
             assert result.data == "Cancelled"
+
+
+async def test_elicitation_implicit_acceptance(fastmcp_server):
+    """Test that elicitation handler can return data directly without ElicitResult wrapper."""
+
+    async def elicitation_handler(message, response_type, params, ctx):
+        # Return data directly without wrapping in ElicitResult
+        # This should be treated as implicit acceptance
+        return response_type(name="Bob")
+
+    async with Client(
+        fastmcp_server, elicitation_handler=elicitation_handler
+    ) as client:
+        result = await client.call_tool("ask_for_name")
+        assert result.data == "Hello, Bob!"
+
+
+async def test_elicitation_implicit_acceptance_must_be_dict(fastmcp_server):
+    """Test that elicitation handler can return data directly without ElicitResult wrapper."""
+
+    async def elicitation_handler(message, response_type, params, ctx):
+        # Return data directly without wrapping in ElicitResult
+        # This should be treated as implicit acceptance
+        return "Bob"
+
+    async with Client(
+        fastmcp_server, elicitation_handler=elicitation_handler
+    ) as client:
+        with pytest.raises(
+            ToolError,
+            match="Elicitation responses must be serializable as a JSON object",
+        ):
+            await client.call_tool("ask_for_name")
