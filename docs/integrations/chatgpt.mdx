@@ -135,7 +135,8 @@ Replace `https://your-server-url.com` with the actual URL of your server (such a
 2. Click **Add custom connector**
 3. Enter your server details:
    - **Name**: Library Catalog
-   - **URL**: Your server URL (e.g., `https://abc123.ngrok.io`)
+   - **URL**: Your server URL, including the path.
+        - **Note**: Ensure your URL includes the correct path for the transport you’re using. The defaults are /sse/ for SSE (e.g., https://abc123.ngrok.io/sse/) and /mcp/ for HTTP (e.g., https://abc123.ngrok.io/mcp/).
    - **Description**: A library catalog for searching and retrieving books
 
 #### Test the Connection
