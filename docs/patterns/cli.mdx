@@ -148,10 +148,12 @@ fastmcp dev server.py -e . --with pandas --with matplotlib
 
 Install a MCP server in MCP client applications. FastMCP currently supports the following clients:
 
+- **Claude Code** - Installs via Claude Code's built-in MCP management system
 - **Claude Desktop** - Installs via direct configuration file modification
 - **Cursor** - Installs via deeplink that opens Cursor for user confirmation
 
 ```bash
+fastmcp install claude-code server.py
 fastmcp install claude-desktop server.py
 fastmcp install cursor server.py
 ```
@@ -194,6 +196,9 @@ fastmcp install claude-desktop server.py:my_server
 
 # With custom name and dependencies
 fastmcp install claude-desktop server.py:my_server -n "My Analysis Server" --with pandas
+
+# Install in Claude Code with environment variables
+fastmcp install claude-code server.py --env-var API_KEY=secret --env-var DEBUG=true
 
 # Install in Cursor with environment variables
 fastmcp install cursor server.py --env-var API_KEY=secret --env-var DEBUG=true

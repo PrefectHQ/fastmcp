@@ -14,6 +14,7 @@ from rich import print
 from fastmcp.cli.run import import_server, parse_file_path
 from fastmcp.utilities.logging import get_logger
 
+from .claude_code import install_claude_code
 from .claude_desktop import install_claude_desktop
 from .cursor import install_cursor
 
@@ -23,6 +24,7 @@ logger = get_logger(__name__)
 class Client(str, Enum):
     """Supported MCP clients."""
 
+    CLAUDE_CODE = "claude-code"
     CLAUDE_DESKTOP = "claude-desktop"
     CURSOR = "cursor"
 
@@ -142,9 +144,19 @@ def install(
             env_dict[key] = value
 
     # Route to appropriate installer
-    if client == Client.CLAUDE_DESKTOP:
+    if client == Client.CLAUDE_CODE:
+        success = install_claude_code(
+            file=file,
+            server_object=server_object,
+            name=name,
+            with_editable=with_editable,
+            with_packages=with_packages,
+            env_vars=env_dict,
+        )
+    elif client == Client.CLAUDE_DESKTOP:
         success = install_claude_desktop(
-            server_spec=server_spec,
+            file=file,
+            server_object=server_object,
             name=name,
             with_editable=with_editable,
             with_packages=with_packages,
@@ -152,7 +164,8 @@ def install(
         )
     elif client == Client.CURSOR:
         success = install_cursor(
-            server_spec=server_spec,
+            file=file,
+            server_object=server_object,
             name=name,
             with_editable=with_editable,
             with_packages=with_packages,
@@ -160,7 +173,7 @@ def install(
         )
     else:
         print(
-            f"[red bold]Unknown client: {client!r}[/red bold]. Supported clients: [bold]{Client.CLAUDE_DESKTOP}[/bold], [bold]{Client.CURSOR}[/bold]"
+            f"[red bold]Unknown client: {client!r}[/red bold]. Supported clients: [bold]{Client.CLAUDE_CODE}[/bold], [bold]{Client.CLAUDE_DESKTOP}[/bold], [bold]{Client.CURSOR}[/bold]"
         )
         raise typer.Exit(1)
 

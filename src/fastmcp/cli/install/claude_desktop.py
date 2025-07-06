@@ -33,7 +33,8 @@ def get_claude_config_path() -> Path | None:
 
 
 def install_claude_desktop(
-    server_spec: str,
+    file: Path,
+    server_object: str | None,
     name: str,
     *,
     with_editable: Path | None = None,
@@ -43,7 +44,8 @@ def install_claude_desktop(
     """Install FastMCP server in Claude Desktop.
 
     Args:
-        server_spec: Path to the server file, optionally with :object suffix
+        file: Path to the server file
+        server_object: Optional server object name (for :object suffix)
         name: Name for the server in Claude's config
         with_editable: Optional directory to install in editable mode
         with_packages: Optional list of additional packages to install
@@ -77,13 +79,11 @@ def install_claude_desktop(
     if with_editable:
         args.extend(["--with-editable", str(with_editable)])
 
-    # Convert file path to absolute before adding to command
-    # Split off any :object suffix first
-    if ":" in server_spec:
-        file_path, server_object = server_spec.rsplit(":", 1)
-        server_spec = f"{Path(file_path).resolve()}:{server_object}"
+    # Build server spec from parsed components
+    if server_object:
+        server_spec = f"{file.resolve()}:{server_object}"
     else:
-        server_spec = str(Path(server_spec).resolve())
+        server_spec = str(file.resolve())
 
     # Add fastmcp run command
     args.extend(["fastmcp", "run", server_spec])

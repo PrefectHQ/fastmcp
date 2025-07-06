@@ -1,24 +1,26 @@
 ---
 title: Claude Code + FastMCP
 sidebarTitle: Claude Code
-description: Connect FastMCP servers to Claude Code
+description: Install and use FastMCP servers in Claude Code
 icon: message-smile
 tag: NEW
 ---
 
-Claude Code supports MCP servers through multiple transport methods, allowing you to extend Claude's capabilities with custom tools, resources, and prompts from your FastMCP servers.
+import { VersionBadge } from "/snippets/version-badge.mdx"
+
+Claude Code supports MCP servers through multiple transport methods including STDIO, SSE, and HTTP, allowing you to extend Claude's capabilities with custom tools, resources, and prompts from your FastMCP servers.
 
 <Note>
-Claude Code supports both local and remote MCP servers with flexible configuration options. See the [Claude Code MCP documentation](https://docs.anthropic.com/en/docs/claude-code/mcp) for other transport methods.
+This guide focuses specifically on installing local FastMCP server files directly into Claude Code using STDIO transport. For deploying remote servers using SSE or HTTP transports, see the [Claude Code MCP documentation](https://docs.anthropic.com/en/docs/claude-code/mcp).
 </Note>
 
-<Tip>
-Claude Code provides built-in MCP management commands to easily add, configure, and authenticate your FastMCP servers.
-</Tip>
+## Requirements
+
+This integration uses STDIO transport to run your FastMCP server locally. For remote deployments, you can run your FastMCP server with HTTP or SSE transport and configure it directly using Claude Code's built-in MCP management commands.
 
 ## Create a Server
 
-You can create FastMCP servers using STDIO transport, remote HTTP servers, or local HTTP servers. This example shows one common approach: running an HTTP server locally for development.
+The examples in this guide will use the following simple dice-rolling server, saved as `server.py`.
 
 ```python server.py
 import random
@@ -32,29 +34,101 @@ def roll_dice(n_dice: int) -> list[int]:
     return [random.randint(1, 6) for _ in range(n_dice)]
 
 if __name__ == "__main__":
-    mcp.run(transport="http", port=8000)
+    mcp.run()
 ```
 
-## Connect to Claude Code
+## Install the Server
 
-Start your server and add it to Claude Code:
+### FastMCP CLI
+<VersionBadge version="2.10.3" />
+
+The easiest way to install a FastMCP server in Claude Code is using the `fastmcp install claude-code` command. This automatically handles the configuration, dependency management, and calls Claude Code's built-in MCP management system.
 
 ```bash
-# Start your server first
-python server.py
+fastmcp install claude-code server.py
 ```
 
-Then add it to Claude Code:
+The install command supports the same `file.py:object` notation as the `run` command. If no object is specified, it will automatically look for a FastMCP server object named `mcp`, `server`, or `app` in your file:
+
 ```bash
-claude mcp add dice --transport http http://localhost:8000/mcp/
+# These are equivalent if your server object is named 'mcp'
+fastmcp install claude-code server.py
+fastmcp install claude-code server.py:mcp
+
+# Use explicit object name if your server has a different name
+fastmcp install claude-code server.py:my_custom_server
 ```
 
-## Using Your Server
+The command will automatically configure the server with Claude Code's `claude mcp add` command.
 
-Once connected, Claude Code will automatically discover and use your server's tools when relevant:
+#### Dependencies
 
+If your server has dependencies, include them with the `--with` flag:
+
+```bash
+fastmcp install claude-code server.py --with pandas --with requests
 ```
-Roll some dice for me
+
+Alternatively, you can specify dependencies directly in your server code:
+
+```python server.py
+from fastmcp import FastMCP
+
+mcp = FastMCP(
+    name="Dice Roller",
+    dependencies=["pandas", "requests"]
+)
 ```
 
-Claude will call your `roll_dice` tool and provide the results. If your server provides resources, you can reference them with `@` mentions like `@dice:file://path/to/resource`.
+#### Environment Variables
+
+If your server needs environment variables (like API keys), you must include them:
+
+```bash
+fastmcp install claude-code server.py --name "Weather Server" \
+  --env-var API_KEY=your-api-key \
+  --env-var DEBUG=true
+```
+
+Or load them from a `.env` file:
+
+```bash
+fastmcp install claude-code server.py --name "Weather Server" --env-file .env
+```
+
+<Warning>
+**Claude Code must be installed**. The integration looks for the Claude Code CLI at the default installation location (`~/.claude/local/claude`) and uses the `claude mcp add` command to register servers.
+</Warning>
+
+### Manual Configuration
+
+For more control over the configuration, you can manually use Claude Code's built-in MCP management commands:
+
+```bash
+# Add a server with custom configuration
+claude mcp add dice-roller -- uv run --with fastmcp fastmcp run server.py
+
+# Add with environment variables
+claude mcp add weather-server -e API_KEY=secret -e DEBUG=true -- uv run --with fastmcp fastmcp run server.py
+
+# Add with specific scope (local, user, or project)
+claude mcp add my-server --scope user -- uv run --with fastmcp fastmcp run server.py
+```
+
+## Using the Server
+
+Once your server is installed, you can start using your FastMCP server with Claude Code.
+
+Try asking Claude something like:
+
+> "Roll some dice for me"
+
+Claude will automatically detect your `roll_dice` tool and use it to fulfill your request, returning something like:
+
+> I'll roll some dice for you! Here are your results: [4, 2, 6]
+> 
+> You rolled three dice and got a 4, a 2, and a 6!
+
+Claude Code can now access all the tools, resources, and prompts you've defined in your FastMCP server. 
+
+If your server provides resources, you can reference them with `@` mentions using the format `@server:protocol://resource/path`. If your server provides prompts, you can use them as slash commands with `/mcp__servername__promptname`.
