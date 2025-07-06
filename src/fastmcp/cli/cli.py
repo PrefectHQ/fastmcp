@@ -18,7 +18,7 @@ from typer import Context, Exit
 
 import fastmcp
 from fastmcp.cli import run as run_module
-from fastmcp.cli.install.install import install
+from fastmcp.cli.install import install_app
 from fastmcp.server.server import FastMCP
 from fastmcp.utilities.inspect import FastMCPInfo, inspect_fastmcp
 from fastmcp.utilities.logging import get_logger
@@ -323,8 +323,8 @@ def run(
         sys.exit(1)
 
 
-# Add install command directly
-app.command()(install)
+# Add install subcommands
+app.add_typer(install_app)
 
 
 @app.command()

@@ -140,10 +140,10 @@
                   "integrations/claude-code",
                   "integrations/claude-desktop",
                   "integrations/cursor",
-                  "integrations/gemini",
-                  "integrations/openai",
                   "integrations/eunomia-authorization",
-                  "integrations/contrib"
+                  "integrations/gemini",
+                  "integrations/mcp-json-configuration",
+                  "integrations/openai"
                 ]
               },
               {
@@ -153,7 +153,8 @@
                   "patterns/decorating-methods",
                   "patterns/http-requests",
                   "patterns/testing",
-                  "patterns/cli"
+                  "patterns/cli",
+                  "patterns/contrib"
                 ]
               },
               {
