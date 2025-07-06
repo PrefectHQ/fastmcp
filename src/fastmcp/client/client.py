@@ -285,23 +285,7 @@ class Client(Generic[ClientTransportT]):
                     self._initialize_result = None
 
     async def __aenter__(self):
-        await self._connect()
-
-        # Check if session task failed and raise error immediately
-        if (
-            self._session_task is not None
-            and self._session_task.done()
-            and not self._session_task.cancelled()
-        ):
-            exception = self._session_task.exception()
-            if isinstance(exception, httpx.HTTPStatusError):
-                raise exception
-            elif exception is not None:
-                raise RuntimeError(
-                    f"Client failed to connect: {exception}"
-                ) from exception
-
-        return self
+        return await self._connect()
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         await self._disconnect()
@@ -311,10 +295,21 @@ class Client(Generic[ClientTransportT]):
         async with self._context_lock:
             need_to_start = self._session_task is None or self._session_task.done()
             if need_to_start:
+                assert self._nesting_counter == 0
                 self._stop_event = anyio.Event()
                 self._ready_event = anyio.Event()
                 self._session_task = asyncio.create_task(self._session_runner())
-            await self._ready_event.wait()
+                await self._ready_event.wait()
+
+                if self._session_task.done():
+                    exception = self._session_task.exception()
+                    assert exception is not None
+                    if isinstance(exception, httpx.HTTPStatusError):
+                        raise exception
+                    raise RuntimeError(
+                        f"Client failed to connect: {exception}"
+                    ) from exception
+
             self._nesting_counter += 1
         return self
 
@@ -337,35 +332,21 @@ class Client(Generic[ClientTransportT]):
             if self._session_task is None:
                 return
             self._stop_event.set()
-            runner_task = self._session_task
+            # wait for session to finish to ensure state has been reset
+            await self._session_task
             self._session_task = None
-
-        # wait for the session to finish
-        if runner_task:
-            await runner_task
-
-        # Reset for future reconnects
-        self._stop_event = anyio.Event()
-        self._ready_event = anyio.Event()
-        self._session = None
-        self._initialize_result = None
 
     async def _session_runner(self):
         try:
             async with AsyncExitStack() as stack:
-                try:
-                    await stack.enter_async_context(self._context_manager())
-                    # Session/context is now ready
-                    self._ready_event.set()
-                    # Wait until disconnect/stop is requested
-                    await self._stop_event.wait()
-                finally:
-                    # On exit, ensure ready event is set (idempotent)
-                    self._ready_event.set()
-        except Exception:
+                await stack.enter_async_context(self._context_manager())
+                # Session/context is now ready
+                self._ready_event.set()
+                # Wait until disconnect/stop is requested
+                await self._stop_event.wait()
+        finally:
             # Ensure ready event is set even if context manager entry fails
             self._ready_event.set()
-            raise
 
     async def close(self):
         await self._disconnect(force=True)
