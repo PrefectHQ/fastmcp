@@ -190,7 +190,7 @@ class FunctionResourceTemplate(ResourceTemplate):
             kwargs[context_kwarg] = get_context()
 
         result = self.fn(**kwargs)
-        if inspect.iscoroutine(result):
+        if inspect.isawaitable(result):
             result = await result
         return result
 

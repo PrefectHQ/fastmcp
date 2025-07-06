@@ -329,7 +329,7 @@ class FunctionPrompt(Prompt):
 
             # Call function and check if result is a coroutine
             result = self.fn(**kwargs)
-            if inspect.iscoroutine(result):
+            if inspect.isawaitable(result):
                 result = await result
 
             # Validate messages
