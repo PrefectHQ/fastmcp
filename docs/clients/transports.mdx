@@ -88,6 +88,18 @@ transport = StreamableHttpTransport(
 client = Client(transport)
 ```
 
+This can be written more concisely using the `BearerAuth` helper function:
+
+```python
+from fastmcp import Client
+from fastmcp.client.auth import BearerAuth
+
+client = Client(
+    "https://example.com/mcp",
+    auth=BearerAuth("your-token-here"),
+)
+```
+
 ### SSE (Server-Sent Events)
 
 <VersionBadge version="2.0.0" />
@@ -434,4 +446,4 @@ If your configuration has only a single server, the client will connect directly
 
 <Note>
 The MCPConfig format is an emerging standard for MCP server configuration and may change as the MCP ecosystem evolves. While FastMCP aims to maintain compatibility with future versions, be aware that field names or structure might change.
-</Note> 
+</Note>
