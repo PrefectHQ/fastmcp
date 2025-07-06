@@ -151,11 +151,13 @@ Install a MCP server in MCP client applications. FastMCP currently supports the 
 - **Claude Code** - Installs via Claude Code's built-in MCP management system
 - **Claude Desktop** - Installs via direct configuration file modification
 - **Cursor** - Installs via deeplink that opens Cursor for user confirmation
+- **MCP JSON** - Generates standard MCP JSON configuration for manual use
 
 ```bash
 fastmcp install claude-code server.py
 fastmcp install claude-desktop server.py
 fastmcp install cursor server.py
+fastmcp install mcp-json server.py
 ```
 
 Note that for security reasons, MCP clients run every server in a completely isolated environment. Therefore, all dependencies must be explicitly specified using the `--with` and/or `--with-editable` options (following `uv` conventions) or by attaching them to your server in code via the `dependencies` parameter.
@@ -164,9 +166,9 @@ Note that for security reasons, MCP clients run every server in a completely iso
 **`uv` must be installed and available in your system PATH**. Both Claude Desktop and Cursor run in isolated environments and need `uv` to manage dependencies. On macOS, install `uv` globally with Homebrew for Claude Desktop compatibility: `brew install uv`.
 </Warning>
 
-<Warning>
-The `install` command currently only sets up servers for STDIO transport. When installed in MCP client applications, your server will be run using STDIO regardless of any transport configuration in your code.
-</Warning>
+<Tip>
+**FastMCP `install` commands focus on local server files with STDIO transport.** For remote servers running with HTTP or SSE transport, use your client's native configuration - FastMCP's value is simplifying the complex local setup with dependencies and `uv` commands.
+</Tip>
 
 #### Server Specification
 
@@ -205,7 +207,51 @@ fastmcp install cursor server.py --env-var API_KEY=secret --env-var DEBUG=true
 
 # Install with environment file
 fastmcp install cursor server.py --env-file .env
+
+# Generate MCP JSON configuration
+fastmcp install mcp-json server.py --name "My Server" --with pandas
+
+# Copy JSON configuration to clipboard
+fastmcp install mcp-json server.py --copy
 ```
+
+#### MCP JSON Generation
+
+The `mcp-json` subcommand generates standard MCP JSON configuration that can be used with any MCP-compatible client. This is useful when:
+
+- Working with MCP clients not directly supported by FastMCP
+- Creating configuration for CI/CD environments  
+- Sharing server configurations with others
+- Integration with custom tooling
+
+The generated JSON follows the standard `mcpServers` format used by Claude Desktop, VS Code, Cursor, and other MCP clients:
+
+```json
+{
+  "mcpServers": {
+    "server-name": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--with",
+        "fastmcp",
+        "fastmcp",
+        "run",
+        "/path/to/server.py"
+      ],
+      "env": {
+        "API_KEY": "value"
+      }
+    }
+  }
+}
+```
+
+**Options specific to mcp-json:**
+
+| Option | Flag | Description |
+| ------ | ---- | ----------- |
+| Copy to Clipboard | `--copy` | Copy configuration to clipboard instead of printing to stdout |
 
 ### `inspect`
 

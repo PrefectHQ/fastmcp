@@ -1,5 +1,5 @@
 ---
-title: Cursor + FastMCP
+title: Cursor 🤝 FastMCP
 sidebarTitle: Cursor
 description: Install and use FastMCP servers in Cursor
 icon: message-smile
@@ -7,12 +7,11 @@ tag: NEW
 ---
 
 import { VersionBadge } from "/snippets/version-badge.mdx"
+import { LocalFocusTip } from "/snippets/local-focus.mdx"
+
+<LocalFocusTip />
 
 Cursor supports MCP servers through multiple transport methods including STDIO, SSE, and Streamable HTTP, allowing you to extend Cursor's AI assistant with custom tools, resources, and prompts from your FastMCP servers.
-
-<Note>
-This guide focuses specifically on installing local FastMCP server files directly into Cursor using STDIO transport. For deploying remote servers using SSE or HTTP transports, see the [Cursor MCP documentation](https://docs.cursor.com/context/mcp).
-</Note>
 
 ## Requirements
 
@@ -105,6 +104,24 @@ fastmcp install cursor server.py --name "Weather Server" --env-file .env
 <Warning>
 **`uv` must be installed and available in your system PATH**. Cursor runs in its own isolated environment and needs `uv` to manage dependencies.
 </Warning>
+
+### Generate MCP JSON
+
+<Note>
+**Use the first-class integration above for the best experience.** The MCP JSON generation is useful for advanced use cases, manual configuration, or integration with other tools.
+</Note>
+
+You can generate MCP JSON configuration for manual use:
+
+```bash
+# Generate configuration and output to stdout
+fastmcp install mcp-json server.py --name "Dice Roller" --with pandas
+
+# Copy configuration to clipboard for easy pasting
+fastmcp install mcp-json server.py --name "Dice Roller" --copy
+```
+
+This generates the standard `mcpServers` configuration format that can be used with any MCP-compatible client.
 
 ### Manual Configuration
 
