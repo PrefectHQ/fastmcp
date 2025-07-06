@@ -295,7 +295,10 @@ class Client(Generic[ClientTransportT]):
         async with self._context_lock:
             need_to_start = self._session_task is None or self._session_task.done()
             if need_to_start:
-                assert self._nesting_counter == 0
+                if self._nesting_counter != 0:
+                    raise RuntimeError(
+                        f"Internal error: nesting counter should be 0 when starting new session, got {self._nesting_counter}"
+                    )
                 self._stop_event = anyio.Event()
                 self._ready_event = anyio.Event()
                 self._session_task = asyncio.create_task(self._session_runner())
@@ -303,7 +306,10 @@ class Client(Generic[ClientTransportT]):
 
                 if self._session_task.done():
                     exception = self._session_task.exception()
-                    assert exception is not None
+                    if exception is None:
+                        raise RuntimeError(
+                            "Session task completed without exception but connection failed"
+                        )
                     if isinstance(exception, httpx.HTTPStatusError):
                         raise exception
                     raise RuntimeError(
