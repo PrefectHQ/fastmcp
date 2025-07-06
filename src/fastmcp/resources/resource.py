@@ -182,7 +182,7 @@ class FunctionResource(Resource):
             kwargs[context_kwarg] = get_context()
 
         result = self.fn(**kwargs)
-        if inspect.iscoroutinefunction(self.fn):
+        if inspect.isawaitable(result):
             result = await result
 
         if isinstance(result, Resource):
