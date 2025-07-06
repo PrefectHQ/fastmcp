@@ -31,11 +31,11 @@ from fastmcp.client.roots import (
 )
 from fastmcp.client.sampling import SamplingHandler, create_sampling_callback
 from fastmcp.exceptions import ToolError
+from fastmcp.mcp_config import MCPConfig
 from fastmcp.server import FastMCP
 from fastmcp.utilities.exceptions import get_catch_handlers
 from fastmcp.utilities.json_schema_type import json_schema_to_type
 from fastmcp.utilities.logging import get_logger
-from fastmcp.utilities.mcp_config import MCPConfig
 from fastmcp.utilities.types import get_cached_typeadapter
 
 from .transports import (

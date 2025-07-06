@@ -20,7 +20,7 @@ fastmcp --help
 | ------- | ------- | --------------------- |
 | `run` | Run a FastMCP server directly | Uses your current environment; you are responsible for ensuring all dependencies are available |
 | `dev` | Run a server with the MCP Inspector for testing | Creates an isolated environment; dependencies must be explicitly specified with `--with` and/or `--with-editable` |
-| `install` | Install a server in the Claude desktop app | Creates an isolated environment; dependencies must be explicitly specified with `--with` and/or `--with-editable` |
+| `install` | Install a server in MCP client applications | Creates an isolated environment; dependencies must be explicitly specified with `--with` and/or `--with-editable` |
 | `inspect` | Generate a JSON report about a FastMCP server | Uses your current environment; you are responsible for ensuring all dependencies are available |
 | `version` | Display version information | N/A |
 
@@ -144,22 +144,26 @@ fastmcp dev server.py -e . --with pandas --with matplotlib
 ```
 
 ### `install`
+<VersionBadge version="2.10.3" />
 
-Install a MCP server in the Claude desktop app.
+Install a MCP server in MCP client applications. FastMCP currently supports the following clients:
+
+- **Claude Desktop** - Installs via direct configuration file modification
+- **Cursor** - Installs via deeplink that opens Cursor for user confirmation
 
 ```bash
-fastmcp install server.py
+fastmcp install claude-desktop server.py
+fastmcp install cursor server.py
 ```
 
-Note that for security reasons, Claude runs every MCP server in a completely isolated environment. Therefore, all dependencies must be explicitly specified using the `--with` and/or `--with-editable` options (following `uv` conventions) or by attaching them to your server in code via the `dependencies` parameter.
+Note that for security reasons, MCP clients run every server in a completely isolated environment. Therefore, all dependencies must be explicitly specified using the `--with` and/or `--with-editable` options (following `uv` conventions) or by attaching them to your server in code via the `dependencies` parameter.
 
 <Warning>
-- **`uv` must be installed and available in your system PATH**. Claude Desktop runs in its own isolated environment and needs `uv` to manage dependencies.
-- **On macOS, it is recommended to install `uv` globally with Homebrew** so that Claude Desktop will detect it: `brew install uv`. Installing `uv` with other methods may not make it accessible to Claude Desktop.
+**`uv` must be installed and available in your system PATH**. Both Claude Desktop and Cursor run in isolated environments and need `uv` to manage dependencies. On macOS, install `uv` globally with Homebrew for Claude Desktop compatibility: `brew install uv`.
 </Warning>
 
 <Warning>
-The `install` command currently only sets up servers for STDIO transport. When installed in the Claude desktop app, your server will be run using STDIO regardless of any transport configuration in your code.
+The `install` command currently only sets up servers for STDIO transport. When installed in MCP client applications, your server will be run using STDIO regardless of any transport configuration in your code.
 </Warning>
 
 #### Server Specification
@@ -169,17 +173,33 @@ The `install` command supports the same `file.py:object` notation as the `run` c
 1. `server.py` - imports the module and looks for a FastMCP object named `mcp`, `server`, or `app`. Errors if no such object is found.
 2. `server.py:custom_name` - imports and uses the specified server object
 
+#### Options
+
+| Option | Flag | Description |
+| ------ | ---- | ----------- |
+| Server Name | `--name`, `-n` | Custom name for the server (defaults to server's name attribute or file name) |
+| Editable Package | `--with-editable`, `-e` | Directory containing pyproject.toml to install in editable mode |
+| Additional Packages | `--with` | Additional packages to install (can be used multiple times) |
+| Environment Variables | `--env-var`, `-v` | Environment variables in KEY=VALUE format (can be used multiple times) |
+| Environment File | `--env-file`, `-f` | Load environment variables from a .env file |
+
 **Examples**
 
 ```bash
 # Auto-detects server object (looks for 'mcp', 'server', or 'app')
-fastmcp install server.py
+fastmcp install claude-desktop server.py
 
 # Uses specific server object
-fastmcp install server.py:my_server
+fastmcp install claude-desktop server.py:my_server
 
 # With custom name and dependencies
-fastmcp install server.py:my_server -n "My Analysis Server" --with pandas
+fastmcp install claude-desktop server.py:my_server -n "My Analysis Server" --with pandas
+
+# Install in Cursor with environment variables
+fastmcp install cursor server.py --env-var API_KEY=secret --env-var DEBUG=true
+
+# Install with environment file
+fastmcp install cursor server.py --env-file .env
 ```
 
 ### `inspect`

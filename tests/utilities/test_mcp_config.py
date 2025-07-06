@@ -10,7 +10,7 @@ from fastmcp.client.transports import (
     StdioTransport,
     StreamableHttpTransport,
 )
-from fastmcp.utilities.mcp_config import MCPConfig, RemoteMCPServer, StdioMCPServer
+from fastmcp.mcp_config import MCPConfig, RemoteMCPServer, StdioMCPServer
 
 
 def test_parse_single_stdio_config():

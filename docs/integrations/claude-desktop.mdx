@@ -5,6 +5,8 @@ description: Call FastMCP servers from Claude Desktop
 icon: message-smile
 ---
 
+import { VersionBadge } from "/snippets/version-badge.mdx"
+
 
 Claude Desktop supports MCP servers through local STDIO connections and remote servers (beta), allowing you to extend Claude's capabilities with custom tools, resources, and prompts from your FastMCP servers.
 
@@ -47,22 +49,27 @@ if __name__ == "__main__":
 ## Install the Server
 
 ### FastMCP CLI
+<VersionBadge version="2.10.3" />
 
-The easiest way to install a FastMCP server in Claude Desktop is using the `fastmcp install` command. This automatically handles the configuration and dependency management.
+The easiest way to install a FastMCP server in Claude Desktop is using the `fastmcp install claude-desktop` command. This automatically handles the configuration and dependency management.
+
+<Tip>
+Prior to version 2.10.3, Claude Desktop could be managed by running `fastmcp install <path>` without specifying the client.
+</Tip>
 
 ```bash
-fastmcp install server.py
+fastmcp install claude-desktop server.py
 ```
 
 The install command supports the same `file.py:object` notation as the `run` command. If no object is specified, it will automatically look for a FastMCP server object named `mcp`, `server`, or `app` in your file:
 
 ```bash
 # These are equivalent if your server object is named 'mcp'
-fastmcp install server.py
-fastmcp install server.py:mcp
+fastmcp install claude-desktop server.py
+fastmcp install claude-desktop server.py:mcp
 
 # Use explicit object name if your server has a different name
-fastmcp install server.py:my_custom_server
+fastmcp install claude-desktop server.py:my_custom_server
 ```
 
 After installation, restart Claude Desktop completely. You should see a hammer icon (🔨) in the bottom left of the input box, indicating that MCP tools are available.
@@ -72,7 +79,7 @@ After installation, restart Claude Desktop completely. You should see a hammer i
 If your server has dependencies, include them with the `--with` flag:
 
 ```bash
-fastmcp install server.py --with pandas --with requests
+fastmcp install claude-desktop server.py --with pandas --with requests
 ```
 
 Alternatively, you can specify dependencies directly in your server code:
@@ -95,7 +102,7 @@ Claude Desktop runs servers in a completely isolated environment with no access 
 If your server needs environment variables (like API keys), you must include them:
 
 ```bash
-fastmcp install server.py --name "Weather Server" \
+fastmcp install claude-desktop server.py --name "Weather Server" \
   --env-var API_KEY=your-api-key \
   --env-var DEBUG=true
 ```
@@ -103,7 +110,7 @@ fastmcp install server.py --name "Weather Server" \
 Or load them from a `.env` file:
 
 ```bash
-fastmcp install server.py --name "Weather Server" --env-file .env
+fastmcp install claude-desktop server.py --name "Weather Server" --env-file .env
 ```
 <Warning>
 - **`uv` must be installed and available in your system PATH**. Claude Desktop runs in its own isolated environment and needs `uv` to manage dependencies.

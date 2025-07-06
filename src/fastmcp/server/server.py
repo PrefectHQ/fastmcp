@@ -43,6 +43,7 @@ from starlette.routing import BaseRoute, Route
 import fastmcp
 import fastmcp.server
 from fastmcp.exceptions import DisabledError, NotFoundError
+from fastmcp.mcp_config import MCPConfig
 from fastmcp.prompts import Prompt, PromptManager
 from fastmcp.prompts.prompt import FunctionPrompt
 from fastmcp.resources import Resource, ResourceManager
@@ -63,7 +64,6 @@ from fastmcp.utilities.cache import TimedCache
 from fastmcp.utilities.cli import log_server_banner
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.logging import get_logger
-from fastmcp.utilities.mcp_config import MCPConfig
 from fastmcp.utilities.types import NotSet, NotSetT
 
 if TYPE_CHECKING:

@@ -22,6 +22,7 @@ from fastmcp.client.logging import LogMessage
 from fastmcp.client.roots import RootsList
 from fastmcp.client.transports import ClientTransportT
 from fastmcp.exceptions import NotFoundError, ResourceError, ToolError
+from fastmcp.mcp_config import MCPConfig
 from fastmcp.prompts import Prompt, PromptMessage
 from fastmcp.prompts.prompt import PromptArgument
 from fastmcp.prompts.prompt_manager import PromptManager
@@ -33,7 +34,6 @@ from fastmcp.server.server import FastMCP
 from fastmcp.tools.tool import Tool, ToolResult
 from fastmcp.tools.tool_manager import ToolManager
 from fastmcp.utilities.logging import get_logger
-from fastmcp.utilities.mcp_config import MCPConfig
 
 if TYPE_CHECKING:
     from fastmcp.server import Context

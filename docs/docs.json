@@ -139,6 +139,7 @@
                   "integrations/chatgpt",
                   "integrations/claude-code",
                   "integrations/claude-desktop",
+                  "integrations/cursor",
                   "integrations/gemini",
                   "integrations/openai",
                   "integrations/eunomia-authorization",
