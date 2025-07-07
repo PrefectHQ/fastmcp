@@ -95,13 +95,10 @@ class TestVersionCommand:
     """Test the version command."""
 
     def test_version_command_execution(self):
-        """Test that version command executes and exits properly."""
-        # The version command should exit with code 0 when executed
-        with pytest.raises(SystemExit) as exc_info:
-            command, bound, _ = app.parse_args(["version"])
-            command()
-
-        assert exc_info.value.code == 0
+        """Test that version command executes properly."""
+        # The version command should execute without raising SystemExit
+        command, bound, _ = app.parse_args(["version"])
+        command()  # Should not raise
 
     def test_version_command_parsing(self):
         """Test that the version command parses arguments correctly."""
@@ -116,29 +113,31 @@ class TestVersionCommand:
         assert command.__name__ == "version"
         assert bound.arguments == {"copy": True}
 
-    @patch("fastmcp.cli.cli.sys.exit")
     @patch("fastmcp.cli.cli.pyperclip.copy")
     @patch("fastmcp.cli.cli.console")
     def test_version_command_copy_functionality(
-        self, mock_console, mock_pyperclip_copy, mock_exit
+        self, mock_console, mock_pyperclip_copy
     ):
         """Test that the version command copies to clipboard when --copy is used."""
-        # Mock console.capture
-        mock_capture = Mock()
-        mock_capture.get.return_value = "FastMCP version: 1.0.0\nMCP version: 1.10.0"
-        mock_console.capture.return_value.__enter__.return_value = mock_capture
-        mock_console.capture.return_value.__exit__.return_value = None
-
         command, bound, _ = app.parse_args(["version", "--copy"])
         command(**bound.arguments)
 
-        mock_pyperclip_copy.assert_called_once_with(
-            "FastMCP version: 1.0.0\nMCP version: 1.10.0"
-        )
+        # Verify pyperclip.copy was called with plain text format
+        mock_pyperclip_copy.assert_called_once()
+        copied_text = mock_pyperclip_copy.call_args[0][0]
+
+        # Verify the copied text contains expected version info keys in plain text
+        assert "FastMCP version:" in copied_text
+        assert "MCP version:" in copied_text
+        assert "Python version:" in copied_text
+        assert "Platform:" in copied_text
+        assert "FastMCP root path:" in copied_text
+
+        # Verify no ANSI escape codes (terminal control characters)
+        assert "\x1b[" not in copied_text
         mock_console.print.assert_called_with(
             "[green]✓[/green] Version information copied to clipboard"
         )
-        mock_exit.assert_called_once_with(0)
 
 
 class TestDevCommand:

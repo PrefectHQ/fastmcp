@@ -113,15 +113,14 @@ def version(
         g.add_row(k + ":", str(v).replace("\n", " "))
 
     if copy:
-        # Use Rich's capture to get text representation
-        with console.capture() as capture:
-            console.print(g)
+        # Use Rich's plain text rendering for copying
+        plain_console = Console(file=None, force_terminal=False, legacy_windows=False)
+        with plain_console.capture() as capture:
+            plain_console.print(g)
         pyperclip.copy(capture.get())
         console.print("[green]✓[/green] Version information copied to clipboard")
     else:
         console.print(g)
-
-    sys.exit(0)
 
 
 @app.command
