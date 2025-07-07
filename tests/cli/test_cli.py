@@ -123,18 +123,22 @@ class TestVersionCommand:
         self, mock_console, mock_pyperclip_copy, mock_exit
     ):
         """Test that the version command copies to clipboard when --copy is used."""
-        # Mock console.capture
-        mock_capture = Mock()
-        mock_capture.get.return_value = "FastMCP version: 1.0.0\nMCP version: 1.10.0"
-        mock_console.capture.return_value.__enter__.return_value = mock_capture
-        mock_console.capture.return_value.__exit__.return_value = None
-
         command, bound, _ = app.parse_args(["version", "--copy"])
         command(**bound.arguments)
 
-        mock_pyperclip_copy.assert_called_once_with(
-            "FastMCP version: 1.0.0\nMCP version: 1.10.0"
-        )
+        # Verify pyperclip.copy was called with plain text format
+        mock_pyperclip_copy.assert_called_once()
+        copied_text = mock_pyperclip_copy.call_args[0][0]
+
+        # Verify the copied text contains expected version info keys in plain text
+        assert "FastMCP version:" in copied_text
+        assert "MCP version:" in copied_text
+        assert "Python version:" in copied_text
+        assert "Platform:" in copied_text
+        assert "FastMCP root path:" in copied_text
+
+        # Verify no ANSI escape codes (terminal control characters)
+        assert "\x1b[" not in copied_text
         mock_console.print.assert_called_with(
             "[green]✓[/green] Version information copied to clipboard"
         )
