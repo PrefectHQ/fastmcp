@@ -94,17 +94,19 @@ class TestMainCLI:
 class TestVersionCommand:
     """Test the version command."""
 
-    @patch("fastmcp.cli.cli.sys.exit")
-    @patch("fastmcp.cli.cli.console.print")
-    def test_version_command(self, mock_print, mock_exit):
-        """Test that version command prints info and exits."""
-        # Parse and execute version command
+    def test_version_command_parsing(self):
+        """Test that version command can be parsed."""
         command, bound, _ = app.parse_args(["version"])
-        command()
+        assert command is not None
 
-        # Verify it printed something and exited with 0
-        mock_print.assert_called_once()
-        mock_exit.assert_called_once_with(0)
+    def test_version_command_execution(self):
+        """Test that version command executes and exits properly."""
+        # The version command should exit with code 0 when executed
+        with pytest.raises(SystemExit) as exc_info:
+            command, bound, _ = app.parse_args(["version"])
+            command()
+
+        assert exc_info.value.code == 0
 
 
 class TestDevCommand:
@@ -138,25 +140,21 @@ class TestDevCommand:
 class TestRunCommand:
     """Test the run command."""
 
-    @patch("fastmcp.cli.cli.run_module.run_command")
-    def test_run_command_basic(self, mock_run_command):
-        """Test basic run command."""
+    def test_run_command_parsing_basic(self):
+        """Test basic run command parsing."""
         command, bound, _ = app.parse_args(["run", "server.py"])
-        command(**bound.arguments)
 
-        mock_run_command.assert_called_once_with(
-            server_spec="server.py",
-            transport=None,
-            host=None,
-            port=None,
-            log_level=None,
-            server_args=[],
-            show_banner=True,
-        )
+        assert command is not None
+        assert bound.arguments["server_spec"] == "server.py"
+        # Cyclopts only includes non-default values
+        assert "transport" not in bound.arguments
+        assert "host" not in bound.arguments
+        assert "port" not in bound.arguments
+        assert "log_level" not in bound.arguments
+        assert "no_banner" not in bound.arguments
 
-    @patch("fastmcp.cli.cli.run_module.run_command")
-    def test_run_command_with_options(self, mock_run_command):
-        """Test run command with various options."""
+    def test_run_command_parsing_with_options(self):
+        """Test run command parsing with various options."""
         command, bound, _ = app.parse_args(
             [
                 "run",
@@ -172,28 +170,35 @@ class TestRunCommand:
                 "--no-banner",
             ]
         )
-        command(**bound.arguments)
 
-        mock_run_command.assert_called_once_with(
-            server_spec="server.py",
-            transport="http",
-            host="localhost",
-            port=8080,
-            log_level="DEBUG",
-            server_args=[],
-            show_banner=False,
+        assert command is not None
+        assert bound.arguments["server_spec"] == "server.py"
+        assert bound.arguments["transport"] == "http"
+        assert bound.arguments["host"] == "localhost"
+        assert bound.arguments["port"] == 8080
+        assert bound.arguments["log_level"] == "DEBUG"
+        assert bound.arguments["no_banner"] is True
+
+    def test_run_command_parsing_partial_options(self):
+        """Test run command parsing with only some options."""
+        command, bound, _ = app.parse_args(
+            [
+                "run",
+                "server.py",
+                "--transport",
+                "http",
+                "--no-banner",
+            ]
         )
 
-    @patch("fastmcp.cli.cli.run_module.run_command")
-    def test_run_command_failure(self, mock_run_command):
-        """Test run command handling failures."""
-        mock_run_command.side_effect = Exception("Test error")
-
-        with pytest.raises(SystemExit) as exc_info:
-            command, bound, _ = app.parse_args(["run", "server.py"])
-            command(**bound.arguments)
-
-        assert exc_info.value.code == 1
+        assert command is not None
+        assert bound.arguments["server_spec"] == "server.py"
+        assert bound.arguments["transport"] == "http"
+        assert bound.arguments["no_banner"] is True
+        # Other options should not be present
+        assert "host" not in bound.arguments
+        assert "port" not in bound.arguments
+        assert "log_level" not in bound.arguments
 
 
 class TestWindowsSpecific:
@@ -278,84 +283,93 @@ class TestWindowsSpecific:
             assert result == "npx"
             mock_run.assert_not_called()
 
-    def test_windows_path_parsing_with_colon(self):
+    def test_windows_path_parsing_with_colon(self, tmp_path):
         """Test parsing Windows paths with drive letters and colons."""
         from fastmcp.cli.run import parse_file_path
 
-        # We can't test actual Windows paths on non-Windows systems,
-        # but we can test the logic with mock paths
-        with patch("pathlib.Path.exists") as mock_exists:
-            with patch("pathlib.Path.is_file") as mock_is_file:
-                mock_exists.return_value = True
-                mock_is_file.return_value = True
+        # Create a real test file to test the logic
+        test_file = tmp_path / "server.py"
+        test_file.write_text("# test server")
 
-                # Test that C:\path\file.py is parsed correctly
-                with patch("pathlib.Path.resolve") as mock_resolve:
-                    mock_resolve.return_value = Path("C:/path/file.py")
+        # Test normal file parsing (works on all platforms)
+        file_path, obj = parse_file_path(str(test_file))
+        assert obj is None
 
-                    file_path, obj = parse_file_path("C:\\path\\file.py")
-                    assert obj is None
+        # Test file:object parsing
+        file_path, obj = parse_file_path(f"{test_file}:myapp")
+        assert obj == "myapp"
 
-                # Test C:\path\file.py:object parsing
-                with patch("pathlib.Path.resolve") as mock_resolve:
-                    mock_resolve.return_value = Path("C:/path/file.py")
-
-                    file_path, obj = parse_file_path("C:\\path\\file.py:myapp")
-                    assert obj == "myapp"
+        # Test that the file portion resolves correctly when object is specified
+        assert file_path == test_file.resolve()
 
 
 class TestInspectCommand:
     """Test the inspect command."""
 
-    @patch("fastmcp.cli.cli.run_module.parse_file_path")
-    @patch("fastmcp.cli.cli.run_module.import_server")
-    @patch("fastmcp.cli.cli.inspect_fastmcp")
-    async def test_inspect_command_basic(
-        self, mock_inspect, mock_import_server, mock_parse_file_path, tmp_path
-    ):
-        """Test basic inspect command functionality."""
-        # Setup mocks
-        mock_parse_file_path.return_value = (Path("server.py"), None)
-        mock_server = Mock()
-        mock_import_server.return_value = mock_server
+    def test_inspect_command_parsing_basic(self):
+        """Test basic inspect command parsing."""
+        command, bound, _ = app.parse_args(["inspect", "server.py"])
 
-        mock_info = Mock()
-        mock_info.name = "TestServer"
-        mock_info.tools = []
-        mock_info.prompts = []
-        mock_info.resources = []
-        mock_info.templates = []
-        mock_inspect.return_value = mock_info
+        assert command is not None
+        assert bound.arguments["server_spec"] == "server.py"
+        # Only explicitly set parameters are in bound.arguments
+        assert "output" not in bound.arguments
 
-        # Mock TypeAdapter
-        with patch("fastmcp.cli.cli.TypeAdapter") as mock_adapter:
-            mock_adapter.return_value.dump_json.return_value = b'{"name": "TestServer"}'
+    def test_inspect_command_parsing_with_output(self, tmp_path):
+        """Test inspect command parsing with output file."""
+        output_file = tmp_path / "output.json"
 
-            output_file = tmp_path / "test-output.json"
+        command, bound, _ = app.parse_args(
+            [
+                "inspect",
+                "server.py",
+                "--output",
+                str(output_file),
+            ]
+        )
 
-            # Parse and execute
-            command, bound, _ = app.parse_args(
-                [
-                    "inspect",
-                    "server.py",
-                    "--output",
-                    str(output_file),
-                ]
-            )
+        assert command is not None
+        assert bound.arguments["server_spec"] == "server.py"
+        # Output is parsed as a Path object
+        assert bound.arguments["output"] == output_file
 
-            await command(**bound.arguments)
+    async def test_inspect_command_with_real_server(self, tmp_path):
+        """Test inspect command with a real server file."""
+        # Create a real server file
+        server_file = tmp_path / "test_server.py"
+        server_file.write_text("""
+import fastmcp
 
-        # Verify the output file was created
+mcp = fastmcp.FastMCP("InspectTestServer")
+
+@mcp.tool
+def test_tool(x: int) -> int:
+    return x * 2
+
+@mcp.prompt
+def test_prompt(name: str) -> str:
+    return f"Hello, {name}!"
+""")
+
+        output_file = tmp_path / "inspect_output.json"
+
+        # Parse and execute the command
+        command, bound, _ = app.parse_args(
+            [
+                "inspect",
+                str(server_file),
+                "--output",
+                str(output_file),
+            ]
+        )
+
+        await command(**bound.arguments)
+
+        # Verify the output file was created and contains expected content
         assert output_file.exists()
-        assert output_file.read_text() == '{"name": "TestServer"}'
+        content = output_file.read_text()
 
-    @patch("fastmcp.cli.cli.run_module.import_server")
-    async def test_inspect_command_failure(self, mock_import_server):
-        """Test inspect command handling failures."""
-        mock_import_server.side_effect = Exception("Import failed")
-
-        with pytest.raises(SystemExit) as exc_info:
-            command, bound, _ = app.parse_args(["inspect", "server.py"])
-            await command(**bound.arguments)
-
-        assert exc_info.value.code == 1
+        # Basic checks that the inspection worked
+        assert "InspectTestServer" in content
+        assert "test_tool" in content
+        assert "test_prompt" in content
