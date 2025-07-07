@@ -48,8 +48,10 @@ body:
         To get this information, run the following command in your terminal and paste the output below:
 
         ```bash
-        fastmcp version
+        fastmcp version --copy
         ```
+
+        *Note: if you're using FastMCP < 2.10.3, run `fastmcp version` instead.*
 
         If there is other information that would be helpful, please include it as well.
       render: Text
