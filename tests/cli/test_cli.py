@@ -1,5 +1,3 @@
-"""Tests for the main CLI functionality."""
-
 import subprocess
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -52,7 +50,7 @@ class TestMainCLI:
             "--with",
             "fastmcp",
             "--with-editable",
-            "/path/to/package",
+            str(editable_path),
             "fastmcp",
             "run",
             "server.py",

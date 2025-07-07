@@ -1,5 +1,3 @@
-"""Tests for Cursor integration functionality."""
-
 import base64
 import json
 from pathlib import Path

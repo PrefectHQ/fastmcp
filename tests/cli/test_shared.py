@@ -1,5 +1,3 @@
-"""Tests for shared CLI functionality."""
-
 from fastmcp.cli.cli import _parse_env_var
 
 

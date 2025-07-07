@@ -1,5 +1,3 @@
-"""Tests for the run module functionality."""
-
 import pytest
 
 from fastmcp.cli.run import (

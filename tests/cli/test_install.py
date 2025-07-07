@@ -1,5 +1,3 @@
-"""Tests for the install subcommands."""
-
 from fastmcp.cli.install import install_app
 
 
