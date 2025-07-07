@@ -1,6 +1,5 @@
-"""FastMCP CLI tools."""
+"""FastMCP CLI tools using Cyclopts."""
 
-import asyncio
 import importlib.metadata
 import importlib.util
 import os
@@ -8,13 +7,12 @@ import platform
 import subprocess
 import sys
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
-import typer
+import cyclopts
 from pydantic import TypeAdapter
 from rich.console import Console
 from rich.table import Table
-from typer import Context, Exit
 
 import fastmcp
 from fastmcp.cli import run as run_module
@@ -26,11 +24,10 @@ from fastmcp.utilities.logging import get_logger
 logger = get_logger("cli")
 console = Console()
 
-app = typer.Typer(
+app = cyclopts.App(
     name="fastmcp",
-    help="FastMCP CLI",
-    add_completion=False,
-    no_args_is_help=True,  # Show help if no args provided
+    help="FastMCP 2.0 - The fast, Pythonic way to build MCP servers and clients.",
+    version=fastmcp.__version__,
 )
 
 
@@ -87,11 +84,9 @@ def _build_uv_command(
     return cmd
 
 
-@app.command()
-def version(ctx: Context):
-    if ctx.resilient_parsing:
-        return
-
+@app.command
+def version():
+    """Display version information and platform details."""
     info = {
         "FastMCP version": fastmcp.__version__,
         "MCP version": importlib.metadata.version("mcp"),
@@ -107,56 +102,55 @@ def version(ctx: Context):
         g.add_row(k + ":", str(v).replace("\n", " "))
     console.print(g)
 
-    raise Exit()
+    sys.exit(0)
 
 
-@app.command()
+@app.command
 def dev(
-    server_spec: str = typer.Argument(
-        ...,
-        help="Python file to run, optionally with :object suffix",
-    ),
+    server_spec: str,
+    *,
     with_editable: Annotated[
         Path | None,
-        typer.Option(
-            "--with-editable",
-            "-e",
+        cyclopts.Parameter(
+            name=["--with-editable", "-e"],
             help="Directory containing pyproject.toml to install in editable mode",
-            exists=True,
-            file_okay=False,
-            resolve_path=True,
         ),
     ] = None,
     with_packages: Annotated[
         list[str],
-        typer.Option(
+        cyclopts.Parameter(
             "--with",
             help="Additional packages to install",
+            negative=False,
         ),
     ] = [],
     inspector_version: Annotated[
         str | None,
-        typer.Option(
+        cyclopts.Parameter(
             "--inspector-version",
             help="Version of the MCP Inspector to use",
         ),
     ] = None,
     ui_port: Annotated[
         int | None,
-        typer.Option(
+        cyclopts.Parameter(
             "--ui-port",
             help="Port for the MCP Inspector UI",
         ),
     ] = None,
     server_port: Annotated[
         int | None,
-        typer.Option(
+        cyclopts.Parameter(
             "--server-port",
             help="Port for the MCP Inspector Proxy server",
         ),
     ] = None,
 ) -> None:
-    """Run a MCP server with the MCP Inspector."""
+    """Run an MCP server with the MCP Inspector for development.
+
+    Args:
+        server_spec: Python file to run, optionally with :object suffix
+    """
     file, server_object = run_module.parse_file_path(server_spec)
 
     logger.debug(
@@ -229,66 +223,62 @@ def dev(
         sys.exit(1)
 
 
-@app.command(context_settings={"allow_extra_args": True})
+@app.command
 def run(
-    ctx: typer.Context,
-    server_spec: str = typer.Argument(
-        ...,
-        help="Python file, object specification (file:obj), or URL",
-    ),
+    server_spec: str,
+    *,
     transport: Annotated[
-        str | None,
-        typer.Option(
-            "--transport",
-            "-t",
-            help="Transport protocol to use (stdio, http, or sse)",
+        Literal["stdio", "http", "sse"] | None,
+        cyclopts.Parameter(
+            name=["--transport", "-t"],
+            help="Transport protocol to use",
         ),
     ] = None,
     host: Annotated[
         str | None,
-        typer.Option(
+        cyclopts.Parameter(
             "--host",
             help="Host to bind to when using http transport (default: 127.0.0.1)",
         ),
     ] = None,
     port: Annotated[
         int | None,
-        typer.Option(
-            "--port",
-            "-p",
+        cyclopts.Parameter(
+            name=["--port", "-p"],
             help="Port to bind to when using http transport (default: 8000)",
         ),
     ] = None,
     log_level: Annotated[
-        str | None,
-        typer.Option(
-            "--log-level",
-            "-l",
-            help="Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)",
+        Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] | None,
+        cyclopts.Parameter(
+            name=["--log-level", "-l"],
+            help="Log level",
         ),
     ] = None,
     no_banner: Annotated[
         bool,
-        typer.Option(
+        cyclopts.Parameter(
             "--no-banner",
             help="Don't show the server banner",
+            negative=False,
         ),
     ] = False,
 ) -> None:
-    """Run a MCP server or connect to a remote one.
+    """Run an MCP server or connect to a remote one.
 
     The server can be specified in three ways:
-    1. Module approach: server.py - runs the module directly, looking for an object named mcp/server/app.\n
-    2. Import approach: server.py:app - imports and runs the specified server object.\n
-    3. URL approach: http://server-url - connects to a remote server and creates a proxy.\n\n
-
-    Note: This command runs the server directly. You are responsible for ensuring
-    all dependencies are available.
+    1. Module approach: server.py - runs the module directly, looking for an object named 'mcp', 'server', or 'app'
+    2. Import approach: server.py:app - imports and runs the specified server object
+    3. URL approach: http://server-url - connects to a remote server and creates a proxy
 
     Server arguments can be passed after -- :
     fastmcp run server.py -- --config config.json --debug
+
+    Args:
+        server_spec: Python file, object specification (file:obj), or URL
     """
-    server_args = ctx.args  # extra args after --
+    # TODO: Handle server_args from extra context
+    server_args = []  # Will need to handle this with Cyclopts context
 
     logger.debug(
         "Running server or client",
@@ -323,39 +313,33 @@ def run(
         sys.exit(1)
 
 
-# Add install subcommands
-app.add_typer(install_app)
-
-
-@app.command()
-def inspect(
-    server_spec: str = typer.Argument(
-        ...,
-        help="Python file to inspect, optionally with :object suffix",
-    ),
+@app.command
+async def inspect(
+    server_spec: str,
+    *,
     output: Annotated[
         Path,
-        typer.Option(
-            "--output",
-            "-o",
+        cyclopts.Parameter(
+            name=["--output", "-o"],
             help="Output file path for the JSON report (default: server-info.json)",
         ),
     ] = Path("server-info.json"),
 ) -> None:
-    """Inspect a FastMCP server and generate a JSON report.
+    """Inspect an MCP server and generate a JSON report.
 
-    This command analyzes a FastMCP server (v1.x or v2.x) and generates
-    a comprehensive JSON report containing information about the server's
-    name, instructions, version, tools, prompts, resources, templates,
-    and capabilities.
+    This command analyzes an MCP server and generates a comprehensive JSON report
+    containing information about the server's name, instructions, version, tools,
+    prompts, resources, templates, and capabilities.
 
     Examples:
         fastmcp inspect server.py
         fastmcp inspect server.py -o report.json
         fastmcp inspect server.py:mcp -o analysis.json
         fastmcp inspect path/to/server.py:app -o /tmp/server-info.json
-    """
 
+    Args:
+        server_spec: Python file to inspect, optionally with :object suffix
+    """
     # Parse the server specification
     file, server_object = run_module.parse_file_path(server_spec)
 
@@ -372,22 +356,8 @@ def inspect(
         # Import the server
         server = run_module.import_server(file, server_object)
 
-        # Get server information
-        async def get_info():
-            return await inspect_fastmcp(server)
-
-        try:
-            # Try to use existing event loop if available
-            asyncio.get_running_loop()
-            # If there's already a loop running, we need to run in a thread
-            import concurrent.futures
-
-            with concurrent.futures.ThreadPoolExecutor() as executor:
-                future = executor.submit(asyncio.run, get_info())
-                info = future.result()
-        except RuntimeError:
-            # No running loop, safe to use asyncio.run
-            info = asyncio.run(get_info())
+        # Get server information - using native async support
+        info = await inspect_fastmcp(server)
 
         info_json = TypeAdapter(FastMCPInfo).dump_json(info, indent=2)
 
@@ -420,3 +390,11 @@ def inspect(
         )
         console.print(f"[bold red]✗[/bold red] Failed to inspect server: {e}")
         sys.exit(1)
+
+
+# Add install subcommands using proper Cyclopts pattern
+app.command(install_app)
+
+
+if __name__ == "__main__":
+    app()

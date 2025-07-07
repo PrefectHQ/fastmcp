@@ -1,11 +1,12 @@
-"""Tests for Cursor CLI integration."""
-
 import base64
 import json
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
+
+import pytest
 
 from fastmcp.cli.install.cursor import (
+    cursor_command,
     generate_cursor_deeplink,
     install_cursor,
     open_deeplink,
@@ -13,15 +14,14 @@ from fastmcp.cli.install.cursor import (
 from fastmcp.mcp_config import StdioMCPServer
 
 
-class TestGenerateCursorDeeplink:
-    """Test generate_cursor_deeplink function."""
+class TestCursorDeeplinkGeneration:
+    """Test cursor deeplink generation functionality."""
 
-    def test_generates_valid_deeplink(self):
-        """Should generate a valid Cursor deeplink with base64 encoded config."""
+    def test_generate_deeplink_basic(self):
+        """Test basic deeplink generation."""
         server_config = StdioMCPServer(
             command="uv",
             args=["run", "--with", "fastmcp", "fastmcp", "run", "server.py"],
-            env={"API_KEY": "secret"},
         )
 
         deeplink = generate_cursor_deeplink("test-server", server_config)
@@ -30,97 +30,151 @@ class TestGenerateCursorDeeplink:
         assert "name=test-server" in deeplink
         assert "config=" in deeplink
 
-    def test_config_is_url_safe_base64(self):
-        """Should use URL-safe base64 encoding for the config."""
-        server_config = StdioMCPServer(
-            command="test",
-            args=["arg1", "arg2"],
-        )
-
-        deeplink = generate_cursor_deeplink("test", server_config)
-
-        # Extract the config parameter
-        config_param = deeplink.split("config=")[1]
-
-        # Should be decodable as URL-safe base64
-        decoded = base64.urlsafe_b64decode(config_param.encode())
+        # Verify base64 encoding
+        config_part = deeplink.split("config=")[1]
+        decoded = base64.urlsafe_b64decode(config_part).decode()
         config_data = json.loads(decoded)
 
-        assert config_data["command"] == "test"
-        assert config_data["args"] == ["arg1", "arg2"]
+        assert config_data["command"] == "uv"
+        assert config_data["args"] == [
+            "run",
+            "--with",
+            "fastmcp",
+            "fastmcp",
+            "run",
+            "server.py",
+        ]
 
-    def test_excludes_none_values(self):
-        """Should exclude None values from the configuration."""
+    def test_generate_deeplink_with_env_vars(self):
+        """Test deeplink generation with environment variables."""
         server_config = StdioMCPServer(
-            command="test",
-            args=["arg1"],
-            timeout=None,  # This should be excluded
+            command="uv",
+            args=["run", "--with", "fastmcp", "fastmcp", "run", "server.py"],
+            env={"API_KEY": "secret123", "DEBUG": "true"},
         )
 
-        deeplink = generate_cursor_deeplink("test", server_config)
-        config_param = deeplink.split("config=")[1]
-        decoded = base64.urlsafe_b64decode(config_param.encode())
+        deeplink = generate_cursor_deeplink("my-server", server_config)
+
+        # Decode and verify
+        config_part = deeplink.split("config=")[1]
+        decoded = base64.urlsafe_b64decode(config_part).decode()
         config_data = json.loads(decoded)
 
-        assert "timeout" not in config_data
+        assert config_data["env"] == {"API_KEY": "secret123", "DEBUG": "true"}
+
+    def test_generate_deeplink_special_characters(self):
+        """Test deeplink generation with special characters in server name."""
+        server_config = StdioMCPServer(
+            command="uv",
+            args=["run", "--with", "fastmcp", "fastmcp", "run", "server.py"],
+        )
+
+        # Test with spaces and special chars in name
+        deeplink = generate_cursor_deeplink("my server (test)", server_config)
+
+        assert (
+            "name=my%20server%20%28test%29" in deeplink
+            or "name=my server (test)" in deeplink
+        )
+
+    def test_generate_deeplink_empty_config(self):
+        """Test deeplink generation with minimal config."""
+        server_config = StdioMCPServer(command="python", args=["server.py"])
+
+        deeplink = generate_cursor_deeplink("minimal", server_config)
+
+        config_part = deeplink.split("config=")[1]
+        decoded = base64.urlsafe_b64decode(config_part).decode()
+        config_data = json.loads(decoded)
+
+        assert config_data["command"] == "python"
+        assert config_data["args"] == ["server.py"]
+        assert config_data["env"] == {}  # Empty env dict is included
+
+    def test_generate_deeplink_complex_args(self):
+        """Test deeplink generation with complex arguments."""
+        server_config = StdioMCPServer(
+            command="uv",
+            args=[
+                "run",
+                "--with",
+                "fastmcp",
+                "--with",
+                "numpy>=1.20",
+                "--with-editable",
+                "/path/to/local/package",
+                "fastmcp",
+                "run",
+                "server.py:CustomServer",
+            ],
+        )
+
+        deeplink = generate_cursor_deeplink("complex-server", server_config)
+
+        config_part = deeplink.split("config=")[1]
+        decoded = base64.urlsafe_b64decode(config_part).decode()
+        config_data = json.loads(decoded)
+
+        assert "--with-editable" in config_data["args"]
+        assert "server.py:CustomServer" in config_data["args"]
 
 
 class TestOpenDeeplink:
-    """Test open_deeplink function."""
+    """Test deeplink opening functionality."""
 
     @patch("subprocess.run")
-    @patch("fastmcp.cli.install.cursor.sys.platform", "darwin")
-    def test_opens_on_macos(self, mock_run):
-        """Should use 'open' command on macOS."""
-        mock_run.return_value = None
+    def test_open_deeplink_macos(self, mock_run):
+        """Test opening deeplink on macOS."""
+        with patch("sys.platform", "darwin"):
+            mock_run.return_value = Mock(returncode=0)
 
-        result = open_deeplink("cursor://test")
+            result = open_deeplink("cursor://test")
 
-        assert result is True
-        mock_run.assert_called_once_with(
-            ["open", "cursor://test"], check=True, capture_output=True
-        )
-
-    @patch("subprocess.run")
-    @patch("fastmcp.cli.install.cursor.sys.platform", "win32")
-    def test_opens_on_windows(self, mock_run):
-        """Should use 'start' command on Windows."""
-        mock_run.return_value = None
-
-        result = open_deeplink("cursor://test")
-
-        assert result is True
-        mock_run.assert_called_once_with(
-            ["start", "cursor://test"], shell=True, check=True, capture_output=True
-        )
+            assert result is True
+            mock_run.assert_called_once_with(
+                ["open", "cursor://test"], check=True, capture_output=True
+            )
 
     @patch("subprocess.run")
-    @patch("fastmcp.cli.install.cursor.sys.platform", "linux")
-    def test_opens_on_linux(self, mock_run):
-        """Should use 'xdg-open' command on Linux."""
-        mock_run.return_value = None
+    def test_open_deeplink_windows(self, mock_run):
+        """Test opening deeplink on Windows."""
+        with patch("sys.platform", "win32"):
+            mock_run.return_value = Mock(returncode=0)
 
-        result = open_deeplink("cursor://test")
+            result = open_deeplink("cursor://test")
 
-        assert result is True
-        mock_run.assert_called_once_with(
-            ["xdg-open", "cursor://test"], check=True, capture_output=True
-        )
+            assert result is True
+            mock_run.assert_called_once_with(
+                ["start", "cursor://test"], shell=True, check=True, capture_output=True
+            )
 
     @patch("subprocess.run")
-    def test_handles_subprocess_error(self, mock_run):
-        """Should return False when subprocess command fails."""
-        from subprocess import CalledProcessError
+    def test_open_deeplink_linux(self, mock_run):
+        """Test opening deeplink on Linux."""
+        with patch("sys.platform", "linux"):
+            mock_run.return_value = Mock(returncode=0)
 
-        mock_run.side_effect = CalledProcessError(1, "open")
+            result = open_deeplink("cursor://test")
+
+            assert result is True
+            mock_run.assert_called_once_with(
+                ["xdg-open", "cursor://test"], check=True, capture_output=True
+            )
+
+    @patch("subprocess.run")
+    def test_open_deeplink_failure(self, mock_run):
+        """Test handling of deeplink opening failure."""
+        import subprocess
+
+        mock_run.side_effect = subprocess.CalledProcessError(1, ["open"])
 
         result = open_deeplink("cursor://test")
 
         assert result is False
 
     @patch("subprocess.run")
-    def test_handles_file_not_found(self, mock_run):
-        """Should return False when command is not found."""
+    def test_open_deeplink_command_not_found(self, mock_run):
+        """Test handling when open command is not found."""
         mock_run.side_effect = FileNotFoundError()
 
         result = open_deeplink("cursor://test")
@@ -129,148 +183,167 @@ class TestOpenDeeplink:
 
 
 class TestInstallCursor:
-    """Test install_cursor function."""
+    """Test cursor installation functionality."""
 
     @patch("fastmcp.cli.install.cursor.open_deeplink")
-    @patch("fastmcp.cli.install.cursor.generate_cursor_deeplink")
     @patch("fastmcp.cli.install.cursor.print")
-    def test_successful_installation(
-        self, mock_print, mock_generate_deeplink, mock_open_deeplink
-    ):
-        """Should successfully install when deeplink opens."""
-        mock_generate_deeplink.return_value = "cursor://test-deeplink"
+    def test_install_cursor_success(self, mock_print, mock_open_deeplink):
+        """Test successful cursor installation."""
         mock_open_deeplink.return_value = True
 
-        result = install_cursor(Path("server.py"), None, "test-server")
+        result = install_cursor(
+            file=Path("/path/to/server.py"),
+            server_object=None,
+            name="test-server",
+        )
 
         assert result is True
-        mock_generate_deeplink.assert_called_once()
-        mock_open_deeplink.assert_called_once_with("cursor://test-deeplink")
-        mock_print.assert_called_once()
-        # Check that the success message was printed
-        assert "Opening Cursor to install" in str(mock_print.call_args)
+        mock_open_deeplink.assert_called_once()
+        # Verify the deeplink was generated correctly
+        call_args = mock_open_deeplink.call_args[0][0]
+        assert call_args.startswith("cursor://anysphere.cursor-deeplink/mcp/install?")
+        assert "name=test-server" in call_args
 
     @patch("fastmcp.cli.install.cursor.open_deeplink")
-    @patch("fastmcp.cli.install.cursor.generate_cursor_deeplink")
     @patch("fastmcp.cli.install.cursor.print")
-    def test_fallback_when_deeplink_fails(
-        self, mock_print, mock_generate_deeplink, mock_open_deeplink
-    ):
-        """Should provide manual link when deeplink fails to open."""
-        mock_generate_deeplink.return_value = "cursor://test-deeplink"
+    def test_install_cursor_with_packages(self, mock_print, mock_open_deeplink):
+        """Test cursor installation with additional packages."""
+        mock_open_deeplink.return_value = True
+
+        result = install_cursor(
+            file=Path("/path/to/server.py"),
+            server_object="app",
+            name="test-server",
+            with_packages=["numpy", "pandas"],
+            env_vars={"API_KEY": "test"},
+        )
+
+        assert result is True
+        call_args = mock_open_deeplink.call_args[0][0]
+
+        # Decode the config to verify packages
+        config_part = call_args.split("config=")[1]
+        decoded = base64.urlsafe_b64decode(config_part).decode()
+        config_data = json.loads(decoded)
+
+        # Check that all packages are included
+        assert "--with" in config_data["args"]
+        assert "numpy" in config_data["args"]
+        assert "pandas" in config_data["args"]
+        assert "fastmcp" in config_data["args"]
+        assert config_data["env"] == {"API_KEY": "test"}
+
+    @patch("fastmcp.cli.install.cursor.open_deeplink")
+    @patch("fastmcp.cli.install.cursor.print")
+    def test_install_cursor_with_editable(self, mock_print, mock_open_deeplink):
+        """Test cursor installation with editable package."""
+        mock_open_deeplink.return_value = True
+
+        result = install_cursor(
+            file=Path("/path/to/server.py"),
+            server_object="custom_app",
+            name="test-server",
+            with_editable=Path("/local/package"),
+        )
+
+        assert result is True
+        call_args = mock_open_deeplink.call_args[0][0]
+
+        # Decode and verify editable path
+        config_part = call_args.split("config=")[1]
+        decoded = base64.urlsafe_b64decode(config_part).decode()
+        config_data = json.loads(decoded)
+
+        assert "--with-editable" in config_data["args"]
+        # Check for the editable path in a platform-agnostic way
+        editable_path_str = str(Path("/local/package"))
+        assert editable_path_str in config_data["args"]
+        assert "server.py:custom_app" in " ".join(config_data["args"])
+
+    @patch("fastmcp.cli.install.cursor.open_deeplink")
+    @patch("fastmcp.cli.install.cursor.print")
+    def test_install_cursor_failure(self, mock_print, mock_open_deeplink):
+        """Test cursor installation when deeplink fails to open."""
         mock_open_deeplink.return_value = False
 
-        result = install_cursor(Path("server.py"), None, "test-server")
-
-        assert result is True
-        assert mock_print.call_count == 2
-        # Check that both error and manual link messages were printed
-        print_calls = [str(call) for call in mock_print.call_args_list]
-        assert any(
-            "Could not open Cursor automatically" in call for call in print_calls
+        result = install_cursor(
+            file=Path("/path/to/server.py"),
+            server_object=None,
+            name="test-server",
         )
-        assert any("Please open this link" in call for call in print_calls)
-
-    @patch("fastmcp.cli.install.cursor.generate_cursor_deeplink")
-    @patch("fastmcp.cli.install.cursor.print")
-    def test_handles_deeplink_generation_error(
-        self, mock_print, mock_generate_deeplink
-    ):
-        """Should return False when deeplink generation fails."""
-        mock_generate_deeplink.side_effect = Exception("Test error")
-
-        result = install_cursor(Path("server.py"), None, "test-server")
 
         assert result is False
-        mock_print.assert_called_once()
-        assert "Failed to generate Cursor deeplink" in str(mock_print.call_args)
+        # Verify failure message was printed
+        mock_print.assert_called()
 
-    @patch("fastmcp.cli.install.cursor.open_deeplink")
-    @patch("fastmcp.cli.install.cursor.generate_cursor_deeplink")
-    def test_builds_correct_server_config(
-        self, mock_generate_deeplink, mock_open_deeplink
-    ):
-        """Should build correct server configuration with all options."""
-        mock_generate_deeplink.return_value = "cursor://test"
-        mock_open_deeplink.return_value = True
+    def test_install_cursor_deduplicate_packages(self):
+        """Test that duplicate packages are deduplicated."""
+        with patch("fastmcp.cli.install.cursor.open_deeplink") as mock_open:
+            mock_open.return_value = True
 
-        install_cursor(
-            file=Path("server.py"),
-            server_object="custom_server",
-            name="test-server",
-            with_editable=Path("/path/to/editable"),
-            with_packages=["pandas", "requests"],
-            env_vars={"API_KEY": "secret", "DEBUG": "true"},
+            install_cursor(
+                file=Path("/path/to/server.py"),
+                server_object=None,
+                name="test-server",
+                with_packages=["numpy", "fastmcp", "numpy", "pandas", "fastmcp"],
+            )
+
+            call_args = mock_open.call_args[0][0]
+            config_part = call_args.split("config=")[1]
+            decoded = base64.urlsafe_b64decode(config_part).decode()
+            config_data = json.loads(decoded)
+
+            # Count occurrences of each package
+            args_str = " ".join(config_data["args"])
+            assert args_str.count("numpy") == 1
+            assert args_str.count("pandas") == 1
+            # fastmcp appears twice: once as --with fastmcp and once as the command
+            assert args_str.count("fastmcp") == 2
+
+
+class TestCursorCommand:
+    """Test the cursor CLI command."""
+
+    @patch("fastmcp.cli.install.cursor.install_cursor")
+    @patch("fastmcp.cli.install.cursor.process_common_args")
+    def test_cursor_command_basic(self, mock_process_args, mock_install):
+        """Test basic cursor command execution."""
+        mock_process_args.return_value = (
+            Path("server.py"),
+            None,
+            "test-server",
+            [],
+            {},
         )
+        mock_install.return_value = True
 
-        # Check that generate_cursor_deeplink was called with correct config
-        call_args = mock_generate_deeplink.call_args
-        server_name, server_config = call_args[0]
+        with patch("sys.exit") as mock_exit:
+            cursor_command("server.py")
 
-        assert server_name == "test-server"
-        assert server_config.command == "uv"
-        assert "run" in server_config.args
-        assert "--with" in server_config.args
-        assert "fastmcp" in server_config.args
-        assert "pandas" in server_config.args
-        assert "requests" in server_config.args
-        assert "--with-editable" in server_config.args
-        assert str(Path("/path/to/editable")) in server_config.args
-        assert "fastmcp" in server_config.args
-        assert "run" in server_config.args
-        assert server_config.env == {"API_KEY": "secret", "DEBUG": "true"}
+        mock_install.assert_called_once_with(
+            file=Path("server.py"),
+            server_object=None,
+            name="test-server",
+            with_editable=None,
+            with_packages=[],
+            env_vars={},
+        )
+        mock_exit.assert_not_called()
 
-    @patch("fastmcp.cli.install.cursor.open_deeplink")
-    @patch("fastmcp.cli.install.cursor.generate_cursor_deeplink")
-    def test_resolves_absolute_paths(self, mock_generate_deeplink, mock_open_deeplink):
-        """Should resolve server spec to absolute path."""
-        mock_generate_deeplink.return_value = "cursor://test"
-        mock_open_deeplink.return_value = True
+    @patch("fastmcp.cli.install.cursor.install_cursor")
+    @patch("fastmcp.cli.install.cursor.process_common_args")
+    def test_cursor_command_failure(self, mock_process_args, mock_install):
+        """Test cursor command when installation fails."""
+        mock_process_args.return_value = (
+            Path("server.py"),
+            None,
+            "test-server",
+            [],
+            {},
+        )
+        mock_install.return_value = False
 
-        install_cursor(Path("server.py"), None, "test-server")
+        with pytest.raises(SystemExit) as exc_info:
+            cursor_command("server.py")
 
-        call_args = mock_generate_deeplink.call_args
-        _, server_config = call_args[0]
-
-        # Find the server spec after "fastmcp run"
-        server_spec_in_args = None
-        for i, arg in enumerate(server_config.args):
-            if (
-                arg == "fastmcp"
-                and i + 2 < len(server_config.args)
-                and server_config.args[i + 1] == "run"
-            ):
-                server_spec_in_args = server_config.args[i + 2]
-                break
-
-        assert server_spec_in_args is not None
-        assert str(Path("server.py").resolve()) in server_spec_in_args
-
-    @patch("fastmcp.cli.install.cursor.open_deeplink")
-    @patch("fastmcp.cli.install.cursor.generate_cursor_deeplink")
-    def test_handles_server_spec_with_object(
-        self, mock_generate_deeplink, mock_open_deeplink
-    ):
-        """Should correctly handle server spec with object notation."""
-        mock_generate_deeplink.return_value = "cursor://test"
-        mock_open_deeplink.return_value = True
-
-        install_cursor(Path("server.py"), "custom_object", "test-server")
-
-        call_args = mock_generate_deeplink.call_args
-        _, server_config = call_args[0]
-
-        # Find the server spec after "fastmcp run"
-        server_spec_in_args = None
-        for i, arg in enumerate(server_config.args):
-            if (
-                arg == "fastmcp"
-                and i + 2 < len(server_config.args)
-                and server_config.args[i + 1] == "run"
-            ):
-                server_spec_in_args = server_config.args[i + 2]
-                break
-
-        assert server_spec_in_args is not None
-        assert ":custom_object" in server_spec_in_args
-        assert str(Path("server.py").resolve()) in server_spec_in_args
+        assert exc_info.value.code == 1

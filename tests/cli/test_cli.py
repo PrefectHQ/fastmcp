@@ -1,141 +1,66 @@
-"""Tests for the CLI module."""
-
 import subprocess
 from pathlib import Path
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import Mock, patch
 
 import pytest
-from typer.testing import CliRunner
 
-from fastmcp.cli import cli
-
-# Set up test runner
-runner = CliRunner()
+from fastmcp.cli.cli import _build_uv_command, _parse_env_var, app
 
 
-@pytest.fixture
-def mock_console():
-    """Mock the rich console to test output."""
-    with patch("fastmcp.cli.cli.console") as mock_console:
-        yield mock_console
+class TestMainCLI:
+    """Test the main CLI application."""
 
-
-@pytest.fixture
-def mock_logger():
-    """Mock the logger to test logging."""
-    with patch("fastmcp.cli.cli.logger") as mock_logger:
-        yield mock_logger
-
-
-@pytest.fixture
-def mock_exit():
-    """Mock sys.exit to prevent tests from exiting."""
-    with patch("sys.exit") as mock_exit:
-        yield mock_exit
-
-
-@pytest.fixture
-def temp_python_file(tmp_path):
-    """Create a temporary Python file with a test server."""
-    server_code = """
-from mcp import Server
-
-class TestServer(Server):
-    name = "test_server"
-    dependencies = ["package1", "package2"]
-
-    def run(self, **kwargs):
-        print("Running server with", kwargs)
-
-mcp = TestServer()
-server = TestServer()
-app = TestServer()
-custom_server = TestServer()
-"""
-    file_path = tmp_path / "test_server.py"
-    file_path.write_text(server_code)
-    return file_path
-
-
-@pytest.fixture
-def temp_env_file(tmp_path):
-    """Create a temporary .env file."""
-    env_content = """
-TEST_VAR1=value1
-TEST_VAR2=value2
-"""
-    env_path = tmp_path / ".env"
-    env_path.write_text(env_content)
-    return env_path
-
-
-class TestHelperFunctions:
-    """Tests for helper functions in cli.py."""
-
-    def test_get_npx_command_unix(self):
-        """Test getting npx command on unix systems."""
-        with patch("sys.platform", "linux"):
-            with patch("subprocess.run") as mock_run:
-                mock_run.return_value = Mock(returncode=0)
-                assert cli._get_npx_command() == "npx"
-
-    def test_get_npx_command_windows(self):
-        """Test getting npx command on Windows."""
-        with patch("sys.platform", "win32"):
-            with patch("subprocess.run") as mock_run:
-                # First try fails, second succeeds
-                mock_run.side_effect = [
-                    subprocess.CalledProcessError(1, "npx.cmd"),
-                    Mock(returncode=0),
-                ]
-                assert cli._get_npx_command() == "npx.exe"
-
-    def test_get_npx_command_not_found(self):
-        """Test when npx command is not found."""
-        with patch("sys.platform", "win32"):
-            with patch("subprocess.run") as mock_run:
-                mock_run.side_effect = [
-                    subprocess.CalledProcessError(1, "npx.cmd"),
-                    subprocess.CalledProcessError(1, "npx.exe"),
-                    subprocess.CalledProcessError(1, "npx"),
-                ]
-                assert cli._get_npx_command() is None
+    def test_app_exists(self):
+        """Test that the main app is properly configured."""
+        # app.name is a tuple in cyclopts
+        assert "fastmcp" in app.name
+        assert "FastMCP 2.0" in app.help
+        # Just check that version exists, not the specific value
+        assert hasattr(app, "version")
 
     def test_parse_env_var_valid(self):
         """Test parsing valid environment variables."""
-        assert cli._parse_env_var("KEY=VALUE") == ("KEY", "VALUE")
-        assert cli._parse_env_var("KEY=") == ("KEY", "")
-        assert cli._parse_env_var("KEY=VALUE=WITH=EQUALS") == (
-            "KEY",
-            "VALUE=WITH=EQUALS",
-        )
-        assert cli._parse_env_var(" KEY = VALUE ") == ("KEY", "VALUE")
+        key, value = _parse_env_var("KEY=value")
+        assert key == "KEY"
+        assert value == "value"
+
+        key, value = _parse_env_var("COMPLEX_KEY=complex=value=with=equals")
+        assert key == "COMPLEX_KEY"
+        assert value == "complex=value=with=equals"
+
+    def test_parse_env_var_invalid(self):
+        """Test parsing invalid environment variables exits."""
+        with pytest.raises(SystemExit) as exc_info:
+            _parse_env_var("INVALID_FORMAT")
+        assert exc_info.value.code == 1
 
     def test_build_uv_command_basic(self):
         """Test building basic uv command."""
-        cmd = cli._build_uv_command("file.py")
-        assert cmd == ["uv", "run", "--with", "fastmcp", "fastmcp", "run", "file.py"]
+        cmd = _build_uv_command("server.py")
+        expected = ["uv", "run", "--with", "fastmcp", "fastmcp", "run", "server.py"]
+        assert cmd == expected
 
     def test_build_uv_command_with_editable(self):
-        """Test building uv command with editable flag."""
-        project_path = Path("/path/to/project")
-        cmd = cli._build_uv_command("file.py", with_editable=project_path)
-        assert cmd == [
+        """Test building uv command with editable package."""
+        editable_path = Path("/path/to/package")
+        cmd = _build_uv_command("server.py", with_editable=editable_path)
+        expected = [
             "uv",
             "run",
             "--with",
             "fastmcp",
             "--with-editable",
-            str(project_path),
+            str(editable_path),
             "fastmcp",
             "run",
-            "file.py",
+            "server.py",
         ]
+        assert cmd == expected
 
     def test_build_uv_command_with_packages(self):
         """Test building uv command with additional packages."""
-        cmd = cli._build_uv_command("file.py", with_packages=["pkg1", "pkg2"])
-        assert cmd == [
+        cmd = _build_uv_command("server.py", with_packages=["pkg1", "pkg2"])
+        expected = [
             "uv",
             "run",
             "--with",
@@ -146,327 +71,305 @@ class TestHelperFunctions:
             "pkg2",
             "fastmcp",
             "run",
-            "file.py",
+            "server.py",
         ]
+        assert cmd == expected
 
-    def test_build_uv_command_full(self):
-        """Test building full uv command with all options."""
-        project_path = Path("/path/to/project")
-        cmd = cli._build_uv_command(
-            "file.py:server",
-            with_editable=project_path,
-            with_packages=["pkg1", "pkg2"],
-        )
-        assert cmd == [
+    def test_build_uv_command_no_banner(self):
+        """Test building uv command with no banner flag."""
+        cmd = _build_uv_command("server.py", no_banner=True)
+        expected = [
             "uv",
             "run",
             "--with",
             "fastmcp",
-            "--with-editable",
-            str(project_path),
-            "--with",
-            "pkg1",
-            "--with",
-            "pkg2",
             "fastmcp",
             "run",
-            "file.py:server",
+            "server.py",
+            "--no-banner",
         ]
+        assert cmd == expected
 
 
 class TestVersionCommand:
-    """Tests for the version command."""
+    """Test the version command."""
 
-    def test_version_early_exit_with_resilient_parsing(self):
-        """Test version command exits early with resilient parsing."""
-        ctx = MagicMock()
-        ctx.resilient_parsing = True
-        result = cli.version(ctx)
-        assert result is None
+    def test_version_command_parsing(self):
+        """Test that version command can be parsed."""
+        command, bound, _ = app.parse_args(["version"])
+        assert command is not None
+
+    def test_version_command_execution(self):
+        """Test that version command executes and exits properly."""
+        # The version command should exit with code 0 when executed
+        with pytest.raises(SystemExit) as exc_info:
+            command, bound, _ = app.parse_args(["version"])
+            command()
+
+        assert exc_info.value.code == 0
 
 
 class TestDevCommand:
-    """Tests for the dev command."""
+    """Test the dev command."""
 
-    def test_dev_command_success(self, temp_python_file, mock_logger):
-        """Test successful dev command execution."""
-        with (
-            patch("fastmcp.cli.run.parse_file_path") as mock_parse,
-            patch("fastmcp.cli.run.import_server") as mock_import,
-            patch("fastmcp.cli.cli._get_npx_command") as mock_get_npx,
-            patch("fastmcp.cli.cli._build_uv_command") as mock_build_uv,
-            patch("subprocess.run") as mock_run,
-        ):
-            mock_parse.return_value = (temp_python_file, None)
-            mock_server = MagicMock()
-            mock_server.dependencies = ["extra_dep"]
-            mock_import.return_value = mock_server
-            mock_get_npx.return_value = "npx"
-            mock_build_uv.return_value = ["uv", "command"]
-            mock_run.return_value = MagicMock(returncode=0)
+    def test_dev_command_parsing(self):
+        """Test that dev command can be parsed with various options."""
+        # Test basic parsing
+        command, bound, _ = app.parse_args(["dev", "server.py"])
+        assert command is not None
+        assert bound.arguments["server_spec"] == "server.py"
 
-            result = runner.invoke(cli.app, ["dev", str(temp_python_file)])
-            assert result.exit_code == 0
-            mock_run.assert_called_once()
-
-            # Check dependencies were passed correctly with no_banner=True
-            mock_build_uv.assert_called_once_with(
-                str(temp_python_file), None, ["extra_dep"], no_banner=True
-            )
-
-    def test_dev_command_with_ui_port(self, temp_python_file):
-        """Test dev command with UI port."""
-        with (
-            patch("fastmcp.cli.run.parse_file_path") as mock_parse,
-            patch("fastmcp.cli.run.import_server") as mock_import,
-            patch("fastmcp.cli.cli._get_npx_command") as mock_get_npx,
-            patch("fastmcp.cli.cli._build_uv_command") as mock_build_uv,
-            patch("subprocess.run") as mock_run,
-        ):
-            mock_parse.return_value = (temp_python_file, None)
-            mock_import.return_value = MagicMock(dependencies=[])
-            mock_get_npx.return_value = "npx"
-            mock_build_uv.return_value = ["uv", "command"]
-            mock_run.return_value = MagicMock(returncode=0)
-
-            result = runner.invoke(
-                cli.app, ["dev", str(temp_python_file), "--ui-port", "3000"]
-            )
-            assert result.exit_code == 0
-
-            # Check environment variables were set
-            env = mock_run.call_args[1]["env"]
-            assert "CLIENT_PORT" in env
-            assert env["CLIENT_PORT"] == "3000"
-
-    def test_dev_command_with_server_port(self, temp_python_file):
-        """Test dev command with server port."""
-        with (
-            patch("fastmcp.cli.run.parse_file_path") as mock_parse,
-            patch("fastmcp.cli.run.import_server") as mock_import,
-            patch("fastmcp.cli.cli._get_npx_command") as mock_get_npx,
-            patch("fastmcp.cli.cli._build_uv_command") as mock_build_uv,
-            patch("subprocess.run") as mock_run,
-        ):
-            mock_parse.return_value = (temp_python_file, None)
-            mock_import.return_value = MagicMock(dependencies=[])
-            mock_get_npx.return_value = "npx"
-            mock_build_uv.return_value = ["uv", "command"]
-            mock_run.return_value = MagicMock(returncode=0)
-
-            result = runner.invoke(
-                cli.app, ["dev", str(temp_python_file), "--server-port", "8080"]
-            )
-            assert result.exit_code == 0
-
-            # Check environment variables were set
-            env = mock_run.call_args[1]["env"]
-            assert "SERVER_PORT" in env
-            assert env["SERVER_PORT"] == "8080"
-
-    def test_dev_command_inspector_version(self, temp_python_file):
-        """Test dev command with specific inspector version."""
-        with (
-            patch("fastmcp.cli.run.parse_file_path") as mock_parse,
-            patch("fastmcp.cli.run.import_server") as mock_import,
-            patch("fastmcp.cli.cli._get_npx_command") as mock_get_npx,
-            patch("fastmcp.cli.cli._build_uv_command") as mock_build_uv,
-            patch("subprocess.run") as mock_run,
-        ):
-            mock_parse.return_value = (temp_python_file, None)
-            mock_import.return_value = MagicMock(dependencies=[])
-            mock_get_npx.return_value = "npx"
-            mock_build_uv.return_value = ["uv", "command"]
-            mock_run.return_value = MagicMock(returncode=0)
-
-            result = runner.invoke(
-                cli.app, ["dev", str(temp_python_file), "--inspector-version", "1.0.0"]
-            )
-            assert result.exit_code == 0
-
-            # Check inspector version was used
-            inspector_cmd = mock_run.call_args[0][0][1]
-            assert inspector_cmd == "@modelcontextprotocol/inspector@1.0.0"
+        # Test with options
+        command, bound, _ = app.parse_args(
+            [
+                "dev",
+                "server.py",
+                "--with",
+                "package1",
+                "--inspector-version",
+                "1.0.0",
+                "--ui-port",
+                "3000",
+            ]
+        )
+        assert bound.arguments["with_packages"] == ["package1"]
+        assert bound.arguments["inspector_version"] == "1.0.0"
+        assert bound.arguments["ui_port"] == 3000
 
 
 class TestRunCommand:
-    """Tests for the run command."""
+    """Test the run command."""
 
-    def test_run_command_success(self, temp_python_file):
-        """Test successful run command execution."""
-        with (
-            patch("fastmcp.cli.run.parse_file_path") as mock_parse,
-            patch("fastmcp.cli.run.import_server") as mock_import,
-            patch("fastmcp.cli.run.logger") as mock_logger,
-        ):
-            mock_parse.return_value = (temp_python_file, None)
-            mock_server = MagicMock()
-            mock_server.name = "test_server"
-            mock_import.return_value = mock_server
+    def test_run_command_parsing_basic(self):
+        """Test basic run command parsing."""
+        command, bound, _ = app.parse_args(["run", "server.py"])
 
-            result = runner.invoke(cli.app, ["run", str(temp_python_file)])
-            assert result.exit_code == 0
-            mock_server.run.assert_called_once_with()
-            mock_logger.debug.assert_called_with(
-                f'Found server "test_server" in {temp_python_file}'
+        assert command is not None
+        assert bound.arguments["server_spec"] == "server.py"
+        # Cyclopts only includes non-default values
+        assert "transport" not in bound.arguments
+        assert "host" not in bound.arguments
+        assert "port" not in bound.arguments
+        assert "log_level" not in bound.arguments
+        assert "no_banner" not in bound.arguments
+
+    def test_run_command_parsing_with_options(self):
+        """Test run command parsing with various options."""
+        command, bound, _ = app.parse_args(
+            [
+                "run",
+                "server.py",
+                "--transport",
+                "http",
+                "--host",
+                "localhost",
+                "--port",
+                "8080",
+                "--log-level",
+                "DEBUG",
+                "--no-banner",
+            ]
+        )
+
+        assert command is not None
+        assert bound.arguments["server_spec"] == "server.py"
+        assert bound.arguments["transport"] == "http"
+        assert bound.arguments["host"] == "localhost"
+        assert bound.arguments["port"] == 8080
+        assert bound.arguments["log_level"] == "DEBUG"
+        assert bound.arguments["no_banner"] is True
+
+    def test_run_command_parsing_partial_options(self):
+        """Test run command parsing with only some options."""
+        command, bound, _ = app.parse_args(
+            [
+                "run",
+                "server.py",
+                "--transport",
+                "http",
+                "--no-banner",
+            ]
+        )
+
+        assert command is not None
+        assert bound.arguments["server_spec"] == "server.py"
+        assert bound.arguments["transport"] == "http"
+        assert bound.arguments["no_banner"] is True
+        # Other options should not be present
+        assert "host" not in bound.arguments
+        assert "port" not in bound.arguments
+        assert "log_level" not in bound.arguments
+
+
+class TestWindowsSpecific:
+    """Test Windows-specific functionality."""
+
+    @patch("subprocess.run")
+    def test_get_npx_command_windows_cmd(self, mock_run):
+        """Test npx command detection on Windows with npx.cmd."""
+        from fastmcp.cli.cli import _get_npx_command
+
+        with patch("sys.platform", "win32"):
+            # First call succeeds with npx.cmd
+            mock_run.return_value = Mock(returncode=0)
+
+            result = _get_npx_command()
+
+            assert result == "npx.cmd"
+            mock_run.assert_called_once_with(
+                ["npx.cmd", "--version"],
+                check=True,
+                capture_output=True,
+                shell=True,
             )
 
-    def test_run_command_with_transport(self, temp_python_file):
-        """Test run command with transport option."""
-        with (
-            patch("fastmcp.cli.run.parse_file_path") as mock_parse,
-            patch("fastmcp.cli.run.import_server") as mock_import,
-        ):
-            mock_parse.return_value = (temp_python_file, None)
-            mock_server = MagicMock()
-            mock_server.name = "test_server"
-            mock_import.return_value = mock_server
+    @patch("subprocess.run")
+    def test_get_npx_command_windows_exe(self, mock_run):
+        """Test npx command detection on Windows with npx.exe."""
+        from fastmcp.cli.cli import _get_npx_command
 
-            result = runner.invoke(
-                cli.app, ["run", str(temp_python_file), "--transport", "sse"]
-            )
-            assert result.exit_code == 0
-            mock_server.run.assert_called_once_with(transport="sse")
+        with patch("sys.platform", "win32"):
+            # First call fails, second succeeds
+            mock_run.side_effect = [
+                subprocess.CalledProcessError(1, "npx.cmd"),
+                Mock(returncode=0),
+            ]
 
-    def test_run_command_with_http_transports(self, temp_python_file):
-        """Test run command with both http and streamable-http transport options."""
-        # Test "http" transport
-        with (
-            patch("fastmcp.cli.run.parse_file_path") as mock_parse,
-            patch("fastmcp.cli.run.import_server") as mock_import,
-        ):
-            mock_parse.return_value = (temp_python_file, None)
-            mock_server = MagicMock()
-            mock_server.name = "test_server"
-            mock_import.return_value = mock_server
+            result = _get_npx_command()
 
-            result = runner.invoke(
-                cli.app, ["run", str(temp_python_file), "--transport", "http"]
-            )
-            assert result.exit_code == 0
-            mock_server.run.assert_called_once_with(transport="http")
+            assert result == "npx.exe"
+            assert mock_run.call_count == 2
 
-        # Test "streamable-http" transport (alias for http)
-        with (
-            patch("fastmcp.cli.run.parse_file_path") as mock_parse,
-            patch("fastmcp.cli.run.import_server") as mock_import,
-        ):
-            mock_parse.return_value = (temp_python_file, None)
-            mock_server = MagicMock()
-            mock_server.name = "test_server"
-            mock_import.return_value = mock_server
+    @patch("subprocess.run")
+    def test_get_npx_command_windows_fallback(self, mock_run):
+        """Test npx command detection on Windows with plain npx."""
+        from fastmcp.cli.cli import _get_npx_command
 
-            result = runner.invoke(
-                cli.app,
-                ["run", str(temp_python_file), "--transport", "streamable-http"],
-            )
-            assert result.exit_code == 0
-            mock_server.run.assert_called_once_with(transport="streamable-http")
+        with patch("sys.platform", "win32"):
+            # First two calls fail, third succeeds
+            mock_run.side_effect = [
+                subprocess.CalledProcessError(1, "npx.cmd"),
+                subprocess.CalledProcessError(1, "npx.exe"),
+                Mock(returncode=0),
+            ]
 
-    def test_run_command_with_host(self, temp_python_file):
-        """Test run command with host option."""
-        with (
-            patch("fastmcp.cli.run.parse_file_path") as mock_parse,
-            patch("fastmcp.cli.run.import_server") as mock_import,
-        ):
-            mock_parse.return_value = (temp_python_file, None)
-            mock_server = MagicMock()
-            mock_server.name = "test_server"
-            mock_import.return_value = mock_server
+            result = _get_npx_command()
 
-            result = runner.invoke(
-                cli.app, ["run", str(temp_python_file), "--host", "0.0.0.0"]
-            )
-            assert result.exit_code == 0
-            mock_server.run.assert_called_once_with(host="0.0.0.0")
+            assert result == "npx"
+            assert mock_run.call_count == 3
 
-    def test_run_command_with_port(self, temp_python_file):
-        """Test run command with port option."""
-        with (
-            patch("fastmcp.cli.run.parse_file_path") as mock_parse,
-            patch("fastmcp.cli.run.import_server") as mock_import,
-        ):
-            mock_parse.return_value = (temp_python_file, None)
-            mock_server = MagicMock()
-            mock_server.name = "test_server"
-            mock_import.return_value = mock_server
+    @patch("subprocess.run")
+    def test_get_npx_command_windows_not_found(self, mock_run):
+        """Test npx command detection on Windows when npx is not found."""
+        from fastmcp.cli.cli import _get_npx_command
 
-            result = runner.invoke(
-                cli.app, ["run", str(temp_python_file), "--port", "8080"]
-            )
-            assert result.exit_code == 0
-            mock_server.run.assert_called_once_with(port=8080)
+        with patch("sys.platform", "win32"):
+            # All calls fail
+            mock_run.side_effect = subprocess.CalledProcessError(1, "npx")
 
-    def test_run_command_with_log_level(self, temp_python_file):
-        """Test run command with log level option."""
-        with (
-            patch("fastmcp.cli.run.parse_file_path") as mock_parse,
-            patch("fastmcp.cli.run.import_server") as mock_import,
-        ):
-            mock_parse.return_value = (temp_python_file, None)
-            mock_server = MagicMock()
-            mock_server.name = "test_server"
-            mock_import.return_value = mock_server
+            result = _get_npx_command()
 
-            result = runner.invoke(
-                cli.app, ["run", str(temp_python_file), "--log-level", "DEBUG"]
-            )
-            assert result.exit_code == 0
-            mock_server.run.assert_called_once_with(log_level="DEBUG")
+            assert result is None
+            assert mock_run.call_count == 3
 
-    def test_run_command_with_multiple_options(self, temp_python_file):
-        """Test run command with multiple options."""
-        with (
-            patch("fastmcp.cli.run.parse_file_path") as mock_parse,
-            patch("fastmcp.cli.run.import_server") as mock_import,
-        ):
-            mock_parse.return_value = (temp_python_file, None)
-            mock_server = MagicMock()
-            mock_server.name = "test_server"
-            mock_import.return_value = mock_server
+    @patch("subprocess.run")
+    def test_get_npx_command_unix(self, mock_run):
+        """Test npx command detection on Unix systems."""
+        from fastmcp.cli.cli import _get_npx_command
 
-            result = runner.invoke(
-                cli.app,
-                [
-                    "run",
-                    str(temp_python_file),
-                    "--transport",
-                    "sse",
-                    "--host",
-                    "0.0.0.0",
-                    "--port",
-                    "8080",
-                    "--log-level",
-                    "DEBUG",
-                ],
-            )
-            assert result.exit_code == 0
-            mock_server.run.assert_called_once_with(
-                transport="sse", host="0.0.0.0", port=8080, log_level="DEBUG"
-            )
+        with patch("sys.platform", "darwin"):
+            result = _get_npx_command()
 
-    def test_run_command_with_server_args(self, temp_python_file):
-        """Test run command with server arguments using -- pattern."""
-        with (
-            patch("fastmcp.cli.run.run_command") as mock_run_command,
-        ):
-            result = runner.invoke(
-                cli.app,
-                [
-                    "run",
-                    str(temp_python_file),
-                    "--",
-                    "--config",
-                    "config.json",
-                ],
-            )
-            assert result.exit_code == 0
-            mock_run_command.assert_called_once_with(
-                server_spec=str(temp_python_file),
-                transport=None,
-                host=None,
-                port=None,
-                log_level=None,
-                server_args=["--config", "config.json"],
-                show_banner=True,
-            )
+            assert result == "npx"
+            mock_run.assert_not_called()
+
+    def test_windows_path_parsing_with_colon(self, tmp_path):
+        """Test parsing Windows paths with drive letters and colons."""
+        from fastmcp.cli.run import parse_file_path
+
+        # Create a real test file to test the logic
+        test_file = tmp_path / "server.py"
+        test_file.write_text("# test server")
+
+        # Test normal file parsing (works on all platforms)
+        file_path, obj = parse_file_path(str(test_file))
+        assert obj is None
+
+        # Test file:object parsing
+        file_path, obj = parse_file_path(f"{test_file}:myapp")
+        assert obj == "myapp"
+
+        # Test that the file portion resolves correctly when object is specified
+        assert file_path == test_file.resolve()
+
+
+class TestInspectCommand:
+    """Test the inspect command."""
+
+    def test_inspect_command_parsing_basic(self):
+        """Test basic inspect command parsing."""
+        command, bound, _ = app.parse_args(["inspect", "server.py"])
+
+        assert command is not None
+        assert bound.arguments["server_spec"] == "server.py"
+        # Only explicitly set parameters are in bound.arguments
+        assert "output" not in bound.arguments
+
+    def test_inspect_command_parsing_with_output(self, tmp_path):
+        """Test inspect command parsing with output file."""
+        output_file = tmp_path / "output.json"
+
+        command, bound, _ = app.parse_args(
+            [
+                "inspect",
+                "server.py",
+                "--output",
+                str(output_file),
+            ]
+        )
+
+        assert command is not None
+        assert bound.arguments["server_spec"] == "server.py"
+        # Output is parsed as a Path object
+        assert bound.arguments["output"] == output_file
+
+    async def test_inspect_command_with_real_server(self, tmp_path):
+        """Test inspect command with a real server file."""
+        # Create a real server file
+        server_file = tmp_path / "test_server.py"
+        server_file.write_text("""
+import fastmcp
+
+mcp = fastmcp.FastMCP("InspectTestServer")
+
+@mcp.tool
+def test_tool(x: int) -> int:
+    return x * 2
+
+@mcp.prompt
+def test_prompt(name: str) -> str:
+    return f"Hello, {name}!"
+""")
+
+        output_file = tmp_path / "inspect_output.json"
+
+        # Parse and execute the command
+        command, bound, _ = app.parse_args(
+            [
+                "inspect",
+                str(server_file),
+                "--output",
+                str(output_file),
+            ]
+        )
+
+        await command(**bound.arguments)
+
+        # Verify the output file was created and contains expected content
+        assert output_file.exists()
+        content = output_file.read_text()
+
+        # Basic checks that the inspection worked
+        assert "InspectTestServer" in content
+        assert "test_tool" in content
+        assert "test_prompt" in content

@@ -1,13 +1,11 @@
-"""MCP configuration JSON generation for FastMCP install."""
-
-from __future__ import annotations
+"""MCP configuration JSON generation for FastMCP install using Cyclopts."""
 
 import json
 import sys
 from pathlib import Path
 from typing import Annotated
 
-import typer
+import cyclopts
 from rich import print
 
 from fastmcp.utilities.logging import get_logger
@@ -86,11 +84,11 @@ def install_mcp_config(
 
                 pyperclip.copy(json_output)
                 print(
-                    f"[green]MCP configuration for '[bold]{name}[/bold]' copied to clipboard[/green]"
+                    f"[green]MCP configuration for '{name}' copied to clipboard[/green]"
                 )
             except ImportError:
                 print(
-                    "[red]The `--copy` flag requires pyperclip. Please install pyperclip and try again: `pip install pyperclip`[/red]"
+                    "[red]The --copy flag requires pyperclip. Please install pyperclip and try again: pip install pyperclip[/red]"
                 )
                 return False
         else:
@@ -100,66 +98,64 @@ def install_mcp_config(
         return True
 
     except Exception as e:
-        print(f"[red]❌ Failed to generate MCP configuration: {e}[/red]")
+        print(f"[red]Failed to generate MCP configuration: {e}[/red]")
         return False
 
 
 def mcp_config_command(
-    server_spec: Annotated[
-        str, typer.Argument(help="Python file to run, optionally with :object suffix")
-    ],
+    server_spec: str,
+    *,
     server_name: Annotated[
         str | None,
-        typer.Option(
-            "--name",
-            "-n",
-            help="Custom name for the server (defaults to server's name attribute or file name)",
+        cyclopts.Parameter(
+            name=["--server-name", "-n"],
+            help="Custom name for the server in MCP config",
         ),
     ] = None,
     with_editable: Annotated[
         Path | None,
-        typer.Option(
-            "--with-editable",
-            "-e",
-            help="Directory containing pyproject.toml to install in editable mode",
-            exists=True,
-            file_okay=False,
-            resolve_path=True,
+        cyclopts.Parameter(
+            name=["--with-editable", "-e"],
+            help="Directory with pyproject.toml to install in editable mode",
         ),
     ] = None,
     with_packages: Annotated[
         list[str],
-        typer.Option(
-            "--with", help="Additional packages to install, in PEP 508 format"
+        cyclopts.Parameter(
+            "--with",
+            help="Additional packages to install",
+            negative=False,
         ),
     ] = [],
     env_vars: Annotated[
         list[str],
-        typer.Option(
-            "--env-var", "-v", help="Environment variables in KEY=VALUE format"
+        cyclopts.Parameter(
+            "--env",
+            help="Environment variables in KEY=VALUE format",
+            negative=False,
         ),
     ] = [],
     env_file: Annotated[
         Path | None,
-        typer.Option(
+        cyclopts.Parameter(
             "--env-file",
-            "-f",
-            help="Load environment variables from a .env file",
-            exists=True,
-            file_okay=True,
-            dir_okay=False,
-            resolve_path=True,
+            help="Load environment variables from .env file",
         ),
     ] = None,
     copy: Annotated[
         bool,
-        typer.Option(
+        cyclopts.Parameter(
             "--copy",
             help="Copy configuration to clipboard instead of printing to stdout",
+            negative=False,
         ),
     ] = False,
 ) -> None:
-    """Generate MCP configuration JSON for manual installation."""
+    """Generate MCP configuration JSON for manual installation.
+
+    Args:
+        server_spec: Python file to install, optionally with :object suffix
+    """
     file, server_object, name, packages, env_dict = process_common_args(
         server_spec, server_name, with_packages, env_vars, env_file
     )
@@ -174,6 +170,5 @@ def mcp_config_command(
         copy=copy,
     )
 
-    # mcp-config handles its own messaging, no generic success message needed
     if not success:
         sys.exit(1)

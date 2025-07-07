@@ -1,13 +1,11 @@
-"""Claude Desktop integration for FastMCP install."""
-
-from __future__ import annotations
+"""Claude Desktop integration for FastMCP install using Cyclopts."""
 
 import os
 import sys
 from pathlib import Path
 from typing import Annotated
 
-import typer
+import cyclopts
 from rich import print
 
 from fastmcp.mcp_config import StdioMCPServer, update_config_file
@@ -61,7 +59,7 @@ def install_claude_desktop(
     config_dir = get_claude_config_path()
     if not config_dir:
         print(
-            "[red]❌ Claude Desktop config directory not found.[/red]\n"
+            "[red]Claude Desktop config directory not found.[/red]\n"
             "[blue]Please ensure Claude Desktop is installed and has been run at least once to initialize its config.[/blue]"
         )
         return False
@@ -116,65 +114,62 @@ def install_claude_desktop(
                         merged_env = existing_env
                     server_config.env = merged_env
 
+        # Update configuration with correct function signature
         update_config_file(config_file, name, server_config)
+        print(f"[green]Successfully installed '{name}' in Claude Desktop[/green]")
         return True
     except Exception as e:
-        print(
-            f"[red]Failed to install '[bold]{name}[/bold]' in Claude Desktop: {e}[/red]"
-        )
+        print(f"[red]Failed to install server: {e}[/red]")
         return False
 
 
 def claude_desktop_command(
-    server_spec: Annotated[
-        str, typer.Argument(help="Python file to run, optionally with :object suffix")
-    ],
+    server_spec: str,
+    *,
     server_name: Annotated[
         str | None,
-        typer.Option(
-            "--name",
-            "-n",
-            help="Custom name for the server (defaults to server's name attribute or file name)",
+        cyclopts.Parameter(
+            name=["--server-name", "-n"],
+            help="Custom name for the server in Claude Desktop's config",
         ),
     ] = None,
     with_editable: Annotated[
         Path | None,
-        typer.Option(
-            "--with-editable",
-            "-e",
-            help="Directory containing pyproject.toml to install in editable mode",
-            exists=True,
-            file_okay=False,
-            resolve_path=True,
+        cyclopts.Parameter(
+            name=["--with-editable", "-e"],
+            help="Directory with pyproject.toml to install in editable mode",
         ),
     ] = None,
     with_packages: Annotated[
         list[str],
-        typer.Option(
-            "--with", help="Additional packages to install, in PEP 508 format"
+        cyclopts.Parameter(
+            "--with",
+            help="Additional packages to install",
+            negative=False,
         ),
     ] = [],
     env_vars: Annotated[
         list[str],
-        typer.Option(
-            "--env-var", "-v", help="Environment variables in KEY=VALUE format"
+        cyclopts.Parameter(
+            "--env",
+            help="Environment variables in KEY=VALUE format",
+            negative=False,
         ),
     ] = [],
     env_file: Annotated[
         Path | None,
-        typer.Option(
+        cyclopts.Parameter(
             "--env-file",
-            "-f",
-            help="Load environment variables from a .env file",
-            exists=True,
-            file_okay=True,
-            dir_okay=False,
-            resolve_path=True,
+            help="Load environment variables from .env file",
         ),
     ] = None,
 ) -> None:
-    """Install a MCP server in Claude Desktop."""
-    file, server_object, name, packages, env_dict = process_common_args(
+    """Install an MCP server in Claude Desktop.
+
+    Args:
+        server_spec: Python file to install, optionally with :object suffix
+    """
+    file, server_object, name, with_packages, env_dict = process_common_args(
         server_spec, server_name, with_packages, env_vars, env_file
     )
 
@@ -183,13 +178,9 @@ def claude_desktop_command(
         server_object=server_object,
         name=name,
         with_editable=with_editable,
-        with_packages=packages,
+        with_packages=with_packages,
         env_vars=env_dict,
     )
 
-    if success:
-        print(
-            f"[green bold]Successfully installed '[bold]{name}[/bold]' in Claude Desktop[/green bold]"
-        )
-    else:
+    if not success:
         sys.exit(1)
