@@ -108,6 +108,43 @@ class TestVersionCommand:
         mock_print.assert_called_once()
         mock_exit.assert_called_once_with(0)
 
+    def test_version_command_parsing(self):
+        """Test that the version command parses arguments correctly."""
+        command, bound, _ = app.parse_args(["version"])
+        assert command.__name__ == "version"
+        # Default arguments aren't included in bound.arguments
+        assert bound.arguments == {}
+
+    def test_version_command_with_copy_flag(self):
+        """Test that the version command parses --copy flag correctly."""
+        command, bound, _ = app.parse_args(["version", "--copy"])
+        assert command.__name__ == "version"
+        assert bound.arguments == {"copy": True}
+
+    @patch("fastmcp.cli.cli.sys.exit")
+    @patch("fastmcp.cli.cli.pyperclip.copy")
+    @patch("fastmcp.cli.cli.console")
+    def test_version_command_copy_functionality(
+        self, mock_console, mock_pyperclip_copy, mock_exit
+    ):
+        """Test that the version command copies to clipboard when --copy is used."""
+        # Mock console.capture
+        mock_capture = Mock()
+        mock_capture.get.return_value = "FastMCP version: 1.0.0\nMCP version: 1.10.0"
+        mock_console.capture.return_value.__enter__.return_value = mock_capture
+        mock_console.capture.return_value.__exit__.return_value = None
+
+        command, bound, _ = app.parse_args(["version", "--copy"])
+        command(**bound.arguments)
+
+        mock_pyperclip_copy.assert_called_once_with(
+            "FastMCP version: 1.0.0\nMCP version: 1.10.0"
+        )
+        mock_console.print.assert_called_with(
+            "[green]✓[/green] Version information copied to clipboard"
+        )
+        mock_exit.assert_called_once_with(0)
+
 
 class TestDevCommand:
     """Test the dev command."""
