@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Annotated, Literal
 
 import cyclopts
+import pyperclip
 from pydantic import TypeAdapter
 from rich.console import Console
 from rich.table import Table
@@ -85,7 +86,17 @@ def _build_uv_command(
 
 
 @app.command
-def version():
+def version(
+    *,
+    copy: Annotated[
+        bool,
+        cyclopts.Parameter(
+            "--copy",
+            help="Copy version information to clipboard",
+            negative=False,
+        ),
+    ] = False,
+):
     """Display version information and platform details."""
     info = {
         "FastMCP version": fastmcp.__version__,
@@ -100,7 +111,15 @@ def version():
     g.add_column(style="cyan", justify="right")
     for k, v in info.items():
         g.add_row(k + ":", str(v).replace("\n", " "))
-    console.print(g)
+
+    if copy:
+        # Use Rich's capture to get text representation
+        with console.capture() as capture:
+            console.print(g)
+        pyperclip.copy(capture.get())
+        console.print("[green]✓[/green] Version information copied to clipboard")
+    else:
+        console.print(g)
 
     sys.exit(0)
 

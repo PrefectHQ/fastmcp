@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Annotated
 
 import cyclopts
+import pyperclip
 from rich import print
 
 from fastmcp.utilities.logging import get_logger
@@ -79,18 +80,8 @@ def install_mcp_config(
 
         # Handle output
         if copy:
-            try:
-                import pyperclip
-
-                pyperclip.copy(json_output)
-                print(
-                    f"[green]MCP configuration for '{name}' copied to clipboard[/green]"
-                )
-            except ImportError:
-                print(
-                    "[red]The --copy flag requires pyperclip. Please install pyperclip and try again: pip install pyperclip[/red]"
-                )
-                return False
+            pyperclip.copy(json_output)
+            print(f"[green]MCP configuration for '{name}' copied to clipboard[/green]")
         else:
             # Print to stdout (for piping)
             print(json_output)
