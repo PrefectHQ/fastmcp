@@ -1,5 +1,3 @@
-"""Tests for Cursor integration functionality."""
-
 import base64
 import json
 from pathlib import Path
@@ -257,7 +255,9 @@ class TestInstallCursor:
         config_data = json.loads(decoded)
 
         assert "--with-editable" in config_data["args"]
-        assert "/local/package" in config_data["args"]
+        # Check for the editable path in a platform-agnostic way
+        editable_path_str = str(Path("/local/package"))
+        assert editable_path_str in config_data["args"]
         assert "server.py:custom_app" in " ".join(config_data["args"])
 
     @patch("fastmcp.cli.install.cursor.open_deeplink")

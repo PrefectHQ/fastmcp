@@ -7,7 +7,6 @@ specifications and properly applied during HTTP request serialization.
 from unittest.mock import AsyncMock, MagicMock
 
 import httpx
-import pytest
 
 from fastmcp.server.openapi import OpenAPITool
 from fastmcp.utilities.openapi import parse_openapi_to_http_routes
@@ -130,7 +129,6 @@ class TestExplodeIntegration:
             f"Expected explode=None, got {parameter.explode}"
         )
 
-    @pytest.mark.asyncio
     async def test_explode_false_request_serialization(self):
         """Test that explode=false results in comma-separated query parameters in HTTP requests.
 
@@ -201,7 +199,6 @@ class TestExplodeIntegration:
             f"Expected 'red,blue,green', got '{tags_value}'"
         )
 
-    @pytest.mark.asyncio
     async def test_explode_true_request_serialization(self):
         """Test that explode=true results in separate query parameters in HTTP requests."""
         openapi_spec = {
@@ -262,7 +259,6 @@ class TestExplodeIntegration:
             f"Expected ['red', 'blue', 'green'], got {tags_value}"
         )
 
-    @pytest.mark.asyncio
     async def test_explode_default_request_serialization(self):
         """Test that default behavior (no explode) uses explode=true for query parameters."""
         openapi_spec = {
