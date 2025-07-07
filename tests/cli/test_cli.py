@@ -312,7 +312,7 @@ class TestInspectCommand:
     @patch("fastmcp.cli.cli.run_module.parse_file_path")
     @patch("fastmcp.cli.cli.run_module.import_server")
     @patch("fastmcp.cli.cli.inspect_fastmcp")
-    def test_inspect_command_basic(
+    async def test_inspect_command_basic(
         self, mock_inspect, mock_import_server, mock_parse_file_path, tmp_path
     ):
         """Test basic inspect command functionality."""
@@ -345,24 +345,19 @@ class TestInspectCommand:
                 ]
             )
 
-            # This is an async command, so we need to run it
-            import asyncio
-
-            asyncio.run(command(**bound.arguments))
+            await command(**bound.arguments)
 
         # Verify the output file was created
         assert output_file.exists()
         assert output_file.read_text() == '{"name": "TestServer"}'
 
     @patch("fastmcp.cli.cli.run_module.import_server")
-    def test_inspect_command_failure(self, mock_import_server):
+    async def test_inspect_command_failure(self, mock_import_server):
         """Test inspect command handling failures."""
         mock_import_server.side_effect = Exception("Import failed")
 
         with pytest.raises(SystemExit) as exc_info:
             command, bound, _ = app.parse_args(["inspect", "server.py"])
-            import asyncio
-
-            asyncio.run(command(**bound.arguments))
+            await command(**bound.arguments)
 
         assert exc_info.value.code == 1
