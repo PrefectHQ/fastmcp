@@ -95,13 +95,10 @@ class TestVersionCommand:
     """Test the version command."""
 
     def test_version_command_execution(self):
-        """Test that version command executes and exits properly."""
-        # The version command should exit with code 0 when executed
-        with pytest.raises(SystemExit) as exc_info:
-            command, bound, _ = app.parse_args(["version"])
-            command()
-
-        assert exc_info.value.code == 0
+        """Test that version command executes properly."""
+        # The version command should execute without raising SystemExit
+        command, bound, _ = app.parse_args(["version"])
+        command()  # Should not raise
 
     def test_version_command_parsing(self):
         """Test that the version command parses arguments correctly."""
@@ -116,11 +113,10 @@ class TestVersionCommand:
         assert command.__name__ == "version"
         assert bound.arguments == {"copy": True}
 
-    @patch("fastmcp.cli.cli.sys.exit")
     @patch("fastmcp.cli.cli.pyperclip.copy")
     @patch("fastmcp.cli.cli.console")
     def test_version_command_copy_functionality(
-        self, mock_console, mock_pyperclip_copy, mock_exit
+        self, mock_console, mock_pyperclip_copy
     ):
         """Test that the version command copies to clipboard when --copy is used."""
         command, bound, _ = app.parse_args(["version", "--copy"])
@@ -142,7 +138,6 @@ class TestVersionCommand:
         mock_console.print.assert_called_with(
             "[green]✓[/green] Version information copied to clipboard"
         )
-        mock_exit.assert_called_once_with(0)
 
 
 class TestDevCommand:
