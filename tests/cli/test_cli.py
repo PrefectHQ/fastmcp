@@ -1,5 +1,6 @@
 """Tests for the main CLI functionality."""
 
+import subprocess
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -195,6 +196,114 @@ class TestRunCommand:
             command(**bound.arguments)
 
         assert exc_info.value.code == 1
+
+
+class TestWindowsSpecific:
+    """Test Windows-specific functionality."""
+
+    @patch("subprocess.run")
+    def test_get_npx_command_windows_cmd(self, mock_run):
+        """Test npx command detection on Windows with npx.cmd."""
+        from fastmcp.cli.cli import _get_npx_command
+
+        with patch("sys.platform", "win32"):
+            # First call succeeds with npx.cmd
+            mock_run.return_value = Mock(returncode=0)
+
+            result = _get_npx_command()
+
+            assert result == "npx.cmd"
+            mock_run.assert_called_once_with(
+                ["npx.cmd", "--version"],
+                check=True,
+                capture_output=True,
+                shell=True,
+            )
+
+    @patch("subprocess.run")
+    def test_get_npx_command_windows_exe(self, mock_run):
+        """Test npx command detection on Windows with npx.exe."""
+        from fastmcp.cli.cli import _get_npx_command
+
+        with patch("sys.platform", "win32"):
+            # First call fails, second succeeds
+            mock_run.side_effect = [
+                subprocess.CalledProcessError(1, "npx.cmd"),
+                Mock(returncode=0),
+            ]
+
+            result = _get_npx_command()
+
+            assert result == "npx.exe"
+            assert mock_run.call_count == 2
+
+    @patch("subprocess.run")
+    def test_get_npx_command_windows_fallback(self, mock_run):
+        """Test npx command detection on Windows with plain npx."""
+        from fastmcp.cli.cli import _get_npx_command
+
+        with patch("sys.platform", "win32"):
+            # First two calls fail, third succeeds
+            mock_run.side_effect = [
+                subprocess.CalledProcessError(1, "npx.cmd"),
+                subprocess.CalledProcessError(1, "npx.exe"),
+                Mock(returncode=0),
+            ]
+
+            result = _get_npx_command()
+
+            assert result == "npx"
+            assert mock_run.call_count == 3
+
+    @patch("subprocess.run")
+    def test_get_npx_command_windows_not_found(self, mock_run):
+        """Test npx command detection on Windows when npx is not found."""
+        from fastmcp.cli.cli import _get_npx_command
+
+        with patch("sys.platform", "win32"):
+            # All calls fail
+            mock_run.side_effect = subprocess.CalledProcessError(1, "npx")
+
+            result = _get_npx_command()
+
+            assert result is None
+            assert mock_run.call_count == 3
+
+    @patch("subprocess.run")
+    def test_get_npx_command_unix(self, mock_run):
+        """Test npx command detection on Unix systems."""
+        from fastmcp.cli.cli import _get_npx_command
+
+        with patch("sys.platform", "darwin"):
+            result = _get_npx_command()
+
+            assert result == "npx"
+            mock_run.assert_not_called()
+
+    def test_windows_path_parsing_with_colon(self):
+        """Test parsing Windows paths with drive letters and colons."""
+        from fastmcp.cli.run import parse_file_path
+
+        # We can't test actual Windows paths on non-Windows systems,
+        # but we can test the logic with mock paths
+        with patch("pathlib.Path.exists") as mock_exists:
+            with patch("pathlib.Path.is_file") as mock_is_file:
+                mock_exists.return_value = True
+                mock_is_file.return_value = True
+
+                # Test that C:\path\file.py is parsed correctly
+                with patch("pathlib.Path.resolve") as mock_resolve:
+                    mock_resolve.return_value = Path("C:/path/file.py")
+
+                    file_path, obj = parse_file_path("C:\\path\\file.py")
+                    assert obj is None
+
+                # Test C:\path\file.py:object parsing
+                with patch("pathlib.Path.resolve") as mock_resolve:
+                    mock_resolve.return_value = Path("C:/path/file.py")
+
+                    file_path, obj = parse_file_path("C:\\path\\file.py:myapp")
+                    assert obj == "myapp"
 
 
 class TestInspectCommand:
