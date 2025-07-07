@@ -152,6 +152,7 @@ __all__ = [
     "ParameterLocation",
     "JsonSchema",
     "parse_openapi_to_http_routes",
+    "extract_output_schema_from_responses",
 ]
 
 # Type variables for generic parser
@@ -1107,3 +1108,94 @@ def _combine_schemas(route: HTTPRoute) -> dict[str, Any]:
     result = compress_schema(result)
 
     return result
+
+
+def extract_output_schema_from_responses(
+    responses: dict[str, ResponseInfo], schema_definitions: dict[str, Any] | None = None
+) -> dict[str, Any] | None:
+    """
+    Extract output schema from OpenAPI responses for use as MCP tool output schema.
+
+    This function finds the first successful response (200, 201, 202, 204) with a
+    JSON-compatible content type and extracts its schema. If the schema is not an
+    object type, it wraps it to comply with MCP requirements.
+
+    Args:
+        responses: Dictionary of ResponseInfo objects keyed by status code
+        schema_definitions: Optional schema definitions to include in the output schema
+
+    Returns:
+        dict: MCP-compliant output schema with potential wrapping, or None if no suitable schema found
+    """
+    if not responses:
+        return None
+
+    # Priority order for success status codes
+    success_codes = ["200", "201", "202", "204"]
+
+    # Find the first successful response
+    response_info = None
+    for status_code in success_codes:
+        if status_code in responses:
+            response_info = responses[status_code]
+            break
+
+    # If no explicit success codes, try any 2xx response
+    if response_info is None:
+        for status_code, resp_info in responses.items():
+            if status_code.startswith("2"):
+                response_info = resp_info
+                break
+
+    if response_info is None or not response_info.content_schema:
+        return None
+
+    # Prefer application/json, then fall back to other JSON-compatible types
+    json_compatible_types = [
+        "application/json",
+        "application/vnd.api+json",
+        "application/hal+json",
+        "application/ld+json",
+        "text/json",
+    ]
+
+    schema = None
+    for content_type in json_compatible_types:
+        if content_type in response_info.content_schema:
+            schema = response_info.content_schema[content_type]
+            break
+
+    # If no JSON-compatible type found, try the first available content type
+    if schema is None and response_info.content_schema:
+        first_content_type = next(iter(response_info.content_schema))
+        schema = response_info.content_schema[first_content_type]
+        logger.debug(
+            f"Using non-JSON content type for output schema: {first_content_type}"
+        )
+
+    if not schema or not isinstance(schema, dict):
+        return None
+
+    # Clean and copy the schema
+    output_schema = schema.copy()
+
+    # MCP requires output schemas to be objects. If this schema is not an object,
+    # we need to wrap it similar to how ParsedFunction.from_function() does it
+    if output_schema.get("type") != "object":
+        # Create a wrapped schema that contains the original schema under a "result" key
+        wrapped_schema = {
+            "type": "object",
+            "properties": {"result": output_schema},
+            "required": ["result"],
+            "x-fastmcp-wrap-result": True,
+        }
+        output_schema = wrapped_schema
+
+    # Add schema definitions if available
+    if schema_definitions:
+        output_schema["$defs"] = schema_definitions
+
+    # Use compress_schema to remove unused definitions
+    output_schema = compress_schema(output_schema)
+
+    return output_schema

@@ -109,7 +109,16 @@ class TestTools:
                 },
                 "required": ["name", "active"],
             },
-            outputSchema=None,
+            outputSchema={
+                "type": "object",
+                "properties": {
+                    "id": {"type": "integer", "title": "Id"},
+                    "name": {"type": "string", "title": "Name"},
+                    "active": {"type": "boolean", "title": "Active"},
+                },
+                "required": ["id", "name", "active"],
+                "title": "User",
+            },
         )
         assert tools[1].model_dump() == dict(
             name="update_user_name_users",
@@ -127,7 +136,16 @@ class TestTools:
                 },
                 "required": ["user_id", "name"],
             },
-            outputSchema=None,
+            outputSchema={
+                "type": "object",
+                "properties": {
+                    "id": {"type": "integer", "title": "Id"},
+                    "name": {"type": "string", "title": "Name"},
+                    "active": {"type": "boolean", "title": "Active"},
+                },
+                "required": ["id", "name", "active"],
+                "title": "User",
+            },
         )
 
     async def test_call_create_user_tool(
@@ -143,8 +161,11 @@ class TestTools:
                 "create_user_users_post", {"name": "David", "active": False}
             )
 
-        expected_user = User(id=4, name="David", active=False).model_dump()
-        assert tool_response.data == expected_user
+        expected_user = User(id=4, name="David", active=False)
+        # Compare the data content since MCP client creates different class instances
+        assert tool_response.data.id == expected_user.id
+        assert tool_response.data.name == expected_user.name
+        assert tool_response.data.active == expected_user.active
 
         # Check that the user was created via API
         response = await api_client.get("/users")
@@ -155,7 +176,7 @@ class TestTools:
             user_response = await client.read_resource("resource://get_user_users/4")
             response_text = user_response[0].text  # type: ignore[attr-defined]
             user = json.loads(response_text)
-        assert user == expected_user
+        assert user == expected_user.model_dump()
 
     async def test_call_update_user_name_tool(
         self,
@@ -171,19 +192,22 @@ class TestTools:
                 {"user_id": 1, "name": "XYZ"},
             )
 
-        expected_data = dict(id=1, name="XYZ", active=True)
-        assert tool_response.data == expected_data
+        expected_user = User(id=1, name="XYZ", active=True)
+        # Compare the data content since MCP client creates different class instances
+        assert tool_response.data.id == expected_user.id
+        assert tool_response.data.name == expected_user.name
+        assert tool_response.data.active == expected_user.active
 
         # Check that the user was updated via API
         response = await api_client.get("/users")
-        assert expected_data in response.json()
+        assert expected_user.model_dump() in response.json()
 
         # Check that the user was updated via MCP
         async with Client(fastmcp_openapi_server) as client:
             user_response = await client.read_resource("resource://get_user_users/1")
             response_text = user_response[0].text  # type: ignore[attr-defined]
             user = json.loads(response_text)
-        assert user == expected_data
+        assert user == expected_user.model_dump()
 
     async def test_call_tool_return_list(
         self,
@@ -204,12 +228,11 @@ class TestTools:
         )
         async with Client(mcp_server) as client:
             tool_response = await client.call_tool("get_users_users_get", {})
-            assert tool_response.data == {
-                "result": [
-                    user.model_dump()
-                    for user in sorted(users_db.values(), key=lambda x: x.id)
-                ]
-            }
+            # The tool response should now be unwrapped since we have output schema
+            assert tool_response.data == [
+                user.model_dump()
+                for user in sorted(users_db.values(), key=lambda x: x.id)
+            ]
 
 
 class TestResources:
