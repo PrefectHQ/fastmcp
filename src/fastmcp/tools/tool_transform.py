@@ -553,6 +553,7 @@ class TransformedTool(Tool):
         """
 
         # Build transformed schema and mapping
+        parent_defs = parent_tool.parameters.get("$defs", {})
         parent_props = parent_tool.parameters.get("properties", {}).copy()
         parent_required = set(parent_tool.parameters.get("required", []))
 
@@ -607,6 +608,9 @@ class TransformedTool(Tool):
             "properties": new_props,
             "required": list(new_required),
         }
+
+        if parent_defs:
+            schema["$defs"] = parent_defs
 
         # Create forwarding function that closes over everything it needs
         async def _forward(**kwargs):
