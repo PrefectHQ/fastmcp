@@ -15,7 +15,7 @@ import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Annotated, Self
+from typing import Annotated, Any, Self
 
 import asyncpg
 import numpy as np
@@ -60,12 +60,12 @@ def cosine_similarity(a: list[float], b: list[float]) -> float:
     )
 
 
-async def do_ai[T](
+async def do_ai(
     user_prompt: str,
     system_prompt: str,
-    result_type: type[T] | Annotated,
+    result_type: type | Annotated,
     deps=None,
-) -> T:
+) -> Any:
     agent = Agent(
         DEFAULT_LLM_MODEL,
         system_prompt=system_prompt,
