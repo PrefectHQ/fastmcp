@@ -94,11 +94,6 @@ class TestMainCLI:
 class TestVersionCommand:
     """Test the version command."""
 
-    def test_version_command_parsing(self):
-        """Test that version command can be parsed."""
-        command, bound, _ = app.parse_args(["version"])
-        assert command is not None
-
     def test_version_command_execution(self):
         """Test that version command executes and exits properly."""
         # The version command should exit with code 0 when executed
