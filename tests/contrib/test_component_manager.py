@@ -566,7 +566,6 @@ class TestComponentManagerWithPath:
     def client_with_path(self, mcp_with_path):
         return TestClient(mcp_with_path.http_app())
 
-    @pytest.mark.asyncio
     async def test_enable_tool_route_with_path(self, client_with_path, mcp_with_path):
         tool = await mcp_with_path._tool_manager.get_tool("test_tool")
         tool.enabled = False
@@ -576,7 +575,6 @@ class TestComponentManagerWithPath:
         tool = await mcp_with_path._tool_manager.get_tool("test_tool")
         assert tool.enabled is True
 
-    @pytest.mark.asyncio
     async def test_disable_resource_route_with_path(
         self, client_with_path, mcp_with_path
     ):
@@ -592,7 +590,6 @@ class TestComponentManagerWithPath:
         )
         assert resource.enabled is False
 
-    @pytest.mark.asyncio
     async def test_enable_prompt_route_with_path(self, client_with_path, mcp_with_path):
         prompt = await mcp_with_path._prompt_manager.get_prompt("test_prompt")
         prompt.enabled = False
@@ -646,7 +643,6 @@ class TestComponentManagerWithPathAuth:
 
         self.client = TestClient(self.mcp.http_app())
 
-    @pytest.mark.asyncio
     async def test_unauthorized_enable_tool(self):
         tool = await self.mcp._tool_manager.get_tool("test_tool")
         tool.enabled = False
@@ -654,7 +650,6 @@ class TestComponentManagerWithPathAuth:
         assert response.status_code == 401
         assert tool.enabled is False
 
-    @pytest.mark.asyncio
     async def test_forbidden_enable_tool(self):
         tool = await self.mcp._tool_manager.get_tool("test_tool")
         tool.enabled = False
@@ -665,7 +660,6 @@ class TestComponentManagerWithPathAuth:
         assert response.status_code == 403
         assert tool.enabled is False
 
-    @pytest.mark.asyncio
     async def test_authorized_enable_tool(self):
         tool = await self.mcp._tool_manager.get_tool("test_tool")
         tool.enabled = False
@@ -678,7 +672,6 @@ class TestComponentManagerWithPathAuth:
         tool = await self.mcp._tool_manager.get_tool("test_tool")
         assert tool.enabled is True
 
-    @pytest.mark.asyncio
     async def test_unauthorized_disable_resource(self):
         resource = await self.mcp._resource_manager.get_resource("data://test_resource")
         resource.enabled = True
@@ -686,7 +679,6 @@ class TestComponentManagerWithPathAuth:
         assert response.status_code == 401
         assert resource.enabled is True
 
-    @pytest.mark.asyncio
     async def test_forbidden_disable_resource(self):
         resource = await self.mcp._resource_manager.get_resource("data://test_resource")
         resource.enabled = True
@@ -697,7 +689,6 @@ class TestComponentManagerWithPathAuth:
         assert response.status_code == 403
         assert resource.enabled is True
 
-    @pytest.mark.asyncio
     async def test_authorized_disable_resource(self):
         resource = await self.mcp._resource_manager.get_resource("data://test_resource")
         resource.enabled = True
@@ -710,7 +701,6 @@ class TestComponentManagerWithPathAuth:
         resource = await self.mcp._resource_manager.get_resource("data://test_resource")
         assert resource.enabled is False
 
-    @pytest.mark.asyncio
     async def test_unauthorized_enable_prompt(self):
         prompt = await self.mcp._prompt_manager.get_prompt("test_prompt")
         prompt.enabled = False
@@ -718,7 +708,6 @@ class TestComponentManagerWithPathAuth:
         assert response.status_code == 401
         assert prompt.enabled is False
 
-    @pytest.mark.asyncio
     async def test_forbidden_enable_prompt(self):
         prompt = await self.mcp._prompt_manager.get_prompt("test_prompt")
         prompt.enabled = False
@@ -729,7 +718,6 @@ class TestComponentManagerWithPathAuth:
         assert response.status_code == 403
         assert prompt.enabled is False
 
-    @pytest.mark.asyncio
     async def test_authorized_enable_prompt(self):
         prompt = await self.mcp._prompt_manager.get_prompt("test_prompt")
         prompt.enabled = False
