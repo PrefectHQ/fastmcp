@@ -1,13 +1,11 @@
-"""Claude Code integration for FastMCP install."""
-
-from __future__ import annotations
+"""Claude Code integration for FastMCP install using Cyclopts."""
 
 import subprocess
 import sys
 from pathlib import Path
 from typing import Annotated
 
-import typer
+import cyclopts
 from rich import print
 
 from fastmcp.utilities.logging import get_logger
@@ -124,54 +122,51 @@ def install_claude_code(
 
 
 def claude_code_command(
-    server_spec: Annotated[
-        str, typer.Argument(help="Python file to run, optionally with :object suffix")
-    ],
+    server_spec: str,
+    *,
     server_name: Annotated[
         str | None,
-        typer.Option(
-            "--name",
-            "-n",
-            help="Custom name for the server (defaults to server's name attribute or file name)",
+        cyclopts.Parameter(
+            name=["--server-name", "-n"],
+            help="Custom name for the server in Claude Code",
         ),
     ] = None,
     with_editable: Annotated[
         Path | None,
-        typer.Option(
-            "--with-editable",
-            "-e",
-            help="Directory containing pyproject.toml to install in editable mode",
-            exists=True,
-            file_okay=False,
-            resolve_path=True,
+        cyclopts.Parameter(
+            name=["--with-editable", "-e"],
+            help="Directory with pyproject.toml to install in editable mode",
         ),
     ] = None,
     with_packages: Annotated[
         list[str],
-        typer.Option(
-            "--with", help="Additional packages to install, in PEP 508 format"
+        cyclopts.Parameter(
+            "--with",
+            help="Additional packages to install",
+            negative=False,
         ),
     ] = [],
     env_vars: Annotated[
         list[str],
-        typer.Option(
-            "--env-var", "-v", help="Environment variables in KEY=VALUE format"
+        cyclopts.Parameter(
+            "--env",
+            help="Environment variables in KEY=VALUE format",
+            negative=False,
         ),
     ] = [],
     env_file: Annotated[
         Path | None,
-        typer.Option(
+        cyclopts.Parameter(
             "--env-file",
-            "-f",
-            help="Load environment variables from a .env file",
-            exists=True,
-            file_okay=True,
-            dir_okay=False,
-            resolve_path=True,
+            help="Load environment variables from .env file",
         ),
     ] = None,
 ) -> None:
-    """Install a MCP server in Claude Code."""
+    """Install an MCP server in Claude Code.
+
+    Args:
+        server_spec: Python file to install, optionally with :object suffix
+    """
     file, server_object, name, packages, env_dict = process_common_args(
         server_spec, server_name, with_packages, env_vars, env_file
     )
@@ -186,8 +181,6 @@ def claude_code_command(
     )
 
     if success:
-        print(
-            f"[green bold]Successfully installed '[bold]{name}[/bold]' in Claude Code[/green bold]"
-        )
+        print(f"[green]Successfully installed '{name}' in Claude Code[/green]")
     else:
         sys.exit(1)

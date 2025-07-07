@@ -1,6 +1,4 @@
-"""Cursor integration for FastMCP install."""
-
-from __future__ import annotations
+"""Cursor integration for FastMCP install using Cyclopts."""
 
 import base64
 import subprocess
@@ -8,7 +6,7 @@ import sys
 from pathlib import Path
 from typing import Annotated
 
-import typer
+import cyclopts
 from rich import print
 
 from fastmcp.mcp_config import StdioMCPServer
@@ -33,7 +31,6 @@ def generate_cursor_deeplink(
         Deeplink URL that can be clicked to install the server
     """
     # Create the configuration structure expected by Cursor
-
     # Base64 encode the configuration (URL-safe for query parameter)
     config_json = server_config.model_dump_json(exclude_none=True)
     config_b64 = base64.urlsafe_b64encode(config_json.encode()).decode()
@@ -81,7 +78,7 @@ def install_cursor(
     Args:
         file: Path to the server file
         server_object: Optional server object name (for :object suffix)
-        name: Name for the server in Cursor's config
+        name: Name for the server in Cursor
         with_editable: Optional directory to install in editable mode
         with_packages: Optional list of additional packages to install
         env_vars: Optional dictionary of environment variables
@@ -120,75 +117,69 @@ def install_cursor(
         env=env_vars or {},
     )
 
-    # Generate and open deeplink
-    try:
-        deeplink = generate_cursor_deeplink(name, server_config)
+    # Generate deeplink
+    deeplink = generate_cursor_deeplink(name, server_config)
 
-        if open_deeplink(deeplink):
-            print(
-                f"[green]Opening Cursor to install '[bold]{name}[/bold]' - please confirm in Cursor to complete installation[/green]"
-            )
-            return True
-        else:
-            print("[yellow]Could not open Cursor automatically.[/yellow]")
-            print(f"[blue]Please open this link to install:[/blue] {deeplink}")
-            return True
+    print(f"[blue]Opening Cursor to install '{name}'[/blue]")
 
-    except Exception as e:
-        print(f"[red]Failed to generate Cursor deeplink: {e}[/red]")
+    if open_deeplink(deeplink):
+        print("[green]Cursor should now open with the installation dialog[/green]")
+        return True
+    else:
+        print(
+            "[red]Could not open Cursor automatically.[/red]\n"
+            f"[blue]Please copy this link and open it in Cursor: {deeplink}[/blue]"
+        )
         return False
 
 
 def cursor_command(
-    server_spec: Annotated[
-        str, typer.Argument(help="Python file to run, optionally with :object suffix")
-    ],
+    server_spec: str,
+    *,
     server_name: Annotated[
         str | None,
-        typer.Option(
-            "--name",
-            "-n",
-            help="Custom name for the server (defaults to server's name attribute or file name)",
+        cyclopts.Parameter(
+            name=["--server-name", "-n"],
+            help="Custom name for the server in Cursor",
         ),
     ] = None,
     with_editable: Annotated[
         Path | None,
-        typer.Option(
-            "--with-editable",
-            "-e",
-            help="Directory containing pyproject.toml to install in editable mode",
-            exists=True,
-            file_okay=False,
-            resolve_path=True,
+        cyclopts.Parameter(
+            name=["--with-editable", "-e"],
+            help="Directory with pyproject.toml to install in editable mode",
         ),
     ] = None,
     with_packages: Annotated[
         list[str],
-        typer.Option(
-            "--with", help="Additional packages to install, in PEP 508 format"
+        cyclopts.Parameter(
+            "--with",
+            help="Additional packages to install",
+            negative=False,
         ),
     ] = [],
     env_vars: Annotated[
         list[str],
-        typer.Option(
-            "--env-var", "-v", help="Environment variables in KEY=VALUE format"
+        cyclopts.Parameter(
+            "--env",
+            help="Environment variables in KEY=VALUE format",
+            negative=False,
         ),
     ] = [],
     env_file: Annotated[
         Path | None,
-        typer.Option(
+        cyclopts.Parameter(
             "--env-file",
-            "-f",
-            help="Load environment variables from a .env file",
-            exists=True,
-            file_okay=True,
-            dir_okay=False,
-            resolve_path=True,
+            help="Load environment variables from .env file",
         ),
     ] = None,
 ) -> None:
-    """Install a MCP server in Cursor."""
-    file, server_object, name, packages, env_dict = process_common_args(
+    """Install an MCP server in Cursor.
+
+    Args:
+        server_spec: Python file to install, optionally with :object suffix
+    """
+    file, server_object, name, with_packages, env_dict = process_common_args(
         server_spec, server_name, with_packages, env_vars, env_file
     )
 
@@ -197,10 +188,9 @@ def cursor_command(
         server_object=server_object,
         name=name,
         with_editable=with_editable,
-        with_packages=packages,
+        with_packages=with_packages,
         env_vars=env_dict,
     )
 
-    # Cursor handles its own messaging, no generic success message needed
     if not success:
         sys.exit(1)

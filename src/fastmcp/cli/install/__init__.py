@@ -1,27 +1,20 @@
-"""Install subcommands for FastMCP CLI."""
+"""Install subcommands for FastMCP CLI using Cyclopts."""
 
-import typer
+import cyclopts
 
 from .claude_code import claude_code_command
 from .claude_desktop import claude_desktop_command
 from .cursor import cursor_command
 from .mcp_config import mcp_config_command
 
-# Create a typer app for install subcommands
-install_app = typer.Typer(
+# Create a cyclopts app for install subcommands
+install_app = cyclopts.App(
     name="install",
-    help="Install MCP servers in various clients and formats",
-    no_args_is_help=True,
+    help="Install MCP servers in various clients and formats.",
 )
 
 # Register each command from its respective module
-install_app.command("claude-code", help="Install a MCP server in Claude Code")(
-    claude_code_command
-)
-install_app.command("claude-desktop", help="Install a MCP server in Claude Desktop")(
-    claude_desktop_command
-)
-install_app.command("cursor", help="Install a MCP server in Cursor")(cursor_command)
-install_app.command(
-    "mcp-json", help="Generate MCP JSON configuration for manual installation"
-)(mcp_config_command)
+install_app.command(claude_code_command, name="claude-code")
+install_app.command(claude_desktop_command, name="claude-desktop")
+install_app.command(cursor_command, name="cursor")
+install_app.command(mcp_config_command, name="mcp-json")

@@ -1,7 +1,5 @@
 """Shared utilities for install commands."""
 
-from __future__ import annotations
-
 import sys
 from pathlib import Path
 
@@ -18,7 +16,7 @@ def parse_env_var(env_var: str) -> tuple[str, str]:
     """Parse environment variable string in format KEY=VALUE."""
     if "=" not in env_var:
         print(
-            f"[red]❌ Invalid environment variable format: '[bold]{env_var}[/bold]'. Must be KEY=VALUE[/red]"
+            f"[red]Invalid environment variable format: '[bold]{env_var}[/bold]'. Must be KEY=VALUE[/red]"
         )
         sys.exit(1)
     key, value = env_var.split("=", 1)
@@ -76,7 +74,7 @@ def process_common_args(
                     k: v for k, v in dotenv_values(env_file).items() if v is not None
                 }
             except Exception as e:
-                print(f"[red]❌ Failed to load .env file: {e}[/red]")
+                print(f"[red]Failed to load .env file: {e}[/red]")
                 sys.exit(1)
 
         # Add command line environment variables
