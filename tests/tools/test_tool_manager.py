@@ -489,7 +489,7 @@ class TestCallTools:
                 },
             )
 
-        assert result.content[0].text == '[\n  "rex",\n  "gertrude"\n]'  # type: ignore[attr-defined]
+        assert result.content[0].text == '["rex","gertrude"]'  # type: ignore[attr-defined]
         assert result.structured_content == {"result": ["rex", "gertrude"]}
 
     async def test_call_tool_with_custom_serializer(self):

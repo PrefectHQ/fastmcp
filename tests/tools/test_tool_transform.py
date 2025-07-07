@@ -1157,7 +1157,7 @@ class TestTransformToolOutputSchema:
 
         result = await new_tool.run({"x": 3})
         # Should wrap string result
-        assert result.structured_content == {"result": 'Custom: {\n  "value": 3\n}'}
+        assert result.structured_content == {"result": 'Custom: {"value":3}'}
 
     def test_transform_custom_function_fallback_to_parent(self, base_string_tool):
         """Test that custom function without output annotation falls back to parent."""

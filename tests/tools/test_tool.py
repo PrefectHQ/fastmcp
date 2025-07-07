@@ -553,7 +553,7 @@ class TestToolFromFunctionOutputSchema:
         # Dict objects automatically become structured content even without schema
         assert result.structured_content == {"message": "Hello, world!"}
         assert len(result.content) == 1
-        assert result.content[0].text == '{\n  "message": "Hello, world!"\n}'  # type: ignore[attr-defined]
+        assert result.content[0].text == '{"message":"Hello, world!"}'  # type: ignore[attr-defined]
 
     async def test_output_schema_none_disables_structured_content(self):
         """Test that output_schema=None explicitly disables structured content."""
@@ -607,7 +607,7 @@ class TestToolFromFunctionOutputSchema:
         result = await tool.run({})
         # Dict result with object schema is used directly
         assert result.structured_content == {"value": 42}
-        assert result.content[0].text == '{\n  "value": 42\n}'  # type: ignore[attr-defined]
+        assert result.content[0].text == '{"value":42}'  # type: ignore[attr-defined]
 
     async def test_explicit_object_schema_with_non_dict_return_fails(self):
         """Test that explicit object schemas fail when function returns non-dict."""
@@ -859,7 +859,7 @@ class TestConvertResultToContent:
         assert isinstance(result, list)
         assert len(result) == 1
         assert isinstance(result[0], TextContent)
-        assert result[0].text == '{\n  "a": 1,\n  "b": 2\n}'
+        assert result[0].text == '{"a":1,"b":2}'
 
     def test_list_of_basic_types(self):
         """Test that a list of basic types is converted to a single TextContent."""
@@ -867,7 +867,7 @@ class TestConvertResultToContent:
         assert isinstance(result, list)
         assert len(result) == 1
         assert isinstance(result[0], TextContent)
-        assert result[0].text == '[\n  1,\n  "two",\n  {\n    "c": 3\n  }\n]'
+        assert result[0].text == '[1,"two",{"c":3}]'
 
     def test_list_of_mcp_types(self):
         """Test that a list of MCP types is returned as a list of those types."""
@@ -898,7 +898,7 @@ class TestConvertResultToContent:
         assert image_content_count == 1
 
         text_item = next(item for item in result if isinstance(item, TextContent))
-        assert text_item.text == '{\n  "a": 1\n}'
+        assert text_item.text == '[{"a":1}]'
 
         image_item = next(item for item in result if isinstance(item, ImageContent))
         assert image_item.data == "ZmFrZWltYWdlZGF0YQ=="
@@ -920,7 +920,7 @@ class TestConvertResultToContent:
         assert image_content_count == 1
 
         text_item = next(item for item in result if isinstance(item, TextContent))
-        assert text_item.text == '[\n  {\n    "a": 1\n  },\n  {\n    "b": 2\n  }\n]'
+        assert text_item.text == '[[{"a":1},{"b":2}]]'
 
         image_item = next(item for item in result if isinstance(item, ImageContent))
         assert image_item.data == "ZmFrZWltYWdlZGF0YQ=="
@@ -942,7 +942,7 @@ class TestConvertResultToContent:
         assert audio_content_count == 1
 
         text_item = next(item for item in result if isinstance(item, TextContent))
-        assert text_item.text == '{\n  "a": 1\n}'
+        assert text_item.text == '[{"a":1}]'
 
         audio_item = next(item for item in result if isinstance(item, AudioContent))
         assert audio_item.data == "ZmFrZWF1ZGlvZGF0YQ=="
@@ -967,7 +967,7 @@ class TestConvertResultToContent:
         assert embedded_content_count == 1
 
         text_item = next(item for item in result if isinstance(item, TextContent))
-        assert text_item.text == '{\n  "a": 1\n}'
+        assert text_item.text == '[{"a":1}]'
 
         embedded_item = next(
             item
@@ -1031,7 +1031,7 @@ class TestConvertResultToContent:
         assert isinstance(result, list)
         assert len(result) == 1
         assert isinstance(result[0], TextContent)
-        assert result[0].text == '[\n  1,\n  "two",\n  {\n    "c": 3\n  }\n]'
+        assert result[0].text == '[1,"two",{"c":3}]'
 
         content1 = TextContent(type="text", text="hello")
         result = _convert_to_content([1, content1], _process_as_single_item=True)
@@ -1043,6 +1043,30 @@ class TestConvertResultToContent:
             1,
             {"type": "text", "text": "hello", "annotations": None, "_meta": None},
         ]
+
+    def test_single_element_list_preserves_structure(self):
+        """Test that single-element lists preserve their list structure."""
+
+        # Test with a single integer
+        result = _convert_to_content([1])
+        assert isinstance(result, list)
+        assert len(result) == 1
+        assert isinstance(result[0], TextContent)
+        assert result[0].text == "[1]"  # Should be "[1]", not "1"
+
+        # Test with a single string
+        result = _convert_to_content(["hello"])
+        assert isinstance(result, list)
+        assert len(result) == 1
+        assert isinstance(result[0], TextContent)
+        assert result[0].text == '["hello"]'  # Should be ["hello"], not "hello"
+
+        # Test with a single dict
+        result = _convert_to_content([{"a": 1}])
+        assert isinstance(result, list)
+        assert len(result) == 1
+        assert isinstance(result[0], TextContent)
+        assert result[0].text == '[{"a":1}]'  # Should be wrapped in a list
 
 
 class TestAutomaticStructuredContent:

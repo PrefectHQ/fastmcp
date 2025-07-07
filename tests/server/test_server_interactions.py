@@ -170,7 +170,7 @@ class TestTools:
     async def test_tool_returns_list(self, tool_server: FastMCP):
         async with Client(tool_server) as client:
             result = await client.call_tool("list_tool", {})
-            assert result.content[0].text == '[\n  "x",\n  2\n]'  # type: ignore[attr-defined]
+            assert result.content[0].text == '["x",2]'  # type: ignore[attr-defined]
             assert result.data == ["x", 2]
 
     async def test_file_text_tool(self, tool_server: FastMCP):

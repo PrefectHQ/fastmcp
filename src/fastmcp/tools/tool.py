@@ -46,7 +46,7 @@ class _UnserializableType:
 
 
 def default_serializer(data: Any) -> str:
-    return pydantic_core.to_json(data, fallback=str, indent=2).decode()
+    return pydantic_core.to_json(data, fallback=str).decode()
 
 
 class ToolResult:
@@ -434,6 +434,7 @@ def _convert_to_content(
     _process_as_single_item: bool = False,
 ) -> list[ContentBlock]:
     """Convert a result to a sequence of content objects."""
+
     if result is None:
         return []
 
@@ -467,7 +468,7 @@ def _convert_to_content(
 
         if other_content:
             other_content = _convert_to_content(
-                other_content[0] if len(other_content) == 1 else other_content,
+                other_content,
                 serializer=serializer,
                 _process_as_single_item=True,
             )
