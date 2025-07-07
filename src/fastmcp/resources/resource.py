@@ -192,4 +192,4 @@ class FunctionResource(Resource):
         elif isinstance(result, str):
             return result
         else:
-            return pydantic_core.to_json(result, fallback=str, indent=2).decode()
+            return pydantic_core.to_json(result, fallback=str).decode()

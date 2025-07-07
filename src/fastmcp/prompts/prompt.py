@@ -350,9 +350,7 @@ class FunctionPrompt(Prompt):
                             )
                         )
                     else:
-                        content = pydantic_core.to_json(
-                            msg, fallback=str, indent=2
-                        ).decode()
+                        content = pydantic_core.to_json(msg, fallback=str).decode()
                         messages.append(
                             PromptMessage(
                                 role="user",

@@ -67,7 +67,7 @@ class TestFunctionResource:
         )
         content = await resource.read()
         assert isinstance(content, str)
-        assert '"key": "value"' in content
+        assert '"key":"value"' in content
 
     async def test_error_handling(self):
         """Test error handling in FunctionResource."""
@@ -95,7 +95,7 @@ class TestFunctionResource:
             fn=lambda: MyModel(name="test"),
         )
         content = await resource.read()
-        assert content == '{\n  "name": "test"\n}'
+        assert content == '{"name":"test"}'
 
     async def test_custom_type_conversion(self):
         """Test handling of custom types."""

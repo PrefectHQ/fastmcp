@@ -25,7 +25,7 @@ async def test_complex_inputs():
             "name_shrimp", {"tank": tank, "extra_names": ["charlie"]}
         )
         assert len(result.content) == 1
-        assert result.content[0].text == '[\n  "bob",\n  "alice",\n  "charlie"\n]'  # type: ignore[attr-defined]
+        assert result.content[0].text == '["bob","alice","charlie"]'  # type: ignore[attr-defined]
 
 
 async def test_desktop(monkeypatch):
