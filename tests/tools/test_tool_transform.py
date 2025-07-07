@@ -383,6 +383,23 @@ async def test_forward_raw_outside_context_raises_error():
     ):
         await forward_raw(new_x=1, old_y=2)
 
+def test_transform_args_with_parent_defaults():
+    """Test that transform_args with parent defaults works."""
+
+    class CoolModel(BaseModel):
+        x: int = 10
+
+    def parent_tool(cool_model: CoolModel) -> int:
+        return cool_model.x
+
+    tool = Tool.from_function(parent_tool)
+
+    new_tool = Tool.from_tool(
+        tool
+    )
+
+    assert new_tool.parameters["$defs"] == tool.parameters["$defs"]
+
 
 def test_transform_args_validation_unknown_arg(add_tool):
     """Test that transform_args with unknown arguments raises ValueError."""
