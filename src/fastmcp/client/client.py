@@ -93,13 +93,16 @@ class Client(Generic[ClientTransportT]):
          https://github.com/jlowin/fastmcp/pull/1054
 
     Args:
-        transport: Connection source specification, which can be:
-            - ClientTransport: Direct transport instance
-            - FastMCP: In-process FastMCP server
-            - AnyUrl | str: URL to connect to
-            - Path: File path for local socket
-            - MCPConfig: MCP server configuration
-            - dict: Transport configuration
+        transport:
+            Connection source specification, which can be:
+
+                - ClientTransport: Direct transport instance
+                - FastMCP: In-process FastMCP server
+                - AnyUrl or str: URL to connect to
+                - Path: File path for local socket
+                - MCPConfig: MCP server configuration
+                - dict: Transport configuration
+
         roots: Optional RootsList or RootsHandler for filesystem access
         sampling_handler: Optional handler for sampling requests
         log_handler: Optional handler for log messages
@@ -110,14 +113,16 @@ class Client(Generic[ClientTransportT]):
             Set to 0 to disable. If None, uses the value in the FastMCP global settings.
 
     Examples:
-        ```python # Connect to FastMCP server client =
-        Client("http://localhost:8080")
+        ```python
+        # Connect to FastMCP server
+        client = Client("http://localhost:8080")
 
         async with client:
-            # List available resources resources = await client.list_resources()
+            # List available resources
+            resources = await client.list_resources()
 
-            # Call a tool result = await client.call_tool("my_tool", {"param":
-            "value"})
+            # Call a tool
+            result = await client.call_tool("my_tool", {"param": "value"})
         ```
     """
 
