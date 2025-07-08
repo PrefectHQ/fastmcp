@@ -106,8 +106,8 @@ def test_as_proxy_with_url():
     """FastMCP.as_proxy should accept a URL without connecting."""
     proxy = FastMCP.as_proxy("http://example.com/mcp/")
     assert isinstance(proxy, FastMCPProxy)
-    assert isinstance(proxy.client.transport, StreamableHttpTransport)
-    assert proxy.client.transport.url == "http://example.com/mcp/"
+    assert isinstance(proxy.client_factory().transport, StreamableHttpTransport)
+    assert proxy.client_factory().transport.url == "http://example.com/mcp/"  # type: ignore[attr-defined]
 
 
 class TestTools:

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import datetime
 from contextlib import AsyncExitStack, asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Generic, Literal, cast, overload
+from typing import Any, Generic, Literal, TypeVar, cast, overload
 
 import anyio
 import httpx
@@ -39,6 +40,7 @@ from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import get_cached_typeadapter
 
 from .transports import (
+    ClientTransport,
     ClientTransportT,
     FastMCP1Server,
     FastMCPTransport,
@@ -65,6 +67,25 @@ __all__ = [
 
 logger = get_logger(__name__)
 
+T = TypeVar("T", bound="ClientTransport")
+
+
+@dataclass
+class ClientSessionState:
+    """Holds all session-related state for a Client instance.
+
+    This allows clean separation of configuration (which is copied) from
+    session state (which should be fresh for each new client instance).
+    """
+
+    session: ClientSession | None = None
+    nesting_counter: int = 0
+    lock: anyio.Lock = field(default_factory=anyio.Lock)
+    session_task: asyncio.Task | None = None
+    ready_event: anyio.Event = field(default_factory=anyio.Event)
+    stop_event: anyio.Event = field(default_factory=anyio.Event)
+    initialize_result: mcp.types.InitializeResult | None = None
+
 
 class Client(Generic[ClientTransportT]):
     """
@@ -89,8 +110,8 @@ class Client(Generic[ClientTransportT]):
     between tasks, and ensures all session state changes happen within a lock.
     Events are only created when needed, never reset outside locks.
 
-    See: https://github.com/jlowin/fastmcp/issues/1051
-         https://github.com/jlowin/fastmcp/pull/1054
+    This design prevents race conditions where tasks wait on events that get
+    replaced by other tasks, ensuring reliable coordination in concurrent scenarios.
 
     Args:
         transport:
@@ -127,56 +148,65 @@ class Client(Generic[ClientTransportT]):
     """
 
     @overload
-    def __new__(
-        cls,
-        transport: ClientTransportT,
-        **kwargs: Any,
-    ) -> Client[ClientTransportT]: ...
+    def __init__(self: Client[T], transport: T, *args, **kwargs) -> None: ...
 
     @overload
-    def __new__(
-        cls, transport: AnyUrl, **kwargs
-    ) -> Client[SSETransport | StreamableHttpTransport]: ...
+    def __init__(
+        self: Client[SSETransport | StreamableHttpTransport],
+        transport: AnyUrl,
+        *args,
+        **kwargs,
+    ) -> None: ...
 
     @overload
-    def __new__(
-        cls, transport: FastMCP | FastMCP1Server, **kwargs
-    ) -> Client[FastMCPTransport]: ...
+    def __init__(
+        self: Client[FastMCPTransport],
+        transport: FastMCP | FastMCP1Server,
+        *args,
+        **kwargs,
+    ) -> None: ...
 
     @overload
-    def __new__(
-        cls, transport: Path, **kwargs
-    ) -> Client[PythonStdioTransport | NodeStdioTransport]: ...
+    def __init__(
+        self: Client[PythonStdioTransport | NodeStdioTransport],
+        transport: Path,
+        *args,
+        **kwargs,
+    ) -> None: ...
 
     @overload
-    def __new__(
-        cls, transport: MCPConfig | dict[str, Any], **kwargs
-    ) -> Client[MCPConfigTransport]: ...
+    def __init__(
+        self: Client[MCPConfigTransport],
+        transport: MCPConfig | dict[str, Any],
+        *args,
+        **kwargs,
+    ) -> None: ...
 
     @overload
-    def __new__(
-        cls, transport: str, **kwargs
-    ) -> Client[
-        PythonStdioTransport
-        | NodeStdioTransport
-        | SSETransport
-        | StreamableHttpTransport
-    ]: ...
-
-    def __new__(cls, transport, **kwargs) -> Client:
-        instance = super().__new__(cls)
-        return instance
+    def __init__(
+        self: Client[
+            PythonStdioTransport
+            | NodeStdioTransport
+            | SSETransport
+            | StreamableHttpTransport
+        ],
+        transport: str,
+        *args,
+        **kwargs,
+    ) -> None: ...
 
     def __init__(
         self,
-        transport: ClientTransportT
-        | FastMCP
-        | AnyUrl
-        | Path
-        | MCPConfig
-        | dict[str, Any]
-        | str,
-        # Common args
+        transport: (
+            ClientTransportT
+            | FastMCP
+            | FastMCP1Server
+            | AnyUrl
+            | Path
+            | MCPConfig
+            | dict[str, Any]
+            | str
+        ),
         roots: RootsList | RootsHandler | None = None,
         sampling_handler: SamplingHandler | None = None,
         elicitation_handler: ElicitationHandler | None = None,
@@ -187,11 +217,10 @@ class Client(Generic[ClientTransportT]):
         init_timeout: datetime.timedelta | float | int | None = None,
         client_info: mcp.types.Implementation | None = None,
         auth: httpx.Auth | Literal["oauth"] | str | None = None,
-    ):
+    ) -> None:
         self.transport = cast(ClientTransportT, infer_transport(transport))
         if auth is not None:
             self.transport._set_auth(auth)
-        self._initialize_result: mcp.types.InitializeResult | None = None
 
         if log_handler is None:
             log_handler = default_log_handler
@@ -238,33 +267,26 @@ class Client(Generic[ClientTransportT]):
             )
 
         # Session context management - see class docstring for detailed explanation
-        self._session: ClientSession | None = None  # Active MCP session
-        self._nesting_counter: int = 0  # Reference count for active context managers
-        self._context_lock = anyio.Lock()  # Protects all session state changes
-        self._session_task: asyncio.Task | None = (
-            None  # Background session manager task
-        )
-        self._ready_event = anyio.Event()  # Signals when session is ready for use
-        self._stop_event = anyio.Event()  # Signals when session should stop
+        self._session_state = ClientSessionState()
 
     @property
     def session(self) -> ClientSession:
         """Get the current active session. Raises RuntimeError if not connected."""
-        if self._session is None:
+        if self._session_state.session is None:
             raise RuntimeError(
                 "Client is not connected. Use the 'async with client:' context manager first."
             )
 
-        return self._session
+        return self._session_state.session
 
     @property
     def initialize_result(self) -> mcp.types.InitializeResult:
         """Get the result of the initialization request."""
-        if self._initialize_result is None:
+        if self._session_state.initialize_result is None:
             raise RuntimeError(
                 "Client is not connected. Use the 'async with client:' context manager first."
             )
-        return self._initialize_result
+        return self._session_state.initialize_result
 
     def set_roots(self, roots: RootsList | RootsHandler) -> None:
         """Set the roots for the client. This does not automatically call `send_roots_list_changed`."""
@@ -286,7 +308,33 @@ class Client(Generic[ClientTransportT]):
 
     def is_connected(self) -> bool:
         """Check if the client is currently connected."""
-        return self._session is not None
+        return self._session_state.session is not None
+
+    def new(self) -> Client[ClientTransportT]:
+        """Create a new client instance with the same configuration but fresh session state.
+
+        This creates a new client with the same transport, handlers, and configuration,
+        but with no active session. Useful for creating independent sessions that don't
+        share state with the original client.
+
+        Returns:
+            A new Client instance with the same configuration but disconnected state.
+
+        Example:
+            ```python
+            # Create a fresh client for each concurrent operation
+            fresh_client = client.new()
+            async with fresh_client:
+                await fresh_client.call_tool("some_tool", {})
+            ```
+        """
+
+        new_client = copy.copy(self)
+
+        # Reset session state to fresh state
+        new_client._session_state = ClientSessionState()
+
+        return new_client
 
     @asynccontextmanager
     async def _context_manager(self):
@@ -294,19 +342,21 @@ class Client(Generic[ClientTransportT]):
             async with self.transport.connect_session(
                 **self._session_kwargs
             ) as session:
-                self._session = session
+                self._session_state.session = session
                 # Initialize the session
                 try:
                     with anyio.fail_after(self._init_timeout):
-                        self._initialize_result = await self._session.initialize()
+                        self._session_state.initialize_result = (
+                            await self._session_state.session.initialize()
+                        )
                     yield
                 except anyio.ClosedResourceError:
                     raise RuntimeError("Server session was closed unexpectedly")
                 except TimeoutError:
                     raise RuntimeError("Failed to initialize server session")
                 finally:
-                    self._session = None
-                    self._initialize_result = None
+                    self._session_state.session = None
+                    self._session_state.initialize_result = None
 
     async def __aenter__(self):
         return await self._connect()
@@ -328,20 +378,25 @@ class Client(Generic[ClientTransportT]):
         tasks wait on events that get replaced by other tasks.
         """
         # ensure only one session is running at a time to avoid race conditions
-        async with self._context_lock:
-            need_to_start = self._session_task is None or self._session_task.done()
+        async with self._session_state.lock:
+            need_to_start = (
+                self._session_state.session_task is None
+                or self._session_state.session_task.done()
+            )
             if need_to_start:
-                if self._nesting_counter != 0:
+                if self._session_state.nesting_counter != 0:
                     raise RuntimeError(
-                        f"Internal error: nesting counter should be 0 when starting new session, got {self._nesting_counter}"
+                        f"Internal error: nesting counter should be 0 when starting new session, got {self._session_state.nesting_counter}"
                     )
-                self._stop_event = anyio.Event()
-                self._ready_event = anyio.Event()
-                self._session_task = asyncio.create_task(self._session_runner())
-                await self._ready_event.wait()
+                self._session_state.stop_event = anyio.Event()
+                self._session_state.ready_event = anyio.Event()
+                self._session_state.session_task = asyncio.create_task(
+                    self._session_runner()
+                )
+                await self._session_state.ready_event.wait()
 
-                if self._session_task.done():
-                    exception = self._session_task.exception()
+                if self._session_state.session_task.done():
+                    exception = self._session_state.session_task.exception()
                     if exception is None:
                         raise RuntimeError(
                             "Session task completed without exception but connection failed"
@@ -352,7 +407,7 @@ class Client(Generic[ClientTransportT]):
                         f"Client failed to connect: {exception}"
                     ) from exception
 
-            self._nesting_counter += 1
+            self._session_state.nesting_counter += 1
         return self
 
     async def _disconnect(self, force: bool = False):
@@ -370,26 +425,28 @@ class Client(Generic[ClientTransportT]):
         Event recreation now happens only in _connect() when actually needed.
         """
         # ensure only one session is running at a time to avoid race conditions
-        async with self._context_lock:
+        async with self._session_state.lock:
             # if we are forcing a disconnect, reset the nesting counter
             if force:
-                self._nesting_counter = 0
+                self._session_state.nesting_counter = 0
 
             # otherwise decrement to check if we are done nesting
             else:
-                self._nesting_counter = max(0, self._nesting_counter - 1)
+                self._session_state.nesting_counter = max(
+                    0, self._session_state.nesting_counter - 1
+                )
 
             # if we are still nested, return
-            if self._nesting_counter > 0:
+            if self._session_state.nesting_counter > 0:
                 return
 
             # stop the active seesion
-            if self._session_task is None:
+            if self._session_state.session_task is None:
                 return
-            self._stop_event.set()
+            self._session_state.stop_event.set()
             # wait for session to finish to ensure state has been reset
-            await self._session_task
-            self._session_task = None
+            await self._session_state.session_task
+            self._session_state.session_task = None
 
     async def _session_runner(self):
         """
@@ -409,12 +466,12 @@ class Client(Generic[ClientTransportT]):
             async with AsyncExitStack() as stack:
                 await stack.enter_async_context(self._context_manager())
                 # Session/context is now ready
-                self._ready_event.set()
+                self._session_state.ready_event.set()
                 # Wait until disconnect/stop is requested
-                await self._stop_event.wait()
+                await self._session_state.stop_event.wait()
         finally:
             # Ensure ready event is set even if context manager entry fails
-            self._ready_event.set()
+            self._session_state.ready_event.set()
 
     async def close(self):
         await self._disconnect(force=True)

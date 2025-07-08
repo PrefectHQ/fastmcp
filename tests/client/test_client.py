@@ -449,27 +449,27 @@ async def test_client_nested_context_manager(fastmcp_server):
 
     # Before connection
     assert not client.is_connected()
-    assert client._session is None
+    assert client._session_state.session is None
 
     # During connection
     async with client:
         assert client.is_connected()
-        assert client._session is not None
-        session = client._session
+        assert client._session_state.session is not None
+        session = client._session_state.session
 
         # Re-use the same session
         async with client:
             assert client.is_connected()
-            assert client._session is session
+            assert client._session_state.session is session
 
         # Re-use the same session
         async with client:
             assert client.is_connected()
-            assert client._session is session
+            assert client._session_state.session is session
 
     # After connection
     assert not client.is_connected()
-    assert client._session is None
+    assert client._session_state.session is None
 
 
 async def test_concurrent_client_context_managers():

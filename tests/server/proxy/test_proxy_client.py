@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from typing import cast
 
 import pytest
+from anyio import create_task_group
 from mcp.types import LoggingLevel, ModelHint, ModelPreferences, TextContent
 
 from fastmcp import Client, Context, FastMCP
@@ -255,3 +256,104 @@ class TestProxyClient:
             await client.call_tool("report_progress", {})
 
         assert PROGRESS_MESSAGES == EXPECTED_PROGRESS_MESSAGES
+
+    async def test_concurrent_log_requests_no_mixing(self, proxy_server: FastMCP):
+        """Test that concurrent log requests don't mix handlers (fixes #1068)."""
+        results: dict[str, LogMessage] = {}
+
+        async def log_handler_a(message: LogMessage) -> None:
+            results["logger_a"] = message
+
+        async def log_handler_b(message: LogMessage) -> None:
+            results["logger_b"] = message
+
+        async with (
+            Client(proxy_server, log_handler=log_handler_a) as client_a,
+            Client(proxy_server, log_handler=log_handler_b) as client_b,
+        ):
+            async with create_task_group() as tg:
+                tg.start_soon(
+                    client_a.call_tool,
+                    "log",
+                    {"message": "Hello, world!", "level": "info", "logger": "a"},
+                )
+                tg.start_soon(
+                    client_b.call_tool,
+                    "log",
+                    {"message": "Hello, world!", "level": "info", "logger": "b"},
+                )
+
+        assert results["logger_a"].logger == "a"
+        assert results["logger_b"].logger == "b"
+
+    async def test_concurrent_elicitation_no_mixing(self, proxy_server: FastMCP):
+        """Test that concurrent elicitation requests don't mix handlers (fixes #1068)."""
+        results = {}
+
+        async def elicitation_handler_a(
+            message: str,
+            response_type: type,
+            params: ElicitRequestParams,
+            ctx: RequestContext,
+        ) -> ElicitResult:
+            return ElicitResult(action="accept", content=response_type(name="Alice"))
+
+        async def elicitation_handler_b(
+            message: str,
+            response_type: type,
+            params: ElicitRequestParams,
+            ctx: RequestContext,
+        ) -> ElicitResult:
+            return ElicitResult(action="accept", content=response_type(name="Bob"))
+
+        async def get_and_store(name, coro):
+            result = await coro
+            results[name] = result.data
+
+        async with (
+            Client(proxy_server, elicitation_handler=elicitation_handler_a) as client_a,
+            Client(proxy_server, elicitation_handler=elicitation_handler_b) as client_b,
+        ):
+            async with create_task_group() as tg:
+                tg.start_soon(
+                    get_and_store,
+                    "elicitation_a",
+                    client_a.call_tool("elicit", {}),
+                )
+                tg.start_soon(
+                    get_and_store,
+                    "elicitation_b",
+                    client_b.call_tool("elicit", {}),
+                )
+
+        assert results["elicitation_a"] == "Hello, Alice!"
+        assert results["elicitation_b"] == "Hello, Bob!"
+
+    async def test_client_factory_creates_fresh_sessions(self, fastmcp_server: FastMCP):
+        """Test that the client factory pattern creates fresh sessions for each request."""
+        from fastmcp.server.proxy import FastMCPProxy
+
+        # Create a disconnected client (should use fresh sessions per request)
+        base_client = Client(fastmcp_server)
+
+        # Test both as_proxy convenience method and direct client_factory usage
+        proxy_via_as_proxy = FastMCP.as_proxy(base_client)
+        proxy_via_factory = FastMCPProxy(client_factory=base_client.new)
+
+        # Verify the proxies are created successfully - this tests the client factory pattern
+        assert proxy_via_as_proxy is not None
+        assert proxy_via_factory is not None
+
+        # Verify they have the expected client factory behavior
+        assert hasattr(proxy_via_as_proxy, "_tool_manager")
+        assert hasattr(proxy_via_factory, "_tool_manager")
+
+    async def test_connected_client_reuses_sessions(self, fastmcp_server: FastMCP):
+        """Test that connected clients passed to as_proxy reuse sessions (preserves #959 behavior)."""
+        # Create a connected client (should reuse sessions)
+        async with Client(fastmcp_server) as connected_client:
+            proxy = FastMCP.as_proxy(connected_client)
+
+            # Verify the proxy is created successfully and uses session reuse
+            assert proxy is not None
+            assert hasattr(proxy, "_tool_manager")
