@@ -107,6 +107,79 @@ class TestPruneUnusedDefs:
         result = _prune_unused_defs(schema)
         assert "$defs" not in result
 
+    def test_nested_references_with_recursion_kept(self):
+        """Test that definitions with recursion referenced via nesting are kept."""
+        schema = {
+            "properties": {
+                "foo": {"$ref": "#/$defs/foo_def"},
+            },
+            "$defs": {
+                "foo_def": {
+                    "type": "object",
+                    "properties": {"nested": {"$ref": "#/$defs/foo_def"}},
+                },
+                "unused_def": {"type": "integer"},
+            },
+        }
+        result = _prune_unused_defs(schema)
+        assert "foo_def" in result["$defs"]
+        assert "unused_def" not in result["$defs"]
+
+    def test_nested_references_with_recursion_removed(self):
+        """Test that definitions with recursion referenced via nesting in unused defs are removed."""
+        schema = {
+            "properties": {},
+            "$defs": {
+                "foo_def": {
+                    "type": "object",
+                    "properties": {"nested": {"$ref": "#/$defs/foo_def"}},
+                },
+            },
+        }
+        result = _prune_unused_defs(schema)
+        assert "$defs" not in result
+
+    def test_multiple_nested_references_with_recursion_kept(self):
+        """Test that definitions with multiple levels of recursion referenced via nesting are kept."""
+        schema = {
+            "properties": {
+                "foo": {"$ref": "#/$defs/foo_def"},
+            },
+            "$defs": {
+                "foo_def": {
+                    "type": "object",
+                    "properties": {"nested": {"$ref": "#/$defs/nested_def"}},
+                },
+                "nested_def": {
+                    "type": "object",
+                    "properties": {"nested": {"$ref": "#/$defs/foo_def"}},
+                },
+                "unused_def": {"type": "integer"},
+            },
+        }
+        result = _prune_unused_defs(schema)
+        assert "foo_def" in result["$defs"]
+        assert "nested_def" in result["$defs"]
+        assert "unused_def" not in result["$defs"]
+
+    def test_multiple_nested_references_with_recursion_removed(self):
+        """Test that definitions with multiple levels of recursion referenced via nesting in unused defs are removed."""
+        schema = {
+            "properties": {},
+            "$defs": {
+                "foo_def": {
+                    "type": "object",
+                    "properties": {"nested": {"$ref": "#/$defs/nested_def"}},
+                },
+                "nested_def": {
+                    "type": "object",
+                    "properties": {"nested": {"$ref": "#/$defs/foo_def"}},
+                },
+            },
+        }
+        result = _prune_unused_defs(schema)
+        assert "$defs" not in result
+
     def test_array_references_kept(self):
         """Test that definitions referenced in array items are kept."""
         schema = {
