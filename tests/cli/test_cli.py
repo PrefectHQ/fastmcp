@@ -181,6 +181,7 @@ class TestRunCommand:
         assert "transport" not in bound.arguments
         assert "host" not in bound.arguments
         assert "port" not in bound.arguments
+        assert "path" not in bound.arguments
         assert "log_level" not in bound.arguments
         assert "no_banner" not in bound.arguments
 
@@ -196,6 +197,8 @@ class TestRunCommand:
                 "localhost",
                 "--port",
                 "8080",
+                "--path",
+                "/v1/mcp",
                 "--log-level",
                 "DEBUG",
                 "--no-banner",
@@ -207,6 +210,7 @@ class TestRunCommand:
         assert bound.arguments["transport"] == "http"
         assert bound.arguments["host"] == "localhost"
         assert bound.arguments["port"] == 8080
+        assert bound.arguments["path"] == "/v1/mcp"
         assert bound.arguments["log_level"] == "DEBUG"
         assert bound.arguments["no_banner"] is True
 
@@ -230,6 +234,7 @@ class TestRunCommand:
         assert "host" not in bound.arguments
         assert "port" not in bound.arguments
         assert "log_level" not in bound.arguments
+        assert "path" not in bound.arguments
 
 
 class TestWindowsSpecific:

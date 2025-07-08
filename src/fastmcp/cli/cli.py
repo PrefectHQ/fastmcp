@@ -266,6 +266,13 @@ def run(
             help="Port to bind to when using http transport (default: 8000)",
         ),
     ] = None,
+    path: Annotated[
+        str | None,
+        cyclopts.Parameter(
+            "--path",
+            help="The route path for the server (default: /mcp/ for http transport, /sse/ for sse transport)",
+        ),
+    ] = None,
     log_level: Annotated[
         Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] | None,
         cyclopts.Parameter(
@@ -305,6 +312,7 @@ def run(
             "transport": transport,
             "host": host,
             "port": port,
+            "path": path,
             "log_level": log_level,
             "server_args": server_args,
         },
@@ -316,6 +324,7 @@ def run(
             transport=transport,
             host=host,
             port=port,
+            path=path,
             log_level=log_level,
             server_args=server_args,
             show_banner=not no_banner,

@@ -171,6 +171,7 @@ def run_command(
     transport: TransportType | None = None,
     host: str | None = None,
     port: int | None = None,
+    path: str | None = None,
     log_level: LogLevelType | None = None,
     server_args: list[str] | None = None,
     show_banner: bool = True,
@@ -182,6 +183,7 @@ def run_command(
         transport: Transport protocol to use
         host: Host to bind to when using http transport
         port: Port to bind to when using http transport
+        path: Path to bind to when using http transport
         log_level: Log level
         server_args: Additional arguments to pass to the server
         show_banner: Whether to show the server banner
@@ -204,6 +206,8 @@ def run_command(
         kwargs["host"] = host
     if port:
         kwargs["port"] = port
+    if path:
+        kwargs["path"] = path
     if log_level:
         kwargs["log_level"] = log_level
 
