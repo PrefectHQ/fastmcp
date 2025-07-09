@@ -1,0 +1,229 @@
+---
+title: FastAPI 🤝 FastMCP
+sidebarTitle: FastAPI
+description: Integrate FastMCP with FastAPI applications
+icon: bolt
+---
+
+import { VersionBadge } from '/snippets/version-badge.mdx'
+
+FastMCP provides two powerful ways to integrate with FastAPI applications, both of which are documented below.
+
+1. You can [generate an MCP server FROM your FastAPI app](#generating-an-mcp-server) by converting existing API endpoints into MCP tools. This is useful for bootstrapping and quickly attaching LLMs to your API.
+2. You can [mount an MCP server INTO your FastAPI app](#mounting-an-mcp-server) by adding MCP functionality to your web application. This is useful for exposing your MCP tools alongside regular API endpoints.
+
+You can even combine both approaches to create a single FastAPI app that serves both regular API endpoints and MCP tools!
+
+<Tip>
+Generating MCP servers from FastAPI apps is a great way to get started with FastMCP, but in practice LLMs achieve **significantly better performance** with well-designed and curated MCP servers than with auto-converted FastAPI servers. This is especially true for complex APIs with many endpoints and parameters.
+</Tip>
+
+<Note>
+FastMCP does *not* include FastAPI as a dependency; you must install it separately to use this integration.
+</Note>
+
+## Generating an MCP Server
+
+<VersionBadge version="2.0.0" />
+
+FastMCP can directly convert your existing FastAPI applications into MCP servers, allowing AI models to interact with your API endpoints through the MCP protocol.
+
+
+<Tip>
+Under the hood, the FastAPI integration is built on top of FastMCP's OpenAPI integration. See the [OpenAPI docs](/integrations/openapi) for more details.
+</Tip>
+
+### Create a Server
+
+The simplest way to convert a FastAPI app is using the `FastMCP.from_fastapi()` method:
+
+```python server.py
+from fastapi import FastAPI
+from fastmcp import FastMCP
+
+# Your existing FastAPI app
+app = FastAPI(title="My API", version="1.0.0")
+
+@app.get("/items", tags=["items"], operation_id="list_items")
+def list_items():
+    return [{"id": 1, "name": "Item 1"}, {"id": 2, "name": "Item 2"}]
+
+@app.get("/items/{item_id}", tags=["items", "detail"], operation_id="get_item")
+def get_item(item_id: int):
+    return {"id": item_id, "name": f"Item {item_id}"}
+
+@app.post("/items", tags=["items", "create"], operation_id="create_item")
+def create_item(name: str):
+    return {"id": 3, "name": name}
+
+# Convert FastAPI app to MCP server
+mcp = FastMCP.from_fastapi(app=app)
+
+if __name__ == "__main__":
+    mcp.run()  # Run as MCP server
+```
+
+### Component Mapping
+
+By default, FastMCP converts **every endpoint** in your FastAPI app into an MCP **Tool**. This provides maximum compatibility with LLM clients that primarily support MCP tools.
+
+You can customize this behavior using route maps to control which endpoints become tools, resources, or resource templates:
+
+```python
+from fastmcp.server.openapi import RouteMap, MCPType
+
+# Custom route mapping
+mcp = FastMCP.from_fastapi(
+    app=app,
+    route_maps=[
+        # GET requests with path parameters become ResourceTemplates
+        RouteMap(methods=["GET"], pattern=r".*\{.*\}.*", mcp_type=MCPType.RESOURCE_TEMPLATE),
+        # All other GET requests become Resources
+        RouteMap(methods=["GET"], pattern=r".*", mcp_type=MCPType.RESOURCE),
+        # POST/PUT/DELETE become Tools (handled by default rule)
+    ],
+)
+```
+
+The `FastMCP.from_fastapi()` method accepts all the same configuration options as `FastMCP.from_openapi()`, including route maps, custom tags, component naming, timeouts, and component customization functions. For comprehensive configuration details, see the [OpenAPI Integration guide](/integrations/openapi).
+
+### Key Considerations
+
+#### Operation IDs
+
+FastMCP uses your FastAPI operation IDs to name MCP components. Ensure your endpoints have meaningful operation IDs:
+
+```python
+@app.get("/users/{user_id}", operation_id="get_user_detail")  # ✅ Good
+@app.get("/users/{user_id}")  # ❌ Auto-generated name might be unclear
+```
+
+#### Pydantic Models
+
+Your Pydantic models are automatically converted to JSON schema for MCP tool parameters:
+
+```python
+from pydantic import BaseModel
+
+class CreateItemRequest(BaseModel):
+    name: str
+    description: str | None = None
+    price: float
+
+@app.post("/items")
+def create_item(item: CreateItemRequest):
+    return {"id": 123, **item.dict()}
+```
+
+The MCP tool will have properly typed parameters matching your Pydantic model.
+
+#### Error Handling
+
+FastAPI error handling carries over to the MCP server. HTTPExceptions are automatically converted to appropriate MCP errors.
+
+Since FastAPI integration is built on OpenAPI, all the same configuration options are available including authentication setup, timeout configuration, and request parameter handling. For detailed information on these features, see the [OpenAPI Integration guide](/integrations/openapi).
+
+## Mounting an MCP Server
+
+<VersionBadge version="2.3.1" />
+
+You can also mount an existing FastMCP server into your FastAPI application, adding MCP functionality to your web application. This is useful for exposing your MCP tools alongside regular API endpoints.
+
+### Basic Integration
+
+```python
+from fastmcp import FastMCP
+from fastapi import FastAPI
+from starlette.routing import Mount
+
+# Create your FastMCP server
+mcp = FastMCP("MyServer")
+
+@mcp.tool
+def analyze_data(query: str) -> dict:
+    """Analyze data based on the query."""
+    return {"result": f"Analysis for: {query}"}
+
+# Create the ASGI app from your MCP server
+mcp_app = mcp.http_app(path='/mcp')
+
+# Create a FastAPI app and mount the MCP server
+app = FastAPI(lifespan=mcp_app.lifespan)
+app.mount("/mcp-server", mcp_app)
+
+# Add regular FastAPI routes
+@app.get("/health")
+def health_check():
+    return {"status": "healthy"}
+```
+
+The MCP endpoint will be available at `/mcp-server/mcp/` of your FastAPI application.
+
+<Warning>
+For Streamable HTTP transport, you **must** pass the lifespan context from the FastMCP app to the FastAPI app. Otherwise, the FastMCP server's session manager will not be properly initialized.
+</Warning>
+
+### Advanced Integration
+
+You can combine both approaches - generate an MCP server from your FastAPI app AND mount additional MCP servers:
+
+```python
+from fastmcp import FastMCP
+from fastapi import FastAPI
+
+# Your existing FastAPI app
+app = FastAPI()
+
+@app.get("/items")
+def list_items():
+    return [{"id": 1, "name": "Item 1"}]
+
+# Generate MCP server from FastAPI app
+api_mcp = FastMCP.from_fastapi(app=app, name="API Server")
+
+# Create additional purpose-built MCP server
+tools_mcp = FastMCP("Tools Server")
+
+@tools_mcp.tool
+def advanced_analysis(data: dict) -> dict:
+    """Perform advanced analysis not available via API."""
+    return {"analysis": "complex results"}
+
+# Mount the tools server into the same FastAPI app
+tools_app = tools_mcp.http_app(path='/mcp')
+app.mount("/tools", tools_app, lifespan=tools_app.lifespan)
+```
+
+Now you have:
+- API endpoints converted to MCP tools (via `api_mcp`)
+- Additional MCP tools available at `/tools/mcp/`
+- Regular FastAPI endpoints at their original paths
+
+### Authentication and Middleware
+
+When mounting MCP servers into FastAPI, you can leverage FastAPI's authentication and middleware:
+
+```python
+from fastapi import FastAPI, Depends, HTTPException
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+
+security = HTTPBearer()
+
+def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    if credentials.credentials != "secret-token":
+        raise HTTPException(status_code=401, detail="Invalid token")
+    return credentials
+
+app = FastAPI()
+
+# Mount MCP server with authentication
+@app.get("/secure")
+def secure_endpoint(auth=Depends(verify_token)):
+    return {"message": "Authenticated"}
+
+# The mounted MCP server inherits the app's security
+mcp_app = mcp.http_app()
+app.mount("/mcp", mcp_app, lifespan=mcp_app.lifespan)
+```
+
+For more advanced ASGI integration patterns, see the [ASGI Integration guide](/integrations/asgi).
