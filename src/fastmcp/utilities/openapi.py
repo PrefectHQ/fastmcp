@@ -1060,6 +1060,7 @@ def _replace_ref_with_defs(
 def _combine_schemas(route: HTTPRoute) -> dict[str, Any]:
     """
     Combines parameter and request body schemas into a single schema.
+    Handles parameter name collisions by adding location suffixes.
 
     Args:
         route: HTTPRoute object
@@ -1070,17 +1071,19 @@ def _combine_schemas(route: HTTPRoute) -> dict[str, Any]:
     properties = {}
     required = []
 
-    # Add path parameters
-    for param in route.parameters:
-        if param.required:
-            required.append(param.name)
-        properties[param.name] = _replace_ref_with_defs(
-            param.schema_.copy(), param.description
-        )
+    # First pass: collect parameter names by location and body properties
+    param_names_by_location = {
+        "path": set(),
+        "query": set(),
+        "header": set(),
+        "cookie": set(),
+    }
+    body_props = {}
 
-    # Add request body if it exists
+    for param in route.parameters:
+        param_names_by_location[param.location].add(param.name)
+
     if route.request_body and route.request_body.content_schema:
-        # For now, just use the first content type's schema
         content_type = next(iter(route.request_body.content_schema))
         body_schema = _replace_ref_with_defs(
             route.request_body.content_schema[content_type].copy(),
@@ -1088,7 +1091,44 @@ def _combine_schemas(route: HTTPRoute) -> dict[str, Any]:
         )
         body_props = body_schema.get("properties", {})
 
-        # Add request body properties
+    # Detect collisions: parameters that exist in both body and path/query/header
+    all_non_body_params = set()
+    for location_params in param_names_by_location.values():
+        all_non_body_params.update(location_params)
+
+    body_param_names = set(body_props.keys())
+    colliding_params = all_non_body_params & body_param_names
+
+    # Add parameters with suffixes for collisions
+    for param in route.parameters:
+        if param.name in colliding_params:
+            # Add suffix for non-body parameters when collision detected
+            suffixed_name = f"{param.name}__{param.location}"
+            if param.required:
+                required.append(suffixed_name)
+
+            # Add location info to description
+            param_schema = _replace_ref_with_defs(
+                param.schema_.copy(), param.description
+            )
+            original_desc = param_schema.get("description", "")
+            location_desc = f"({param.location.capitalize()} parameter)"
+            if original_desc:
+                param_schema["description"] = f"{original_desc} {location_desc}"
+            else:
+                param_schema["description"] = location_desc
+
+            properties[suffixed_name] = param_schema
+        else:
+            # No collision, use original name
+            if param.required:
+                required.append(param.name)
+            properties[param.name] = _replace_ref_with_defs(
+                param.schema_.copy(), param.description
+            )
+
+    # Add request body properties (no suffixes for body parameters)
+    if route.request_body and route.request_body.content_schema:
         for prop_name, prop_schema in body_props.items():
             properties[prop_name] = prop_schema
 
