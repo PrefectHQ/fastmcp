@@ -81,13 +81,13 @@
                     "icon": "stars",
                     "pages": [
                       "servers/context",
+                      "servers/proxy",
+                      "servers/composition",
                       "servers/elicitation",
                       "servers/logging",
                       "servers/progress",
                       "servers/sampling",
-                      "servers/middleware",
-                      "servers/composition",
-                      "servers/proxy"
+                      "servers/middleware"
                     ]
                   },
                   {

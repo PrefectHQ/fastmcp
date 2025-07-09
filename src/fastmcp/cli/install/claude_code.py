@@ -1,5 +1,6 @@
 """Claude Code integration for FastMCP install using Cyclopts."""
 
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -16,21 +17,49 @@ logger = get_logger(__name__)
 
 
 def find_claude_command() -> str | None:
-    """Find the Claude Code CLI command."""
-    # Check the default installation location
-    default_path = Path.home() / ".claude" / "local" / "claude"
-    if default_path.exists():
+    """Find the Claude Code CLI command.
+
+    Checks common installation locations since 'claude' is often a shell alias
+    that doesn't work with subprocess calls.
+    """
+    # First try shutil.which() in case it's a real executable in PATH
+    claude_in_path = shutil.which("claude")
+    if claude_in_path:
         try:
             result = subprocess.run(
-                [str(default_path), "--version"],
+                [claude_in_path, "--version"],
                 check=True,
                 capture_output=True,
                 text=True,
             )
             if "Claude Code" in result.stdout:
-                return str(default_path)
+                return claude_in_path
         except (subprocess.CalledProcessError, FileNotFoundError):
             pass
+
+    # Check common installation locations (aliases don't work with subprocess)
+    potential_paths = [
+        # Default Claude Code installation location (after migration)
+        Path.home() / ".claude" / "local" / "claude",
+        # npm global installation on macOS/Linux (default)
+        Path("/usr/local/bin/claude"),
+        # npm global installation with custom prefix
+        Path.home() / ".npm-global" / "bin" / "claude",
+    ]
+
+    for path in potential_paths:
+        if path.exists():
+            try:
+                result = subprocess.run(
+                    [str(path), "--version"],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+                if "Claude Code" in result.stdout:
+                    return str(path)
+            except (subprocess.CalledProcessError, FileNotFoundError):
+                continue
 
     return None
 

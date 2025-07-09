@@ -65,6 +65,10 @@ This single setup gives you:
 - Session isolation to prevent context mixing
 - Full compatibility with all MCP clients
 
+You can also pass a FastMCP [client transport](/clients/transports) (or parameter that can be inferred to a transport) to `as_proxy()`. This will automatically create a `ProxyClient` instance for you.
+
+Finally, you can pass a regular FastMCP `Client` instance to `as_proxy()`. This will work for many use cases, but may break if advanced MCP features like sampling or elicitation are invoked by the server. 
+
 ## Session Isolation & Concurrency
 
 <VersionBadge version="2.10.3" />
@@ -240,23 +244,35 @@ composite_proxy = FastMCP.as_proxy(config, name="Composite Proxy")
 # - weather://weather/icons/sunny, calendar://calendar/events/today
 ```
 
-## Alternative Approaches
+## Mirrored Components
 
-The examples above show the recommended approach using `ProxyClient` or transport strings. For advanced use cases, you can also work directly with the underlying classes.
+When you access tools, resources, or prompts from a proxy server, they are "mirrored" from the remote server. Mirrored components cannot be modified directly directly since they reflect the state of the remote server. For example, you can not simply "disable" a mirrored component.
 
-### Using Regular Client
+However, you can create a copy of a mirrored component and store it as a new locally-defined component. Local components always take precedence over mirored ones because the proxy server will check its own registry before it attempts to engage the remote server.
 
-You can pass a regular `Client` instance to `as_proxy()`. The proxy will automatically create an appropriate session strategy:
+Therefore, to enable or disable a proxy tool, resource, or prompt, you should first create a local copy and add it to your own server. Here's an example of how to do that for a tool:
 
 ```python
-from fastmcp import FastMCP, Client
+# Create your own server
+my_server = FastMCP("MyServer")
 
-# Using regular Client (session strategy auto-detected)
-client = Client("backend_server.py")
-proxy = FastMCP.as_proxy(client)
+# Get a proxy server
+proxy = FastMCP.as_proxy("backend_server.py")
+
+# Add mirrored components to your server
+async with proxy:
+    mirrored_tool = await proxy.get_tool("useful_tool")
+    
+    # Create a local copy that you can modify
+    local_tool = mirrored_tool.copy()
+    
+    # Add the local copy to your server
+    my_server.add_tool(local_tool)
+    
+    # Now you can disable YOUR copy
+    local_tool.disable()
 ```
 
-This approach provides session isolation but doesn't include advanced MCP feature forwarding (sampling, elicitation, etc.) unless you configure handlers manually.
 
 ## `FastMCPProxy` Class
 
@@ -308,4 +324,5 @@ def custom_client_factory():
     return client
 
 proxy = FastMCPProxy(client_factory=custom_client_factory)
-``` 
+```
+
