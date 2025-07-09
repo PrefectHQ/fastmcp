@@ -62,7 +62,14 @@
               {
                 "group": "Servers",
                 "pages": [
-                  "servers/server",
+                  {
+                    "group": "Essentials",
+                    "icon": "cube",
+                    "pages": [
+                      "servers/server",
+                      "deployment/running-server"
+                    ]
+                  },
                   {
                     "group": "Core Components",
                     "icon": "toolbox",
@@ -80,7 +87,10 @@
                       "servers/elicitation",
                       "servers/logging",
                       "servers/progress",
-                      "servers/sampling"
+                      "servers/sampling",
+                      "servers/middleware",
+                      "servers/composition",
+                      "servers/proxy"
                     ]
                   },
                   {
@@ -88,22 +98,24 @@
                     "icon": "shield-check",
                     "pages": ["servers/auth/bearer"]
                   },
-                  "servers/middleware",
-                  "servers/openapi",
-                  "servers/proxy",
-                  "servers/composition",
                   {
                     "group": "Deployment",
                     "icon": "upload",
-                    "pages": ["deployment/running-server", "deployment/asgi"]
+                    "pages": ["deployment/asgi"]
                   }
                 ]
               },
               {
                 "group": "Clients",
                 "pages": [
-                  "clients/client",
-                  "clients/transports",
+                  {
+                    "group": "Essentials",
+                    "icon": "cube",
+                    "pages": [
+                      "clients/client",
+                      "clients/transports"
+                    ]
+                  },
                   {
                     "group": "Core Operations",
                     "icon": "handshake",
@@ -149,6 +161,7 @@
               {
                 "group": "Patterns",
                 "pages": [
+                  "servers/openapi",
                   "patterns/tool-transformation",
                   "patterns/decorating-methods",
                   "patterns/http-requests",
