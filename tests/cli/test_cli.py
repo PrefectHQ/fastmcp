@@ -236,6 +236,32 @@ class TestRunCommand:
         assert "log_level" not in bound.arguments
         assert "path" not in bound.arguments
 
+    def test_run_command_transport_aliases(self):
+        """Test that both 'http' and 'streamable-http' are accepted as valid transport options."""
+        # Test with 'http' transport
+        command, bound, _ = app.parse_args(
+            [
+                "run",
+                "server.py",
+                "--transport",
+                "http",
+            ]
+        )
+        assert command is not None
+        assert bound.arguments["transport"] == "http"
+
+        # Test with 'streamable-http' transport
+        command, bound, _ = app.parse_args(
+            [
+                "run",
+                "server.py",
+                "--transport",
+                "streamable-http",
+            ]
+        )
+        assert command is not None
+        assert bound.arguments["transport"] == "streamable-http"
+
 
 class TestWindowsSpecific:
     """Test Windows-specific functionality."""

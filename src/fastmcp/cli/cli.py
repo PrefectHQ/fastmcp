@@ -246,7 +246,7 @@ def run(
     server_spec: str,
     *,
     transport: Annotated[
-        Literal["stdio", "http", "sse"] | None,
+        run_module.TransportType | None,
         cyclopts.Parameter(
             name=["--transport", "-t"],
             help="Transport protocol to use",

@@ -11,7 +11,7 @@ from fastmcp.utilities.logging import get_logger
 logger = get_logger("cli.run")
 
 # Type aliases for better type safety
-TransportType = Literal["stdio", "http", "sse"]
+TransportType = Literal["stdio", "http", "sse", "streamable-http"]
 LogLevelType = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 
 
