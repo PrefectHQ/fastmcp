@@ -36,6 +36,7 @@ from fastmcp.server.dependencies import get_context
 from fastmcp.server.server import FastMCP
 from fastmcp.tools.tool import Tool, ToolResult
 from fastmcp.tools.tool_manager import ToolManager
+from fastmcp.utilities.components import MirroredComponent
 from fastmcp.utilities.logging import get_logger
 
 if TYPE_CHECKING:
@@ -226,7 +227,7 @@ class ProxyPromptManager(PromptManager):
                 return result
 
 
-class ProxyTool(Tool):
+class ProxyTool(Tool, MirroredComponent):
     """
     A Tool that represents and executes a tool on a remote server.
     """
@@ -245,6 +246,7 @@ class ProxyTool(Tool):
             parameters=mcp_tool.inputSchema,
             annotations=mcp_tool.annotations,
             output_schema=mcp_tool.outputSchema,
+            _mirrored=True,
         )
 
     async def run(
@@ -266,7 +268,7 @@ class ProxyTool(Tool):
         )
 
 
-class ProxyResource(Resource):
+class ProxyResource(Resource, MirroredComponent):
     """
     A Resource that represents and reads a resource from a remote server.
     """
@@ -298,6 +300,7 @@ class ProxyResource(Resource):
             name=mcp_resource.name,
             description=mcp_resource.description,
             mime_type=mcp_resource.mimeType or "text/plain",
+            _mirrored=True,
         )
 
     async def read(self) -> str | bytes:
@@ -315,7 +318,7 @@ class ProxyResource(Resource):
             raise ResourceError(f"Unsupported content type: {type(result[0])}")
 
 
-class ProxyTemplate(ResourceTemplate):
+class ProxyTemplate(ResourceTemplate, MirroredComponent):
     """
     A ResourceTemplate that represents and creates resources from a remote server template.
     """
@@ -336,6 +339,7 @@ class ProxyTemplate(ResourceTemplate):
             description=mcp_template.description,
             mime_type=mcp_template.mimeType or "text/plain",
             parameters={},  # Remote templates don't have local parameters
+            _mirrored=True,
         )
 
     async def create_resource(
@@ -371,7 +375,7 @@ class ProxyTemplate(ResourceTemplate):
         )
 
 
-class ProxyPrompt(Prompt):
+class ProxyPrompt(Prompt, MirroredComponent):
     """
     A Prompt that represents and renders a prompt from a remote server.
     """
@@ -400,6 +404,7 @@ class ProxyPrompt(Prompt):
             name=mcp_prompt.name,
             description=mcp_prompt.description,
             arguments=arguments,
+            _mirrored=True,
         )
 
     async def render(self, arguments: dict[str, Any]) -> list[PromptMessage]:

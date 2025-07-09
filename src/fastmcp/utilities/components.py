@@ -77,3 +77,46 @@ class FastMCPComponent(FastMCPBaseModel):
     def disable(self) -> None:
         """Disable the component."""
         self.enabled = False
+
+    def copy(self) -> Self:
+        """Create a copy of the component."""
+        return self.model_copy()
+
+
+class MirroredComponent(FastMCPComponent):
+    """Base class for components that are mirrored from a remote server.
+
+    Mirrored components cannot be enabled or disabled directly. Call copy() first
+    to create a local version you can modify.
+    """
+
+    _mirrored: bool = PrivateAttr(default=False)
+
+    def __init__(self, *, _mirrored: bool = False, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self._mirrored = _mirrored
+
+    def enable(self) -> None:
+        """Enable the component."""
+        if self._mirrored:
+            raise RuntimeError(
+                f"Cannot enable mirrored component '{self.name}'. "
+                f"Create a local copy first with {self.name}.copy() and add it to your server."
+            )
+        super().enable()
+
+    def disable(self) -> None:
+        """Disable the component."""
+        if self._mirrored:
+            raise RuntimeError(
+                f"Cannot disable mirrored component '{self.name}'. "
+                f"Create a local copy first with {self.name}.copy() and add it to your server."
+            )
+        super().disable()
+
+    def copy(self) -> Self:
+        """Create a copy of the component that can be modified."""
+        # Create a copy and mark it as not mirrored
+        copied = self.model_copy()
+        copied._mirrored = False
+        return copied

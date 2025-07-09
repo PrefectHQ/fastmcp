@@ -759,7 +759,7 @@ class FastMCP(Generic[LifespanResultT]):
         )
         return await self._apply_middleware(mw_context, _handler)
 
-    def add_tool(self, tool: Tool) -> None:
+    def add_tool(self, tool: Tool) -> Tool:
         """Add a tool to the server.
 
         The tool function can optionally request a Context object by adding a parameter
@@ -767,6 +767,9 @@ class FastMCP(Generic[LifespanResultT]):
 
         Args:
             tool: The Tool instance to register
+
+        Returns:
+            The tool instance that was added to the server.
         """
         self._tool_manager.add_tool(tool)
         self._cache.clear()
@@ -779,6 +782,8 @@ class FastMCP(Generic[LifespanResultT]):
             context._queue_tool_list_changed()  # type: ignore[private-use]
         except RuntimeError:
             pass  # No context available
+
+        return tool
 
     def remove_tool(self, name: str) -> None:
         """Remove a tool from the server.
@@ -958,13 +963,15 @@ class FastMCP(Generic[LifespanResultT]):
             enabled=enabled,
         )
 
-    def add_resource(self, resource: Resource) -> None:
+    def add_resource(self, resource: Resource) -> Resource:
         """Add a resource to the server.
 
         Args:
             resource: A Resource instance to add
-        """
 
+        Returns:
+            The resource instance that was added to the server.
+        """
         self._resource_manager.add_resource(resource)
         self._cache.clear()
 
@@ -977,11 +984,16 @@ class FastMCP(Generic[LifespanResultT]):
         except RuntimeError:
             pass  # No context available
 
-    def add_template(self, template: ResourceTemplate) -> None:
+        return resource
+
+    def add_template(self, template: ResourceTemplate) -> ResourceTemplate:
         """Add a resource template to the server.
 
         Args:
             template: A ResourceTemplate instance to add
+
+        Returns:
+            The template instance that was added to the server.
         """
         self._resource_manager.add_template(template)
 
@@ -993,6 +1005,8 @@ class FastMCP(Generic[LifespanResultT]):
             context._queue_resource_list_changed()  # type: ignore[private-use]
         except RuntimeError:
             pass  # No context available
+
+        return template
 
     def add_resource_fn(
         self,
@@ -1159,11 +1173,14 @@ class FastMCP(Generic[LifespanResultT]):
 
         return decorator
 
-    def add_prompt(self, prompt: Prompt) -> None:
+    def add_prompt(self, prompt: Prompt) -> Prompt:
         """Add a prompt to the server.
 
         Args:
             prompt: A Prompt instance to add
+
+        Returns:
+            The prompt instance that was added to the server.
         """
         self._prompt_manager.add_prompt(prompt)
         self._cache.clear()
@@ -1176,6 +1193,8 @@ class FastMCP(Generic[LifespanResultT]):
             context._queue_prompt_list_changed()  # type: ignore[private-use]
         except RuntimeError:
             pass  # No context available
+
+        return prompt
 
     @overload
     def prompt(
