@@ -1,7 +1,7 @@
 ---
 title: Client Transports
 sidebarTitle: Transports
-description: Understand the different ways FastMCP Clients can connect to servers.
+description: Configure how FastMCP Clients connect to and communicate with servers.
 icon: link
 ---
 
@@ -9,441 +9,302 @@ import { VersionBadge } from "/snippets/version-badge.mdx"
 
 <VersionBadge version="2.0.0" />
 
-The FastMCP `Client` relies on a `ClientTransport` object to handle the specifics of connecting to and communicating with an MCP server. FastMCP provides several built-in transport implementations for common connection methods.
+The FastMCP `Client` communicates with MCP servers through transport objects that handle the underlying connection mechanics. While the client can automatically select a transport based on what you pass to it, instantiating transports explicitly gives you full control over configuration—environment variables, authentication, session management, and more.
 
-While the `Client` often infers the correct transport automatically (see [Client Overview](/clients/client#transport-inference)), you can also instantiate transports explicitly for more control.
+Think of transports as configurable adapters between your client code and MCP servers. Each transport type handles a different communication pattern: subprocesses with pipes, HTTP connections, or direct in-memory calls.
 
-<Tip>
-Clients are lightweight objects, so don't hesitate to create new ones as needed. However, be mindful of the context management - each time you open a client context (`async with client:`), a new connection or process starts. For best performance, keep client contexts open while performing multiple operations rather than repeatedly opening and closing them.
-</Tip>
+## Choosing the Right Transport
 
-## Choosing a Transport
+- **Use [STDIO Transport](#stdio-transport)** when you need to run local MCP servers with full control over their environment and lifecycle
+- **Use [Remote Transports](#remote-transports)** when connecting to production services or shared MCP servers running independently  
+- **Use [In-Memory Transport](#in-memory-transport)** for testing FastMCP servers without subprocess or network overhead
+- **Use [MCP JSON Configuration](#mcp-json-configuration-transport)** when you need to connect to multiple servers defined in configuration files
 
-Choose the transport that best fits your use case:
+## STDIO Transport
 
-- **Connecting to Remote/Persistent Servers:** Use `StreamableHttpTransport` (recommended, default for HTTP URLs) or `SSETransport` (legacy option) for web-based deployments.
+STDIO (Standard Input/Output) transport communicates with MCP servers through subprocess pipes. This is the standard mechanism used by desktop clients like Claude Desktop and is the primary way to run local MCP servers.
 
-- **Local Development/Testing:** Use `FastMCPTransport` for in-memory, same-process testing of your FastMCP servers.
+### The Client Runs the Server
 
-- **Running Local Servers:** Use `UvxStdioTransport` (Python/uv) or `NpxStdioTransport` (Node/npm) if you need to run MCP servers as packaged tools.
+<Warning>
+**Critical Concept**: When using STDIO transport, your client actually launches and manages the server process. This is fundamentally different from network transports where you connect to an already-running server. Understanding this relationship is key to using STDIO effectively.
+</Warning>
 
-## Network Transports
+With STDIO transport, your client:
+- Starts the server as a subprocess when you connect
+- Manages the server's lifecycle (start, stop, restart)
+- Controls the server's environment and configuration
+- Communicates through stdin/stdout pipes
 
-These transports connect to servers running over a network, typically long-running services accessible via URLs.
+This architecture enables powerful local integrations but requires understanding environment isolation and process management.
 
-### Streamable HTTP
+### Environment Isolation
 
-<VersionBadge version="2.3.0" />
+STDIO servers run in isolated environments by default. This is a security feature enforced by the MCP protocol to prevent accidental exposure of sensitive data.
 
-Streamable HTTP is the recommended transport for web-based deployments, providing efficient bidirectional communication over HTTP.
+When your client launches an MCP server:
+- The server does NOT inherit your shell's environment variables
+- API keys, paths, and other configuration must be explicitly passed
+- The working directory and system paths may differ from your shell
 
-#### Overview
-
-- **Class:** `fastmcp.client.transports.StreamableHttpTransport`
-- **Inferred From:** URLs starting with `http://` or `https://` (default for HTTP URLs since v2.3.0) that do not contain `/sse/` in the path
-- **Server Compatibility:** Works with FastMCP servers running in `http` mode
-
-#### Basic Usage
-
-The simplest way to use Streamable HTTP is to let the transport be inferred from a URL:
-
-```python
-from fastmcp import Client
-import asyncio
-
-# The Client automatically uses StreamableHttpTransport for HTTP URLs
-client = Client("https://example.com/mcp")
-
-async def main():
-    async with client:
-        tools = await client.list_tools()
-        print(f"Available tools: {tools}")
-
-asyncio.run(main())
-```
-
-You can also explicitly instantiate the transport:
-
-```python
-from fastmcp.client.transports import StreamableHttpTransport
-
-transport = StreamableHttpTransport(url="https://example.com/mcp")
-client = Client(transport)
-```
-
-#### Authentication with Headers
-
-For servers requiring authentication:
+To pass environment variables to your server, use the `env` parameter:
 
 ```python
 from fastmcp import Client
-from fastmcp.client.transports import StreamableHttpTransport
 
-# Create transport with authentication headers
-transport = StreamableHttpTransport(
-    url="https://example.com/mcp",
-    headers={"Authorization": "Bearer your-token-here"}
-)
-
-client = Client(transport)
-```
-
-This can be written more concisely using the `BearerAuth` helper function:
-
-```python
-from fastmcp import Client
-from fastmcp.client.auth import BearerAuth
-
+# If your server needs environment variables (like API keys),
+# you must explicitly pass them:
 client = Client(
-    "https://example.com/mcp",
-    auth=BearerAuth("your-token-here"),
+    "my_server.py",
+    env={"API_KEY": "secret", "DEBUG": "true"}
 )
+
+# This won't work - the server runs in isolation:
+# export API_KEY="secret"  # in your shell
+# client = Client("my_server.py")  # server can't see API_KEY
 ```
 
-### SSE (Server-Sent Events)
+### Basic Usage
 
-<VersionBadge version="2.0.0" />
-
-Server-Sent Events (SSE) is a transport that allows servers to push data to clients over HTTP connections. While still supported, Streamable HTTP is now the recommended transport for new web-based deployments.
-
-#### Overview
-
-- **Class:** `fastmcp.client.transports.SSETransport`
-- **Inferred From:** HTTP URLs containing `/sse/` in the path
-- **Server Compatibility:** Works with FastMCP servers running in `sse` mode
-
-#### Basic Usage
-
-The simplest way to use SSE is to let the transport be inferred from a URL with `/sse/` in the path:
+To use STDIO transport, you create a transport instance with the command and arguments needed to run your server:
 
 ```python
-from fastmcp import Client
-import asyncio
+from fastmcp.client.transports import StdioTransport
 
-# The Client automatically uses SSETransport for URLs containing /sse/ in the path
-client = Client("https://example.com/sse")
-
-async def main():
-    async with client:
-        tools = await client.list_tools()
-        print(f"Available tools: {tools}")
-
-asyncio.run(main())
-```
-
-You can also explicitly instantiate the transport for URLs that do not contain `/sse/` in the path or for more control: 
-
-```python
-from fastmcp.client.transports import SSETransport
-
-transport = SSETransport(url="https://example.com/sse")
+transport = StdioTransport(
+    command="python",
+    args=["my_server.py"]
+)
 client = Client(transport)
 ```
 
-#### Authentication with Headers
-
-SSE transport also supports custom headers for authentication:
+You can configure additional settings like environment variables, working directory, or command arguments:
 
 ```python
-from fastmcp import Client
-from fastmcp.client.transports import SSETransport
-
-# Create SSE transport with authentication headers
-transport = SSETransport(
-    url="https://example.com/sse",
-    headers={"Authorization": "Bearer your-token-here"}
+transport = StdioTransport(
+    command="python",
+    args=["my_server.py", "--verbose"],
+    env={"LOG_LEVEL": "DEBUG"},
+    cwd="/path/to/server"
 )
-
 client = Client(transport)
 ```
 
-#### When to Use SSE vs. Streamable HTTP
+For convenience, the client can also infer STDIO transport from file paths, but this doesn't allow configuration:
 
-- **Use Streamable HTTP when:**
-  - Setting up new deployments (recommended default)
-  - You need bidirectional streaming
-  - You're connecting to FastMCP servers running in `http` mode
-
-- **Use SSE when:**
-  - Connecting to legacy FastMCP servers running in `sse` mode
-  - Working with infrastructure optimized for Server-Sent Events
-
-## Local Transports
-
-These transports manage an MCP server running as a subprocess, communicating with it via standard input (stdin) and standard output (stdout). This is the standard mechanism used by clients like Claude Desktop.
-
-### Session Management
-
-All stdio transports support a `keep_alive` parameter (default: `True`) that controls session persistence across multiple client context managers:
-
-- **`keep_alive=True` (default)**: The subprocess and session are maintained between client context exits and re-entries. This improves performance when making multiple separate connections to the same server.
-- **`keep_alive=False`**: A new subprocess is started for each client context, ensuring complete isolation between sessions.
-
-When `keep_alive=True`, you can manually close the session using `await client.close()` if needed. This will terminate the subprocess and require a new one to be started on the next connection.
-
-<CodeGroup>
-```python keep_alive=True
+```python
 from fastmcp import Client
 
-# Client with keep_alive=True (default)
-client = Client("my_mcp_server.py")
-
-async def example():
-    # First session
-    async with client:
-        await client.ping()
-
-    # Second session - uses the same subprocess
-    async with client:
-        await client.ping()
-
-    # Manually close the session
-    await client.close()
-
-    # Third session - will start a new subprocess
-    async with client:
-        await client.ping()
-
-asyncio.run(example())
+client = Client("my_server.py")  # Limited - no configuration options
 ```
-```python keep_alive=False
-from fastmcp import Client
 
-# Client with keep_alive=False
-client = Client("my_mcp_server.py", keep_alive=False)
+### Environment Variables
 
-async def example():
-    # First session
+Since STDIO servers don't inherit your environment, you need strategies for passing configuration. Here are two common approaches:
+
+**Selective forwarding** passes only the variables your server actually needs:
+
+```python
+import os
+from fastmcp.client.transports import StdioTransport
+
+required_vars = ["API_KEY", "DATABASE_URL", "REDIS_HOST"]
+env = {
+    var: os.environ[var] 
+    for var in required_vars 
+    if var in os.environ
+}
+
+transport = StdioTransport(
+    command="python",
+    args=["server.py"],
+    env=env
+)
+client = Client(transport)
+```
+
+**Loading from .env files** keeps configuration separate from code:
+
+```python
+from dotenv import dotenv_values
+from fastmcp.client.transports import StdioTransport
+
+env = dotenv_values(".env")
+transport = StdioTransport(
+    command="python",
+    args=["server.py"],
+    env=env
+)
+client = Client(transport)
+```
+
+### Session Persistence
+
+STDIO transports maintain sessions across multiple client contexts by default (`keep_alive=True`). This improves performance by reusing the same subprocess for multiple connections, but can be controlled when you need isolation.
+
+By default, the subprocess persists between connections:
+
+```python
+from fastmcp.client.transports import StdioTransport
+
+transport = StdioTransport(
+    command="python",
+    args=["server.py"]
+)
+client = Client(transport)
+
+async def efficient_multiple_operations():
     async with client:
         await client.ping()
     
-    # Second session - will start a new subprocess
-    async with client:
-        await client.ping()
-
-    # Third session - will start a new subprocess
-    async with client:
-        await client.ping()
-
-asyncio.run(example())
+    async with client:  # Reuses the same subprocess
+        await client.call_tool("process_data", {"file": "data.csv"})
 ```
-</CodeGroup>
 
-### Python Stdio
-
-- **Class:** `fastmcp.client.transports.PythonStdioTransport`
-- **Inferred From:** Paths to `.py` files
-- **Use Case:** Running a Python-based MCP server script in a subprocess
-
-This is the most common way to interact with local FastMCP servers during development or when integrating with tools that expect to launch a server script.
+For complete isolation between connections, disable session persistence:
 
 ```python
-from fastmcp import Client
-from fastmcp.client.transports import PythonStdioTransport
-
-server_script = "my_mcp_server.py" # Path to your server script
-
-# Option 1: Inferred transport
-client = Client(server_script)
-
-# Option 2: Explicit transport with custom configuration
-transport = PythonStdioTransport(
-    script_path=server_script,
-    python_cmd="/usr/bin/python3.11", # Optional: specify Python interpreter
-    # args=["--some-server-arg"],      # Optional: pass arguments to the script
-    # env={"MY_VAR": "value"},         # Optional: set environment variables
+transport = StdioTransport(
+    command="python",
+    args=["server.py"],
+    keep_alive=False
 )
 client = Client(transport)
-
-async def main():
-    async with client:
-        tools = await client.list_tools()
-        print(f"Connected via Python Stdio, found tools: {tools}")
-
-asyncio.run(main())
 ```
 
-<Warning>
-The server script must include logic to start the MCP server and listen on stdio, typically via `mcp.run()` or `fastmcp.server.run()`. The Client only launches the script; it doesn't inject the server logic.
-</Warning>
+Use `keep_alive=False` when you need complete isolation (e.g., in test suites) or when server state could cause issues between connections.
 
-### Node.js Stdio
+### Specialized STDIO Transports
 
-- **Class:** `fastmcp.client.transports.NodeStdioTransport`
-- **Inferred From:** Paths to `.js` files
-- **Use Case:** Running a Node.js-based MCP server script in a subprocess
+FastMCP provides convenience transports that are thin wrappers around `StdioTransport` with pre-configured commands:
 
-Similar to the Python transport, but for JavaScript servers.
+- **`PythonStdioTransport`** - Uses `python` command for `.py` files
+- **`NodeStdioTransport`** - Uses `node` command for `.js` files  
+- **`UvxStdioTransport`** - Uses `uvx` for Python packages (uses `env_vars` parameter)
+- **`NpxStdioTransport`** - Uses `npx` for Node packages (uses `env_vars` parameter)
+
+For most use cases, instantiate `StdioTransport` directly with your desired command. These specialized transports are primarily useful for client inference shortcuts.
+
+## Remote Transports
+
+Remote transports connect to MCP servers running as web services. This is a fundamentally different model from STDIO transports—instead of your client launching and managing a server process, you connect to an already-running service that manages its own environment and lifecycle.
+
+### Streamable HTTP Transport
+
+<VersionBadge version="2.3.0" />
+
+Streamable HTTP is the recommended transport for production deployments, providing efficient bidirectional streaming over HTTP connections.
+
+- **Class:** `StreamableHttpTransport`
+- **Server compatibility:** FastMCP servers running with `mcp run --transport http`
+
+The transport requires a URL and optionally supports custom headers for authentication and configuration:
 
 ```python
-from fastmcp import Client
-from fastmcp.client.transports import NodeStdioTransport
+from fastmcp.client.transports import StreamableHttpTransport
 
-node_server_script = "my_mcp_server.js" # Path to your Node.js server script
-
-# Option 1: Inferred transport
-client = Client(node_server_script)
-
-# Option 2: Explicit transport
-transport = NodeStdioTransport(
-    script_path=node_server_script,
-    node_cmd="node", # Optional: specify path to Node executable
-)
+# Basic connection
+transport = StreamableHttpTransport(url="https://api.example.com/mcp")
 client = Client(transport)
 
-async def main():
-    async with client:
-        tools = await client.list_tools()
-        print(f"Connected via Node.js Stdio, found tools: {tools}")
-
-asyncio.run(main())
+# With custom headers for authentication
+transport = StreamableHttpTransport(
+    url="https://api.example.com/mcp",
+    headers={
+        "Authorization": "Bearer your-token-here",
+        "X-Custom-Header": "value"
+    }
+)
+client = Client(transport)
 ```
 
-### UVX Stdio (Experimental)
-
-- **Class:** `fastmcp.client.transports.UvxStdioTransport`
-- **Inferred From:** Not automatically inferred
-- **Use Case:** Running an MCP server packaged as a Python tool using [`uvx`](https://docs.astral.sh/uv/reference/cli/#uvx)
-
-This is useful for executing MCP servers distributed as command-line tools or packages without installing them into your environment.
+For convenience, FastMCP also provides authentication helpers:
 
 ```python
-from fastmcp import Client
-from fastmcp.client.transports import UvxStdioTransport
+from fastmcp.client.auth import BearerAuth
 
-# Run a hypothetical 'cloud-analyzer-mcp' tool via uvx
-transport = UvxStdioTransport(
-    tool_name="cloud-analyzer-mcp",
-    # from_package="cloud-analyzer-cli", # Optional: specify package if tool name differs
-    # with_packages=["boto3", "requests"] # Optional: add dependencies
+client = Client(
+    "https://api.example.com/mcp",
+    auth=BearerAuth("your-token-here")
 )
-client = Client(transport)
-
-async def main():
-    async with client:
-        result = await client.call_tool("analyze_bucket", {"name": "my-data"})
-        print(f"Analysis result: {result}")
-
-asyncio.run(main())
 ```
 
-### NPX Stdio (Experimental)
+### SSE Transport (Legacy)
 
-- **Class:** `fastmcp.client.transports.NpxStdioTransport`
-- **Inferred From:** Not automatically inferred
-- **Use Case:** Running an MCP server packaged as an NPM package using `npx`
+Server-Sent Events transport is maintained for backward compatibility but is superseded by Streamable HTTP for new deployments.
 
-Similar to `UvxStdioTransport`, but for the Node.js ecosystem.
+- **Class:** `SSETransport`  
+- **Server compatibility:** FastMCP servers running with `mcp run --transport sse`
+
+SSE transport supports the same configuration options as Streamable HTTP:
 
 ```python
-from fastmcp import Client
-from fastmcp.client.transports import NpxStdioTransport
+from fastmcp.client.transports import SSETransport
 
-# Run an MCP server from an NPM package
-transport = NpxStdioTransport(
-    package="mcp-server-package",
-    # args=["--port", "stdio"] # Optional: pass arguments to the package
+transport = SSETransport(
+    url="https://api.example.com/sse",
+    headers={"Authorization": "Bearer token"}
 )
 client = Client(transport)
-
-async def main():
-    async with client:
-        result = await client.call_tool("get_npm_data", {})
-        print(f"Result: {result}")
-
-asyncio.run(main())
 ```
 
-## In-Memory Transports
+Use Streamable HTTP for new deployments unless you have specific infrastructure requirements for SSE.
 
-### FastMCP Transport
+## In-Memory Transport
 
-- **Class:** `fastmcp.client.transports.FastMCPTransport`
-- **Inferred From:** An instance of `fastmcp.server.FastMCP` or a **FastMCP 1.0 server** (`mcp.server.fastmcp.FastMCP`)
-- **Use Case:** Connecting directly to a FastMCP server instance in the same Python process
+In-memory transport connects directly to a FastMCP server instance within the same Python process. This eliminates both subprocess management and network overhead, making it ideal for testing and development.
 
-This is extremely useful for testing your FastMCP servers.
+- **Class:** `FastMCPTransport`
+
+<Note>
+Unlike STDIO transports, in-memory servers have full access to your Python process's environment. They share the same memory space and environment variables as your client code—no isolation or explicit environment passing required.
+</Note>
 
 ```python
 from fastmcp import FastMCP, Client
-import asyncio
+import os
 
-# 1. Create your FastMCP server instance
-server = FastMCP(name="InMemoryServer")
+mcp = FastMCP("TestServer")
 
-@server.tool
-def ping(): 
-    return "pong"
+@mcp.tool
+def greet(name: str) -> str:
+    prefix = os.environ.get("GREETING_PREFIX", "Hello")
+    return f"{prefix}, {name}!"
 
-# 2. Create a client pointing directly to the server instance
-client = Client(server)  # Transport is automatically inferred
+client = Client(mcp)
 
-async def main():
-    async with client:
-        result = await client.call_tool("ping")
-        print(f"In-memory call result: {result}")
-
-asyncio.run(main())
+async with client:
+    result = await client.call_tool("greet", {"name": "World"})
 ```
 
-Communication happens through efficient in-memory queues, making it very fast and ideal for unit testing. 
-
-## Configuration-Based Transports
-
-### MCPConfig Transport
+## MCP JSON Configuration Transport
 
 <VersionBadge version="2.4.0" />
 
-- **Class:** `fastmcp.client.transports.MCPConfigTransport`
-- **Inferred From:** An instance of `MCPConfig` or a dictionary matching the MCPConfig schema
-- **Use Case:** Connecting to one or more MCP servers defined in a configuration object
+This transport supports the emerging MCP JSON configuration standard for defining multiple servers:
 
-MCPConfig follows an emerging standard for MCP server configuration but is subject to change as the specification evolves. The standard supports both local servers (running via stdio) and remote servers (accessed via HTTP).
+- **Class:** `MCPConfigTransport`
 
 ```python
-from fastmcp import Client
-
-# Configuration for multiple MCP servers (both local and remote)
 config = {
     "mcpServers": {
-        # Remote HTTP server
         "weather": {
-            "url": "https://weather-api.example.com/mcp",
+            "url": "https://weather.example.com/mcp",
             "transport": "http"
         },
-        # Local stdio server
         "assistant": {
             "command": "python",
-            "args": ["./assistant_server.py"],
-            "env": {"DEBUG": "true"}
-        },
-        # Another remote server
-        "calendar": {
-            "url": "https://calendar-api.example.com/mcp",
-            "transport": "http"
+            "args": ["./assistant.py"],
+            "env": {"LOG_LEVEL": "INFO"}
         }
     }
 }
 
-# Create a transport from the config (happens automatically with Client)
 client = Client(config)
 
-async def main():
-    async with client:
-        # Tools are accessible with server name prefixes
-        weather = await client.call_tool("weather_get_forecast", {"city": "London"})
-        answer = await client.call_tool("assistant_answer_question", {"query": "What is MCP?"})
-        events = await client.call_tool("calendar_list_events", {"date": "2023-06-01"})
-        
-        # Resources use prefixed URI paths
-        icons = await client.read_resource("weather://weather/icons/sunny")
-        docs = await client.read_resource("resource://assistant/docs/mcp")
-
-asyncio.run(main())
+async with client:
+    # Tools are namespaced by server
+    weather = await client.call_tool("weather_get_forecast", {"city": "NYC"})
+    answer = await client.call_tool("assistant_ask", {"question": "What?"})
 ```
 
-If your configuration has only a single server, the client will connect directly to that server without any prefixing. This makes it convenient to switch between single and multi-server configurations without changing your client code.
-
-<Note>
-The MCPConfig format is an emerging standard for MCP server configuration and may change as the MCP ecosystem evolves. While FastMCP aims to maintain compatibility with future versions, be aware that field names or structure might change.
-</Note>

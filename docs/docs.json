@@ -103,6 +103,7 @@
                 "group": "Clients",
                 "pages": [
                   "clients/client",
+                  "clients/transports",
                   {
                     "group": "Core Operations",
                     "icon": "handshake",
@@ -124,7 +125,6 @@
                       "clients/roots"
                     ]
                   },
-                  "clients/transports",
                   {
                     "group": "Authentication",
                     "icon": "user-shield",
