@@ -847,10 +847,13 @@ class FastMCPOpenAPI(FastMCP):
                     f"Using component as-is."
                 )
 
+        # Use the potentially modified tool name as the registration key
+        final_tool_name = tool.name
+
         # Register the tool by directly assigning to the tools dictionary
-        self._tool_manager._tools[tool_name] = tool
+        self._tool_manager._tools[final_tool_name] = tool
         logger.debug(
-            f"Registered TOOL: {tool_name} ({route.method} {route.path}) with tags: {route.tags}"
+            f"Registered TOOL: {final_tool_name} ({route.method} {route.path}) with tags: {route.tags}"
         )
 
     def _create_openapi_resource(
@@ -897,10 +900,13 @@ class FastMCPOpenAPI(FastMCP):
                     f"Using component as-is."
                 )
 
+        # Use the potentially modified resource URI as the registration key
+        final_resource_uri = str(resource.uri)
+
         # Register the resource by directly assigning to the resources dictionary
-        self._resource_manager._resources[str(resource.uri)] = resource
+        self._resource_manager._resources[final_resource_uri] = resource
         logger.debug(
-            f"Registered RESOURCE: {resource_uri} ({route.method} {route.path}) with tags: {route.tags}"
+            f"Registered RESOURCE: {final_resource_uri} ({route.method} {route.path}) with tags: {route.tags}"
         )
 
     def _create_openapi_template(
@@ -976,8 +982,11 @@ class FastMCPOpenAPI(FastMCP):
                     f"Using component as-is."
                 )
 
+        # Use the potentially modified template URI as the registration key
+        final_template_uri = template.uri_template
+
         # Register the template by directly assigning to the templates dictionary
-        self._resource_manager._templates[uri_template_str] = template
+        self._resource_manager._templates[final_template_uri] = template
         logger.debug(
-            f"Registered TEMPLATE: {uri_template_str} ({route.method} {route.path}) with tags: {route.tags}"
+            f"Registered TEMPLATE: {final_template_uri} ({route.method} {route.path}) with tags: {route.tags}"
         )

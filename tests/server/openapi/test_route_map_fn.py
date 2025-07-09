@@ -1,5 +1,7 @@
 """Tests for the route_map_fn and component_fn functionality in FastMCPOpenAPI."""
 
+from unittest.mock import AsyncMock
+
 import httpx
 import pytest
 
@@ -372,3 +374,79 @@ def test_route_map_fn_can_rescue_excluded_routes(sample_openapi_spec, http_clien
     assert "getAdminSettings" not in tools
     assert "updateAdminSettings" not in tools
     assert "getData" not in tools
+
+
+class TestComponentFnToolNameModificationBug:
+    """Test that mcp_component_fn can modify tool names without breaking access (Issue #1091)."""
+
+    @pytest.fixture
+    def mocked_http_client(self):
+        """Mock HTTP client that returns successful responses."""
+        from unittest.mock import MagicMock
+
+        mock_client = AsyncMock(spec=httpx.AsyncClient)
+
+        # Mock a successful response
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"result": "success"}
+        mock_response.raise_for_status.return_value = None
+
+        mock_client.request.return_value = mock_response
+        return mock_client
+
+    @pytest.fixture
+    def server_with_modified_tool_names(self, sample_openapi_spec, mocked_http_client):
+        """Server with tool names modified by mcp_component_fn."""
+
+        def modify_tool_names(route, component):
+            """Modify tool names by adding v1_removed_ prefix."""
+            from fastmcp.server.openapi import OpenAPITool
+
+            if isinstance(component, OpenAPITool):
+                if component.name.startswith("get"):
+                    component.name = "v1_removed_" + component.name
+
+        return FastMCPOpenAPI(
+            openapi_spec=sample_openapi_spec,
+            client=mocked_http_client,
+            name="Test Server",
+            mcp_component_fn=modify_tool_names,
+        )
+
+    def test_registration(self, server_with_modified_tool_names):
+        """Test that modified tool names are properly registered."""
+        tools = server_with_modified_tool_names._tool_manager._tools
+
+        # Tool should be registered with the modified name
+        assert "v1_removed_getUserById" in tools
+        assert "v1_removed_getAdminSettings" in tools
+        assert "v1_removed_getData" in tools
+
+        # The tool object should have the same name as the registration key
+        for key, tool in tools.items():
+            if key.startswith("v1_removed_"):
+                assert tool.name == key
+
+    async def test_client_access(self, server_with_modified_tool_names):
+        """Test that modified tool names are accessible via client."""
+        from fastmcp.client import Client
+
+        async with Client(server_with_modified_tool_names) as client:
+            # List tools to verify they are exposed correctly
+            available_tools = await client.list_tools()
+            tool_names = [tool.name for tool in available_tools]
+
+            # Verify the modified tool names are available
+            assert "v1_removed_getUserById" in tool_names
+            assert "v1_removed_getAdminSettings" in tool_names
+            assert "v1_removed_getData" in tool_names
+
+    async def test_client_call(self, server_with_modified_tool_names):
+        """Test that modified tool names can be called via client."""
+        from fastmcp.client import Client
+
+        async with Client(server_with_modified_tool_names) as client:
+            # This should work without "Unknown tool" error
+            result = await client.call_tool("v1_removed_getData", {})
+            assert result.data == {"result": "success"}
