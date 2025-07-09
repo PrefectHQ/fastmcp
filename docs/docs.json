@@ -65,10 +65,7 @@
                   {
                     "group": "Essentials",
                     "icon": "cube",
-                    "pages": [
-                      "servers/server",
-                      "deployment/running-server"
-                    ]
+                    "pages": ["servers/server", "deployment/running-server"]
                   },
                   {
                     "group": "Core Components",
@@ -97,11 +94,6 @@
                     "group": "Authentication",
                     "icon": "shield-check",
                     "pages": ["servers/auth/bearer"]
-                  },
-                  {
-                    "group": "Deployment",
-                    "icon": "upload",
-                    "pages": ["deployment/asgi"]
                   }
                 ]
               },
@@ -111,10 +103,7 @@
                   {
                     "group": "Essentials",
                     "icon": "cube",
-                    "pages": [
-                      "clients/client",
-                      "clients/transports"
-                    ]
+                    "pages": ["clients/client", "clients/transports"]
                   },
                   {
                     "group": "Core Operations",
@@ -153,15 +142,17 @@
                   "integrations/claude-desktop",
                   "integrations/cursor",
                   "integrations/eunomia-authorization",
+                  "integrations/fastapi",
                   "integrations/gemini",
                   "integrations/mcp-json-configuration",
-                  "integrations/openai"
+                  "integrations/openai",
+                  "integrations/openapi",
+                  "integrations/starlette"
                 ]
               },
               {
                 "group": "Patterns",
                 "pages": [
-                  "servers/openapi",
                   "patterns/tool-transformation",
                   "patterns/decorating-methods",
                   "patterns/http-requests",
