@@ -29,6 +29,7 @@ from fastmcp.utilities.openapi import (
     _combine_schemas,
     extract_output_schema_from_responses,
     format_array_parameter,
+    format_deep_object_parameter,
     format_description_with_responses,
 )
 
@@ -357,18 +358,36 @@ class OpenAPITool(Tool):
                     param_value = arguments[p.name]
 
                 if param_value is not None:
-                    # Format array query parameters as comma-separated strings
-                    # following OpenAPI form style (default for query parameters)
-                    if (
+                    # Handle different parameter styles and types
+                    param_style = (
+                        p.style or "form"
+                    )  # Default style for query parameters is "form"
+                    param_explode = (
+                        p.explode if p.explode is not None else True
+                    )  # Default explode for query is True
+
+                    # Handle deepObject style for object parameters
+                    if param_style == "deepObject" and isinstance(param_value, dict):
+                        if param_explode:
+                            # deepObject with explode=true: object properties become separate parameters
+                            # e.g., target[id]=123&target[type]=user
+                            deep_obj_params = format_deep_object_parameter(
+                                param_value, p.name
+                            )
+                            query_params.update(deep_obj_params)
+                        else:
+                            # deepObject with explode=false is not commonly used, fallback to JSON
+                            logger.warning(
+                                f"deepObject style with explode=false for parameter '{p.name}' is not standard. "
+                                f"Using JSON serialization fallback."
+                            )
+                            query_params[p.name] = json.dumps(param_value)
+                    # Handle array parameters with form style (default)
+                    elif (
                         isinstance(param_value, list)
                         and p.schema_.get("type") == "array"
                     ):
-                        # Get explode parameter from the parameter info, default is True for query parameters
-                        # If explode is True, the array is serialized as separate parameters
-                        # If explode is False, the array is serialized as a comma-separated string
-                        explode = p.explode if p.explode is not None else True
-
-                        if explode:
+                        if param_explode:
                             # When explode=True, we pass the array directly, which HTTPX will serialize
                             # as multiple parameters with the same name
                             query_params[p.name] = param_value
@@ -379,7 +398,7 @@ class OpenAPITool(Tool):
                             )
                             query_params[p.name] = formatted_value
                     else:
-                        # Non-array parameters are passed as is
+                        # Non-array, non-deepObject parameters are passed as is
                         query_params[p.name] = param_value
 
         # Prepare headers - fix typing by ensuring all values are strings

@@ -93,6 +93,40 @@ def format_array_parameter(
             return str_value
 
 
+def format_deep_object_parameter(
+    param_value: dict, parameter_name: str
+) -> dict[str, str]:
+    """
+    Format a dictionary parameter for deepObject style serialization.
+
+    According to OpenAPI 3.0 spec, deepObject style with explode=true serializes
+    object properties as separate query parameters with bracket notation.
+
+    For example: {"id": "123", "type": "user"} becomes:
+    param[id]=123&param[type]=user
+
+    Args:
+        param_value: Dictionary value to format
+        parameter_name: Name of the parameter
+
+    Returns:
+        Dictionary with bracketed parameter names as keys
+    """
+    if not isinstance(param_value, dict):
+        logger.warning(
+            f"deepObject style parameter '{parameter_name}' expected dict, got {type(param_value)}"
+        )
+        return {}
+
+    result = {}
+    for key, value in param_value.items():
+        # Format as param[key]=value
+        bracketed_key = f"{parameter_name}[{key}]"
+        result[bracketed_key] = str(value)
+
+    return result
+
+
 class ParameterInfo(FastMCPBaseModel):
     """Represents a single parameter for an HTTP operation in our IR."""
 
@@ -102,6 +136,7 @@ class ParameterInfo(FastMCPBaseModel):
     schema_: JsonSchema = Field(..., alias="schema")  # Target name in IR
     description: str | None = None
     explode: bool | None = None  # OpenAPI explode property for array parameters
+    style: str | None = None  # OpenAPI style property for parameter serialization
 
 
 class RequestBodyInfo(FastMCPBaseModel):
@@ -153,6 +188,7 @@ __all__ = [
     "JsonSchema",
     "parse_openapi_to_http_routes",
     "extract_output_schema_from_responses",
+    "format_deep_object_parameter",
 ]
 
 # Type variables for generic parser
@@ -415,8 +451,9 @@ class OpenAPIParser(
                         ):
                             param_schema_dict["default"] = resolved_media_schema.default
 
-                # Extract explode property if present
+                # Extract explode and style properties if present
                 explode = getattr(parameter, "explode", None)
+                style = getattr(parameter, "style", None)
 
                 # Create parameter info object
                 param_info = ParameterInfo(
@@ -426,6 +463,7 @@ class OpenAPIParser(
                     schema=param_schema_dict,
                     description=parameter.description,
                     explode=explode,
+                    style=style,
                 )
                 extracted_params.append(param_info)
             except Exception as e:
