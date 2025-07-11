@@ -16,8 +16,8 @@ FASTMCP_GITHUB_TOKEN = os.getenv("FASTMCP_GITHUB_TOKEN")
 
 # Skip tests if no GitHub token is available
 pytestmark = pytest.mark.xfail(
-    FASTMCP_GITHUB_TOKEN is None,
-    reason="The FASTMCP_GITHUB_TOKEN environment variable is not set",
+    not FASTMCP_GITHUB_TOKEN,
+    reason="The FASTMCP_GITHUB_TOKEN environment variable is not set or empty",
 )
 
 
