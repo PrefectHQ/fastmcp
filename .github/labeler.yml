@@ -27,3 +27,7 @@ tests:
   - changed-files:
       - any-glob-to-any-file:
           - "src/**/*openapi*.py"
+          - "src/**/openapi/**"
+          - "tests/**/*openapi*.py"
+          - "tests/**/openapi/**"
+          - "docs/**/*openapi*"
