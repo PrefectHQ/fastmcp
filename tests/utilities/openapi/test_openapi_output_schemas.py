@@ -2,6 +2,7 @@
 
 from fastmcp.utilities.openapi import (
     ResponseInfo,
+    _adjust_union_types,
     extract_output_schema_from_responses,
 )
 
@@ -234,3 +235,42 @@ class TestExtractOutputSchema:
         assert "User" in result["$defs"]
         assert result["properties"]["result"]["type"] == "array"
         assert result["properties"]["result"]["items"]["$ref"] == "#/$defs/User"
+
+
+def test_adjust_union_types():
+    """Test that oneOf is replaced with anyOf in schemas."""
+    schema = {"oneOf": [{"type": "string"}, {"type": "number"}]}
+    result = _adjust_union_types(schema)
+    assert isinstance(result, dict)
+    assert "anyOf" in result
+    assert "oneOf" not in result
+    assert len(result["anyOf"]) == 2
+    assert result["anyOf"][0] == {"type": "string"}
+    assert result["anyOf"][1] == {"type": "number"}
+
+
+def test_extract_output_schema_converts_oneOf_to_anyOf():
+    """Test that extracted schema converts oneOf to anyOf."""
+    responses = {
+        "200": ResponseInfo(
+            description="Success",
+            content_schema={
+                "application/json": {
+                    "type": "object",
+                    "properties": {
+                        "result": {
+                            "oneOf": [
+                                {"$ref": "#/$defs/TypeA"},
+                                {"$ref": "#/$defs/TypeB"},
+                            ]
+                        }
+                    },
+                }
+            },
+        )
+    }
+    schema_definitions = {"TypeA": {"type": "string"}, "TypeB": {"type": "number"}}
+    result = extract_output_schema_from_responses(responses, schema_definitions)
+    assert result is not None
+    assert "oneOf" not in str(result)  # Ensure no oneOf remains
+    assert "anyOf" in str(result)  # Ensure anyOf is present

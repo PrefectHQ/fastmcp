@@ -1,6 +1,6 @@
 import json
 import logging
-from typing import Any, Generic, Literal, TypeVar
+from typing import Any, Generic, Literal, TypeVar, cast
 
 from openapi_pydantic import (
     OpenAPI,
@@ -1188,6 +1188,20 @@ def _combine_schemas(route: HTTPRoute) -> dict[str, Any]:
     return result
 
 
+def _adjust_union_types(
+    schema: dict[str, Any] | list[Any],
+) -> dict[str, Any] | list[Any]:
+    """Recursively replace 'oneOf' with 'anyOf' in schema to handle overlapping unions."""
+    if isinstance(schema, dict):
+        if "oneOf" in schema:
+            schema["anyOf"] = schema.pop("oneOf")
+        for k, v in schema.items():
+            schema[k] = _adjust_union_types(v)
+    elif isinstance(schema, list):
+        return [_adjust_union_types(item) for item in schema]
+    return schema
+
+
 def extract_output_schema_from_responses(
     responses: dict[str, ResponseInfo], schema_definitions: dict[str, Any] | None = None
 ) -> dict[str, Any] | None:
@@ -1275,5 +1289,8 @@ def extract_output_schema_from_responses(
 
     # Use compress_schema to remove unused definitions
     output_schema = compress_schema(output_schema)
+
+    # Adjust union types to handle overlapping unions
+    output_schema = cast(dict[str, Any], _adjust_union_types(output_schema))
 
     return output_schema
