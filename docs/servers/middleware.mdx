@@ -181,23 +181,23 @@ class ComponentAccessMiddleware(Middleware):
 
 ### Working with Listing Results
 
-For listing operations, the middleware `call_next` function returns a special object that contains the full list of FastMCP components prior to being converted to MCP format. You can modify this object and return it to the client. Specifically, the `ListToolsResult`, `ListResourcesResult`, `ListResourceTemplatesResult`, and `ListPromptsResult` objects can all be imported from fastmcp.server.middleware for this purpose. For example:
+For listing operations, the middleware `call_next` function returns a list of FastMCP components prior to being converted to MCP format. You can filter or modify this list and return it to the client. For example:
 
 ```python
-from fastmcp.server.middleware import Middleware, MiddlewareContext, ListToolsResult
+from fastmcp.server.middleware import Middleware, MiddlewareContext
 
 class ListingFilterMiddleware(Middleware):
     async def on_list_tools(self, context: MiddlewareContext, call_next):
         result = await call_next(context)
         
         # Filter out tools with "private" tag
-        filtered_tools = {
-            name: tool for name, tool in result.tools.items()
+        filtered_tools = [
+            tool for tool in result 
             if "private" not in tool.tags
-        }
+        ]
         
-        # Return modified result
-        return ListToolsResult(tools=filtered_tools)
+        # Return modified list
+        return filtered_tools
 ```
 
 This filtering happens before the components are converted to MCP format and returned to the client, so the tags (which are FastMCP-specific) are naturally stripped in the final response.

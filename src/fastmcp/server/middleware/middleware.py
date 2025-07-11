@@ -29,10 +29,6 @@ __all__ = [
     "Middleware",
     "MiddlewareContext",
     "CallNext",
-    "ListToolsResult",
-    "ListResourcesResult",
-    "ListResourceTemplatesResult",
-    "ListPromptsResult",
 ]
 
 logger = logging.getLogger(__name__)
@@ -60,26 +56,6 @@ ServerResultT = TypeVar(
     | mt.CallToolResult
     | mt.ListToolsResult,
 )
-
-
-@dataclass(kw_only=True)
-class ListToolsResult:
-    tools: dict[str, Tool]
-
-
-@dataclass(kw_only=True)
-class ListResourcesResult:
-    resources: list[Resource]
-
-
-@dataclass(kw_only=True)
-class ListResourceTemplatesResult:
-    resource_templates: list[ResourceTemplate]
-
-
-@dataclass(kw_only=True)
-class ListPromptsResult:
-    prompts: list[Prompt]
 
 
 @runtime_checkable
@@ -212,29 +188,27 @@ class Middleware:
     async def on_list_tools(
         self,
         context: MiddlewareContext[mt.ListToolsRequest],
-        call_next: CallNext[mt.ListToolsRequest, ListToolsResult],
-    ) -> ListToolsResult:
+        call_next: CallNext[mt.ListToolsRequest, list[Tool]],
+    ) -> list[Tool]:
         return await call_next(context)
 
     async def on_list_resources(
         self,
         context: MiddlewareContext[mt.ListResourcesRequest],
-        call_next: CallNext[mt.ListResourcesRequest, ListResourcesResult],
-    ) -> ListResourcesResult:
+        call_next: CallNext[mt.ListResourcesRequest, list[Resource]],
+    ) -> list[Resource]:
         return await call_next(context)
 
     async def on_list_resource_templates(
         self,
         context: MiddlewareContext[mt.ListResourceTemplatesRequest],
-        call_next: CallNext[
-            mt.ListResourceTemplatesRequest, ListResourceTemplatesResult
-        ],
-    ) -> ListResourceTemplatesResult:
+        call_next: CallNext[mt.ListResourceTemplatesRequest, list[ResourceTemplate]],
+    ) -> list[ResourceTemplate]:
         return await call_next(context)
 
     async def on_list_prompts(
         self,
         context: MiddlewareContext[mt.ListPromptsRequest],
-        call_next: CallNext[mt.ListPromptsRequest, ListPromptsResult],
-    ) -> ListPromptsResult:
+        call_next: CallNext[mt.ListPromptsRequest, list[Prompt]],
+    ) -> list[Prompt]:
         return await call_next(context)

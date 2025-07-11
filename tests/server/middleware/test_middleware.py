@@ -225,6 +225,12 @@ class TestMiddlewareHooks:
         assert recording_middleware.assert_called(hook="on_request", at_least=1)
         assert recording_middleware.assert_called(hook="on_list_tools", at_least=1)
 
+        # Verify the middleware receives a list of tools
+        list_tools_calls = recording_middleware.get_calls(hook="on_list_tools")
+        assert len(list_tools_calls) > 0
+        result = list_tools_calls[0].result
+        assert isinstance(result, list)
+
     async def test_list_resources(
         self, mcp_server: FastMCP, recording_middleware: RecordingMiddleware
     ):
@@ -236,6 +242,12 @@ class TestMiddlewareHooks:
         assert recording_middleware.assert_called(hook="on_message", at_least=1)
         assert recording_middleware.assert_called(hook="on_request", at_least=1)
         assert recording_middleware.assert_called(hook="on_list_resources", at_least=1)
+
+        # Verify the middleware receives a list of resources
+        list_resources_calls = recording_middleware.get_calls(hook="on_list_resources")
+        assert len(list_resources_calls) > 0
+        result = list_resources_calls[0].result
+        assert isinstance(result, list)
 
     async def test_list_resource_templates(
         self, mcp_server: FastMCP, recording_middleware: RecordingMiddleware
@@ -253,6 +265,14 @@ class TestMiddlewareHooks:
             hook="on_list_resource_templates", at_least=1
         )
 
+        # Verify the middleware receives a list of resource templates
+        list_templates_calls = recording_middleware.get_calls(
+            hook="on_list_resource_templates"
+        )
+        assert len(list_templates_calls) > 0
+        result = list_templates_calls[0].result
+        assert isinstance(result, list)
+
     async def test_list_prompts(
         self, mcp_server: FastMCP, recording_middleware: RecordingMiddleware
     ):
@@ -264,6 +284,132 @@ class TestMiddlewareHooks:
         assert recording_middleware.assert_called(hook="on_message", at_least=1)
         assert recording_middleware.assert_called(hook="on_request", at_least=1)
         assert recording_middleware.assert_called(hook="on_list_prompts", at_least=1)
+
+        # Verify the middleware receives a list of prompts
+        list_prompts_calls = recording_middleware.get_calls(hook="on_list_prompts")
+        assert len(list_prompts_calls) > 0
+        result = list_prompts_calls[0].result
+        assert isinstance(result, list)
+
+    async def test_list_tools_filtering_middleware(self):
+        """Test that middleware can filter tools."""
+
+        class FilteringMiddleware(Middleware):
+            async def on_list_tools(self, context: MiddlewareContext, call_next):
+                result = await call_next(context)
+                # Filter out tools with "private" tag - simple list filtering
+                filtered_tools = [tool for tool in result if "private" not in tool.tags]
+                return filtered_tools
+
+        server = FastMCP("TestServer")
+
+        @server.tool
+        def public_tool(name: str) -> str:
+            return f"Hello {name}"
+
+        @server.tool(tags={"private"})
+        def private_tool(secret: str) -> str:
+            return f"Secret: {secret}"
+
+        server.add_middleware(FilteringMiddleware())
+
+        async with Client(server) as client:
+            tools = await client.list_tools()
+
+        assert len(tools) == 1
+        assert tools[0].name == "public_tool"
+
+    async def test_list_resources_filtering_middleware(self):
+        """Test that middleware can filter resources."""
+
+        class FilteringMiddleware(Middleware):
+            async def on_list_resources(self, context: MiddlewareContext, call_next):
+                result = await call_next(context)
+                # Filter out resources with "private" tag
+                filtered_resources = [
+                    resource for resource in result if "private" not in resource.tags
+                ]
+                return filtered_resources
+
+        server = FastMCP("TestServer")
+
+        @server.resource("resource://public")
+        def public_resource() -> str:
+            return "public data"
+
+        @server.resource("resource://private", tags={"private"})
+        def private_resource() -> str:
+            return "private data"
+
+        server.add_middleware(FilteringMiddleware())
+
+        async with Client(server) as client:
+            resources = await client.list_resources()
+
+        assert len(resources) == 1
+        assert str(resources[0].uri) == "resource://public"
+
+    async def test_list_resource_templates_filtering_middleware(self):
+        """Test that middleware can filter resource templates."""
+
+        class FilteringMiddleware(Middleware):
+            async def on_list_resource_templates(
+                self, context: MiddlewareContext, call_next
+            ):
+                result = await call_next(context)
+                # Filter out templates with "private" tag
+                filtered_templates = [
+                    template for template in result if "private" not in template.tags
+                ]
+                return filtered_templates
+
+        server = FastMCP("TestServer")
+
+        @server.resource("resource://public/{x}")
+        def public_template(x: str) -> str:
+            return f"public {x}"
+
+        @server.resource("resource://private/{x}", tags={"private"})
+        def private_template(x: str) -> str:
+            return f"private {x}"
+
+        server.add_middleware(FilteringMiddleware())
+
+        async with Client(server) as client:
+            templates = await client.list_resource_templates()
+
+        assert len(templates) == 1
+        assert str(templates[0].uriTemplate) == "resource://public/{x}"
+
+    async def test_list_prompts_filtering_middleware(self):
+        """Test that middleware can filter prompts."""
+
+        class FilteringMiddleware(Middleware):
+            async def on_list_prompts(self, context: MiddlewareContext, call_next):
+                result = await call_next(context)
+                # Filter out prompts with "private" tag
+                filtered_prompts = [
+                    prompt for prompt in result if "private" not in prompt.tags
+                ]
+                return filtered_prompts
+
+        server = FastMCP("TestServer")
+
+        @server.prompt
+        def public_prompt(name: str) -> str:
+            return f"Hello {name}"
+
+        @server.prompt(tags={"private"})
+        def private_prompt(secret: str) -> str:
+            return f"Secret: {secret}"
+
+        server.add_middleware(FilteringMiddleware())
+
+        async with Client(server) as client:
+            prompts = await client.list_prompts()
+
+        assert len(prompts) == 1
+        assert prompts[0].name == "public_prompt"
 
 
 class TestNestedMiddlewareHooks:
