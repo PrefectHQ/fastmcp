@@ -368,7 +368,7 @@ class OpenAPITool(Tool):
 
                     # Handle deepObject style for object parameters
                     if (
-                        param_style == "deepObject" 
+                        param_style == "deepObject"
                         and isinstance(param_value, dict)
                         and len(param_value) > 0
                     ):
