@@ -2,6 +2,145 @@
 icon: "list-check"
 ---
 
+<Update label="v2.10.5" description="2025-07-11">
+
+## [v2.10.5: Middle Management](https://github.com/jlowin/fastmcp/releases/tag/v2.10.5)
+
+A maintenance release focused on OpenAPI refinements and middleware fixes, plus console improvements.
+
+## What's Changed
+### Enhancements 🔧
+* Fix Claude Code CLI detection for npm global installations by [@jlowin](https://github.com/jlowin) in [#1106](https://github.com/jlowin/fastmcp/pull/1106)
+* Fix OpenAPI parameter name collisions with location suffixing by [@jlowin](https://github.com/jlowin) in [#1107](https://github.com/jlowin/fastmcp/pull/1107)
+* Add mirrored component support for proxy servers by [@jlowin](https://github.com/jlowin) in [#1105](https://github.com/jlowin/fastmcp/pull/1105)
+### Fixes 🐞
+* Fix OpenAPI deepObject style parameter encoding by [@jlowin](https://github.com/jlowin) in [#1122](https://github.com/jlowin/fastmcp/pull/1122)
+* xfail when github token is not set ('' or None) by [@jlowin](https://github.com/jlowin) in [#1123](https://github.com/jlowin/fastmcp/pull/1123)
+* fix: replace oneOf with anyOf in OpenAPI output schemas by [@MagnusS0](https://github.com/MagnusS0) in [#1119](https://github.com/jlowin/fastmcp/pull/1119)
+* Fix middleware list result types by [@jlowin](https://github.com/jlowin) in [#1125](https://github.com/jlowin/fastmcp/pull/1125)
+* Improve console width for logo by [@jlowin](https://github.com/jlowin) in [#1126](https://github.com/jlowin/fastmcp/pull/1126)
+### Docs 📚
+* Improve transport + integration docs by [@jlowin](https://github.com/jlowin) in [#1103](https://github.com/jlowin/fastmcp/pull/1103)
+* Update proxy.mdx by [@coldfire-x](https://github.com/coldfire-x) in [#1108](https://github.com/jlowin/fastmcp/pull/1108)
+### Other Changes 🦾
+* Update github remote server tests with secret by [@jlowin](https://github.com/jlowin) in [#1112](https://github.com/jlowin/fastmcp/pull/1112)
+
+## New Contributors
+* [@coldfire-x](https://github.com/coldfire-x) made their first contribution in [#1108](https://github.com/jlowin/fastmcp/pull/1108)
+* [@MagnusS0](https://github.com/MagnusS0) made their first contribution in [#1119](https://github.com/jlowin/fastmcp/pull/1119)
+
+**Full Changelog**: [v2.10.4...v2.10.5](https://github.com/jlowin/fastmcp/compare/v2.10.4...v2.10.5)
+
+</Update>
+
+<Update label="v2.10.4" description="2025-07-09">
+
+## [v2.10.4: Transport-ation](https://github.com/jlowin/fastmcp/releases/tag/v2.10.4)
+
+A quick fix to ensure the CLI accepts "streamable-http" as a valid transport option.
+
+## What's Changed
+### Fixes 🐞
+* Ensure the CLI accepts "streamable-http" as a valid transport by [@jlowin](https://github.com/jlowin) in [#1099](https://github.com/jlowin/fastmcp/pull/1099)
+
+**Full Changelog**: [v2.10.3...v2.10.4](https://github.com/jlowin/fastmcp/compare/v2.10.3...v2.10.4)
+
+</Update>
+
+<Update label="v2.10.3" description="2025-07-09">
+
+## [v2.10.3: CLI Me a River](https://github.com/jlowin/fastmcp/releases/tag/v2.10.3)
+
+A major CLI overhaul featuring a complete refactor from typer to cyclopts, new IDE integrations, and comprehensive OpenAPI improvements.
+
+## What's Changed
+### New Features 🎉
+* Refactor CLI from typer to cyclopts and add comprehensive tests by [@jlowin](https://github.com/jlowin) in [#1062](https://github.com/jlowin/fastmcp/pull/1062)
+* Add output schema support for OpenAPI tools by [@jlowin](https://github.com/jlowin) in [#1073](https://github.com/jlowin/fastmcp/pull/1073)
+### Enhancements 🔧
+* Add Cursor support via CLI integration by [@jlowin](https://github.com/jlowin) in [#1052](https://github.com/jlowin/fastmcp/pull/1052)
+* Add Claude Code install integration by [@jlowin](https://github.com/jlowin) in [#1053](https://github.com/jlowin/fastmcp/pull/1053)
+* Generate MCP JSON config output from CLI as new `fastmcp install` command by [@jlowin](https://github.com/jlowin) in [#1056](https://github.com/jlowin/fastmcp/pull/1056)
+* Use isawaitable instead of iscoroutine by [@jlowin](https://github.com/jlowin) in [#1059](https://github.com/jlowin/fastmcp/pull/1059)
+* feat: Add `--path` Option to CLI for HTTP/SSE Route by [@davidbk-legit](https://github.com/davidbk-legit) in [#1087](https://github.com/jlowin/fastmcp/pull/1087)
+* Fix concurrent proxy client operations with session isolation by [@jlowin](https://github.com/jlowin) in [#1083](https://github.com/jlowin/fastmcp/pull/1083)
+### Fixes 🐞
+* Refactor Client context management to avoid concurrency issue by [@hopeful0](https://github.com/hopeful0) in [#1054](https://github.com/jlowin/fastmcp/pull/1054)
+* Keep json schema $defs on transform by [@strawgate](https://github.com/strawgate) in [#1066](https://github.com/jlowin/fastmcp/pull/1066)
+* Ensure fastmcp version copy is plaintext by [@jlowin](https://github.com/jlowin) in [#1071](https://github.com/jlowin/fastmcp/pull/1071)
+* Fix single-element list unwrapping in tool content by [@jlowin](https://github.com/jlowin) in [#1074](https://github.com/jlowin/fastmcp/pull/1074)
+* Fix max recursion error when pruning OpenAPI definitions by [@dimitribarbot](https://github.com/dimitribarbot) in [#1092](https://github.com/jlowin/fastmcp/pull/1092)
+* Fix OpenAPI tool name registration when modified by mcp_component_fn by [@jlowin](https://github.com/jlowin) in [#1096](https://github.com/jlowin/fastmcp/pull/1096)
+### Docs 📚
+* Docs: add example of more concise way to use bearer auth by [@neilconway](https://github.com/neilconway) in [#1055](https://github.com/jlowin/fastmcp/pull/1055)
+* Update favicon by [@jlowin](https://github.com/jlowin) in [#1058](https://github.com/jlowin/fastmcp/pull/1058)
+* Update environment note by [@jlowin](https://github.com/jlowin) in [#1075](https://github.com/jlowin/fastmcp/pull/1075)
+* Add fastmcp version --copy documentation by [@jlowin](https://github.com/jlowin) in [#1076](https://github.com/jlowin/fastmcp/pull/1076)
+### Other Changes 🦾
+* Remove asserts and add documentation following #1054 by [@jlowin](https://github.com/jlowin) in [#1057](https://github.com/jlowin/fastmcp/pull/1057)
+* Add --copy flag for fastmcp version by [@jlowin](https://github.com/jlowin) in [#1063](https://github.com/jlowin/fastmcp/pull/1063)
+* Fix docstring format for fastmcp.client.Client by [@neilconway](https://github.com/neilconway) in [#1094](https://github.com/jlowin/fastmcp/pull/1094)
+
+## New Contributors
+* [@neilconway](https://github.com/neilconway) made their first contribution in [#1055](https://github.com/jlowin/fastmcp/pull/1055)
+* [@davidbk-legit](https://github.com/davidbk-legit) made their first contribution in [#1087](https://github.com/jlowin/fastmcp/pull/1087)
+* [@dimitribarbot](https://github.com/dimitribarbot) made their first contribution in [#1092](https://github.com/jlowin/fastmcp/pull/1092)
+
+**Full Changelog**: [v2.10.2...v2.10.3](https://github.com/jlowin/fastmcp/compare/v2.10.2...v2.10.3)
+
+</Update>
+
+<Update label="v2.10.2" description="2025-07-05">
+
+## [v2.10.2: Forward March](https://github.com/jlowin/fastmcp/releases/tag/v2.10.2)
+
+The headline feature of this release is the ability to "forward" advanced MCP interactions like logging, progress, and elicitation through proxy servers. If the remote server requests an elicitation, the proxy client will pass that request to the new, "ultimate" client.
+
+## What's Changed
+### New Features 🎉
+* Proxy support advanced MCP features by [@hopeful0](https://github.com/hopeful0) in [#1022](https://github.com/jlowin/fastmcp/pull/1022)
+### Enhancements 🔧
+* Re-add splash screen by [@jlowin](https://github.com/jlowin) in [#1027](https://github.com/jlowin/fastmcp/pull/1027)
+* Reduce banner padding by [@jlowin](https://github.com/jlowin) in [#1030](https://github.com/jlowin/fastmcp/pull/1030)
+* Allow per-server timeouts in MCPConfig by [@cegersdoerfer](https://github.com/cegersdoerfer) in [#1031](https://github.com/jlowin/fastmcp/pull/1031)
+* Support 'scp' claim for OAuth scopes in BearerAuthProvider by [@jlowin](https://github.com/jlowin) in [#1033](https://github.com/jlowin/fastmcp/pull/1033)
+* Add path expansion to image/audio/file by [@jlowin](https://github.com/jlowin) in [#1038](https://github.com/jlowin/fastmcp/pull/1038)
+* Ensure multi-client configurations use new ProxyClient by [@jlowin](https://github.com/jlowin) in [#1045](https://github.com/jlowin/fastmcp/pull/1045)
+### Fixes 🐞
+* Expose stateless_http kwarg for mcp.run() by [@jlowin](https://github.com/jlowin) in [#1018](https://github.com/jlowin/fastmcp/pull/1018)
+* Avoid propagating logs by [@jlowin](https://github.com/jlowin) in [#1042](https://github.com/jlowin/fastmcp/pull/1042)
+### Docs 📚
+* Clean up docs by [@jlowin](https://github.com/jlowin) in [#1028](https://github.com/jlowin/fastmcp/pull/1028)
+* Docs: clarify server URL paths for ChatGPT integration by [@thap2331](https://github.com/thap2331) in [#1017](https://github.com/jlowin/fastmcp/pull/1017)
+### Other Changes 🦾
+* Split giant openapi test file into smaller files by [@jlowin](https://github.com/jlowin) in [#1034](https://github.com/jlowin/fastmcp/pull/1034)
+* Add comprehensive OpenAPI 3.0 vs 3.1 compatibility tests by [@jlowin](https://github.com/jlowin) in [#1035](https://github.com/jlowin/fastmcp/pull/1035)
+* Update banner and use console.log by [@jlowin](https://github.com/jlowin) in [#1041](https://github.com/jlowin/fastmcp/pull/1041)
+
+## New Contributors
+* [@cegersdoerfer](https://github.com/cegersdoerfer) made their first contribution in [#1031](https://github.com/jlowin/fastmcp/pull/1031)
+* [@hopeful0](https://github.com/hopeful0) made their first contribution in [#1022](https://github.com/jlowin/fastmcp/pull/1022)
+* [@thap2331](https://github.com/thap2331) made their first contribution in [#1017](https://github.com/jlowin/fastmcp/pull/1017)
+
+**Full Changelog**: [v2.10.1...v2.10.2](https://github.com/jlowin/fastmcp/compare/v2.10.1...v2.10.2)
+
+</Update>
+
+<Update label="v2.10.1" description="2025-07-02">
+
+## [v2.10.1: Revert to Sender](https://github.com/jlowin/fastmcp/releases/tag/v2.10.1)
+
+A quick patch to revert the CLI banner that was added in v2.10.0.
+
+## What's Changed
+### Docs 📚
+* Update changelog.mdx by [@jlowin](https://github.com/jlowin) in [#1009](https://github.com/jlowin/fastmcp/pull/1009)
+* Revert "Add CLI banner" by [@jlowin](https://github.com/jlowin) in [#1011](https://github.com/jlowin/fastmcp/pull/1011)
+
+**Full Changelog**: [v2.10.0...v2.10.1](https://github.com/jlowin/fastmcp/compare/v2.10.0...v2.10.1)
+
+</Update>
+
 <Update label="v2.10.0" description="2024-07-01">
 
 ## [v2.10.0: Great Spec-tations](https://github.com/jlowin/fastmcp/releases/tag/v2.10.0)
