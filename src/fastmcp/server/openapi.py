@@ -367,7 +367,11 @@ class OpenAPITool(Tool):
                     )  # Default explode for query is True
 
                     # Handle deepObject style for object parameters
-                    if param_style == "deepObject" and isinstance(param_value, dict):
+                    if (
+                        param_style == "deepObject" 
+                        and isinstance(param_value, dict)
+                        and len(param_value) > 0
+                    ):
                         if param_explode:
                             # deepObject with explode=true: object properties become separate parameters
                             # e.g., target[id]=123&target[type]=user
@@ -386,6 +390,7 @@ class OpenAPITool(Tool):
                     elif (
                         isinstance(param_value, list)
                         and p.schema_.get("type") == "array"
+                        and len(param_value) > 0
                     ):
                         if param_explode:
                             # When explode=True, we pass the array directly, which HTTPX will serialize
