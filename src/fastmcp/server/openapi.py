@@ -344,18 +344,28 @@ class OpenAPITool(Tool):
                 suffixed_name = f"{p.name}__{p.location}"
                 param_value = None
 
+                suffixed_value = arguments.get(suffixed_name)
                 if (
                     suffixed_name in arguments
-                    and arguments.get(suffixed_name) is not None
-                    and arguments.get(suffixed_name) != ""
+                    and suffixed_value is not None
+                    and suffixed_value != ""
+                    and not (
+                        isinstance(suffixed_value, list | dict)
+                        and len(suffixed_value) == 0
+                    )
                 ):
                     param_value = arguments[suffixed_name]
-                elif (
-                    p.name in arguments
-                    and arguments.get(p.name) is not None
-                    and arguments.get(p.name) != ""
-                ):
-                    param_value = arguments[p.name]
+                else:
+                    name_value = arguments.get(p.name)
+                    if (
+                        p.name in arguments
+                        and name_value is not None
+                        and name_value != ""
+                        and not (
+                            isinstance(name_value, list | dict) and len(name_value) == 0
+                        )
+                    ):
+                        param_value = arguments[p.name]
 
                 if param_value is not None:
                     # Handle different parameter styles and types
