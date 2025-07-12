@@ -325,7 +325,8 @@ class TransformedTool(Tool):
         cls,
         tool: Tool,
         name: str | None = None,
-        description: str | None = None,
+        title: str | None | NotSetT = NotSet,
+        description: str | None | NotSetT = NotSet,
         tags: set[str] | None = None,
         transform_fn: Callable[..., Any] | None = None,
         transform_args: dict[str, ArgTransform] | None = None,
@@ -342,6 +343,7 @@ class TransformedTool(Tool):
                 to call the parent tool. Functions with **kwargs receive transformed
                 argument names.
             name: New name for the tool. Defaults to parent tool's name.
+            title: New title for the tool. Defaults to parent tool's title.
             transform_args: Optional transformations for parent tool arguments.
                 Only specified arguments are transformed, others pass through unchanged:
                 - Simple rename (str)
@@ -506,13 +508,18 @@ class TransformedTool(Tool):
                     f"{', '.join(sorted(duplicates))}"
                 )
 
-        final_description = description if description is not None else tool.description
+        final_name = name or tool.name
+        final_description = (
+            description if not isinstance(description, NotSetT) else tool.description
+        )
+        final_title = title if not isinstance(title, NotSetT) else tool.title
 
         transformed_tool = cls(
             fn=final_fn,
             forwarding_fn=forwarding_fn,
             parent_tool=tool,
-            name=name or tool.name,
+            name=final_name,
+            title=final_title,
             description=final_description,
             parameters=final_schema,
             output_schema=final_output_schema,
