@@ -1,4 +1,5 @@
 import inspect
+from pathlib import Path
 
 import pytest
 
@@ -10,6 +11,7 @@ from fastmcp.cli.run import (
 )
 from fastmcp.client.client import Client
 from fastmcp.client.transports import FastMCPTransport
+from fastmcp.mcp_config import MCPConfig, StdioMCPServer
 from fastmcp.server.server import FastMCP
 
 
@@ -89,7 +91,7 @@ class TestFilePathParsing:
 class TestMCPConfig:
     """Test MCPConfig functionality."""
 
-    async def test_run_mcp_config(self, tmp_path):
+    async def test_run_mcp_config(self, tmp_path: Path):
         """Test creating a server from an MCPConfig file."""
         server_script = inspect.cleandoc("""
             from fastmcp import FastMCP
@@ -104,21 +106,17 @@ class TestMCPConfig:
                 mcp.run()
             """)
 
-        script_path = tmp_path / "test.py"
+        script_path: Path = tmp_path / "test.py"
         script_path.write_text(server_script)
 
         mcp_config_path = tmp_path / "mcp_config.json"
-        mcp_config_str = f"""
-            {{
-                "mcpServers": {{
-                    "test_server": {{
-                        "command": "python",
-                        "args": ["{str(script_path)}"]
-                    }}
-                }}
-            }}
-        """
-        mcp_config_path.write_text(mcp_config_str)
+
+        mcp_config = MCPConfig(
+            mcpServers={
+                "test_server": StdioMCPServer(command="python", args=[str(script_path)])
+            }
+        )
+        mcp_config.write_to_file(mcp_config_path)
 
         server: FastMCP[None] = create_mcp_config_server(mcp_config_path)
 
