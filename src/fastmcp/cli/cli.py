@@ -295,7 +295,7 @@ def run(
     1. Module approach: server.py - runs the module directly, looking for an object named 'mcp', 'server', or 'app'
     2. Import approach: server.py:app - imports and runs the specified server object
     3. URL approach: http://server-url - connects to a remote server and creates a proxy
-    4. MCPConfig file: mcp.json - runs the MCPConfig file directly
+    4. MCPConfig file: mcp.json - runs as a proxy server for the MCP Servers in the MCPConfig file
 
     Server arguments can be passed after -- :
     fastmcp run server.py -- --config config.json --debug
