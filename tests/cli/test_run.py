@@ -1,10 +1,16 @@
+import inspect
+
 import pytest
 
 from fastmcp.cli.run import (
+    create_mcp_config_server,
     import_server,
     is_url,
     parse_file_path,
 )
+from fastmcp.client.client import Client
+from fastmcp.client.transports import FastMCPTransport
+from fastmcp.server.server import FastMCP
 
 
 class TestUrlDetection:
@@ -78,6 +84,49 @@ class TestFilePathParsing:
         with pytest.raises(SystemExit) as exc_info:
             parse_file_path(str(tmp_path))
         assert exc_info.value.code == 1
+
+
+class TestMCPConfig:
+    """Test MCPConfig functionality."""
+
+    async def test_run_mcp_config(self, tmp_path):
+        """Test creating a server from an MCPConfig file."""
+        server_script = inspect.cleandoc("""
+            from fastmcp import FastMCP
+
+            mcp = FastMCP()
+
+            @mcp.tool
+            def add(a: int, b: int) -> int:
+                return a + b
+
+            if __name__ == '__main__':
+                mcp.run()
+            """)
+
+        script_path = tmp_path / "test.py"
+        script_path.write_text(server_script)
+
+        mcp_config_path = tmp_path / "mcp_config.json"
+        mcp_config_str = f"""
+            {{
+                "mcpServers": {{
+                    "test_server": {{
+                        "command": "python",
+                        "args": ["{str(script_path)}"]
+                    }}
+                }}
+            }}
+        """
+        mcp_config_path.write_text(mcp_config_str)
+
+        server: FastMCP[None] = create_mcp_config_server(mcp_config_path)
+
+        client = Client[FastMCPTransport](server)
+
+        async with client:
+            tools = await client.list_tools()
+            assert len(tools) == 1
 
 
 class TestServerImport:

@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 from typing import Any, Literal
 
+from fastmcp.server.server import FastMCP
 from fastmcp.utilities.logging import get_logger
 
 logger = get_logger("cli.run")
@@ -142,6 +143,19 @@ def create_client_server(url: str) -> Any:
         sys.exit(1)
 
 
+def create_mcp_config_server(mcp_config_path: Path) -> FastMCP[None]:
+    """Create a FastMCP server from a MCPConfig."""
+    from fastmcp import FastMCP
+    from fastmcp.client import Client
+    from fastmcp.client.transports import MCPConfigTransport
+    from fastmcp.mcp_config import MCPConfig
+
+    mcp_config = MCPConfig.from_file(mcp_config_path)
+    client = Client[MCPConfigTransport](mcp_config)
+    server = FastMCP.as_proxy(client)
+    return server
+
+
 def import_server_with_args(
     file: Path, server_object: str | None = None, server_args: list[str] | None = None
 ) -> Any:
@@ -179,7 +193,7 @@ def run_command(
     """Run a MCP server or connect to a remote one.
 
     Args:
-        server_spec: Python file, object specification (file:obj), or URL
+        server_spec: Python file, object specification (file:obj), MCPConfig file, or URL
         transport: Transport protocol to use
         host: Host to bind to when using http transport
         port: Port to bind to when using http transport
@@ -192,6 +206,8 @@ def run_command(
         # Handle URL case
         server = create_client_server(server_spec)
         logger.debug(f"Created client proxy server for {server_spec}")
+    elif server_spec.endswith(".json"):
+        server = create_mcp_config_server(Path(server_spec))
     else:
         # Handle file case
         file, server_object = parse_file_path(server_spec)

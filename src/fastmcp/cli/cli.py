@@ -291,16 +291,17 @@ def run(
 ) -> None:
     """Run an MCP server or connect to a remote one.
 
-    The server can be specified in three ways:
+    The server can be specified in four ways:
     1. Module approach: server.py - runs the module directly, looking for an object named 'mcp', 'server', or 'app'
     2. Import approach: server.py:app - imports and runs the specified server object
     3. URL approach: http://server-url - connects to a remote server and creates a proxy
+    4. MCPConfig file: mcp.json - runs the MCPConfig file directly
 
     Server arguments can be passed after -- :
     fastmcp run server.py -- --config config.json --debug
 
     Args:
-        server_spec: Python file, object specification (file:obj), or URL
+        server_spec: Python file, object specification (file:obj), MCPConfig file, or URL
     """
     # TODO: Handle server_args from extra context
     server_args = []  # Will need to handle this with Cyclopts context
