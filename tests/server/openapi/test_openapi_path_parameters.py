@@ -448,6 +448,154 @@ async def test_array_query_parameter_exploded_format(mock_client):
     )
 
 
+async def test_empty_array_parameter_exclusion(mock_client):
+    """Test that empty array parameters are excluded from requests."""
+    # Create a route with array query parameter
+    route = HTTPRoute(
+        path="/search",
+        method="GET",
+        operation_id="search-operation",
+        parameters=[
+            ParameterInfo(
+                name="tags",
+                location="query",
+                required=False,
+                schema={
+                    "type": "array",
+                    "items": {"type": "string"},
+                },
+            ),
+            ParameterInfo(
+                name="categories",
+                location="query",
+                required=False,
+                schema={
+                    "type": "array",
+                    "items": {"type": "string"},
+                },
+            ),
+            ParameterInfo(
+                name="limit",
+                location="query",
+                required=False,
+                schema={"type": "integer"},
+            ),
+        ],
+    )
+
+    # Create the tool
+    tool = OpenAPITool(
+        client=mock_client,
+        route=route,
+        name="search-operation",
+        description="Search operation",
+        parameters={},
+    )
+
+    # Test with empty array - should be excluded
+    await tool.run(
+        {
+            "tags": [],  # Empty array should be excluded
+            "categories": ["tech", "news"],  # Non-empty array should be included
+            "limit": 10,  # Non-array param should be included
+        }
+    )
+
+    # Check that empty array is excluded, but others are included
+    mock_client.request.assert_called_with(
+        method="GET",
+        url="/search",
+        params={
+            "categories": ["tech", "news"],  # Only non-empty array included
+            "limit": 10,
+        },
+        headers={},
+        json=None,
+        timeout=None,
+    )
+
+
+async def test_empty_deep_object_parameter_exclusion(mock_client):
+    """Test that empty dict parameters with deepObject style are excluded from requests."""
+    # Create a route with deepObject query parameter
+    route = HTTPRoute(
+        path="/filter",
+        method="GET",
+        operation_id="filter-operation",
+        parameters=[
+            ParameterInfo(
+                name="filters",
+                location="query",
+                required=False,
+                style="deepObject",
+                explode=True,
+                schema={
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string"},
+                        "age": {"type": "integer"},
+                    },
+                },
+            ),
+            ParameterInfo(
+                name="options",
+                location="query",
+                required=False,
+                style="deepObject",
+                explode=True,
+                schema={
+                    "type": "object",
+                    "properties": {
+                        "sort": {"type": "string"},
+                        "order": {"type": "string"},
+                    },
+                },
+            ),
+            ParameterInfo(
+                name="page",
+                location="query",
+                required=False,
+                schema={"type": "integer"},
+            ),
+        ],
+    )
+
+    # Create the tool
+    tool = OpenAPITool(
+        client=mock_client,
+        route=route,
+        name="filter-operation",
+        description="Filter operation",
+        parameters={},
+    )
+
+    # Test with empty dict - should be excluded
+    await tool.run(
+        {
+            "filters": {},  # Empty dict should be excluded
+            "options": {
+                "sort": "name",
+                "order": "asc",
+            },  # Non-empty dict should be included
+            "page": 1,  # Non-dict param should be included
+        }
+    )
+
+    # Check that empty dict is excluded, but others are included
+    mock_client.request.assert_called_with(
+        method="GET",
+        url="/filter",
+        params={
+            "options[sort]": "name",  # Deep object style for non-empty dict
+            "options[order]": "asc",
+            "page": 1,
+        },
+        headers={},
+        json=None,
+        timeout=None,
+    )
+
+
 def test_parameter_location_enum_handling():
     """Test that ParameterLocation enum values are handled correctly (issue #950)."""
     from enum import Enum

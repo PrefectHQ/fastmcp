@@ -1095,6 +1095,35 @@ def _replace_ref_with_defs(
     return schema
 
 
+def _make_optional_parameter_nullable(schema: dict[str, Any]) -> dict[str, Any]:
+    """
+    Make an optional parameter schema nullable to allow None values.
+
+    For optional parameters, we need to allow null values in addition to the
+    specified type to handle cases where None is passed for optional parameters.
+    """
+    # If schema already has multiple types or is already nullable, don't modify
+    if "anyOf" in schema or "oneOf" in schema or "allOf" in schema:
+        return schema
+
+    # If it's already nullable (type includes null), don't modify
+    if isinstance(schema.get("type"), list) and "null" in schema["type"]:
+        return schema
+
+    # Create a new schema that allows null in addition to the original type
+    if "type" in schema:
+        original_type = schema["type"]
+        if isinstance(original_type, str):
+            # Single type - make it a union with null
+            nullable_schema = schema.copy()
+            nullable_schema["anyOf"] = [{"type": original_type}, {"type": "null"}]
+            # Remove the original type since we're using anyOf
+            del nullable_schema["type"]
+            return nullable_schema
+
+    return schema
+
+
 def _combine_schemas(route: HTTPRoute) -> dict[str, Any]:
     """
     Combines parameter and request body schemas into a single schema.
@@ -1156,14 +1185,24 @@ def _combine_schemas(route: HTTPRoute) -> dict[str, Any]:
             else:
                 param_schema["description"] = location_desc
 
+            # Make optional parameters nullable to allow None values
+            if not param.required:
+                param_schema = _make_optional_parameter_nullable(param_schema)
+
             properties[suffixed_name] = param_schema
         else:
             # No collision, use original name
             if param.required:
                 required.append(param.name)
-            properties[param.name] = _replace_ref_with_defs(
+            param_schema = _replace_ref_with_defs(
                 param.schema_.copy(), param.description
             )
+
+            # Make optional parameters nullable to allow None values
+            if not param.required:
+                param_schema = _make_optional_parameter_nullable(param_schema)
+
+            properties[param.name] = param_schema
 
     # Add request body properties (no suffixes for body parameters)
     if route.request_body and route.request_body.content_schema:
