@@ -459,9 +459,7 @@ class OpenAPITool(Tool):
                     params_to_exclude.add(p.name)
 
             body_params = {
-                k: v
-                for k, v in arguments.items()
-                if k not in params_to_exclude and k != "context"
+                k: v for k, v in arguments.items() if k not in params_to_exclude
             }
 
             if body_params:
