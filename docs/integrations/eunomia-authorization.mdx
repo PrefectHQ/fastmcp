@@ -6,13 +6,17 @@ icon: shield-check
 tag: NEW
 ---
 
-Add **policy-based authorization** to your FastMCP servers with minimal code changes using Eunomia authorization middleware.
+Add **policy-based authorization** to your FastMCP servers with one-line code addition with the **[Eunomia][eunomia-github] authorization middleware**.
 
-Control which actions MCP clients can perform on your server by restricting how the agent can access resources, tools and prompts by using JSON-based policies, while obtaining a comprehensive audit log of all access attempts and violations.
+Control which tools, resources and prompts MCP clients can view and execute on your server. Define dynamic JSON-based policies and obtain a comprehensive audit log of all access attempts and violations.
 
-## Eunomia Authorization Middleware
+## How it Works
 
-The middleware intercepts all MCP requests to your server and automatically maps MCP methods to authorization checks.
+Exploiting FastMCP's [Middleware][fastmcp-middleare], the Eunomia middleware intercepts all MCP requests to your server and, then, automatically maps MCP methods to authorization checks.
+
+### Listing Operations
+
+The middleware behaves as a filter for listing operations (`tools/list`, `resources/list`, `prompts/list`), hiding to the client components that are not authorized by the defined policies.
 
 ```mermaid
 sequenceDiagram
@@ -21,14 +25,35 @@ sequenceDiagram
     participant MCPServer as FastMCP Server
     participant EunomiaServer as Eunomia Server
 
-    MCPClient->>EunomiaMiddleware: MCP Request
-    Note over MCPClient, EunomiaMiddleware: Middleware intercepts request to server
-    EunomiaMiddleware->>EunomiaServer: Authorization Check
-    EunomiaServer->>EunomiaMiddleware: Authorization Decision (allow/deny)
-    EunomiaMiddleware-->>MCPClient: MCP Unauthorized Error (if denied)
-    EunomiaMiddleware->>MCPServer: MCP Request (if allowed)
-    MCPServer-->>MCPClient: MCP Response (if allowed)
+    MCPClient->>EunomiaMiddleware: MCP Listing Request (e.g., tools/list)
+    EunomiaMiddleware->>MCPServer: MCP Listing Request
+    MCPServer-->>EunomiaMiddleware: MCP Listing Response
+    EunomiaMiddleware->>EunomiaServer: Authorization Checks
+    EunomiaServer->>EunomiaMiddleware: Authorization Decisions
+    EunomiaMiddleware-->>MCPClient: Filtered MCP Listing Response
 ```
+
+### Execution Operations
+
+The middleware behaves as a firewall for execution operations (`tools/call`, `resources/read`, `prompts/get`), blocking operations that are not authorized by the defined policies.
+
+```mermaid
+sequenceDiagram
+    participant MCPClient as MCP Client
+    participant EunomiaMiddleware as Eunomia Middleware
+    participant MCPServer as FastMCP Server
+    participant EunomiaServer as Eunomia Server
+
+    MCPClient->>EunomiaMiddleware: MCP Execution Request (e.g., tools/call)
+    EunomiaMiddleware->>EunomiaServer: Authorization Check
+    EunomiaServer->>EunomiaMiddleware: Authorization Decision
+    EunomiaMiddleware-->>MCPClient: MCP Unauthorized Error (if denied)
+    EunomiaMiddleware->>MCPServer: MCP Execution Request (if allowed)
+    MCPServer-->>EunomiaMiddleware: MCP Execution Response (if allowed)
+    EunomiaMiddleware-->>MCPClient: MCP Execution Response (if allowed)
+```
+
+## Add Authorization to Your Server
 
 <Note>
 Eunomia is an AI-specific standalone authorization server that handles policy decisions. You must have an Eunomia server running alongside your FastMCP server for the middleware to function.
@@ -49,11 +74,11 @@ First, install the `eunomia-mcp` package:
 pip install eunomia-mcp
 ```
 
-Then create a FastMCP server and add the Eunomia middleware with a few lines of code:
+Then create a FastMCP server and add the Eunomia middleware in one line:
 
 ```python server.py
 from fastmcp import FastMCP
-from eunomia_mcp import create_eunomia_middleware
+from eunomia_mcp import EunomiaMcpMiddleware
 
 mcp = FastMCP("Secure FastMCP Server 🔒")
 
@@ -62,12 +87,11 @@ def add(a: int, b: int) -> int:
     """Add two numbers"""
     return a + b
 
-middleware = [create_eunomia_middleware()]
-app = mcp.http_app(middleware=middleware)
+middleware = EunomiaMcpMiddleware()
+app = mcp.add_middleware(middleware)
 
 if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8080)
+    mcp.run()
 ```
 
 ### Configure Access Policies
@@ -97,12 +121,14 @@ Start your FastMCP server normally:
 python server.py
 ```
 
-The middleware will now intercept all MCP requests and check them against your policies. Requests include agent identification through headers like `X-Agent-ID`, `X-User-ID`, or `Authorization` and an automatic mapping of MCP methods to authorization resources and actions.
+The middleware will now intercept all MCP requests and check them against your policies. Requests include agent identification through headers like `X-Agent-ID`, `X-User-ID`, `User-Agent`, or `Authorization` and an automatic mapping of MCP methods to authorization resources and actions.
 
 <Tip>
   For detailed policy configuration, custom authentication, and advanced
   deployment patterns, visit the [Eunomia MCP Middleware
-  repository][eunomia-github].
+  repository][eunomia-mcp-github].
 </Tip>
 
-[eunomia-github]: https://github.com/whataboutyou-ai/eunomia/tree/main/pkgs/extensions/mcp
+[eunomia-github]: https://github.com/whataboutyou-ai/eunomia
+[eunomia-mcp-github]: https://github.com/whataboutyou-ai/eunomia/tree/main/pkgs/extensions/mcp
+[fastmcp-middleare]: /servers/middleware
