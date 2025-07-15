@@ -29,6 +29,7 @@ def fastmcp_server():
         result = await context.sample(
             "Hello, world!",
             system_prompt="You love FastMCP",
+            include_context="thisServer",
             temperature=0.5,
             max_tokens=100,
             model_preferences="gpt-4o",

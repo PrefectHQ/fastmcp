@@ -16,6 +16,7 @@ from mcp.shared.context import RequestContext
 from mcp.types import (
     ContentBlock,
     CreateMessageResult,
+    IncludeContext,
     ModelHint,
     ModelPreferences,
     Root,
@@ -272,6 +273,7 @@ class Context:
         self,
         messages: str | list[str | SamplingMessage],
         system_prompt: str | None = None,
+        include_context: IncludeContext | None = None,
         temperature: float | None = None,
         max_tokens: int | None = None,
         model_preferences: ModelPreferences | str | list[str] | None = None,
@@ -304,6 +306,7 @@ class Context:
         result: CreateMessageResult = await self.session.create_message(
             messages=sampling_messages,
             system_prompt=system_prompt,
+            include_context=include_context,
             temperature=temperature,
             max_tokens=max_tokens,
             model_preferences=self._parse_model_preferences(model_preferences),
