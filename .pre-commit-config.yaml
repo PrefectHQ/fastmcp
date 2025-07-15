@@ -27,3 +27,9 @@ repos:
     hooks:
       - id: pyright-pretty
         files: ^src/|^tests/
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.3.0
+    hooks:
+      - id: no-commit-to-branch
+        args: [--branch, main]
