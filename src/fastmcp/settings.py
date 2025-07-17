@@ -5,7 +5,7 @@ import warnings
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic.fields import FieldInfo
 from pydantic_settings import (
     BaseSettings,
@@ -99,7 +99,16 @@ class Settings(BaseSettings):
     home: Path = Path.home() / ".fastmcp"
 
     test_mode: bool = False
+
     log_level: LOG_LEVEL = "INFO"
+
+    @field_validator("log_level", mode="before")
+    @classmethod
+    def normalize_log_level(cls, v):
+        if isinstance(v, str):
+            return v.upper()
+        return v
+
     enable_rich_tracebacks: Annotated[
         bool,
         Field(
