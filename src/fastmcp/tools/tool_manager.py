@@ -76,7 +76,7 @@ class ToolManager:
             except Exception as e:
                 # Skip failed mounts silently, matches existing behavior
                 logger.warning(
-                    f"Failed to get tools from mounted server '{mounted.prefix}': {e}"
+                    f"Failed to get tools from server: {mounted.server.name!r}, mounted at: {mounted.prefix!r}: {e}"
                 )
                 continue
 
