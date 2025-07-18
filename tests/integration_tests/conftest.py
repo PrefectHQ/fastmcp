@@ -3,7 +3,7 @@ import pytest
 
 @pytest.hookimpl(hookwrapper=True)
 def pytest_runtest_makereport(item, call):
-    """Convert BrokenResourceError failures to skips"""
+    """Convert BrokenResourceError failures to skips only for GitHub rate limits"""
     outcome = yield
     report = outcome.get_result()
 
@@ -14,8 +14,10 @@ def pytest_runtest_makereport(item, call):
         and not hasattr(report, "wasxfail")
         and call.excinfo
         and call.excinfo.typename == "BrokenResourceError"
+        and item.module.__name__ == "tests.integration_tests.test_github_mcp_remote"
     ):
-        # Convert to a skip
+        # Only skip if the test is in the GitHub remote test module
+        # This prevents catching unrelated BrokenResourceErrors
         report.outcome = "skipped"
         report.longrepr = (
             "/Users/nate/github.com/jlowin/fastmcp/tests/integration_tests/conftest.py",
