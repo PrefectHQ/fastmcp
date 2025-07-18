@@ -7,23 +7,23 @@ sidebarTitle: bearer
 
 ## Classes
 
-### `JWKData` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/bearer.py#L29"><Icon icon="github" size="14" /></a></sup>
+### `JWKData` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/bearer.py#L31" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 JSON Web Key data structure.
 
 
-### `JWKSData` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/bearer.py#L42"><Icon icon="github" size="14" /></a></sup>
+### `JWKSData` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/bearer.py#L44" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 JSON Web Key Set data structure.
 
 
-### `RSAKeyPair` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/bearer.py#L49"><Icon icon="github" size="14" /></a></sup>
+### `RSAKeyPair` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/bearer.py#L51" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 **Methods:**
 
-#### `generate` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/bearer.py#L54"><Icon icon="github" size="14" /></a></sup>
+#### `generate` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/bearer.py#L56" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 generate(cls) -> 'RSAKeyPair'
@@ -35,7 +35,7 @@ Generate an RSA key pair for testing.
 - (private_key_pem, public_key_pem)
 
 
-#### `create_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/bearer.py#L88"><Icon icon="github" size="14" /></a></sup>
+#### `create_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/bearer.py#L90" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 create_token(self, subject: str = 'fastmcp-user', issuer: str = 'https://fastmcp.example.com', audience: str | list[str] | None = None, scopes: list[str] | None = None, expires_in_seconds: int = 3600, additional_claims: dict[str, Any] | None = None, kid: str | None = None) -> str
@@ -57,13 +57,96 @@ Generate a test JWT token for testing purposes.
 - Signed JWT token string
 
 
-### `BearerAuthProvider` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/bearer.py#L149"><Icon icon="github" size="14" /></a></sup>
+### `BearerAuthProvider` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/bearer.py#L152" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Simple JWT Bearer Token validator for hosted MCP servers.
-Uses RS256 asymmetric encryption. Supports either static public key
+Uses RS256 asymmetric encryption by default but supports all JWA algorithms. Supports either static public key
 or JWKS URI for key rotation.
 
 Note that this provider DOES NOT permit client registration or revocation, or any OAuth flows.
 It is intended to be used with a control plane that manages clients and tokens.
 
+
+**Methods:**
+
+#### `load_access_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/bearer.py#L313" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+load_access_token(self, token: str) -> AccessToken | None
+```
+
+Validates the provided JWT bearer token.
+
+**Args:**
+- `token`: The JWT token string to validate
+
+**Returns:**
+- AccessToken object if valid, None if invalid or expired
+
+
+#### `verify_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/bearer.py#L419" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+verify_token(self, token: str) -> AccessToken | None
+```
+
+Verify a bearer token and return access info if valid.
+
+This method implements the TokenVerifier protocol by delegating
+to our existing load_access_token method.
+
+**Args:**
+- `token`: The JWT token string to validate
+
+**Returns:**
+- AccessToken object if valid, None if invalid or expired
+
+
+#### `get_client` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/bearer.py#L435" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_client(self, client_id: str) -> OAuthClientInformationFull | None
+```
+
+#### `register_client` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/bearer.py#L438" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+register_client(self, client_info: OAuthClientInformationFull) -> None
+```
+
+#### `authorize` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/bearer.py#L441" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+authorize(self, client: OAuthClientInformationFull, params: AuthorizationParams) -> str
+```
+
+#### `load_authorization_code` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/bearer.py#L446" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+load_authorization_code(self, client: OAuthClientInformationFull, authorization_code: str) -> AuthorizationCode | None
+```
+
+#### `exchange_authorization_code` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/bearer.py#L451" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+exchange_authorization_code(self, client: OAuthClientInformationFull, authorization_code: AuthorizationCode) -> OAuthToken
+```
+
+#### `load_refresh_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/bearer.py#L456" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+load_refresh_token(self, client: OAuthClientInformationFull, refresh_token: str) -> RefreshToken | None
+```
+
+#### `exchange_refresh_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/bearer.py#L461" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+exchange_refresh_token(self, client: OAuthClientInformationFull, refresh_token: RefreshToken, scopes: list[str]) -> OAuthToken
+```
+
+#### `revoke_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/bearer.py#L469" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+revoke_token(self, token: AccessToken | RefreshToken) -> None
+```
