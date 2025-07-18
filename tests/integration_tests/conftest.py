@@ -20,7 +20,7 @@ def pytest_runtest_makereport(item, call):
         # This prevents catching unrelated BrokenResourceErrors
         report.outcome = "skipped"
         report.longrepr = (
-            "/Users/nate/github.com/jlowin/fastmcp/tests/integration_tests/conftest.py",
+            os.path.abspath(__file__),
             None,
             "Skipped: Skipping due to GitHub API rate limit (429)",
         )
