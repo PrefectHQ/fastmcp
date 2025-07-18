@@ -1114,10 +1114,56 @@ def _make_optional_parameter_nullable(schema: dict[str, Any]) -> dict[str, Any]:
     # Create a new schema that allows null in addition to the original type
     if "type" in schema:
         original_type = schema["type"]
+
         if isinstance(original_type, str):
             # Single type - make it a union with null
             nullable_schema = schema.copy()
-            nullable_schema["anyOf"] = [{"type": original_type}, {"type": "null"}]
+
+            nested_non_nullable_schema = {
+                "type": original_type,
+            }
+
+            # If the original type is an array, move the array-specific properties into the now-nested schema
+            # https://json-schema.org/understanding-json-schema/reference/array
+            if original_type == "array":
+                for array_property in [
+                    "items",
+                    "prefixItems",
+                    "unevaluatedItems",
+                    "contains",
+                    "minContains",
+                    "maxContains",
+                    "minItems",
+                    "maxItems",
+                    "uniqueItems",
+                ]:
+                    if array_property in nullable_schema:
+                        nested_non_nullable_schema[array_property] = nullable_schema[
+                            array_property
+                        ]
+                        del nullable_schema[array_property]
+
+            # If the original type is an object, move the object-specific properties into the now-nested schema
+            # https://json-schema.org/understanding-json-schema/reference/object
+            elif original_type == "object":
+                for object_property in [
+                    "properties",
+                    "patternProperties",
+                    "additionalProperties",
+                    "unevaluatedProperties",
+                    "required",
+                    "propertyNames",
+                    "minProperties",
+                    "maxProperties",
+                ]:
+                    if object_property in nullable_schema:
+                        nested_non_nullable_schema[object_property] = nullable_schema[
+                            object_property
+                        ]
+                        del nullable_schema[object_property]
+
+            nullable_schema["anyOf"] = [nested_non_nullable_schema, {"type": "null"}]
+
             # Remove the original type since we're using anyOf
             del nullable_schema["type"]
             return nullable_schema
