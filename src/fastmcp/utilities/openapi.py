@@ -1068,15 +1068,16 @@ def _replace_ref_with_defs(
     """
     schema = info.copy()
     if ref_path := schema.get("$ref"):
-        if ref_path.startswith("#/components/schemas/"):
-            schema_name = ref_path.split("/")[-1]
-            schema["$ref"] = f"#/$defs/{schema_name}"
-        elif not ref_path.startswith("#/"):
-            raise ValueError(
-                f"External or non-local reference not supported: {ref_path}. "
-                f"FastMCP only supports local schema references starting with '#/'. "
-                f"Please include all schema definitions within the OpenAPI document."
-            )
+        if isinstance(ref_path, str):
+            if ref_path.startswith("#/components/schemas/"):
+                schema_name = ref_path.split("/")[-1]
+                schema["$ref"] = f"#/$defs/{schema_name}"
+            elif not ref_path.startswith("#/"):
+                raise ValueError(
+                    f"External or non-local reference not supported: {ref_path}. "
+                    f"FastMCP only supports local schema references starting with '#/'. "
+                    f"Please include all schema definitions within the OpenAPI document."
+                )
     elif properties := schema.get("properties"):
         if "$ref" in properties:
             schema["properties"] = _replace_ref_with_defs(properties)
@@ -1113,10 +1114,56 @@ def _make_optional_parameter_nullable(schema: dict[str, Any]) -> dict[str, Any]:
     # Create a new schema that allows null in addition to the original type
     if "type" in schema:
         original_type = schema["type"]
+
         if isinstance(original_type, str):
             # Single type - make it a union with null
             nullable_schema = schema.copy()
-            nullable_schema["anyOf"] = [{"type": original_type}, {"type": "null"}]
+
+            nested_non_nullable_schema = {
+                "type": original_type,
+            }
+
+            # If the original type is an array, move the array-specific properties into the now-nested schema
+            # https://json-schema.org/understanding-json-schema/reference/array
+            if original_type == "array":
+                for array_property in [
+                    "items",
+                    "prefixItems",
+                    "unevaluatedItems",
+                    "contains",
+                    "minContains",
+                    "maxContains",
+                    "minItems",
+                    "maxItems",
+                    "uniqueItems",
+                ]:
+                    if array_property in nullable_schema:
+                        nested_non_nullable_schema[array_property] = nullable_schema[
+                            array_property
+                        ]
+                        del nullable_schema[array_property]
+
+            # If the original type is an object, move the object-specific properties into the now-nested schema
+            # https://json-schema.org/understanding-json-schema/reference/object
+            elif original_type == "object":
+                for object_property in [
+                    "properties",
+                    "patternProperties",
+                    "additionalProperties",
+                    "unevaluatedProperties",
+                    "required",
+                    "propertyNames",
+                    "minProperties",
+                    "maxProperties",
+                ]:
+                    if object_property in nullable_schema:
+                        nested_non_nullable_schema[object_property] = nullable_schema[
+                            object_property
+                        ]
+                        del nullable_schema[object_property]
+
+            nullable_schema["anyOf"] = [nested_non_nullable_schema, {"type": "null"}]
+
             # Remove the original type since we're using anyOf
             del nullable_schema["type"]
             return nullable_schema

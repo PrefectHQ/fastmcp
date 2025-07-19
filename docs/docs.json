@@ -65,7 +65,10 @@
                   {
                     "group": "Essentials",
                     "icon": "cube",
-                    "pages": ["servers/server", "deployment/running-server"]
+                    "pages": [
+                      "servers/server",
+                      "deployment/running-server"
+                    ]
                   },
                   {
                     "group": "Core Components",
@@ -93,7 +96,9 @@
                   {
                     "group": "Authentication",
                     "icon": "shield-check",
-                    "pages": ["servers/auth/bearer"]
+                    "pages": [
+                      "servers/auth/bearer"
+                    ]
                   }
                 ]
               },
@@ -103,7 +108,10 @@
                   {
                     "group": "Essentials",
                     "icon": "cube",
-                    "pages": ["clients/client", "clients/transports"]
+                    "pages": [
+                      "clients/client",
+                      "clients/transports"
+                    ]
                   },
                   {
                     "group": "Core Operations",
@@ -129,7 +137,10 @@
                   {
                     "group": "Authentication",
                     "icon": "user-shield",
-                    "pages": ["clients/auth/oauth", "clients/auth/bearer"]
+                    "pages": [
+                      "clients/auth/oauth",
+                      "clients/auth/bearer"
+                    ]
                   }
                 ]
               },
@@ -174,12 +185,17 @@
           },
           {
             "anchor": "What's New",
-            "pages": ["updates", "changelog"]
+            "pages": [
+              "updates",
+              "changelog"
+            ]
           },
           {
             "anchor": "Community",
             "icon": "users",
-            "pages": ["community/showcase"]
+            "pages": [
+              "community/showcase"
+            ]
           }
         ]
       },
@@ -191,6 +207,7 @@
             "icon": "python",
             "pages": [
               "python-sdk/fastmcp-exceptions",
+              "python-sdk/fastmcp-mcp_config",
               "python-sdk/fastmcp-settings",
               {
                 "group": "fastmcp.cli",
@@ -198,6 +215,17 @@
                   "python-sdk/fastmcp-cli-__init__",
                   "python-sdk/fastmcp-cli-claude",
                   "python-sdk/fastmcp-cli-cli",
+                  {
+                    "group": "install",
+                    "pages": [
+                      "python-sdk/fastmcp-cli-install-__init__",
+                      "python-sdk/fastmcp-cli-install-claude_code",
+                      "python-sdk/fastmcp-cli-install-claude_desktop",
+                      "python-sdk/fastmcp-cli-install-cursor",
+                      "python-sdk/fastmcp-cli-install-mcp_config",
+                      "python-sdk/fastmcp-cli-install-shared"
+                    ]
+                  },
                   "python-sdk/fastmcp-cli-run"
                 ]
               },
@@ -214,7 +242,9 @@
                     ]
                   },
                   "python-sdk/fastmcp-client-client",
+                  "python-sdk/fastmcp-client-elicitation",
                   "python-sdk/fastmcp-client-logging",
+                  "python-sdk/fastmcp-client-messages",
                   "python-sdk/fastmcp-client-oauth_callback",
                   "python-sdk/fastmcp-client-progress",
                   "python-sdk/fastmcp-client-roots",
@@ -262,7 +292,9 @@
                   },
                   "python-sdk/fastmcp-server-context",
                   "python-sdk/fastmcp-server-dependencies",
+                  "python-sdk/fastmcp-server-elicitation",
                   "python-sdk/fastmcp-server-http",
+                  "python-sdk/fastmcp-server-low_level",
                   {
                     "group": "middleware",
                     "pages": [
@@ -293,13 +325,14 @@
                 "pages": [
                   "python-sdk/fastmcp-utilities-__init__",
                   "python-sdk/fastmcp-utilities-cache",
+                  "python-sdk/fastmcp-utilities-cli",
                   "python-sdk/fastmcp-utilities-components",
                   "python-sdk/fastmcp-utilities-exceptions",
                   "python-sdk/fastmcp-utilities-http",
                   "python-sdk/fastmcp-utilities-inspect",
                   "python-sdk/fastmcp-utilities-json_schema",
+                  "python-sdk/fastmcp-utilities-json_schema_type",
                   "python-sdk/fastmcp-utilities-logging",
-                  "python-sdk/fastmcp-utilities-mcp_config",
                   "python-sdk/fastmcp-utilities-openapi",
                   "python-sdk/fastmcp-utilities-tests",
                   "python-sdk/fastmcp-utilities-types"

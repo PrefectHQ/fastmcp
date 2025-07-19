@@ -1,0 +1,110 @@
+---
+title: json_schema_type
+sidebarTitle: json_schema_type
+---
+
+# `fastmcp.utilities.json_schema_type`
+
+
+Convert JSON Schema to Python types with validation.
+
+The json_schema_to_type function converts a JSON Schema into a Python type that can be used
+for validation with Pydantic. It supports:
+
+- Basic types (string, number, integer, boolean, null)
+- Complex types (arrays, objects)
+- Format constraints (date-time, email, uri)
+- Numeric constraints (minimum, maximum, multipleOf)
+- String constraints (minLength, maxLength, pattern)
+- Array constraints (minItems, maxItems, uniqueItems)
+- Object properties with defaults
+- References and recursive schemas
+- Enums and constants
+- Union types
+
+Example:
+    ```python
+    schema = {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string", "minLength": 1},
+            "age": {"type": "integer", "minimum": 0},
+            "email": {"type": "string", "format": "email"}
+        },
+        "required": ["name", "age"]
+    }
+
+    # Name is optional and will be inferred from schema's "title" property if not provided
+    Person = json_schema_to_type(schema)
+    # Creates a validated dataclass with name, age, and optional email fields
+    ```
+
+
+## Functions
+
+### `json_schema_to_type` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/json_schema_type.py#L110" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+json_schema_to_type(schema: Mapping[str, Any], name: str | None = None) -> type
+```
+
+
+Convert JSON schema to appropriate Python type with validation.
+
+**Args:**
+- `schema`: A JSON Schema dictionary defining the type structure and validation rules
+- `name`: Optional name for object schemas. Only allowed when schema type is "object".
+If not provided for objects, name will be inferred from schema's "title"
+property or default to "Root".
+
+**Returns:**
+- A Python type (typically a dataclass for objects) with Pydantic validation
+
+**Raises:**
+- `ValueError`: If a name is provided for a non-object schema
+
+**Examples:**
+
+Create a dataclass from an object schema:
+```python
+schema = {
+    "type": "object",
+    "title": "Person",
+    "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "age": {"type": "integer", "minimum": 0},
+        "email": {"type": "string", "format": "email"}
+    },
+    "required": ["name", "age"]
+}
+
+Person = json_schema_to_type(schema)
+# Creates a dataclass with name, age, and optional email fields:
+# @dataclass
+# class Person:
+#     name: str
+#     age: int
+#     email: str | None = None
+```
+Person(name="John", age=30)
+
+Create a scalar type with constraints:
+```python
+schema = {
+    "type": "string",
+    "minLength": 3,
+    "pattern": "^[A-Z][a-z]+$"
+}
+
+NameType = json_schema_to_type(schema)
+# Creates Annotated[str, StringConstraints(min_length=3, pattern="^[A-Z][a-z]+$")]
+
+@dataclass
+class Name:
+    name: NameType
+```
+
+
+## Classes
+
+### `JSONSchema` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/json_schema_type.py#L77" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>

@@ -441,6 +441,41 @@ mcp.add_tool(new_tool)
 In the above example, `**kwargs` receives the renamed argument `b`, not the original argument `y`. It is therefore recommended to use with `forward()`, not `forward_raw()`.
 </Tip>
 
+## Modifying MCP Tools with MCPConfig
+
+When running MCP Servers under FastMCP with `MCPConfig`, you can also apply a subset of tool transformations
+directly in the MCPConfig json file.
+
+```json
+{
+    "mcpServers": {
+        "weather": {
+            "url": "https://weather.example.com/mcp",
+            "transport": "http",
+            "tools": {
+                "weather_get_forecast": {
+                    "name": "miami_weather",
+                    "description": "Get the weather for Miami",
+                    "arguments": {
+                        "city": {
+                            "name": "city",
+                            "default": "Miami",
+                            "hide": True,
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+```
+
+The `tools` section is a dictionary of tool names to tool configurations. Each tool configuration is a
+dictionary of tool properties.
+
+See the [MCPConfigTransport](/clients/transports#tool-transformation-with-fastmcp-and-mcpconfig) documentation for more details.
+
+
 ## Output Schema Control
 
 <VersionBadge version="2.10.0" />

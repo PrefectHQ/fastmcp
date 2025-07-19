@@ -98,23 +98,25 @@ Generate configuration and output to stdout (useful for piping):
 fastmcp install mcp-json server.py
 ```
 
-This outputs the server configuration JSON that you add to the `mcpServers` object:
+This outputs the server configuration JSON with the server name as the root key:
 
 ```json
 {
-  "command": "uv",
-  "args": [
-    "run",
-    "--with",
-    "fastmcp", 
-    "fastmcp",
-    "run",
-    "/absolute/path/to/server.py"
-  ]
+  "My Server": {
+    "command": "uv",
+    "args": [
+      "run",
+      "--with",
+      "fastmcp", 
+      "fastmcp",
+      "run",
+      "/absolute/path/to/server.py"
+    ]
+  }
 }
 ```
 
-To use this in a client configuration file, add it under a server name in the `mcpServers` object:
+To use this in a client configuration file, add it to the `mcpServers` object in your client's configuration:
 
 ```json
 {
@@ -133,6 +135,10 @@ To use this in a client configuration file, add it under a server name in the `m
   }
 }
 ```
+
+<Note>
+Different MCP clients may have specific configuration requirements or formatting needs. Always consult your client's documentation to ensure proper integration.
+</Note>
 
 ## Configuration Options
 
@@ -177,8 +183,8 @@ mcp = FastMCP(
 ```bash
 # Individual environment variables
 fastmcp install mcp-json server.py \
-  --env-var API_KEY=your-secret-key \
-  --env-var DEBUG=true
+  --env API_KEY=your-secret-key \
+  --env DEBUG=true
 
 # Load from .env file
 fastmcp install mcp-json server.py --env-file .env
@@ -219,15 +225,17 @@ fastmcp install mcp-json dice_server.py
 Output:
 ```json
 {
-  "command": "uv",
-  "args": [
-    "run",
-    "--with",
-    "fastmcp",
-    "fastmcp", 
-    "run",
-    "/home/user/dice_server.py"
-  ]
+  "Dice Server": {
+    "command": "uv",
+    "args": [
+      "run",
+      "--with",
+      "fastmcp",
+      "fastmcp", 
+      "run",
+      "/home/user/dice_server.py"
+    ]
+  }
 }
 ```
 
@@ -238,29 +246,31 @@ fastmcp install mcp-json api_server.py \
   --name "Production API Server" \
   --with requests \
   --with python-dotenv \
-  --env-var API_BASE_URL=https://api.example.com \
-  --env-var TIMEOUT=30
+  --env API_BASE_URL=https://api.example.com \
+  --env TIMEOUT=30
 ```
 
 Output:
 ```json
 {
-  "command": "uv",
-  "args": [
-    "run",
-    "--with",
-    "fastmcp",
-    "--with",
-    "python-dotenv", 
-    "--with",
-    "requests",
-    "fastmcp",
-    "run", 
-    "/home/user/api_server.py"
-  ],
-  "env": {
-    "API_BASE_URL": "https://api.example.com",
-    "TIMEOUT": "30"
+  "Production API Server": {
+    "command": "uv",
+    "args": [
+      "run",
+      "--with",
+      "fastmcp",
+      "--with",
+      "python-dotenv", 
+      "--with",
+      "requests",
+      "fastmcp",
+      "run", 
+      "/home/user/api_server.py"
+    ],
+    "env": {
+      "API_BASE_URL": "https://api.example.com",
+      "TIMEOUT": "30"
+    }
   }
 }
 ```
@@ -278,7 +288,7 @@ Use in shell scripts:
 ```bash
 #!/bin/bash
 CONFIG=$(fastmcp install mcp-json server.py --name "CI Server")
-echo "$CONFIG" | jq '.command'
+echo "$CONFIG" | jq '."CI Server".command'
 # Output: "uv"
 ```
 
@@ -306,21 +316,21 @@ Use the JSON configuration with any application that supports the MCP protocol
 
 ## Configuration Format
 
-The generated configuration follows the standard MCP server specification:
+The generated configuration outputs a server object with the server name as the root key:
 
 ```json
 {
-  "mcpServers": {
-    "<server-name>": {
-      "command": "<executable>",
-      "args": ["<arg1>", "<arg2>", "..."],
-      "env": {
-        "<ENV_VAR>": "<value>"
-      }
+  "<server-name>": {
+    "command": "<executable>",
+    "args": ["<arg1>", "<arg2>", "..."],
+    "env": {
+      "<ENV_VAR>": "<value>"
     }
   }
 }
 ```
+
+To use this in an MCP client, add it to the client's `mcpServers` configuration object.
 
 **Fields:**
 - `command`: The executable to run (always `uv` for FastMCP servers)

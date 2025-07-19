@@ -5,9 +5,66 @@ sidebarTitle: tool_transform
 
 # `fastmcp.tools.tool_transform`
 
+## Functions
+
+### `forward` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/tools/tool_transform.py#L25" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+forward(**kwargs) -> ToolResult
+```
+
+
+Forward to parent tool with argument transformation applied.
+
+This function can only be called from within a transformed tool's custom
+function. It applies argument transformation (renaming, validation) before
+calling the parent tool.
+
+For example, if the parent tool has args `x` and `y`, but the transformed
+tool has args `a` and `b`, and an `transform_args` was provided that maps `x` to
+`a` and `y` to `b`, then `forward(a=1, b=2)` will call the parent tool with
+`x=1` and `y=2`.
+
+**Args:**
+- `**kwargs`: Arguments to forward to the parent tool (using transformed names).
+
+**Returns:**
+- The ToolResult from the parent tool execution.
+
+**Raises:**
+- `RuntimeError`: If called outside a transformed tool context.
+- `TypeError`: If provided arguments don't match the transformed schema.
+
+
+### `forward_raw` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/tools/tool_transform.py#L55" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+forward_raw(**kwargs) -> ToolResult
+```
+
+
+Forward directly to parent tool without transformation.
+
+This function bypasses all argument transformation and validation, calling the parent
+tool directly with the provided arguments. Use this when you need to call the parent
+with its original parameter names and structure.
+
+For example, if the parent tool has args `x` and `y`, then `forward_raw(x=1,
+y=2)` will call the parent tool with `x=1` and `y=2`.
+
+**Args:**
+- `**kwargs`: Arguments to pass directly to the parent tool (using original names).
+
+**Returns:**
+- The ToolResult from the parent tool execution.
+
+**Raises:**
+- `RuntimeError`: If called outside a transformed tool context.
+
+
 ## Classes
 
-### `ArgTransform` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/tools/tool_transform.py#L85"><Icon icon="github" size="14" /></a></sup>
+### `ArgTransform` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/tools/tool_transform.py#L82" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Configuration for transforming a parent tool's argument.
@@ -69,26 +126,46 @@ ArgTransform(name="new_name", description="New desc", default=None, type=int)
 ```
 
 
-### `TransformedTool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/tools/tool_transform.py#L199"><Icon icon="github" size="14" /></a></sup>
+### `TransformedTool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/tools/tool_transform.py#L196" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 A tool that is transformed from another tool.
 
 This class represents a tool that has been created by transforming another tool.
 It supports argument renaming, schema modification, custom function injection,
-and provides context for the forward() and forward_raw() functions.
+structured output control, and provides context for the forward() and forward_raw() functions.
 
 The transformation can be purely schema-based (argument renaming, dropping, etc.)
 or can include a custom function that uses forward() to call the parent tool
-with transformed arguments.
+with transformed arguments. Output schemas and structured outputs are automatically
+inherited from the parent tool but can be overridden or disabled.
 
 
 **Methods:**
 
-#### `from_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/tools/tool_transform.py#L280"><Icon icon="github" size="14" /></a></sup>
+#### `run` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/tools/tool_transform.py#L223" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-from_tool(cls, tool: Tool, name: str | None = None, description: str | None = None, tags: set[str] | None = None, transform_fn: Callable[..., Any] | None = None, transform_args: dict[str, ArgTransform] | None = None, annotations: ToolAnnotations | None = None, serializer: Callable[[Any], str] | None = None, enabled: bool | None = None) -> TransformedTool
+run(self, arguments: dict[str, Any]) -> ToolResult
+```
+
+Run the tool with context set for forward() functions.
+
+This method executes the tool's function while setting up the context
+that allows forward() and forward_raw() to work correctly within custom
+functions.
+
+**Args:**
+- `arguments`: Dictionary of arguments to pass to the tool's function.
+
+**Returns:**
+- ToolResult object containing content and optional structured output.
+
+
+#### `from_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/tools/tool_transform.py#L324" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+from_tool(cls, tool: Tool, name: str | None = None, title: str | None | NotSetT = NotSet, description: str | None | NotSetT = NotSet, tags: set[str] | None = None, transform_fn: Callable[..., Any] | None = None, transform_args: dict[str, ArgTransform] | None = None, annotations: ToolAnnotations | None = None, output_schema: dict[str, Any] | None | Literal[False] = None, serializer: Callable[[Any], str] | None = None, enabled: bool | None = None) -> TransformedTool
 ```
 
 Create a transformed tool from a parent tool.
@@ -99,6 +176,7 @@ Create a transformed tool from a parent tool.
 to call the parent tool. Functions with **kwargs receive transformed
 argument names.
 - `name`: New name for the tool. Defaults to parent tool's name.
+- `title`: New title for the tool. Defaults to parent tool's title.
 - `transform_args`: Optional transformations for parent tool arguments.
 Only specified arguments are transformed, others pass through unchanged\:
 - Simple rename (str)
@@ -107,6 +185,10 @@ Only specified arguments are transformed, others pass through unchanged\:
 - `description`: New description. Defaults to parent's description.
 - `tags`: New tags. Defaults to parent's tags.
 - `annotations`: New annotations. Defaults to parent's annotations.
+- `output_schema`: Control output schema for structured outputs\:
+- None (default)\: Inherit from transform_fn if available, then parent tool
+- dict\: Use custom output schema
+- False\: Disable output schema and structured outputs
 - `serializer`: New serializer. Defaults to parent's serializer.
 
 **Returns:**
@@ -135,5 +217,25 @@ async def flexible(**kwargs) -> str:
     return f"Got: {kwargs}"
 
 Tool.from_tool(parent, transform_fn=flexible, transform_args={"a": "x"})
+```
+
+# Control structured outputs and schemas
+```python
+# Custom output schema
+Tool.from_tool(parent, output_schema={
+    "type": "object",
+    "properties": {"status": {"type": "string"}}
+})
+
+# Disable structured outputs
+Tool.from_tool(parent, output_schema=False)
+
+# Return ToolResult for full control
+async def custom_output(**kwargs) -> ToolResult:
+    result = await forward(**kwargs)
+    return ToolResult(
+        content=[TextContent(text="Summary")],
+        structured_content={"processed": True}
+    )
 ```
 

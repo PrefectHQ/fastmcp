@@ -36,6 +36,9 @@ from fastmcp.server.dependencies import get_context
 from fastmcp.server.server import FastMCP
 from fastmcp.tools.tool import Tool, ToolResult
 from fastmcp.tools.tool_manager import ToolManager
+from fastmcp.tools.tool_transform import (
+    apply_transformations_to_tools,
+)
 from fastmcp.utilities.components import MirroredComponent
 from fastmcp.utilities.logging import get_logger
 
@@ -71,7 +74,12 @@ class ProxyToolManager(ToolManager):
             else:
                 raise e
 
-        return all_tools
+        transformed_tools = apply_transformations_to_tools(
+            tools=all_tools,
+            transformations=self.transformations,
+        )
+
+        return transformed_tools
 
     async def list_tools(self) -> list[Tool]:
         """Gets the filtered list of tools including local, mounted, and proxy tools."""
@@ -469,7 +477,11 @@ class FastMCPProxy(FastMCP):
             raise ValueError("Must specify 'client_factory'")
 
         # Replace the default managers with our specialized proxy managers.
-        self._tool_manager = ProxyToolManager(client_factory=self.client_factory)
+        self._tool_manager = ProxyToolManager(
+            client_factory=self.client_factory,
+            # Propagate the transformations from the base class tool manager
+            transformations=self._tool_manager.transformations,
+        )
         self._resource_manager = ProxyResourceManager(
             client_factory=self.client_factory
         )
@@ -580,3 +592,45 @@ class ProxyClient(Client[ClientTransportT]):
         """
         ctx = get_context()
         await ctx.report_progress(progress, total, message)
+
+
+class StatefulProxyClient(ProxyClient[ClientTransportT]):
+    """
+    A proxy client that provides a stateful client factory for the proxy server.
+
+    The stateful proxy client bound its copy to the server session.
+    And it will be disconnected when the session is exited.
+
+    This is useful to proxy a stateful mcp server such as the Playwright MCP server.
+    Note that it is essential to ensure that the proxy server itself is also stateful.
+    """
+
+    async def __aexit__(self, exc_type, exc_value, traceback) -> None:
+        """
+        The stateful proxy client will be forced disconnected when the session is exited.
+        So we do nothing here.
+        """
+        pass
+
+    def new_stateful(self) -> Client[ClientTransportT]:
+        """
+        Create a new stateful proxy client instance with the same configuration.
+
+        Use this method as the client factory for stateful proxy server.
+        """
+        session = get_context().session
+        proxy_client = session.__dict__.get("_proxy_client", None)
+
+        if proxy_client is None:
+            proxy_client = self.new()
+            logger.debug(f"{proxy_client} created for {session}")
+            session.__dict__["_proxy_client"] = proxy_client
+
+            async def _on_session_exit():
+                proxy_client: Client = session.__dict__.pop("_proxy_client")
+                logger.debug(f"{proxy_client} will be disconnect")
+                await proxy_client._disconnect(force=True)
+
+            session._exit_stack.push_async_callback(_on_session_exit)
+
+        return proxy_client

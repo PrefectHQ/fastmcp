@@ -185,7 +185,7 @@ The `install` command supports the same `file.py:object` notation as the `run` c
 | Server Name | `--name`, `-n` | Custom name for the server (defaults to server's name attribute or file name) |
 | Editable Package | `--with-editable`, `-e` | Directory containing pyproject.toml to install in editable mode |
 | Additional Packages | `--with` | Additional packages to install (can be used multiple times) |
-| Environment Variables | `--env-var`, `-v` | Environment variables in KEY=VALUE format (can be used multiple times) |
+| Environment Variables | `--env` | Environment variables in KEY=VALUE format (can be used multiple times) |
 | Environment File | `--env-file`, `-f` | Load environment variables from a .env file |
 
 **Examples**
@@ -198,13 +198,13 @@ fastmcp install claude-desktop server.py
 fastmcp install claude-desktop server.py:my_server
 
 # With custom name and dependencies
-fastmcp install claude-desktop server.py:my_server -n "My Analysis Server" --with pandas
+fastmcp install claude-desktop server.py:my_server --name "My Analysis Server" --with pandas
 
 # Install in Claude Code with environment variables
-fastmcp install claude-code server.py --env-var API_KEY=secret --env-var DEBUG=true
+fastmcp install claude-code server.py --env API_KEY=secret --env DEBUG=true
 
 # Install in Cursor with environment variables
-fastmcp install cursor server.py --env-var API_KEY=secret --env-var DEBUG=true
+fastmcp install cursor server.py --env API_KEY=secret --env DEBUG=true
 
 # Install with environment file
 fastmcp install cursor server.py --env-file .env
@@ -225,28 +225,30 @@ The `mcp-json` subcommand generates standard MCP JSON configuration that can be 
 - Sharing server configurations with others
 - Integration with custom tooling
 
-The generated JSON follows the standard `mcpServers` format used by Claude Desktop, VS Code, Cursor, and other MCP clients:
+The generated JSON follows the standard MCP server configuration format used by Claude Desktop, VS Code, Cursor, and other MCP clients, with the server name as the root key:
 
 ```json
 {
-  "mcpServers": {
-    "server-name": {
-      "command": "uv",
-      "args": [
-        "run",
-        "--with",
-        "fastmcp",
-        "fastmcp",
-        "run",
-        "/path/to/server.py"
-      ],
-      "env": {
-        "API_KEY": "value"
-      }
+  "server-name": {
+    "command": "uv",
+    "args": [
+      "run",
+      "--with",
+      "fastmcp",
+      "fastmcp",
+      "run",
+      "/path/to/server.py"
+    ],
+    "env": {
+      "API_KEY": "value"
     }
   }
 }
 ```
+
+<Note>
+To use this configuration with your MCP client, you'll typically need to add it to the client's `mcpServers` object. Consult your client's documentation for any specific configuration requirements or formatting needs.
+</Note>
 
 **Options specific to mcp-json:**
 

@@ -732,7 +732,7 @@ class MCPConfigTransport(ClientTransport):
 
     1. If the MCPConfig contains exactly one server, it creates a direct transport to that server.
     2. If the MCPConfig contains multiple servers, it creates a composite client by mounting
-       all servers on a single FastMCP instance, with each server's name used as its mounting prefix.
+       all servers on a single FastMCP instance, with each server's name, by default, used as its mounting prefix.
 
     In the multi-server case, tools are accessible with the prefix pattern `{server_name}_{tool_name}`
     and resources with the pattern `protocol://{server_name}/path/to/resource`.
@@ -772,7 +772,9 @@ class MCPConfigTransport(ClientTransport):
         ```
     """
 
-    def __init__(self, config: MCPConfig | dict):
+    def __init__(self, config: MCPConfig | dict, name_as_prefix: bool = True):
+        from fastmcp.utilities.mcp_config import composite_server_from_mcp_config
+
         if isinstance(config, dict):
             config = MCPConfig.from_dict(config)
         self.config = config
@@ -787,15 +789,11 @@ class MCPConfigTransport(ClientTransport):
 
         # otherwise create a composite client
         else:
-            composite_server = FastMCP()
-
-            for name, server in self.config.mcpServers.items():
-                composite_server.mount(
-                    prefix=name,
-                    server=FastMCP.as_proxy(backend=server.to_transport()),
+            self.transport = FastMCPTransport(
+                mcp=composite_server_from_mcp_config(
+                    self.config, name_as_prefix=name_as_prefix
                 )
-
-            self.transport = FastMCPTransport(mcp=composite_server)
+            )
 
     @contextlib.asynccontextmanager
     async def connect_session(

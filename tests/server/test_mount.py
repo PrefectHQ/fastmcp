@@ -317,15 +317,18 @@ class TestMultipleServerMount:
             record.message for record in caplog.records if record.levelname == "WARNING"
         ]
         assert any(
-            "Failed to get tools from mounted server 'unreachable'" in msg
+            "Failed to get tools from server: 'FastMCP', mounted at: 'unreachable'"
+            in msg
             for msg in warning_messages
         )
         assert any(
-            "Failed to get resources from mounted server 'unreachable'" in msg
+            "Failed to get resources from server: 'FastMCP', mounted at: 'unreachable'"
+            in msg
             for msg in warning_messages
         )
         assert any(
-            "Failed to get prompts from mounted server 'unreachable'" in msg
+            "Failed to get prompts from server: 'FastMCP', mounted at: 'unreachable'"
+            in msg
             for msg in warning_messages
         )
 

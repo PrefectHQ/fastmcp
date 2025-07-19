@@ -1,0 +1,150 @@
+---
+title: mcp_config
+sidebarTitle: mcp_config
+---
+
+# `fastmcp.mcp_config`
+
+
+Canonical MCP Configuration Format.
+
+This module defines the standard configuration format for Model Context Protocol (MCP) servers.
+It provides a client-agnostic, extensible format that can be used across all MCP implementations.
+
+The configuration format supports both stdio and remote (HTTP/SSE) transports, with comprehensive
+field definitions for server metadata, authentication, and execution parameters.
+
+Example configuration:
+    {
+        "mcpServers": {
+            "my-server": {
+                "command": "npx",
+                "args": ["-y", "@my/mcp-server"],
+                "env": {"API_KEY": "secret"},
+                "timeout": 30000,
+                "description": "My MCP server"
+            }
+        }
+    }
+
+
+## Functions
+
+### `infer_transport_type_from_url` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/mcp_config.py#L43" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+infer_transport_type_from_url(url: str | AnyUrl) -> Literal['http', 'sse']
+```
+
+
+Infer the appropriate transport type from the given URL.
+
+
+### `update_config_file` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/mcp_config.py#L253" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+update_config_file(file_path: Path, server_name: str, server_config: StdioMCPServer | RemoteMCPServer) -> None
+```
+
+
+Update MCP configuration file with new server, preserving existing fields.
+
+
+## Classes
+
+### `StdioMCPServer` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/mcp_config.py#L63" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+MCP server configuration for stdio transport.
+
+This is the canonical configuration format for MCP servers using stdio transport.
+
+
+**Methods:**
+
+#### `to_transport` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/mcp_config.py#L93" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+to_transport(self) -> StdioTransport
+```
+
+### `RemoteMCPServer` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/mcp_config.py#L104" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+MCP server configuration for HTTP/SSE transport.
+
+This is the canonical configuration format for MCP servers using remote transports.
+
+
+**Methods:**
+
+#### `to_transport` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/mcp_config.py#L140" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+to_transport(self) -> StreamableHttpTransport | SSETransport
+```
+
+### `MCPConfig` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/mcp_config.py#L165" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Canonical MCP configuration format.
+
+This defines the standard configuration format for Model Context Protocol servers.
+The format is designed to be client-agnostic and extensible for future use cases.
+
+
+**Methods:**
+
+#### `from_dict` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/mcp_config.py#L177" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+from_dict(cls, config: dict[str, Any]) -> MCPConfig
+```
+
+Parse MCP configuration from dictionary format.
+
+
+#### `to_dict` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/mcp_config.py#L212" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+to_dict(self) -> dict[str, Any]
+```
+
+Convert MCPConfig to dictionary format, preserving all fields.
+
+
+#### `write_to_file` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/mcp_config.py#L225" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+write_to_file(self, file_path: Path) -> None
+```
+
+Write configuration to JSON file.
+
+
+#### `from_file` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/mcp_config.py#L232" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+from_file(cls, file_path: Path) -> MCPConfig
+```
+
+Load configuration from JSON file.
+
+
+#### `add_server` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/mcp_config.py#L243" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+add_server(self, name: str, server: StdioMCPServer | RemoteMCPServer) -> None
+```
+
+Add or update a server in the configuration.
+
+
+#### `remove_server` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/mcp_config.py#L247" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+remove_server(self, name: str) -> None
+```
+
+Remove a server from the configuration.
+

@@ -5,7 +5,7 @@ import warnings
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator
 from pydantic.fields import FieldInfo
 from pydantic_settings import (
     BaseSettings,
@@ -99,7 +99,16 @@ class Settings(BaseSettings):
     home: Path = Path.home() / ".fastmcp"
 
     test_mode: bool = False
+
     log_level: LOG_LEVEL = "INFO"
+
+    @field_validator("log_level", mode="before")
+    @classmethod
+    def normalize_log_level(cls, v):
+        if isinstance(v, str):
+            return v.upper()
+        return v
+
     enable_rich_tracebacks: Annotated[
         bool,
         Field(
@@ -161,17 +170,6 @@ class Settings(BaseSettings):
             description="The timeout for the client's initialization handshake, in seconds. Set to None or 0 to disable.",
         ),
     ] = None
-
-    @model_validator(mode="after")
-    def setup_logging(self) -> Self:
-        """Finalize the settings."""
-        from fastmcp.utilities.logging import configure_logging
-
-        configure_logging(
-            self.log_level, enable_rich_tracebacks=self.enable_rich_tracebacks
-        )
-
-        return self
 
     # HTTP settings
     host: str = "127.0.0.1"

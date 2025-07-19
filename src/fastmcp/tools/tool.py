@@ -399,7 +399,7 @@ class ParsedFunction:
 
             try:
                 type_adapter = get_cached_typeadapter(clean_output_type)
-                base_schema = type_adapter.json_schema()
+                base_schema = type_adapter.json_schema(mode="serialization")
 
                 # Generate schema for wrapped type if it's non-object
                 # because MCP requires that output schemas are objects
@@ -410,7 +410,7 @@ class ParsedFunction:
                     # Use the wrapped result schema directly
                     wrapped_type = _WrappedResult[clean_output_type]
                     wrapped_adapter = get_cached_typeadapter(wrapped_type)
-                    output_schema = wrapped_adapter.json_schema()
+                    output_schema = wrapped_adapter.json_schema(mode="serialization")
                     output_schema["x-fastmcp-wrap-result"] = True
                 else:
                     output_schema = base_schema

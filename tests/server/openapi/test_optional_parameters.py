@@ -95,8 +95,6 @@ async def test_optional_parameter_allows_null_for_type(param_schema):
     # Should have anyOf with the original type and null
     assert "anyOf" in optional_param_schema
     assert {"type": "null"} in optional_param_schema["anyOf"]
-    # Check that original schema is preserved (either simple type or complex schema)
-    if "type" in param_schema:
-        assert {"type": param_schema["type"]} in optional_param_schema["anyOf"]
-    else:
-        assert param_schema in optional_param_schema["anyOf"]
+
+    # Check that original schema is fully preserved under anyOf
+    assert param_schema in optional_param_schema["anyOf"]

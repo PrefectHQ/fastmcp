@@ -124,7 +124,7 @@ class TestMcpJsonInstall:
     def test_mcp_json_basic(self):
         """Test basic mcp-json install command parsing."""
         command, bound, _ = install_app.parse_args(
-            ["mcp-json", "server.py", "--server-name", "test-server"]
+            ["mcp-json", "server.py", "--name", "test-server"]
         )
 
         assert command is not None
@@ -134,7 +134,7 @@ class TestMcpJsonInstall:
     def test_mcp_json_with_copy(self):
         """Test mcp-json install with copy to clipboard option."""
         command, bound, _ = install_app.parse_args(
-            ["mcp-json", "server.py", "--server-name", "test-server", "--copy"]
+            ["mcp-json", "server.py", "--name", "test-server", "--copy"]
         )
 
         assert bound.arguments["copy"] is True

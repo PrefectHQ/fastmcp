@@ -7,7 +7,48 @@ sidebarTitle: openapi
 
 ## Functions
 
-### `parse_openapi_to_http_routes` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/openapi.py#L112"><Icon icon="github" size="14" /></a></sup>
+### `format_array_parameter` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/openapi.py#L42" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+format_array_parameter(values: list, parameter_name: str, is_query_parameter: bool = False) -> str | list
+```
+
+
+Format an array parameter according to OpenAPI specifications.
+
+**Args:**
+- `values`: List of values to format
+- `parameter_name`: Name of the parameter (for error messages)
+- `is_query_parameter`: If True, can return list for explode=True behavior
+
+**Returns:**
+- String (comma-separated) or list (for query params with explode=True)
+
+
+### `format_deep_object_parameter` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/openapi.py#L96" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+format_deep_object_parameter(param_value: dict, parameter_name: str) -> dict[str, str]
+```
+
+
+Format a dictionary parameter for deepObject style serialization.
+
+According to OpenAPI 3.0 spec, deepObject style with explode=true serializes
+object properties as separate query parameters with bracket notation.
+
+For example: {"id": "123", "type": "user"} becomes:
+param[id]=123&param[type]=user
+
+**Args:**
+- `param_value`: Dictionary value to format
+- `parameter_name`: Name of the parameter
+
+**Returns:**
+- Dictionary with bracketed parameter names as keys
+
+
+### `parse_openapi_to_http_routes` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/openapi.py#L205" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 parse_openapi_to_http_routes(openapi_dict: dict[str, Any]) -> list[HTTPRoute]
@@ -20,7 +61,7 @@ using the openapi-pydantic library.
 Supports both OpenAPI 3.0.x and 3.1.x versions.
 
 
-### `clean_schema_for_display` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/openapi.py#L570"><Icon icon="github" size="14" /></a></sup>
+### `clean_schema_for_display` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/openapi.py#L740" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 clean_schema_for_display(schema: JsonSchema | None) -> JsonSchema | None
@@ -30,7 +71,7 @@ clean_schema_for_display(schema: JsonSchema | None) -> JsonSchema | None
 Clean up a schema dictionary for display by removing internal/complex fields.
 
 
-### `generate_example_from_schema` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/openapi.py#L630"><Icon icon="github" size="14" /></a></sup>
+### `generate_example_from_schema` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/openapi.py#L800" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 generate_example_from_schema(schema: JsonSchema | None) -> Any
@@ -41,7 +82,7 @@ Generate a simple example value from a JSON schema dictionary.
 Very basic implementation focusing on types.
 
 
-### `format_json_for_description` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/openapi.py#L713"><Icon icon="github" size="14" /></a></sup>
+### `format_json_for_description` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/openapi.py#L883" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 format_json_for_description(data: Any, indent: int = 2) -> str
@@ -51,7 +92,7 @@ format_json_for_description(data: Any, indent: int = 2) -> str
 Formats Python data as a JSON string block for markdown.
 
 
-### `format_description_with_responses` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/openapi.py#L722"><Icon icon="github" size="14" /></a></sup>
+### `format_description_with_responses` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/openapi.py#L892" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 format_description_with_responses(base_description: str, responses: dict[str, Any], parameters: list[ParameterInfo] | None = None, request_body: RequestBodyInfo | None = None) -> str
@@ -74,33 +115,54 @@ including its description, whether it is required, and its content schema.
 - and the request body.
 
 
+### `extract_output_schema_from_responses` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/openapi.py#L1291" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+extract_output_schema_from_responses(responses: dict[str, ResponseInfo], schema_definitions: dict[str, Any] | None = None) -> dict[str, Any] | None
+```
+
+
+Extract output schema from OpenAPI responses for use as MCP tool output schema.
+
+This function finds the first successful response (200, 201, 202, 204) with a
+JSON-compatible content type and extracts its schema. If the schema is not an
+object type, it wraps it to comply with MCP requirements.
+
+**Args:**
+- `responses`: Dictionary of ResponseInfo objects keyed by status code
+- `schema_definitions`: Optional schema definitions to include in the output schema
+
+**Returns:**
+- MCP-compliant output schema with potential wrapping, or None if no suitable schema found
+
+
 ## Classes
 
-### `ParameterInfo` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/openapi.py#L42"><Icon icon="github" size="14" /></a></sup>
+### `ParameterInfo` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/openapi.py#L130" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Represents a single parameter for an HTTP operation in our IR.
 
 
-### `RequestBodyInfo` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/openapi.py#L52"><Icon icon="github" size="14" /></a></sup>
+### `RequestBodyInfo` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/openapi.py#L142" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Represents the request body for an HTTP operation in our IR.
 
 
-### `ResponseInfo` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/openapi.py#L62"><Icon icon="github" size="14" /></a></sup>
+### `ResponseInfo` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/openapi.py#L152" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Represents response information in our IR.
 
 
-### `HTTPRoute` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/openapi.py#L70"><Icon icon="github" size="14" /></a></sup>
+### `HTTPRoute` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/openapi.py#L160" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Intermediate Representation for a single OpenAPI operation.
 
 
-### `OpenAPIParser` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/openapi.py#L164"><Icon icon="github" size="14" /></a></sup>
+### `OpenAPIParser` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/openapi.py#L257" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Unified parser for OpenAPI schemas with generic type parameters to handle both 3.0 and 3.1.
@@ -108,7 +170,7 @@ Unified parser for OpenAPI schemas with generic type parameters to handle both 3
 
 **Methods:**
 
-#### `parse` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/openapi.py#L469"><Icon icon="github" size="14" /></a></sup>
+#### `parse` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/openapi.py#L619" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 parse(self) -> list[HTTPRoute]

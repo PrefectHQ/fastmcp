@@ -6,77 +6,66 @@ sidebarTitle: cli
 # `fastmcp.cli.cli`
 
 
-FastMCP CLI tools.
+FastMCP CLI tools using Cyclopts.
 
 ## Functions
 
-### `version` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/cli/cli.py#L87"><Icon icon="github" size="14" /></a></sup>
+### `version` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/cli/cli.py#L89" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-version(ctx: Context)
-```
-
-### `dev` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/cli/cli.py#L110"><Icon icon="github" size="14" /></a></sup>
-
-```python
-dev(server_spec: str = typer.Argument(..., help='Python file to run, optionally with :object suffix'), with_editable: Annotated[Path | None, typer.Option('--with-editable', '-e', help='Directory containing pyproject.toml to install in editable mode', exists=True, file_okay=False, resolve_path=True)] = None, with_packages: Annotated[list[str], typer.Option('--with', help='Additional packages to install')] = [], inspector_version: Annotated[str | None, typer.Option('--inspector-version', help='Version of the MCP Inspector to use')] = None, ui_port: Annotated[int | None, typer.Option('--ui-port', help='Port for the MCP Inspector UI')] = None, server_port: Annotated[int | None, typer.Option('--server-port', help='Port for the MCP Inspector Proxy server')] = None) -> None
+version()
 ```
 
 
-Run a MCP server with the MCP Inspector.
+Display version information and platform details.
 
 
-### `run` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/cli/cli.py#L227"><Icon icon="github" size="14" /></a></sup>
+### `dev` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/cli/cli.py#L127" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-run(ctx: typer.Context, server_spec: str = typer.Argument(..., help='Python file, object specification (file:obj), or URL'), transport: Annotated[str | None, typer.Option('--transport', '-t', help='Transport protocol to use (stdio, http, or sse)')] = None, host: Annotated[str | None, typer.Option('--host', help='Host to bind to when using http transport (default: 127.0.0.1)')] = None, port: Annotated[int | None, typer.Option('--port', '-p', help='Port to bind to when using http transport (default: 8000)')] = None, log_level: Annotated[str | None, typer.Option('--log-level', '-l', help='Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)')] = None) -> None
+dev(server_spec: str) -> None
 ```
 
 
-Run a MCP server or connect to a remote one.
+Run an MCP server with the MCP Inspector for development.
+
+**Args:**
+- `server_spec`: Python file to run, optionally with \:object suffix
+
+
+### `run` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/cli/cli.py#L245" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+run(server_spec: str) -> None
+```
+
+
+Run an MCP server or connect to a remote one.
 
 The server can be specified in three ways:
-1. Module approach: server.py - runs the module directly, looking for an object named mcp/server/app.
-
-2. Import approach: server.py:app - imports and runs the specified server object.
-
-3. URL approach: http://server-url - connects to a remote server and creates a proxy.
-
-
-
-Note: This command runs the server directly. You are responsible for ensuring
-all dependencies are available.
+1. Module approach: server.py - runs the module directly, looking for an object named 'mcp', 'server', or 'app'
+2. Import approach: server.py:app - imports and runs the specified server object
+3. URL approach: http://server-url - connects to a remote server and creates a proxy
 
 Server arguments can be passed after -- :
 fastmcp run server.py -- --config config.json --debug
 
+**Args:**
+- `server_spec`: Python file, object specification (file\:obj), or URL
 
-### `install` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/cli/cli.py#L313"><Icon icon="github" size="14" /></a></sup>
+
+### `inspect` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/cli/cli.py#L344" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-install(server_spec: str = typer.Argument(..., help='Python file to run, optionally with :object suffix'), server_name: Annotated[str | None, typer.Option('--name', '-n', help="Custom name for the server (defaults to server's name attribute or file name)")] = None, with_editable: Annotated[Path | None, typer.Option('--with-editable', '-e', help='Directory containing pyproject.toml to install in editable mode', exists=True, file_okay=False, resolve_path=True)] = None, with_packages: Annotated[list[str], typer.Option('--with', help='Additional packages to install')] = [], env_vars: Annotated[list[str], typer.Option('--env-var', '-v', help='Environment variables in KEY=VALUE format')] = [], env_file: Annotated[Path | None, typer.Option('--env-file', '-f', help='Load environment variables from a .env file', exists=True, file_okay=True, dir_okay=False, resolve_path=True)] = None) -> None
+inspect(server_spec: str) -> None
 ```
 
 
-Install a MCP server in the Claude desktop app.
+Inspect an MCP server and generate a JSON report.
 
-Environment variables are preserved once added and only updated if new values
-are explicitly provided.
-
-
-### `inspect` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/cli/cli.py#L444"><Icon icon="github" size="14" /></a></sup>
-
-```python
-inspect(server_spec: str = typer.Argument(..., help='Python file to inspect, optionally with :object suffix'), output: Annotated[Path, typer.Option('--output', '-o', help='Output file path for the JSON report (default: server-info.json)')] = Path('server-info.json')) -> None
-```
-
-
-Inspect a FastMCP server and generate a JSON report.
-
-This command analyzes a FastMCP server (v1.x or v2.x) and generates
-a comprehensive JSON report containing information about the server's
-name, instructions, version, tools, prompts, resources, templates,
-and capabilities.
+This command analyzes an MCP server and generates a comprehensive JSON report
+containing information about the server's name, instructions, version, tools,
+prompts, resources, templates, and capabilities.
 
 **Examples:**
 
@@ -84,4 +73,7 @@ fastmcp inspect server.py
 fastmcp inspect server.py -o report.json
 fastmcp inspect server.py:mcp -o analysis.json
 fastmcp inspect path/to/server.py:app -o /tmp/server-info.json
+
+**Args:**
+- `server_spec`: Python file to inspect, optionally with \:object suffix
 

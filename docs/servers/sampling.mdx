@@ -137,6 +137,7 @@ async def creative_writing(topic: str, ctx: Context) -> str:
     response = await ctx.sample(
         messages=f"Write a creative short story about {topic}",
         model_preferences="claude-3-sonnet",  # Prefer a specific model
+        include_context="thisServer",  # Use the server's context
         temperature=0.9,  # High creativity
         max_tokens=1000
     )

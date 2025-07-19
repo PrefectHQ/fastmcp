@@ -12,6 +12,9 @@ from fastmcp.client import Client
 from fastmcp.client.transports import FastMCPTransport, StreamableHttpTransport
 from fastmcp.exceptions import ToolError
 from fastmcp.server.proxy import FastMCPProxy, ProxyClient
+from fastmcp.tools.tool_transform import (
+    ToolTransformConfig,
+)
 
 USERS = [
     {"id": "1", "name": "Alice", "active": True},
@@ -117,6 +120,30 @@ class TestTools:
         assert "add" in tools
         assert "error_tool" in tools
         assert "tool_without_description" in tools
+
+    async def test_get_transformed_tools(
+        self, fastmcp_server: FastMCP, proxy_server: FastMCPProxy
+    ):
+        """An explicit None description should change the tool description to None."""
+
+        fastmcp_server.add_tool_transformation(
+            "add", ToolTransformConfig(name="add_transformed")
+        )
+        tools = await proxy_server.get_tools()
+        assert "add_transformed" in tools
+        assert "add" not in tools
+
+    async def test_call_transformed_tools(
+        self, fastmcp_server: FastMCP, proxy_server: FastMCPProxy
+    ):
+        """An explicit None description should change the tool description to None."""
+
+        fastmcp_server.add_tool_transformation(
+            "add", ToolTransformConfig(name="add_transformed")
+        )
+        async with Client(proxy_server) as client:
+            result = await client.call_tool("add_transformed", {"a": 1, "b": 2})
+        assert result.data == 3
 
     async def test_tool_without_description(self, proxy_server):
         tools = await proxy_server.get_tools()

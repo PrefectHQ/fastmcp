@@ -10,13 +10,13 @@ FastMCP server implementation for OpenAPI integration.
 
 ## Classes
 
-### `MCPType` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/openapi.py#L76"><Icon icon="github" size="14" /></a></sup>
+### `MCPType` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/openapi.py#L78" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Type of FastMCP component to create from a route.
 
 
-### `RouteType` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/openapi.py#L95"><Icon icon="github" size="14" /></a></sup>
+### `RouteType` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/openapi.py#L97" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Deprecated: Use MCPType instead.
@@ -24,31 +24,64 @@ Deprecated: Use MCPType instead.
 This enum is kept for backward compatibility and will be removed in a future version.
 
 
-### `RouteMap` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/openapi.py#L109"><Icon icon="github" size="14" /></a></sup>
+### `RouteMap` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/openapi.py#L111" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Mapping configuration for HTTP routes to FastMCP component types.
 
 
-### `OpenAPITool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/openapi.py#L227"><Icon icon="github" size="14" /></a></sup>
+### `OpenAPITool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/openapi.py#L229" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Tool implementation for OpenAPI endpoints.
 
 
-### `OpenAPIResource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/openapi.py#L478"><Icon icon="github" size="14" /></a></sup>
+**Methods:**
+
+#### `run` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/openapi.py#L262" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+run(self, arguments: dict[str, Any]) -> ToolResult
+```
+
+Execute the HTTP request based on the route configuration.
+
+
+### `OpenAPIResource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/openapi.py#L523" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Resource implementation for OpenAPI endpoints.
 
 
-### `OpenAPIResourceTemplate` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/openapi.py#L597"><Icon icon="github" size="14" /></a></sup>
+**Methods:**
+
+#### `read` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/openapi.py#L552" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+read(self) -> str | bytes
+```
+
+Fetch the resource data by making an HTTP request.
+
+
+### `OpenAPIResourceTemplate` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/openapi.py#L642" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Resource template implementation for OpenAPI endpoints.
 
 
-### `FastMCPOpenAPI` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/openapi.py#L651"><Icon icon="github" size="14" /></a></sup>
+**Methods:**
+
+#### `create_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/openapi.py#L671" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+create_resource(self, uri: str, params: dict[str, Any], context: Context | None = None) -> Resource
+```
+
+Create a resource with the given parameters.
+
+
+### `FastMCPOpenAPI` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/openapi.py#L696" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 FastMCP server implementation that creates components from an OpenAPI schema.

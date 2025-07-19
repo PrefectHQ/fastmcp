@@ -10,6 +10,10 @@ from fastmcp import settings
 from fastmcp.exceptions import NotFoundError, ToolError
 from fastmcp.settings import DuplicateBehavior
 from fastmcp.tools.tool import Tool, ToolResult
+from fastmcp.tools.tool_transform import (
+    ToolTransformConfig,
+    apply_transformations_to_tools,
+)
 from fastmcp.utilities.logging import get_logger
 
 if TYPE_CHECKING:
@@ -25,10 +29,12 @@ class ToolManager:
         self,
         duplicate_behavior: DuplicateBehavior | None = None,
         mask_error_details: bool | None = None,
+        transformations: dict[str, ToolTransformConfig] | None = None,
     ):
         self._tools: dict[str, Tool] = {}
         self._mounted_servers: list[MountedServer] = []
         self.mask_error_details = mask_error_details or settings.mask_error_details
+        self.transformations = transformations or {}
 
         # Default to "warn" if None is provided
         if duplicate_behavior is None:
@@ -76,13 +82,19 @@ class ToolManager:
             except Exception as e:
                 # Skip failed mounts silently, matches existing behavior
                 logger.warning(
-                    f"Failed to get tools from mounted server '{mounted.prefix}': {e}"
+                    f"Failed to get tools from server: {mounted.server.name!r}, mounted at: {mounted.prefix!r}: {e}"
                 )
                 continue
 
         # Finally, add local tools, which always take precedence
         all_tools.update(self._tools)
-        return all_tools
+
+        transformed_tools = apply_transformations_to_tools(
+            tools=all_tools,
+            transformations=self.transformations,
+        )
+
+        return transformed_tools
 
     async def has_tool(self, key: str) -> bool:
         """Check if a tool exists."""
@@ -108,6 +120,15 @@ class ToolManager:
         """
         tools_dict = await self._load_tools(via_server=True)
         return list(tools_dict.values())
+
+    @property
+    def _tools_transformed(self) -> list[str]:
+        """Get the local tools."""
+
+        return [
+            transformation.name or tool_name
+            for tool_name, transformation in self.transformations.items()
+        ]
 
     def add_tool_from_fn(
         self,
@@ -155,6 +176,21 @@ class ToolManager:
             self._tools[tool.key] = tool
         return tool
 
+    def add_tool_transformation(
+        self, tool_name: str, transformation: ToolTransformConfig
+    ) -> None:
+        """Add a tool transformation."""
+        self.transformations[tool_name] = transformation
+
+    def get_tool_transformation(self, tool_name: str) -> ToolTransformConfig | None:
+        """Get a tool transformation."""
+        return self.transformations.get(tool_name)
+
+    def remove_tool_transformation(self, tool_name: str) -> None:
+        """Remove a tool transformation."""
+        if tool_name in self.transformations:
+            del self.transformations[tool_name]
+
     def remove_tool(self, key: str) -> None:
         """Remove a tool from the server.
 
@@ -175,7 +211,7 @@ class ToolManager:
         filtered protocol path.
         """
         # 1. Check local tools first. The server will have already applied its filter.
-        if key in self._tools:
+        if key in self._tools or key in self._tools_transformed:
             tool = await self.get_tool(key)
             if not tool:
                 raise NotFoundError(f"Tool {key!r} not found")

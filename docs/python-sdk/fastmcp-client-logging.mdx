@@ -7,7 +7,13 @@ sidebarTitle: logging
 
 ## Functions
 
-### `create_log_callback` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/logging.py#L20"><Icon icon="github" size="14" /></a></sup>
+### `default_log_handler` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/logging.py#L15" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+default_log_handler(message: LogMessage) -> None
+```
+
+### `create_log_callback` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/logging.py#L19" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 create_log_callback(handler: LogHandler | None = None) -> LoggingFnT

@@ -10,7 +10,23 @@ FastMCP - A more ergonomic interface for MCP servers.
 
 ## Functions
 
-### `add_resource_prefix` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L1879"><Icon icon="github" size="14" /></a></sup>
+### `default_lifespan` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L86" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+default_lifespan(server: FastMCP[LifespanResultT]) -> AsyncIterator[Any]
+```
+
+
+Default lifespan context manager that does nothing.
+
+**Args:**
+- `server`: The server instance this lifespan is managing
+
+**Returns:**
+- An empty context object
+
+
+### `add_resource_prefix` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L2047" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 add_resource_prefix(uri: str, prefix: str, prefix_format: Literal['protocol', 'path'] | None = None) -> str
@@ -48,7 +64,7 @@ add_resource_prefix("resource:///absolute/path", "prefix")
 - `ValueError`: If the URI doesn't match the expected protocol\://path format
 
 
-### `remove_resource_prefix` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L1939"><Icon icon="github" size="14" /></a></sup>
+### `remove_resource_prefix` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L2107" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 remove_resource_prefix(uri: str, prefix: str, prefix_format: Literal['protocol', 'path'] | None = None) -> str
@@ -87,7 +103,7 @@ remove_resource_prefix("resource://prefix//absolute/path", "prefix")
 - `ValueError`: If the URI doesn't match the expected protocol\://path format
 
 
-### `has_resource_prefix` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L2006"><Icon icon="github" size="14" /></a></sup>
+### `has_resource_prefix` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L2174" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 has_resource_prefix(uri: str, prefix: str, prefix_format: Literal['protocol', 'path'] | None = None) -> bool
@@ -127,32 +143,44 @@ False
 
 ## Classes
 
-### `FastMCP` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L113"><Icon icon="github" size="14" /></a></sup>
+### `FastMCP` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L117" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 **Methods:**
 
-#### `settings` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L264"><Icon icon="github" size="14" /></a></sup>
+#### `settings` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L268" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 settings(self) -> Settings
 ```
 
-#### `name` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L275"><Icon icon="github" size="14" /></a></sup>
+#### `name` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L279" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 name(self) -> str
 ```
 
-#### `instructions` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L279"><Icon icon="github" size="14" /></a></sup>
+#### `instructions` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L283" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 instructions(self) -> str | None
 ```
 
-#### `run` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L304"><Icon icon="github" size="14" /></a></sup>
+#### `run_async` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L286" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-run(self, transport: Transport | None = None, **transport_kwargs: Any) -> None
+run_async(self, transport: Transport | None = None, show_banner: bool = True, **transport_kwargs: Any) -> None
+```
+
+Run the FastMCP server asynchronously.
+
+**Args:**
+- `transport`: Transport protocol to use ("stdio", "sse", or "streamable-http")
+
+
+#### `run` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L316" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+run(self, transport: Transport | None = None, show_banner: bool = True, **transport_kwargs: Any) -> None
 ```
 
 Run the FastMCP server. Note this is a synchronous function.
@@ -161,13 +189,76 @@ Run the FastMCP server. Note this is a synchronous function.
 - `transport`: Transport protocol to use ("stdio", "sse", or "streamable-http")
 
 
-#### `add_middleware` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L338"><Icon icon="github" size="14" /></a></sup>
+#### `add_middleware` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L358" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 add_middleware(self, middleware: Middleware) -> None
 ```
 
-#### `custom_route` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L384"><Icon icon="github" size="14" /></a></sup>
+#### `get_tools` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L361" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_tools(self) -> dict[str, Tool]
+```
+
+Get all registered tools, indexed by registered key.
+
+
+#### `get_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L365" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_tool(self, key: str) -> Tool
+```
+
+#### `get_resources` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L371" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_resources(self) -> dict[str, Resource]
+```
+
+Get all registered resources, indexed by registered key.
+
+
+#### `get_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L375" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_resource(self, key: str) -> Resource
+```
+
+#### `get_resource_templates` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L381" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_resource_templates(self) -> dict[str, ResourceTemplate]
+```
+
+Get all registered resource templates, indexed by registered key.
+
+
+#### `get_resource_template` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L385" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_resource_template(self, key: str) -> ResourceTemplate
+```
+
+Get a registered resource template by key.
+
+
+#### `get_prompts` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L392" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_prompts(self) -> dict[str, Prompt]
+```
+
+List all available prompts.
+
+
+#### `get_prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L398" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_prompt(self, key: str) -> Prompt
+```
+
+#### `custom_route` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L404" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 custom_route(self, path: str, methods: list[str], name: str | None = None, include_in_schema: bool = True)
@@ -188,10 +279,10 @@ Starlette's reverse URL lookup feature)
 - `include_in_schema`: Whether to include in OpenAPI schema, defaults to True
 
 
-#### `add_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L742"><Icon icon="github" size="14" /></a></sup>
+#### `add_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L762" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-add_tool(self, tool: Tool) -> None
+add_tool(self, tool: Tool) -> Tool
 ```
 
 Add a tool to the server.
@@ -202,8 +293,11 @@ with the Context type annotation. See the @tool decorator for examples.
 **Args:**
 - `tool`: The Tool instance to register
 
+**Returns:**
+- The tool instance that was added to the server.
 
-#### `remove_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L754"><Icon icon="github" size="14" /></a></sup>
+
+#### `remove_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L788" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 remove_tool(self, name: str) -> None
@@ -218,19 +312,19 @@ Remove a tool from the server.
 - `NotFoundError`: If the tool is not found
 
 
-#### `tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L767"><Icon icon="github" size="14" /></a></sup>
+#### `tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L810" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 tool(self, name_or_fn: AnyFunction) -> FunctionTool
 ```
 
-#### `tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L780"><Icon icon="github" size="14" /></a></sup>
+#### `tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L825" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 tool(self, name_or_fn: str | None = None) -> Callable[[AnyFunction], FunctionTool]
 ```
 
-#### `tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L792"><Icon icon="github" size="14" /></a></sup>
+#### `tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L839" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 tool(self, name_or_fn: str | AnyFunction | None = None) -> Callable[[AnyFunction], FunctionTool] | FunctionTool
@@ -254,6 +348,7 @@ This decorator supports multiple calling patterns:
 - `name`: Optional name for the tool (keyword-only, alternative to name_or_fn)
 - `description`: Optional description of what the tool does
 - `tags`: Optional set of tags for categorizing the tool
+- `output_schema`: Optional JSON schema for the tool's output
 - `annotations`: Optional annotations about the tool's behavior
 - `exclude_args`: Optional list of argument names to exclude from the tool schema
 - `enabled`: Optional boolean to enable or disable the tool
@@ -284,10 +379,10 @@ server.tool(my_function, name="custom_name")
 ```
 
 
-#### `add_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L912"><Icon icon="github" size="14" /></a></sup>
+#### `add_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L966" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-add_resource(self, resource: Resource) -> None
+add_resource(self, resource: Resource) -> Resource
 ```
 
 Add a resource to the server.
@@ -295,11 +390,14 @@ Add a resource to the server.
 **Args:**
 - `resource`: A Resource instance to add
 
+**Returns:**
+- The resource instance that was added to the server.
 
-#### `add_template` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L922"><Icon icon="github" size="14" /></a></sup>
+
+#### `add_template` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L989" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-add_template(self, template: ResourceTemplate) -> None
+add_template(self, template: ResourceTemplate) -> ResourceTemplate
 ```
 
 Add a resource template to the server.
@@ -307,8 +405,11 @@ Add a resource template to the server.
 **Args:**
 - `template`: A ResourceTemplate instance to add
 
+**Returns:**
+- The template instance that was added to the server.
 
-#### `add_resource_fn` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L930"><Icon icon="github" size="14" /></a></sup>
+
+#### `add_resource_fn` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L1011" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 add_resource_fn(self, fn: AnyFunction, uri: str, name: str | None = None, description: str | None = None, mime_type: str | None = None, tags: set[str] | None = None) -> None
@@ -328,7 +429,7 @@ has parameters, it will be registered as a template resource.
 - `tags`: Optional set of tags for categorizing the resource
 
 
-#### `resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L969"><Icon icon="github" size="14" /></a></sup>
+#### `resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L1050" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 resource(self, uri: str) -> Callable[[AnyFunction], Resource | ResourceTemplate]
@@ -386,10 +487,10 @@ async def get_weather(city: str) -> str:
 ```
 
 
-#### `add_prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L1092"><Icon icon="github" size="14" /></a></sup>
+#### `add_prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L1176" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-add_prompt(self, prompt: Prompt) -> None
+add_prompt(self, prompt: Prompt) -> Prompt
 ```
 
 Add a prompt to the server.
@@ -397,20 +498,23 @@ Add a prompt to the server.
 **Args:**
 - `prompt`: A Prompt instance to add
 
+**Returns:**
+- The prompt instance that was added to the server.
 
-#### `prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L1102"><Icon icon="github" size="14" /></a></sup>
+
+#### `prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L1200" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 prompt(self, name_or_fn: AnyFunction) -> FunctionPrompt
 ```
 
-#### `prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L1113"><Icon icon="github" size="14" /></a></sup>
+#### `prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L1212" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 prompt(self, name_or_fn: str | None = None) -> Callable[[AnyFunction], FunctionPrompt]
 ```
 
-#### `prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L1123"><Icon icon="github" size="14" /></a></sup>
+#### `prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L1223" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 prompt(self, name_or_fn: str | AnyFunction | None = None) -> Callable[[AnyFunction], FunctionPrompt] | FunctionPrompt
@@ -487,7 +591,44 @@ Decorator to register a prompt.
             ```
 
 
-#### `sse_app` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L1344"><Icon icon="github" size="14" /></a></sup>
+#### `run_stdio_async` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L1360" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+run_stdio_async(self, show_banner: bool = True) -> None
+```
+
+Run the server using stdio transport.
+
+
+#### `run_http_async` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L1380" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+run_http_async(self, show_banner: bool = True, transport: Literal['http', 'streamable-http', 'sse'] = 'http', host: str | None = None, port: int | None = None, log_level: str | None = None, path: str | None = None, uvicorn_config: dict[str, Any] | None = None, middleware: list[ASGIMiddleware] | None = None, stateless_http: bool | None = None) -> None
+```
+
+Run the server using HTTP transport.
+
+**Args:**
+- `transport`: Transport protocol to use - either "streamable-http" (default) or "sse"
+- `host`: Host address to bind to (defaults to settings.host)
+- `port`: Port to bind to (defaults to settings.port)
+- `log_level`: Log level for the server (defaults to settings.log_level)
+- `path`: Path for the endpoint (defaults to settings.streamable_http_path or settings.sse_path)
+- `uvicorn_config`: Additional configuration for the Uvicorn server
+- `middleware`: A list of middleware to apply to the app
+- `stateless_http`: Whether to use stateless HTTP (defaults to settings.stateless_http)
+
+
+#### `run_sse_async` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L1454" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+run_sse_async(self, host: str | None = None, port: int | None = None, log_level: str | None = None, path: str | None = None, uvicorn_config: dict[str, Any] | None = None) -> None
+```
+
+Run the server using SSE transport.
+
+
+#### `sse_app` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L1482" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 sse_app(self, path: str | None = None, message_path: str | None = None, middleware: list[ASGIMiddleware] | None = None) -> StarletteWithLifespan
@@ -501,7 +642,7 @@ Create a Starlette app for the SSE server.
 - `middleware`: A list of middleware to apply to the app
 
 
-#### `streamable_http_app` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L1375"><Icon icon="github" size="14" /></a></sup>
+#### `streamable_http_app` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L1513" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 streamable_http_app(self, path: str | None = None, middleware: list[ASGIMiddleware] | None = None) -> StarletteWithLifespan
@@ -514,7 +655,7 @@ Create a Starlette app for the StreamableHTTP server.
 - `middleware`: A list of middleware to apply to the app
 
 
-#### `http_app` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L1396"><Icon icon="github" size="14" /></a></sup>
+#### `http_app` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L1534" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 http_app(self, path: str | None = None, middleware: list[ASGIMiddleware] | None = None, json_response: bool | None = None, stateless_http: bool | None = None, transport: Literal['http', 'streamable-http', 'sse'] = 'http') -> StarletteWithLifespan
@@ -531,7 +672,13 @@ Create a Starlette app using the specified HTTP transport.
 - A Starlette application configured with the specified transport
 
 
-#### `mount` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L1470"><Icon icon="github" size="14" /></a></sup>
+#### `run_streamable_http_async` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L1583" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+run_streamable_http_async(self, host: str | None = None, port: int | None = None, log_level: str | None = None, path: str | None = None, uvicorn_config: dict[str, Any] | None = None) -> None
+```
+
+#### `mount` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L1608" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 mount(self, server: FastMCP[LifespanResultT], prefix: str | None = None, as_proxy: bool | None = None) -> None
@@ -585,7 +732,48 @@ automatically determined based on whether the server has a custom lifespan
 - `prompt_separator`: Deprecated. Separator character for prompt names.
 
 
-#### `from_openapi` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L1720"><Icon icon="github" size="14" /></a></sup>
+#### `import_server` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L1732" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+import_server(self, server: FastMCP[LifespanResultT], prefix: str | None = None, tool_separator: str | None = None, resource_separator: str | None = None, prompt_separator: str | None = None) -> None
+```
+
+Import the MCP objects from another FastMCP server into this one,
+optionally with a given prefix.
+
+Note that when a server is *imported*, its objects are immediately
+registered to the importing server. This is a one-time operation and
+future changes to the imported server will not be reflected in the
+importing server. Server-level configurations and lifespans are not imported.
+
+When a server is imported with a prefix:
+- The tools are imported with prefixed names
+  Example: If server has a tool named "get_weather", it will be
+  available as "prefix_get_weather"
+- The resources are imported with prefixed URIs using the new format
+  Example: If server has a resource with URI "weather://forecast", it will
+  be available as "weather://prefix/forecast"
+- The templates are imported with prefixed URI templates using the new format
+  Example: If server has a template with URI "weather://location/{id}", it will
+  be available as "weather://prefix/location/{id}"
+- The prompts are imported with prefixed names
+  Example: If server has a prompt named "weather_prompt", it will be available as
+  "prefix_weather_prompt"
+
+When a server is imported without a prefix (prefix=None), its tools, resources,
+templates, and prompts are imported with their original names.
+
+**Args:**
+- `server`: The FastMCP server to import
+- `prefix`: Optional prefix to use for the imported server's objects. If None,
+objects are imported with their original names.
+- `tool_separator`: Deprecated. Separator for tool names.
+- `resource_separator`: Deprecated and ignored. Prefix is now
+applied using the protocol\://prefix/path format
+- `prompt_separator`: Deprecated. Separator for prompt names.
+
+
+#### `from_openapi` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L1857" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 from_openapi(cls, openapi_spec: dict[str, Any], client: httpx.AsyncClient, route_maps: list[RouteMap] | None = None, route_map_fn: OpenAPIRouteMapFn | None = None, mcp_component_fn: OpenAPIComponentFn | None = None, mcp_names: dict[str, str] | None = None, tags: set[str] | None = None, **settings: Any) -> FastMCPOpenAPI
@@ -594,7 +782,7 @@ from_openapi(cls, openapi_spec: dict[str, Any], client: httpx.AsyncClient, route
 Create a FastMCP server from an OpenAPI specification.
 
 
-#### `from_fastapi` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L1748"><Icon icon="github" size="14" /></a></sup>
+#### `from_fastapi` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L1885" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 from_fastapi(cls, app: Any, name: str | None = None, route_maps: list[RouteMap] | None = None, route_map_fn: OpenAPIRouteMapFn | None = None, mcp_component_fn: OpenAPIComponentFn | None = None, mcp_names: dict[str, str] | None = None, httpx_client_kwargs: dict[str, Any] | None = None, tags: set[str] | None = None, **settings: Any) -> FastMCPOpenAPI
@@ -603,7 +791,7 @@ from_fastapi(cls, app: Any, name: str | None = None, route_maps: list[RouteMap] 
 Create a FastMCP server from a FastAPI application.
 
 
-#### `as_proxy` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L1790"><Icon icon="github" size="14" /></a></sup>
+#### `as_proxy` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L1927" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 as_proxy(cls, backend: Client[ClientTransportT] | ClientTransport | FastMCP[Any] | AnyUrl | Path | MCPConfig | dict[str, Any] | str, **settings: Any) -> FastMCPProxy
@@ -617,7 +805,7 @@ instance or any value accepted as the `transport` argument of
 `fastmcp.client.Client` constructor.
 
 
-#### `from_client` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L1820"><Icon icon="github" size="14" /></a></sup>
+#### `from_client` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L1988" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 from_client(cls, client: Client[ClientTransportT], **settings: Any) -> FastMCPProxy
@@ -626,4 +814,4 @@ from_client(cls, client: Client[ClientTransportT], **settings: Any) -> FastMCPPr
 Create a FastMCP proxy server from a FastMCP client.
 
 
-### `MountedServer` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L1873"><Icon icon="github" size="14" /></a></sup>
+### `MountedServer` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/server.py#L2041" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>

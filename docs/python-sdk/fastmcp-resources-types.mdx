@@ -10,19 +10,41 @@ Concrete resource implementations.
 
 ## Classes
 
-### `TextResource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/types.py#L21"><Icon icon="github" size="14" /></a></sup>
+### `TextResource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/types.py#L21" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 A resource that reads from a string.
 
 
-### `BinaryResource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/types.py#L31"><Icon icon="github" size="14" /></a></sup>
+**Methods:**
+
+#### `read` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/types.py#L26" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+read(self) -> str
+```
+
+Read the text content.
+
+
+### `BinaryResource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/types.py#L31" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 A resource that reads from bytes.
 
 
-### `FileResource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/types.py#L41"><Icon icon="github" size="14" /></a></sup>
+**Methods:**
+
+#### `read` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/types.py#L36" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+read(self) -> bytes
+```
+
+Read the binary content.
+
+
+### `FileResource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/types.py#L41" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 A resource that reads from a file.
@@ -32,7 +54,7 @@ Set is_binary=True to read file as binary data instead of text.
 
 **Methods:**
 
-#### `validate_absolute_path` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/types.py#L59"><Icon icon="github" size="14" /></a></sup>
+#### `validate_absolute_path` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/types.py#L59" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 validate_absolute_path(cls, path: Path) -> Path
@@ -41,7 +63,7 @@ validate_absolute_path(cls, path: Path) -> Path
 Ensure path is absolute.
 
 
-#### `set_binary_from_mime_type` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/types.py#L67"><Icon icon="github" size="14" /></a></sup>
+#### `set_binary_from_mime_type` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/types.py#L67" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 set_binary_from_mime_type(cls, is_binary: bool, info: ValidationInfo) -> bool
@@ -50,13 +72,33 @@ set_binary_from_mime_type(cls, is_binary: bool, info: ValidationInfo) -> bool
 Set is_binary based on mime_type if not explicitly set.
 
 
-### `HttpResource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/types.py#L84"><Icon icon="github" size="14" /></a></sup>
+#### `read` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/types.py#L74" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+read(self) -> str | bytes
+```
+
+Read the file content.
+
+
+### `HttpResource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/types.py#L84" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 A resource that reads from an HTTP endpoint.
 
 
-### `DirectoryResource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/types.py#L100"><Icon icon="github" size="14" /></a></sup>
+**Methods:**
+
+#### `read` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/types.py#L92" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+read(self) -> str | bytes
+```
+
+Read the HTTP content.
+
+
+### `DirectoryResource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/types.py#L100" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 A resource that lists files in a directory.
@@ -64,7 +106,7 @@ A resource that lists files in a directory.
 
 **Methods:**
 
-#### `validate_absolute_path` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/types.py#L116"><Icon icon="github" size="14" /></a></sup>
+#### `validate_absolute_path` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/types.py#L116" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 validate_absolute_path(cls, path: Path) -> Path
@@ -73,11 +115,20 @@ validate_absolute_path(cls, path: Path) -> Path
 Ensure path is absolute.
 
 
-#### `list_files` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/types.py#L122"><Icon icon="github" size="14" /></a></sup>
+#### `list_files` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/types.py#L122" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 list_files(self) -> list[Path]
 ```
 
 List files in the directory.
+
+
+#### `read` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/types.py#L144" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+read(self) -> str
+```
+
+Read the directory listing.
 
