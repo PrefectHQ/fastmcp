@@ -46,7 +46,28 @@ jobs:
       - name: Install FastMCP
         run: uv sync --locked
 
-      - name: Run tests
-        run: uv run pytest tests
+      - name: Run tests (excluding integration)
+        run: uv run pytest tests -m "not integration"
+
+  run_integration_tests:
+    name: "Run integration tests"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+          python-version: "3.10"
+
+      - name: Install FastMCP
+        run: uv sync --locked
+
+      - name: Run integration tests
+        run: uv run pytest tests -m "integration"
         env:
           FASTMCP_GITHUB_TOKEN: ${{ secrets.FASTMCP_GITHUB_TOKEN }}

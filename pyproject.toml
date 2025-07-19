@@ -101,6 +101,15 @@ env = [
     'D:FASTMCP_LOG_LEVEL=DEBUG',
     'D:FASTMCP_ENABLE_RICH_TRACEBACKS=0',
 ]
+markers = [
+    "integration: marks tests as integration tests (deselect with '-m \"not integration\"')",
+]
+# Automatically mark all tests in integration_tests folder
+pythonpath = ["."]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
 
 [tool.pyright]
 include = ["src", "tests"]
