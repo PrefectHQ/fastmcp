@@ -1,6 +1,7 @@
 """FastMCP run command implementation with enhanced type hints."""
 
 import importlib.util
+import json
 import re
 import sys
 from pathlib import Path
@@ -146,13 +147,11 @@ def create_client_server(url: str) -> Any:
 def create_mcp_config_server(mcp_config_path: Path) -> FastMCP[None]:
     """Create a FastMCP server from a MCPConfig."""
     from fastmcp import FastMCP
-    from fastmcp.client import Client
-    from fastmcp.client.transports import MCPConfigTransport
-    from fastmcp.mcp_config import MCPConfig
 
-    mcp_config = MCPConfig.from_file(mcp_config_path)
-    client = Client[MCPConfigTransport](mcp_config)
-    server = FastMCP.as_proxy(client)
+    with mcp_config_path.open() as src:
+        mcp_config = json.load(src)
+
+    server = FastMCP.as_proxy(mcp_config)
     return server
 
 
