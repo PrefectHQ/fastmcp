@@ -36,6 +36,9 @@ from fastmcp.server.dependencies import get_context
 from fastmcp.server.server import FastMCP
 from fastmcp.tools.tool import Tool, ToolResult
 from fastmcp.tools.tool_manager import ToolManager
+from fastmcp.tools.tool_transform import (
+    apply_transformations_to_tools,
+)
 from fastmcp.utilities.components import MirroredComponent
 from fastmcp.utilities.logging import get_logger
 
@@ -71,7 +74,12 @@ class ProxyToolManager(ToolManager):
             else:
                 raise e
 
-        return all_tools
+        transformed_tools = apply_transformations_to_tools(
+            tools=all_tools,
+            transformations=self.transformations,
+        )
+
+        return transformed_tools
 
     async def list_tools(self) -> list[Tool]:
         """Gets the filtered list of tools including local, mounted, and proxy tools."""
@@ -469,7 +477,11 @@ class FastMCPProxy(FastMCP):
             raise ValueError("Must specify 'client_factory'")
 
         # Replace the default managers with our specialized proxy managers.
-        self._tool_manager = ProxyToolManager(client_factory=self.client_factory)
+        self._tool_manager = ProxyToolManager(
+            client_factory=self.client_factory,
+            # Propagate the transformations from the base class tool manager
+            transformations=self._tool_manager.transformations,
+        )
         self._resource_manager = ProxyResourceManager(
             client_factory=self.client_factory
         )

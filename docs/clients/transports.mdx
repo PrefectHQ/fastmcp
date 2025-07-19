@@ -308,3 +308,75 @@ async with client:
     answer = await client.call_tool("assistant_ask", {"question": "What?"})
 ```
 
+### Tool Transformation with FastMCP and MCPConfig
+
+FastMCP supports basic tool transformations to be defined alongside the MCP Servers in the MCPConfig file.
+
+```python
+config = {
+    "mcpServers": {
+        "weather": {
+            "url": "https://weather.example.com/mcp",
+            "transport": "http",
+            "tools": { }   #  <--- This is the tool transformation section
+        }
+    }
+}
+```
+
+With these transformations, you can transform (change) the name, title, description, tags, enablement, and arguments of a tool.
+
+For each argument the tool takes, you can transform (change) the name, description, default, visibility, whether it's required, and you can provide example values.
+
+In the following example, we're transforming the `weather_get_forecast` tool to only retrieve the weather for `Miami` and hiding the `city` argument from the client.
+
+```python
+tool_transformations = {
+    "weather_get_forecast": {
+        "name": "miami_weather",
+        "description": "Get the weather for Miami",
+        "arguments": {
+            "city": {
+                "name": "city",
+                "default": "Miami",
+                "hide": True,
+            }
+        }
+    }
+}
+
+config = {
+    "mcpServers": {
+        "weather": {
+            "url": "https://weather.example.com/mcp",
+            "transport": "http",
+            "tools": tool_transformations
+        }
+    }
+}
+```
+
+#### Allowlisting and Blocklisting Tools
+
+Tools can be allowlisted or blocklisted from the client by applying `tags` to the tools on the server. In the following example, we're allowlisting only tools marked with the `forecast` tag, all other tools will be unavailable to the client.
+
+```python
+tool_transformations = {
+    "weather_get_forecast": {
+        "enabled": True,
+        "tags": ["forecast"]
+    }
+}
+
+
+config = {
+    "mcpServers": {
+        "weather": {
+            "url": "https://weather.example.com/mcp",
+            "transport": "http",
+            "tools": tool_transformations,
+            "include_tags": ["forecast"]
+        }
+    }
+}
+```
