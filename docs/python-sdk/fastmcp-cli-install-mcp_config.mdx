@@ -1,0 +1,46 @@
+---
+title: mcp_config
+sidebarTitle: mcp_config
+---
+
+# `fastmcp.cli.install.mcp_config`
+
+
+MCP configuration JSON generation for FastMCP install using Cyclopts.
+
+## Functions
+
+### `install_mcp_config` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/cli/install/mcp_config.py#L19" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+install_mcp_config(file: Path, server_object: str | None, name: str) -> bool
+```
+
+
+Generate MCP configuration JSON for manual installation.
+
+**Args:**
+- `file`: Path to the server file
+- `server_object`: Optional server object name (for \:object suffix)
+- `name`: Name for the server in MCP config
+- `with_editable`: Optional directory to install in editable mode
+- `with_packages`: Optional list of additional packages to install
+- `env_vars`: Optional dictionary of environment variables
+- `copy`: If True, copy to clipboard instead of printing to stdout
+
+**Returns:**
+- True if generation was successful, False otherwise
+
+
+### `mcp_config_command` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/cli/install/mcp_config.py#L96" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+mcp_config_command(server_spec: str) -> None
+```
+
+
+Generate MCP configuration JSON for manual installation.
+
+**Args:**
+- `server_spec`: Python file to install, optionally with \:object suffix
+

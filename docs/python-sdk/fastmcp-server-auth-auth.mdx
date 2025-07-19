@@ -7,4 +7,24 @@ sidebarTitle: auth
 
 ## Classes
 
-### `OAuthProvider` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L14"><Icon icon="github" size="14" /></a></sup>
+### `OAuthProvider` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L14" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+**Methods:**
+
+#### `verify_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L47" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+verify_token(self, token: str) -> AccessToken | None
+```
+
+Verify a bearer token and return access info if valid.
+
+This method implements the TokenVerifier protocol by delegating
+to our existing load_access_token method.
+
+**Args:**
+- `token`: The token string to validate
+
+**Returns:**
+- AccessToken object if valid, None if invalid or expired
+

@@ -14,6 +14,7 @@ GITHUB_REMOTE_MCP_URL = "https://api.githubcopilot.com/mcp/"
 HEADER_AUTHORIZATION = "Authorization"
 FASTMCP_GITHUB_TOKEN = os.getenv("FASTMCP_GITHUB_TOKEN")
 
+
 # Skip tests if no GitHub token is available
 pytestmark = pytest.mark.xfail(
     not FASTMCP_GITHUB_TOKEN,

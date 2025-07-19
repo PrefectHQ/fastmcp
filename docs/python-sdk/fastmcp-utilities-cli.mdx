@@ -1,0 +1,25 @@
+---
+title: cli
+sidebarTitle: cli
+---
+
+# `fastmcp.utilities.cli`
+
+## Functions
+
+### `log_server_banner` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/cli.py#L26" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+log_server_banner(server: FastMCP[Any], transport: Literal['stdio', 'http', 'sse', 'streamable-http']) -> None
+```
+
+
+Creates and logs a formatted banner with server information and logo.
+
+**Args:**
+- `transport`: The transport protocol being used
+- `server_name`: Optional server name to display
+- `host`: Host address (for HTTP transports)
+- `port`: Port number (for HTTP transports)
+- `path`: Server path (for HTTP transports)
+

@@ -7,7 +7,7 @@ sidebarTitle: components
 
 ## Classes
 
-### `FastMCPComponent` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/components.py#L21"><Icon icon="github" size="14" /></a></sup>
+### `FastMCPComponent` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/components.py#L21" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Base class for FastMCP tools, prompts, resources, and resource templates.
@@ -15,7 +15,7 @@ Base class for FastMCP tools, prompts, resources, and resource templates.
 
 **Methods:**
 
-#### `key` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/components.py#L48"><Icon icon="github" size="14" /></a></sup>
+#### `key` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/components.py#L52" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 key(self) -> str
@@ -27,13 +27,13 @@ keys having a certain value, as the same tool loaded from different
 hierarchies of servers may have different keys.
 
 
-#### `with_key` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/components.py#L57"><Icon icon="github" size="14" /></a></sup>
+#### `with_key` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/components.py#L61" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 with_key(self, key: str) -> Self
 ```
 
-#### `enable` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/components.py#L69"><Icon icon="github" size="14" /></a></sup>
+#### `enable` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/components.py#L73" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 enable(self) -> None
@@ -42,11 +42,58 @@ enable(self) -> None
 Enable the component.
 
 
-#### `disable` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/components.py#L73"><Icon icon="github" size="14" /></a></sup>
+#### `disable` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/components.py#L77" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 disable(self) -> None
 ```
 
 Disable the component.
+
+
+#### `copy` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/components.py#L81" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+copy(self) -> Self
+```
+
+Create a copy of the component.
+
+
+### `MirroredComponent` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/components.py#L86" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Base class for components that are mirrored from a remote server.
+
+Mirrored components cannot be enabled or disabled directly. Call copy() first
+to create a local version you can modify.
+
+
+**Methods:**
+
+#### `enable` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/components.py#L99" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+enable(self) -> None
+```
+
+Enable the component.
+
+
+#### `disable` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/components.py#L108" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+disable(self) -> None
+```
+
+Disable the component.
+
+
+#### `copy` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/components.py#L117" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+copy(self) -> Self
+```
+
+Create a copy of the component that can be modified.
 
