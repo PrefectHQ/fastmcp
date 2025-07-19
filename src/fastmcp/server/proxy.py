@@ -580,3 +580,45 @@ class ProxyClient(Client[ClientTransportT]):
         """
         ctx = get_context()
         await ctx.report_progress(progress, total, message)
+
+
+class StatefulProxyClient(ProxyClient[ClientTransportT]):
+    """
+    A proxy client that provides a stateful client factory for the proxy server.
+
+    The stateful proxy client bound its copy to the server session.
+    And it will be disconnected when the session is exited.
+
+    This is useful to proxy a stateful mcp server such as the Playwright MCP server.
+    Note that it is essential to ensure that the proxy server itself is also stateful.
+    """
+
+    async def __aexit__(self, exc_type, exc_value, traceback) -> None:
+        """
+        The stateful proxy client will be forced disconnected when the session is exited.
+        So we do nothing here.
+        """
+        pass
+
+    def new_stateful(self) -> Client[ClientTransportT]:
+        """
+        Create a new stateful proxy client instance with the same configuration.
+
+        Use this method as the client factory for stateful proxy server.
+        """
+        session = get_context().session
+        proxy_client = session.__dict__.get("_proxy_client", None)
+
+        if proxy_client is None:
+            proxy_client = self.new()
+            logger.debug(f"{proxy_client} created for {session}")
+            session.__dict__["_proxy_client"] = proxy_client
+
+            async def _on_session_exit():
+                proxy_client: Client = session.__dict__.pop("_proxy_client")
+                logger.debug(f"{proxy_client} will be disconnect")
+                await proxy_client._disconnect(force=True)
+
+            session._exit_stack.push_async_callback(_on_session_exit)
+
+        return proxy_client
