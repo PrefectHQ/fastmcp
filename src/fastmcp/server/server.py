@@ -1662,8 +1662,7 @@ class FastMCP(Generic[LifespanResultT]):
             resource_separator: Deprecated. Separator character for resource URIs.
             prompt_separator: Deprecated. Separator character for prompt names.
         """
-        from fastmcp.client.transports import FastMCPTransport
-        from fastmcp.server.proxy import FastMCPProxy, ProxyClient
+        from fastmcp.server.proxy import FastMCPProxy
 
         # Deprecated since 2.9.0
         # Prior to 2.9.0, the first positional argument was the prefix and the
@@ -1715,7 +1714,7 @@ class FastMCP(Generic[LifespanResultT]):
             as_proxy = server._has_lifespan
 
         if as_proxy and not isinstance(server, FastMCPProxy):
-            server = FastMCPProxy(ProxyClient(transport=FastMCPTransport(server)))
+            server = FastMCP.as_proxy(server)
 
         # Delegate mounting to all three managers
         mounted_server = MountedServer(
