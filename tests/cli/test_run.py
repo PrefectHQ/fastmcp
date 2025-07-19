@@ -1,7 +1,9 @@
 import inspect
+import json
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from fastmcp.cli.run import (
     create_mcp_config_server,
@@ -125,6 +127,18 @@ class TestMCPConfig:
         async with client:
             tools = await client.list_tools()
             assert len(tools) == 1
+
+    async def test_validate_mcp_config(self, tmp_path: Path):
+        """Test creating a server from an MCPConfig file."""
+
+        mcp_config_path = tmp_path / "mcp_config.json"
+
+        mcp_config = {"mcpServers": {"test_server": dict(x=1, y=2)}}
+        with mcp_config_path.open("w") as f:
+            json.dump(mcp_config, f)
+
+        with pytest.raises(ValidationError, match="validation errors for MCPConfig"):
+            create_mcp_config_server(mcp_config_path)
 
 
 class TestServerImport:
