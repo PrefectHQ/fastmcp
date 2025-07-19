@@ -16,7 +16,7 @@ from .shared import process_common_args
 logger = get_logger(__name__)
 
 
-def install_mcp_config(
+def install_mcp_json(
     file: Path,
     server_object: str | None,
     name: str,
@@ -65,15 +65,18 @@ def install_mcp_config(
         # Add fastmcp run command
         args.extend(["fastmcp", "run", server_spec])
 
-        # Build MCP server configuration (just the server object, not the wrapper)
-        config = {
+        # Build MCP server configuration
+        server_config = {
             "command": "uv",
             "args": args,
         }
 
         # Add environment variables if provided
         if env_vars:
-            config["env"] = env_vars
+            server_config["env"] = env_vars
+
+        # Wrap with server name as root key
+        config = {name: server_config}
 
         # Convert to JSON
         json_output = json.dumps(config, indent=2)
@@ -93,13 +96,13 @@ def install_mcp_config(
         return False
 
 
-def mcp_config_command(
+def mcp_json_command(
     server_spec: str,
     *,
     server_name: Annotated[
         str | None,
         cyclopts.Parameter(
-            name=["--server-name", "-n"],
+            name=["--name", "-n"],
             help="Custom name for the server in MCP config",
         ),
     ] = None,
@@ -151,7 +154,7 @@ def mcp_config_command(
         server_spec, server_name, with_packages, env_vars, env_file
     )
 
-    success = install_mcp_config(
+    success = install_mcp_json(
         file=file,
         server_object=server_object,
         name=name,

@@ -5,7 +5,7 @@ import cyclopts
 from .claude_code import claude_code_command
 from .claude_desktop import claude_desktop_command
 from .cursor import cursor_command
-from .mcp_config import mcp_config_command
+from .mcp_json import mcp_json_command
 
 # Create a cyclopts app for install subcommands
 install_app = cyclopts.App(
@@ -17,4 +17,4 @@ install_app = cyclopts.App(
 install_app.command(claude_code_command, name="claude-code")
 install_app.command(claude_desktop_command, name="claude-desktop")
 install_app.command(cursor_command, name="cursor")
-install_app.command(mcp_config_command, name="mcp-json")
+install_app.command(mcp_json_command, name="mcp-json")
