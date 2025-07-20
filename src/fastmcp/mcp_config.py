@@ -270,7 +270,7 @@ class MCPConfig(BaseModel):
             if content := file_path.read_text().strip():
                 return cls.model_validate_json(content)
 
-        return cls(mcpServers={})
+        raise ValueError(f"No MCP servers defined in the config: {file_path}")
 
 
 class CanonicalMCPConfig(MCPConfig):
