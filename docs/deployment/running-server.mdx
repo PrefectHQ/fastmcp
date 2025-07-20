@@ -53,10 +53,46 @@ You can specify transport options and other configuration:
 fastmcp run server.py --transport sse --port 9000
 ```
 
+### Dependency Management with CLI
+
+When using the FastMCP CLI, you can pass additional options to configure how `uv` runs your server:
+
+```bash
+# Run with a specific Python version
+fastmcp run server.py --python 3.11
+
+# Run with additional packages
+fastmcp run server.py --with pandas --with numpy
+
+# Run with dependencies from a requirements file
+fastmcp run server.py --with-requirements requirements.txt
+
+# Combine multiple options
+fastmcp run server.py --python 3.10 --with httpx --transport http
+
+# Run within a specific project directory
+fastmcp run server.py --project /path/to/project
+```
+
+<Note>
+When using `--python`, `--with`, `--project`, or `--with-requirements`, the server runs via `uv run` subprocess instead of using your local environment. The `uv` command will manage dependencies based on your project configuration.
+</Note>
+
+<Tip>
+The `--python` option is particularly useful when you need to run a server with a specific Python version that differs from your system's default. This addresses common compatibility issues where servers require a particular Python version to function correctly.
+</Tip>
+
 For development and testing, you can use the `dev` command to run your server with the MCP Inspector:
 
 ```bash
 fastmcp dev server.py
+```
+
+The `dev` command also supports the same dependency management options:
+
+```bash
+# Dev server with specific Python version and packages
+fastmcp dev server.py --python 3.11 --with pandas
 ```
 
 See the [CLI documentation](/patterns/cli) for detailed information about all available commands and options.

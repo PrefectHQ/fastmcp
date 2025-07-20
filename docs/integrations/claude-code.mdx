@@ -62,10 +62,24 @@ The command will automatically configure the server with Claude Code's `claude m
 
 #### Dependencies
 
-If your server has dependencies, include them with the `--with` flag:
+FastMCP provides flexible dependency management options for your Claude Code servers:
+
+**Individual packages**: Use the `--with` flag to specify packages your server needs. You can use this flag multiple times:
 
 ```bash
 fastmcp install claude-code server.py --with pandas --with requests
+```
+
+**Requirements file**: If you maintain a `requirements.txt` file with all your dependencies, use `--with-requirements` to install them:
+
+```bash
+fastmcp install claude-code server.py --with-requirements requirements.txt
+```
+
+**Editable packages**: For local packages under development, use `--with-editable` to install them in editable mode:
+
+```bash
+fastmcp install claude-code server.py --with-editable ./my-local-package
 ```
 
 Alternatively, you can specify dependencies directly in your server code:
@@ -79,14 +93,30 @@ mcp = FastMCP(
 )
 ```
 
+#### Python Version and Project Configuration
+
+Control the Python environment for your server with these options:
+
+**Python version**: Use `--python` to specify which Python version your server requires. This ensures compatibility when your server needs specific Python features:
+
+```bash
+fastmcp install claude-code server.py --python 3.11
+```
+
+**Project directory**: Use `--project` to run your server within a specific project context. This tells `uv` to use the project's configuration files and virtual environment:
+
+```bash
+fastmcp install claude-code server.py --project /path/to/my-project
+```
+
 #### Environment Variables
 
 If your server needs environment variables (like API keys), you must include them:
 
 ```bash
 fastmcp install claude-code server.py --name "Weather Server" \
-  --env-var API_KEY=your-api-key \
-  --env-var DEBUG=true
+  --env API_KEY=your-api-key \
+  --env DEBUG=true
 ```
 
 Or load them from a `.env` file:
@@ -101,7 +131,7 @@ fastmcp install claude-code server.py --name "Weather Server" --env-file .env
 
 ### Manual Configuration
 
-For more control over the configuration, you can manually use Claude Code's built-in MCP management commands:
+For more control over the configuration, you can manually use Claude Code's built-in MCP management commands. This gives you direct control over how your server is launched:
 
 ```bash
 # Add a server with custom configuration
@@ -112,6 +142,16 @@ claude mcp add weather-server -e API_KEY=secret -e DEBUG=true -- uv run --with f
 
 # Add with specific scope (local, user, or project)
 claude mcp add my-server --scope user -- uv run --with fastmcp fastmcp run server.py
+```
+
+You can also manually specify Python versions and project directories in your Claude Code commands:
+
+```bash
+# With specific Python version
+claude mcp add ml-server -- uv run --python 3.11 --with fastmcp fastmcp run server.py
+
+# Within a project directory
+claude mcp add project-server -- uv run --project /path/to/project --with fastmcp fastmcp run server.py
 ```
 
 ## Using the Server

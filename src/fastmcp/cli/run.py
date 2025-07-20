@@ -2,6 +2,7 @@
 
 import importlib.util
 import re
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any, Literal
@@ -122,6 +123,84 @@ def import_server(file: Path, server_object: str | None = None) -> Any:
     return server
 
 
+def run_with_uv(
+    server_spec: str,
+    python_version: str | None = None,
+    with_packages: list[str] | None = None,
+    with_requirements: Path | None = None,
+    project: Path | None = None,
+    transport: TransportType | None = None,
+    host: str | None = None,
+    port: int | None = None,
+    path: str | None = None,
+    log_level: LogLevelType | None = None,
+    show_banner: bool = True,
+) -> None:
+    """Run a MCP server using uv run subprocess.
+
+    Args:
+        server_spec: Python file, object specification (file:obj), or URL
+        python_version: Python version to use (e.g. "3.10")
+        with_packages: Additional packages to install
+        with_requirements: Requirements file to use
+        project: Run the command within the given project directory
+        transport: Transport protocol to use
+        host: Host to bind to when using http transport
+        port: Port to bind to when using http transport
+        path: Path to bind to when using http transport
+        log_level: Log level
+        show_banner: Whether to show the server banner
+    """
+    cmd = ["uv", "run"]
+
+    # Add Python version if specified
+    if python_version:
+        cmd.extend(["--python", python_version])
+
+    # Add project if specified
+    if project:
+        cmd.extend(["--project", str(project)])
+
+    # Add fastmcp package
+    cmd.extend(["--with", "fastmcp"])
+
+    # Add additional packages
+    if with_packages:
+        for pkg in with_packages:
+            if pkg:
+                cmd.extend(["--with", pkg])
+
+    # Add requirements file
+    if with_requirements:
+        cmd.extend(["--with-requirements", str(with_requirements)])
+
+    # Add fastmcp run command
+    cmd.extend(["fastmcp", "run", server_spec])
+
+    # Add transport options
+    if transport:
+        cmd.extend(["--transport", transport])
+    if host:
+        cmd.extend(["--host", host])
+    if port:
+        cmd.extend(["--port", str(port)])
+    if path:
+        cmd.extend(["--path", path])
+    if log_level:
+        cmd.extend(["--log-level", log_level])
+    if not show_banner:
+        cmd.append("--no-banner")
+
+    # Run the command
+    logger.debug(f"Running command: {' '.join(cmd)}")
+    try:
+        process = subprocess.run(cmd, check=True)
+        sys.exit(process.returncode)
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Failed to run server: {e}")
+        sys.exit(e.returncode)
+
+
 def create_client_server(url: str) -> Any:
     """Create a FastMCP server from a client URL.
 
@@ -175,6 +254,7 @@ def run_command(
     log_level: LogLevelType | None = None,
     server_args: list[str] | None = None,
     show_banner: bool = True,
+    use_direct_import: bool = False,
 ) -> None:
     """Run a MCP server or connect to a remote one.
 
@@ -187,6 +267,7 @@ def run_command(
         log_level: Log level
         server_args: Additional arguments to pass to the server
         show_banner: Whether to show the server banner
+        use_direct_import: Whether to use direct import instead of subprocess
     """
     if is_url(server_spec):
         # Handle URL case

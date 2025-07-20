@@ -327,6 +327,9 @@ class TestCursorCommand:
             with_editable=None,
             with_packages=[],
             env_vars={},
+            python_version=None,
+            with_requirements=None,
+            project=None,
         )
         mock_exit.assert_not_called()
 

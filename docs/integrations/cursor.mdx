@@ -64,10 +64,24 @@ After running the command, Cursor will open automatically and prompt you to inst
 
 #### Dependencies
 
-If your server has dependencies, include them with the `--with` flag:
+FastMCP offers multiple ways to manage dependencies for your Cursor servers:
+
+**Individual packages**: Use the `--with` flag to specify packages your server needs. You can use this flag multiple times:
 
 ```bash
 fastmcp install cursor server.py --with pandas --with requests
+```
+
+**Requirements file**: For projects with a `requirements.txt` file, use `--with-requirements` to install all dependencies at once:
+
+```bash
+fastmcp install cursor server.py --with-requirements requirements.txt
+```
+
+**Editable packages**: When developing local packages, use `--with-editable` to install them in editable mode:
+
+```bash
+fastmcp install cursor server.py --with-editable ./my-local-package
 ```
 
 Alternatively, you can specify dependencies directly in your server code:
@@ -81,6 +95,22 @@ mcp = FastMCP(
 )
 ```
 
+#### Python Version and Project Configuration
+
+Control your server's Python environment with these options:
+
+**Python version**: Use `--python` to specify which Python version your server should use. This is essential when your server requires specific Python features:
+
+```bash
+fastmcp install cursor server.py --python 3.11
+```
+
+**Project directory**: Use `--project` to run your server within a specific project context. This ensures `uv` discovers all project configuration files and uses the correct virtual environment:
+
+```bash
+fastmcp install cursor server.py --project /path/to/my-project
+```
+
 #### Environment Variables
 
 <Warning>
@@ -91,8 +121,8 @@ If your server needs environment variables (like API keys), you must include the
 
 ```bash
 fastmcp install cursor server.py --name "Weather Server" \
-  --env-var API_KEY=your-api-key \
-  --env-var DEBUG=true
+  --env API_KEY=your-api-key \
+  --env DEBUG=true
 ```
 
 Or load them from a `.env` file:
@@ -147,6 +177,8 @@ After updating the configuration file, your server should be available in Cursor
 
 If your server has dependencies, you can use `uv` or another package manager to set up the environment.
 
+When manually configuring dependencies, the recommended approach is to use `uv` with FastMCP. The configuration should use `uv run` to create an isolated environment with your specified packages:
+
 ```json
 {
   "mcpServers": {
@@ -154,15 +186,40 @@ If your server has dependencies, you can use `uv` or another package manager to 
       "command": "uv",
       "args": [
         "run",
+        "--with", "fastmcp",
         "--with", "pandas",
         "--with", "requests", 
-        "python",
+        "fastmcp",
+        "run",
         "path/to/your/server.py"
       ]
     }
   }
 }
 ```
+
+You can also manually specify Python versions and project directories in your configuration:
+
+```json
+{
+  "mcpServers": {
+    "dice-roller": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--python", "3.11",
+        "--project", "/path/to/project",
+        "--with", "fastmcp",
+        "fastmcp",
+        "run",
+        "path/to/your/server.py"
+      ]
+    }
+  }
+}
+```
+
+Note that the order of arguments is important: Python version and project settings should come before package specifications.
 
 <Warning>
 **`uv` must be installed and available in your system PATH**. Cursor runs in its own isolated environment and needs `uv` to manage dependencies.

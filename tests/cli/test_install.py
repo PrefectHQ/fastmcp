@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from fastmcp.cli.install import install_app
 
 
@@ -63,6 +65,27 @@ class TestClaudeCodeInstall:
         assert bound.arguments["with_packages"] == ["package1", "package2"]
         assert bound.arguments["env_vars"] == ["VAR1=value1"]
 
+    def test_claude_code_with_new_options(self):
+        """Test claude-code install with new uv options."""
+        from pathlib import Path
+
+        command, bound, _ = install_app.parse_args(
+            [
+                "claude-code",
+                "server.py",
+                "--python",
+                "3.11",
+                "--project",
+                "/workspace",
+                "--with-requirements",
+                "requirements.txt",
+            ]
+        )
+
+        assert bound.arguments["python"] == "3.11"
+        assert bound.arguments["project"] == Path("/workspace")
+        assert bound.arguments["with_requirements"] == Path("requirements.txt")
+
 
 class TestClaudeDesktopInstall:
     """Test claude-desktop install command."""
@@ -93,6 +116,27 @@ class TestClaudeDesktopInstall:
         )
 
         assert bound.arguments["env_vars"] == ["VAR1=value1", "VAR2=value2"]
+
+    def test_claude_desktop_with_new_options(self):
+        """Test claude-desktop install with new uv options."""
+        from pathlib import Path
+
+        command, bound, _ = install_app.parse_args(
+            [
+                "claude-desktop",
+                "server.py",
+                "--python",
+                "3.10",
+                "--project",
+                "/my/project",
+                "--with-requirements",
+                "reqs.txt",
+            ]
+        )
+
+        assert bound.arguments["python"] == "3.10"
+        assert bound.arguments["project"] == Path("/my/project")
+        assert bound.arguments["with_requirements"] == Path("reqs.txt")
 
 
 class TestCursorInstall:
@@ -163,3 +207,45 @@ class TestInstallCommandParsing:
         command, bound, _ = install_app.parse_args(["mcp-json", "server.py"])
         assert command is not None
         assert bound.arguments["server_spec"] == "server.py"
+
+    def test_python_option(self):
+        """Test --python option for all install commands."""
+        commands_to_test = [
+            ["claude-code", "server.py", "--python", "3.11"],
+            ["claude-desktop", "server.py", "--python", "3.11"],
+            ["cursor", "server.py", "--python", "3.11"],
+            ["mcp-json", "server.py", "--python", "3.11"],
+        ]
+
+        for cmd_args in commands_to_test:
+            command, bound, _ = install_app.parse_args(cmd_args)
+            assert command is not None
+            assert bound.arguments["python"] == "3.11"
+
+    def test_with_requirements_option(self):
+        """Test --with-requirements option for all install commands."""
+        commands_to_test = [
+            ["claude-code", "server.py", "--with-requirements", "requirements.txt"],
+            ["claude-desktop", "server.py", "--with-requirements", "requirements.txt"],
+            ["cursor", "server.py", "--with-requirements", "requirements.txt"],
+            ["mcp-json", "server.py", "--with-requirements", "requirements.txt"],
+        ]
+
+        for cmd_args in commands_to_test:
+            command, bound, _ = install_app.parse_args(cmd_args)
+            assert command is not None
+            assert str(bound.arguments["with_requirements"]) == "requirements.txt"
+
+    def test_project_option(self):
+        """Test --project option for all install commands."""
+        commands_to_test = [
+            ["claude-code", "server.py", "--project", "/path/to/project"],
+            ["claude-desktop", "server.py", "--project", "/path/to/project"],
+            ["cursor", "server.py", "--project", "/path/to/project"],
+            ["mcp-json", "server.py", "--project", "/path/to/project"],
+        ]
+
+        for cmd_args in commands_to_test:
+            command, bound, _ = install_app.parse_args(cmd_args)
+            assert command is not None
+            assert str(bound.arguments["project"]) == str(Path("/path/to/project"))

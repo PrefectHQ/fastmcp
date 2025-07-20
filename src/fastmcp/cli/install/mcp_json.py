@@ -25,6 +25,9 @@ def install_mcp_json(
     with_packages: list[str] | None = None,
     env_vars: dict[str, str] | None = None,
     copy: bool = False,
+    python_version: str | None = None,
+    with_requirements: Path | None = None,
+    project: Path | None = None,
 ) -> bool:
     """Generate MCP configuration JSON for manual installation.
 
@@ -36,6 +39,9 @@ def install_mcp_json(
         with_packages: Optional list of additional packages to install
         env_vars: Optional dictionary of environment variables
         copy: If True, copy to clipboard instead of printing to stdout
+        python_version: Optional Python version to use
+        with_requirements: Optional requirements file to install from
+        project: Optional project directory to run within
 
     Returns:
         True if generation was successful, False otherwise
@@ -43,6 +49,14 @@ def install_mcp_json(
     try:
         # Build uv run command
         args = ["run"]
+
+        # Add Python version if specified
+        if python_version:
+            args.extend(["--python", python_version])
+
+        # Add project if specified
+        if project:
+            args.extend(["--project", str(project)])
 
         # Collect all packages in a set to deduplicate
         packages = {"fastmcp"}
@@ -55,6 +69,9 @@ def install_mcp_json(
 
         if with_editable:
             args.extend(["--with-editable", str(with_editable)])
+
+        if with_requirements:
+            args.extend(["--with-requirements", str(with_requirements)])
 
         # Build server spec from parsed components
         if server_object:
@@ -144,6 +161,27 @@ def mcp_json_command(
             negative=False,
         ),
     ] = False,
+    python: Annotated[
+        str | None,
+        cyclopts.Parameter(
+            "--python",
+            help="Python version to use (e.g., 3.10, 3.11)",
+        ),
+    ] = None,
+    with_requirements: Annotated[
+        Path | None,
+        cyclopts.Parameter(
+            "--with-requirements",
+            help="Requirements file to install dependencies from",
+        ),
+    ] = None,
+    project: Annotated[
+        Path | None,
+        cyclopts.Parameter(
+            "--project",
+            help="Run the command within the given project directory",
+        ),
+    ] = None,
 ) -> None:
     """Generate MCP configuration JSON for manual installation.
 
@@ -162,6 +200,9 @@ def mcp_json_command(
         with_packages=packages,
         env_vars=env_dict,
         copy=copy,
+        python_version=python,
+        with_requirements=with_requirements,
+        project=project,
     )
 
     if not success:

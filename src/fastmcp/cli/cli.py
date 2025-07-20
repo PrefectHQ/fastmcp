@@ -62,11 +62,22 @@ def _build_uv_command(
     with_editable: Path | None = None,
     with_packages: list[str] | None = None,
     no_banner: bool = False,
+    python_version: str | None = None,
+    with_requirements: Path | None = None,
+    project: Path | None = None,
 ) -> list[str]:
     """Build the uv run command that runs a MCP server through mcp run."""
-    cmd = ["uv"]
+    cmd = ["uv", "run"]
 
-    cmd.extend(["run", "--with", "fastmcp"])
+    # Add Python version if specified
+    if python_version:
+        cmd.extend(["--python", python_version])
+
+    # Add project if specified
+    if project:
+        cmd.extend(["--project", str(project)])
+
+    cmd.extend(["--with", "fastmcp"])
 
     if with_editable:
         cmd.extend(["--with-editable", str(with_editable)])
@@ -75,6 +86,9 @@ def _build_uv_command(
         for pkg in with_packages:
             if pkg:
                 cmd.extend(["--with", pkg])
+
+    if with_requirements:
+        cmd.extend(["--with-requirements", str(with_requirements)])
 
     # Add mcp run command
     cmd.extend(["fastmcp", "run", server_spec])
@@ -163,6 +177,27 @@ def dev(
             help="Port for the MCP Inspector Proxy server",
         ),
     ] = None,
+    python: Annotated[
+        str | None,
+        cyclopts.Parameter(
+            "--python",
+            help="Python version to use (e.g., 3.10, 3.11)",
+        ),
+    ] = None,
+    with_requirements: Annotated[
+        Path | None,
+        cyclopts.Parameter(
+            "--with-requirements",
+            help="Requirements file to install dependencies from",
+        ),
+    ] = None,
+    project: Annotated[
+        Path | None,
+        cyclopts.Parameter(
+            "--project",
+            help="Run the command within the given project directory",
+        ),
+    ] = None,
 ) -> None:
     """Run an MCP server with the MCP Inspector for development.
 
@@ -209,7 +244,13 @@ def dev(
             inspector_cmd += f"@{inspector_version}"
 
         uv_cmd = _build_uv_command(
-            server_spec, with_editable, with_packages, no_banner=True
+            server_spec,
+            with_editable,
+            with_packages,
+            no_banner=True,
+            python_version=python,
+            with_requirements=with_requirements,
+            project=project,
         )
 
         # Run the MCP Inspector command with shell=True on Windows
@@ -288,6 +329,35 @@ def run(
             negative=False,
         ),
     ] = False,
+    python: Annotated[
+        str | None,
+        cyclopts.Parameter(
+            "--python",
+            help="Python version to use (e.g., 3.10, 3.11)",
+        ),
+    ] = None,
+    with_packages: Annotated[
+        list[str],
+        cyclopts.Parameter(
+            "--with",
+            help="Additional packages to install (can be used multiple times)",
+            negative=False,
+        ),
+    ] = [],
+    project: Annotated[
+        Path | None,
+        cyclopts.Parameter(
+            "--project",
+            help="Run the command within the given project directory",
+        ),
+    ] = None,
+    with_requirements: Annotated[
+        Path | None,
+        cyclopts.Parameter(
+            "--with-requirements",
+            help="Requirements file to install dependencies from",
+        ),
+    ] = None,
 ) -> None:
     """Run an MCP server or connect to a remote one.
 
@@ -318,26 +388,53 @@ def run(
         },
     )
 
-    try:
-        run_module.run_command(
-            server_spec=server_spec,
-            transport=transport,
-            host=host,
-            port=port,
-            path=path,
-            log_level=log_level,
-            server_args=server_args,
-            show_banner=not no_banner,
-        )
-    except Exception as e:
-        logger.error(
-            f"Failed to run: {e}",
-            extra={
-                "server_spec": server_spec,
-                "error": str(e),
-            },
-        )
-        sys.exit(1)
+    # If any uv-specific options are provided, use uv run
+    if python or with_packages or with_requirements or project:
+        try:
+            run_module.run_with_uv(
+                server_spec=server_spec,
+                python_version=python,
+                with_packages=with_packages,
+                with_requirements=with_requirements,
+                project=project,
+                transport=transport,
+                host=host,
+                port=port,
+                path=path,
+                log_level=log_level,
+                show_banner=not no_banner,
+            )
+        except Exception as e:
+            logger.error(
+                f"Failed to run: {e}",
+                extra={
+                    "server_spec": server_spec,
+                    "error": str(e),
+                },
+            )
+            sys.exit(1)
+    else:
+        # Use direct import for backwards compatibility
+        try:
+            run_module.run_command(
+                server_spec=server_spec,
+                transport=transport,
+                host=host,
+                port=port,
+                path=path,
+                log_level=log_level,
+                server_args=server_args,
+                show_banner=not no_banner,
+            )
+        except Exception as e:
+            logger.error(
+                f"Failed to run: {e}",
+                extra={
+                    "server_spec": server_spec,
+                    "error": str(e),
+                },
+            )
+            sys.exit(1)
 
 
 @app.command

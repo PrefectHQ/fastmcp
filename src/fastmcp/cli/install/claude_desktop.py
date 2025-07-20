@@ -42,6 +42,9 @@ def install_claude_desktop(
     with_editable: Path | None = None,
     with_packages: list[str] | None = None,
     env_vars: dict[str, str] | None = None,
+    python_version: str | None = None,
+    with_requirements: Path | None = None,
+    project: Path | None = None,
 ) -> bool:
     """Install FastMCP server in Claude Desktop.
 
@@ -52,6 +55,9 @@ def install_claude_desktop(
         with_editable: Optional directory to install in editable mode
         with_packages: Optional list of additional packages to install
         env_vars: Optional dictionary of environment variables
+        python_version: Optional Python version to use
+        with_requirements: Optional requirements file to install from
+        project: Optional project directory to run within
 
     Returns:
         True if installation was successful, False otherwise
@@ -69,6 +75,14 @@ def install_claude_desktop(
     # Build uv run command
     args = ["run"]
 
+    # Add Python version if specified
+    if python_version:
+        args.extend(["--python", python_version])
+
+    # Add project if specified
+    if project:
+        args.extend(["--project", str(project)])
+
     # Collect all packages in a set to deduplicate
     packages = {"fastmcp"}
     if with_packages:
@@ -80,6 +94,9 @@ def install_claude_desktop(
 
     if with_editable:
         args.extend(["--with-editable", str(with_editable)])
+
+    if with_requirements:
+        args.extend(["--with-requirements", str(with_requirements)])
 
     # Build server spec from parsed components
     if server_object:
@@ -163,6 +180,27 @@ def claude_desktop_command(
             help="Load environment variables from .env file",
         ),
     ] = None,
+    python: Annotated[
+        str | None,
+        cyclopts.Parameter(
+            "--python",
+            help="Python version to use (e.g., 3.10, 3.11)",
+        ),
+    ] = None,
+    with_requirements: Annotated[
+        Path | None,
+        cyclopts.Parameter(
+            "--with-requirements",
+            help="Requirements file to install dependencies from",
+        ),
+    ] = None,
+    project: Annotated[
+        Path | None,
+        cyclopts.Parameter(
+            "--project",
+            help="Run the command within the given project directory",
+        ),
+    ] = None,
 ) -> None:
     """Install an MCP server in Claude Desktop.
 
@@ -180,6 +218,9 @@ def claude_desktop_command(
         with_editable=with_editable,
         with_packages=with_packages,
         env_vars=env_dict,
+        python_version=python,
+        with_requirements=with_requirements,
+        project=project,
     )
 
     if not success:

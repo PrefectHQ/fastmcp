@@ -137,6 +137,10 @@ To use this in a client configuration file, add it to the `mcpServers` object in
 ```
 
 <Note>
+When using `--python`, `--project`, or `--with-requirements`, the generated configuration will include these options in the `uv run` command, ensuring your server runs with the correct Python version and dependencies.
+</Note>
+
+<Note>
 Different MCP clients may have specific configuration requirements or formatting needs. Always consult your client's documentation to ensure proper integration.
 </Note>
 
@@ -165,6 +169,9 @@ fastmcp install mcp-json server.py --with pandas --with requests --with httpx
 
 # Editable local package
 fastmcp install mcp-json server.py --with-editable ./my-package
+
+# From requirements file
+fastmcp install mcp-json server.py --with-requirements requirements.txt
 ```
 
 You can also specify dependencies directly in your server code:
@@ -188,6 +195,18 @@ fastmcp install mcp-json server.py \
 
 # Load from .env file
 fastmcp install mcp-json server.py --env-file .env
+```
+
+### Python Version and Project Directory
+
+Specify Python version or run within a specific project:
+
+```bash
+# Use specific Python version
+fastmcp install mcp-json server.py --python 3.11
+
+# Run within a project directory
+fastmcp install mcp-json server.py --project /path/to/project
 ```
 
 ### Server Object Selection
@@ -250,6 +269,17 @@ fastmcp install mcp-json api_server.py \
   --env TIMEOUT=30
 ```
 
+### Advanced Configuration
+
+```bash
+fastmcp install mcp-json ml_server.py \
+  --name "ML Analysis Server" \
+  --python 3.11 \
+  --with-requirements requirements.txt \
+  --project /home/user/ml-project \
+  --env GPU_DEVICE=0
+```
+
 Output:
 ```json
 {
@@ -270,6 +300,32 @@ Output:
     "env": {
       "API_BASE_URL": "https://api.example.com",
       "TIMEOUT": "30"
+    }
+  }
+}
+```
+
+The advanced configuration example generates:
+```json
+{
+  "ML Analysis Server": {
+    "command": "uv",
+    "args": [
+      "run",
+      "--python",
+      "3.11",
+      "--project",
+      "/home/user/ml-project",
+      "--with",
+      "fastmcp",
+      "--with-requirements",
+      "requirements.txt",
+      "fastmcp",
+      "run",
+      "/home/user/ml_server.py"
+    ],
+    "env": {
+      "GPU_DEVICE": "0"
     }
   }
 }

@@ -78,10 +78,24 @@ After installation, restart Claude Desktop completely. You should see a hammer i
 
 #### Dependencies
 
-If your server has dependencies, include them with the `--with` flag:
+FastMCP provides several ways to manage your server's dependencies when installing in Claude Desktop:
+
+**Individual packages**: Use the `--with` flag to specify packages your server needs. You can use this flag multiple times:
 
 ```bash
 fastmcp install claude-desktop server.py --with pandas --with requests
+```
+
+**Requirements file**: If you have a `requirements.txt` file listing all your dependencies, use `--with-requirements` to install them all at once:
+
+```bash
+fastmcp install claude-desktop server.py --with-requirements requirements.txt
+```
+
+**Editable packages**: For local packages in development, use `--with-editable` to install them in editable mode:
+
+```bash
+fastmcp install claude-desktop server.py --with-editable ./my-local-package
 ```
 
 Alternatively, you can specify dependencies directly in your server code:
@@ -95,6 +109,24 @@ mcp = FastMCP(
 )
 ```
 
+#### Python Version and Project Directory
+
+FastMCP allows you to control the Python environment for your server:
+
+**Python version**: Use `--python` to specify which Python version your server should run with. This is particularly useful when your server requires a specific Python version:
+
+```bash
+fastmcp install claude-desktop server.py --python 3.11
+```
+
+**Project directory**: Use `--project` to run your server within a specific project directory. This ensures that `uv` will discover all `pyproject.toml`, `uv.toml`, and `.python-version` files from that project:
+
+```bash
+fastmcp install claude-desktop server.py --project /path/to/my-project
+```
+
+When you specify a project directory, all relative paths in your server will be resolved from that directory, and the project's virtual environment will be used.
+
 #### Environment Variables
 
 <Warning>
@@ -105,8 +137,8 @@ If your server needs environment variables (like API keys), you must include the
 
 ```bash
 fastmcp install claude-desktop server.py --name "Weather Server" \
-  --env-var API_KEY=your-api-key \
-  --env-var DEBUG=true
+  --env API_KEY=your-api-key \
+  --env DEBUG=true
 ```
 
 Or load them from a `.env` file:
@@ -146,6 +178,8 @@ After updating the configuration file, restart Claude Desktop completely. Look f
 If your server has dependencies, you can use `uv` or another package manager to set up the environment.
 
 
+When manually configuring dependencies, the recommended approach is to use `uv` with FastMCP. The configuration uses `uv run` to create an isolated environment with your specified packages:
+
 ```json
 {
   "mcpServers": {
@@ -153,15 +187,40 @@ If your server has dependencies, you can use `uv` or another package manager to 
       "command": "uv",
       "args": [
         "run",
+        "--with", "fastmcp",
         "--with", "pandas",
         "--with", "requests", 
-        "python",
+        "fastmcp",
+        "run",
         "path/to/your/server.py"
       ]
     }
   }
 }
 ```
+
+You can also manually specify Python versions and project directories in your configuration. Add `--python` to use a specific Python version, or `--project` to run within a project directory:
+
+```json
+{
+  "mcpServers": {
+    "dice-roller": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--python", "3.11",
+        "--project", "/path/to/project",
+        "--with", "fastmcp",
+        "fastmcp",
+        "run",
+        "path/to/your/server.py"
+      ]
+    }
+  }
+}
+```
+
+The order of arguments matters: Python version and project settings come before package specifications, which come before the actual command to run.
 
 <Warning>
 - **`uv` must be installed and available in your system PATH**. Claude Desktop runs in its own isolated environment and needs `uv` to manage dependencies.
