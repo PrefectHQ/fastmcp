@@ -411,7 +411,10 @@ class FastMCP(Generic[LifespanResultT]):
         methods: list[str],
         name: str | None = None,
         include_in_schema: bool = True,
-    ):
+    ) -> Callable[
+        [Callable[[Request], Awaitable[Response]]],
+        Callable[[Request], Awaitable[Response]],
+    ]:
         """
         Decorator to register a custom HTTP route on the FastMCP server.
 
