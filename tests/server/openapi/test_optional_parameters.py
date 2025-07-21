@@ -5,8 +5,8 @@ import pytest
 from fastmcp.utilities.openapi import HTTPRoute, ParameterInfo, _combine_schemas
 
 
-async def test_optional_parameter_schema_allows_null():
-    """Test that optional parameters generate schemas that allow null values."""
+async def test_optional_parameter_schema_preserves_original_type():
+    """Test that optional parameters preserve their original schema without forcing nullable behavior."""
     # Create a minimal HTTPRoute with optional parameter
     optional_param = ParameterInfo(
         name="optional_param",
@@ -38,13 +38,12 @@ async def test_optional_parameter_schema_allows_null():
     # Generate combined schema
     schema = _combine_schemas(route)
 
-    # Verify that optional parameter allows null values
+    # Verify that optional parameter preserves original schema
     optional_param_schema = schema["properties"]["optional_param"]
 
-    # Should have anyOf with string and null types
-    assert "anyOf" in optional_param_schema
-    assert {"type": "string"} in optional_param_schema["anyOf"]
-    assert {"type": "null"} in optional_param_schema["anyOf"]
+    # Should preserve the original type without making it nullable
+    assert optional_param_schema["type"] == "string"
+    assert "anyOf" not in optional_param_schema
 
     # Required parameter should not allow null
     required_param_schema = schema["properties"]["required_param"]
@@ -67,8 +66,8 @@ async def test_optional_parameter_schema_allows_null():
         {"type": "object", "properties": {"name": {"type": "string"}}},
     ],
 )
-async def test_optional_parameter_allows_null_for_type(param_schema):
-    """Test that optional parameters of any type allow null values."""
+async def test_optional_parameter_preserves_schema_for_all_types(param_schema):
+    """Test that optional parameters of any type preserve their original schema without nullable behavior."""
     optional_param = ParameterInfo(
         name="optional_param",
         location="query",
@@ -92,9 +91,10 @@ async def test_optional_parameter_allows_null_for_type(param_schema):
     schema = _combine_schemas(route)
     optional_param_schema = schema["properties"]["optional_param"]
 
-    # Should have anyOf with the original type and null
-    assert "anyOf" in optional_param_schema
-    assert {"type": "null"} in optional_param_schema["anyOf"]
+    # Should preserve the original schema exactly without making it nullable
+    assert "anyOf" not in optional_param_schema
 
-    # Check that original schema is fully preserved under anyOf
-    assert param_schema in optional_param_schema["anyOf"]
+    # The schema should include the original type and fields, plus the description
+    for key, value in param_schema.items():
+        assert optional_param_schema[key] == value
+    assert optional_param_schema.get("description") == "Optional parameter"

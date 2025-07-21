@@ -1,13 +1,20 @@
+import logging
 from typing import Annotated
 
+import httpx
 import pytest
+from fastapi import FastAPI
 from mcp import McpError
 from pydantic import Field
 
 from fastmcp import Client, FastMCP
 from fastmcp.exceptions import NotFoundError
+from fastmcp.experimental.server.openapi import (
+    FastMCPOpenAPI as ExperimentalFastMCPOpenAPI,
+)
 from fastmcp.prompts.prompt import FunctionPrompt, Prompt
 from fastmcp.resources import Resource, ResourceTemplate
+from fastmcp.server.openapi import FastMCPOpenAPI as LegacyFastMCPOpenAPI
 from fastmcp.server.server import (
     add_resource_prefix,
     has_resource_prefix,
@@ -15,6 +22,7 @@ from fastmcp.server.server import (
 )
 from fastmcp.tools import FunctionTool
 from fastmcp.tools.tool import Tool
+from fastmcp.utilities.tests import caplog_for_fastmcp, temporary_settings
 
 
 class TestCreateServer:
@@ -1366,3 +1374,135 @@ class TestShouldIncludeComponent:
         mcp2 = FastMCP(tools=[tool2], exclude_tags={"bad_tag"})
         result = mcp2._should_enable_component(tool2)
         assert result is True
+
+
+class TestOpenAPIExperimentalFeatureFlag:
+    """Test experimental OpenAPI parser feature flag behavior."""
+
+    @pytest.fixture
+    def simple_openapi_spec(self):
+        """Simple OpenAPI spec for testing."""
+        return {
+            "openapi": "3.0.0",
+            "info": {"title": "Test API", "version": "1.0.0"},
+            "paths": {
+                "/test": {
+                    "get": {
+                        "operationId": "test_operation",
+                        "summary": "Test operation",
+                        "responses": {"200": {"description": "Success"}},
+                    }
+                }
+            },
+        }
+
+    @pytest.fixture
+    def mock_client(self):
+        """Mock HTTP client."""
+        return httpx.AsyncClient(base_url="https://api.example.com")
+
+    def test_from_openapi_uses_legacy_by_default_and_logs_message(
+        self, simple_openapi_spec, mock_client, caplog
+    ):
+        """Test that from_openapi uses legacy parser by default and emits log message."""
+        # Capture all logs at INFO level and above using FastMCP's logger
+        with caplog_for_fastmcp(caplog), caplog.at_level(logging.INFO):
+            # Create server using from_openapi (should use legacy by default)
+            server = FastMCP.from_openapi(
+                openapi_spec=simple_openapi_spec, client=mock_client
+            )
+
+        # Should be the legacy implementation
+        assert isinstance(server, LegacyFastMCPOpenAPI)
+
+        # Should have logged the message about using legacy parser
+        legacy_log_messages = [
+            record
+            for record in caplog.records
+            if "Using legacy OpenAPI parser" in record.message
+        ]
+        assert len(legacy_log_messages) == 1
+        assert legacy_log_messages[0].levelno == logging.INFO
+        assert (
+            "FASTMCP_EXPERIMENTAL_ENABLE_NEW_OPENAPI_PARSER=true"
+            in legacy_log_messages[0].message
+        )
+
+    def test_from_openapi_uses_experimental_with_flag_and_no_log(
+        self, simple_openapi_spec, mock_client, caplog
+    ):
+        """Test that from_openapi uses experimental parser with flag and emits no log."""
+        # Capture all logs at INFO level and above
+        with caplog.at_level(logging.INFO):
+            # Create server with experimental flag enabled
+            with temporary_settings(experimental__enable_new_openapi_parser=True):
+                server = FastMCP.from_openapi(
+                    openapi_spec=simple_openapi_spec, client=mock_client
+                )
+
+        # Should be the experimental implementation
+        assert isinstance(server, ExperimentalFastMCPOpenAPI)
+
+        # Should not have logged the legacy parser message
+        legacy_log_messages = [
+            record
+            for record in caplog.records
+            if "Using legacy OpenAPI parser" in record.message
+        ]
+        assert len(legacy_log_messages) == 0
+
+    def test_from_fastapi_uses_legacy_by_default_and_logs_message(self, caplog):
+        """Test that from_fastapi uses legacy parser by default and emits log message."""
+        # Capture all logs at INFO level and above using FastMCP's logger
+        with caplog_for_fastmcp(caplog), caplog.at_level(logging.INFO):
+            # Create a simple FastAPI app
+            app = FastAPI(title="Test API")
+
+            @app.get("/test")
+            def test_endpoint():
+                return {"message": "test"}
+
+            # Create server using from_fastapi (should use legacy by default)
+            server = FastMCP.from_fastapi(app=app)
+
+        # Should be the legacy implementation
+        assert isinstance(server, LegacyFastMCPOpenAPI)
+
+        # Should have logged the message about using legacy parser
+        legacy_log_messages = [
+            record
+            for record in caplog.records
+            if "Using legacy OpenAPI parser" in record.message
+        ]
+        assert len(legacy_log_messages) == 1
+        assert legacy_log_messages[0].levelno == logging.INFO
+        assert (
+            "FASTMCP_EXPERIMENTAL_ENABLE_NEW_OPENAPI_PARSER=true"
+            in legacy_log_messages[0].message
+        )
+
+    def test_from_fastapi_uses_experimental_with_flag_and_no_log(self, caplog):
+        """Test that from_fastapi uses experimental parser with flag and emits no log."""
+        # Capture all logs at INFO level and above
+        with caplog.at_level(logging.INFO):
+            # Create a simple FastAPI app
+            app = FastAPI(title="Test API")
+
+            @app.get("/test")
+            def test_endpoint():
+                return {"message": "test"}
+
+            # Create server with experimental flag enabled
+            with temporary_settings(experimental__enable_new_openapi_parser=True):
+                server = FastMCP.from_fastapi(app=app)
+
+        # Should be the experimental implementation
+        assert isinstance(server, ExperimentalFastMCPOpenAPI)
+
+        # Should not have logged the legacy parser message
+        legacy_log_messages = [
+            record
+            for record in caplog.records
+            if "Using legacy OpenAPI parser" in record.message
+        ]
+        assert len(legacy_log_messages) == 0

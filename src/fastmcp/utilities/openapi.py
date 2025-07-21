@@ -1232,9 +1232,8 @@ def _combine_schemas(route: HTTPRoute) -> dict[str, Any]:
             else:
                 param_schema["description"] = location_desc
 
-            # Make optional parameters nullable to allow None values
-            if not param.required:
-                param_schema = _make_optional_parameter_nullable(param_schema)
+            # Don't make optional parameters nullable - they can simply be omitted
+            # The OpenAPI specification doesn't require optional parameters to accept null values
 
             properties[suffixed_name] = param_schema
         else:
@@ -1245,9 +1244,8 @@ def _combine_schemas(route: HTTPRoute) -> dict[str, Any]:
                 param.schema_.copy(), param.description
             )
 
-            # Make optional parameters nullable to allow None values
-            if not param.required:
-                param_schema = _make_optional_parameter_nullable(param_schema)
+            # Don't make optional parameters nullable - they can simply be omitted
+            # The OpenAPI specification doesn't require optional parameters to accept null values
 
             properties[param.name] = param_schema
 

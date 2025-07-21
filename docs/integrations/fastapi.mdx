@@ -7,6 +7,12 @@ icon: bolt
 
 import { VersionBadge } from '/snippets/version-badge.mdx'
 
+<Tip>
+**New in 2.11**: FastMCP is introducing a next-generation OpenAPI parser. The new parser has greatly improved performance and compatibility, and is also easier to maintain. To enable it, set the environment variable `FASTMCP_EXPERIMENTAL_ENABLE_NEW_OPENAPI_PARSER=true`. 
+
+The new parser is largely API-compatible with the existing implementation and will become the default in a future version. We encourage all users to test it and report any issues before it becomes the default.
+</Tip>
+
 FastMCP provides two powerful ways to integrate with FastAPI applications:
 
 1. **[Generate an MCP server FROM your FastAPI app](#generating-an-mcp-server)** - Convert existing API endpoints into MCP tools
@@ -217,6 +223,9 @@ Because FastMCP's FastAPI integration is based on its [OpenAPI integration](/int
 # Assumes the FastAPI app from above is already defined
 from fastmcp import FastMCP
 from fastmcp.server.openapi import RouteMap, MCPType
+
+# If using experimental parser, import from experimental module:
+# from fastmcp.experimental.server.openapi import RouteMap, MCPType
 
 # Custom mapping rules
 mcp = FastMCP.from_fastapi(

@@ -61,7 +61,7 @@ def _prune_unused_defs(schema: dict) -> dict:
 
         elif isinstance(node, list):
             for v in node:
-                walk(v)
+                walk(v, current_def=current_def)
 
     # Traverse the schema once, skipping the $defs
     walk(schema, skip_defs=True)

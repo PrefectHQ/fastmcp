@@ -37,21 +37,18 @@ def temporary_settings(**kwargs: Any):
         assert fastmcp.settings.log_level == 'INFO'
         ```
     """
-    old_settings = copy.deepcopy(settings.model_dump())
+    old_settings = copy.deepcopy(settings)
 
     try:
         # apply the new settings
         for attr, value in kwargs.items():
-            if not hasattr(settings, attr):
-                raise AttributeError(f"Setting {attr} does not exist.")
-            setattr(settings, attr, value)
+            settings.set_setting(attr, value)
         yield
 
     finally:
         # restore the old settings
         for attr in kwargs:
-            if hasattr(settings, attr):
-                setattr(settings, attr, old_settings[attr])
+            settings.set_setting(attr, old_settings.get_setting(attr))
 
 
 def _run_server(mcp_server: FastMCP, transport: Literal["sse"], port: int) -> None:
