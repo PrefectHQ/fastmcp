@@ -8,7 +8,15 @@ from collections.abc import Callable
 from functools import lru_cache
 from pathlib import Path
 from types import EllipsisType, UnionType
-from typing import Annotated, TypeAlias, TypeVar, Union, get_args, get_origin
+from typing import (
+    Annotated,
+    TypeAlias,
+    TypeVar,
+    Union,
+    get_args,
+    get_origin,
+    get_type_hints,
+)
 
 import mcp.types
 from mcp.types import Annotations
@@ -35,6 +43,54 @@ def get_cached_typeadapter(cls: T) -> TypeAdapter[T]:
     However, this isn't feasible for user-generated functions. Instead, we use a
     cache to minimize the cost of creating them as much as possible.
     """
+    # For functions, we need to ensure TypeAdapter can resolve forward
+    # references
+    # Normally this could be done by setting e.g. parent_depth=3 to reflect the
+    # globals in the parent stack, but this utility function can't make that assumption.
+    if inspect.isfunction(cls) or inspect.ismethod(cls):
+        # Only try to resolve annotations if the function has them
+        if hasattr(cls, "__annotations__") and cls.__annotations__:
+            try:
+                # Use include_extras=True to preserve Annotated metadata
+                resolved_hints = get_type_hints(cls, include_extras=True)
+                # Check if we need to create a new function with resolved annotations
+                if resolved_hints != cls.__annotations__:
+                    # Create a new function object with resolved annotations
+                    import types
+
+                    # Handle both functions and methods
+                    if inspect.ismethod(cls):
+                        actual_func = cls.__func__
+                        code = actual_func.__code__
+                        globals_dict = actual_func.__globals__
+                        name = actual_func.__name__
+                        defaults = actual_func.__defaults__
+                        closure = actual_func.__closure__
+                    else:
+                        code = cls.__code__
+                        globals_dict = cls.__globals__
+                        name = cls.__name__
+                        defaults = cls.__defaults__
+                        closure = cls.__closure__
+
+                    new_func = types.FunctionType(
+                        code,
+                        globals_dict,
+                        name,
+                        defaults,
+                        closure,
+                    )
+                    new_func.__dict__.update(cls.__dict__)
+                    new_func.__module__ = cls.__module__
+                    new_func.__qualname__ = getattr(cls, "__qualname__", cls.__name__)
+                    new_func.__annotations__ = resolved_hints
+                    return TypeAdapter(new_func)
+            except Exception:
+                # If resolution fails, this might be due to closure-scoped types
+                # that aren't available in the function's globals. In this case,
+                # we'll let TypeAdapter handle the string annotations directly.
+                pass
+
     return TypeAdapter(cls)
 
 
@@ -77,12 +133,21 @@ def find_kwarg_by_type(fn: Callable, kwarg_type: type) -> str | None:
     Includes union types that contain the kwarg_type, as well as Annotated types.
     """
     if inspect.ismethod(fn) and hasattr(fn, "__func__"):
-        sig = inspect.signature(fn.__func__)
-    else:
-        sig = inspect.signature(fn)
+        fn = fn.__func__
 
+    # Try to get resolved type hints
+    try:
+        # Use include_extras=True to preserve Annotated metadata
+        type_hints = get_type_hints(fn, include_extras=True)
+    except Exception:
+        # If resolution fails, use raw annotations if they exist
+        type_hints = getattr(fn, "__annotations__", {})
+
+    sig = inspect.signature(fn)
     for name, param in sig.parameters.items():
-        if is_class_member_of_type(param.annotation, kwarg_type):
+        # Use resolved hint if available, otherwise raw annotation
+        annotation = type_hints.get(name, param.annotation)
+        if is_class_member_of_type(annotation, kwarg_type):
             return name
     return None
 
