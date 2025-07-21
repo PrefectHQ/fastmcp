@@ -53,7 +53,11 @@ def _prune_unused_defs(schema: dict) -> dict:
                 if skip_defs and k == "$defs":
                     continue
 
-                walk(v, current_def=current_def)
+                if k in ["allOf", "oneOf", "anyOf"]:
+                    for child in v:
+                        walk(child, current_def=current_def)
+                else:
+                    walk(v, current_def=current_def)
 
         elif isinstance(node, list):
             for v in node:
