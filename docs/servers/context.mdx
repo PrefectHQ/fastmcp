@@ -17,6 +17,7 @@ The `Context` object provides a clean interface to access MCP features within yo
 - **Resource Access**: Read data from resources registered with the server
 - **LLM Sampling**: Request the client's LLM to generate text based on provided messages
 - **User Elicitation**: Request structured input from users during tool execution
+- **State Management**: Store and share data across middleware and tool calls within a request
 - **Request Information**: Access metadata about the current request
 - **Server Access**: When needed, access the underlying FastMCP server instance
 
@@ -185,6 +186,51 @@ content = content_list[0].content
 **Method signature:**
 - **`ctx.read_resource(uri: str | AnyUrl) -> list[ReadResourceContents]`**: Returns a list of resource content parts
 
+### State Management
+
+<VersionBadge version="2.11.0" />
+
+Store and share data across middleware and tool calls within a request. Context objects maintain a state dictionary that's especially useful for passing information from [middleware](/servers/middleware) to your tools.
+
+To store a value in the context state, use `ctx.set_state(key, value)`. To retrieve a value, use `ctx.get_state(key)`.
+
+This simplified example shows how to use MCP middleware to store user info in the context state, and how to access that state in a tool:
+
+```python {7-8, 16-17}
+from fastmcp.server.middleware import Middleware, MiddlewareContext
+
+class UserAuthMiddleware(Middleware):
+    async def on_call_tool(self, context: MiddlewareContext, call_next):
+
+        # Middleware stores user info in context state
+        context.fastmcp_context.set_state("user_id", "user_123")
+        context.fastmcp_context.set_state("permissions", ["read", "write"])
+        
+        return await call_next()
+
+@mcp.tool
+async def secure_operation(data: str, ctx: Context) -> str:
+    """Tool can access state set by middleware."""
+
+    user_id = ctx.get_state("user_id")  # "user_123"
+    permissions = ctx.get_state("permissions")  # ["read", "write"]
+    
+    if "write" not in permissions:
+        return "Access denied"
+    
+    return f"Processing {data} for user {user_id}"
+```
+
+**Method signatures:**
+- **`ctx.set_state_value(key: str, value: Any) -> None`**: Store a value in the context state
+- **`ctx.get_state_value(key: str) -> Any`**: Retrieve a value from the context state (returns None if not found)
+
+**State Inheritance:**
+When a new context is created (nested contexts), it inherits a copy of its parent's state. This ensures that:
+- State set on a child context never affects the parent context
+- State set on a parent context after the child context is initialized is not propagated to the child context
+
+This makes state management predictable and prevents unexpected side effects between nested operations.
 
 ### Change Notifications
 

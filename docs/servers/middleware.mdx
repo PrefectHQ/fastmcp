@@ -244,6 +244,10 @@ You have complete control over the request flow:
 - **Stop the chain**: Don't call `call_next` (rarely needed)
 - **Handle errors**: Wrap `call_next` in try/catch blocks
 
+#### State Management
+
+In addition to modifying the request and response, you can also store state data that your tools can (optionally) access later. To do so, use the FastMCP Context to either `set_state` or `get_state` as appropriate. For more information, see the [Context State Management](/servers/context#state-management) docs.
+
 ## Creating Middleware
 
 FastMCP middleware is implemented by subclassing the `Middleware` base class and overriding the hooks you need. You only need to implement the hooks that are relevant to your use case.
