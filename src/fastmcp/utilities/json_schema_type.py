@@ -561,9 +561,7 @@ def _create_dataclass(
             else:
                 field_def = field(default=None, metadata=meta)
 
-        if is_required and default_val is not MISSING:
-            fields.append((field_name, field_type, field_def))
-        elif is_required:
+        if is_required or default_val is not MISSING:
             fields.append((field_name, field_type, field_def))
         else:
             fields.append((field_name, Union[field_type, type(None)], field_def))  # type: ignore[misc]  # noqa: UP007

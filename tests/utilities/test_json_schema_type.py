@@ -1523,3 +1523,58 @@ class TestAdditionalProperties:
         # Should be the same cached class
         assert Type1 is Type2
         assert issubclass(Type1, BaseModel)
+
+
+class TestFieldsWithDefaults:
+    """Test suite for fields with default values not being made nullable."""
+
+    def test_field_with_default_preserves_type(self):
+        """Test that fields with defaults preserve their original type."""
+        schema = {
+            "type": "object",
+            "properties": {"flag": {"type": "boolean", "default": False}},
+        }
+
+        generated_type = json_schema_to_type(schema)
+        regenerated_schema = TypeAdapter(generated_type).json_schema()
+
+        assert regenerated_schema["properties"]["flag"]["type"] == "boolean"
+
+    def test_field_with_default_not_nullable(self):
+        """Test that fields with defaults are not made nullable."""
+        schema = {
+            "type": "object",
+            "properties": {"flag": {"type": "boolean", "default": False}},
+        }
+
+        generated_type = json_schema_to_type(schema)
+        regenerated_schema = TypeAdapter(generated_type).json_schema()
+
+        flag_prop = regenerated_schema["properties"]["flag"]
+        assert "anyOf" not in flag_prop
+
+    def test_field_with_default_uses_default(self):
+        """Test that fields with defaults use their default values."""
+        schema = {
+            "type": "object",
+            "properties": {"flag": {"type": "boolean", "default": False}},
+        }
+
+        generated_type = json_schema_to_type(schema)
+        validator = TypeAdapter(generated_type)
+        result = validator.validate_python({})
+
+        assert result.flag is False
+
+    def test_field_with_default_accepts_explicit_value(self):
+        """Test that fields with defaults accept explicit values."""
+        schema = {
+            "type": "object",
+            "properties": {"flag": {"type": "boolean", "default": False}},
+        }
+
+        generated_type = json_schema_to_type(schema)
+        validator = TypeAdapter(generated_type)
+        result = validator.validate_python({"flag": True})
+
+        assert result.flag is True
