@@ -316,7 +316,7 @@ def __getattr__(name: str):
         # Deprecated in 2.10.2
         if settings.deprecation_warnings:
             warnings.warn(
-                "`from fastmcp.settings import settings` is deprecated. use `fasmtpc.settings` instead.",
+                "`from fastmcp.settings import settings` is deprecated. use `fastmcp.settings` instead.",
                 DeprecationWarning,
                 stacklevel=2,
             )
