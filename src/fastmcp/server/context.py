@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import warnings
 from collections.abc import Generator
 from contextlib import contextmanager
@@ -83,8 +84,18 @@ class Context:
         request_id = ctx.request_id
         client_id = ctx.client_id
 
+        # Manage state across the request
+        ctx.set_state_value("key", "value")
+        value = ctx.get_state_value("key")
+
         return str(x)
     ```
+
+    State Management:
+    Context objects maintain a state dictionary that can be used to store and share
+    data across middleware and tool calls within a request. When a new context
+    is created (nested contexts), it inherits a copy of its parent's state, ensuring
+    that modifications in child contexts don't affect parent contexts.
 
     The context parameter name can be anything as long as it's annotated with Context.
     The context is optional - tools that don't need it can omit the parameter.
@@ -95,9 +106,15 @@ class Context:
         self.fastmcp = fastmcp
         self._tokens: list[Token] = []
         self._notification_queue: set[str] = set()  # Dedupe notifications
+        self._state: dict[str, Any] = {}
 
     async def __aenter__(self) -> Context:
         """Enter the context manager and set this context as the current context."""
+        parent_context = _current_context.get(None)
+        if parent_context is not None:
+            # Inherit state from parent context
+            self._state = copy.deepcopy(parent_context._state)
+
         # Always set this context and save the token
         token = _current_context.set(self)
         self._tokens.append(token)
@@ -454,6 +471,14 @@ class Context:
             )
 
         return fastmcp.server.dependencies.get_http_request()
+
+    def set_state(self, key: str, value: Any) -> None:
+        """Set a value in the context state."""
+        self._state[key] = value
+
+    def get_state(self, key: str) -> Any:
+        """Get a value from the context state. Returns None if the key is not found."""
+        return self._state.get(key)
 
     def _queue_tool_list_changed(self) -> None:
         """Queue a tool list changed notification."""

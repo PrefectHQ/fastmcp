@@ -123,3 +123,51 @@ class TestSessionId:
             "fastmcp.server.dependencies.get_http_headers", return_value=mock_headers
         ):
             assert context.session_id == ""  # Empty string is still returned as-is
+
+
+class TestContextState:
+    """Test suite for Context state functionality."""
+
+    @pytest.mark.asyncio
+    async def test_context_state(self):
+        """Test that state modifications in child contexts don't affect parent."""
+        mock_fastmcp = MagicMock()
+
+        async with Context(fastmcp=mock_fastmcp) as context:
+            assert context.get_state("test1") is None
+            assert context.get_state("test2") is None
+            context.set_state("test1", "value")
+            context.set_state("test2", 2)
+            assert context.get_state("test1") == "value"
+            assert context.get_state("test2") == 2
+            context.set_state("test1", "new_value")
+            assert context.get_state("test1") == "new_value"
+
+    @pytest.mark.asyncio
+    async def test_context_state_inheritance(self):
+        """Test that child contexts inherit parent state."""
+        mock_fastmcp = MagicMock()
+
+        async with Context(fastmcp=mock_fastmcp) as context1:
+            context1.set_state("key1", "key1-context1")
+            context1.set_state("key2", "key2-context1")
+            async with Context(fastmcp=mock_fastmcp) as context2:
+                # Override one key
+                context2.set_state("key1", "key1-context2")
+                assert context2.get_state("key1") == "key1-context2"
+                assert context1.get_state("key1") == "key1-context1"
+                assert context2.get_state("key2") == "key2-context1"
+
+                async with Context(fastmcp=mock_fastmcp) as context3:
+                    # Verify state was inherited
+                    assert context3.get_state("key1") == "key1-context2"
+                    assert context3.get_state("key2") == "key2-context1"
+
+                    # Add a new key and verify parents were not affected
+                    context3.set_state("key-context3-only", 1)
+                    assert context1.get_state("key-context3-only") is None
+                    assert context2.get_state("key-context3-only") is None
+                    assert context3.get_state("key-context3-only") == 1
+
+            assert context1.get_state("key1") == "key1-context1"
+            assert context1.get_state("key-context3-only") is None
