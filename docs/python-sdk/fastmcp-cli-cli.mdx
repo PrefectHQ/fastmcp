@@ -10,7 +10,7 @@ FastMCP CLI tools using Cyclopts.
 
 ## Functions
 
-### `version` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/cli/cli.py#L89" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `version` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/cli/cli.py#L103" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 version()
@@ -20,7 +20,7 @@ version()
 Display version information and platform details.
 
 
-### `dev` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/cli/cli.py#L127" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `dev` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/cli/cli.py#L141" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 dev(server_spec: str) -> None
@@ -33,7 +33,7 @@ Run an MCP server with the MCP Inspector for development.
 - `server_spec`: Python file to run, optionally with \:object suffix
 
 
-### `run` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/cli/cli.py#L245" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `run` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/cli/cli.py#L286" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 run(server_spec: str) -> None
@@ -42,19 +42,20 @@ run(server_spec: str) -> None
 
 Run an MCP server or connect to a remote one.
 
-The server can be specified in three ways:
-1. Module approach: server.py - runs the module directly, looking for an object named 'mcp', 'server', or 'app'
-2. Import approach: server.py:app - imports and runs the specified server object
-3. URL approach: http://server-url - connects to a remote server and creates a proxy
+The server can be specified in four ways:
+1. Module approach: "server.py" - runs the module directly, looking for an object named 'mcp', 'server', or 'app'
+2. Import approach: "server.py:app" - imports and runs the specified server object
+3. URL approach: "http://server-url" - connects to a remote server and creates a proxy
+4. MCPConfig file: "mcp.json" - runs as a proxy server for the MCP Servers in the MCPConfig file
 
 Server arguments can be passed after -- :
 fastmcp run server.py -- --config config.json --debug
 
 **Args:**
-- `server_spec`: Python file, object specification (file\:obj), or URL
+- `server_spec`: Python file, object specification (file\:obj), MCPConfig file, or URL
 
 
-### `inspect` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/cli/cli.py#L344" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `inspect` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/cli/cli.py#L442" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 inspect(server_spec: str) -> None

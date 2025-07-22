@@ -368,12 +368,13 @@ def replace_type(type_, type_map: dict[type, type]):
         new_type: The type to replace old_type with.
 
     Examples:
-        >>> replace_type(list[int | bool], {int: str})
-        list[str | bool]
+    ```python
+    >>> replace_type(list[int | bool], {int: str})
+    list[str | bool]
 
-        >>> replace_type(list[list[int]], {int: str})
-        list[list[str]]
-
+    >>> replace_type(list[list[int]], {int: str})
+    list[list[str]]
+    ```
     """
     if type_ in type_map:
         return type_map[type_]

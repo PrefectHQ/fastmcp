@@ -7,44 +7,22 @@ sidebarTitle: mcp_config
 
 ## Functions
 
-### `infer_transport_type_from_url` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/mcp_config.py#L20"><Icon icon="github" size="14" /></a></sup>
+### `composite_server_from_mcp_config` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/mcp_config.py#L5" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-infer_transport_type_from_url(url: str | AnyUrl) -> Literal['http', 'sse']
+composite_server_from_mcp_config(config: MCPConfig, name_as_prefix: bool = True) -> FastMCP
 ```
 
 
-Infer the appropriate transport type from the given URL.
+A utility function to create a composite server from an MCPConfig.
 
 
-## Classes
-
-### `StdioMCPServer` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/mcp_config.py#L40"><Icon icon="github" size="14" /></a></sup>
-
-**Methods:**
-
-#### `to_transport` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/mcp_config.py#L47"><Icon icon="github" size="14" /></a></sup>
+### `mount_mcp_config_into_server` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/mcp_config.py#L16" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-to_transport(self) -> StdioTransport
+mount_mcp_config_into_server(config: MCPConfig, server: FastMCP, name_as_prefix: bool = True) -> None
 ```
 
-### `RemoteMCPServer` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/mcp_config.py#L58"><Icon icon="github" size="14" /></a></sup>
 
-**Methods:**
+A utility function to mount the servers from an MCPConfig into a FastMCP server.
 
-#### `to_transport` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/mcp_config.py#L71"><Icon icon="github" size="14" /></a></sup>
-
-```python
-to_transport(self) -> StreamableHttpTransport | SSETransport
-```
-
-### `MCPConfig` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/mcp_config.py#L88"><Icon icon="github" size="14" /></a></sup>
-
-**Methods:**
-
-#### `from_dict` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/mcp_config.py#L92"><Icon icon="github" size="14" /></a></sup>
-
-```python
-from_dict(cls, config: dict[str, Any]) -> MCPConfig
-```

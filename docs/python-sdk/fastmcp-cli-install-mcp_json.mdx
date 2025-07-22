@@ -1,19 +1,19 @@
 ---
-title: mcp_config
-sidebarTitle: mcp_config
+title: mcp_json
+sidebarTitle: mcp_json
 ---
 
-# `fastmcp.cli.install.mcp_config`
+# `fastmcp.cli.install.mcp_json`
 
 
 MCP configuration JSON generation for FastMCP install using Cyclopts.
 
 ## Functions
 
-### `install_mcp_config` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/cli/install/mcp_config.py#L19" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `install_mcp_json` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/cli/install/mcp_json.py#L19" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-install_mcp_config(file: Path, server_object: str | None, name: str) -> bool
+install_mcp_json(file: Path, server_object: str | None, name: str) -> bool
 ```
 
 
@@ -27,15 +27,18 @@ Generate MCP configuration JSON for manual installation.
 - `with_packages`: Optional list of additional packages to install
 - `env_vars`: Optional dictionary of environment variables
 - `copy`: If True, copy to clipboard instead of printing to stdout
+- `python_version`: Optional Python version to use
+- `with_requirements`: Optional requirements file to install from
+- `project`: Optional project directory to run within
 
 **Returns:**
 - True if generation was successful, False otherwise
 
 
-### `mcp_config_command` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/cli/install/mcp_config.py#L96" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `mcp_json_command` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/cli/install/mcp_json.py#L116" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-mcp_config_command(server_spec: str) -> None
+mcp_json_command(server_spec: str) -> None
 ```
 
 

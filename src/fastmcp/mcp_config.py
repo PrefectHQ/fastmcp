@@ -7,17 +7,19 @@ The configuration format supports both stdio and remote (HTTP/SSE) transports, w
 field definitions for server metadata, authentication, and execution parameters.
 
 Example configuration:
-    {
-        "mcpServers": {
-            "my-server": {
-                "command": "npx",
-                "args": ["-y", "@my/mcp-server"],
-                "env": {"API_KEY": "secret"},
-                "timeout": 30000,
-                "description": "My MCP server"
-            }
+```json
+{
+    "mcpServers": {
+        "my-server": {
+            "command": "npx",
+            "args": ["-y", "@my/mcp-server"],
+            "env": {"API_KEY": "secret"},
+            "timeout": 30000,
+            "description": "My MCP server"
         }
     }
+}
+```
 """
 
 from __future__ import annotations

@@ -65,7 +65,10 @@
                   {
                     "group": "Essentials",
                     "icon": "cube",
-                    "pages": ["servers/server", "deployment/running-server"]
+                    "pages": [
+                      "servers/server",
+                      "deployment/running-server"
+                    ]
                   },
                   {
                     "group": "Core Components",
@@ -93,7 +96,9 @@
                   {
                     "group": "Authentication",
                     "icon": "shield-check",
-                    "pages": ["servers/auth/bearer"]
+                    "pages": [
+                      "servers/auth/bearer"
+                    ]
                   }
                 ]
               },
@@ -103,7 +108,10 @@
                   {
                     "group": "Essentials",
                     "icon": "cube",
-                    "pages": ["clients/client", "clients/transports"]
+                    "pages": [
+                      "clients/client",
+                      "clients/transports"
+                    ]
                   },
                   {
                     "group": "Core Operations",
@@ -129,7 +137,10 @@
                   {
                     "group": "Authentication",
                     "icon": "user-shield",
-                    "pages": ["clients/auth/oauth", "clients/auth/bearer"]
+                    "pages": [
+                      "clients/auth/oauth",
+                      "clients/auth/bearer"
+                    ]
                   }
                 ]
               },
@@ -175,12 +186,17 @@
           },
           {
             "anchor": "What's New",
-            "pages": ["updates", "changelog"]
+            "pages": [
+              "updates",
+              "changelog"
+            ]
           },
           {
             "anchor": "Community",
             "icon": "users",
-            "pages": ["community/showcase"]
+            "pages": [
+              "community/showcase"
+            ]
           }
         ]
       },
@@ -207,7 +223,7 @@
                       "python-sdk/fastmcp-cli-install-claude_code",
                       "python-sdk/fastmcp-cli-install-claude_desktop",
                       "python-sdk/fastmcp-cli-install-cursor",
-                      "python-sdk/fastmcp-cli-install-mcp_config",
+                      "python-sdk/fastmcp-cli-install-mcp_json",
                       "python-sdk/fastmcp-cli-install-shared"
                     ]
                   },
@@ -318,6 +334,7 @@
                   "python-sdk/fastmcp-utilities-json_schema",
                   "python-sdk/fastmcp-utilities-json_schema_type",
                   "python-sdk/fastmcp-utilities-logging",
+                  "python-sdk/fastmcp-utilities-mcp_config",
                   "python-sdk/fastmcp-utilities-openapi",
                   "python-sdk/fastmcp-utilities-tests",
                   "python-sdk/fastmcp-utilities-types"

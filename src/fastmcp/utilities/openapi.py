@@ -101,8 +101,7 @@ def format_deep_object_parameter(
     According to OpenAPI 3.0 spec, deepObject style with explode=true serializes
     object properties as separate query parameters with bracket notation.
 
-    For example: {"id": "123", "type": "user"} becomes:
-    param[id]=123&param[type]=user
+    For example: `{"id": "123", "type": "user"}` becomes `param[id]=123&param[type]=user`.
 
     Args:
         param_value: Dictionary value to format

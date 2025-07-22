@@ -7,7 +7,7 @@ sidebarTitle: transports
 
 ## Functions
 
-### `infer_transport` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/transports.py#L849" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `infer_transport` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/transports.py#L847" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 infer_transport(transport: ClientTransport | FastMCP | FastMCP1Server | AnyUrl | Path | MCPConfig | dict[str, Any] | str) -> ClientTransport
@@ -238,7 +238,7 @@ object or dictionary matching the MCPConfig schema. It supports two key scenario
 
 1. If the MCPConfig contains exactly one server, it creates a direct transport to that server.
 2. If the MCPConfig contains multiple servers, it creates a composite client by mounting
-   all servers on a single FastMCP instance, with each server's name used as its mounting prefix.
+   all servers on a single FastMCP instance, with each server's name, by default, used as its mounting prefix.
 
 In the multi-server case, tools are accessible with the prefix pattern `{server_name}_{tool_name}`
 and resources with the pattern `protocol://{server_name}/path/to/resource`.
@@ -281,7 +281,7 @@ async with client:
 
 **Methods:**
 
-#### `connect_session` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/transports.py#L801" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `connect_session` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/transports.py#L799" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 connect_session(self, **session_kwargs: Unpack[SessionKwargs]) -> AsyncIterator[ClientSession]
