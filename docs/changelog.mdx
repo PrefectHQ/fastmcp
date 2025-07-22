@@ -2,6 +2,52 @@
 icon: "list-check"
 ---
 
+<Update label="v2.10.6" description="2025-07-19">
+
+## [v2.10.6: Hymn for the Weekend](https://github.com/jlowin/fastmcp/releases/tag/v2.10.6)
+
+A special Saturday release with many fixes.
+
+## What's Changed
+### Enhancements 🔧
+* Resolve #1139 -- Implement include_context argument in Context.sample by [@codingjoe](https://github.com/codingjoe) in [#1141](https://github.com/jlowin/fastmcp/pull/1141)
+* feat(settings): add log level normalization by [@ka2048](https://github.com/ka2048) in [#1171](https://github.com/jlowin/fastmcp/pull/1171)
+* add server name to mounted server warnings by [@artificial-aidan](https://github.com/artificial-aidan) in [#1147](https://github.com/jlowin/fastmcp/pull/1147)
+* Add StatefulProxyClient by [@hopeful0](https://github.com/hopeful0) in [#1109](https://github.com/jlowin/fastmcp/pull/1109)
+### Fixes 🐞
+* Fix OpenAPI empty parameters by [@FabrizioSandri](https://github.com/FabrizioSandri) in [#1128](https://github.com/jlowin/fastmcp/pull/1128)
+* Fix title field preservation in tool transformations by [@jlowin](https://github.com/jlowin) in [#1131](https://github.com/jlowin/fastmcp/pull/1131)
+* Fix optional parameter validation in OpenAPI integration by [@jlowin](https://github.com/jlowin) in [#1135](https://github.com/jlowin/fastmcp/pull/1135)
+* Do not silently exclude the "context" key from JSON body by [@melkamar](https://github.com/melkamar) in [#1153](https://github.com/jlowin/fastmcp/pull/1153)
+* Fix tool output schema generation to respect Pydantic serialization aliases by [@zzstoatzz](https://github.com/zzstoatzz) in [#1148](https://github.com/jlowin/fastmcp/pull/1148)
+* fix: _replace_ref_with_defs; ensure ref_path is string by [@itaru2622](https://github.com/itaru2622) in [#1164](https://github.com/jlowin/fastmcp/pull/1164)
+* Fix nesting when making OpenAPI arrays and objects optional by [@melkamar](https://github.com/melkamar) in [#1178](https://github.com/jlowin/fastmcp/pull/1178)
+* Fix `mcp-json` output format to include server name by [@jlowin](https://github.com/jlowin) in [#1185](https://github.com/jlowin/fastmcp/pull/1185)
+* Only configure logging one time by [@jlowin](https://github.com/jlowin) in [#1187](https://github.com/jlowin/fastmcp/pull/1187)
+### Docs 📚
+* Update changelog.mdx by [@jlowin](https://github.com/jlowin) in [#1127](https://github.com/jlowin/fastmcp/pull/1127)
+* Eunomia Authorization with native FastMCP's Middleware by [@tommitt](https://github.com/tommitt) in [#1144](https://github.com/jlowin/fastmcp/pull/1144)
+* update api ref for new `mdxify` version by [@zzstoatzz](https://github.com/zzstoatzz) in [#1182](https://github.com/jlowin/fastmcp/pull/1182)
+### Other Changes 🦾
+* Expand empty parameter filtering and add comprehensive tests by [@jlowin](https://github.com/jlowin) in [#1129](https://github.com/jlowin/fastmcp/pull/1129)
+* Add no-commit-to-branch hook by [@zzstoatzz](https://github.com/zzstoatzz) in [#1149](https://github.com/jlowin/fastmcp/pull/1149)
+* Update README.md by [@jlowin](https://github.com/jlowin) in [#1165](https://github.com/jlowin/fastmcp/pull/1165)
+* skip on rate limit by [@zzstoatzz](https://github.com/zzstoatzz) in [#1183](https://github.com/jlowin/fastmcp/pull/1183)
+* Remove deprecated proxy creation by [@jlowin](https://github.com/jlowin) in [#1186](https://github.com/jlowin/fastmcp/pull/1186)
+* Separate integration tests from unit tests in CI by [@jlowin](https://github.com/jlowin) in [#1188](https://github.com/jlowin/fastmcp/pull/1188)
+
+## New Contributors
+* [@FabrizioSandri](https://github.com/FabrizioSandri) made their first contribution in [#1128](https://github.com/jlowin/fastmcp/pull/1128)
+* [@melkamar](https://github.com/melkamar) made their first contribution in [#1153](https://github.com/jlowin/fastmcp/pull/1153)
+* [@codingjoe](https://github.com/codingjoe) made their first contribution in [#1141](https://github.com/jlowin/fastmcp/pull/1141)
+* [@itaru2622](https://github.com/itaru2622) made their first contribution in [#1164](https://github.com/jlowin/fastmcp/pull/1164)
+* [@ka2048](https://github.com/ka2048) made their first contribution in [#1171](https://github.com/jlowin/fastmcp/pull/1171)
+* [@artificial-aidan](https://github.com/artificial-aidan) made their first contribution in [#1147](https://github.com/jlowin/fastmcp/pull/1147)
+
+**Full Changelog**: [v2.10.5...v2.10.6](https://github.com/jlowin/fastmcp/compare/v2.10.5...v2.10.6)
+
+</Update>
+
 <Update label="v2.10.5" description="2025-07-11">
 
 ## [v2.10.5: Middle Management](https://github.com/jlowin/fastmcp/releases/tag/v2.10.5)
