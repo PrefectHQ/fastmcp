@@ -202,3 +202,139 @@ class TestFastMCPOpenAPIBasicFunctionality:
         # Should handle empty paths gracefully
         assert hasattr(server, "_director")
         assert hasattr(server, "_spec")
+
+    @pytest.mark.asyncio
+    async def test_clean_schema_output_no_unused_defs(self):
+        """Test that unused schema definitions are removed from tool schemas."""
+        # Create a spec with unused HTTPValidationError-like definitions
+        spec_with_unused_defs = {
+            "openapi": "3.0.0",
+            "info": {"title": "Test API", "version": "1.0.0"},
+            "servers": [{"url": "https://api.example.com"}],
+            "paths": {
+                "/users": {
+                    "post": {
+                        "operationId": "create_user",
+                        "summary": "Create a new user",
+                        "requestBody": {
+                            "required": True,
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {
+                                            "name": {"type": "string", "title": "Name"},
+                                            "active": {
+                                                "type": "boolean",
+                                                "title": "Active",
+                                            },
+                                        },
+                                        "required": ["name", "active"],
+                                    }
+                                }
+                            },
+                        },
+                        "responses": {
+                            "200": {
+                                "description": "User created successfully",
+                                "content": {
+                                    "application/json": {
+                                        "schema": {
+                                            "type": "object",
+                                            "properties": {
+                                                "id": {
+                                                    "type": "integer",
+                                                    "title": "Id",
+                                                },
+                                                "name": {
+                                                    "type": "string",
+                                                    "title": "Name",
+                                                },
+                                                "active": {
+                                                    "type": "boolean",
+                                                    "title": "Active",
+                                                },
+                                            },
+                                            "required": ["id", "name", "active"],
+                                            "title": "User",
+                                        }
+                                    }
+                                },
+                            }
+                        },
+                    }
+                }
+            },
+            "components": {
+                "schemas": {
+                    # This should be removed since it's not referenced
+                    "HTTPValidationError": {
+                        "properties": {
+                            "detail": {
+                                "items": {
+                                    "$ref": "#/components/schemas/ValidationError"
+                                },
+                                "title": "Detail",
+                                "type": "array",
+                            }
+                        },
+                        "title": "HTTPValidationError",
+                        "type": "object",
+                    },
+                    "ValidationError": {
+                        "properties": {
+                            "loc": {
+                                "items": {
+                                    "anyOf": [{"type": "string"}, {"type": "integer"}]
+                                },
+                                "title": "Location",
+                                "type": "array",
+                            },
+                            "msg": {"title": "Message", "type": "string"},
+                            "type": {"title": "Error Type", "type": "string"},
+                        },
+                        "required": ["loc", "msg", "type"],
+                        "title": "ValidationError",
+                        "type": "object",
+                    },
+                }
+            },
+        }
+
+        async with httpx.AsyncClient(base_url="https://api.example.com") as client:
+            server = FastMCPOpenAPI(
+                openapi_spec=spec_with_unused_defs, client=client, name="Test Server"
+            )
+
+            async with Client(server) as mcp_client:
+                tools = await mcp_client.list_tools()
+
+                assert len(tools) == 1  # Only the POST operation
+                tool = tools[0]
+
+                # Verify tool has clean schemas without unused $defs
+                assert tool.name == "create_user"
+
+                # Input schema should not have $defs since no references are used
+                expected_input_schema = {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string", "title": "Name"},
+                        "active": {"type": "boolean", "title": "Active"},
+                    },
+                    "required": ["name", "active"],
+                }
+                assert tool.inputSchema == expected_input_schema
+
+                # Output schema should not have $defs since no references are used
+                expected_output_schema = {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "integer", "title": "Id"},
+                        "name": {"type": "string", "title": "Name"},
+                        "active": {"type": "boolean", "title": "Active"},
+                    },
+                    "required": ["id", "name", "active"],
+                    "title": "User",
+                }
+                assert tool.outputSchema == expected_output_schema
