@@ -146,6 +146,9 @@ class OpenAPIParser(
         """Resolves a reference to its target definition."""
         if isinstance(item, self.reference_cls):
             ref_str = item.ref
+            # Ensure ref_str is a string before calling startswith()
+            if not isinstance(ref_str, str):
+                return item
             try:
                 if not ref_str.startswith("#/"):
                     raise ValueError(

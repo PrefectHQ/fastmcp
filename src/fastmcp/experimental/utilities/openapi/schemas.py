@@ -93,15 +93,16 @@ def _replace_ref_with_defs(
     """
     schema = info.copy()
     if ref_path := schema.get("$ref"):
-        if ref_path.startswith("#/components/schemas/"):
-            schema_name = ref_path.split("/")[-1]
-            schema["$ref"] = f"#/$defs/{schema_name}"
-        elif not ref_path.startswith("#/"):
-            raise ValueError(
-                f"External or non-local reference not supported: {ref_path}. "
-                f"FastMCP only supports local schema references starting with '#/'. "
-                f"Please include all schema definitions within the OpenAPI document."
-            )
+        if isinstance(ref_path, str):
+            if ref_path.startswith("#/components/schemas/"):
+                schema_name = ref_path.split("/")[-1]
+                schema["$ref"] = f"#/$defs/{schema_name}"
+            elif not ref_path.startswith("#/"):
+                raise ValueError(
+                    f"External or non-local reference not supported: {ref_path}. "
+                    f"FastMCP only supports local schema references starting with '#/'. "
+                    f"Please include all schema definitions within the OpenAPI document."
+                )
     elif properties := schema.get("properties"):
         if "$ref" in properties:
             schema["properties"] = _replace_ref_with_defs(properties)
