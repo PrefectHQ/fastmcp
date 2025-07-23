@@ -114,7 +114,7 @@ fastmcp install claude-code server.py --project /path/to/my-project
 If your server needs environment variables (like API keys), you must include them:
 
 ```bash
-fastmcp install claude-code server.py --name "Weather Server" \
+fastmcp install claude-code server.py --server-name "Weather Server" \
   --env API_KEY=your-api-key \
   --env DEBUG=true
 ```
@@ -122,7 +122,7 @@ fastmcp install claude-code server.py --name "Weather Server" \
 Or load them from a `.env` file:
 
 ```bash
-fastmcp install claude-code server.py --name "Weather Server" --env-file .env
+fastmcp install claude-code server.py --server-name "Weather Server" --env-file .env
 ```
 
 <Warning>

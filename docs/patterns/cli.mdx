@@ -253,7 +253,7 @@ The `install` command supports the same `file.py:object` notation as the `run` c
 
 | Option | Flag | Description |
 | ------ | ---- | ----------- |
-| Server Name | `--name`, `-n` | Custom name for the server (defaults to server's name attribute or file name) |
+| Server Name | `--server-name`, `-n` | Custom name for the server (defaults to server's name attribute or file name) |
 | Editable Package | `--with-editable`, `-e` | Directory containing pyproject.toml to install in editable mode |
 | Additional Packages | `--with` | Additional packages to install (can be used multiple times) |
 | Environment Variables | `--env` | Environment variables in KEY=VALUE format (can be used multiple times) |
@@ -272,7 +272,7 @@ fastmcp install claude-desktop server.py
 fastmcp install claude-desktop server.py:my_server
 
 # With custom name and dependencies
-fastmcp install claude-desktop server.py:my_server --name "My Analysis Server" --with pandas
+fastmcp install claude-desktop server.py:my_server --server-name "My Analysis Server" --with pandas
 
 # Install in Claude Code with environment variables
 fastmcp install claude-code server.py --env API_KEY=secret --env DEBUG=true

@@ -120,7 +120,7 @@ Cursor runs servers in a completely isolated environment with no access to your 
 If your server needs environment variables (like API keys), you must include them:
 
 ```bash
-fastmcp install cursor server.py --name "Weather Server" \
+fastmcp install cursor server.py --server-name "Weather Server" \
   --env API_KEY=your-api-key \
   --env DEBUG=true
 ```
@@ -128,7 +128,7 @@ fastmcp install cursor server.py --name "Weather Server" \
 Or load them from a `.env` file:
 
 ```bash
-fastmcp install cursor server.py --name "Weather Server" --env-file .env
+fastmcp install cursor server.py --server-name "Weather Server" --env-file .env
 ```
 
 <Warning>
@@ -145,10 +145,10 @@ You can generate MCP JSON configuration for manual use:
 
 ```bash
 # Generate configuration and output to stdout
-fastmcp install mcp-json server.py --name "Dice Roller" --with pandas
+fastmcp install mcp-json server.py --server-name "Dice Roller" --with pandas
 
 # Copy configuration to clipboard for easy pasting
-fastmcp install mcp-json server.py --name "Dice Roller" --copy
+fastmcp install mcp-json server.py --server-name "Dice Roller" --copy
 ```
 
 This generates the standard `mcpServers` configuration format that can be used with any MCP-compatible client.
