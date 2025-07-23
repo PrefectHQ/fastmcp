@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import quote
 
 import mcp.types
+from mcp import ServerSession
 from mcp.client.session import ClientSession
 from mcp.shared.context import LifespanContextT, RequestContext
 from mcp.shared.exceptions import McpError
@@ -606,12 +607,24 @@ class StatefulProxyClient(ProxyClient[ClientTransportT]):
     Note that it is essential to ensure that the proxy server itself is also stateful.
     """
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._caches: dict[ServerSession, Client[ClientTransportT]] = {}
+
     async def __aexit__(self, exc_type, exc_value, traceback) -> None:
         """
         The stateful proxy client will be forced disconnected when the session is exited.
         So we do nothing here.
         """
         pass
+
+    async def clear(self):
+        """
+        Clear all cached clients and force disconnect them.
+        """
+        while self._caches:
+            _, cache = self._caches.popitem()
+            await cache._disconnect(force=True)
 
     def new_stateful(self) -> Client[ClientTransportT]:
         """
@@ -620,15 +633,15 @@ class StatefulProxyClient(ProxyClient[ClientTransportT]):
         Use this method as the client factory for stateful proxy server.
         """
         session = get_context().session
-        proxy_client = session.__dict__.get("_proxy_client", None)
+        proxy_client = self._caches.get(session, None)
 
         if proxy_client is None:
             proxy_client = self.new()
             logger.debug(f"{proxy_client} created for {session}")
-            session.__dict__["_proxy_client"] = proxy_client
+            self._caches[session] = proxy_client
 
             async def _on_session_exit():
-                proxy_client: Client = session.__dict__.pop("_proxy_client")
+                self._caches.pop(session)
                 logger.debug(f"{proxy_client} will be disconnect")
                 await proxy_client._disconnect(force=True)
 

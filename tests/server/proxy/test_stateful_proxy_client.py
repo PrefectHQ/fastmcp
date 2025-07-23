@@ -118,3 +118,31 @@ class TestStatefulProxyClient:
 
             with pytest.raises(ToolError, match="Value not found"):
                 await client.call_tool("stateful_get", {})
+
+    async def test_multi_proxies_no_mixing(self):
+        """Test that the stateful proxy client won't be mixed in multi-proxies sessions."""
+        mcp_a, mcp_b = FastMCP(), FastMCP()
+
+        @mcp_a.tool
+        def tool_a() -> str:
+            return "a"
+
+        @mcp_b.tool
+        def tool_b() -> str:
+            return "b"
+
+        proxy_mcp_a = FastMCPProxy(
+            client_factory=StatefulProxyClient(mcp_a).new_stateful
+        )
+        proxy_mcp_b = FastMCPProxy(
+            client_factory=StatefulProxyClient(mcp_b).new_stateful
+        )
+        multi_proxy_mcp = FastMCP()
+        multi_proxy_mcp.mount(proxy_mcp_a, prefix="a")
+        multi_proxy_mcp.mount(proxy_mcp_b, prefix="b")
+
+        async with Client(multi_proxy_mcp) as client:
+            result_a = await client.call_tool("a_tool_a", {})
+            result_b = await client.call_tool("b_tool_b", {})
+            assert result_a.data == "a"
+            assert result_b.data == "b"
