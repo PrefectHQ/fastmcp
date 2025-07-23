@@ -404,10 +404,12 @@ def test_transform_args_validation_unknown_arg(add_tool):
     """Test that transform_args with unknown arguments raises ValueError."""
     with pytest.raises(
         ValueError, match="Unknown arguments in transform_args: unknown_param"
-    ):
+    ) as exc_info:
         Tool.from_tool(
             add_tool, transform_args={"unknown_param": ArgTransform(name="new_name")}
         )
+
+    assert "`add`" in str(exc_info.value)
 
 
 def test_transform_args_creates_duplicate_names(add_tool):

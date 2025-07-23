@@ -445,7 +445,7 @@ class TransformedTool(Tool):
         if unknown_args:
             raise ValueError(
                 f"Unknown arguments in transform_args: {', '.join(sorted(unknown_args))}. "
-                f"Parent tool has: {', '.join(sorted(parent_params))}"
+                f"Parent tool `{tool.name}` has: {', '.join(sorted(parent_params))}"
             )
 
         # Always create the forwarding transform
