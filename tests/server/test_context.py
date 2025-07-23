@@ -91,38 +91,44 @@ class TestParseModelPreferences:
 class TestSessionId:
     def test_session_id_with_http_headers(self, context):
         """Test that session_id returns the value from mcp-session-id header."""
+        from mcp.server.lowlevel.server import request_ctx
+        from mcp.shared.context import RequestContext
+
         mock_headers = {"mcp-session-id": "test-session-123"}
 
-        with patch(
-            "fastmcp.server.dependencies.get_http_headers", return_value=mock_headers
-        ):
-            assert context.session_id == "test-session-123"
+        token = request_ctx.set(
+            RequestContext(
+                request_id=0,
+                meta=None,
+                session=MagicMock(wraps={}),
+                lifespan_context=MagicMock(),
+                request=MagicMock(headers=mock_headers),
+            )
+        )
+
+        assert context.session_id == "test-session-123"
+
+        request_ctx.reset(token)
 
     def test_session_id_without_http_headers(self, context):
-        """Test that session_id returns None when no HTTP headers are available."""
-        with patch(
-            "fastmcp.server.dependencies.get_http_headers",
-            side_effect=RuntimeError("No active HTTP request found."),
-        ):
-            assert context.session_id is None
+        """Test that session_id returns a UUID string when no HTTP headers are available."""
+        import uuid
 
-    def test_session_id_with_missing_header(self, context):
-        """Test that session_id returns None when mcp-session-id header is missing."""
-        mock_headers = {"other-header": "value"}
+        from mcp.server.lowlevel.server import request_ctx
+        from mcp.shared.context import RequestContext
 
-        with patch(
-            "fastmcp.server.dependencies.get_http_headers", return_value=mock_headers
-        ):
-            assert context.session_id is None
+        token = request_ctx.set(
+            RequestContext(
+                request_id=0,
+                meta=None,
+                session=MagicMock(wraps={}),
+                lifespan_context=MagicMock(),
+            )
+        )
 
-    def test_session_id_with_empty_header(self, context):
-        """Test that session_id returns None when mcp-session-id header is empty."""
-        mock_headers = {"mcp-session-id": ""}
+        assert uuid.UUID(context.session_id)
 
-        with patch(
-            "fastmcp.server.dependencies.get_http_headers", return_value=mock_headers
-        ):
-            assert context.session_id == ""  # Empty string is still returned as-is
+        request_ctx.reset(token)
 
 
 class TestContextState:

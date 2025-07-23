@@ -37,9 +37,14 @@ def get_context() -> Context:
 
 
 def get_http_request() -> Request:
-    from fastmcp.server.http import _current_http_request
+    from mcp.server.lowlevel.server import request_ctx
 
-    request = _current_http_request.get()
+    request = None
+    try:
+        request = request_ctx.get().request
+    except LookupError:
+        pass
+
     if request is None:
         raise RuntimeError("No active HTTP request found.")
     return request
@@ -72,6 +77,8 @@ def get_http_headers(include_all: bool = False) -> dict[str, str]:
             "proxy-authenticate",
             "proxy-authorization",
             "proxy-connection",
+            # MCP-related headers
+            "mcp-session-id",
         }
         # (just in case)
         if not all(h.lower() == h for h in exclude_headers):

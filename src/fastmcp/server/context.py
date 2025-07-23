@@ -130,7 +130,7 @@ class Context:
             _current_context.reset(token)
 
     @property
-    def request_context(self) -> RequestContext:
+    def request_context(self) -> RequestContext[ServerSession, Any, Request]:
         """Access to the underlying request context.
 
         If called outside of a request context, this will raise a ValueError.
@@ -217,35 +217,48 @@ class Context:
         return str(self.request_context.request_id)
 
     @property
-    def session_id(self) -> str | None:
-        """Get the MCP session ID for HTTP transports.
+    def session_id(self) -> str:
+        """Get the MCP session ID for ALL transports.
 
         Returns the session ID that can be used as a key for session-based
         data storage (e.g., Redis) to share data between tool calls within
         the same client session.
 
         Returns:
-            The session ID for HTTP transports (SSE, StreamableHTTP), or None
-            for stdio and in-memory transports which don't use session IDs.
+            The session ID for StreamableHTTP transports, or a generated ID
+            for other transports.
 
         Example:
             ```python
             @server.tool
             def store_data(data: dict, ctx: Context) -> str:
-                if session_id := ctx.session_id:
-                    redis_client.set(f"session:{session_id}:data", json.dumps(data))
-                    return f"Data stored for session {session_id}"
-                return "No session ID available (stdio/memory transport)"
+                session_id = ctx.session_id
+                redis_client.set(f"session:{session_id}:data", json.dumps(data))
+                return f"Data stored for session {session_id}"
             ```
         """
-        try:
-            from fastmcp.server.dependencies import get_http_headers
+        request_ctx = self.request_context
+        session = request_ctx.session
 
-            headers = get_http_headers(include_all=True)
-            return headers.get("mcp-session-id")
-        except RuntimeError:
-            # No HTTP context available (stdio/in-memory transport)
-            return None
+        # Try to get the session ID from the session attributes
+        session_id = getattr(session, "_fastmcp_id", None)
+        if session_id is not None:
+            return session_id
+
+        # Try to get the session ID from the http request headers
+        request = request_ctx.request
+        if request:
+            session_id = request.headers.get("mcp-session-id")
+
+        # Generate a session ID if it doesn't exist.
+        if session_id is None:
+            from uuid import uuid4
+
+            session_id = str(uuid4())
+
+        # Save the session id to the session attributes
+        setattr(session, "_fastmcp_id", session_id)
+        return session_id
 
     @property
     def session(self) -> ServerSession:
