@@ -261,18 +261,17 @@ my_server = FastMCP("MyServer")
 # Get a proxy server
 proxy = FastMCP.as_proxy("backend_server.py")
 
-# Add mirrored components to your server
-async with proxy:
-    mirrored_tool = await proxy.get_tool("useful_tool")
-    
-    # Create a local copy that you can modify
-    local_tool = mirrored_tool.copy()
-    
-    # Add the local copy to your server
-    my_server.add_tool(local_tool)
-    
-    # Now you can disable YOUR copy
-    local_tool.disable()
+# Get mirrored components from proxy
+mirrored_tool = await proxy.get_tool("useful_tool")
+
+# Create a local copy that you can modify
+local_tool = mirrored_tool.copy()
+
+# Add the local copy to your server
+my_server.add_tool(local_tool)
+
+# Now you can disable YOUR copy
+local_tool.disable()
 ```
 
 
