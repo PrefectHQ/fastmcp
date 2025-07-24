@@ -20,7 +20,7 @@ from typing import (
 
 import mcp.types
 from mcp.types import Annotations
-from pydantic import AnyUrl, BaseModel, ConfigDict, TypeAdapter, UrlConstraints
+from pydantic import AnyUrl, BaseModel, ConfigDict, Field, TypeAdapter, UrlConstraints
 
 T = TypeVar("T")
 
@@ -43,53 +43,65 @@ def get_cached_typeadapter(cls: T) -> TypeAdapter[T]:
     However, this isn't feasible for user-generated functions. Instead, we use a
     cache to minimize the cost of creating them as much as possible.
     """
-    # For functions, we need to ensure TypeAdapter can resolve forward
-    # references
-    # Normally this could be done by setting e.g. parent_depth=3 to reflect the
-    # globals in the parent stack, but this utility function can't make that assumption.
+    # For functions, process annotations to handle forward references and convert
+    # Annotated[Type, "string"] to Annotated[Type, Field(description="string")]
     if inspect.isfunction(cls) or inspect.ismethod(cls):
-        # Only try to resolve annotations if the function has them
         if hasattr(cls, "__annotations__") and cls.__annotations__:
             try:
-                # Use include_extras=True to preserve Annotated metadata
+                # Resolve forward references first
                 resolved_hints = get_type_hints(cls, include_extras=True)
-                # Check if we need to create a new function with resolved annotations
-                if resolved_hints != cls.__annotations__:
-                    # Create a new function object with resolved annotations
-                    import types
-
-                    # Handle both functions and methods
-                    if inspect.ismethod(cls):
-                        actual_func = cls.__func__
-                        code = actual_func.__code__
-                        globals_dict = actual_func.__globals__
-                        name = actual_func.__name__
-                        defaults = actual_func.__defaults__
-                        closure = actual_func.__closure__
-                    else:
-                        code = cls.__code__
-                        globals_dict = cls.__globals__
-                        name = cls.__name__
-                        defaults = cls.__defaults__
-                        closure = cls.__closure__
-
-                    new_func = types.FunctionType(
-                        code,
-                        globals_dict,
-                        name,
-                        defaults,
-                        closure,
-                    )
-                    new_func.__dict__.update(cls.__dict__)
-                    new_func.__module__ = cls.__module__
-                    new_func.__qualname__ = getattr(cls, "__qualname__", cls.__name__)
-                    new_func.__annotations__ = resolved_hints
-                    return TypeAdapter(new_func)
             except Exception:
-                # If resolution fails, this might be due to closure-scoped types
-                # that aren't available in the function's globals. In this case,
-                # we'll let TypeAdapter handle the string annotations directly.
-                pass
+                # If forward reference resolution fails, use original annotations
+                resolved_hints = cls.__annotations__
+
+            # Process annotations to convert string descriptions to Fields
+            processed_hints = {}
+
+            for name, annotation in resolved_hints.items():
+                # Check if this is Annotated[Type, "string"] and convert to Annotated[Type, Field(description="string")]
+                if (
+                    get_origin(annotation) is Annotated
+                    and len(get_args(annotation)) == 2
+                    and isinstance(get_args(annotation)[1], str)
+                ):
+                    base_type, description = get_args(annotation)
+                    processed_hints[name] = Annotated[
+                        base_type, Field(description=description)
+                    ]
+                else:
+                    processed_hints[name] = annotation
+
+            # Create new function if annotations changed
+            if processed_hints != cls.__annotations__:
+                import types
+
+                # Handle both functions and methods
+                if inspect.ismethod(cls):
+                    actual_func = cls.__func__
+                    code = actual_func.__code__
+                    globals_dict = actual_func.__globals__
+                    name = actual_func.__name__
+                    defaults = actual_func.__defaults__
+                    closure = actual_func.__closure__
+                else:
+                    code = cls.__code__
+                    globals_dict = cls.__globals__
+                    name = cls.__name__
+                    defaults = cls.__defaults__
+                    closure = cls.__closure__
+
+                new_func = types.FunctionType(
+                    code,
+                    globals_dict,
+                    name,
+                    defaults,
+                    closure,
+                )
+                new_func.__dict__.update(cls.__dict__)
+                new_func.__module__ = cls.__module__
+                new_func.__qualname__ = getattr(cls, "__qualname__", cls.__name__)
+                new_func.__annotations__ = processed_hints
+                return TypeAdapter(new_func)
 
     return TypeAdapter(cls)
 

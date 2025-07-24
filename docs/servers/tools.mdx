@@ -163,9 +163,8 @@ def my_tool() -> None:
 ```
 </CodeGroup>
 
-### Tool Parameters
 
-#### Type Annotations
+### Type Annotations
 
 Type annotations for parameters are essential for proper tool functionality. They:
 1. Inform the LLM about the expected data types for each parameter
@@ -185,9 +184,55 @@ def analyze_text(
     # Implementation...
 ```
 
-#### Parameter Metadata
+FastMCP supports a wide range of type annotations, including all Pydantic types:
 
-You can provide additional metadata about parameters using Pydantic's `Field` class with `Annotated`. This approach is preferred as it's more modern and keeps type hints separate from validation rules:
+| Type Annotation         | Example                       | Description                         |
+| :---------------------- | :---------------------------- | :---------------------------------- |
+| Basic types             | `int`, `float`, `str`, `bool` | Simple scalar values - see [Built-in Types](#built-in-types) |
+| Binary data             | `bytes`                       | Binary content - see [Binary Data](#binary-data) |
+| Date and Time           | `datetime`, `date`, `timedelta` | Date and time objects - see [Date and Time Types](#date-and-time-types) |
+| Collection types        | `list[str]`, `dict[str, int]`, `set[int]` | Collections of items - see [Collection Types](#collection-types) |
+| Optional types          | `float \| None`, `Optional[float]`| Parameters that may be null/omitted - see [Union and Optional Types](#union-and-optional-types) |
+| Union types             | `str \| int`, `Union[str, int]`| Parameters accepting multiple types - see [Union and Optional Types](#union-and-optional-types) |
+| Constrained types       | `Literal["A", "B"]`, `Enum`   | Parameters with specific allowed values - see [Constrained Types](#constrained-types) |
+| Paths                   | `Path`                        | File system paths - see [Paths](#paths) |
+| UUIDs                   | `UUID`                        | Universally unique identifiers - see [UUIDs](#uuids) |
+| Pydantic models         | `UserData`                    | Complex structured data - see [Pydantic Models](#pydantic-models) |
+
+For additional type annotations not listed here, see the [Parameter Types](#parameter-types) section below for more detailed information and examples.
+### Parameter Metadata
+
+You can provide additional metadata about parameters in several ways:
+
+#### Simple String Descriptions
+
+<VersionBadge version="2.11.0" />
+
+For basic parameter descriptions, you can use a convenient shorthand with `Annotated`:
+
+```python 
+from typing import Annotated
+
+@mcp.tool
+def process_image(
+    image_url: Annotated[str, "URL of the image to process"],
+    resize: Annotated[bool, "Whether to resize the image"] = False,
+    width: Annotated[int, "Target width in pixels"] = 800,
+    format: Annotated[str, "Output image format"] = "jpeg"
+) -> dict:
+    """Process an image with optional resizing."""
+    # Implementation...
+```
+
+This shorthand syntax is equivalent to using `Field(description=...)` but more concise for simple descriptions.
+
+<Tip>
+This shorthand syntax is only applied to `Annotated` types with a single string description. 
+</Tip>
+
+#### Advanced Metadata with Field
+
+For validation constraints and advanced metadata, use Pydantic's `Field` class with `Annotated`:
 
 ```python
 from typing import Annotated
@@ -227,26 +272,9 @@ Field provides several validation and documentation features:
 - `pattern`: Regex pattern for string validation
 - `default`: Default value if parameter is omitted
 
-#### Supported Types
 
-FastMCP supports a wide range of type annotations, including all Pydantic types:
 
-| Type Annotation         | Example                       | Description                         |
-| :---------------------- | :---------------------------- | :---------------------------------- |
-| Basic types             | `int`, `float`, `str`, `bool` | Simple scalar values - see [Built-in Types](#built-in-types) |
-| Binary data             | `bytes`                       | Binary content - see [Binary Data](#binary-data) |
-| Date and Time           | `datetime`, `date`, `timedelta` | Date and time objects - see [Date and Time Types](#date-and-time-types) |
-| Collection types        | `list[str]`, `dict[str, int]`, `set[int]` | Collections of items - see [Collection Types](#collection-types) |
-| Optional types          | `float \| None`, `Optional[float]`| Parameters that may be null/omitted - see [Union and Optional Types](#union-and-optional-types) |
-| Union types             | `str \| int`, `Union[str, int]`| Parameters accepting multiple types - see [Union and Optional Types](#union-and-optional-types) |
-| Constrained types       | `Literal["A", "B"]`, `Enum`   | Parameters with specific allowed values - see [Constrained Types](#constrained-types) |
-| Paths                   | `Path`                        | File system paths - see [Paths](#paths) |
-| UUIDs                   | `UUID`                        | Universally unique identifiers - see [UUIDs](#uuids) |
-| Pydantic models         | `UserData`                    | Complex structured data - see [Pydantic Models](#pydantic-models) |
-
-For additional type annotations not listed here, see the [Parameter Types](#parameter-types) section below for more detailed information and examples.
-
-#### Optional Arguments
+### Optional Arguments
 
 FastMCP follows Python's standard function parameter conventions. Parameters without default values are required, while those with default values are optional.
 

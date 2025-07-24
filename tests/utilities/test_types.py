@@ -7,12 +7,14 @@ from typing import Annotated, Any
 
 import pytest
 from mcp.types import BlobResourceContents, TextResourceContents
+from pydantic import Field
 
 from fastmcp.utilities.types import (
     Audio,
     File,
     Image,
     find_kwarg_by_type,
+    get_cached_typeadapter,
     is_class_member_of_type,
     issubclass_safe,
     replace_type,
@@ -617,3 +619,76 @@ class TestReplaceType:
     def test_replace_type(self, input, type_map, expected):
         """Test replacing a type with another type."""
         assert replace_type(input, type_map) == expected
+
+
+class TestAnnotationStringDescriptions:
+    """Test the new functionality for string descriptions in Annotated types."""
+
+    def test_get_cached_typeadapter_with_string_descriptions(self):
+        """Test TypeAdapter creation with string descriptions."""
+
+        def func(name: Annotated[str, "The user's name"]) -> str:
+            return f"Hello {name}"
+
+        adapter = get_cached_typeadapter(func)
+        schema = adapter.json_schema()
+
+        # Should have description in schema
+        assert "properties" in schema
+        assert "name" in schema["properties"]
+        assert schema["properties"]["name"]["description"] == "The user's name"
+
+    def test_multiple_string_annotations(self):
+        """Test function with multiple string-annotated parameters."""
+
+        def func(
+            name: Annotated[str, "User's name"],
+            email: Annotated[str, "User's email"],
+            age: int,
+        ) -> str:
+            return f"{name} ({email}) is {age}"
+
+        adapter = get_cached_typeadapter(func)
+        schema = adapter.json_schema()
+
+        # Both annotated parameters should have descriptions
+        assert schema["properties"]["name"]["description"] == "User's name"
+        assert schema["properties"]["email"]["description"] == "User's email"
+        # Non-annotated parameter should not have description
+        assert "description" not in schema["properties"]["age"]
+
+    def test_annotated_with_more_than_string_unchanged(self):
+        """Test that Annotated with more than just a string is unchanged."""
+
+        def func(name: Annotated[str, "desc", "extra"]) -> str:
+            return f"Hello {name}"
+
+        adapter = get_cached_typeadapter(func)
+        schema = adapter.json_schema()
+
+        # Should not have description since it's not exactly length 2
+        assert "description" not in schema["properties"]["name"]
+
+    def test_annotated_with_non_string_unchanged(self):
+        """Test that Annotated with non-string second arg is unchanged."""
+
+        def func(name: Annotated[str, 42]) -> str:
+            return f"Hello {name}"
+
+        adapter = get_cached_typeadapter(func)
+        schema = adapter.json_schema()
+
+        # Should not have description since second arg is not string
+        assert "description" not in schema["properties"]["name"]
+
+    def test_existing_field_unchanged(self):
+        """Test that existing Field annotations are unchanged."""
+
+        def func(name: Annotated[str, Field(description="Field desc")]) -> str:
+            return f"Hello {name}"
+
+        adapter = get_cached_typeadapter(func)
+        schema = adapter.json_schema()
+
+        # Should keep the Field description
+        assert schema["properties"]["name"]["description"] == "Field desc"

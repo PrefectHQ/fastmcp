@@ -891,6 +891,18 @@ class TestToolParameters:
             ):
                 await client.call_tool("send_timedelta", {"x": 1000})
 
+    async def test_annotated_string_description(self):
+        mcp = FastMCP()
+
+        @mcp.tool
+        def f(x: Annotated[int, "A number"]):
+            return x
+
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+            assert len(tools) == 1
+            assert tools[0].inputSchema["properties"]["x"]["description"] == "A number"
+
 
 class TestToolOutputSchema:
     @pytest.mark.parametrize("annotation", [str, int, float, bool, list, AnyUrl])
