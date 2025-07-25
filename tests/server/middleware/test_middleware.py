@@ -7,7 +7,8 @@ import pytest
 
 from fastmcp import Client, FastMCP
 from fastmcp.server.context import Context
-from fastmcp.server.middleware import Middleware, MiddlewareContext
+from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
+from fastmcp.tools.tool import ToolResult
 
 
 @dataclass
@@ -410,6 +411,38 @@ class TestMiddlewareHooks:
 
         assert len(prompts) == 1
         assert prompts[0].name == "public_prompt"
+
+    async def test_call_tool_middleware(self):
+        server = FastMCP()
+
+        @server.tool
+        def add(a: int, b: int) -> int:
+            return a + b
+
+        class CallToolMiddleware(Middleware):
+            async def on_call_tool(
+                self,
+                context: MiddlewareContext[mcp.types.CallToolRequestParams],
+                call_next: CallNext[mcp.types.CallToolRequestParams, ToolResult],
+            ):
+                # modify argument
+                if context.message.name == "add":
+                    context.message.arguments["a"] += 100  # type: ignore
+
+                result = await call_next(context)
+
+                # modify result
+                if context.message.name == "add":
+                    result.structured_content["result"] += 5  # type: ignore
+
+                return result
+
+        server.add_middleware(CallToolMiddleware())
+
+        async with Client(server) as client:
+            result = await client.call_tool("add", {"a": 1, "b": 2})
+
+        assert result.structured_content["result"] == 108  # type: ignore
 
 
 class TestNestedMiddlewareHooks:

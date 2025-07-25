@@ -20,7 +20,7 @@ import mcp.types as mt
 from fastmcp.prompts.prompt import Prompt
 from fastmcp.resources.resource import Resource
 from fastmcp.resources.template import ResourceTemplate
-from fastmcp.tools.tool import Tool
+from fastmcp.tools.tool import Tool, ToolResult
 
 if TYPE_CHECKING:
     from fastmcp.server.context import Context
@@ -41,26 +41,6 @@ R = TypeVar("R", covariant=True)
 @runtime_checkable
 class CallNext(Protocol[T, R]):
     def __call__(self, context: MiddlewareContext[T]) -> Awaitable[R]: ...
-
-
-ServerResultT = TypeVar(
-    "ServerResultT",
-    bound=mt.EmptyResult
-    | mt.InitializeResult
-    | mt.CompleteResult
-    | mt.GetPromptResult
-    | mt.ListPromptsResult
-    | mt.ListResourcesResult
-    | mt.ListResourceTemplatesResult
-    | mt.ReadResourceResult
-    | mt.CallToolResult
-    | mt.ListToolsResult,
-)
-
-
-@runtime_checkable
-class ServerResultProtocol(Protocol[ServerResultT]):
-    root: ServerResultT
 
 
 @dataclass(kw_only=True, frozen=True)
@@ -167,8 +147,8 @@ class Middleware:
     async def on_call_tool(
         self,
         context: MiddlewareContext[mt.CallToolRequestParams],
-        call_next: CallNext[mt.CallToolRequestParams, mt.CallToolResult],
-    ) -> mt.CallToolResult:
+        call_next: CallNext[mt.CallToolRequestParams, ToolResult],
+    ) -> ToolResult:
         return await call_next(context)
 
     async def on_read_resource(

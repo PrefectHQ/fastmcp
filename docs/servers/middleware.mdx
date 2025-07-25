@@ -202,6 +202,40 @@ class ListingFilterMiddleware(Middleware):
 
 This filtering happens before the components are converted to MCP format and returned to the client, so the tags (which are FastMCP-specific) are naturally stripped in the final response.
 
+<Tip>
+When filtering components in listing operations, ensure you also prevent execution of filtered components in the corresponding execution hooks (`on_call_tool`, `on_read_resource`, `on_get_prompt`) to maintain consistency.
+</Tip>
+
+### Tool Call Modification
+
+For execution operations like tool calls, you can modify arguments before execution or transform results afterward:
+
+```python
+from fastmcp.server.middleware import Middleware, MiddlewareContext
+
+class ToolCallMiddleware(Middleware):
+    async def on_call_tool(self, context: MiddlewareContext, call_next):
+        # Modify arguments before execution
+        if context.message.name == "calculate":
+            # Ensure positive inputs
+            if context.message.arguments.get("value", 0) < 0:
+                context.message.arguments["value"] = abs(context.message.arguments["value"])
+        
+        result = await call_next(context)
+        
+        # Transform result after execution
+        if context.message.name == "get_data":
+            # Add metadata to result
+            if result.structured_content:
+                result.structured_content["processed_at"] = "2024-01-01T00:00:00Z"
+        
+        return result
+```
+
+<Tip>
+For more complex tool rewriting scenarios, consider using [Tool Transformation](/patterns/tool-transformation) patterns which provide a more structured approach to creating modified tool variants.
+</Tip>
+
 ### Anatomy of a Hook
 
 Every middleware hook follows the same pattern. Let's examine the `on_message` hook to understand the structure:
