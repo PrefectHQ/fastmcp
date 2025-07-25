@@ -8,6 +8,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Annotated, Any
 
 import pydantic_core
+from mcp.types import Annotations
 from mcp.types import Resource as MCPResource
 from pydantic import (
     AnyUrl,
@@ -43,6 +44,10 @@ class Resource(FastMCPComponent, abc.ABC):
         description="MIME type of the resource content",
         pattern=r"^[a-zA-Z0-9]+/[a-zA-Z0-9\-+.]+$",
     )
+    annotations: Annotated[
+        Annotations | None,
+        Field(description="Optional annotations about the resource's behavior"),
+    ] = None
 
     def enable(self) -> None:
         super().enable()
@@ -70,6 +75,7 @@ class Resource(FastMCPComponent, abc.ABC):
         mime_type: str | None = None,
         tags: set[str] | None = None,
         enabled: bool | None = None,
+        annotations: Annotations | None = None,
     ) -> FunctionResource:
         return FunctionResource.from_function(
             fn=fn,
@@ -80,6 +86,7 @@ class Resource(FastMCPComponent, abc.ABC):
             mime_type=mime_type,
             tags=tags,
             enabled=enabled,
+            annotations=annotations,
         )
 
     @field_validator("mime_type", mode="before")
@@ -114,6 +121,7 @@ class Resource(FastMCPComponent, abc.ABC):
             "description": self.description,
             "mimeType": self.mime_type,
             "title": self.title,
+            "annotations": self.annotations,
         }
         return MCPResource(**kwargs | overrides)
 
@@ -157,6 +165,7 @@ class FunctionResource(Resource):
         mime_type: str | None = None,
         tags: set[str] | None = None,
         enabled: bool | None = None,
+        annotations: Annotations | None = None,
     ) -> FunctionResource:
         """Create a FunctionResource from a function."""
         if isinstance(uri, str):
@@ -170,6 +179,7 @@ class FunctionResource(Resource):
             mime_type=mime_type or "text/plain",
             tags=tags or set(),
             enabled=enabled if enabled is not None else True,
+            annotations=annotations,
         )
 
     async def read(self) -> str | bytes:

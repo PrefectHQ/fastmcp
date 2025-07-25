@@ -1450,6 +1450,33 @@ class TestResource:
             result = await client.read_resource(AnyUrl("file://test.bin"))
             assert result[0].blob == base64.b64encode(b"Binary file data").decode()  # type: ignore[attr-defined]
 
+    async def test_resource_with_annotations(self):
+        mcp = FastMCP()
+
+        @mcp.resource(
+            "http://example.com/data",
+            name="test",
+            annotations={
+                "httpMethod": "GET",
+                "Cache-Control": "max-age=3600",
+            },
+        )
+        def get_data() -> str:
+            return "Hello, world!"
+
+        async with Client(mcp) as client:
+            resources = await client.list_resources()
+            assert len(resources) == 1
+
+            resource = resources[0]
+            assert str(resource.uri) == "http://example.com/data"
+
+            assert resource.annotations is not None
+            assert hasattr(resource.annotations, "httpMethod")
+            assert getattr(resource.annotations, "httpMethod") == "GET"
+            assert hasattr(resource.annotations, "Cache-Control")
+            assert getattr(resource.annotations, "Cache-Control") == "max-age=3600"
+
 
 class TestResourceTags:
     def create_server(self, include_tags=None, exclude_tags=None):
@@ -1847,6 +1874,30 @@ class TestResourceTemplates:
 
             result = await client.read_resource(AnyUrl("resource://a/b"))
             assert result[0].text == "Template resource 1: a/b"  # type: ignore[attr-defined]
+
+    async def test_resource_template_with_annotations(self):
+        """Test that resource template annotations are visible to clients."""
+        mcp = FastMCP()
+
+        @mcp.resource(
+            "api://users/{user_id}",
+            annotations={"httpMethod": "GET", "Cache-Control": "no-cache"},
+        )
+        def get_user(user_id: str) -> str:
+            return f"User {user_id} data"
+
+        async with Client(mcp) as client:
+            templates = await client.list_resource_templates()
+            assert len(templates) == 1
+
+            template = templates[0]
+            assert template.uriTemplate == "api://users/{user_id}"
+
+            assert template.annotations is not None
+            assert hasattr(template.annotations, "httpMethod")
+            assert getattr(template.annotations, "httpMethod") == "GET"
+            assert hasattr(template.annotations, "Cache-Control")
+            assert getattr(template.annotations, "Cache-Control") == "no-cache"
 
 
 class TestResourceTemplatesTags:
