@@ -151,7 +151,7 @@ class FastMCPOpenAPI(FastMCP):
         try:
             self._spec = Spec.from_dict(openapi_spec)  # type: ignore[arg-type]
             self._director = RequestDirector(self._spec)
-            logger.info(
+            logger.debug(
                 "Initialized OpenAPI RequestDirector for stateless request building"
             )
         except Exception as e:
@@ -199,9 +199,9 @@ class FastMCPOpenAPI(FastMCP):
             elif route_type == MCPType.RESOURCE_TEMPLATE:
                 self._create_openapi_template(route, component_name, tags=route_tags)
             elif route_type == MCPType.EXCLUDE:
-                logger.info(f"Excluding route: {route.method} {route.path}")
+                logger.debug(f"Excluding route: {route.method} {route.path}")
 
-        logger.info(f"Created FastMCP OpenAPI server with {len(http_routes)} routes")
+        logger.debug(f"Created FastMCP OpenAPI server with {len(http_routes)} routes")
 
     def _generate_default_name(
         self, route: HTTPRoute, mcp_names_map: dict[str, str] | None = None

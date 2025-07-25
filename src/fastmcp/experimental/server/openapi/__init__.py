@@ -6,7 +6,6 @@ from .server import FastMCPOpenAPI
 # Import from routing
 from .routing import (
     MCPType,
-    RouteType,  # Deprecated but kept for backward compatibility
     RouteMap,
     RouteMapFn,
     ComponentFn,
@@ -27,7 +26,6 @@ __all__ = [
     "FastMCPOpenAPI",
     # Routing
     "MCPType",
-    "RouteType",  # Deprecated but kept for backward compatibility
     "RouteMap",
     "RouteMapFn",
     "ComponentFn",

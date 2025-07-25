@@ -2,13 +2,10 @@
 
 import enum
 import re
-import warnings
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from re import Pattern
 from typing import TYPE_CHECKING, Literal
-
-import fastmcp
 
 if TYPE_CHECKING:
     from .components import (
@@ -41,7 +38,6 @@ class MCPType(enum.Enum):
         RESOURCE: Convert the route to a Resource (typically GET endpoints)
         RESOURCE_TEMPLATE: Convert the route to a ResourceTemplate (typically GET with path params)
         EXCLUDE: Exclude the route from being converted to any MCP component
-        IGNORE: Deprecated, use EXCLUDE instead
     """
 
     TOOL = "TOOL"
@@ -51,33 +47,18 @@ class MCPType(enum.Enum):
     EXCLUDE = "EXCLUDE"
 
 
-# Keep RouteType as an alias to MCPType for backward compatibility
-class RouteType(enum.Enum):
-    """
-    Deprecated: Use MCPType instead.
-
-    This enum is kept for backward compatibility and will be removed in a future version.
-    """
-
-    TOOL = "TOOL"
-    RESOURCE = "RESOURCE"
-    RESOURCE_TEMPLATE = "RESOURCE_TEMPLATE"
-    IGNORE = "IGNORE"
-
-
 @dataclass(kw_only=True)
 class RouteMap:
     """Mapping configuration for HTTP routes to FastMCP component types."""
 
     methods: list[HttpMethod] | Literal["*"] = field(default="*")
     pattern: Pattern[str] | str = field(default=r".*")
-    route_type: RouteType | MCPType | None = field(default=None)
+
     tags: set[str] = field(
         default_factory=set,
         metadata={"description": "A set of tags to match. All tags must match."},
     )
-    mcp_type: MCPType | None = field(
-        default=None,
+    mcp_type: MCPType = field(
         metadata={"description": "The type of FastMCP component to create."},
     )
     mcp_tags: set[str] = field(
@@ -86,50 +67,6 @@ class RouteMap:
             "description": "A set of tags to apply to the generated FastMCP component."
         },
     )
-
-    def __post_init__(self):
-        """Validate and process the route map after initialization."""
-        # Handle backward compatibility for route_type, deprecated in 2.5.0
-        if self.mcp_type is None and self.route_type is not None:
-            if fastmcp.settings.deprecation_warnings:
-                warnings.warn(
-                    "The 'route_type' parameter is deprecated and will be removed in a future version. "
-                    "Use 'mcp_type' instead with the appropriate MCPType value.",
-                    DeprecationWarning,
-                    stacklevel=2,
-                )
-            if isinstance(self.route_type, RouteType):
-                if fastmcp.settings.deprecation_warnings:
-                    warnings.warn(
-                        "The RouteType class is deprecated and will be removed in a future version. "
-                        "Use MCPType instead.",
-                        DeprecationWarning,
-                        stacklevel=2,
-                    )
-            # Check for the deprecated IGNORE value
-            if self.route_type == RouteType.IGNORE:
-                if fastmcp.settings.deprecation_warnings:
-                    warnings.warn(
-                        "RouteType.IGNORE is deprecated and will be removed in a future version. "
-                        "Use MCPType.EXCLUDE instead.",
-                        DeprecationWarning,
-                        stacklevel=2,
-                    )
-
-            # Convert from RouteType to MCPType if needed
-            if isinstance(self.route_type, RouteType):
-                route_type_name = self.route_type.name
-                if route_type_name == "IGNORE":
-                    route_type_name = "EXCLUDE"
-                self.mcp_type = getattr(MCPType, route_type_name)
-            else:
-                self.mcp_type = self.route_type
-        elif self.mcp_type is None:
-            raise ValueError("`mcp_type` must be provided")
-
-        # Set route_type to match mcp_type for backward compatibility
-        if self.route_type is None:
-            self.route_type = self.mcp_type
 
 
 # Default route mapping: all routes become tools.
@@ -187,7 +124,6 @@ def _determine_route_type(
 # Export public symbols
 __all__ = [
     "MCPType",
-    "RouteType",  # Deprecated but kept for backward compatibility
     "RouteMap",
     "RouteMapFn",
     "ComponentFn",
