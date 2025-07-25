@@ -468,6 +468,7 @@ class TestOpenAPIComprehensive:
         # Create a mock client that tracks requests
         mock_client = Mock(spec=httpx.AsyncClient)
         mock_client.base_url = "https://api.example.com"
+        mock_client.headers = None
 
         # Mock successful response
         mock_response = Mock(spec=Response)
@@ -509,6 +510,7 @@ class TestOpenAPIComprehensive:
         """Test complex request with both parameters and body."""
         mock_client = Mock(spec=httpx.AsyncClient)
         mock_client.base_url = "https://api.example.com"
+        mock_client.headers = None
 
         mock_response = Mock(spec=Response)
         mock_response.status_code = 201
@@ -557,6 +559,7 @@ class TestOpenAPIComprehensive:
         """Test query parameter handling."""
         mock_client = Mock(spec=httpx.AsyncClient)
         mock_client.base_url = "https://api.example.com"
+        mock_client.headers = None
 
         mock_response = Mock(spec=Response)
         mock_response.status_code = 200
@@ -595,6 +598,7 @@ class TestOpenAPIComprehensive:
         """Test error handling for HTTP errors."""
         mock_client = Mock(spec=httpx.AsyncClient)
         mock_client.base_url = "https://api.example.com"
+        mock_client.headers = None
 
         # Mock HTTP error response
         mock_response = Mock(spec=Response)

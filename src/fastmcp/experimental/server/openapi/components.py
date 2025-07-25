@@ -68,6 +68,13 @@ class OpenAPITool(Tool):
                 else "http://localhost"
             )
 
+            # Get Headers from client
+            cli_headers = (
+                self._client.headers
+                if hasattr(self._client, "headers") and self._client.headers
+                else {}
+            )
+
             # Build the request using RequestDirector
             request = self._director.build(self._route, arguments, base_url)
 
@@ -81,6 +88,17 @@ class OpenAPITool(Tool):
                     # Create new headers from mcp_headers
                     for key, value in mcp_headers.items():
                         request.headers[key] = value
+
+            if cli_headers:
+                # Merge with existing headers, _client headers take precedence
+                if request.headers:
+                    request.headers.update(cli_headers)
+                else:
+                    # Create new headers from cli_headers
+                    for key, value in cli_headers.items():
+                        request.headers[key] = value
+            # print logger
+            logger.debug(f"run - sending request; headers: {request.headers}")
 
             # Execute the request
             # Note: httpx.AsyncClient.send() doesn't accept timeout parameter
@@ -210,6 +228,14 @@ class OpenAPIResource(Resource):
             headers = {}
             mcp_headers = get_http_headers()
             headers.update(mcp_headers)
+            # Get Headers from client
+            cli_headers = (
+                self._client.headers
+                if hasattr(self._client, "headers") and self._client.headers
+                else {}
+            )
+            # Merge with existing headers, _client headers take precedence
+            headers.update(cli_headers)
 
             response = await self._client.request(
                 method=self._route.method,
