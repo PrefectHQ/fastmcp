@@ -104,6 +104,18 @@ def get_application_status() -> dict:
 <ParamField body="enabled" type="bool" default="True">
   A boolean to enable or disable the resource. See [Disabling Resources](#disabling-resources) for more information
 </ParamField>
+
+<ParamField body="annotations" type="Annotations | dict | None">
+    An optional `Annotations` object or dictionary to add additional metadata about the resource.
+  <Expandable title="Annotations attributes">
+    <ParamField body="readOnlyHint" type="bool | None">
+      If true, the resource is read-only and does not modify its environment.
+    </ParamField>
+    <ParamField body="idempotentHint" type="bool | None">
+      If true, reading the resource repeatedly will have no additional effect on its environment.
+    </ParamField>
+  </Expandable>
+</ParamField>
 </Card>
 
 ### Return Values
@@ -300,11 +312,46 @@ Notifications are only sent when these operations occur within an active MCP req
 
 Clients can handle these notifications using a [message handler](/clients/messages) to automatically refresh their resource lists or update their interfaces.
 
+### Annotations
+
+<VersionBadge version="2.11.0" />
+
+FastMCP allows you to add specialized metadata to your resources through annotations. These annotations communicate how resources behave to client applications without consuming token context in LLM prompts.
+
+Annotations serve several purposes in client applications:
+- Indicating whether resources are read-only or may have side effects
+- Describing the safety profile of resources (idempotent vs. non-idempotent)
+- Helping clients optimize caching and access patterns
+
+You can add annotations to a resource using the `annotations` parameter in the `@mcp.resource` decorator:
+
+```python
+@mcp.resource(
+    "data://config",
+    annotations={
+        "readOnlyHint": True,
+        "idempotentHint": True
+    }
+)
+def get_config() -> dict:
+    """Get application configuration."""
+    return {"version": "1.0", "debug": False}
+```
+
+FastMCP supports these standard annotations:
+
+| Annotation | Type | Default | Purpose |
+| :--------- | :--- | :------ | :------ |
+| `readOnlyHint` | boolean | true | Indicates if the resource only provides data without side effects |
+| `idempotentHint` | boolean | true | Indicates if repeated reads have the same effect as a single read |
+
+Remember that annotations help make better user experiences but should be treated as advisory hints. They help client applications present appropriate UI elements and optimize access patterns, but won't enforce behavior on their own. Always focus on making your annotations accurately represent what your resource actually does.
+
 ## Resource Templates
 
 Resource Templates allow clients to request resources whose content depends on parameters embedded in the URI. Define a template using the **same `@mcp.resource` decorator**, but include `{parameter_name}` placeholders in the URI string and add corresponding arguments to your function signature.
 
-Resource templates share most configuration options with regular resources (name, description, mime_type, tags), but add the ability to define URI parameters that map to function parameters.
+Resource templates share most configuration options with regular resources (name, description, mime_type, tags, annotations), but add the ability to define URI parameters that map to function parameters.
 
 Resource templates generate a new resource for each unique set of parameters, which means that resources can be dynamically created on-demand. For example, if the resource template `"user://profile/{name}"` is registered, MCP clients could request `"user://profile/ford"` or `"user://profile/marvin"` to retrieve either of those two user profiles as resources, without having to register each resource individually.
 
@@ -332,8 +379,14 @@ def get_weather(city: str) -> dict:
         "unit": "celsius"
     }
 
-# Template with multiple parameters
-@mcp.resource("repos://{owner}/{repo}/info")
+# Template with multiple parameters and annotations
+@mcp.resource(
+    "repos://{owner}/{repo}/info",
+    annotations={
+        "readOnlyHint": True,
+        "idempotentHint": True
+    }
+)
 def get_repo_info(owner: str, repo: str) -> dict:
     """Retrieves information about a GitHub repository."""
     # In a real implementation, this would call the GitHub API
