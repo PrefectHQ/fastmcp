@@ -308,7 +308,7 @@ Learn more in the [**Composition Documentation**](https://gofastmcp.com/patterns
 
 Automatically generate FastMCP servers from existing OpenAPI specifications (`FastMCP.from_openapi()`) or FastAPI applications (`FastMCP.from_fastapi()`), instantly bringing your web APIs to the MCP ecosystem.
 
-Learn more: [**OpenAPI Integration**](https://gofastmcp.com/servers/openapi#openapi-integration) | [**FastAPI Integration**](https://gofastmcp.com/deployment/asgi#fastapi-integration).
+Learn more: [**OpenAPI Integration**](https://gofastmcp.com/integrations/openapi) | [**FastAPI Integration**](https://gofastmcp.com/integrations/fastapi).
 
 ### Authentication & Security
 
