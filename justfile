@@ -12,7 +12,7 @@ typecheck:
 
 # Serve documentation locally
 docs:
-    cd docs && npx mint@latest dev
+    cd docs && npx --yes mint@latest dev
 
 # Generate API reference documentation for all modules
 api-ref-all:
