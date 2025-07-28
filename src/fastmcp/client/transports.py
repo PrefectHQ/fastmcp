@@ -48,6 +48,7 @@ __all__ = [
     "FastMCPStdioTransport",
     "NodeStdioTransport",
     "UvxStdioTransport",
+    "UvStdioTransport",
     "NpxStdioTransport",
     "FastMCPTransport",
     "infer_transport",
@@ -542,6 +543,63 @@ class NodeStdioTransport(StdioTransport):
         self.script_path = script_path
 
 
+class UvStdioTransport(StdioTransport):
+    """Transport for running commands via the uv tool."""
+
+    def __init__(
+        self,
+        command: str,
+        args: list[str] | None = None,
+        module: bool = False,
+        project_directory: str | None = None,
+        python_version: str | None = None,
+        with_packages: list[str] | None = None,
+        with_requirements: str | None = None,
+        env_vars: dict[str, str] | None = None,
+        keep_alive: bool | None = None,
+    ):
+        # Basic validation
+        if project_directory and not Path(project_directory).exists():
+            raise NotADirectoryError(
+                f"Project directory not found: {project_directory}"
+            )
+
+        # Build uv arguments
+        uv_args: list[str] = ["run"]
+        if project_directory:
+            uv_args.extend(["--directory", str(project_directory)])
+        if python_version:
+            uv_args.extend(["--python", python_version])
+        for pkg in with_packages or []:
+            uv_args.extend(["--with", pkg])
+        if with_requirements:
+            uv_args.extend(["--with-requirements", str(with_requirements)])
+        if module:
+            uv_args.append("--module")
+
+        if not args:
+            args = []
+
+        uv_args.extend([command, *args])
+
+        # Get environment with any additional variables
+        env: dict[str, str] | None = None
+        if env_vars or project_directory:
+            env = os.environ.copy()
+            if project_directory:
+                env["UV_PROJECT_DIR"] = str(project_directory)
+            if env_vars:
+                env.update(env_vars)
+
+        super().__init__(
+            command="uv",
+            args=uv_args,
+            env=env,
+            cwd=None,  # Use --directory flag instead of cwd
+            keep_alive=keep_alive,
+        )
+
+
 class UvxStdioTransport(StdioTransport):
     """Transport for running commands via the uvx tool."""
 
@@ -579,7 +637,7 @@ class UvxStdioTransport(StdioTransport):
             )
 
         # Build uvx arguments
-        uvx_args = []
+        uvx_args: list[str] = []
         if python_version:
             uvx_args.extend(["--python", python_version])
         if from_package:
@@ -592,11 +650,9 @@ class UvxStdioTransport(StdioTransport):
         if tool_args:
             uvx_args.extend(tool_args)
 
-        # Get environment with any additional variables
-        env = None
+        env: dict[str, str] | None = None
         if env_vars:
             env = os.environ.copy()
-            env.update(env_vars)
 
         super().__init__(
             command="uvx",
@@ -605,7 +661,7 @@ class UvxStdioTransport(StdioTransport):
             cwd=project_directory,
             keep_alive=keep_alive,
         )
-        self.tool_name = tool_name
+        self.tool_name: str = tool_name
 
 
 class NpxStdioTransport(StdioTransport):

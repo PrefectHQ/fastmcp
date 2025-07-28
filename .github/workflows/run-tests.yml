@@ -46,8 +46,11 @@ jobs:
       - name: Install FastMCP
         run: uv sync --locked
 
-      - name: Run tests (excluding integration)
-        run: uv run pytest tests -m "not integration"
+      - name: Run tests (excluding integration and client_process)
+        run: uv run pytest tests -m "not integration and not client_process"
+
+      - name: Run client process tests separately
+        run: uv run pytest tests -m "client_process" -x
 
   run_integration_tests:
     name: "Run integration tests"
