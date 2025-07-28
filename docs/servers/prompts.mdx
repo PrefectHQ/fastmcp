@@ -85,7 +85,7 @@ def data_analysis_prompt(
 </ParamField>
 
 <ParamField body="tags" type="set[str] | None">
-  A set of strings used to categorize the prompt. Clients might use tags to filter or group available prompts
+  A set of strings used to categorize the prompt. Clients might use tags to filter or group available prompts. Tags are available to clients in the prompt's `meta` field when the prompt is listed (via `list_prompts`)
 </ParamField>
 
 <ParamField body="enabled" type="bool" default="True">

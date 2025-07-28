@@ -111,9 +111,9 @@ FastMCP middleware handles two types of operations differently:
 
 **Listing Operations** (`on_list_tools`, `on_list_resources`, `on_list_prompts`, etc.):
 - Middleware receives **FastMCP component objects** with full metadata
-- These objects include FastMCP-specific properties like `tags` that aren't part of the MCP specification
-- The result contains complete component information before it's converted to MCP format
-- Tags and other metadata are stripped when finally returned to the MCP client
+- These objects include FastMCP-specific properties like `tags` that can be accessed directly from the component
+- The result contains complete component information before it's converted to MCP format  
+- Tags are included in the component's `meta` field in the listing response returned to MCP clients
 
 **Execution Operations** (`on_call_tool`, `on_read_resource`, `on_get_prompt`):
 - Middleware runs **before** the component is executed
@@ -200,7 +200,7 @@ class ListingFilterMiddleware(Middleware):
         return filtered_tools
 ```
 
-This filtering happens before the components are converted to MCP format and returned to the client, so the tags (which are FastMCP-specific) are naturally stripped in the final response.
+This filtering happens before the components are converted to MCP format and returned to the client. Tags are accessible both during filtering and are included in the component's `meta` field in the final listing response.
 
 <Tip>
 When filtering components in listing operations, ensure you also prevent execution of filtered components in the corresponding execution hooks (`on_call_tool`, `on_read_resource`, `on_get_prompt`) to maintain consistency.

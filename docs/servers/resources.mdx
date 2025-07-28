@@ -98,7 +98,7 @@ def get_application_status() -> dict:
 </ParamField>
 
 <ParamField body="tags" type="set[str] | None">
-  A set of strings for categorization, potentially used by clients for filtering
+  A set of strings for categorization, potentially used by clients for filtering. Tags are available to clients in the resource's `meta` field when the resource is listed (via `list_resources` or `list_resource_templates`)
 </ParamField>
 
 <ParamField body="enabled" type="bool" default="True">
