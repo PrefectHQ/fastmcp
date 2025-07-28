@@ -100,6 +100,7 @@ class Prompt(FastMCPComponent, ABC):
             "description": self.description,
             "arguments": arguments,
             "title": self.title,
+            "_meta": self.get_meta(),
         }
         return MCPPrompt(**kwargs | overrides)
 

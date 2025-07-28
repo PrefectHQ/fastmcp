@@ -154,6 +154,7 @@ class ResourceTemplate(FastMCPComponent):
             "mimeType": self.mime_type,
             "title": self.title,
             "annotations": self.annotations,
+            "_meta": self.get_meta(),
         }
         return MCPResourceTemplate(**kwargs | overrides)
 

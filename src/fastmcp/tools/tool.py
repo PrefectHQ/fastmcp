@@ -145,6 +145,7 @@ class Tool(FastMCPComponent):
             "outputSchema": self.output_schema,
             "annotations": self.annotations,
             "title": title,
+            "_meta": self.get_meta(),
         }
         return MCPTool(**kwargs | overrides)
 
