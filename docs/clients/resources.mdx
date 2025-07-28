@@ -34,6 +34,9 @@ async with client:
         print(f"Name: {resource.name}")
         print(f"Description: {resource.description}")
         print(f"MIME Type: {resource.mimeType}")
+        # Access tags and other metadata
+        if hasattr(resource, '_meta') and resource._meta:
+            print(f"Tags: {resource._meta.get('tags', [])}")
 ```
 
 ### Resource Templates
@@ -49,7 +52,32 @@ async with client:
         print(f"Template URI: {template.uriTemplate}")
         print(f"Name: {template.name}")
         print(f"Description: {template.description}")
+        # Access tags and other metadata
+        if hasattr(template, '_meta') and template._meta:
+            print(f"Tags: {template._meta.get('tags', [])}")
 ```
+
+### Filtering by Tags
+
+You can use the `meta` field to filter resources based on their tags:
+
+```python
+async with client:
+    resources = await client.list_resources()
+    
+    # Filter resources by tag
+    config_resources = [
+        resource for resource in resources 
+        if hasattr(resource, '_meta') and resource._meta and 
+           'config' in resource._meta.get('tags', [])
+    ]
+    
+    print(f"Found {len(config_resources)} config resources")
+```
+
+<Note>
+The `_meta` field is part of the standard MCP specification, but the inclusion of tags within it is specific to FastMCP servers. Other MCP server implementations may not provide tags in their metadata.
+</Note>
 
 ## Reading Resources
 

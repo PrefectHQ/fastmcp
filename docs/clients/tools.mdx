@@ -25,7 +25,32 @@ async with client:
         print(f"Description: {tool.description}")
         if tool.inputSchema:
             print(f"Parameters: {tool.inputSchema}")
+        # Access tags and other metadata
+        if hasattr(tool, '_meta') and tool._meta:
+            print(f"Tags: {tool._meta.get('tags', [])}")
 ```
+
+### Filtering by Tags
+
+You can use the `meta` field to filter tools based on their tags:
+
+```python
+async with client:
+    tools = await client.list_tools()
+    
+    # Filter tools by tag
+    analysis_tools = [
+        tool for tool in tools 
+        if hasattr(tool, '_meta') and tool._meta and 
+           'analysis' in tool._meta.get('tags', [])
+    ]
+    
+    print(f"Found {len(analysis_tools)} analysis tools")
+```
+
+<Note>
+The `_meta` field is part of the standard MCP specification, but the inclusion of tags within it is specific to FastMCP servers. Other MCP server implementations may not provide tags in their metadata.
+</Note>
 
 ## Executing Tools
 
