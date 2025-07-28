@@ -62,7 +62,10 @@ class FastMCPComponent(FastMCPBaseModel):
 
     def get_meta(self) -> dict[str, Any]:
         """Get the meta information about the component."""
-        return {"tags": list(self.tags)} | self.meta
+        if self.tags:
+            return {"tags": list(self.tags)} | self.meta
+        else:
+            return self.meta
 
     def with_key(self, key: str) -> Self:
         return self.model_copy(update={"_key": key})
