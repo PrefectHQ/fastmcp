@@ -192,6 +192,31 @@ async def test_hide_required_param_with_user_default_works():
     assert result.structured_content == {"result": 25}
 
 
+async def test_hidden_param_prunes_defs():
+    class VisibleType(BaseModel):
+        x: int
+
+    class HiddenType(BaseModel):
+        y: int
+
+    @Tool.from_function
+    def tool_with_refs(a: VisibleType, b: HiddenType | None = None) -> int:
+        return a.x + (b.y if b else 0)
+
+    # Hide parameter 'b'
+    new_tool = Tool.from_tool(
+        tool_with_refs, transform_args={"b": ArgTransform(hide=True)}
+    )
+
+    schema = new_tool.parameters
+    # Only 'a' should be visible
+    assert list(schema["properties"].keys()) == ["a"]
+    # $defs should only contain VisibleType, not HiddenType
+    defs = schema.get("$defs", {})
+    assert "VisibleType" in defs
+    assert "HiddenType" not in defs
+
+
 async def test_forward_with_argument_mapping(add_tool):
     """Test that forward() applies argument mapping correctly."""
 

@@ -13,6 +13,7 @@ from pydantic.functional_validators import BeforeValidator
 
 from fastmcp.tools.tool import ParsedFunction, Tool, ToolResult, _convert_to_content
 from fastmcp.utilities.components import _convert_set_default_none
+from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import (
     FastMCPBaseModel,
@@ -645,6 +646,7 @@ class TransformedTool(Tool):
 
         if parent_defs:
             schema["$defs"] = parent_defs
+            schema = compress_schema(schema, prune_defs=True)
 
         # Create forwarding function that closes over everything it needs
         async def _forward(**kwargs):
