@@ -63,7 +63,7 @@ class FastMCPComponent(FastMCPBaseModel):
     def get_meta(self) -> dict[str, Any]:
         """Get the meta information about the component."""
         if self.tags:
-            return {"tags": list(self.tags)} | self.meta
+            return {"tags": sorted(self.tags)} | self.meta
         else:
             return self.meta
 
