@@ -268,6 +268,21 @@ class TestToolTags:
             result_2 = await client.call_tool("tool_2", {})
             assert result_2.data == 2
 
+    async def test_tags_in_meta(self):
+        mcp = FastMCP()
+
+        @mcp.tool(tags={"tool-example", "test-tool-tag"})
+        def sample_tool(x: int) -> int:
+            """A sample tool."""
+            return x * 2
+
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+            assert len(tools) == 1
+            tool = tools[0]
+            assert tool.meta is not None
+            assert set(tool.meta["tags"]) == {"tool-example", "test-tool-tag"}
+
 
 class TestToolReturnTypes:
     async def test_string(self):
@@ -1544,6 +1559,26 @@ class TestResourceTags:
             with pytest.raises(McpError, match="Unknown resource"):
                 await client.read_resource(AnyUrl("resource://1"))
 
+    async def test_tags_in_meta(self):
+        mcp = FastMCP()
+
+        @mcp.resource(
+            uri="test://resource", tags={"resource-example", "test-resource-tag"}
+        )
+        def sample_resource() -> str:
+            """A sample resource."""
+            return "resource content"
+
+        async with Client(mcp) as client:
+            resources = await client.list_resources()
+            assert len(resources) == 1
+            resource = resources[0]
+            assert resource.meta is not None
+            assert set(resource.meta["tags"]) == {
+                "resource-example",
+                "test-resource-tag",
+            }
+
 
 class TestResourceContext:
     async def test_resource_with_context_annotation_gets_context(self):
@@ -1972,6 +2007,26 @@ class TestResourceTemplatesTags:
             result = await client.read_resource("resource://2/x")
             assert result[0].text == "Template resource 2: x"  # type: ignore[attr-defined]
 
+    async def test_tags_in_meta(self):
+        mcp = FastMCP()
+
+        @mcp.resource(
+            "test://template/{id}", tags={"template-example", "test-template-tag"}
+        )
+        def sample_template(id: str) -> str:
+            """A sample resource template."""
+            return f"template content for {id}"
+
+        async with Client(mcp) as client:
+            templates = await client.list_resource_templates()
+            assert len(templates) == 1
+            template = templates[0]
+            assert template.meta is not None
+            assert set(template.meta["tags"]) == {
+                "template-example",
+                "test-template-tag",
+            }
+
 
 class TestResourceTemplateContext:
     async def test_resource_template_context(self):
@@ -2338,6 +2393,20 @@ class TestPrompts:
         assert len(prompts_dict) == 1
         prompt = prompts_dict["sample_prompt"]
         assert prompt.tags == {"example", "test-tag"}
+
+    async def test_tags_in_meta(self):
+        mcp = FastMCP()
+
+        @mcp.prompt(tags={"example", "test-tag"})
+        def sample_prompt() -> str:
+            return "Hello, world!"
+
+        async with Client(mcp) as client:
+            prompts = await client.list_prompts()
+            assert len(prompts) == 1
+            prompt = prompts[0]
+            assert prompt.meta is not None
+            assert set(prompt.meta["tags"]) == {"example", "test-tag"}
 
 
 class TestPromptEnabled:

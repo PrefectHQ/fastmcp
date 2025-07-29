@@ -25,7 +25,32 @@ async with client:
         print(f"Description: {prompt.description}")
         if prompt.arguments:
             print(f"Arguments: {[arg.name for arg in prompt.arguments]}")
+        # Access tags and other metadata
+        if hasattr(prompt, '_meta') and prompt._meta:
+            print(f"Tags: {prompt._meta.get('tags', [])}")
 ```
+
+### Filtering by Tags
+
+You can use the `meta` field to filter prompts based on their tags:
+
+```python
+async with client:
+    prompts = await client.list_prompts()
+    
+    # Filter prompts by tag
+    analysis_prompts = [
+        prompt for prompt in prompts 
+        if hasattr(prompt, '_meta') and prompt._meta and 
+           'analysis' in prompt._meta.get('tags', [])
+    ]
+    
+    print(f"Found {len(analysis_prompts)} analysis prompts")
+```
+
+<Note>
+The `_meta` field is part of the standard MCP specification, but the inclusion of tags within it is specific to FastMCP servers. Other MCP server implementations may not provide tags in their metadata.
+</Note>
 
 ## Using Prompts
 

@@ -36,7 +36,9 @@ class FastMCPComponent(FastMCPBaseModel):
         default_factory=set,
         description="Tags for the component.",
     )
-
+    meta: dict[str, Any] = Field(
+        default_factory=dict, description="Meta information about the prompt"
+    )
     enabled: bool = Field(
         default=True,
         description="Whether the component is enabled.",
@@ -57,6 +59,13 @@ class FastMCPComponent(FastMCPBaseModel):
         hierarchies of servers may have different keys.
         """
         return self._key or self.name
+
+    def get_meta(self) -> dict[str, Any]:
+        """Get the meta information about the component."""
+        if self.tags:
+            return {"tags": sorted(self.tags)} | self.meta
+        else:
+            return self.meta
 
     def with_key(self, key: str) -> Self:
         return self.model_copy(update={"_key": key})

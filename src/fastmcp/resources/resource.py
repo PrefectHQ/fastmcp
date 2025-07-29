@@ -122,6 +122,7 @@ class Resource(FastMCPComponent, abc.ABC):
             "mimeType": self.mime_type,
             "title": self.title,
             "annotations": self.annotations,
+            "_meta": self.get_meta(),
         }
         return MCPResource(**kwargs | overrides)
 
