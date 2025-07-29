@@ -18,6 +18,10 @@ from fastmcp.server.proxy import ProxyClient
 def fastmcp_server():
     mcp = FastMCP("TestServer")
 
+    @mcp.tool(tags={"echo"})
+    def echo(message: str) -> str:
+        return f"echo: {message}"
+
     @mcp.tool
     async def list_roots(context: Context) -> list[str]:
         roots = await context.list_roots()
@@ -80,6 +84,15 @@ async def proxy_server(fastmcp_server: FastMCP):
 
 
 class TestProxyClient:
+    async def test_forward_tool_meta(self, proxy_server: FastMCP):
+        """
+        Test that the proxy client correctly forwards the `echo` tool meta.
+        """
+        async with Client(proxy_server) as client:
+            tools = await client.list_tools()
+            echo_tool = next(t for t in tools if t.name == "echo")
+            assert echo_tool.meta == {"tags": ["echo"]}
+
     async def test_forward_error_response(self, proxy_server: FastMCP):
         """
         Test that the proxy client correctly forwards an error response.

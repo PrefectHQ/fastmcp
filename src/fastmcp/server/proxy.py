@@ -255,6 +255,8 @@ class ProxyTool(Tool, MirroredComponent):
             parameters=mcp_tool.inputSchema,
             annotations=mcp_tool.annotations,
             output_schema=mcp_tool.outputSchema,
+            meta=mcp_tool.meta,
+            tags=(mcp_tool.meta or {}).get("tags", []),
             _mirrored=True,
         )
 
@@ -309,6 +311,8 @@ class ProxyResource(Resource, MirroredComponent):
             name=mcp_resource.name,
             description=mcp_resource.description,
             mime_type=mcp_resource.mimeType or "text/plain",
+            meta=mcp_resource.meta,
+            tags=(mcp_resource.meta or {}).get("tags", []),
             _mirrored=True,
         )
 
@@ -348,6 +352,8 @@ class ProxyTemplate(ResourceTemplate, MirroredComponent):
             description=mcp_template.description,
             mime_type=mcp_template.mimeType or "text/plain",
             parameters={},  # Remote templates don't have local parameters
+            meta=mcp_template.meta,
+            tags=(mcp_template.meta or {}).get("tags", []),
             _mirrored=True,
         )
 
@@ -380,6 +386,8 @@ class ProxyTemplate(ResourceTemplate, MirroredComponent):
             name=self.name,
             description=self.description,
             mime_type=result[0].mimeType,
+            meta=self.meta,
+            tags=(self.meta or {}).get("tags", []),
             _value=value,
         )
 
@@ -413,6 +421,8 @@ class ProxyPrompt(Prompt, MirroredComponent):
             name=mcp_prompt.name,
             description=mcp_prompt.description,
             arguments=arguments,
+            meta=mcp_prompt.meta,
+            tags=(mcp_prompt.meta or {}).get("tags", []),
             _mirrored=True,
         )
 

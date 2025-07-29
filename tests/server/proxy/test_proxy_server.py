@@ -29,7 +29,7 @@ def fastmcp_server():
 
     # --- Tools ---
 
-    @server.tool
+    @server.tool(tags={"greet"})
     def greet(name: str) -> str:
         """Greet someone by name."""
         return f"Hello, {name}!"
@@ -50,7 +50,7 @@ def fastmcp_server():
 
     # --- Resources ---
 
-    @server.resource(uri="resource://wave")
+    @server.resource(uri="resource://wave", tags={"wave"})
     def wave() -> str:
         return "👋"
 
@@ -58,13 +58,13 @@ def fastmcp_server():
     async def get_users() -> list[dict[str, Any]]:
         return USERS
 
-    @server.resource(uri="data://user/{user_id}")
+    @server.resource(uri="data://user/{user_id}", tags={"users"})
     async def get_user(user_id: str) -> dict[str, Any] | None:
         return next((user for user in USERS if user["id"] == user_id), None)
 
     # --- Prompts ---
 
-    @server.prompt
+    @server.prompt(tags={"welcome"})
     def welcome(name: str) -> str:
         return f"Welcome to FastMCP, {name}!"
 
@@ -120,6 +120,11 @@ class TestTools:
         assert "add" in tools
         assert "error_tool" in tools
         assert "tool_without_description" in tools
+
+    async def test_get_tools_meta(self, proxy_server):
+        tools = await proxy_server.get_tools()
+        greet_tool = tools["greet"]
+        assert greet_tool.meta == {"tags": ["greet"]}
 
     async def test_get_transformed_tools(
         self, fastmcp_server: FastMCP, proxy_server: FastMCPProxy
@@ -238,6 +243,11 @@ class TestResources:
         )
         assert [r.name for r in resources.values()] == Contains("get_users", "wave")
 
+    async def test_get_resources_meta(self, proxy_server):
+        resources = await proxy_server.get_resources()
+        wave_resource = resources["resource://wave"]
+        assert wave_resource.meta == {"tags": ["wave"]}
+
     async def test_list_resources_same_as_original(self, fastmcp_server, proxy_server):
         assert (
             await proxy_server._mcp_list_resources()
@@ -331,6 +341,11 @@ class TestResourceTemplates:
     async def test_get_resource_templates(self, proxy_server):
         templates = await proxy_server.get_resource_templates()
         assert [t.name for t in templates.values()] == Contains("get_user")
+
+    async def test_get_resource_templates_meta(self, proxy_server):
+        templates = await proxy_server.get_resource_templates()
+        get_user_template = templates["data://user/{user_id}"]
+        assert get_user_template.meta == {"tags": ["users"]}
 
     async def test_list_resource_templates_same_as_original(
         self, fastmcp_server, proxy_server
@@ -430,6 +445,11 @@ class TestPrompts:
     async def test_get_prompts_server_method(self, proxy_server: FastMCPProxy):
         prompts = await proxy_server.get_prompts()
         assert [p.name for p in prompts.values()] == Contains("welcome")
+
+    async def test_get_prompts_meta(self, proxy_server):
+        prompts = await proxy_server.get_prompts()
+        welcome_prompt = prompts["welcome"]
+        assert welcome_prompt.meta == {"tags": ["welcome"]}
 
     async def test_list_prompts_same_as_original(self, fastmcp_server, proxy_server):
         async with Client(fastmcp_server) as client:
