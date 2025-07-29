@@ -304,6 +304,21 @@ class Settings(BaseSettings):
         ),
     ] = None
 
+    include_fastmcp_meta: Annotated[
+        bool,
+        Field(
+            default=True,
+            description=inspect.cleandoc(
+                """
+                Whether to include FastMCP meta in the server's MCP responses.
+                If True, a `_fastmcp` key will be added to the `meta` field of
+                all MCP component responses. This key will contain a dict of
+                various FastMCP-specific metadata, such as tags. 
+                """
+            ),
+        ),
+    ] = True
+
 
 def __getattr__(name: str):
     """

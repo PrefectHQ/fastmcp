@@ -85,7 +85,12 @@ class Prompt(FastMCPComponent, ABC):
         except RuntimeError:
             pass  # No context available
 
-    def to_mcp_prompt(self, **overrides: Any) -> MCPPrompt:
+    def to_mcp_prompt(
+        self,
+        *,
+        include_fastmcp_meta: bool | None = None,
+        **overrides: Any,
+    ) -> MCPPrompt:
         """Convert the prompt to an MCP prompt."""
         arguments = [
             MCPPromptArgument(
@@ -100,7 +105,7 @@ class Prompt(FastMCPComponent, ABC):
             "description": self.description,
             "arguments": arguments,
             "title": self.title,
-            "_meta": self.get_meta(),
+            "_meta": self.get_meta(include_fastmcp_meta=include_fastmcp_meta),
         }
         return MCPPrompt(**kwargs | overrides)
 

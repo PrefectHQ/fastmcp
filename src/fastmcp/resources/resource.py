@@ -113,7 +113,12 @@ class Resource(FastMCPComponent, abc.ABC):
         """Read the resource content."""
         pass
 
-    def to_mcp_resource(self, **overrides: Any) -> MCPResource:
+    def to_mcp_resource(
+        self,
+        *,
+        include_fastmcp_meta: bool | None = None,
+        **overrides: Any,
+    ) -> MCPResource:
         """Convert the resource to an MCPResource."""
         kwargs = {
             "uri": self.uri,
@@ -122,7 +127,7 @@ class Resource(FastMCPComponent, abc.ABC):
             "mimeType": self.mime_type,
             "title": self.title,
             "annotations": self.annotations,
-            "_meta": self.get_meta(),
+            "_meta": self.get_meta(include_fastmcp_meta=include_fastmcp_meta),
         }
         return MCPResource(**kwargs | overrides)
 

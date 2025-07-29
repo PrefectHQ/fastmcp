@@ -76,7 +76,7 @@ def search_products_implementation(query: str, category: str | None = None) -> l
 </ParamField>
 
 <ParamField body="tags" type="set[str] | None">
-  A set of strings to categorize the tool. Clients might use tags to filter or group available tools. Tags are available to clients in the tool's `meta` field when the tool is listed (via `list_tools`)
+  A set of strings used to categorize the tool. These can be used by the server and, in some cases, by clients to filter or group available tools.
 </ParamField>
 
 <ParamField body="enabled" type="bool" default="True">

@@ -145,7 +145,12 @@ class ResourceTemplate(FastMCPComponent):
             enabled=self.enabled,
         )
 
-    def to_mcp_template(self, **overrides: Any) -> MCPResourceTemplate:
+    def to_mcp_template(
+        self,
+        *,
+        include_fastmcp_meta: bool | None = None,
+        **overrides: Any,
+    ) -> MCPResourceTemplate:
         """Convert the resource template to an MCPResourceTemplate."""
         kwargs = {
             "uriTemplate": self.uri_template,
@@ -154,7 +159,7 @@ class ResourceTemplate(FastMCPComponent):
             "mimeType": self.mime_type,
             "title": self.title,
             "annotations": self.annotations,
-            "_meta": self.get_meta(),
+            "_meta": self.get_meta(include_fastmcp_meta=include_fastmcp_meta),
         }
         return MCPResourceTemplate(**kwargs | overrides)
 

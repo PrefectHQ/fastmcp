@@ -1,12 +1,25 @@
+from __future__ import annotations
+
 from collections.abc import Sequence
-from typing import Annotated, Any, TypeVar
+from typing import Annotated, Any, TypedDict, TypeVar
 
 from pydantic import BeforeValidator, Field, PrivateAttr
 from typing_extensions import Self
 
+import fastmcp
 from fastmcp.utilities.types import FastMCPBaseModel
 
 T = TypeVar("T")
+
+
+class FastMCPMeta(TypedDict, total=False):
+    tags: list[str]
+
+
+def _merge_meta(left: FastMCPMeta, right: FastMCPMeta) -> FastMCPMeta:
+    return FastMCPMeta(
+        tags=sorted(set(left.get("tags", [])) | set(right.get("tags", [])))
+    )
 
 
 def _convert_set_default_none(maybe_set: set[T] | Sequence[T] | None) -> set[T]:
@@ -36,8 +49,8 @@ class FastMCPComponent(FastMCPBaseModel):
         default_factory=set,
         description="Tags for the component.",
     )
-    meta: dict[str, Any] = Field(
-        default_factory=dict, description="Meta information about the prompt"
+    meta: dict[str, Any] | None = Field(
+        default=None, description="Meta information about the component"
     )
     enabled: bool = Field(
         default=True,
@@ -60,12 +73,28 @@ class FastMCPComponent(FastMCPBaseModel):
         """
         return self._key or self.name
 
-    def get_meta(self) -> dict[str, Any]:
-        """Get the meta information about the component."""
-        if self.tags:
-            return {"tags": sorted(self.tags)} | self.meta
-        else:
-            return self.meta
+    def get_meta(
+        self, include_fastmcp_meta: bool | None = None
+    ) -> dict[str, Any] | None:
+        """
+        Get the meta information about the component.
+
+        If include_fastmcp_meta is True, a `_fastmcp` key will be added to the
+        meta, containing a `tags` field with the tags of the component.
+        """
+
+        if include_fastmcp_meta is None:
+            include_fastmcp_meta = fastmcp.settings.include_fastmcp_meta
+
+        meta = self.meta or {}
+
+        if include_fastmcp_meta:
+            fastmcp_meta = FastMCPMeta(tags=sorted(self.tags))
+            if upstream_meta := meta.get("_fastmcp"):
+                fastmcp_meta = _merge_meta(upstream_meta, fastmcp_meta)
+            meta["_fastmcp"] = fastmcp_meta
+
+        return meta or None
 
     def with_key(self, key: str) -> Self:
         return self.model_copy(update={"_key": key})

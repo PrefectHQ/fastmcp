@@ -154,6 +154,7 @@ class FastMCP(Generic[LifespanResultT]):
         dependencies: list[str] | None = None,
         include_tags: set[str] | None = None,
         exclude_tags: set[str] | None = None,
+        include_fastmcp_meta: bool | None = None,
         # ---
         # ---
         # --- The following arguments are DEPRECATED ---
@@ -222,6 +223,12 @@ class FastMCP(Generic[LifespanResultT]):
         # Set up MCP protocol handlers
         self._setup_handlers()
         self.dependencies = dependencies or fastmcp.settings.server_dependencies
+
+        self.include_fastmcp_meta = (
+            include_fastmcp_meta
+            if include_fastmcp_meta is not None
+            else fastmcp.settings.include_fastmcp_meta
+        )
 
         # handle deprecated settings
         self._handle_deprecated_settings(
@@ -470,7 +477,13 @@ class FastMCP(Generic[LifespanResultT]):
 
         async with fastmcp.server.context.Context(fastmcp=self):
             tools = await self._list_tools()
-            return [tool.to_mcp_tool(name=tool.key) for tool in tools]
+            return [
+                tool.to_mcp_tool(
+                    name=tool.key,
+                    include_fastmcp_meta=self.include_fastmcp_meta,
+                )
+                for tool in tools
+            ]
 
     async def _list_tools(self) -> list[Tool]:
         """
@@ -509,7 +522,11 @@ class FastMCP(Generic[LifespanResultT]):
         async with fastmcp.server.context.Context(fastmcp=self):
             resources = await self._list_resources()
             return [
-                resource.to_mcp_resource(uri=resource.key) for resource in resources
+                resource.to_mcp_resource(
+                    uri=resource.key,
+                    include_fastmcp_meta=self.include_fastmcp_meta,
+                )
+                for resource in resources
             ]
 
     async def _list_resources(self) -> list[Resource]:
@@ -550,7 +567,10 @@ class FastMCP(Generic[LifespanResultT]):
         async with fastmcp.server.context.Context(fastmcp=self):
             templates = await self._list_resource_templates()
             return [
-                template.to_mcp_template(uriTemplate=template.key)
+                template.to_mcp_template(
+                    uriTemplate=template.key,
+                    include_fastmcp_meta=self.include_fastmcp_meta,
+                )
                 for template in templates
             ]
 
@@ -591,7 +611,13 @@ class FastMCP(Generic[LifespanResultT]):
 
         async with fastmcp.server.context.Context(fastmcp=self):
             prompts = await self._list_prompts()
-            return [prompt.to_mcp_prompt(name=prompt.key) for prompt in prompts]
+            return [
+                prompt.to_mcp_prompt(
+                    name=prompt.key,
+                    include_fastmcp_meta=self.include_fastmcp_meta,
+                )
+                for prompt in prompts
+            ]
 
     async def _list_prompts(self) -> list[Prompt]:
         """

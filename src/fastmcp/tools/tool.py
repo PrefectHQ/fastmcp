@@ -130,7 +130,12 @@ class Tool(FastMCPComponent):
         except RuntimeError:
             pass  # No context available
 
-    def to_mcp_tool(self, **overrides: Any) -> MCPTool:
+    def to_mcp_tool(
+        self,
+        *,
+        include_fastmcp_meta: bool | None = None,
+        **overrides: Any,
+    ) -> MCPTool:
         if self.title:
             title = self.title
         elif self.annotations and self.annotations.title:
@@ -145,7 +150,7 @@ class Tool(FastMCPComponent):
             "outputSchema": self.output_schema,
             "annotations": self.annotations,
             "title": title,
-            "_meta": self.get_meta(),
+            "_meta": self.get_meta(include_fastmcp_meta=include_fastmcp_meta),
         }
         return MCPTool(**kwargs | overrides)
 

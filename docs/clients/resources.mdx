@@ -36,7 +36,8 @@ async with client:
         print(f"MIME Type: {resource.mimeType}")
         # Access tags and other metadata
         if hasattr(resource, '_meta') and resource._meta:
-            print(f"Tags: {resource._meta.get('tags', [])}")
+            fastmcp_meta = resource._meta.get('_fastmcp', {})
+            print(f"Tags: {fastmcp_meta.get('tags', [])}")
 ```
 
 ### Resource Templates
@@ -54,10 +55,13 @@ async with client:
         print(f"Description: {template.description}")
         # Access tags and other metadata
         if hasattr(template, '_meta') and template._meta:
-            print(f"Tags: {template._meta.get('tags', [])}")
+            fastmcp_meta = template._meta.get('_fastmcp', {})
+            print(f"Tags: {fastmcp_meta.get('tags', [])}")
 ```
 
 ### Filtering by Tags
+
+<VersionBadge version="2.11.0" />
 
 You can use the `meta` field to filter resources based on their tags:
 
@@ -68,15 +72,16 @@ async with client:
     # Filter resources by tag
     config_resources = [
         resource for resource in resources 
-        if hasattr(resource, '_meta') and resource._meta and 
-           'config' in resource._meta.get('tags', [])
+        if hasattr(resource, '_meta') and resource._meta and
+           resource._meta.get('_fastmcp', {}) and
+           'config' in resource._meta.get('_fastmcp', {}).get('tags', [])
     ]
     
     print(f"Found {len(config_resources)} config resources")
 ```
 
 <Note>
-The `_meta` field is part of the standard MCP specification, but the inclusion of tags within it is specific to FastMCP servers. Other MCP server implementations may not provide tags in their metadata.
+The `_meta` field is part of the standard MCP specification. FastMCP servers include tags and other metadata within a `_fastmcp` namespace (e.g., `_meta._fastmcp.tags`) to avoid conflicts with user-defined metadata. This behavior can be controlled with the server's `include_fastmcp_meta` setting - when disabled, the `_fastmcp` namespace won't be included. Other MCP server implementations may not provide this metadata structure.
 </Note>
 
 ## Reading Resources

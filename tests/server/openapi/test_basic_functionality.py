@@ -97,7 +97,7 @@ class TestTools:
 
         assert tools[0].model_dump() == dict(
             name="create_user_users_post",
-            meta=dict(tags=["create", "users"]),
+            meta=dict(_fastmcp=dict(tags=["create", "users"])),
             title=None,
             annotations=None,
             description=IsStr(regex=r"^Create a new user\..*$", regex_flags=re.DOTALL),
@@ -122,7 +122,7 @@ class TestTools:
         )
         assert tools[1].model_dump() == dict(
             name="update_user_name_users",
-            meta=dict(tags=["update", "users"]),
+            meta=dict(_fastmcp=dict(tags=["update", "users"])),
             title=None,
             annotations=None,
             description=IsStr(
