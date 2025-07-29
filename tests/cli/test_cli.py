@@ -399,6 +399,79 @@ class TestRunCommand:
         assert command is not None
         assert bound.arguments["transport"] == "streamable-http"
 
+    def test_run_command_parsing_with_server_args(self):
+        """Test run command parsing with server arguments after --."""
+        command, bound, _ = app.parse_args(
+            [
+                "run",
+                "server.py",
+                "--",
+                "--config",
+                "test.json",
+                "--debug",
+            ]
+        )
+
+        assert command is not None
+        assert bound.arguments["server_spec"] == "server.py"
+        # Server args after -- are captured as positional arguments in bound.args
+        assert bound.args == ("server.py", "--config", "test.json", "--debug")
+
+    def test_run_command_parsing_with_mixed_args(self):
+        """Test run command parsing with both FastMCP options and server args."""
+        command, bound, _ = app.parse_args(
+            [
+                "run",
+                "server.py",
+                "--transport",
+                "http",
+                "--port",
+                "8080",
+                "--",
+                "--server-port",
+                "9090",
+                "--debug",
+            ]
+        )
+
+        assert command is not None
+        assert bound.arguments["server_spec"] == "server.py"
+        assert bound.arguments["transport"] == "http"
+        assert bound.arguments["port"] == 8080
+        # Server args after -- are captured separately from FastMCP options
+        assert bound.args == ("server.py", "--server-port", "9090", "--debug")
+
+    def test_run_command_parsing_with_positional_server_args(self):
+        """Test run command parsing with positional server arguments."""
+        command, bound, _ = app.parse_args(
+            [
+                "run",
+                "server.py",
+                "--",
+                "arg1",
+                "arg2",
+                "--flag",
+            ]
+        )
+
+        assert command is not None
+        assert bound.arguments["server_spec"] == "server.py"
+        # Positional args and flags after -- are all captured
+        assert bound.args == ("server.py", "arg1", "arg2", "--flag")
+
+    def test_run_command_parsing_server_args_require_delimiter(self):
+        """Test that server args without -- delimiter are rejected."""
+        # Should fail because --config is not a recognized FastMCP option
+        with pytest.raises(SystemExit):
+            app.parse_args(
+                [
+                    "run",
+                    "server.py",
+                    "--config",
+                    "test.json",
+                ]
+            )
+
 
 class TestWindowsSpecific:
     """Test Windows-specific functionality."""

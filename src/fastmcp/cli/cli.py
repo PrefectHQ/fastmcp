@@ -285,7 +285,7 @@ def dev(
 @app.command
 def run(
     server_spec: str,
-    *,
+    *server_args: str,
     transport: Annotated[
         run_module.TransportType | None,
         cyclopts.Parameter(
@@ -373,9 +373,6 @@ def run(
     Args:
         server_spec: Python file, object specification (file:obj), MCPConfig file, or URL
     """
-    # TODO: Handle server_args from extra context
-    server_args = []  # Will need to handle this with Cyclopts context
-
     logger.debug(
         "Running server or client",
         extra={
@@ -385,7 +382,7 @@ def run(
             "port": port,
             "path": path,
             "log_level": log_level,
-            "server_args": server_args,
+            "server_args": list(server_args),
         },
     )
 
@@ -424,7 +421,7 @@ def run(
                 port=port,
                 path=path,
                 log_level=log_level,
-                server_args=server_args,
+                server_args=list(server_args),
                 show_banner=not no_banner,
             )
         except Exception as e:
