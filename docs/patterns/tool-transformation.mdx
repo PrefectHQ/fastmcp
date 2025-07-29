@@ -92,6 +92,7 @@ The `Tool.from_tool()` class method is the primary way to create a transformed t
 - `tags`: An optional set of tags for the new tool.
 - `annotations`: An optional set of `ToolAnnotations` for the new tool.
 - `serializer`: An optional function that will be called to serialize the result of the new tool.
+- `meta`: Control meta information for the tool. Use `None` to remove meta, any dict to set meta, or leave unset to inherit from parent.
 
 The result is a new `TransformedTool` object that wraps the parent tool and applies the transformations you specify. You can add this tool to your MCP server using its `add_tool()` method.
 
@@ -254,6 +255,50 @@ transform_args = {
 <Warning>
 `default_factory` can only be used with `hide=True`. This is because visible parameters need static defaults that can be represented in a JSON schema for the client.
 </Warning>
+
+### Meta Information
+
+<VersionBadge version="2.11.0" />
+
+You can control meta information on transformed tools using the `meta` parameter. Meta information is additional data about the tool that doesn't affect its functionality but can be used by clients for categorization, routing, or other purposes.
+
+```python {15-17}
+from fastmcp import FastMCP
+from fastmcp.tools import Tool
+
+mcp = FastMCP()
+
+@mcp.tool
+def analyze_data(data: str) -> dict:
+    """Analyzes the provided data."""
+    return {"result": f"Analysis of {data}"}
+
+# Add custom meta information
+enhanced_tool = Tool.from_tool(
+    analyze_data,
+    name="enhanced_analyzer",
+    meta={
+        "category": "analytics",
+        "priority": "high",
+        "requires_auth": True
+    }
+)
+
+mcp.add_tool(enhanced_tool)
+```
+
+You can also remove meta information entirely:
+
+```python {6}
+# Remove meta information from parent tool
+simplified_tool = Tool.from_tool(
+    analyze_data,
+    name="simple_analyzer", 
+    meta=None  # Removes any meta information
+)
+```
+
+If you don't specify the `meta` parameter, the transformed tool inherits the parent tool's meta information.
 
 ### Required Values
 
@@ -456,6 +501,10 @@ directly in the MCPConfig json file.
                 "weather_get_forecast": {
                     "name": "miami_weather",
                     "description": "Get the weather for Miami",
+                    "meta": {
+                        "category": "weather",
+                        "location": "miami"
+                    },
                     "arguments": {
                         "city": {
                             "name": "city",

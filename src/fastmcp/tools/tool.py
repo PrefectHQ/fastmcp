@@ -208,6 +208,7 @@ class Tool(FastMCPComponent):
         annotations: ToolAnnotations | None = None,
         output_schema: dict[str, Any] | None | Literal[False] = None,
         serializer: Callable[[Any], str] | None = None,
+        meta: dict[str, Any] | None | NotSetT = NotSet,
         enabled: bool | None = None,
     ) -> TransformedTool:
         from fastmcp.tools.tool_transform import TransformedTool
@@ -223,6 +224,7 @@ class Tool(FastMCPComponent):
             annotations=annotations,
             output_schema=output_schema,
             serializer=serializer,
+            meta=meta,
             enabled=enabled,
         )
 

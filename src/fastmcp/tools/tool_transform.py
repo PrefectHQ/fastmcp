@@ -366,6 +366,7 @@ class TransformedTool(Tool):
         annotations: ToolAnnotations | None = None,
         output_schema: dict[str, Any] | None | Literal[False] = None,
         serializer: Callable[[Any], str] | None = None,
+        meta: dict[str, Any] | None | NotSetT = NotSet,
         enabled: bool | None = None,
     ) -> TransformedTool:
         """Create a transformed tool from a parent tool.
@@ -390,6 +391,10 @@ class TransformedTool(Tool):
                 - dict: Use custom output schema
                 - False: Disable output schema and structured outputs
             serializer: New serializer. Defaults to parent's serializer.
+            meta: Control meta information:
+                - NotSet (default): Inherit from parent tool
+                - dict: Use custom meta information
+                - None: Remove meta information
 
         Returns:
             TransformedTool with the specified transformations.
@@ -546,6 +551,7 @@ class TransformedTool(Tool):
             description if not isinstance(description, NotSetT) else tool.description
         )
         final_title = title if not isinstance(title, NotSetT) else tool.title
+        final_meta = meta if not isinstance(meta, NotSetT) else tool.meta
 
         transformed_tool = cls(
             fn=final_fn,
@@ -559,6 +565,7 @@ class TransformedTool(Tool):
             tags=tags or tool.tags,
             annotations=annotations or tool.annotations,
             serializer=serializer or tool.serializer,
+            meta=final_meta,
             transform_args=transform_args,
             enabled=enabled if enabled is not None else True,
         )
@@ -850,6 +857,10 @@ class ToolTransformConfig(FastMCPBaseModel):
     tags: Annotated[set[str], BeforeValidator(_convert_set_default_none)] = Field(
         default_factory=set,
         description="The new tags for the tool.",
+    )
+    meta: dict[str, Any] | None = Field(
+        default=None,
+        description="The new meta information for the tool.",
     )
 
     enabled: bool = Field(
