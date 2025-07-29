@@ -15,6 +15,7 @@ from mcp.server.lowlevel.server import LifespanResultT
 from mcp.server.sse import SseServerTransport
 from mcp.server.streamable_http import EventStore
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
+from pydantic import AnyHttpUrl
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.middleware.authentication import AuthenticationMiddleware
@@ -307,6 +308,14 @@ def create_streamable_http_app(
 
     # Add StreamableHTTP routes with or without auth
     if auth:
+        resource_metadata_url = None
+
+        if auth.resource_server_url:
+            resource_metadata_url = AnyHttpUrl(
+                str(auth.resource_server_url).rstrip("/")
+                + "/.well-known/oauth-protected-resource"
+            )
+
         auth_middleware, auth_routes, required_scopes = (
             setup_auth_middleware_and_routes(auth)
         )
@@ -318,7 +327,9 @@ def create_streamable_http_app(
         server_routes.append(
             Mount(
                 streamable_http_path,
-                app=RequireAuthMiddleware(handle_streamable_http, required_scopes),
+                app=RequireAuthMiddleware(
+                    handle_streamable_http, required_scopes, resource_metadata_url
+                ),
             )
         )
     else:

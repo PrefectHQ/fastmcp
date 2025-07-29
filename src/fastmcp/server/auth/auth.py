@@ -21,6 +21,7 @@ class OAuthProvider(
         client_registration_options: ClientRegistrationOptions | None = None,
         revocation_options: RevocationOptions | None = None,
         required_scopes: list[str] | None = None,
+        resource_server_url: AnyHttpUrl | str | None = None,
     ):
         """
         Initialize the OAuth provider.
@@ -43,6 +44,9 @@ class OAuthProvider(
         self.client_registration_options = client_registration_options
         self.revocation_options = revocation_options
         self.required_scopes = required_scopes
+        self.resource_server_url = (
+            AnyHttpUrl(resource_server_url) if resource_server_url else None
+        )
 
     async def verify_token(self, token: str) -> AccessToken | None:
         """

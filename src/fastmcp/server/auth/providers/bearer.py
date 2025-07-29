@@ -167,6 +167,7 @@ class BearerAuthProvider(OAuthProvider):
         algorithm: str | None = None,
         audience: str | list[str] | None = None,
         required_scopes: list[str] | None = None,
+        resource_server: str | None = None,
     ):
         """
         Initialize the provider. Either public_key or jwks_uri must be provided.
@@ -210,11 +211,19 @@ class BearerAuthProvider(OAuthProvider):
             # Issuer is not a valid URL, use default for parent class
             issuer_url = "https://fastmcp.example.com"
 
+        try:
+            resource_server_url = (
+                AnyHttpUrl(resource_server) if resource_server else None
+            )
+        except ValidationError:
+            resource_server_url = None
+
         super().__init__(
             issuer_url=issuer_url,
             client_registration_options=ClientRegistrationOptions(enabled=False),
             revocation_options=RevocationOptions(enabled=False),
             required_scopes=required_scopes,
+            resource_server_url=resource_server_url,
         )
 
         self.algorithm = algorithm
