@@ -165,6 +165,7 @@ class Tool(FastMCPComponent):
         exclude_args: list[str] | None = None,
         output_schema: dict[str, Any] | None | NotSetT | Literal[False] = NotSet,
         serializer: Callable[[Any], str] | None = None,
+        meta: dict[str, Any] | None = None,
         enabled: bool | None = None,
     ) -> FunctionTool:
         """Create a Tool from a function."""
@@ -178,6 +179,7 @@ class Tool(FastMCPComponent):
             exclude_args=exclude_args,
             output_schema=output_schema,
             serializer=serializer,
+            meta=meta,
             enabled=enabled,
         )
 
@@ -240,6 +242,7 @@ class FunctionTool(Tool):
         exclude_args: list[str] | None = None,
         output_schema: dict[str, Any] | None | NotSetT | Literal[False] = NotSet,
         serializer: Callable[[Any], str] | None = None,
+        meta: dict[str, Any] | None = None,
         enabled: bool | None = None,
     ) -> FunctionTool:
         """Create a Tool from a function."""
@@ -272,6 +275,7 @@ class FunctionTool(Tool):
             annotations=annotations,
             tags=tags or set(),
             serializer=serializer,
+            meta=meta,
             enabled=enabled if enabled is not None else True,
         )
 

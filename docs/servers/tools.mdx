@@ -58,6 +58,7 @@ While FastMCP infers the name and description from your function, you can overri
     name="find_products",           # Custom tool name for the LLM
     description="Search the product catalog with optional category filtering.", # Custom description
     tags={"catalog", "search"},      # Optional tags for organization/filtering
+    meta={"version": "1.2", "author": "product-team"}  # Custom metadata
 )
 def search_products_implementation(query: str, category: str | None = None) -> list[dict]:
     """Internal function description (ignored if description is provided above)."""
@@ -106,6 +107,12 @@ def search_products_implementation(query: str, category: str | None = None) -> l
       If true, this tool may interact with an "open world" of external entities. If false, the tool's domain of interaction is closed.
     </ParamField>
   </Expandable>
+</ParamField>
+
+<ParamField body="meta" type="dict[str, Any] | None">
+  <VersionBadge version="2.11.0" />
+  
+  Optional meta information about the tool. This data is passed through to the MCP client as the `_meta` field of the client-side tool object and can be used for custom metadata, versioning, or other application-specific purposes.
 </ParamField>
 </Card>
 

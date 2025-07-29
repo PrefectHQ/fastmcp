@@ -93,3 +93,23 @@ class TestResourceValidation:
 
         with pytest.raises(TypeError, match="abstract method"):
             ConcreteResource(uri=AnyUrl("test://test"), name="test")  # type: ignore
+
+    def test_resource_meta_parameter(self):
+        """Test that meta parameter is properly handled."""
+
+        def resource_func() -> str:
+            return "test content"
+
+        meta_data = {"version": "1.0", "category": "test"}
+        resource = Resource.from_function(
+            fn=resource_func,
+            uri="resource://test",
+            name="test_resource",
+            meta=meta_data,
+        )
+
+        assert resource.meta == meta_data
+        mcp_resource = resource.to_mcp_resource()
+        # MCP resource includes fastmcp meta, so check that our meta is included
+        assert mcp_resource.meta is not None
+        assert meta_data.items() <= mcp_resource.meta.items()

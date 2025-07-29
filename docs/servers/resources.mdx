@@ -73,7 +73,8 @@ mcp = FastMCP(name="DataServer")
     name="ApplicationStatus",     # Custom name
     description="Provides the current status of the application.", # Custom description
     mime_type="application/json", # Explicit MIME type
-    tags={"monitoring", "status"} # Categorization tags
+    tags={"monitoring", "status"}, # Categorization tags
+    meta={"version": "2.1", "team": "infrastructure"}  # Custom metadata
 )
 def get_application_status() -> dict:
     """Internal function description (ignored if description is provided above)."""
@@ -115,6 +116,12 @@ def get_application_status() -> dict:
       If true, reading the resource repeatedly will have no additional effect on its environment.
     </ParamField>
   </Expandable>
+</ParamField>
+
+<ParamField body="meta" type="dict[str, Any] | None">
+  <VersionBadge version="2.11.0" />
+  
+  Optional meta information about the resource. This data is passed through to the MCP client as the `_meta` field of the client-side resource object and can be used for custom metadata, versioning, or other application-specific purposes.
 </ParamField>
 </Card>
 

@@ -65,7 +65,8 @@ While FastMCP infers the name and description from your function, you can overri
 @mcp.prompt(
     name="analyze_data_request",          # Custom prompt name
     description="Creates a request to analyze data with specific parameters",  # Custom description
-    tags={"analysis", "data"}             # Optional categorization tags
+    tags={"analysis", "data"},            # Optional categorization tags
+    meta={"version": "1.1", "author": "data-team"}  # Custom metadata
 )
 def data_analysis_prompt(
     data_uri: str = Field(description="The URI of the resource containing the data."),
@@ -90,6 +91,12 @@ def data_analysis_prompt(
 
 <ParamField body="enabled" type="bool" default="True">
   A boolean to enable or disable the prompt. See [Disabling Prompts](#disabling-prompts) for more information
+</ParamField>
+
+<ParamField body="meta" type="dict[str, Any] | None">
+  <VersionBadge version="2.11.0" />
+  
+  Optional meta information about the prompt. This data is passed through to the MCP client as the `_meta` field of the client-side prompt object and can be used for custom metadata, versioning, or other application-specific purposes.
 </ParamField>
 </Card>
 

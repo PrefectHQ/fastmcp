@@ -44,6 +44,22 @@ class TestToolFromFunction:
         }
         assert tool.output_schema == expected_schema
 
+    def test_meta_parameter(self):
+        """Test that meta parameter is properly handled."""
+
+        def multiply(a: int, b: int) -> int:
+            """Multiply two numbers."""
+            return a * b
+
+        meta_data = {"version": "1.0", "author": "test"}
+        tool = Tool.from_function(multiply, meta=meta_data)
+
+        assert tool.meta == meta_data
+        mcp_tool = tool.to_mcp_tool()
+        # MCP tool includes fastmcp meta, so check that our meta is included
+        assert mcp_tool.meta is not None
+        assert meta_data.items() <= mcp_tool.meta.items()
+
     async def test_async_function(self):
         """Test registering and running an async function."""
 

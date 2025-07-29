@@ -117,6 +117,7 @@ class Prompt(FastMCPComponent, ABC):
         description: str | None = None,
         tags: set[str] | None = None,
         enabled: bool | None = None,
+        meta: dict[str, Any] | None = None,
     ) -> FunctionPrompt:
         """Create a Prompt from a function.
 
@@ -133,6 +134,7 @@ class Prompt(FastMCPComponent, ABC):
             description=description,
             tags=tags,
             enabled=enabled,
+            meta=meta,
         )
 
     @abstractmethod
@@ -158,6 +160,7 @@ class FunctionPrompt(Prompt):
         description: str | None = None,
         tags: set[str] | None = None,
         enabled: bool | None = None,
+        meta: dict[str, Any] | None = None,
     ) -> FunctionPrompt:
         """Create a Prompt from a function.
 
@@ -252,6 +255,7 @@ class FunctionPrompt(Prompt):
             tags=tags or set(),
             enabled=enabled if enabled is not None else True,
             fn=fn,
+            meta=meta,
         )
 
     def _convert_string_arguments(self, kwargs: dict[str, Any]) -> dict[str, Any]:

@@ -482,3 +482,18 @@ class TestPromptArgumentDescriptions:
                     "Provide as a JSON string matching the following schema:"
                     not in arg.description
                 )
+
+    def test_prompt_meta_parameter(self):
+        """Test that meta parameter is properly handled."""
+
+        def test_prompt(message: str) -> str:
+            return f"Response: {message}"
+
+        meta_data = {"version": "3.0", "type": "prompt"}
+        prompt = Prompt.from_function(test_prompt, meta=meta_data)
+
+        assert prompt.meta == meta_data
+        mcp_prompt = prompt.to_mcp_prompt()
+        # MCP prompt includes fastmcp meta, so check that our meta is included
+        assert mcp_prompt.meta is not None
+        assert meta_data.items() <= mcp_prompt.meta.items()

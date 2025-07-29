@@ -421,6 +421,22 @@ class TestToolDecorator:
             def my_function(x: int) -> str:
                 return f"Result: {x}"
 
+    async def test_tool_decorator_with_meta(self):
+        """Test that meta parameter is passed through the tool decorator."""
+        mcp = FastMCP()
+
+        meta_data = {"version": "1.0", "author": "test"}
+
+        @mcp.tool(meta=meta_data)
+        def multiply(a: int, b: int) -> int:
+            """Multiply two numbers."""
+            return a * b
+
+        tools_dict = await mcp.get_tools()
+        tool = tools_dict["multiply"]
+
+        assert tool.meta == meta_data
+
 
 class TestResourceDecorator:
     async def test_no_resources_before_decorator(self):
@@ -584,6 +600,21 @@ class TestResourceDecorator:
             result = await client.read_resource("resource://data")
             assert result[0].text == "Static Hello, world!"  # type: ignore[attr-defined]
 
+    async def test_resource_decorator_with_meta(self):
+        """Test that meta parameter is passed through the resource decorator."""
+        mcp = FastMCP()
+
+        meta_data = {"version": "1.0", "author": "test"}
+
+        @mcp.resource("resource://data", meta=meta_data)
+        def get_data() -> str:
+            return "Hello, world!"
+
+        resources_dict = await mcp.get_resources()
+        resource = resources_dict["resource://data"]
+
+        assert resource.meta == meta_data
+
 
 class TestTemplateDecorator:
     async def test_template_decorator(self):
@@ -732,6 +763,21 @@ class TestTemplateDecorator:
         template = templates_dict["resource://{param*}"]
         assert template.uri_template == "resource://{param*}"
         assert template.name == "template_resource"
+
+    async def test_template_decorator_with_meta(self):
+        """Test that meta parameter is passed through the template decorator."""
+        mcp = FastMCP()
+
+        meta_data = {"version": "2.0", "template": "test"}
+
+        @mcp.resource("resource://{param}/data", meta=meta_data)
+        def get_template_data(param: str) -> str:
+            return f"Data for {param}"
+
+        templates_dict = await mcp.get_resource_templates()
+        template = templates_dict["resource://{param}/data"]
+
+        assert template.meta == meta_data
 
 
 class TestPromptDecorator:
@@ -987,6 +1033,21 @@ class TestPromptDecorator:
             assert len(result.messages) == 1
             message = result.messages[0]
             assert message.content.text == "Static Hello, world!"  # type: ignore[attr-defined]
+
+    async def test_prompt_decorator_with_meta(self):
+        """Test that meta parameter is passed through the prompt decorator."""
+        mcp = FastMCP()
+
+        meta_data = {"version": "3.0", "type": "prompt"}
+
+        @mcp.prompt(meta=meta_data)
+        def test_prompt(message: str) -> str:
+            return f"Response: {message}"
+
+        prompts_dict = await mcp.get_prompts()
+        prompt = prompts_dict["test_prompt"]
+
+        assert prompt.meta == meta_data
 
 
 class TestResourcePrefixHelpers:

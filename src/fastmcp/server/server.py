@@ -871,6 +871,7 @@ class FastMCP(Generic[LifespanResultT]):
         output_schema: dict[str, Any] | None | NotSetT = NotSet,
         annotations: ToolAnnotations | dict[str, Any] | None = None,
         exclude_args: list[str] | None = None,
+        meta: dict[str, Any] | None = None,
         enabled: bool | None = None,
     ) -> FunctionTool: ...
 
@@ -886,6 +887,7 @@ class FastMCP(Generic[LifespanResultT]):
         output_schema: dict[str, Any] | None | NotSetT = NotSet,
         annotations: ToolAnnotations | dict[str, Any] | None = None,
         exclude_args: list[str] | None = None,
+        meta: dict[str, Any] | None = None,
         enabled: bool | None = None,
     ) -> Callable[[AnyFunction], FunctionTool]: ...
 
@@ -900,6 +902,7 @@ class FastMCP(Generic[LifespanResultT]):
         output_schema: dict[str, Any] | None | NotSetT = NotSet,
         annotations: ToolAnnotations | dict[str, Any] | None = None,
         exclude_args: list[str] | None = None,
+        meta: dict[str, Any] | None = None,
         enabled: bool | None = None,
     ) -> Callable[[AnyFunction], FunctionTool] | FunctionTool:
         """Decorator to register a tool.
@@ -923,6 +926,7 @@ class FastMCP(Generic[LifespanResultT]):
             output_schema: Optional JSON schema for the tool's output
             annotations: Optional annotations about the tool's behavior
             exclude_args: Optional list of argument names to exclude from the tool schema
+            meta: Optional meta information about the tool
             enabled: Optional boolean to enable or disable the tool
 
         Examples:
@@ -981,6 +985,7 @@ class FastMCP(Generic[LifespanResultT]):
                 output_schema=output_schema,
                 annotations=annotations,
                 exclude_args=exclude_args,
+                meta=meta,
                 serializer=self._tool_serializer,
                 enabled=enabled,
             )
@@ -1013,6 +1018,7 @@ class FastMCP(Generic[LifespanResultT]):
             output_schema=output_schema,
             annotations=annotations,
             exclude_args=exclude_args,
+            meta=meta,
             enabled=enabled,
         )
 
@@ -1111,6 +1117,7 @@ class FastMCP(Generic[LifespanResultT]):
         tags: set[str] | None = None,
         enabled: bool | None = None,
         annotations: Annotations | dict[str, Any] | None = None,
+        meta: dict[str, Any] | None = None,
     ) -> Callable[[AnyFunction], Resource | ResourceTemplate]:
         """Decorator to register a function as a resource.
 
@@ -1135,6 +1142,7 @@ class FastMCP(Generic[LifespanResultT]):
             tags: Optional set of tags for categorizing the resource
             enabled: Optional boolean to enable or disable the resource
             annotations: Optional annotations about the resource's behavior
+            meta: Optional meta information about the resource
 
         Examples:
             Register a resource with a custom name:
@@ -1208,6 +1216,7 @@ class FastMCP(Generic[LifespanResultT]):
                     tags=tags,
                     enabled=enabled,
                     annotations=annotations,
+                    meta=meta,
                 )
                 self.add_template(template)
                 return template
@@ -1222,6 +1231,7 @@ class FastMCP(Generic[LifespanResultT]):
                     tags=tags,
                     enabled=enabled,
                     annotations=annotations,
+                    meta=meta,
                 )
                 self.add_resource(resource)
                 return resource
@@ -1266,6 +1276,7 @@ class FastMCP(Generic[LifespanResultT]):
         description: str | None = None,
         tags: set[str] | None = None,
         enabled: bool | None = None,
+        meta: dict[str, Any] | None = None,
     ) -> FunctionPrompt: ...
 
     @overload
@@ -1278,6 +1289,7 @@ class FastMCP(Generic[LifespanResultT]):
         description: str | None = None,
         tags: set[str] | None = None,
         enabled: bool | None = None,
+        meta: dict[str, Any] | None = None,
     ) -> Callable[[AnyFunction], FunctionPrompt]: ...
 
     def prompt(
@@ -1289,6 +1301,7 @@ class FastMCP(Generic[LifespanResultT]):
         description: str | None = None,
         tags: set[str] | None = None,
         enabled: bool | None = None,
+        meta: dict[str, Any] | None = None,
     ) -> Callable[[AnyFunction], FunctionPrompt] | FunctionPrompt:
         """Decorator to register a prompt.
 
@@ -1309,6 +1322,7 @@ class FastMCP(Generic[LifespanResultT]):
             description: Optional description of what the prompt does
             tags: Optional set of tags for categorizing the prompt
             enabled: Optional boolean to enable or disable the prompt
+            meta: Optional meta information about the prompt
 
         Examples:
 
@@ -1386,6 +1400,7 @@ class FastMCP(Generic[LifespanResultT]):
                 description=description,
                 tags=tags,
                 enabled=enabled,
+                meta=meta,
             )
             self.add_prompt(prompt)
 
@@ -1415,6 +1430,7 @@ class FastMCP(Generic[LifespanResultT]):
             description=description,
             tags=tags,
             enabled=enabled,
+            meta=meta,
         )
 
     async def run_stdio_async(self, show_banner: bool = True) -> None:

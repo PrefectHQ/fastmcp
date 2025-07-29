@@ -96,6 +96,7 @@ class ResourceTemplate(FastMCPComponent):
         tags: set[str] | None = None,
         enabled: bool | None = None,
         annotations: Annotations | None = None,
+        meta: dict[str, Any] | None = None,
     ) -> FunctionResourceTemplate:
         return FunctionResourceTemplate.from_function(
             fn=fn,
@@ -107,6 +108,7 @@ class ResourceTemplate(FastMCPComponent):
             tags=tags,
             enabled=enabled,
             annotations=annotations,
+            meta=meta,
         )
 
     @field_validator("mime_type", mode="before")
@@ -219,6 +221,7 @@ class FunctionResourceTemplate(ResourceTemplate):
         tags: set[str] | None = None,
         enabled: bool | None = None,
         annotations: Annotations | None = None,
+        meta: dict[str, Any] | None = None,
     ) -> FunctionResourceTemplate:
         """Create a template from a function."""
         from fastmcp.server.context import Context
@@ -304,4 +307,5 @@ class FunctionResourceTemplate(ResourceTemplate):
             tags=tags or set(),
             enabled=enabled if enabled is not None else True,
             annotations=annotations,
+            meta=meta,
         )
