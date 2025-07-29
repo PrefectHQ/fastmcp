@@ -74,6 +74,7 @@ def parse_openapi_to_http_routes(openapi_dict: dict[str, Any]) -> list[HTTPRoute
                 Response_30,
                 Operation_30,
                 PathItem_30,
+                openapi_version,
             )
             return parser.parse()
         else:
@@ -91,6 +92,7 @@ def parse_openapi_to_http_routes(openapi_dict: dict[str, Any]) -> list[HTTPRoute
                 Response,
                 Operation,
                 PathItem,
+                openapi_version,
             )
             return parser.parse()
     except ValidationError as e:
@@ -124,6 +126,7 @@ class OpenAPIParser(
         response_cls: type[TResponse],
         operation_cls: type[TOperation],
         path_item_cls: type[TPathItem],
+        openapi_version: str,
     ):
         """Initialize the parser with the OpenAPI schema and type classes."""
         self.openapi = openapi
@@ -134,6 +137,7 @@ class OpenAPIParser(
         self.response_cls = response_cls
         self.operation_cls = operation_cls
         self.path_item_cls = path_item_cls
+        self.openapi_version = openapi_version
 
     def _convert_to_parameter_location(self, param_in: str) -> ParameterLocation:
         """Convert string parameter location to our ParameterLocation type."""
@@ -560,6 +564,7 @@ class OpenAPIParser(
                             responses=responses,
                             schema_definitions=schema_definitions,
                             extensions=extensions,
+                            openapi_version=self.openapi_version,
                         )
 
                         # Pre-calculate schema and parameter mapping for performance

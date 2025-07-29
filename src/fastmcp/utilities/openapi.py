@@ -173,6 +173,7 @@ class HTTPRoute(FastMCPBaseModel):
         default_factory=dict
     )  # Store component schemas
     extensions: dict[str, Any] = Field(default_factory=dict)
+    openapi_version: str | None = None
 
 
 # Export public symbols
@@ -227,6 +228,7 @@ def parse_openapi_to_http_routes(openapi_dict: dict[str, Any]) -> list[HTTPRoute
                 Response_30,
                 Operation_30,
                 PathItem_30,
+                openapi_version,
             )
             return parser.parse()
         else:
@@ -244,6 +246,7 @@ def parse_openapi_to_http_routes(openapi_dict: dict[str, Any]) -> list[HTTPRoute
                 Response,
                 Operation,
                 PathItem,
+                openapi_version,
             )
             return parser.parse()
     except ValidationError as e:
@@ -277,6 +280,7 @@ class OpenAPIParser(
         response_cls: type[TResponse],
         operation_cls: type[TOperation],
         path_item_cls: type[TPathItem],
+        openapi_version: str,
     ):
         """Initialize the parser with the OpenAPI schema and type classes."""
         self.openapi = openapi
@@ -287,6 +291,7 @@ class OpenAPIParser(
         self.response_cls = response_cls
         self.operation_cls = operation_cls
         self.path_item_cls = path_item_cls
+        self.openapi_version = openapi_version
 
     def _convert_to_parameter_location(self, param_in: str) -> ParameterLocation:
         """Convert string parameter location to our ParameterLocation type."""
@@ -709,6 +714,7 @@ class OpenAPIParser(
                             responses=responses,
                             schema_definitions=schema_definitions,
                             extensions=extensions,
+                            openapi_version=self.openapi_version,
                         )
                         routes.append(route)
                         logger.info(
@@ -1401,7 +1407,9 @@ def _adjust_union_types(
 
 
 def extract_output_schema_from_responses(
-    responses: dict[str, ResponseInfo], schema_definitions: dict[str, Any] | None = None
+    responses: dict[str, ResponseInfo],
+    schema_definitions: dict[str, Any] | None = None,
+    openapi_version: str | None = None,
 ) -> dict[str, Any] | None:
     """
     Extract output schema from OpenAPI responses for use as MCP tool output schema.
@@ -1413,6 +1421,7 @@ def extract_output_schema_from_responses(
     Args:
         responses: Dictionary of ResponseInfo objects keyed by status code
         schema_definitions: Optional schema definitions to include in the output schema
+        openapi_version: OpenAPI version string, used to optimize nullable field handling
 
     Returns:
         dict: MCP-compliant output schema with potential wrapping, or None if no suitable schema found
@@ -1480,7 +1489,9 @@ def extract_output_schema_from_responses(
 
     # Handle OpenAPI nullable fields by converting them to JSON Schema format
     # This prevents "None is not of type 'string'" validation errors
-    output_schema = _handle_nullable_fields(output_schema)
+    # Only needed for OpenAPI 3.0 - 3.1 uses standard JSON Schema null types
+    if openapi_version and openapi_version.startswith("3.0"):
+        output_schema = _handle_nullable_fields(output_schema)
 
     # MCP requires output schemas to be objects. If this schema is not an object,
     # we need to wrap it similar to how ParsedFunction.from_function() does it
@@ -1499,7 +1510,11 @@ def extract_output_schema_from_responses(
     if schema_definitions and "$ref" not in schema.copy():
         processed_defs = {}
         for def_name, def_schema in schema_definitions.items():
-            processed_defs[def_name] = _handle_nullable_fields(def_schema)
+            # Only handle nullable fields for OpenAPI 3.0 - 3.1 uses standard JSON Schema null types
+            if openapi_version and openapi_version.startswith("3.0"):
+                processed_defs[def_name] = _handle_nullable_fields(def_schema)
+            else:
+                processed_defs[def_name] = def_schema
         output_schema["$defs"] = processed_defs
 
     # Use lightweight compression - prune additionalProperties and unused definitions

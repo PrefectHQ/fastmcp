@@ -1,7 +1,7 @@
 """Unit tests for RequestDirector."""
 
 import pytest
-from openapi_core import Spec
+from jsonschema_path import SchemaPath
 
 from fastmcp.experimental.utilities.openapi.director import RequestDirector
 from fastmcp.experimental.utilities.openapi.models import (
@@ -148,12 +148,12 @@ class TestRequestDirector:
     @pytest.fixture
     def director(self, basic_openapi_30_spec):
         """Create a RequestDirector instance."""
-        spec = Spec.from_dict(basic_openapi_30_spec)
+        spec = SchemaPath.from_dict(basic_openapi_30_spec)
         return RequestDirector(spec)
 
     def test_director_initialization(self, basic_openapi_30_spec):
         """Test RequestDirector initialization."""
-        spec = Spec.from_dict(basic_openapi_30_spec)
+        spec = SchemaPath.from_dict(basic_openapi_30_spec)
         director = RequestDirector(spec)
 
         assert director._spec is not None
@@ -350,7 +350,7 @@ class TestRequestDirector:
         request = director.build(route, flat_args, "https://api.example.com")
 
         assert request.method == "POST"
-        # For non-JSON content, httpx uses 'data' parameter which becomes bytes
+        # For non-JSON content, httpx uses 'content' parameter which becomes bytes
         assert request.content == b"Hello, World!"
 
     def test_body_construction_multiple_properties_non_object_schema(self, director):
@@ -392,7 +392,7 @@ class TestRequestDirectorIntegration:
         assert len(routes) == 1
 
         route = routes[0]
-        spec = Spec.from_dict(basic_openapi_30_spec)
+        spec = SchemaPath.from_dict(basic_openapi_30_spec)
         director = RequestDirector(spec)
 
         flat_args = {"id": 42}
@@ -407,7 +407,7 @@ class TestRequestDirectorIntegration:
         assert len(routes) == 1
 
         route = routes[0]
-        spec = Spec.from_dict(collision_spec)
+        spec = SchemaPath.from_dict(collision_spec)
         director = RequestDirector(spec)
 
         # Use the parameter names from the actual parameter map
@@ -440,7 +440,7 @@ class TestRequestDirectorIntegration:
         assert len(routes) == 1
 
         route = routes[0]
-        spec = Spec.from_dict(deepobject_spec)
+        spec = SchemaPath.from_dict(deepobject_spec)
         director = RequestDirector(spec)
 
         # DeepObject parameters should be flattened in the parameter map

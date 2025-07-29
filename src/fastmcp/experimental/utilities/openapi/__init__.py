@@ -30,7 +30,12 @@ from .schemas import (
     clean_schema_for_display,
     _replace_ref_with_defs,
     _make_optional_parameter_nullable,
-    _adjust_union_types,
+)
+
+# Import from json_schema_converter
+from .json_schema_converter import (
+    convert_openapi_schema_to_json_schema,
+    convert_schema_definitions,
 )
 
 # Export public symbols - maintaining backward compatibility
@@ -57,5 +62,7 @@ __all__ = [
     "clean_schema_for_display",
     "_replace_ref_with_defs",
     "_make_optional_parameter_nullable",
-    "_adjust_union_types",
+    # JSON Schema Converter
+    "convert_openapi_schema_to_json_schema",
+    "convert_schema_definitions",
 ]

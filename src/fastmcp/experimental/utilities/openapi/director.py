@@ -4,7 +4,7 @@ from typing import Any
 from urllib.parse import urljoin
 
 import httpx
-from openapi_core import Spec
+from jsonschema_path import SchemaPath
 
 from fastmcp.utilities.logging import get_logger
 
@@ -16,8 +16,8 @@ logger = get_logger(__name__)
 class RequestDirector:
     """Builds httpx.Request objects from HTTPRoute and arguments using openapi-core."""
 
-    def __init__(self, spec: Spec):
-        """Initialize with a parsed openapi-core Spec object."""
+    def __init__(self, spec: SchemaPath):
+        """Initialize with a parsed SchemaPath object."""
         self._spec = spec
 
     def build(
@@ -66,7 +66,7 @@ class RequestDirector:
             if isinstance(body, dict) or isinstance(body, list):
                 request_data["json"] = body
             else:
-                request_data["data"] = body
+                request_data["content"] = body
 
         # Step 5: Create httpx.Request
         return httpx.Request(**{k: v for k, v in request_data.items() if v is not None})

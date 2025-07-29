@@ -5,7 +5,7 @@ from collections import Counter
 from typing import Any, Literal
 
 import httpx
-from openapi_core import Spec
+from jsonschema_path import SchemaPath
 
 # Import from our new utilities and components
 from fastmcp.experimental.utilities.openapi import (
@@ -149,7 +149,7 @@ class FastMCPOpenAPI(FastMCP):
 
         # Create openapi-core Spec and RequestDirector for stateless request building
         try:
-            self._spec = Spec.from_dict(openapi_spec)  # type: ignore[arg-type]
+            self._spec = SchemaPath.from_dict(openapi_spec)  # type: ignore[arg-type]
             self._director = RequestDirector(self._spec)
             logger.debug(
                 "Initialized OpenAPI RequestDirector for stateless request building"
@@ -270,7 +270,7 @@ class FastMCPOpenAPI(FastMCP):
 
         # Extract output schema from OpenAPI responses
         output_schema = extract_output_schema_from_responses(
-            route.responses, route.schema_definitions
+            route.responses, route.schema_definitions, route.openapi_version
         )
 
         # Get a unique tool name

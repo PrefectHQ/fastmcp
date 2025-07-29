@@ -36,13 +36,13 @@ The new implementation follows a **stateless request building strategy** using `
 ### Initialization Process
 
 ```
-OpenAPI Spec → Parser → HTTPRoute with Pre-calculated Fields → RequestDirector + openapi-core Spec
+OpenAPI Spec → Parser → HTTPRoute with Pre-calculated Fields → RequestDirector + SchemaPath
 ```
 
 1. **Input**: Raw OpenAPI specification (dict)
 2. **Parsing**: Extract operations to `HTTPRoute` models
 3. **Pre-calculation**: Generate combined schemas and parameter maps during parsing
-4. **Director Setup**: Create `RequestDirector` with `openapi-core` Spec for request building
+4. **Director Setup**: Create `RequestDirector` with `SchemaPath` for request building
 
 ### Request Processing
 
@@ -125,10 +125,10 @@ async with httpx.AsyncClient() as client:
 
 ```python
 from fastmcp.experimental.utilities.openapi.director import RequestDirector
-from openapi_core import Spec
+from jsonschema_path import SchemaPath
 
 # Create RequestDirector manually
-spec = Spec.from_dict(openapi_spec)
+spec = SchemaPath.from_dict(openapi_spec)
 director = RequestDirector(spec)
 
 # Build HTTP request
@@ -210,7 +210,7 @@ Tests are located in `/tests/server/openapi_new/`:
 ### Common Issues
 
 1. **RequestDirector Initialization Fails**
-   - Check OpenAPI spec validity with `openapi-core`
+   - Check OpenAPI spec validity with `jsonschema-path`
    - Verify spec format is correct JSON/YAML
    - Ensure all required OpenAPI fields are present
 

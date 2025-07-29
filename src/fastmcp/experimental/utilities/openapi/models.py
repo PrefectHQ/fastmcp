@@ -62,6 +62,7 @@ class HTTPRoute(FastMCPBaseModel):
         default_factory=dict
     )  # Store component schemas
     extensions: dict[str, Any] = Field(default_factory=dict)
+    openapi_version: str | None = None
 
     # Pre-calculated fields for performance
     flat_param_schema: JsonSchema = Field(

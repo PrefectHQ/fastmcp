@@ -1,7 +1,7 @@
 """Schema manipulation utilities for OpenAPI operations."""
 
 import logging
-from typing import Any, cast
+from typing import Any
 
 from .models import HTTPRoute, JsonSchema, ResponseInfo
 
@@ -199,86 +199,6 @@ def _make_optional_parameter_nullable(schema: dict[str, Any]) -> dict[str, Any]:
     return schema
 
 
-def _add_null_to_type(schema: dict[str, Any]) -> None:
-    """Add 'null' to the schema's type field or handle oneOf/anyOf/allOf constructs if not already present."""
-    if "type" in schema:
-        current_type = schema["type"]
-
-        if isinstance(current_type, str):
-            # Convert string type to array with null
-            schema["type"] = [current_type, "null"]
-        elif isinstance(current_type, list):
-            # Add null to array if not already present
-            if "null" not in current_type:
-                schema["type"] = current_type + ["null"]
-    elif "oneOf" in schema:
-        # Convert oneOf to anyOf with null type
-        schema["anyOf"] = schema.pop("oneOf") + [{"type": "null"}]
-    elif "anyOf" in schema:
-        # Add null type to anyOf if not already present
-        if not any(item.get("type") == "null" for item in schema["anyOf"]):
-            schema["anyOf"].append({"type": "null"})
-    elif "allOf" in schema:
-        # For allOf, wrap in anyOf with null - this means (all conditions) OR null
-        schema["anyOf"] = [{"allOf": schema.pop("allOf")}, {"type": "null"}]
-
-
-def _handle_nullable_fields(schema: dict[str, Any] | Any) -> dict[str, Any] | Any:
-    """Convert OpenAPI nullable fields to JSON Schema format: {"type": "string",
-    "nullable": true} -> {"type": ["string", "null"]}"""
-
-    if not isinstance(schema, dict):
-        return schema
-
-    # Check if we need to modify anything first to avoid unnecessary copying
-    has_root_nullable_field = "nullable" in schema
-    has_root_nullable_true = (
-        has_root_nullable_field
-        and schema["nullable"]
-        and (
-            "type" in schema
-            or "oneOf" in schema
-            or "anyOf" in schema
-            or "allOf" in schema
-        )
-    )
-
-    has_property_nullable_field = False
-    if "properties" in schema:
-        for prop_schema in schema["properties"].values():
-            if isinstance(prop_schema, dict) and "nullable" in prop_schema:
-                has_property_nullable_field = True
-                break
-
-    # If no nullable fields at all, return original schema unchanged
-    if not has_root_nullable_field and not has_property_nullable_field:
-        return schema
-
-    # Only copy if we need to modify
-    result = schema.copy()
-
-    # Handle root level nullable - always remove the field, convert type if true
-    if has_root_nullable_field:
-        result.pop("nullable")
-        if has_root_nullable_true:
-            _add_null_to_type(result)
-
-    # Handle properties nullable fields
-    if has_property_nullable_field and "properties" in result:
-        for prop_name, prop_schema in result["properties"].items():
-            if isinstance(prop_schema, dict) and "nullable" in prop_schema:
-                nullable_value = prop_schema.pop("nullable")
-                if nullable_value and (
-                    "type" in prop_schema
-                    or "oneOf" in prop_schema
-                    or "anyOf" in prop_schema
-                    or "allOf" in prop_schema
-                ):
-                    _add_null_to_type(prop_schema)
-
-    return result
-
-
 def _combine_schemas_and_map_params(
     route: HTTPRoute,
 ) -> tuple[dict[str, Any], dict[str, dict[str, str]]]:
@@ -450,68 +370,10 @@ def _combine_schemas(route: HTTPRoute) -> dict[str, Any]:
     return schema
 
 
-def _has_one_of(obj: dict[str, Any] | list[Any]) -> bool:
-    """Quickly check if schema contains any 'oneOf' keys without deep traversal."""
-    if isinstance(obj, dict):
-        if "oneOf" in obj:
-            return True
-        # Only check likely schema containers, skip examples/defaults
-        for k, v in obj.items():
-            if k in [
-                "properties",
-                "items",
-                "allOf",
-                "anyOf",
-                "additionalProperties",
-            ] and isinstance(v, dict | list):
-                if _has_one_of(v):
-                    return True
-    elif isinstance(obj, list):
-        for item in obj:
-            if isinstance(item, dict | list) and _has_one_of(item):
-                return True
-    return False
-
-
-def _adjust_union_types(
-    schema: dict[str, Any] | list[Any], _depth: int = 0
-) -> dict[str, Any] | list[Any]:
-    """Recursively replace 'oneOf' with 'anyOf' in schema to handle overlapping unions."""
-    # MAJOR OPTIMIZATION: Skip entirely if schema has no oneOf keys
-    if _depth == 0 and not _has_one_of(schema):
-        return schema
-
-    # OPTIMIZATION: Early termination for very deep structures to prevent exponential slowdown
-    if _depth > 30:  # Reduced from 50 for better performance
-        return schema
-
-    if isinstance(schema, dict):
-        # Work on a copy to avoid mutating the input
-        result = schema.copy()
-        if "oneOf" in result:
-            result["anyOf"] = result.pop("oneOf")
-        # OPTIMIZATION: Only recurse into values that could contain more schemas
-        for k, v in result.items():
-            if isinstance(v, dict | list) and k not in [
-                "examples",
-                "example",
-                "default",
-            ]:
-                result[k] = _adjust_union_types(v, _depth + 1)
-        return result
-    elif isinstance(schema, list):
-        # Process list items without mutating the input list
-        return [
-            _adjust_union_types(item, _depth + 1)
-            if isinstance(item, dict | list)
-            else item
-            for item in schema
-        ]
-    return schema
-
-
 def extract_output_schema_from_responses(
-    responses: dict[str, ResponseInfo], schema_definitions: dict[str, Any] | None = None
+    responses: dict[str, ResponseInfo],
+    schema_definitions: dict[str, Any] | None = None,
+    openapi_version: str | None = None,
 ) -> dict[str, Any] | None:
     """
     Extract output schema from OpenAPI responses for use as MCP tool output schema.
@@ -523,6 +385,7 @@ def extract_output_schema_from_responses(
     Args:
         responses: Dictionary of ResponseInfo objects keyed by status code
         schema_definitions: Optional schema definitions to include in the output schema
+        openapi_version: OpenAPI version string, used to optimize nullable field handling
 
     Returns:
         dict: MCP-compliant output schema with potential wrapping, or None if no suitable schema found
@@ -588,9 +451,14 @@ def extract_output_schema_from_responses(
                 # Replace $ref with the actual schema definition
                 output_schema = schema_definitions[schema_name].copy()
 
-    # Handle OpenAPI nullable fields by converting them to JSON Schema format
-    # This prevents "None is not of type 'string'" validation errors
-    output_schema = _handle_nullable_fields(output_schema)
+    # Convert OpenAPI schema to JSON Schema format
+    # Only needed for OpenAPI 3.0 - 3.1 uses standard JSON Schema null types
+    if openapi_version and openapi_version.startswith("3.0"):
+        from .json_schema_converter import convert_openapi_schema_to_json_schema
+
+        output_schema = convert_openapi_schema_to_json_schema(
+            output_schema, openapi_version
+        )
 
     # MCP requires output schemas to be objects. If this schema is not an object,
     # we need to wrap it similar to how ParsedFunction.from_function() does it
@@ -609,7 +477,15 @@ def extract_output_schema_from_responses(
     if schema_definitions and "$ref" not in schema.copy():
         processed_defs = {}
         for def_name, def_schema in schema_definitions.items():
-            processed_defs[def_name] = _handle_nullable_fields(def_schema)
+            # Convert OpenAPI schema definitions to JSON Schema format
+            if openapi_version and openapi_version.startswith("3.0"):
+                from .json_schema_converter import convert_openapi_schema_to_json_schema
+
+                processed_defs[def_name] = convert_openapi_schema_to_json_schema(
+                    def_schema, openapi_version
+                )
+            else:
+                processed_defs[def_name] = def_schema
         output_schema["$defs"] = processed_defs
 
     # Use lightweight compression - prune additionalProperties and unused definitions
@@ -647,9 +523,6 @@ def extract_output_schema_from_responses(
         else:
             output_schema.pop("$defs")
 
-    # Adjust union types to handle overlapping unions
-    output_schema = cast(dict[str, Any], _adjust_union_types(output_schema))
-
     return output_schema
 
 
@@ -661,6 +534,4 @@ __all__ = [
     "extract_output_schema_from_responses",
     "_replace_ref_with_defs",
     "_make_optional_parameter_nullable",
-    "_handle_nullable_fields",
-    "_adjust_union_types",
 ]
