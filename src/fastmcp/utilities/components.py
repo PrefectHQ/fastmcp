@@ -16,12 +16,6 @@ class FastMCPMeta(TypedDict, total=False):
     tags: list[str]
 
 
-def _merge_meta(left: FastMCPMeta, right: FastMCPMeta) -> FastMCPMeta:
-    return FastMCPMeta(
-        tags=sorted(set(left.get("tags", [])) | set(right.get("tags", [])))
-    )
-
-
 def _convert_set_default_none(maybe_set: set[T] | Sequence[T] | None) -> set[T]:
     """Convert a sequence to a set, defaulting to an empty set if None."""
     if maybe_set is None:
@@ -90,8 +84,9 @@ class FastMCPComponent(FastMCPBaseModel):
 
         if include_fastmcp_meta:
             fastmcp_meta = FastMCPMeta(tags=sorted(self.tags))
+            # overwrite any existing _fastmcp meta with keys from the new one
             if upstream_meta := meta.get("_fastmcp"):
-                fastmcp_meta = _merge_meta(upstream_meta, fastmcp_meta)
+                fastmcp_meta = upstream_meta | fastmcp_meta
             meta["_fastmcp"] = fastmcp_meta
 
         return meta or None

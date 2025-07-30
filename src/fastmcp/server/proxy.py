@@ -256,7 +256,7 @@ class ProxyTool(Tool, MirroredComponent):
             annotations=mcp_tool.annotations,
             output_schema=mcp_tool.outputSchema,
             meta=mcp_tool.meta,
-            tags=(mcp_tool.meta or {}).get("tags", []),
+            tags=(mcp_tool.meta or {}).get("_fastmcp", {}).get("tags", []),
             _mirrored=True,
         )
 
@@ -305,6 +305,7 @@ class ProxyResource(Resource, MirroredComponent):
         mcp_resource: mcp.types.Resource,
     ) -> ProxyResource:
         """Factory method to create a ProxyResource from a raw MCP resource schema."""
+
         return cls(
             client=client,
             uri=mcp_resource.uri,
@@ -312,7 +313,7 @@ class ProxyResource(Resource, MirroredComponent):
             description=mcp_resource.description,
             mime_type=mcp_resource.mimeType or "text/plain",
             meta=mcp_resource.meta,
-            tags=(mcp_resource.meta or {}).get("tags", []),
+            tags=(mcp_resource.meta or {}).get("_fastmcp", {}).get("tags", []),
             _mirrored=True,
         )
 
@@ -353,7 +354,7 @@ class ProxyTemplate(ResourceTemplate, MirroredComponent):
             mime_type=mcp_template.mimeType or "text/plain",
             parameters={},  # Remote templates don't have local parameters
             meta=mcp_template.meta,
-            tags=(mcp_template.meta or {}).get("tags", []),
+            tags=(mcp_template.meta or {}).get("_fastmcp", {}).get("tags", []),
             _mirrored=True,
         )
 
@@ -387,7 +388,7 @@ class ProxyTemplate(ResourceTemplate, MirroredComponent):
             description=self.description,
             mime_type=result[0].mimeType,
             meta=self.meta,
-            tags=(self.meta or {}).get("tags", []),
+            tags=(self.meta or {}).get("_fastmcp", {}).get("tags", []),
             _value=value,
         )
 
@@ -422,7 +423,7 @@ class ProxyPrompt(Prompt, MirroredComponent):
             description=mcp_prompt.description,
             arguments=arguments,
             meta=mcp_prompt.meta,
-            tags=(mcp_prompt.meta or {}).get("tags", []),
+            tags=(mcp_prompt.meta or {}).get("_fastmcp", {}).get("tags", []),
             _mirrored=True,
         )
 
