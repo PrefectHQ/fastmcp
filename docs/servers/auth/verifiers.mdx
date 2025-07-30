@@ -1,21 +1,18 @@
 ---
-title: Bearer Token Authentication
-sidebarTitle: Bearer Auth
-description: Secure your FastMCP server's HTTP endpoints by validating JWT Bearer tokens.
+title: Token Verification
+sidebarTitle: Token Verification
+description: Secure your FastMCP server's HTTP endpoints by validating JWT tokens.
 icon: key
 tag: NEW
 ---
 
 import { VersionBadge } from "/snippets/version-badge.mdx"
 
-<VersionBadge version="2.6.0" />
+<VersionBadge version="2.11.0" />
+
 <Tip>
 Authentication and authorization are only relevant for HTTP-based transports.
 </Tip>
-
-<Note>
-The [MCP specification](https://modelcontextprotocol.io/specification/2025-03-26/basic/authorization) requires servers to implement full OAuth 2.1 authorization flows with dynamic client registration, server metadata discovery, and complete token endpoints. FastMCP's Bearer Token authentication provides a simpler, more practical alternative by directly validating pre-issued JWT tokens—ideal for service-to-service communication and programmatic environments where full OAuth flows may be impractical, and in accordance with how the MCP ecosystem is pragmatically evolving. However, please note that since it doesn't implement the full OAuth 2.1 flow, this implementation does not strictly comply with the MCP specification.
-</Note>
 
 Bearer Token authentication is a common way to secure HTTP-based APIs. In this model, the client sends a token (usually a JSON Web Token or JWT) in the `Authorization` header with the "Bearer" scheme. The server then validates this token to grant or deny access.
 
@@ -32,37 +29,29 @@ FastMCP uses **asymmetric encryption** for token validation, which provides a cl
 
 This design allows you to integrate FastMCP servers into existing authentication infrastructures without compromising security boundaries.
 
-## Configuration
+## Token Verification Approaches
 
-To enable Bearer Token validation on your FastMCP server, use the `BearerAuthProvider` class. This provider validates incoming JWTs by verifying signatures, checking expiration, and optionally validating claims.
+FastMCP provides three token verification approaches:
+
+### JWTVerifier
+Validates JWT tokens using public key cryptography. Use when you have JWT tokens issued by an external identity provider (Auth0, Okta, Keycloak, etc.) and want self-contained validation without network calls.
+
+### IntrospectionTokenVerifier
+Validates tokens by calling a remote OAuth 2.0 authorization server's introspection endpoint (RFC 7662). Use when your authorization server is separate from your FastMCP server, you're using opaque tokens, or you need real-time token revocation.
+
+### StaticTokenVerifier
+Validates tokens against a predefined dictionary. Use for development and testing only - never in production.
 
 <Warning>
-The `BearerAuthProvider` validates tokens; it does **not** issue them (or implement any part of an OAuth flow). You'll need to generate tokens separately, either using FastMCP utilities or an external Identity Provider (IdP) or OAuth 2.1 Authorization Server.
+These verifiers validate tokens; they do **not** issue them (or implement any part of an OAuth flow). You'll need to generate tokens separately, either using FastMCP utilities or an external Identity Provider (IdP) or OAuth 2.1 Authorization Server.
 </Warning>
 
-### Basic Setup
-
-To configure bearer token authentication, instantiate a `BearerAuthProvider` instance and pass it to the `auth` parameter of the `FastMCP` instance.
-
-The `BearerAuthProvider` requires either a static public key or a JWKS URI (but not both!) in order to verify the token's signature. All other parameters are optional -- if they are provided, they will be used as additional validation criteria.
-
-```python {2, 10}
-from fastmcp import FastMCP
-from fastmcp.server.auth import BearerAuthProvider
-
-auth = BearerAuthProvider(
-    jwks_uri="https://my-identity-provider.com/.well-known/jwks.json",
-    issuer="https://my-identity-provider.com/",
-    algorithm="RS512",
-    audience="my-mcp-server"
-)
-
-mcp = FastMCP(name="My MCP Server", auth=auth)
-```
 
 ### Configuration Parameters
 
-<Card icon="code" title="BearerAuthProvider Configuration">
+<Tabs>
+<Tab title="JWTVerifier">
+<Card icon="code" title="JWTVerifier Configuration">
 <ParamField body="public_key" type="str">
   RSA public key in PEM format for static key validation. Required if `jwks_uri` is not provided
 </ParamField>
@@ -87,13 +76,66 @@ mcp = FastMCP(name="My MCP Server", auth=auth)
   Global scopes required for all requests
 </ParamField>
 </Card>
+</Tab>
 
-#### Public Key
+<Tab title="IntrospectionTokenVerifier">
+<Card icon="code" title="IntrospectionTokenVerifier Configuration">
+<ParamField body="introspection_endpoint" type="str">
+  OAuth 2.0 Token Introspection endpoint URL (RFC 7662)
+</ParamField>
 
-If you have a public key in PEM format, you can provide it to the `BearerAuthProvider` as a string.
+<ParamField body="client_id" type="str">
+  Resource server client ID for introspection authentication
+</ParamField>
+
+<ParamField body="client_secret" type="str">
+  Resource server client secret for introspection authentication
+</ParamField>
+
+<ParamField body="required_scopes" type="list[str] | None">
+  Global scopes required for all requests
+</ParamField>
+</Card>
+</Tab>
+
+<Tab title="StaticTokenVerifier">
+<Card icon="code" title="StaticTokenVerifier Configuration">
+<ParamField body="valid_tokens" type="dict[str, dict]">
+  Mapping of valid tokens to their claims. Each token maps to a dictionary containing token metadata like `sub`, `scope`, etc.
+</ParamField>
+
+<ParamField body="required_scopes" type="list[str] | None">
+  Global scopes required for all requests
+</ParamField>
+</Card>
+</Tab>
+</Tabs>
+
+## JWT Verification
+
+The `JWTVerifier` validates JWT tokens using public key cryptography. Use this when you have JWT tokens issued by an external identity provider and want self-contained validation without network calls.
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.auth.verifiers import JWTVerifier
+
+verifier = JWTVerifier(
+    jwks_uri="https://my-identity-provider.com/.well-known/jwks.json",
+    issuer="https://my-identity-provider.com/",
+    audience="my-mcp-server"
+)
+
+mcp = FastMCP(name="My MCP Server", auth=verifier)
+```
+
+### Public Key Configuration
+
+#### Using a Static Public Key
+
+If you have a public key in PEM format, you can provide it to the `JWTVerifier` as a string.
 
 ```python {12}
-from fastmcp.server.auth import BearerAuthProvider
+from fastmcp.server.auth.verifiers import JWTVerifier
 import inspect
 
 public_key_pem = inspect.cleandoc(
@@ -104,13 +146,13 @@ public_key_pem = inspect.cleandoc(
     """
 )
 
-auth = BearerAuthProvider(public_key=public_key_pem)
+auth = JWTVerifier(public_key=public_key_pem)
 ```
 
-#### JWKS URI
+#### Using JWKS URI
 
 ```python
-provider = BearerAuthProvider(
+verifier = JWTVerifier(
     jwks_uri="https://idp.example.com/.well-known/jwks.json"
 )
 ```
@@ -118,6 +160,58 @@ provider = BearerAuthProvider(
 <Note>
 JWKS is recommended for production as it supports automatic key rotation and multiple signing keys.
 </Note>
+
+## OAuth 2.0 Token Introspection
+
+The `IntrospectionTokenVerifier` validates tokens by calling an OAuth 2.0 authorization server's introspection endpoint (RFC 7662). This is useful when your authorization server is separate from your FastMCP server, you're using opaque tokens, or you need real-time token validation with immediate revocation support.
+
+```python
+from fastmcp.server.auth.verifiers import IntrospectionTokenVerifier
+
+verifier = IntrospectionTokenVerifier(
+    introspection_endpoint="https://auth.company.com/oauth/introspect",
+    server_url="https://mcp.company.com",  # This server's URL
+    client_id="mcp-resource-server",
+    client_secret="your-secret",
+    required_scopes=["mcp:access"]
+)
+
+mcp = FastMCP(name="MCP Server", auth=verifier)
+```
+
+For each request, the verifier makes an HTTP call to the introspection endpoint to check if the token is valid and active. This provides real-time validation but requires network connectivity.
+
+## Static Token Verification
+
+The `StaticTokenVerifier` validates tokens against a predefined dictionary of token strings and claims. Use this for development and testing when you need predictable tokens without setting up a real OAuth server.
+
+```python
+from fastmcp.server.auth.verifiers import StaticTokenVerifier
+
+verifier = StaticTokenVerifier(
+    tokens={
+        "dev-token-123": {
+            "client_id": "dev-user",
+            "scopes": ["read", "write"],
+            "sub": "developer@example.com"
+        },
+        "readonly-token": {
+            "client_id": "readonly-user",
+            "scopes": ["read"],
+            "expires_at": 1735689600  # Optional expiration
+        }
+    },
+    required_scopes=["read"]
+)
+
+mcp = FastMCP(name="Development Server", auth=verifier)
+```
+
+Token claims can include `client_id` (required), `scopes`, `sub`, `expires_at`, and any custom metadata your application needs.
+
+<Warning>
+Never use StaticTokenVerifier in production - tokens are stored in plain text.
+</Warning>
 
 ## Generating Tokens
 
@@ -130,14 +224,13 @@ The `RSAKeyPair` utility is intended for development and testing only. For produ
 
 ```python
 from fastmcp import FastMCP
-from fastmcp.server.auth import BearerAuthProvider
-from fastmcp.server.auth.providers.bearer import RSAKeyPair
+from fastmcp.server.auth.verifiers import JWTVerifier, RSAKeyPair
 
 # Generate a new key pair
 key_pair = RSAKeyPair.generate()
 
-# Configure the auth provider with the public key
-auth = BearerAuthProvider(
+# Configure the auth verifier with the public key
+auth = JWTVerifier(
     public_key=key_pair.public_key,
     issuer="https://dev.example.com",
     audience="my-dev-server"
@@ -189,6 +282,7 @@ The `create_token()` method accepts these parameters:
   Key ID for JWKS lookup
 </ParamField>
 </Card>
+
 
 
 ## Accessing Token Claims

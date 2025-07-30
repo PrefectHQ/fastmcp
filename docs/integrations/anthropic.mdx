@@ -125,7 +125,7 @@ For this example, we'll quickly generate our own tokens with FastMCP's `RSAKeyPa
 We'll start by creating an RSA key pair to sign and verify tokens.
 
 ```python
-from fastmcp.server.auth.providers.bearer import RSAKeyPair
+from fastmcp.server.auth.verifiers import RSAKeyPair
 
 key_pair = RSAKeyPair.generate()
 access_token = key_pair.create_token(audience="dice-server")
@@ -135,13 +135,13 @@ access_token = key_pair.create_token(audience="dice-server")
 FastMCP's `RSAKeyPair` utility is for development and testing only.
 </Warning> 
 
-Next, we'll create a `BearerAuthProvider` to authenticate the server. 
+Next, we'll create a `JWTVerifier` to authenticate the server. 
 
 ```python
 from fastmcp import FastMCP
-from fastmcp.server.auth import BearerAuthProvider
+from fastmcp.server.auth import JWTVerifier
 
-auth = BearerAuthProvider(
+auth = JWTVerifier(
     public_key=key_pair.public_key,
     audience="dice-server",
 )
@@ -153,14 +153,14 @@ Here is a complete example that you can copy/paste. For simplicity and the purpo
 
 ```python server.py [expandable]
 from fastmcp import FastMCP
-from fastmcp.server.auth import BearerAuthProvider
-from fastmcp.server.auth.providers.bearer import RSAKeyPair
+from fastmcp.server.auth import JWTVerifier
+from fastmcp.server.auth.verifiers import RSAKeyPair
 import random
 
 key_pair = RSAKeyPair.generate()
 access_token = key_pair.create_token(audience="dice-server")
 
-auth = BearerAuthProvider(
+auth = JWTVerifier(
     public_key=key_pair.public_key,
     audience="dice-server",
 )

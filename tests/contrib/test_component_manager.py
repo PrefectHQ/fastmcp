@@ -4,7 +4,7 @@ from starlette.testclient import TestClient
 
 from fastmcp import FastMCP
 from fastmcp.contrib.component_manager import set_up_component_manager
-from fastmcp.server.auth.providers.bearer import BearerAuthProvider, RSAKeyPair
+from fastmcp.server.auth.verifiers import JWTVerifier, RSAKeyPair
 
 
 class TestComponentManagementRoutes:
@@ -340,7 +340,7 @@ class TestAuthComponentManagementRoutes:
         """Set up test fixtures."""
         # Generate a key pair and create an auth provider
         key_pair = RSAKeyPair.generate()
-        self.auth = BearerAuthProvider(
+        self.auth = JWTVerifier(
             public_key=key_pair.public_key,
             issuer="https://dev.example.com",
             audience="my-dev-server",
@@ -425,7 +425,7 @@ class TestAuthComponentManagementRoutes:
         assert tool.enabled is False
 
     async def test_forbidden_enable_tool(self):
-        """Test that unauthenticated requests to enable a resource are rejected."""
+        """Test that requests with insufficient scopes are rejected."""
         tool = await self.mcp._tool_manager.get_tool("test_tool")
         tool.enabled = False
 
@@ -459,7 +459,7 @@ class TestAuthComponentManagementRoutes:
         assert resource.enabled is True
 
     async def test_forbidden_enable_resource(self):
-        """Test that unauthenticated requests to enable a resource are rejected."""
+        """Test that requests with insufficient scopes are rejected."""
         resource = await self.mcp._resource_manager.get_resource("data://test_resource")
         resource.enabled = False
 
@@ -515,7 +515,7 @@ class TestAuthComponentManagementRoutes:
         assert prompt.enabled is True
 
     async def test_forbidden_disable_prompt(self):
-        """Test that unauthenticated requests to enable a resource are rejected."""
+        """Test that requests with insufficient scopes are rejected."""
         prompt = await self.mcp._prompt_manager.get_prompt("test_prompt")
         prompt.enabled = True
 
@@ -606,11 +606,10 @@ class TestComponentManagerWithPathAuth:
     def setup_method(self):
         # Generate a key pair and create an auth provider
         key_pair = RSAKeyPair.generate()
-        self.auth = BearerAuthProvider(
+        self.auth = JWTVerifier(
             public_key=key_pair.public_key,
             issuer="https://dev.example.com",
             audience="my-dev-server",
-            required_scopes=["tool:write", "tool:read"],
         )
         self.mcp = FastMCP("TestServerWithPathAuth", auth=self.auth)
         set_up_component_manager(

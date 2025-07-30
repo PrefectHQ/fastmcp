@@ -50,8 +50,8 @@ from fastmcp.prompts import Prompt, PromptManager
 from fastmcp.prompts.prompt import FunctionPrompt
 from fastmcp.resources import Resource, ResourceManager
 from fastmcp.resources.template import ResourceTemplate
-from fastmcp.server.auth.auth import OAuthProvider
-from fastmcp.server.auth.providers.bearer_env import EnvBearerAuthProvider
+from fastmcp.server.auth.auth import OAuthProvider, TokenVerifier
+from fastmcp.server.auth.verifiers import EnvJWTVerifier
 from fastmcp.server.http import (
     StarletteWithLifespan,
     create_sse_app,
@@ -133,7 +133,7 @@ class FastMCP(Generic[LifespanResultT]):
         instructions: str | None = None,
         *,
         version: str | None = None,
-        auth: OAuthProvider | None = None,
+        auth: OAuthProvider | TokenVerifier | None = None,
         middleware: list[Middleware] | None = None,
         lifespan: (
             Callable[
@@ -205,8 +205,9 @@ class FastMCP(Generic[LifespanResultT]):
             lifespan=_lifespan_wrapper(self, lifespan),
         )
 
-        if auth is None and fastmcp.settings.default_auth_provider == "bearer_env":
-            auth = EnvBearerAuthProvider()
+        if auth is None and fastmcp.settings.default_auth_provider == "jwt-env":
+            auth = EnvJWTVerifier()
+
         self.auth = auth
 
         if tools:

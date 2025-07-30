@@ -6,8 +6,8 @@ from mcp.server.auth.provider import AccessToken
 from starlette.middleware import Middleware
 from starlette.middleware.authentication import AuthenticationMiddleware
 
-from fastmcp.server.auth.providers.bearer import BearerAuthProvider, RSAKeyPair
 from fastmcp.server.auth.providers.in_memory import InMemoryOAuthProvider
+from fastmcp.server.auth.verifiers import JWTVerifier, RSAKeyPair
 from fastmcp.server.http import setup_auth_middleware_and_routes
 
 
@@ -15,10 +15,10 @@ class TestSetupAuthMiddlewareAndRoutes:
     """Test setup_auth_middleware_and_routes with TokenVerifier providers."""
 
     @pytest.fixture
-    def bearer_provider(self) -> BearerAuthProvider:
-        """Create BearerAuthProvider for testing."""
+    def jwt_verifier(self) -> JWTVerifier:
+        """Create JWTVerifier for testing."""
         key_pair = RSAKeyPair.generate()
-        return BearerAuthProvider(
+        return JWTVerifier(
             public_key=key_pair.public_key,
             issuer="https://test.example.com",
             audience="https://api.example.com",
@@ -33,10 +33,10 @@ class TestSetupAuthMiddlewareAndRoutes:
             required_scopes=["user"],
         )
 
-    def test_setup_with_bearer_provider(self, bearer_provider: BearerAuthProvider):
-        """Test that setup works with BearerAuthProvider as TokenVerifier."""
+    def test_setup_with_jwt_verifier(self, jwt_verifier: JWTVerifier):
+        """Test that setup works with JWTVerifier as TokenVerifier."""
         middleware, auth_routes, required_scopes = setup_auth_middleware_and_routes(
-            bearer_provider
+            jwt_verifier
         )
 
         # Should return middleware list
@@ -51,11 +51,11 @@ class TestSetupAuthMiddlewareAndRoutes:
 
         backend = auth_middleware.kwargs["backend"]
         assert isinstance(backend, BearerAuthBackend)
-        assert backend.token_verifier is bearer_provider  # type: ignore[attr-defined]
+        assert backend.token_verifier is jwt_verifier  # type: ignore[attr-defined]
 
         # Should return auth routes
         assert isinstance(auth_routes, list)
-        assert len(auth_routes) > 0  # Should have OAuth routes
+        assert len(auth_routes) == 0  # TokenVerifier should not have OAuth routes
 
         # Should return required scopes
         assert required_scopes == ["read", "write"]
@@ -81,25 +81,23 @@ class TestSetupAuthMiddlewareAndRoutes:
         # Should return required scopes
         assert required_scopes == ["user"]
 
-    def test_setup_preserves_provider_functionality(
-        self, bearer_provider: BearerAuthProvider
-    ):
+    def test_setup_preserves_provider_functionality(self, jwt_verifier: JWTVerifier):
         """Test that setup doesn't break the provider's functionality."""
         # Setup should not modify the provider
-        original_issuer = bearer_provider.issuer
-        original_scopes = bearer_provider.required_scopes
+        original_issuer = jwt_verifier.issuer
+        original_scopes = jwt_verifier.required_scopes
 
         middleware, auth_routes, required_scopes = setup_auth_middleware_and_routes(
-            bearer_provider
+            jwt_verifier
         )
 
         # Provider should be unchanged
-        assert bearer_provider.issuer == original_issuer
-        assert bearer_provider.required_scopes == original_scopes
+        assert jwt_verifier.issuer == original_issuer
+        assert jwt_verifier.required_scopes == original_scopes
 
         # Provider should still work as TokenVerifier
-        assert hasattr(bearer_provider, "verify_token")
-        assert callable(bearer_provider.verify_token)
+        assert hasattr(jwt_verifier, "verify_token")
+        assert callable(jwt_verifier.verify_token)
 
 
 class MockOAuthProvider:

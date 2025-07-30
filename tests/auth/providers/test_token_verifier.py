@@ -3,12 +3,12 @@
 import pytest
 from mcp.server.auth.provider import AccessToken
 
-from fastmcp.server.auth.providers.bearer import BearerAuthProvider, RSAKeyPair
 from fastmcp.server.auth.providers.in_memory import InMemoryOAuthProvider
+from fastmcp.server.auth.verifiers import JWTVerifier, RSAKeyPair
 
 
-class TestBearerAuthProviderTokenVerifier:
-    """Test that BearerAuthProvider implements TokenVerifier protocol correctly."""
+class TestJWTVerifierTokenVerifier:
+    """Test that JWTVerifier implements TokenVerifier protocol correctly."""
 
     @pytest.fixture
     def rsa_key_pair(self) -> RSAKeyPair:
@@ -16,9 +16,9 @@ class TestBearerAuthProviderTokenVerifier:
         return RSAKeyPair.generate()
 
     @pytest.fixture
-    def bearer_provider(self, rsa_key_pair: RSAKeyPair) -> BearerAuthProvider:
-        """Create BearerAuthProvider for testing."""
-        return BearerAuthProvider(
+    def jwt_verifier(self, rsa_key_pair: RSAKeyPair) -> JWTVerifier:
+        """Create JWTVerifier for testing."""
+        return JWTVerifier(
             public_key=rsa_key_pair.public_key,
             issuer="https://test.example.com",
             audience="https://api.example.com",
@@ -45,10 +45,10 @@ class TestBearerAuthProviderTokenVerifier:
         )
 
     async def test_verify_token_with_valid_token(
-        self, bearer_provider: BearerAuthProvider, valid_token: str
+        self, jwt_verifier: JWTVerifier, valid_token: str
     ):
         """Test that verify_token returns AccessToken for valid token."""
-        result = await bearer_provider.verify_token(valid_token)
+        result = await jwt_verifier.verify_token(valid_token)
 
         assert result is not None
         assert isinstance(result, AccessToken)
@@ -58,33 +58,29 @@ class TestBearerAuthProviderTokenVerifier:
         assert "write" in result.scopes
 
     async def test_verify_token_with_expired_token(
-        self, bearer_provider: BearerAuthProvider, expired_token: str
+        self, jwt_verifier: JWTVerifier, expired_token: str
     ):
         """Test that verify_token returns None for expired token."""
-        result = await bearer_provider.verify_token(expired_token)
+        result = await jwt_verifier.verify_token(expired_token)
         assert result is None
 
-    async def test_verify_token_with_invalid_token(
-        self, bearer_provider: BearerAuthProvider
-    ):
+    async def test_verify_token_with_invalid_token(self, jwt_verifier: JWTVerifier):
         """Test that verify_token returns None for invalid token."""
-        result = await bearer_provider.verify_token("invalid.token.here")
+        result = await jwt_verifier.verify_token("invalid.token.here")
         assert result is None
 
-    async def test_verify_token_with_malformed_token(
-        self, bearer_provider: BearerAuthProvider
-    ):
+    async def test_verify_token_with_malformed_token(self, jwt_verifier: JWTVerifier):
         """Test that verify_token returns None for malformed token."""
-        result = await bearer_provider.verify_token("not-a-jwt")
+        result = await jwt_verifier.verify_token("not-a-jwt")
         assert result is None
 
     async def test_verify_token_delegation_to_load_access_token(
-        self, bearer_provider: BearerAuthProvider, valid_token: str
+        self, jwt_verifier: JWTVerifier, valid_token: str
     ):
         """Test that verify_token delegates to load_access_token."""
         # Both methods should return the same result
-        verify_result = await bearer_provider.verify_token(valid_token)
-        load_result = await bearer_provider.load_access_token(valid_token)
+        verify_result = await jwt_verifier.verify_token(valid_token)
+        load_result = await jwt_verifier.load_access_token(valid_token)
 
         assert verify_result == load_result
         if verify_result is not None and load_result is not None:
@@ -162,9 +158,9 @@ class TestTokenVerifierProtocolCompliance:
     """Test that our providers properly implement the TokenVerifier protocol."""
 
     async def test_bearer_provider_implements_protocol(self):
-        """Test that BearerAuthProvider can be used as TokenVerifier."""
+        """Test that JWTVerifier can be used as TokenVerifier."""
         key_pair = RSAKeyPair.generate()
-        provider = BearerAuthProvider(public_key=key_pair.public_key)
+        provider = JWTVerifier(public_key=key_pair.public_key)
 
         # Should have the required method for TokenVerifier protocol
         assert hasattr(provider, "verify_token")

@@ -7,12 +7,7 @@ from pytest_httpx import HTTPXMock
 
 from fastmcp import Client, FastMCP
 from fastmcp.client.auth.bearer import BearerAuth
-from fastmcp.server.auth.providers.bearer import (
-    BearerAuthProvider,
-    JWKData,
-    JWKSData,
-    RSAKeyPair,
-)
+from fastmcp.server.auth.verifiers import JWKData, JWKSData, JWTVerifier, RSAKeyPair
 from fastmcp.utilities.tests import run_server_in_process
 
 
@@ -31,8 +26,8 @@ def bearer_token(rsa_key_pair: RSAKeyPair) -> str:
 
 
 @pytest.fixture
-def bearer_provider(rsa_key_pair: RSAKeyPair) -> BearerAuthProvider:
-    return BearerAuthProvider(
+def bearer_provider(rsa_key_pair: RSAKeyPair) -> JWTVerifier:
+    return JWTVerifier(
         public_key=rsa_key_pair.public_key,
         issuer="https://test.example.com",
         audience="https://api.example.com",
@@ -47,7 +42,7 @@ def run_mcp_server(
     run_kwargs: dict[str, Any] | None = None,
 ) -> None:
     mcp = FastMCP(
-        auth=BearerAuthProvider(
+        auth=JWTVerifier(
             public_key=public_key,
             **auth_kwargs or {},
         )
@@ -113,9 +108,9 @@ class TestBearerTokenJWKS:
     """Tests for JWKS URI functionality."""
 
     @pytest.fixture
-    def jwks_provider(self, rsa_key_pair: RSAKeyPair) -> BearerAuthProvider:
+    def jwks_provider(self, rsa_key_pair: RSAKeyPair) -> JWTVerifier:
         """Provider configured with JWKS URI."""
-        return BearerAuthProvider(
+        return JWTVerifier(
             jwks_uri="https://test.example.com/.well-known/jwks.json",
             issuer="https://test.example.com",
             audience="https://api.example.com",
@@ -137,7 +132,7 @@ class TestBearerTokenJWKS:
     async def test_jwks_token_validation(
         self,
         rsa_key_pair: RSAKeyPair,
-        jwks_provider: BearerAuthProvider,
+        jwks_provider: JWTVerifier,
         mock_jwks_data: JWKSData,
         httpx_mock: HTTPXMock,
     ):
@@ -159,7 +154,7 @@ class TestBearerTokenJWKS:
     async def test_jwks_token_validation_with_invalid_key(
         self,
         rsa_key_pair: RSAKeyPair,
-        jwks_provider: BearerAuthProvider,
+        jwks_provider: JWTVerifier,
         mock_jwks_data: JWKSData,
         httpx_mock: HTTPXMock,
     ):
@@ -179,7 +174,7 @@ class TestBearerTokenJWKS:
     async def test_jwks_token_validation_with_kid(
         self,
         rsa_key_pair: RSAKeyPair,
-        jwks_provider: BearerAuthProvider,
+        jwks_provider: JWTVerifier,
         mock_jwks_data: JWKSData,
         httpx_mock: HTTPXMock,
     ):
@@ -202,7 +197,7 @@ class TestBearerTokenJWKS:
     async def test_jwks_token_validation_with_kid_and_no_kid_in_token(
         self,
         rsa_key_pair: RSAKeyPair,
-        jwks_provider: BearerAuthProvider,
+        jwks_provider: JWTVerifier,
         mock_jwks_data: JWKSData,
         httpx_mock: HTTPXMock,
     ):
@@ -224,7 +219,7 @@ class TestBearerTokenJWKS:
     async def test_jwks_token_validation_with_no_kid_and_kid_in_jwks(
         self,
         rsa_key_pair: RSAKeyPair,
-        jwks_provider: BearerAuthProvider,
+        jwks_provider: JWTVerifier,
         mock_jwks_data: JWKSData,
         httpx_mock: HTTPXMock,
     ):
@@ -246,7 +241,7 @@ class TestBearerTokenJWKS:
     async def test_jwks_token_validation_with_kid_mismatch(
         self,
         rsa_key_pair: RSAKeyPair,
-        jwks_provider: BearerAuthProvider,
+        jwks_provider: JWTVerifier,
         mock_jwks_data: JWKSData,
         httpx_mock: HTTPXMock,
     ):
@@ -268,7 +263,7 @@ class TestBearerTokenJWKS:
     async def test_jwks_token_validation_with_multiple_keys_and_no_kid_in_token(
         self,
         rsa_key_pair: RSAKeyPair,
-        jwks_provider: BearerAuthProvider,
+        jwks_provider: JWTVerifier,
         mock_jwks_data: JWKSData,
         httpx_mock: HTTPXMock,
     ):
@@ -300,7 +295,7 @@ class TestBearerTokenJWKS:
 class TestBearerToken:
     def test_initialization_with_public_key(self, rsa_key_pair: RSAKeyPair):
         """Test provider initialization with public key."""
-        provider = BearerAuthProvider(
+        provider = JWTVerifier(
             public_key=rsa_key_pair.public_key, issuer="https://test.example.com"
         )
 
@@ -310,7 +305,7 @@ class TestBearerToken:
 
     def test_initialization_with_jwks_uri(self):
         """Test provider initialization with JWKS URI."""
-        provider = BearerAuthProvider(
+        provider = JWTVerifier(
             jwks_uri="https://test.example.com/.well-known/jwks.json",
             issuer="https://test.example.com",
         )
@@ -324,21 +319,21 @@ class TestBearerToken:
         with pytest.raises(
             ValueError, match="Either public_key or jwks_uri must be provided"
         ):
-            BearerAuthProvider(issuer="https://test.example.com")
+            JWTVerifier(issuer="https://test.example.com")
 
     def test_initialization_rejects_both_key_and_uri(self, rsa_key_pair: RSAKeyPair):
         """Test that both public_key and jwks_uri cannot be provided."""
         with pytest.raises(
             ValueError, match="Provide either public_key or jwks_uri, not both"
         ):
-            BearerAuthProvider(
+            JWTVerifier(
                 public_key=rsa_key_pair.public_key,
                 jwks_uri="https://test.example.com/.well-known/jwks.json",
                 issuer="https://test.example.com",
             )
 
     async def test_valid_token_validation(
-        self, rsa_key_pair: RSAKeyPair, bearer_provider: BearerAuthProvider
+        self, rsa_key_pair: RSAKeyPair, bearer_provider: JWTVerifier
     ):
         """Test validation of a valid token."""
         token = rsa_key_pair.create_token(
@@ -357,7 +352,7 @@ class TestBearerToken:
         assert access_token.expires_at is not None
 
     async def test_expired_token_rejection(
-        self, rsa_key_pair: RSAKeyPair, bearer_provider: BearerAuthProvider
+        self, rsa_key_pair: RSAKeyPair, bearer_provider: JWTVerifier
     ):
         """Test rejection of expired tokens."""
         token = rsa_key_pair.create_token(
@@ -371,7 +366,7 @@ class TestBearerToken:
         assert access_token is None
 
     async def test_invalid_issuer_rejection(
-        self, rsa_key_pair: RSAKeyPair, bearer_provider: BearerAuthProvider
+        self, rsa_key_pair: RSAKeyPair, bearer_provider: JWTVerifier
     ):
         """Test rejection of tokens with invalid issuer."""
         token = rsa_key_pair.create_token(
@@ -384,7 +379,7 @@ class TestBearerToken:
         assert access_token is None
 
     async def test_invalid_audience_rejection(
-        self, rsa_key_pair: RSAKeyPair, bearer_provider: BearerAuthProvider
+        self, rsa_key_pair: RSAKeyPair, bearer_provider: JWTVerifier
     ):
         """Test rejection of tokens with invalid audience."""
         token = rsa_key_pair.create_token(
@@ -398,7 +393,7 @@ class TestBearerToken:
 
     async def test_no_issuer_validation_when_none(self, rsa_key_pair: RSAKeyPair):
         """Test that issuer validation is skipped when provider has no issuer configured."""
-        provider = BearerAuthProvider(
+        provider = JWTVerifier(
             public_key=rsa_key_pair.public_key,
             issuer=None,  # No issuer validation
         )
@@ -412,7 +407,7 @@ class TestBearerToken:
 
     async def test_no_audience_validation_when_none(self, rsa_key_pair: RSAKeyPair):
         """Test that audience validation is skipped when provider has no audience configured."""
-        provider = BearerAuthProvider(
+        provider = JWTVerifier(
             public_key=rsa_key_pair.public_key,
             issuer="https://test.example.com",
             audience=None,  # No audience validation
@@ -429,7 +424,7 @@ class TestBearerToken:
 
     async def test_multiple_audiences_validation(self, rsa_key_pair: RSAKeyPair):
         """Test validation with multiple audiences in token."""
-        provider = BearerAuthProvider(
+        provider = JWTVerifier(
             public_key=rsa_key_pair.public_key,
             issuer="https://test.example.com",
             audience="https://api.example.com",
@@ -450,7 +445,7 @@ class TestBearerToken:
         self, rsa_key_pair: RSAKeyPair
     ):
         """Test provider configured with multiple expected audiences."""
-        provider = BearerAuthProvider(
+        provider = JWTVerifier(
             public_key=rsa_key_pair.public_key,
             issuer="https://test.example.com",
             audience=["https://api.example.com", "https://other-api.example.com"],
@@ -486,7 +481,7 @@ class TestBearerToken:
         assert access_token3 is None
 
     async def test_scope_extraction_string(
-        self, rsa_key_pair: RSAKeyPair, bearer_provider: BearerAuthProvider
+        self, rsa_key_pair: RSAKeyPair, bearer_provider: JWTVerifier
     ):
         """Test scope extraction from space-separated string."""
         token = rsa_key_pair.create_token(
@@ -502,7 +497,7 @@ class TestBearerToken:
         assert set(access_token.scopes) == {"read", "write", "admin"}
 
     async def test_scope_extraction_list(
-        self, rsa_key_pair: RSAKeyPair, bearer_provider: BearerAuthProvider
+        self, rsa_key_pair: RSAKeyPair, bearer_provider: JWTVerifier
     ):
         """Test scope extraction from list format."""
         token = rsa_key_pair.create_token(
@@ -518,7 +513,7 @@ class TestBearerToken:
         assert set(access_token.scopes) == {"read", "write"}
 
     async def test_no_scopes(
-        self, rsa_key_pair: RSAKeyPair, bearer_provider: BearerAuthProvider
+        self, rsa_key_pair: RSAKeyPair, bearer_provider: JWTVerifier
     ):
         """Test token with no scopes."""
         token = rsa_key_pair.create_token(
@@ -534,7 +529,7 @@ class TestBearerToken:
         assert access_token.scopes == []
 
     async def test_scp_claim_extraction_string(
-        self, rsa_key_pair: RSAKeyPair, bearer_provider: BearerAuthProvider
+        self, rsa_key_pair: RSAKeyPair, bearer_provider: JWTVerifier
     ):
         """Test scope extraction from 'scp' claim with space-separated string."""
         token = rsa_key_pair.create_token(
@@ -550,7 +545,7 @@ class TestBearerToken:
         assert set(access_token.scopes) == {"read", "write", "admin"}
 
     async def test_scp_claim_extraction_list(
-        self, rsa_key_pair: RSAKeyPair, bearer_provider: BearerAuthProvider
+        self, rsa_key_pair: RSAKeyPair, bearer_provider: JWTVerifier
     ):
         """Test scope extraction from 'scp' claim with list format."""
         token = rsa_key_pair.create_token(
@@ -568,7 +563,7 @@ class TestBearerToken:
         assert set(access_token.scopes) == {"read", "write", "admin"}
 
     async def test_scope_precedence_over_scp(
-        self, rsa_key_pair: RSAKeyPair, bearer_provider: BearerAuthProvider
+        self, rsa_key_pair: RSAKeyPair, bearer_provider: JWTVerifier
     ):
         """Test that 'scope' claim takes precedence over 'scp' claim when both are present."""
         token = rsa_key_pair.create_token(
@@ -586,7 +581,7 @@ class TestBearerToken:
         assert access_token is not None
         assert set(access_token.scopes) == {"read", "write"}  # Only 'scope' claim used
 
-    async def test_malformed_token_rejection(self, bearer_provider: BearerAuthProvider):
+    async def test_malformed_token_rejection(self, bearer_provider: JWTVerifier):
         """Test rejection of malformed tokens."""
         malformed_tokens = [
             "not.a.jwt",
@@ -601,7 +596,7 @@ class TestBearerToken:
             assert access_token is None
 
     async def test_invalid_signature_rejection(
-        self, rsa_key_pair: RSAKeyPair, bearer_provider: BearerAuthProvider
+        self, rsa_key_pair: RSAKeyPair, bearer_provider: JWTVerifier
     ):
         """Test rejection of tokens with invalid signatures."""
         # Create a token with a different key pair
@@ -616,7 +611,7 @@ class TestBearerToken:
         assert access_token is None
 
     async def test_client_id_fallback(
-        self, rsa_key_pair: RSAKeyPair, bearer_provider: BearerAuthProvider
+        self, rsa_key_pair: RSAKeyPair, bearer_provider: JWTVerifier
     ):
         """Test client_id extraction with fallback logic."""
         # Test with explicit client_id claim
@@ -634,7 +629,7 @@ class TestBearerToken:
     async def test_string_issuer_validation(self, rsa_key_pair: RSAKeyPair):
         """Test that string (non-URL) issuers are supported per RFC 7519."""
         # Create provider with string issuer
-        provider = BearerAuthProvider(
+        provider = JWTVerifier(
             public_key=rsa_key_pair.public_key,
             issuer="my-service",  # String issuer, not a URL
         )
@@ -652,7 +647,7 @@ class TestBearerToken:
     async def test_string_issuer_mismatch_rejection(self, rsa_key_pair: RSAKeyPair):
         """Test that mismatched string issuers are rejected."""
         # Create provider with one string issuer
-        provider = BearerAuthProvider(
+        provider = JWTVerifier(
             public_key=rsa_key_pair.public_key,
             issuer="my-service",
         )
@@ -669,7 +664,7 @@ class TestBearerToken:
     async def test_url_issuer_still_works(self, rsa_key_pair: RSAKeyPair):
         """Test that URL issuers still work after the fix."""
         # Create provider with URL issuer
-        provider = BearerAuthProvider(
+        provider = JWTVerifier(
             public_key=rsa_key_pair.public_key,
             issuer="https://my-auth-server.com",  # URL issuer
         )
@@ -688,9 +683,9 @@ class TestBearerToken:
 class TestFastMCPBearerAuth:
     def test_bearer_auth(self):
         mcp = FastMCP(
-            auth=BearerAuthProvider(issuer="https://test.example.com", public_key="abc")
+            auth=JWTVerifier(issuer="https://test.example.com", public_key="abc")
         )
-        assert isinstance(mcp.auth, BearerAuthProvider)
+        assert isinstance(mcp.auth, JWTVerifier)
 
     async def test_unauthorized_access(self, mcp_server_url: str):
         with pytest.raises(httpx.HTTPStatusError) as exc_info:
@@ -755,7 +750,10 @@ class TestFastMCPBearerAuth:
             with pytest.raises(httpx.HTTPStatusError) as exc_info:
                 async with Client(mcp_server_url, auth=BearerAuth(token)) as client:
                     tools = await client.list_tools()  # noqa: F841
-            assert exc_info.value.response.status_code == 403
+            # JWTVerifier returns 401 when verify_token returns None (invalid token)
+            # This is correct behavior - when TokenVerifier.verify_token returns None,
+            # it indicates the token is invalid (not just insufficient permissions)
+            assert exc_info.value.response.status_code == 401
             assert "tools" not in locals()
 
     async def test_token_with_sufficient_scopes(

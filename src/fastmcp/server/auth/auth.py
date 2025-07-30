@@ -4,11 +4,43 @@ from mcp.server.auth.provider import (
     OAuthAuthorizationServerProvider,
     RefreshToken,
 )
+from mcp.server.auth.provider import (
+    TokenVerifier as TokenVerifierProtocol,
+)
 from mcp.server.auth.settings import (
     ClientRegistrationOptions,
     RevocationOptions,
 )
 from pydantic import AnyHttpUrl
+
+
+class TokenVerifier(TokenVerifierProtocol):
+    """Base class for token verifiers (Resource Servers)."""
+
+    def __init__(
+        self,
+        resource_server_url: AnyHttpUrl | str | None = None,
+        required_scopes: list[str] | None = None,
+    ):
+        """
+        Initialize the token verifier.
+
+        Args:
+            resource_server_url: The URL of this resource server (for RFC 8707 resource indicators)
+            required_scopes: Scopes that are required for all requests
+        """
+        self.resource_server_url: AnyHttpUrl | None
+        if resource_server_url is None:
+            self.resource_server_url = None
+        elif isinstance(resource_server_url, str):
+            self.resource_server_url = AnyHttpUrl(resource_server_url)
+        else:
+            self.resource_server_url = resource_server_url
+        self.required_scopes = required_scopes or []
+
+    async def verify_token(self, token: str) -> AccessToken | None:
+        """Verify a bearer token and return access info if valid."""
+        raise NotImplementedError("Subclasses must implement verify_token")
 
 
 class OAuthProvider(
@@ -44,21 +76,3 @@ class OAuthProvider(
         self.client_registration_options = client_registration_options
         self.revocation_options = revocation_options
         self.required_scopes = required_scopes
-        self.resource_server_url = (
-            AnyHttpUrl(resource_server_url) if resource_server_url else None
-        )
-
-    async def verify_token(self, token: str) -> AccessToken | None:
-        """
-        Verify a bearer token and return access info if valid.
-
-        This method implements the TokenVerifier protocol by delegating
-        to our existing load_access_token method.
-
-        Args:
-            token: The token string to validate
-
-        Returns:
-            AccessToken object if valid, None if invalid or expired
-        """
-        return await self.load_access_token(token)

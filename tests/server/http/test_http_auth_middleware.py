@@ -3,7 +3,7 @@ from mcp.server.auth.middleware.bearer_auth import RequireAuthMiddleware
 from starlette.routing import Mount
 
 from fastmcp.server import FastMCP
-from fastmcp.server.auth.providers.bearer import BearerAuthProvider, RSAKeyPair
+from fastmcp.server.auth.verifiers import JWTVerifier, RSAKeyPair
 from fastmcp.server.http import create_streamable_http_app
 
 
@@ -17,11 +17,11 @@ class TestStreamableHTTPAppResourceMetadataURL:
 
     @pytest.fixture
     def bearer_auth_provider(self, rsa_key_pair):
-        provider = BearerAuthProvider(
+        provider = JWTVerifier(
             public_key=rsa_key_pair.public_key,
             issuer="https://issuer",
             audience="https://audience",
-            resource_server="https://resource.example.com",
+            resource_server_url="https://resource.example.com",
         )
         return provider
 
@@ -45,11 +45,11 @@ class TestStreamableHTTPAppResourceMetadataURL:
         )
 
     def test_trailing_slash_handling_in_resource_server_url(self, rsa_key_pair):
-        provider = BearerAuthProvider(
+        provider = JWTVerifier(
             public_key=rsa_key_pair.public_key,
             issuer="https://issuer",
             audience="https://audience",
-            resource_server="https://resource.example.com/",
+            resource_server_url="https://resource.example.com/",
         )
         server = FastMCP(name="TestServer")
         app = create_streamable_http_app(

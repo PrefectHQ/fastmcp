@@ -260,7 +260,7 @@ class Settings(BaseSettings):
 
     # Auth settings
     default_auth_provider: Annotated[
-        Literal["bearer_env"] | None,
+        Literal["jwt-env"] | None,
         Field(
             description=inspect.cleandoc(
                 """

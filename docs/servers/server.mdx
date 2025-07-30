@@ -40,6 +40,10 @@ The `FastMCP` constructor accepts several arguments:
   Description of how to interact with this server. These instructions help clients understand the server's purpose and available functionality
 </ParamField>
 
+<ParamField body="auth" type="OAuthProvider | TokenVerifier | None">
+  Authentication provider for securing HTTP-based transports. See [Bearer Token Authentication](/servers/auth/bearer) for configuration options
+</ParamField>
+
 <ParamField body="lifespan" type="AsyncContextManager | None">
   An async context manager function for server startup and shutdown logic
 </ParamField>

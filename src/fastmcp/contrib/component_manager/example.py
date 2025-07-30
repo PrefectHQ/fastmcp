@@ -1,10 +1,10 @@
 from fastmcp import FastMCP
 from fastmcp.contrib.component_manager import set_up_component_manager
-from fastmcp.server.auth.providers.bearer import BearerAuthProvider, RSAKeyPair
+from fastmcp.server.auth.verifiers import JWTVerifier, RSAKeyPair
 
 key_pair = RSAKeyPair.generate()
 
-auth = BearerAuthProvider(
+auth = JWTVerifier(
     public_key=key_pair.public_key,
     issuer="https://dev.example.com",
     audience="my-dev-server",

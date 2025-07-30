@@ -5,7 +5,7 @@ from mcp.server.auth.middleware.bearer_auth import BearerAuthBackend
 from mcp.server.auth.provider import AccessToken
 from starlette.requests import HTTPConnection
 
-from fastmcp.server.auth.providers.bearer import BearerAuthProvider, RSAKeyPair
+from fastmcp.server.auth.verifiers import JWTVerifier, RSAKeyPair
 
 
 class TestBearerAuthBackendTokenVerifierIntegration:
@@ -17,9 +17,9 @@ class TestBearerAuthBackendTokenVerifierIntegration:
         return RSAKeyPair.generate()
 
     @pytest.fixture
-    def bearer_provider(self, rsa_key_pair: RSAKeyPair) -> BearerAuthProvider:
-        """Create BearerAuthProvider for testing."""
-        return BearerAuthProvider(
+    def jwt_verifier(self, rsa_key_pair: RSAKeyPair) -> JWTVerifier:
+        """Create JWTVerifier for testing."""
+        return JWTVerifier(
             public_key=rsa_key_pair.public_key,
             issuer="https://test.example.com",
             audience="https://api.example.com",
@@ -36,18 +36,18 @@ class TestBearerAuthBackendTokenVerifierIntegration:
         )
 
     def test_bearer_auth_backend_constructor_accepts_token_verifier(
-        self, bearer_provider: BearerAuthProvider
+        self, jwt_verifier: JWTVerifier
     ):
         """Test that BearerAuthBackend constructor accepts TokenVerifier."""
         # This should not raise an error
-        backend = BearerAuthBackend(bearer_provider)
-        assert backend.token_verifier is bearer_provider  # type: ignore[attr-defined]
+        backend = BearerAuthBackend(jwt_verifier)
+        assert backend.token_verifier is jwt_verifier  # type: ignore[attr-defined]
 
     async def test_bearer_auth_backend_authenticate_with_valid_token(
-        self, bearer_provider: BearerAuthProvider, valid_token: str
+        self, jwt_verifier: JWTVerifier, valid_token: str
     ):
         """Test BearerAuthBackend authentication with valid token."""
-        backend = BearerAuthBackend(bearer_provider)
+        backend = BearerAuthBackend(jwt_verifier)
 
         # Create mock HTTPConnection with Authorization header
         scope = {
@@ -66,10 +66,10 @@ class TestBearerAuthBackendTokenVerifierIntegration:
         assert user.access_token.token == valid_token
 
     async def test_bearer_auth_backend_authenticate_with_invalid_token(
-        self, bearer_provider: BearerAuthProvider
+        self, jwt_verifier: JWTVerifier
     ):
         """Test BearerAuthBackend authentication with invalid token."""
-        backend = BearerAuthBackend(bearer_provider)
+        backend = BearerAuthBackend(jwt_verifier)
 
         # Create mock HTTPConnection with invalid Authorization header
         scope = {
@@ -82,10 +82,10 @@ class TestBearerAuthBackendTokenVerifierIntegration:
         assert result is None
 
     async def test_bearer_auth_backend_authenticate_with_no_header(
-        self, bearer_provider: BearerAuthProvider
+        self, jwt_verifier: JWTVerifier
     ):
         """Test BearerAuthBackend authentication with no Authorization header."""
-        backend = BearerAuthBackend(bearer_provider)
+        backend = BearerAuthBackend(jwt_verifier)
 
         # Create mock HTTPConnection without Authorization header
         scope = {
@@ -98,10 +98,10 @@ class TestBearerAuthBackendTokenVerifierIntegration:
         assert result is None
 
     async def test_bearer_auth_backend_authenticate_with_non_bearer_token(
-        self, bearer_provider: BearerAuthProvider
+        self, jwt_verifier: JWTVerifier
     ):
         """Test BearerAuthBackend authentication with non-Bearer token."""
-        backend = BearerAuthBackend(bearer_provider)
+        backend = BearerAuthBackend(jwt_verifier)
 
         # Create mock HTTPConnection with Basic auth header
         scope = {
