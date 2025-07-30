@@ -122,7 +122,7 @@ def recording_middleware():
 def mcp_server(recording_middleware):
     mcp = FastMCP()
 
-    @mcp.tool
+    @mcp.tool(tags={"add-tool"})
     def add(a: int, b: int) -> int:
         return a + b
 
@@ -761,3 +761,27 @@ class TestProxyServer:
         assert recording_middleware.assert_called(hook="on_request", at_least=2)
         assert recording_middleware.assert_called(hook="on_call_tool", at_least=1)
         assert recording_middleware.assert_called(hook="on_list_tools", at_least=1)
+
+    async def test_proxied_tags_are_visible_to_middleware(
+        self, mcp_server: FastMCP, recording_middleware: RecordingMiddleware
+    ):
+        """Tests that tags on remote FastMCP servers are visible to middleware
+        via proxy. See https://github.com/jlowin/fastmcp/issues/1300"""
+        proxy_server = FastMCP.as_proxy(mcp_server, name="Proxy Server")
+
+        TAGS = []
+
+        class TagMiddleware(Middleware):
+            async def on_list_tools(self, context: MiddlewareContext, call_next):
+                nonlocal TAGS
+                result = await call_next(context)
+                for tool in result:
+                    TAGS.append(tool.tags)
+                return result
+
+        proxy_server.add_middleware(TagMiddleware())
+
+        async with Client(proxy_server) as client:
+            await client.list_tools()
+
+        assert TAGS == [{"add-tool"}, set(), set(), set()]
