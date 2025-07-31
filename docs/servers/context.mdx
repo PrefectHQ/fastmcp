@@ -222,8 +222,8 @@ async def secure_operation(data: str, ctx: Context) -> str:
 ```
 
 **Method signatures:**
-- **`ctx.set_state_value(key: str, value: Any) -> None`**: Store a value in the context state
-- **`ctx.get_state_value(key: str) -> Any`**: Retrieve a value from the context state (returns None if not found)
+- **`ctx.set_state(key: str, value: Any) -> None`**: Store a value in the context state
+- **`ctx.get_state(key: str) -> Any`**: Retrieve a value from the context state (returns None if not found)
 
 **State Inheritance:**
 When a new context is created (nested contexts), it inherits a copy of its parent's state. This ensures that:
