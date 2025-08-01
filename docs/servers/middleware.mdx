@@ -206,6 +206,30 @@ This filtering happens before the components are converted to MCP format and ret
 When filtering components in listing operations, ensure you also prevent execution of filtered components in the corresponding execution hooks (`on_call_tool`, `on_read_resource`, `on_get_prompt`) to maintain consistency.
 </Tip>
 
+### Tool Call Denial
+
+You can deny access to specific tools by raising a `ToolError` in your middleware. This is the correct way to block tool execution, as it integrates properly with the FastMCP error handling system.
+
+```python
+from fastmcp.server.middleware import Middleware, MiddlewareContext
+from fastmcp.exceptions import ToolError
+
+class AuthMiddleware(Middleware):
+    async def on_call_tool(self, context: MiddlewareContext, call_next):
+        tool_name = context.message.name
+        
+        # Deny access to restricted tools
+        if tool_name.lower() in ["delete", "admin_config"]:
+            raise ToolError("Access denied: tool requires admin privileges")
+        
+        # Allow other tools to proceed
+        return await call_next(context)
+```
+
+<Warning>
+When denying tool calls, always raise `ToolError` rather than returning `ToolResult` objects or other values. `ToolError` ensures proper error propagation through the middleware chain and converts to the correct MCP error response format.
+</Warning>
+
 ### Tool Call Modification
 
 For execution operations like tool calls, you can modify arguments before execution or transform results afterward:

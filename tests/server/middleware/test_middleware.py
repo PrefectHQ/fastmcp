@@ -6,6 +6,7 @@ import mcp.types
 import pytest
 
 from fastmcp import Client, FastMCP
+from fastmcp.exceptions import ToolError
 from fastmcp.server.context import Context
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.tools.tool import ToolResult
@@ -785,3 +786,109 @@ class TestProxyServer:
             await client.list_tools()
 
         assert TAGS == [{"add-tool"}, set(), set(), set()]
+
+
+class TestToolCallDenial:
+    """Test denying tool calls in middleware using ToolError."""
+
+    async def test_deny_tool_call_with_tool_error(self):
+        """Test that middleware can deny tool calls by raising ToolError."""
+
+        class AuthMiddleware(Middleware):
+            async def on_call_tool(
+                self,
+                context: MiddlewareContext[mcp.types.CallToolRequestParams],
+                call_next: CallNext[mcp.types.CallToolRequestParams, ToolResult],
+            ) -> ToolResult:
+                tool_name = context.message.name
+                if tool_name.lower() == "restricted_tool":
+                    raise ToolError("Access denied: tool is disabled")
+                return await call_next(context)
+
+        server = FastMCP("TestServer")
+
+        @server.tool
+        def allowed_tool(x: int) -> int:
+            """This tool is allowed."""
+            return x * 2
+
+        @server.tool
+        def restricted_tool(x: int) -> int:
+            """This tool should be denied by middleware."""
+            return x * 3
+
+        server.add_middleware(AuthMiddleware())
+
+        async with Client(server) as client:
+            # Allowed tool should work normally
+            result = await client.call_tool("allowed_tool", {"x": 5})
+            assert result.structured_content is not None
+            assert result.structured_content["result"] == 10
+
+            # Restricted tool should raise ToolError
+            with pytest.raises(ToolError) as exc_info:
+                await client.call_tool("restricted_tool", {"x": 5})
+
+            # Verify the error message is preserved
+            assert "Access denied: tool is disabled" in str(exc_info.value)
+
+    async def test_middleware_can_selectively_deny_tools(self):
+        """Test that middleware can deny specific tools while allowing others."""
+
+        denied_tools = set()
+
+        class SelectiveAuthMiddleware(Middleware):
+            async def on_call_tool(
+                self,
+                context: MiddlewareContext[mcp.types.CallToolRequestParams],
+                call_next: CallNext[mcp.types.CallToolRequestParams, ToolResult],
+            ) -> ToolResult:
+                tool_name = context.message.name
+
+                # Deny tools that start with "admin_"
+                if tool_name.startswith("admin_"):
+                    denied_tools.add(tool_name)
+                    raise ToolError(
+                        f"Access denied: {tool_name} requires admin privileges"
+                    )
+
+                return await call_next(context)
+
+        server = FastMCP("TestServer")
+
+        @server.tool
+        def public_tool(x: int) -> int:
+            """Public tool available to all."""
+            return x + 1
+
+        @server.tool
+        def admin_delete(item_id: str) -> str:
+            """Admin tool that should be denied."""
+            return f"Deleted {item_id}"
+
+        @server.tool
+        def admin_config(setting: str, value: str) -> str:
+            """Another admin tool that should be denied."""
+            return f"Set {setting} to {value}"
+
+        server.add_middleware(SelectiveAuthMiddleware())
+
+        async with Client(server) as client:
+            # Public tool should work
+            result = await client.call_tool("public_tool", {"x": 10})
+            assert result.structured_content is not None
+            assert result.structured_content["result"] == 11
+
+            # Admin tools should be denied
+            with pytest.raises(ToolError) as exc_info:
+                await client.call_tool("admin_delete", {"item_id": "test123"})
+            assert "requires admin privileges" in str(exc_info.value)
+
+            with pytest.raises(ToolError) as exc_info:
+                await client.call_tool(
+                    "admin_config", {"setting": "debug", "value": "true"}
+                )
+            assert "requires admin privileges" in str(exc_info.value)
+
+        # Verify both admin tools were denied
+        assert denied_tools == {"admin_delete", "admin_config"}
