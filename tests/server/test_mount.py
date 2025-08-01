@@ -629,7 +629,6 @@ class TestDynamicChanges:
 
         # The tool should no longer be accessible
         # Refresh the cache by clearing it
-        main_app._cache.cache.clear()
         tools = await main_app.get_tools()
         assert "sub_temp_tool" not in tools
 
