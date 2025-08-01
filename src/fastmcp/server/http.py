@@ -327,14 +327,6 @@ def create_streamable_http_app(
 
     # Add StreamableHTTP routes with or without auth
     if auth:
-        resource_metadata_url = None
-
-        if isinstance(auth, TokenVerifier) and auth.resource_server_url:
-            resource_metadata_url = AnyHttpUrl(
-                str(auth.resource_server_url).rstrip("/")
-                + "/.well-known/oauth-protected-resource"
-            )
-
         auth_middleware, auth_routes, required_scopes = (
             setup_auth_middleware_and_routes(auth)
         )
