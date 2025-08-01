@@ -156,7 +156,7 @@ def cursor_command(
     server_name: Annotated[
         str | None,
         cyclopts.Parameter(
-            name=["--server-name", "-n"],
+            name=["--name", "-n"],
             help="Custom name for the server in Cursor",
         ),
     ] = None,

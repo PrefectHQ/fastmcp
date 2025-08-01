@@ -37,7 +37,7 @@ class TestClaudeCodeInstall:
         """Test basic claude-code install command parsing."""
         # Parse command with correct parameter names
         command, bound, _ = install_app.parse_args(
-            ["claude-code", "server.py", "--server-name", "test-server"]
+            ["claude-code", "server.py", "--name", "test-server"]
         )
 
         # Verify parsing was successful
@@ -51,7 +51,7 @@ class TestClaudeCodeInstall:
             [
                 "claude-code",
                 "server.py",
-                "--server-name",
+                "--name",
                 "test-server",
                 "--with",
                 "package1",
@@ -93,7 +93,7 @@ class TestClaudeDesktopInstall:
     def test_claude_desktop_basic(self):
         """Test basic claude-desktop install command parsing."""
         command, bound, _ = install_app.parse_args(
-            ["claude-desktop", "server.py", "--server-name", "test-server"]
+            ["claude-desktop", "server.py", "--name", "test-server"]
         )
 
         assert command is not None
@@ -106,7 +106,7 @@ class TestClaudeDesktopInstall:
             [
                 "claude-desktop",
                 "server.py",
-                "--server-name",
+                "--name",
                 "test-server",
                 "--env",
                 "VAR1=value1",
@@ -145,7 +145,7 @@ class TestCursorInstall:
     def test_cursor_basic(self):
         """Test basic cursor install command parsing."""
         command, bound, _ = install_app.parse_args(
-            ["cursor", "server.py", "--server-name", "test-server"]
+            ["cursor", "server.py", "--name", "test-server"]
         )
 
         assert command is not None
@@ -155,7 +155,7 @@ class TestCursorInstall:
     def test_cursor_with_options(self):
         """Test cursor install with options."""
         command, bound, _ = install_app.parse_args(
-            ["cursor", "server.py", "--server-name", "test-server"]
+            ["cursor", "server.py", "--name", "test-server"]
         )
 
         assert bound.arguments["server_spec"] == "server.py"
