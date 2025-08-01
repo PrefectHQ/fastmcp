@@ -1,7 +1,7 @@
 ---
 title: Eunomia Authorization 🤝 FastMCP
 sidebarTitle: Eunomia Auth
-description: Add policy-based authorization to your FastMCP servers
+description: Add policy-based authorization to your FastMCP servers with Eunomia
 icon: shield-check
 tag: NEW
 ---
@@ -12,7 +12,7 @@ Control which tools, resources and prompts MCP clients can view and execute on y
 
 ## How it Works
 
-Exploiting FastMCP's [Middleware][fastmcp-middleare], the Eunomia middleware intercepts all MCP requests to your server and, then, automatically maps MCP methods to authorization checks.
+Exploiting FastMCP's [Middleware][fastmcp-middleare], the Eunomia middleware intercepts all MCP requests to your server and automatically maps MCP methods to authorization checks.
 
 ### Listing Operations
 
@@ -56,13 +56,7 @@ sequenceDiagram
 ## Add Authorization to Your Server
 
 <Note>
-Eunomia is an AI-specific standalone authorization server that handles policy decisions. You must have an Eunomia server running alongside your FastMCP server for the middleware to function.
-
-Run it in the background with Docker:
-
-```bash
-docker run -d -p 8000:8000 ttommitt/eunomia-server:latest
-```
+Eunomia is an AI-specific authorization server that handles policy decisions. The server runs embedded within your MCP server by default for a zero-effort configuration, but can alternatively be run remotely for centralized policy decisions.
 
 </Note>
 
@@ -78,17 +72,19 @@ Then create a FastMCP server and add the Eunomia middleware in one line:
 
 ```python server.py
 from fastmcp import FastMCP
-from eunomia_mcp import EunomiaMcpMiddleware
+from eunomia_mcp import create_eunomia_middleware
 
-mcp = FastMCP("Secure FastMCP Server 🔒")
+# Create your FastMCP server
+mcp = FastMCP("Secure MCP Server 🔒")
 
 @mcp.tool()
 def add(a: int, b: int) -> int:
     """Add two numbers"""
     return a + b
 
-middleware = EunomiaMcpMiddleware()
-app = mcp.add_middleware(middleware)
+# Add middleware to your server
+middleware = create_eunomia_middleware(policy_file="mcp_policies.json")
+mcp.add_middleware(middleware)
 
 if __name__ == "__main__":
     mcp.run()
@@ -99,18 +95,18 @@ if __name__ == "__main__":
 Use the `eunomia-mcp` CLI in your terminal to manage your authorization policies:
 
 ```bash
-# Create a default policy configuration file
+# Create a default policy file
 eunomia-mcp init
+
+# Or create a policy file customized for your FastMCP server
+eunomia-mcp init --custom-mcp "app.server:mcp"
 ```
 
-This creates a policy file you can customize to control access to your MCP tools and resources.
+This creates `mcp_policies.json` file that you can further edit to your access control needs.
 
 ```bash
-# Once ready, validate your policy
+# Once edited, validate your policy file
 eunomia-mcp validate mcp_policies.json
-
-# And push it to the Eunomia server
-eunomia-mcp push mcp_policies.json
 ```
 
 ### Run the Server
@@ -124,8 +120,8 @@ python server.py
 The middleware will now intercept all MCP requests and check them against your policies. Requests include agent identification through headers like `X-Agent-ID`, `X-User-ID`, `User-Agent`, or `Authorization` and an automatic mapping of MCP methods to authorization resources and actions.
 
 <Tip>
-  For detailed policy configuration, custom authentication, and advanced
-  deployment patterns, visit the [Eunomia MCP Middleware
+  For detailed policy configuration, custom authentication, and remote
+  deployments, visit the [Eunomia MCP Middleware
   repository][eunomia-mcp-github].
 </Tip>
 
