@@ -5,8 +5,11 @@ import json
 import re
 import subprocess
 import sys
+from functools import partial
 from pathlib import Path
 from typing import Any, Literal
+
+from mcp.server.fastmcp import FastMCP as FastMCP1x
 
 from fastmcp.server.server import FastMCP
 from fastmcp.utilities.logging import get_logger
@@ -295,6 +298,12 @@ def run_command(
         logger.debug(f'Found server "{server.name}" in {file}')
 
     # Run the server
+
+    # handle v1 servers
+    if isinstance(server, FastMCP1x):
+        run_v1_server(server, host=host, port=port, transport=transport)
+        return
+
     kwargs = {}
     if transport:
         kwargs["transport"] = transport
@@ -315,3 +324,24 @@ def run_command(
     except Exception as e:
         logger.error(f"Failed to run server: {e}")
         sys.exit(1)
+
+
+def run_v1_server(
+    server: FastMCP1x,
+    host: str | None = None,
+    port: int | None = None,
+    transport: TransportType | None = None,
+) -> None:
+    if host:
+        server.settings.host = host
+    if port:
+        server.settings.port = port
+    match transport:
+        case "stdio":
+            runner = partial(server.run)
+        case "http" | "streamable-http" | None:
+            runner = partial(server.run, transport="streamable-http")
+        case "sse":
+            runner = partial(server.run, transport="sse")
+
+    runner()
