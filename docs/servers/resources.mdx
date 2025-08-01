@@ -502,7 +502,7 @@ def search_resources(query: str, max_results: int = 10, include_archived: bool =
 
 With this template, clients can request `search://python` and the function will be called with `query="python", max_results=10, include_archived=False`. MCP Developers can still call the underlying `search_resources` function directly with more specific parameters.
 
-An even more powerful pattern is registering a single function with multiple URI templates, allowing different ways to access the same data:
+You can also create multiple resource templates that provide different ways to access the same underlying data by manually applying decorators to a single function:
 
 ```python
 from fastmcp import FastMCP
@@ -510,27 +510,25 @@ from fastmcp import FastMCP
 mcp = FastMCP(name="DataServer")
 
 # Define a user lookup function that can be accessed by different identifiers
-@mcp.resource("users://email/{email}")
-@mcp.resource("users://name/{name}")
 def lookup_user(name: str | None = None, email: str | None = None) -> dict:
     """Look up a user by either name or email."""
     if email:
-        return find_user_by_email(email) # pseudocode
+        return find_user_by_email(email)  # pseudocode
     elif name:
-        return find_user_by_name(name) # pseudocode
+        return find_user_by_name(name)  # pseudocode
     else:
         return {"error": "No lookup parameters provided"}
+
+# Manually apply multiple decorators to the same function
+mcp.resource("users://email/{email}")(lookup_user)
+mcp.resource("users://name/{name}")(lookup_user)
 ```
 
 Now an LLM or client can retrieve user information in two different ways:
 - `users://email/alice@example.com` → Looks up user by email (with name=None)
 - `users://name/Bob` → Looks up user by name (with email=None)
 
-In this stacked decorator pattern:
-- The `name` parameter is only provided when using the `users://name/{name}` template
-- The `email` parameter is only provided when using the `users://email/{email}` template
-- Each parameter defaults to `None` when not included in the URI
-- The function logic handles whichever parameter is provided
+This approach allows a single function to be registered with multiple URI patterns while keeping the implementation clean and straightforward.
 
 Templates provide a powerful way to expose parameterized data access points following REST-like principles.
 
