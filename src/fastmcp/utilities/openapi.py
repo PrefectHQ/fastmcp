@@ -1,5 +1,4 @@
 import json
-import logging
 from typing import Any, Generic, Literal, TypeVar, cast
 
 from openapi_pydantic import (
@@ -24,9 +23,10 @@ from openapi_pydantic.v3.v3_0 import Response as Response_30
 from openapi_pydantic.v3.v3_0 import Schema as Schema_30
 from pydantic import BaseModel, Field, ValidationError
 
+from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import FastMCPBaseModel
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # --- Intermediate Representation (IR) Definition ---
 # (IR models remain the same)

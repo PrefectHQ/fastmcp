@@ -6,10 +6,11 @@ to JSON Schema, inspired by py-openapi-schema-to-json-schema but optimized
 for our specific use case.
 """
 
-import logging
 from typing import Any
 
-logger = logging.getLogger(__name__)
+from fastmcp.utilities.logging import get_logger
+
+logger = get_logger(__name__)
 
 # OpenAPI-specific fields that should be removed from JSON Schema
 OPENAPI_SPECIFIC_FIELDS = {

@@ -1,11 +1,12 @@
 """Schema manipulation utilities for OpenAPI operations."""
 
-import logging
 from typing import Any
+
+from fastmcp.utilities.logging import get_logger
 
 from .models import HTTPRoute, JsonSchema, ResponseInfo
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def clean_schema_for_display(schema: JsonSchema | None) -> JsonSchema | None:

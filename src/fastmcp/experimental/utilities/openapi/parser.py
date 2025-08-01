@@ -1,6 +1,5 @@
 """OpenAPI parsing logic for converting OpenAPI specs to HTTPRoute objects."""
 
-import logging
 from typing import Any, Generic, TypeVar
 
 from openapi_pydantic import (
@@ -25,6 +24,8 @@ from openapi_pydantic.v3.v3_0 import Response as Response_30
 from openapi_pydantic.v3.v3_0 import Schema as Schema_30
 from pydantic import BaseModel, ValidationError
 
+from fastmcp.utilities.logging import get_logger
+
 from .models import (
     HTTPRoute,
     JsonSchema,
@@ -35,7 +36,7 @@ from .models import (
 )
 from .schemas import _combine_schemas_and_map_params, _replace_ref_with_defs
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # Type variables for generic parser
 TOpenAPI = TypeVar("TOpenAPI", OpenAPI, OpenAPI_30)
