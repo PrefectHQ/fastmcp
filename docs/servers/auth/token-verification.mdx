@@ -1,0 +1,210 @@
+---
+title: Token Verification
+sidebarTitle: Token Verification
+description: Protect your server by validating bearer tokens.
+icon: key
+---
+
+import { VersionBadge } from "/snippets/version-badge.mdx"
+
+<VersionBadge version="2.11.0" />
+
+In the **Token Verification** pattern, your FastMCP server acts as a pure **Resource Server**. It validates Bearer tokens on incoming requests and uses the token claims to authorize access to protected resources (tools, resources, and prompts). It does not participate in user login, token issuance, or consent flows - it trusts tokens issued by another system. This is equivalent to how a traditional web server validates API keys on incoming requests.
+
+This is the right pattern if you have another system responsible for generating tokens and you simply need your FastMCP server to trust them or use the information in the token to make decisions.
+
+## JWT Verification
+
+JWT (JSON Web Token) verification is the recommended approach for production environments. The `JWTVerifier` class validates tokens using secure, asymmetric public key cryptography. This means your server only needs access to a public key to verify tokens, while the corresponding private key used for signing remains secure on your identity provider.
+
+### Using the JWTVerifier
+
+The most common and flexible approach is to point the verifier at a **JSON Web Key Set (JWKS)** endpoint. This allows your identity provider to rotate signing keys automatically without requiring you to update your server's configuration.
+
+<CodeGroup>
+```python Using a JWKS Endpoint (Recommended)
+from fastmcp import FastMCP
+from fastmcp.server.auth.providers.jwt import JWTVerifier
+
+# The verifier will periodically fetch keys from this URL 
+# to validate incoming tokens.
+verifier = JWTVerifier(
+    jwks_uri="https://my-identity-provider.com/.well-known/jwks.json",
+    issuer="https://my-identity-provider.com/",
+    audience="my-mcp-server-identifier"
+)
+
+mcp = FastMCP(name="My Secure Server", auth=verifier)
+```
+
+```python Using a Static Public Key
+from fastmcp import FastMCP
+from fastmcp.server.auth.providers.jwt import JWTVerifier
+
+# This public key corresponds to the private key used by your token issuer.
+# Use this only if a JWKS endpoint is not available.
+public_key_pem = """-----BEGIN PUBLIC KEY-----
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAy...
+-----END PUBLIC KEY-----"""
+
+verifier = JWTVerifier(
+    public_key=public_key_pem,
+    issuer="https://my-identity-provider.com/",
+    audience="my-mcp-server-identifier"
+)
+
+mcp = FastMCP(name="My Secure Server", auth=verifier)
+```
+</CodeGroup>
+
+<Card icon="code" title="JWTVerifier Constructor">
+<ResponseField name="JWTVerifier" type="class">
+  <Expandable title="Parameters">
+    <ResponseField name="public_key" type="str | None">
+      PEM-encoded public key for JWT verification. Use this for static public key configuration. Cannot be used together with `jwks_uri`.
+    </ResponseField>
+    
+    <ResponseField name="jwks_uri" type="str | None">
+      URI to fetch JSON Web Key Set (JWKS) for automatic key rotation. Cannot be used together with `public_key`.
+    </ResponseField>
+    
+    <ResponseField name="issuer" type="str | None">
+      Expected JWT issuer claim (`iss`) for validation. If provided, tokens must have a matching issuer.
+    </ResponseField>
+    
+    <ResponseField name="audience" type="str | list[str] | None">
+      Expected JWT audience claim (`aud`) for validation. Can be a single string or list of accepted audiences.
+    </ResponseField>
+    
+    <ResponseField name="algorithm" type="str | None" default="RS256">
+      JWT signing algorithm (e.g., RS256, HS256, ES256, PS256)
+    </ResponseField>
+    
+    <ResponseField name="required_scopes" type="list[str] | None">
+      List of scopes that all tokens must have. Tokens missing any required scope will be rejected.
+    </ResponseField>
+    
+    <ResponseField name="resource_server_url" type="str | None">
+      Resource server URL for OAuth protocol compliance
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+</Card>
+
+### Environment Variable Configuration
+
+You can configure the `JWTVerifier` entirely through environment variables. Set `FASTMCP_SERVER_AUTH=JWT` to enable automatic configuration, then provide the verifier's settings.
+
+Example configuration:
+```bash
+export FASTMCP_SERVER_AUTH=JWT
+export FASTMCP_SERVER_AUTH_JWT_JWKS_URI="https://your-idp.com/.well-known/jwks.json"
+export FASTMCP_SERVER_AUTH_JWT_ISSUER="https://your-idp.com"
+export FASTMCP_SERVER_AUTH_JWT_AUDIENCE="your-server-id"
+```
+
+Your FastMCP server will now be automatically configured with JWT verification:
+```python
+from fastmcp import FastMCP
+
+# This server is automatically protected with JWT verification 
+# based on the environment variables.
+mcp = FastMCP(name="My Protected Server")
+```
+
+<Expandable title="JWTVerifier Environment Variables">
+<ParamField body="FASTMCP_SERVER_AUTH_JWT_PUBLIC_KEY" type="str">
+  PEM-encoded public key for JWT verification. Use this for static public key configuration.
+</ParamField>
+
+<ParamField body="FASTMCP_SERVER_AUTH_JWT_JWKS_URI" type="str">
+  URI to fetch JSON Web Key Set (JWKS). Use this for automatic key rotation support.
+</ParamField>
+
+<ParamField body="FASTMCP_SERVER_AUTH_JWT_ISSUER" type="str">
+  Expected JWT issuer claim for validation
+</ParamField>
+
+<ParamField body="FASTMCP_SERVER_AUTH_JWT_AUDIENCE" type="str">
+  Expected JWT audience claim for validation
+</ParamField>
+
+<ParamField body="FASTMCP_SERVER_AUTH_JWT_ALGORITHM" type="str" default="RS256">
+  JWT signing algorithm (e.g., RS256, HS256, ES256)
+</ParamField>
+
+<ParamField body="FASTMCP_SERVER_AUTH_JWT_REQUIRED_SCOPES" type="str">
+  Comma-separated list of required scopes that all tokens must have
+</ParamField>
+
+<ParamField body="FASTMCP_SERVER_AUTH_JWT_RESOURCE_SERVER_URL" type="str">
+  Resource server URL for OAuth protocol compliance
+</ParamField>
+</Expandable>
+
+## Development Tools
+
+For local development and testing, managing JWTs can be cumbersome. FastMCP provides simpler tools for these scenarios.
+
+### Static Token Verification
+
+The `StaticTokenVerifier` validates tokens against a hardcoded set of tokens and claims. It's perfect for quickly getting a secure server running in your local environment for testing or prototyping without the complexity of a real identity provider.
+
+
+<Warning>
+**Never use static token verification in production.** Tokens are stored as plain text strings, which is highly insecure.
+</Warning>
+
+To use the static token verifier, you need to provide a dictionary of tokens and their claims. Each key of the dictionary is a token, and the value is a dictionary of token data. Note that the tokens will be stored as plain text strings and validated as-is. For example, the following configuration would recognize a token provided in the `Authorization` header as `Bearer dev-token-for-alice` and load `alice@example.com` as the client ID:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.auth.providers.jwt import StaticTokenVerifier
+
+verifier = StaticTokenVerifier(
+    tokens={
+        "dev-token-for-alice": {
+            "client_id": "alice@example.com",
+            "scopes": ["read:data", "write:data"]
+        },
+        "readonly-token-for-guest": {
+            "client_id": "guest-user",
+            "scopes": ["read:data"]
+        }
+    },
+    required_scopes=["read:data"] # Optionally enforce a base scope for all tokens.
+)
+
+mcp = FastMCP(name="Development Server", auth=verifier)
+```
+
+### Generating Test Tokens
+
+To help test a `JWTVerifier`-protected server, FastMCP includes a simple `RSAKeyPair` utility to generate a key pair and sign your own JWTs. This is for convenience in development and is not intended for production use.
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.auth.providers.jwt import JWTVerifier, RSAKeyPair
+
+# 1. In a secure part of your test setup, generate a key pair.
+key_pair = RSAKeyPair.generate()
+
+# 2. Configure your FastMCP server's verifier with the PUBLIC key.
+auth_verifier = JWTVerifier(
+    public_key=key_pair.public_key,
+    issuer="https://dev.fastmcp.com",
+    audience="test-server"
+)
+mcp = FastMCP(name="Test Server", auth=auth_verifier)
+
+# 3. Use the PRIVATE key to create a valid token for your client tests.
+test_token = key_pair.create_token(
+    subject="test-user-123",
+    issuer="https://dev.fastmcp.com",
+    audience="test-server",
+    scopes=["read", "write"]
+)
+
+print(f"Generated Test Token:\n{test_token}")
+```
+

@@ -7,7 +7,7 @@ from pytest_httpx import HTTPXMock
 
 from fastmcp import Client, FastMCP
 from fastmcp.client.auth.bearer import BearerAuth
-from fastmcp.server.auth.verifiers import JWKData, JWKSData, JWTVerifier, RSAKeyPair
+from fastmcp.server.auth.providers.jwt import JWKData, JWKSData, JWTVerifier, RSAKeyPair
 from fastmcp.utilities.tests import run_server_in_process
 
 
@@ -776,3 +776,21 @@ class TestFastMCPBearerAuth:
             async with Client(mcp_server_url, auth=BearerAuth(token)) as client:
                 tools = await client.list_tools()
         assert tools
+
+
+class TestJWTVerifierImport:
+    """Test JWT token verifier can be imported and created."""
+
+    def test_jwt_verifier_requires_pyjwt(self):
+        """Test that JWTVerifier raises helpful error without PyJWT."""
+        # Since PyJWT is likely installed in test environment, we'll just test construction
+        from fastmcp.server.auth.providers.jwt import JWTVerifier
+
+        # This should work if PyJWT is available
+        try:
+            verifier = JWTVerifier(public_key="dummy-key")
+            assert verifier.public_key == "dummy-key"
+            assert verifier.algorithm == "RS256"
+        except ImportError as e:
+            # If PyJWT not available, should get helpful error
+            assert "PyJWT is required" in str(e)

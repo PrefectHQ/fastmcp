@@ -120,12 +120,12 @@ The MCP connector supports OAuth authentication through authorization tokens, wh
 
 The simplest way to add authentication to the server is to use a bearer token scheme. 
 
-For this example, we'll quickly generate our own tokens with FastMCP's `RSAKeyPair` utility, but this may not be appropriate for production use. For more details, see the complete server-side [Bearer Auth](/servers/auth/bearer) documentation. 
+For this example, we'll quickly generate our own tokens with FastMCP's `RSAKeyPair` utility, but this may not be appropriate for production use. For more details, see the complete server-side [Token Verification](/servers/auth/token-verification) documentation. 
 
 We'll start by creating an RSA key pair to sign and verify tokens.
 
 ```python
-from fastmcp.server.auth.verifiers import RSAKeyPair
+from fastmcp.server.auth.providers.jwt import RSAKeyPair
 
 key_pair = RSAKeyPair.generate()
 access_token = key_pair.create_token(audience="dice-server")
@@ -154,7 +154,7 @@ Here is a complete example that you can copy/paste. For simplicity and the purpo
 ```python server.py [expandable]
 from fastmcp import FastMCP
 from fastmcp.server.auth import JWTVerifier
-from fastmcp.server.auth.verifiers import RSAKeyPair
+from fastmcp.server.auth.providers.jwt import RSAKeyPair
 import random
 
 key_pair = RSAKeyPair.generate()

@@ -7,7 +7,7 @@ from starlette.middleware import Middleware
 from starlette.middleware.authentication import AuthenticationMiddleware
 
 from fastmcp.server.auth.providers.in_memory import InMemoryOAuthProvider
-from fastmcp.server.auth.verifiers import JWTVerifier, RSAKeyPair
+from fastmcp.server.auth.providers.jwt import JWTVerifier, RSAKeyPair
 from fastmcp.server.http import setup_auth_middleware_and_routes
 
 
@@ -29,7 +29,7 @@ class TestSetupAuthMiddlewareAndRoutes:
     def in_memory_provider(self) -> InMemoryOAuthProvider:
         """Create InMemoryOAuthProvider for testing."""
         return InMemoryOAuthProvider(
-            issuer_url="https://test.example.com",
+            base_url="https://test.example.com",
             required_scopes=["user"],
         )
 
@@ -127,6 +127,10 @@ class MockOAuthProvider:
                 expires_at=None,
             )
         return None
+
+    def customize_auth_routes(self, routes):
+        """Mock customize_auth_routes implementation."""
+        return routes
 
 
 class TestSetupWithMockProvider:

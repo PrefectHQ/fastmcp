@@ -73,7 +73,6 @@ Documentation = "https://gofastmcp.com"
 [project.optional-dependencies]
 websockets = ["websockets>=15.0.1"]
 
-
 [build-system]
 requires = ["hatchling", "uv-dynamic-versioning>=0.7.0"]
 build-backend = "hatchling.build"

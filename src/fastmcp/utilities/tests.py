@@ -8,10 +8,13 @@ import time
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, Literal
+from urllib.parse import parse_qs, urlparse
 
+import httpx
 import uvicorn
 
 from fastmcp import settings
+from fastmcp.client.auth.oauth import OAuth
 from fastmcp.utilities.http import find_available_port
 
 if TYPE_CHECKING:
@@ -139,3 +142,51 @@ def caplog_for_fastmcp(caplog):
         yield
     finally:
         logger.removeHandler(caplog.handler)
+
+
+class HeadlessOAuth(OAuth):
+    """
+    OAuth provider that bypasses browser interaction for testing.
+
+    This simulates the complete OAuth flow programmatically by making HTTP requests
+    instead of opening a browser and running a callback server. Useful for automated testing.
+    """
+
+    def __init__(self, mcp_url: str, **kwargs):
+        """Initialize HeadlessOAuth with stored response tracking."""
+        self._stored_response = None
+        super().__init__(mcp_url, **kwargs)
+
+    async def redirect_handler(self, authorization_url: str) -> None:
+        """Make HTTP request to authorization URL and store response for callback handler."""
+        async with httpx.AsyncClient() as client:
+            response = await client.get(authorization_url, follow_redirects=False)
+            self._stored_response = response
+
+    async def callback_handler(self) -> tuple[str, str | None]:
+        """Parse stored response and return (auth_code, state)."""
+        if not self._stored_response:
+            raise RuntimeError(
+                "No authorization response stored. redirect_handler must be called first."
+            )
+
+        response = self._stored_response
+
+        # Extract auth code from redirect location
+        if response.status_code == 302:
+            redirect_url = response.headers["location"]
+            parsed = urlparse(redirect_url)
+            query_params = parse_qs(parsed.query)
+
+            if "error" in query_params:
+                error = query_params["error"][0]
+                error_desc = query_params.get("error_description", ["Unknown error"])[0]
+                raise RuntimeError(
+                    f"OAuth authorization failed: {error} - {error_desc}"
+                )
+
+            auth_code = query_params["code"][0]
+            state = query_params.get("state", [None])[0]
+            return auth_code, state
+        else:
+            raise RuntimeError(f"Authorization failed: {response.status_code}")

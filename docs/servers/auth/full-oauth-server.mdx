@@ -1,0 +1,128 @@
+---
+title: Full OAuth Server
+sidebarTitle: Full OAuth Server
+description: Build a self-contained authentication system where your FastMCP server manages users, issues tokens, and validates them.
+icon: users-between-lines
+---
+
+import { VersionBadge } from "/snippets/version-badge.mdx"
+
+<VersionBadge version="2.11.0" />
+
+<Warning>
+**This is an extremely advanced pattern.** Building a secure, production-ready OAuth 2.1 server is a complex undertaking that requires deep expertise in authentication protocols, cryptography, and security best practices.
+
+This pattern exists primarily to support the MCP protocol specification's requirements. **Most users should strongly prefer the [Remote Authentication pattern](/servers/auth/remote-authentication)** to integrate with a dedicated identity provider like WorkOS, Auth0, or Okta.
+</Warning>
+
+In the **Full OAuth Server** pattern, your FastMCP server acts as both the **Authorization Server (AS)** and the **Resource Server (RS)**. It becomes responsible for the entire authentication lifecycle:
+
+- **User Management**: Storing user credentials, profiles, and permissions
+- **Client Registration**: Managing MCP client applications and their credentials  
+- **Authentication Flow**: Handling login pages, multi-factor authentication, and user consent
+- **Token Lifecycle**: Issuing, refreshing, and revoking access tokens
+- **Security Controls**: Rate limiting, audit logging, and threat detection
+
+This pattern should only be considered if you have strict requirements that prevent using external identity providers, such as air-gapped environments or highly specialized compliance needs.
+
+## Building an OAuth Provider
+
+To implement this pattern, you must subclass `fastmcp.server.auth.auth.OAuthProvider` and implement all of its abstract methods. This class extends the low-level OAuth authorization server interface and requires implementing the complete OAuth 2.1 specification.
+
+```python
+from fastmcp.server.auth.auth import OAuthProvider
+from mcp.server.auth.provider import (
+    AccessToken, AuthorizationCode, RefreshToken, AuthorizationParams
+)
+from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
+
+class MyOAuthProvider(OAuthProvider):
+    """
+    A production OAuth provider implementation.
+    
+    WARNING: This is a simplified example. A real implementation
+    requires extensive security considerations, persistent storage,
+    proper error handling, and adherence to OAuth 2.1 security
+    best practices.
+    """
+    
+    def __init__(self, base_url: str):
+        super().__init__(base_url=base_url)
+        # Initialize your database connections, cryptographic keys, etc.
+    
+    # === Client Management ===
+    async def get_client(self, client_id: str) -> OAuthClientInformationFull | None:
+        """Retrieve client information by ID from your database."""
+        # Query your client database and return client info or None if not found
+        raise NotImplementedError
+    
+    async def register_client(self, client_info: OAuthClientInformationFull) -> None:
+        """Store new client registration information."""
+        # Validate and save client metadata to your database
+        # May raise RegistrationError if client data is invalid
+        raise NotImplementedError
+    
+    # === Authorization Flow ===
+    async def authorize(
+        self, client: OAuthClientInformationFull, params: AuthorizationParams
+    ) -> str:
+        """
+        Handle authorization request and return redirect URL.
+        
+        Many implementations redirect to a third-party OAuth provider, creating
+        a chain: Client -> MCP Server -> External IdP -> MCP Server -> Client.
+        You must generate an authorization code with at least 128 bits of entropy.
+        """
+        # Authenticate user, get consent, generate auth code, return redirect URL
+        raise NotImplementedError
+    
+    async def load_authorization_code(
+        self, client: OAuthClientInformationFull, authorization_code: str
+    ) -> AuthorizationCode | None:
+        """Load authorization code from storage by code string."""
+        # Look up stored authorization code, return None if not found or expired
+        raise NotImplementedError
+    
+    # === Token Management ===
+    async def exchange_authorization_code(
+        self, client: OAuthClientInformationFull, authorization_code: AuthorizationCode
+    ) -> OAuthToken:
+        """Exchange authorization code for access and refresh tokens."""
+        # Validate code, generate new token pair, invalidate the auth code
+        raise NotImplementedError
+    
+    async def load_refresh_token(
+        self, client: OAuthClientInformationFull, refresh_token: str
+    ) -> RefreshToken | None:
+        """Load refresh token from storage by token string."""
+        # Look up refresh token, return None if not found or expired
+        raise NotImplementedError
+    
+    async def exchange_refresh_token(
+        self, 
+        client: OAuthClientInformationFull, 
+        refresh_token: RefreshToken,
+        scopes: list[str]
+    ) -> OAuthToken:
+        """Exchange refresh token for new access/refresh token pair."""
+        # Should rotate both tokens for security best practices
+        raise NotImplementedError
+    
+    async def load_access_token(self, token: str) -> AccessToken | None:
+        """Load and validate access token - called on every protected request."""
+        # Look up token, check expiration, return None if invalid
+        raise NotImplementedError
+    
+    async def revoke_token(self, token: AccessToken | RefreshToken) -> None:
+        """Revoke access or refresh token."""
+        # Should revoke both access and refresh tokens regardless of which is provided
+        # Do nothing if token is already invalid or revoked
+        raise NotImplementedError
+    
+    # === Token Verification (AuthProvider interface) ===
+    async def verify_token(self, token: str) -> AccessToken | None:
+        """Verify bearer token for incoming requests."""
+        # This is called on every protected MCP request
+        # Typically delegates to load_access_token
+        return await self.load_access_token(token)
+```

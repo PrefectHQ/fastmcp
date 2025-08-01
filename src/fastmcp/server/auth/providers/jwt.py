@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 import httpx
 from authlib.jose import JsonWebKey, JsonWebToken
@@ -12,11 +12,12 @@ from authlib.jose.errors import JoseError
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from mcp.server.auth.provider import AccessToken
-from pydantic import AnyHttpUrl, SecretStr, ValidationError
+from pydantic import AnyHttpUrl, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing_extensions import TypedDict
 
 from fastmcp.server.auth.auth import TokenVerifier
+from fastmcp.server.auth.registry import register_provider
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import NotSet, NotSetT
 
@@ -136,13 +137,29 @@ class RSAKeyPair:
         token_bytes = jwt_lib.encode(
             header, payload, self.private_key.get_secret_value()
         )
-        return (
-            token_bytes.decode("utf-8")
-            if isinstance(token_bytes, bytes)
-            else token_bytes
-        )
+
+        return token_bytes.decode("utf-8")
 
 
+class JWTVerifierSettings(BaseSettings):
+    """Settings for JWT token verification."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="FASTMCP_SERVER_AUTH_JWT_",
+        env_file=".env",
+        extra="ignore",
+    )
+
+    public_key: str | None = None
+    jwks_uri: str | None = None
+    issuer: str | None = None
+    algorithm: str | None = None
+    audience: str | list[str] | None = None
+    required_scopes: list[str] | None = None
+    resource_server_url: AnyHttpUrl | str | None = None
+
+
+@register_provider("JWT")
 class JWTVerifier(TokenVerifier):
     """
     JWT token verifier using public key or JWKS.
@@ -161,13 +178,14 @@ class JWTVerifier(TokenVerifier):
 
     def __init__(
         self,
-        public_key: str | None = None,
-        jwks_uri: str | None = None,
-        issuer: str | None = None,
-        audience: str | list[str] | None = None,
-        algorithm: str | None = None,
-        required_scopes: list[str] | None = None,
-        resource_server_url: AnyHttpUrl | str | None = None,
+        *,
+        public_key: str | None | NotSetT = NotSet,
+        jwks_uri: str | None | NotSetT = NotSet,
+        issuer: str | None | NotSetT = NotSet,
+        audience: str | list[str] | None | NotSetT = NotSet,
+        algorithm: str | None | NotSetT = NotSet,
+        required_scopes: list[str] | None | NotSetT = NotSet,
+        resource_server_url: AnyHttpUrl | str | None | NotSetT = NotSet,
     ):
         """
         Initialize the JWT token verifier.
@@ -181,14 +199,29 @@ class JWTVerifier(TokenVerifier):
             required_scopes: Required scopes for all tokens
             resource_server_url: Resource server URL for TokenVerifier protocol
         """
-        if not public_key and not jwks_uri:
+        settings = JWTVerifierSettings.model_validate(
+            {
+                k: v
+                for k, v in {
+                    "public_key": public_key,
+                    "jwks_uri": jwks_uri,
+                    "issuer": issuer,
+                    "audience": audience,
+                    "algorithm": algorithm,
+                    "required_scopes": required_scopes,
+                    "resource_server_url": resource_server_url,
+                }.items()
+                if v is not NotSet
+            }
+        )
+
+        if not settings.public_key and not settings.jwks_uri:
             raise ValueError("Either public_key or jwks_uri must be provided")
 
-        if public_key and jwks_uri:
+        if settings.public_key and settings.jwks_uri:
             raise ValueError("Provide either public_key or jwks_uri, not both")
 
-        if not algorithm:
-            algorithm = "RS256"
+        algorithm = settings.algorithm or "RS256"
         if algorithm not in {
             "HS256",
             "HS384",
@@ -207,14 +240,15 @@ class JWTVerifier(TokenVerifier):
 
         # Initialize parent TokenVerifier
         super().__init__(
-            resource_server_url=resource_server_url, required_scopes=required_scopes
+            resource_server_url=settings.resource_server_url,
+            required_scopes=settings.required_scopes,
         )
 
         self.algorithm = algorithm
-        self.issuer = issuer
-        self.audience = audience
-        self.public_key = public_key
-        self.jwks_uri = jwks_uri
+        self.issuer = settings.issuer
+        self.audience = settings.audience
+        self.public_key = settings.public_key
+        self.jwks_uri = settings.jwks_uri
         self.jwt = JsonWebToken([self.algorithm])
         self.logger = get_logger(__name__)
 
@@ -377,7 +411,7 @@ class JWTVerifier(TokenVerifier):
                         )
                     else:
                         # aud is a string - check if it's in our expected list
-                        audience_valid = aud in self.audience
+                        audience_valid = aud in cast(list, self.audience)
                 else:
                     # self.audience is a string - use original logic
                     if isinstance(aud, list):
@@ -437,220 +471,6 @@ class JWTVerifier(TokenVerifier):
             AccessToken object if valid, None if invalid or expired
         """
         return await self.load_access_token(token)
-
-
-class JWTVerifierSettings(BaseSettings):
-    """Settings for the BearerAuthProvider."""
-
-    model_config = SettingsConfigDict(
-        env_prefix="FASTMCP_AUTH_JWT_",
-        env_file=".env",
-        extra="ignore",
-    )
-
-    public_key: str | None = None
-    jwks_uri: str | None = None
-    issuer: str | None = None
-    algorithm: str | None = None
-    audience: str | None = None
-    required_scopes: list[str] | None = None
-    resource_server_url: AnyHttpUrl | str | None = None
-
-
-class EnvJWTVerifier(JWTVerifier):
-    def __init__(
-        self,
-        public_key: str | None | NotSetT = NotSet,
-        jwks_uri: str | None | NotSetT = NotSet,
-        issuer: str | None | NotSetT = NotSet,
-        audience: str | list[str] | None | NotSetT = NotSet,
-        algorithm: str | None | NotSetT = NotSet,
-        required_scopes: list[str] | None | NotSetT = NotSet,
-        resource_server_url: AnyHttpUrl | str | None | NotSetT = NotSet,
-    ):
-        kwargs = {
-            "public_key": public_key,
-            "jwks_uri": jwks_uri,
-            "issuer": issuer,
-            "algorithm": algorithm,
-            "audience": audience,
-            "required_scopes": required_scopes,
-            "resource_server_url": resource_server_url,
-        }
-        settings = JWTVerifierSettings(
-            **{k: v for k, v in kwargs.items() if v is not NotSet}
-        )
-        super().__init__(**settings.model_dump())
-
-
-class IntrospectionTokenVerifier(TokenVerifier):
-    """
-    OAuth 2.0 Token Introspection verifier (RFC 7662).
-
-    This verifier validates tokens by making real-time calls to an OAuth 2.0
-    authorization server's introspection endpoint. Unlike JWT verification, this
-    approach works with both opaque tokens and JWTs, and provides real-time
-    validation including immediate revocation support.
-
-    Use this when:
-    - Your authorization server is separate from your FastMCP server
-    - You're using opaque (non-JWT) tokens
-    - You need real-time token validation and revocation support
-    - Your authorization server supports RFC 7662 introspection
-    - You want centralized token management without sharing secrets
-    """
-
-    def __init__(
-        self,
-        introspection_endpoint: AnyHttpUrl | str,
-        server_url: AnyHttpUrl | str,
-        client_id: str | None = None,
-        client_secret: str | None = None,
-        validate_resource: bool = False,
-        required_scopes: list[str] | None = None,
-        timeout: float = 10.0,
-    ):
-        """
-        Initialize the introspection token verifier.
-
-        Args:
-            introspection_endpoint: OAuth 2.0 introspection endpoint URL
-            server_url: This server's URL for resource validation
-            client_id: Client ID for introspection authentication
-            client_secret: Client secret for introspection authentication
-            validate_resource: Whether to validate RFC 8707 resource parameter
-            required_scopes: Required scopes for all tokens
-            timeout: HTTP request timeout in seconds
-        """
-        try:
-            self.introspection_endpoint = AnyHttpUrl(introspection_endpoint)
-            server_url_validated = AnyHttpUrl(server_url)
-        except ValidationError as e:
-            raise ValueError(f"Invalid URL provided: {e}") from e
-
-        # Basic SSRF protection - reject private/localhost URLs
-        if self._is_private_url(str(self.introspection_endpoint)):
-            raise ValueError("Introspection endpoint cannot be a private/localhost URL")
-
-        # Initialize parent TokenVerifier with the resource server URL
-        super().__init__(
-            resource_server_url=server_url_validated, required_scopes=required_scopes
-        )
-
-        self.client_id = client_id
-        self.client_secret = client_secret
-        self.validate_resource = validate_resource
-        self.timeout = timeout
-
-        # Create HTTP client with security settings
-        self._client = httpx.AsyncClient(
-            timeout=timeout,
-            verify=True,  # Always verify SSL
-            limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
-        )
-
-    @property
-    def server_url(self) -> AnyHttpUrl:
-        """The resource server URL for this verifier."""
-        if self.resource_server_url is None:
-            raise ValueError("Resource server URL not set")
-        return self.resource_server_url
-
-    def _is_private_url(self, url: str) -> bool:
-        """Check if URL points to private/localhost addresses (basic SSRF protection)."""
-        import ipaddress
-        from urllib.parse import urlparse
-
-        parsed = urlparse(url)
-        hostname = parsed.hostname
-
-        if not hostname:
-            return False
-
-        # Check for localhost
-        if hostname.lower() in ("localhost", "127.0.0.1", "::1"):
-            return True
-
-        # Check for private IP ranges
-        try:
-            ip = ipaddress.ip_address(hostname)
-            return ip.is_private or ip.is_loopback
-        except ValueError:
-            # Not an IP address, assume it's a hostname
-            return False
-
-    async def verify_token(self, token: str) -> AccessToken | None:
-        """Verify token using OAuth 2.0 introspection."""
-        try:
-            # Prepare introspection request
-            data = {"token": token}
-
-            # Add resource parameter if validation is enabled (RFC 8707)
-            if self.validate_resource and self.resource_server_url:
-                data["resource"] = str(self.resource_server_url)
-
-            # Prepare authentication and make introspection request
-            if self.client_id and self.client_secret:
-                response = await self._client.post(
-                    str(self.introspection_endpoint),
-                    data=data,
-                    auth=(self.client_id, self.client_secret),
-                    headers={"Content-Type": "application/x-www-form-urlencoded"},
-                )
-            else:
-                response = await self._client.post(
-                    str(self.introspection_endpoint),
-                    data=data,
-                    headers={"Content-Type": "application/x-www-form-urlencoded"},
-                )
-            response.raise_for_status()
-
-            introspection_response = response.json()
-
-            # Check if token is active
-            if not introspection_response.get("active", False):
-                return None
-
-            # Extract token information
-            client_id = introspection_response.get("client_id", "unknown")
-            scopes = (
-                introspection_response.get("scope", "").split()
-                if introspection_response.get("scope")
-                else []
-            )
-            exp = introspection_response.get("exp")
-
-            # Check required scopes
-            if self.required_scopes:
-                token_scopes = set(scopes)
-                required_scopes = set(self.required_scopes)
-                if not required_scopes.issubset(token_scopes):
-                    logger.debug(
-                        f"Token missing required scopes. Has: {token_scopes}, Required: {required_scopes}"
-                    )
-                    return None
-
-            return AccessToken(
-                token=token,
-                client_id=client_id,
-                scopes=scopes,
-                expires_at=exp,
-                resource=str(self.resource_server_url)
-                if self.resource_server_url
-                else None,
-            )
-
-        except Exception as e:
-            logger.debug(f"Introspection verification failed: {e}")
-            return None
-
-    async def __aenter__(self):
-        """Async context manager entry."""
-        return self
-
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        """Async context manager exit."""
-        await self._client.aclose()
 
 
 class StaticTokenVerifier(TokenVerifier):

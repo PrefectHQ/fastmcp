@@ -259,19 +259,23 @@ class Settings(BaseSettings):
     )
 
     # Auth settings
-    default_auth_provider: Annotated[
-        Literal["jwt-env"] | None,
+    server_auth: Annotated[
+        str | None,
         Field(
             description=inspect.cleandoc(
                 """
-                Configure the authentication provider. This setting is intended only to
-                be used for remote confirugation of providers that fully support
-                environment variable configuration.
+                Configure the authentication provider for the server. Auth
+                providers are registered with a specific key, and providing that
+                key here will cause the server to automatically configure the
+                provider from the environment.
 
                 If None, no automatic configuration will take place.
 
                 This setting is *always* overriden by any auth provider passed to the
                 FastMCP constructor.
+
+                Note that most auth providers require additional configuration
+                that must be provided via env vars.
                 """
             ),
         ),

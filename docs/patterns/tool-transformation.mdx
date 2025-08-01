@@ -567,7 +567,7 @@ Use a transform function returning `ToolResult` for complete control over both c
 Tool transformation is a flexible feature that supports many powerful patterns. Here are a few common use cases to give you ideas.
 
 ### Adapting Remote or Generated Tools
-This is one of the most common reasons to use tool transformation. Tools from remote servers (via a [proxy](/servers/proxy)) or generated from an [OpenAPI spec](/servers/openapi) are often too generic for direct use by an LLM. You can use transformation to create a simpler, more intuitive version for your specific needs.
+This is one of the most common reasons to use tool transformation. Tools from remote servers (via a [proxy](/servers/proxy)) or generated from an [OpenAPI spec](/integrations/openapi) are often too generic for direct use by an LLM. You can use transformation to create a simpler, more intuitive version for your specific needs.
 
 ### Chaining Transformations
 You can chain transformations by using an already transformed tool as the parent for a new transformation. This lets you build up complex behaviors in layers, for example, first renaming arguments, and then adding validation logic to the renamed tool.

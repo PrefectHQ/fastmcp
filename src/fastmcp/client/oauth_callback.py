@@ -252,6 +252,24 @@ def create_oauth_callback_server(
                 status_code=400,
             )
 
+        # Check for missing state parameter (indicates OAuth flow issue)
+        if callback_response.state is None:
+            # Resolve future with exception if provided
+            if response_future and not response_future.done():
+                response_future.set_exception(
+                    RuntimeError(
+                        "OAuth server did not return state parameter - authentication failed"
+                    )
+                )
+
+            return HTMLResponse(
+                create_callback_html(
+                    "FastMCP OAuth Error: Authentication failed<br>The OAuth server did not return the expected state parameter",
+                    is_success=False,
+                ),
+                status_code=400,
+            )
+
         # Success case
         if response_future and not response_future.done():
             response_future.set_result(

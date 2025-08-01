@@ -1,6 +1,6 @@
 from fastmcp import FastMCP
 from fastmcp.contrib.component_manager import set_up_component_manager
-from fastmcp.server.auth.verifiers import JWTVerifier, RSAKeyPair
+from fastmcp.server.auth.providers.jwt import JWTVerifier, RSAKeyPair
 
 key_pair = RSAKeyPair.generate()
 

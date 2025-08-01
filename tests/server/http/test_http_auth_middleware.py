@@ -3,7 +3,7 @@ from mcp.server.auth.middleware.bearer_auth import RequireAuthMiddleware
 from starlette.routing import Mount
 
 from fastmcp.server import FastMCP
-from fastmcp.server.auth.verifiers import JWTVerifier, RSAKeyPair
+from fastmcp.server.auth.providers.jwt import JWTVerifier, RSAKeyPair
 from fastmcp.server.http import create_streamable_http_app
 
 

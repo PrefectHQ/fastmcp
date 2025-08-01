@@ -35,7 +35,7 @@ For this tutorial, we'll use the [JSONPlaceholder API](https://jsonplaceholder.t
 Now for the magic. We'll use `FastMCP.from_openapi`. This method takes an `httpx.AsyncClient` configured for your API and its OpenAPI specification, and automatically converts **every endpoint** into a callable MCP `Tool`.
 
 <Tip>
-Learn more about working with OpenAPI specs in the [OpenAPI integration docs](/servers/openapi).
+Learn more about working with OpenAPI specs in the [OpenAPI integration docs](/integrations/openapi).
 </Tip>
 
 <Note>
@@ -144,7 +144,7 @@ However, for clients that support the full MCP spec, representing `GET` requests
 FastMCP allows users to customize this behavior using the concept of "route maps". A `RouteMap` is a mapping of an API route to an MCP type. FastMCP checks each API route against your custom maps in order. If a route matches a map, it's converted to the specified `mcp_type`. Any route that doesn't match your custom maps will fall back to the default behavior (becoming a `Tool`).
 
 <Tip>
-Learn more about route maps in the [OpenAPI integration docs](/servers/openapi#route-mapping).
+Learn more about route maps in the [OpenAPI integration docs](/integrations/openapi#route-mapping).
 </Tip>
 
 Here’s how you can add custom route maps to turn `GET` requests into `Resources` and `ResourceTemplates` (if they have path parameters):

@@ -1,0 +1,167 @@
+---
+title: Authentication
+sidebarTitle: Overview
+description: Secure your FastMCP server with flexible authentication patterns, from simple API keys to full OAuth 2.1 integration with external identity providers.
+icon: user-shield
+---
+
+import { VersionBadge } from "/snippets/version-badge.mdx"
+
+<VersionBadge version="2.11.0" />
+
+<Tip>
+Authentication is only relevant for FastMCP's HTTP-based transports (`http` and `sse`). STDIO transport relies on the security of the local environment where it runs.
+</Tip>
+
+FastMCP provides a powerful and flexible authentication system designed to fit modern application needs. Authentication is a fast-moving and often confusing part of the MCP specification, so FastMCP endeavors to make it as straightforward as possible while adhering to industry best practices as the MCP community evolves new standards.
+
+<Warning>
+**Authentication is rapidly evolving in MCP.** The specification and best practices are changing quickly. FastMCP aims to provide stable, secure patterns that adapt to these changes while keeping your code simple and maintainable.
+</Warning>
+
+## Authentication Patterns
+
+MCP supports a variety of authentication options depending on how much of the authentication complexity you want to pull into your server itself. This can be thought of as a trade-off between whether your MCP server acts as a **Resource Server (RS)** that protects resources, an **Authorization Server (AS)** that handles user authentication and issues tokens, or neither.
+
+Think of it as a spectrum:
+
+- **No responsibility:** Your server has no authentication *(none)*
+- **Minimal responsibility:** Your server only validates tokens issued elsewhere *(RS)*
+- **Moderate responsibility:** Your server coordinates with external identity providers *(RS + remote AS)* — **recommended for most users**
+- **Full responsibility:** Your server handles the entire authentication lifecycle *(RS + AS)*
+
+### Unauthenticated
+
+Unauthenticated FastMCP servers run without any mechanisms to protect their components. All tools and resources are publicly accessible to any client that can connect to your server.
+
+**Use this when:**
+- Building development or testing environments
+- Creating internal tools where network access controls provide sufficient security
+- Prototyping before implementing proper authentication
+
+<Warning>
+
+**Security considerations:**
+- Only suitable for trusted environments or carefully designed public APIs
+- Consider network-level security (VPNs, firewalls, private networks)
+- Exercise extreme caution when exposing unauthenticated servers to the public internet
+- Ensure any public endpoints only expose non-sensitive data or operations
+</Warning>
+
+### Token Verification
+
+Token verification is the conceptually simplest approach to authentication, where your FastMCP server acts as a pure **Resource Server**. Your server validates `Bearer` tokens on incoming requests but has no knowledge of how those tokens were obtained. This is analogous to how a web server validates API keys on incoming requests. Read more in the [token verification documentation](/servers/auth/token-verification).
+
+<Note>
+**Protocol Note:** While simple to implement, this pattern operates somewhat outside the formal MCP authentication flow, which expects OAuth-style interactions. It's best suited for internal systems or when you have full control over token generation.
+</Note>
+
+**Use this when:**
+- You just need to validate tokens issued by another system
+- Building internal microservices that trust a central auth service
+- Working with static, long-lived API keys
+- You control both the token issuer and your FastMCP server
+
+**Responsibilities you're taking on:**
+- Token validation logic
+- Ensuring tokens are securely transmitted to your server
+- Managing token lifecycle in your issuing system
+
+### Remote Authentication
+
+This is the **recommended pattern for most FastMCP users** and follows the 2025-6-18 MCP protocol update. Your FastMCP server acts as a **Resource Server** and integrates with an external, trusted **Authorization Server** like WorkOS, Auth0, or Okta. You can learn more about this pattern in the [remote authentication documentation](/servers/auth/remote-authentication).
+
+**Use this when:**
+- You want to integrate with external identity providers
+- Building user-facing applications that need SSO
+- You want enterprise-grade authentication without building it yourself
+- You need features like multi-factor authentication, social logins, or directory sync
+
+**Responsibilities you're taking on:**
+- Configuring your server to trust the external provider
+- Token validation using the provider's public keys
+- Mapping token claims to your application's user model
+
+**What the external provider handles:**
+- User login and consent flows
+- Token issuance and management
+- User account management
+- Security features like MFA and fraud detection
+
+### Full OAuth Server
+
+<Warning>
+**This is extremely advanced.** Most people should not build their own OAuth server. It requires deep security expertise and ongoing maintenance. Consider this only if you need complete control and have the resources to implement it securely.
+</Warning>
+
+In this pattern, your FastMCP server acts as both the **Authorization Server** and **Resource Server**, handling the entire authentication lifecycle from user login to token validation. Read more in the [full OAuth server documentation](/servers/auth/full-oauth-server).
+
+**Use this when:**
+- Building a completely standalone application with its own user database
+- You need full control over every aspect of authentication
+- Prototyping OAuth flows locally without external dependencies
+- You have the security expertise to implement OAuth securely
+
+**Responsibilities you're taking on:**
+- Secure user credential storage and verification
+- OAuth flow implementation
+- Token lifecycle management
+- Security measures like rate limiting and attack prevention
+- User consent and account management interfaces
+- Ongoing security updates and compliance
+
+## Configuring Authentication
+
+FastMCP provides a variety of `AuthProvider` classes that can be used to configure your server. To use one, instantiate it and pass it to your FastMCP server's `auth` parameter.
+
+<CodeGroup>
+
+
+```python Token Verification
+from fastmcp import FastMCP
+from fastmcp.server.auth.providers.jwt import JWTVerifier
+
+jwt_verifier = JWTVerifier(...)
+
+mcp = FastMCP(name="My Server", auth=jwt_verifier)
+```
+
+```python Remote Authentication
+from fastmcp import FastMCP
+from fastmcp.server.auth.providers.workos import AuthKitProvider
+
+auth_provider = AuthKitProvider(...)
+
+mcp = FastMCP(name="My Server", auth=auth_provider)
+```
+</CodeGroup>
+
+### Environment Variables
+
+For providers that support it, you can configure authentication entirely through environment variables. 
+
+There are two steps to this process:
+
+1. Set `FASTMCP_SERVER_AUTH` to the registered name of your provider. For example, `JWT` for the `JWTVerifier` or `AUTHKIT` for the `AuthKitProvider`.
+2. Set the appropriate environment variables for your provider in order to configure it. These are provider-specific and can be found in the provider's documentation. Not all providers will support environment variable configuration for all of their settings.
+
+For example, to configure a JWT verifier, you would set: 
+
+```bash
+export FASTMCP_SERVER_AUTH=JWT
+export FASTMCP_SERVER_AUTH_JWT_JWKS_URI="https://your-idp.com/.well-known/jwks.json"
+```
+
+And now your FastMCP server will automatically be configured with the JWT verifier:
+
+```python
+from fastmcp import FastMCP
+
+# Assumes the environment variables are set as above
+mcp = FastMCP(name="My Protected Server")
+
+assert mcp.auth is not None
+assert mcp.auth.jwks_uri == "https://your-idp.com/.well-known/jwks.json"
+```
+
+Note that if you provide an `auth` parameter to your FastMCP server, it will override the environment variable configuration. You can also set `auth=None` to disable authentication entirely and prohibit environment variable configuration.

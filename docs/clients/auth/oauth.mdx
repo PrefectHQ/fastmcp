@@ -55,6 +55,7 @@ async with Client("https://fastmcp.cloud/mcp", auth=oauth) as client:
 - **`client_name`** (`str`, optional): Client name for dynamic registration. Defaults to `"FastMCP Client"`
 - **`token_storage_cache_dir`** (`Path`, optional): Token cache directory. Defaults to `~/.fastmcp/oauth-mcp-client-cache/`
 - **`additional_client_metadata`** (`dict[str, Any]`, optional): Extra metadata for client registration
+- **`callback_port`** (`int`, optional): Fixed port for OAuth callback server. If not specified, uses a random available port
 
 
 ## OAuth Flow
@@ -72,7 +73,7 @@ If no valid tokens exist, the client attempts to discover the OAuth server's end
 If the OAuth server supports it and the client isn't already registered (or credentials aren't cached), the client performs dynamic client registration according to RFC 7591.
 </Step>
 <Step title="Local Callback Server">
-A temporary local HTTP server is started on an available port. This server's address (e.g., `http://127.0.0.1:<port>/callback`) acts as the `redirect_uri` for the OAuth flow.
+A temporary local HTTP server is started on an available port (or the port specified via `callback_port`). This server's address (e.g., `http://127.0.0.1:<port>/callback`) acts as the `redirect_uri` for the OAuth flow.
 </Step>
 <Step title="Browser Interaction">
 The user's default web browser is automatically opened, directing them to the OAuth server's authorization endpoint. The user logs in and grants (or denies) the requested `scopes`.
