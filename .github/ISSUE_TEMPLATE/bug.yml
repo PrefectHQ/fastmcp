@@ -7,6 +7,19 @@ body:
     attributes:
       value: Thank you for contributing to FastMCP! 🙏
 
+  - type: markdown
+    attributes:
+      value: |
+        ## Before you submit 📝
+
+        To help us help you, please:
+
+        - 🔄 **Make sure you're testing on the latest version of FastMCP** - many issues are already fixed in newer versions
+        - 🔍 **Check if someone else has already reported this issue** or if it's been fixed on the main branch
+        - 📋 **You MUST include a copy/pasteable and properly formatted MRE** (minimal reproducible example) below or your issue may be closed without response
+
+        Thanks for helping make FastMCP better! 🚀
+
   - type: textarea
     id: description
     attributes:
