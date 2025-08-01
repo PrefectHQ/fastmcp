@@ -1,4 +1,5 @@
 import inspect
+import logging
 import tempfile
 from collections.abc import AsyncGenerator
 from pathlib import Path
@@ -281,10 +282,12 @@ async def test_remote_config_with_oauth_literal():
     assert isinstance(client.transport.transport.auth, OAuthClientProvider)
 
 
-async def test_multi_client_with_logging(tmp_path: Path):
+async def test_multi_client_with_logging(tmp_path: Path, caplog):
     """
     Tests that logging is properly forwarded to the ultimate client.
     """
+    caplog.set_level(logging.INFO, logger=__name__)
+
     server_script = inspect.cleandoc("""
         from fastmcp import FastMCP, Context
 
@@ -317,14 +320,31 @@ async def test_multi_client_with_logging(tmp_path: Path):
 
     MESSAGES = []
 
+    logger = logging.getLogger(__name__)
+    # Backwards-compatible way to get the log level mapping
+    if hasattr(logging, "getLevelNamesMapping"):
+        # For Python 3.11+
+        LOGGING_LEVEL_MAP = logging.getLevelNamesMapping()  # pyright: ignore [reportAttributeAccessIssue]
+    else:
+        # For older Python versions
+        LOGGING_LEVEL_MAP = logging._nameToLevel
+
     async def log_handler(message: LogMessage):
         MESSAGES.append(message)
+
+        level = LOGGING_LEVEL_MAP[message.level.upper()]
+        msg = message.data.get("msg")
+        extra = message.data.get("extra")
+        logger.log(level, msg, extra=extra)
 
     async with Client(config, log_handler=log_handler) as client:
         result = await client.call_tool("test_server_log_test", {"message": "test 42"})
         assert result.data == 42
         assert len(MESSAGES) == 1
-        assert MESSAGES[0].data == "test 42"
+        assert MESSAGES[0].data["msg"] == "test 42"
+
+        assert len(caplog.records) == 1
+        assert caplog.records[0].msg == "test 42"
 
 
 async def test_multi_client_with_transforms(tmp_path: Path):

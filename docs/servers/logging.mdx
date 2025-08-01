@@ -53,6 +53,24 @@ async def analyze_data(data: list[float], ctx: Context) -> dict:
         raise
 ```
 
+## Structured Logging with `extra`
+
+All logging methods (`debug`, `info`, `warning`, `error`, `log`) now accept an `extra` parameter, which is a dictionary of arbitrary data. This allows you to send structured data to the client, which is useful for creating rich, queryable logs.
+
+```python
+@mcp.tool
+async def process_transaction(transaction_id: str, amount: float, ctx: Context):
+    await ctx.info(
+        f"Processing transaction {transaction_id}",
+        extra={
+            "transaction_id": transaction_id,
+            "amount": amount,
+            "currency": "USD"
+        }
+    )
+    # ... processing logic ...
+```
+
 ## Logging Methods
 
 <Card icon="code" title="Context Logging Methods">
@@ -62,6 +80,9 @@ async def analyze_data(data: list[float], ctx: Context) -> dict:
   <Expandable title="parameters">
     <ResponseField name="message" type="str">
       The debug message to send to the client
+    </ResponseField>
+    <ResponseField name="extra" type="dict | None" default="None">
+      Optional dictionary for structured logging data
     </ResponseField>
   </Expandable>
 </ResponseField>
@@ -73,6 +94,9 @@ async def analyze_data(data: list[float], ctx: Context) -> dict:
     <ResponseField name="message" type="str">
       The information message to send to the client
     </ResponseField>
+    <ResponseField name="extra" type="dict | None" default="None">
+      Optional dictionary for structured logging data
+    </ResponseField>
   </Expandable>
 </ResponseField>
 
@@ -83,6 +107,9 @@ async def analyze_data(data: list[float], ctx: Context) -> dict:
     <ResponseField name="message" type="str">
       The warning message to send to the client
     </ResponseField>
+    <ResponseField name="extra" type="dict | None" default="None">
+      Optional dictionary for structured logging data
+    </ResponseField>
   </Expandable>
 </ResponseField>
 
@@ -92,6 +119,9 @@ async def analyze_data(data: list[float], ctx: Context) -> dict:
   <Expandable title="parameters">
     <ResponseField name="message" type="str">
       The error message to send to the client
+    </ResponseField>
+    <ResponseField name="extra" type="dict | None" default="None">
+      Optional dictionary for structured logging data
     </ResponseField>
   </Expandable>
 </ResponseField>
@@ -110,6 +140,9 @@ async def analyze_data(data: list[float], ctx: Context) -> dict:
     
     <ResponseField name="logger_name" type="str | None" default="None">
       Optional custom logger name for categorizing messages
+    </ResponseField>
+    <ResponseField name="extra" type="dict | None" default="None">
+      Optional dictionary for structured logging data
     </ResponseField>
   </Expandable>
 </ResponseField>
@@ -153,10 +186,16 @@ Use for potentially harmful situations that don't prevent execution:
 async def validate_config(config: dict, ctx: Context) -> dict:
     """Validate configuration with warnings for deprecated options."""
     if "old_api_key" in config:
-        await ctx.warning("Using deprecated 'old_api_key' field. Please use 'api_key' instead")
+        await ctx.warning(
+            "Using deprecated 'old_api_key' field. Please use 'api_key' instead",
+            extra={"deprecated_field": "old_api_key"}
+        )
     
     if config.get("timeout", 30) > 300:
-        await ctx.warning("Timeout value is very high (>5 minutes), this may cause issues")
+        await ctx.warning(
+            "Timeout value is very high (>5 minutes), this may cause issues",
+            extra={"timeout_value": config.get("timeout")}
+        )
     
     return {"status": "valid", "warnings": "see logs"}
 ```
@@ -176,7 +215,10 @@ async def batch_process(items: list[str], ctx: Context) -> dict:
             # Process item
             successful += 1
         except Exception as e:
-            await ctx.error(f"Failed to process item '{item}': {str(e)}")
+            await ctx.error(
+                f"Failed to process item '{item}': {str(e)}",
+                extra={"failed_item": item}
+            )
             failed += 1
     
     return {"successful": successful, "failed": failed}

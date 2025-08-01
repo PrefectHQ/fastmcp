@@ -591,7 +591,9 @@ class ProxyClient(Client[ClientTransportT]):
         A handler that forwards the log notification from the remote server to the proxy's connected clients.
         """
         ctx = get_context()
-        await ctx.log(message.data, level=message.level, logger_name=message.logger)
+        msg = message.data.get("msg")
+        extra = message.data.get("extra")
+        await ctx.log(msg, level=message.level, logger_name=message.logger, extra=extra)
 
     @classmethod
     async def default_progress_handler(
