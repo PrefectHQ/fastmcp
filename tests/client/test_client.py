@@ -670,6 +670,18 @@ class TestErrorHandling:
             assert "test error" not in result.content[0].text  # type: ignore[attr-defined]
             assert "abc" not in result.content[0].text  # type: ignore[attr-defined]
 
+    async def test_validation_errors_are_not_masked_when_enabled(self):
+        mcp = FastMCP("TestServer", mask_error_details=True)
+
+        @mcp.tool
+        def validated_tool(x: int) -> int:
+            return x
+
+        async with Client(transport=FastMCPTransport(mcp)) as client:
+            result = await client.call_tool_mcp("validated_tool", {"x": "abc"})
+            assert result.isError
+            assert "'abc' is not of type 'integer'" in result.content[0].text  # type: ignore[attr-defined]
+
     async def test_specific_tool_errors_are_sent_to_client(self):
         mcp = FastMCP("TestServer")
 

@@ -101,6 +101,7 @@ env = [
     "FASTMCP_TEST_MODE=1",
     'D:FASTMCP_LOG_LEVEL=DEBUG',
     'D:FASTMCP_ENABLE_RICH_TRACEBACKS=0',
+
 ]
 markers = [
     "integration: marks tests as integration tests (deselect with '-m \"not integration\"')",
