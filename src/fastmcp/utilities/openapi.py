@@ -1122,16 +1122,17 @@ def _make_optional_parameter_nullable(schema: dict[str, Any]) -> dict[str, Any]:
 
         if isinstance(original_type, str):
             # Single type - make it a union with null
-            nullable_schema = schema.copy()
-
+            # Optimize: avoid full schema copy by building directly
             nested_non_nullable_schema = {
                 "type": original_type,
             }
+            nullable_schema = {}
 
-            # If the original type is an array, move the array-specific properties into the now-nested schema
-            # https://json-schema.org/understanding-json-schema/reference/array
+            # Define type-specific properties that should move to nested schema
+            type_specific_properties = set()
             if original_type == "array":
-                for array_property in [
+                # https://json-schema.org/understanding-json-schema/reference/array
+                type_specific_properties = {
                     "items",
                     "prefixItems",
                     "unevaluatedItems",
@@ -1141,17 +1142,10 @@ def _make_optional_parameter_nullable(schema: dict[str, Any]) -> dict[str, Any]:
                     "minItems",
                     "maxItems",
                     "uniqueItems",
-                ]:
-                    if array_property in nullable_schema:
-                        nested_non_nullable_schema[array_property] = nullable_schema[
-                            array_property
-                        ]
-                        del nullable_schema[array_property]
-
-            # If the original type is an object, move the object-specific properties into the now-nested schema
-            # https://json-schema.org/understanding-json-schema/reference/object
+                }
             elif original_type == "object":
-                for object_property in [
+                # https://json-schema.org/understanding-json-schema/reference/object
+                type_specific_properties = {
                     "properties",
                     "patternProperties",
                     "additionalProperties",
@@ -1160,17 +1154,18 @@ def _make_optional_parameter_nullable(schema: dict[str, Any]) -> dict[str, Any]:
                     "propertyNames",
                     "minProperties",
                     "maxProperties",
-                ]:
-                    if object_property in nullable_schema:
-                        nested_non_nullable_schema[object_property] = nullable_schema[
-                            object_property
-                        ]
-                        del nullable_schema[object_property]
+                }
+
+            # Efficiently distribute properties without copying the entire schema
+            for key, value in schema.items():
+                if key == "type":
+                    continue  # Already handled
+                elif key in type_specific_properties:
+                    nested_non_nullable_schema[key] = value
+                else:
+                    nullable_schema[key] = value
 
             nullable_schema["anyOf"] = [nested_non_nullable_schema, {"type": "null"}]
-
-            # Remove the original type since we're using anyOf
-            del nullable_schema["type"]
             return nullable_schema
 
     return schema
@@ -1394,12 +1389,31 @@ def _adjust_union_types(
 ) -> dict[str, Any] | list[Any]:
     """Recursively replace 'oneOf' with 'anyOf' in schema to handle overlapping unions."""
     if isinstance(schema, dict):
-        # Work on a copy to avoid mutating the input
+        # Optimize: only copy if we need to modify something
+        has_one_of = "oneOf" in schema
+        needs_recursive_processing = False
+
+        # Check if we need recursive processing
+        for v in schema.values():
+            if isinstance(v, dict | list):
+                needs_recursive_processing = True
+                break
+
+        # If nothing to change, return original
+        if not has_one_of and not needs_recursive_processing:
+            return schema
+
+        # Work on a copy only when modification is needed
         result = schema.copy()
-        if "oneOf" in result:
+        if has_one_of:
             result["anyOf"] = result.pop("oneOf")
-        for k, v in result.items():
-            result[k] = _adjust_union_types(v)
+
+        # Only recurse where needed
+        if needs_recursive_processing:
+            for k, v in result.items():
+                if isinstance(v, dict | list):
+                    result[k] = _adjust_union_types(v)
+
         return result
     elif isinstance(schema, list):
         return [_adjust_union_types(item) for item in schema]
