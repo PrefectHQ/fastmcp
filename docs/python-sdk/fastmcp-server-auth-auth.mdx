@@ -7,11 +7,86 @@ sidebarTitle: auth
 
 ## Classes
 
-### `OAuthProvider` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L14" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `AuthProvider` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L25" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Base class for all FastMCP authentication providers.
+
+This class provides a unified interface for all authentication providers,
+whether they are simple token verifiers or full OAuth authorization servers.
+All providers must be able to verify tokens and can optionally provide
+custom authentication routes.
+
 
 **Methods:**
 
-#### `verify_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L47" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `verify_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L38" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+verify_token(self, token: str) -> AccessToken | None
+```
+
+Verify a bearer token and return access info if valid.
+
+All auth providers must implement token verification.
+
+**Args:**
+- `token`: The token string to validate
+
+**Returns:**
+- AccessToken object if valid, None if invalid or expired
+
+
+#### `customize_auth_routes` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L51" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+customize_auth_routes(self, routes: list[Route]) -> list[Route]
+```
+
+Customize authentication routes after standard creation.
+
+This method allows providers to modify or add to the standard OAuth routes.
+The default implementation returns the routes unchanged.
+
+**Args:**
+- `routes`: List of standard routes (may be empty for token-only providers)
+
+**Returns:**
+- List of routes (potentially modified or extended)
+
+
+### `TokenVerifier` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L66" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Base class for token verifiers (Resource Servers).
+
+This class provides token verification capability without OAuth server functionality.
+Token verifiers typically don't provide authentication routes by default.
+
+
+**Methods:**
+
+#### `verify_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L97" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+verify_token(self, token: str) -> AccessToken | None
+```
+
+Verify a bearer token and return access info if valid.
+
+
+### `OAuthProvider` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L102" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+OAuth Authorization Server provider.
+
+This class provides full OAuth server functionality including client registration,
+authorization flows, token issuance, and token verification.
+
+
+**Methods:**
+
+#### `verify_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L169" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 verify_token(self, token: str) -> AccessToken | None
@@ -27,4 +102,23 @@ to our existing load_access_token method.
 
 **Returns:**
 - AccessToken object if valid, None if invalid or expired
+
+
+#### `customize_auth_routes` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L184" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+customize_auth_routes(self, routes: list[Route]) -> list[Route]
+```
+
+Customize OAuth authentication routes after standard creation.
+
+This method allows providers to modify the standard OAuth routes
+returned by create_auth_routes. The default implementation returns
+the routes unchanged.
+
+**Args:**
+- `routes`: List of standard OAuth routes from create_auth_routes
+
+**Returns:**
+- List of routes (potentially modified)
 

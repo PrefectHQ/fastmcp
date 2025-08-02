@@ -3,6 +3,7 @@ title: Full OAuth Server
 sidebarTitle: Full OAuth Server
 description: Build a self-contained authentication system where your FastMCP server manages users, issues tokens, and validates them.
 icon: users-between-lines
+tag: NEW
 ---
 
 import { VersionBadge } from "/snippets/version-badge.mdx"
@@ -12,7 +13,7 @@ import { VersionBadge } from "/snippets/version-badge.mdx"
 <Warning>
 **This is an extremely advanced pattern.** Building a secure, production-ready OAuth 2.1 server is a complex undertaking that requires deep expertise in authentication protocols, cryptography, and security best practices.
 
-This pattern exists primarily to support the MCP protocol specification's requirements. **Most users should strongly prefer the [Remote Authentication pattern](/servers/auth/remote-authentication)** to integrate with a dedicated identity provider like WorkOS, Auth0, or Okta.
+This pattern exists primarily to support the MCP protocol specification's requirements. **Most users should strongly prefer the [Remote OAuth pattern](/servers/auth/remote-oauth)** to integrate with a dedicated identity provider like WorkOS, Auth0, or Okta.
 </Warning>
 
 In the **Full OAuth Server** pattern, your FastMCP server acts as both the **Authorization Server (AS)** and the **Resource Server (RS)**. It becomes responsible for the entire authentication lifecycle:

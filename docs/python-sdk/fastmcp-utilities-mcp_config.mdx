@@ -7,20 +7,20 @@ sidebarTitle: mcp_config
 
 ## Functions
 
-### `composite_server_from_mcp_config` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/mcp_config.py#L5" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `composite_server_from_mcp_config` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/mcp_config.py#L7" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-composite_server_from_mcp_config(config: MCPConfig, name_as_prefix: bool = True) -> FastMCP
+composite_server_from_mcp_config(config: MCPConfig, name_as_prefix: bool = True) -> FastMCP[None]
 ```
 
 
 A utility function to create a composite server from an MCPConfig.
 
 
-### `mount_mcp_config_into_server` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/mcp_config.py#L16" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `mount_mcp_config_into_server` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/mcp_config.py#L18" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-mount_mcp_config_into_server(config: MCPConfig, server: FastMCP, name_as_prefix: bool = True) -> None
+mount_mcp_config_into_server(config: MCPConfig, server: FastMCP[Any], name_as_prefix: bool = True) -> None
 ```
 
 

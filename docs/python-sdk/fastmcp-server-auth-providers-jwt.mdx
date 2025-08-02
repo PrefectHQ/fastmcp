@@ -1,0 +1,149 @@
+---
+title: jwt
+sidebarTitle: jwt
+---
+
+# `fastmcp.server.auth.providers.jwt`
+
+
+TokenVerifier implementations for FastMCP.
+
+## Classes
+
+### `JWKData` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/jwt.py#L27" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+JSON Web Key data structure.
+
+
+### `JWKSData` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/jwt.py#L40" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+JSON Web Key Set data structure.
+
+
+### `RSAKeyPair` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/jwt.py#L47" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+RSA key pair for JWT testing.
+
+
+**Methods:**
+
+#### `generate` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/jwt.py#L54" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+generate(cls) -> RSAKeyPair
+```
+
+Generate an RSA key pair for testing.
+
+**Returns:**
+- Generated key pair
+
+
+#### `create_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/jwt.py#L89" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+create_token(self, subject: str = 'fastmcp-user', issuer: str = 'https://fastmcp.example.com', audience: str | list[str] | None = None, scopes: list[str] | None = None, expires_in_seconds: int = 3600, additional_claims: dict[str, Any] | None = None, kid: str | None = None) -> str
+```
+
+Generate a test JWT token for testing purposes.
+
+**Args:**
+- `subject`: Subject claim (usually user ID)
+- `issuer`: Issuer claim
+- `audience`: Audience claim - can be a string or list of strings (optional)
+- `scopes`: List of scopes to include
+- `expires_in_seconds`: Token expiration time in seconds
+- `additional_claims`: Any additional claims to include
+- `kid`: Key ID to include in header
+
+
+### `JWTVerifierSettings` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/jwt.py#L144" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Settings for JWT token verification.
+
+
+### `JWTVerifier` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/jwt.py#L163" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+JWT token verifier using public key or JWKS.
+
+This verifier validates JWT tokens signed by an external issuer. It's ideal for
+scenarios where you have a centralized identity provider (like Auth0, Okta, or
+your own OAuth server) that issues JWTs, and your FastMCP server acts as a
+resource server validating those tokens.
+
+Use this when:
+- You have JWT tokens issued by an external service
+- You want asymmetric key verification (public/private key pairs)
+- You need JWKS support for automatic key rotation
+- Your tokens contain standard OAuth scopes and claims
+
+
+**Methods:**
+
+#### `load_access_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/jwt.py#L359" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+load_access_token(self, token: str) -> AccessToken | None
+```
+
+Validates the provided JWT bearer token.
+
+**Args:**
+- `token`: The JWT token string to validate
+
+**Returns:**
+- AccessToken object if valid, None if invalid or expired
+
+
+#### `verify_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/jwt.py#L460" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+verify_token(self, token: str) -> AccessToken | None
+```
+
+Verify a bearer token and return access info if valid.
+
+This method implements the TokenVerifier protocol by delegating
+to our existing load_access_token method.
+
+**Args:**
+- `token`: The JWT token string to validate
+
+**Returns:**
+- AccessToken object if valid, None if invalid or expired
+
+
+### `StaticTokenVerifier` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/jwt.py#L476" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Simple static token verifier for testing and development.
+
+This verifier validates tokens against a predefined dictionary of valid token
+strings and their associated claims. When a token string matches a key in the
+dictionary, the verifier returns the corresponding claims as if the token was
+validated by a real authorization server.
+
+Use this when:
+- You're developing or testing locally without a real OAuth server
+- You need predictable tokens for automated testing
+- You want to simulate different users/scopes without complex setup
+- You're prototyping and need simple API key-style authentication
+
+WARNING: Never use this in production - tokens are stored in plain text!
+
+
+**Methods:**
+
+#### `verify_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/jwt.py#L510" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+verify_token(self, token: str) -> AccessToken | None
+```
+
+Verify token against static token dictionary.
+
