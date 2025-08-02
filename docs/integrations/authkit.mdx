@@ -1,7 +1,7 @@
 ---
-title: WorkOS AuthKit 🤝 FastMCP
-sidebarTitle: WorkOS AuthKit
-description: Secure your FastMCP server with WorkOS AuthKit
+title: AuthKit 🤝 FastMCP
+sidebarTitle: AuthKit
+description: Secure your FastMCP server with AuthKit by WorkOS
 icon: shield-check
 tag: NEW
 ---
@@ -10,20 +10,20 @@ import { VersionBadge } from "/snippets/version-badge.mdx"
 
 <VersionBadge version="2.11.0" />
 
-This guide shows you how to secure your FastMCP server using **WorkOS AuthKit**, a complete authentication and user management solution. This integration uses the [**Remote OAuth**](/servers/auth/remote-oauth) pattern, where WorkOS handles user login and your FastMCP server validates the tokens.
+This guide shows you how to secure your FastMCP server using WorkOS's **AuthKit**, a complete authentication and user management solution. This integration uses the [**Remote OAuth**](/servers/auth/remote-oauth) pattern, where AuthKit handles user login and your FastMCP server validates the tokens.
 
 
 ## Configuration
 ### Prerequisites
 
 Before you begin, you will need:
-1.  A **WorkOS Account** and a new **Project**.
-2.  An **AuthKit** instance configured within your WorkOS project.
+1.  A **[WorkOS Account](https://workos.com/)** and a new **Project**.
+2.  An **[AuthKit](https://www.authkit.com/)** instance configured within your WorkOS project.
 3.  Your FastMCP server's URL (can be localhost for development, e.g., `http://localhost:8000`).
 
 ### Step 1: AuthKit Configuration
 
-In your WorkOS Dashboard, navigate to your AuthKit instance and configure the following settings:
+In your WorkOS Dashboard, enable AuthKit and configure the following settings:
 
 <Steps>
 <Step title="Enable Dynamic Client Registration">

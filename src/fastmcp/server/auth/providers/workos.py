@@ -32,9 +32,9 @@ class AuthKitProviderSettings(BaseSettings):
 
 @register_provider("AUTHKIT")
 class AuthKitProvider(AuthProvider):
-    """WorkOS AuthKit metadata provider for DCR (Dynamic Client Registration).
+    """AuthKit metadata provider for DCR (Dynamic Client Registration).
 
-    This provider implements WorkOS AuthKit integration using metadata forwarding
+    This provider implements AuthKit integration using metadata forwarding
     instead of OAuth proxying. This is the recommended approach for WorkOS DCR
     as it allows WorkOS to handle the OAuth flow directly while FastMCP acts
     as a resource server.
@@ -56,7 +56,7 @@ class AuthKitProvider(AuthProvider):
         ```python
         from fastmcp.server.auth.providers.workos import AuthKitProvider
 
-        # Create WorkOS metadata provider (JWT verifier created automatically)
+        # Create AuthKit metadata provider (JWT verifier created automatically)
         workos_auth = AuthKitProvider(
             authkit_domain="https://your-workos-domain.authkit.app",
             base_url="https://your-fastmcp-server.com",
@@ -75,13 +75,13 @@ class AuthKitProvider(AuthProvider):
         required_scopes: list[str] | None | NotSetT = NotSet,
         token_verifier: TokenVerifier | None = None,
     ):
-        """Initialize WorkOS metadata provider.
+        """Initialize AuthKit metadata provider.
 
         Args:
-            authkit_domain: Your WorkOS AuthKit domain (e.g., "https://your-app.authkit.app")
+            authkit_domain: Your AuthKit domain (e.g., "https://your-app.authkit.app")
             base_url: Public URL of this FastMCP server
             required_scopes: Optional list of scopes to require for all requests
-            token_verifier: Optional token verifier. If None, creates JWT verifier for WorkOS
+            token_verifier: Optional token verifier. If None, creates JWT verifier for AuthKit
         """
         super().__init__()
 
@@ -112,7 +112,7 @@ class AuthKitProvider(AuthProvider):
         self.token_verifier = token_verifier
 
     async def verify_token(self, token: str) -> AccessToken | None:
-        """Verify a WorkOS token using the configured token verifier."""
+        """Verify an AuthKit token using the configured token verifier."""
         return await self.token_verifier.verify_token(token)
 
     def customize_auth_routes(self, routes: list[BaseRoute]) -> list[BaseRoute]:
