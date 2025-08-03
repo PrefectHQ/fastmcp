@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from mcp.server.auth.provider import (
     AccessToken,
     AuthorizationCode,
@@ -11,6 +9,10 @@ from mcp.server.auth.provider import (
 from mcp.server.auth.provider import (
     TokenVerifier as TokenVerifierProtocol,
 )
+from mcp.server.auth.routes import (
+    create_auth_routes,
+    create_protected_resource_routes,
+)
 from mcp.server.auth.settings import (
     ClientRegistrationOptions,
     RevocationOptions,
@@ -18,11 +20,8 @@ from mcp.server.auth.settings import (
 from pydantic import AnyHttpUrl
 from starlette.routing import Route
 
-if TYPE_CHECKING:
-    pass
 
-
-class AuthProvider:
+class AuthProvider(TokenVerifierProtocol):
     """Base class for all FastMCP authentication providers.
 
     This class provides a unified interface for all authentication providers,
@@ -31,9 +30,18 @@ class AuthProvider:
     custom authentication routes.
     """
 
-    def __init__(self, required_scopes: list[str] | None = None):
-        """Initialize the auth provider."""
-        self.required_scopes: list[str] = required_scopes or []
+    def __init__(self, resource_server_url: AnyHttpUrl | str | None = None):
+        """
+        Initialize the auth provider.
+
+        Args:
+            resource_server_url: The URL of this resource server. This is used
+            for RFC 8707 resource indicators, including creating the WWW-Authenticate
+            header.
+        """
+        if isinstance(resource_server_url, str):
+            resource_server_url = AnyHttpUrl(resource_server_url)
+        self.resource_server_url = resource_server_url
 
     async def verify_token(self, token: str) -> AccessToken | None:
         """Verify a bearer token and return access info if valid.
@@ -48,22 +56,34 @@ class AuthProvider:
         """
         raise NotImplementedError("Subclasses must implement verify_token")
 
-    def customize_auth_routes(self, routes: list[Route]) -> list[Route]:
-        """Customize authentication routes after standard creation.
+    def get_routes(self) -> list[Route]:
+        """Get the routes for this authentication provider.
 
-        This method allows providers to modify or add to the standard OAuth routes.
-        The default implementation returns the routes unchanged.
-
-        Args:
-            routes: List of standard routes (may be empty for token-only providers)
+        Each provider is responsible for creating whatever routes it needs:
+        - TokenVerifier: typically no routes (default implementation)
+        - RemoteAuthProvider: protected resource metadata routes
+        - OAuthProvider: full OAuth authorization server routes
+        - Custom providers: whatever routes they need
 
         Returns:
-            List of routes (potentially modified or extended)
+            List of routes for this provider
         """
-        return routes
+        return []
+
+    def get_resource_metadata_url(self) -> AnyHttpUrl | None:
+        """Get the resource metadata URL for RFC 9728 compliance."""
+        if self.resource_server_url is None:
+            return None
+
+        # Add .well-known path for RFC 9728 compliance
+        resource_metadata_url = AnyHttpUrl(
+            str(self.resource_server_url).rstrip("/")
+            + "/.well-known/oauth-protected-resource"
+        )
+        return resource_metadata_url
 
 
-class TokenVerifier(AuthProvider, TokenVerifierProtocol):
+class TokenVerifier(AuthProvider):
     """Base class for token verifiers (Resource Servers).
 
     This class provides token verification capability without OAuth server functionality.
@@ -79,24 +99,69 @@ class TokenVerifier(AuthProvider, TokenVerifierProtocol):
         Initialize the token verifier.
 
         Args:
-            resource_server_url: The URL of this resource server (for RFC 8707 resource indicators)
+            resource_server_url: The URL of this resource server. This is used
+            for RFC 8707 resource indicators, including creating the WWW-Authenticate
+            header.
             required_scopes: Scopes that are required for all requests
         """
-        # Initialize AuthProvider (no args needed)
-        AuthProvider.__init__(self, required_scopes=required_scopes)
-
-        # Handle our own resource_server_url and required_scopes
-        self.resource_server_url: AnyHttpUrl | None
-        if resource_server_url is None:
-            self.resource_server_url = None
-        elif isinstance(resource_server_url, str):
-            self.resource_server_url = AnyHttpUrl(resource_server_url)
-        else:
-            self.resource_server_url = resource_server_url
+        super().__init__(resource_server_url=resource_server_url)
+        self.required_scopes = required_scopes or []
 
     async def verify_token(self, token: str) -> AccessToken | None:
         """Verify a bearer token and return access info if valid."""
         raise NotImplementedError("Subclasses must implement verify_token")
+
+
+class RemoteAuthProvider(AuthProvider):
+    """Authentication provider for resource servers that verify tokens from known authorization servers.
+
+    This provider composes a TokenVerifier with authorization server metadata to create
+    standardized OAuth 2.0 Protected Resource endpoints (RFC 9728). Perfect for:
+    - JWT verification with known issuers
+    - Remote token introspection services
+    - Any resource server that knows where its tokens come from
+
+    Use this when you have token verification logic and want to advertise
+    the authorization servers that issue valid tokens.
+    """
+
+    def __init__(
+        self,
+        token_verifier: TokenVerifier,
+        authorization_servers: list[AnyHttpUrl],
+        resource_server_url: AnyHttpUrl | str,
+    ):
+        """Initialize the remote auth provider.
+
+        Args:
+            token_verifier: TokenVerifier instance for token validation
+            authorization_servers: List of authorization servers that issue valid tokens
+            resource_server_url: URL of this resource server. This is used
+            for RFC 8707 resource indicators, including creating the WWW-Authenticate
+            header.
+        """
+        super().__init__(resource_server_url=resource_server_url)
+        self.token_verifier = token_verifier
+        self.authorization_servers = authorization_servers
+
+    async def verify_token(self, token: str) -> AccessToken | None:
+        """Verify token using the configured token verifier."""
+        return await self.token_verifier.verify_token(token)
+
+    def get_routes(self) -> list[Route]:
+        """Get OAuth routes for this provider.
+
+        By default, returns only the standardized OAuth 2.0 Protected Resource routes.
+        Subclasses can override this method to add additional routes by calling
+        super().get_routes() and extending the returned list.
+        """
+        assert self.resource_server_url is not None
+
+        return create_protected_resource_routes(
+            resource_url=self.resource_server_url,
+            authorization_servers=self.authorization_servers,
+            scopes_supported=self.token_verifier.required_scopes,
+        )
 
 
 class OAuthProvider(
@@ -181,17 +246,33 @@ class OAuthProvider(
         """
         return await self.load_access_token(token)
 
-    def customize_auth_routes(self, routes: list[Route]) -> list[Route]:
-        """Customize OAuth authentication routes after standard creation.
+    def get_routes(self) -> list[Route]:
+        """Get OAuth authorization server routes and optional protected resource routes.
 
-        This method allows providers to modify the standard OAuth routes
-        returned by create_auth_routes. The default implementation returns
-        the routes unchanged.
-
-        Args:
-            routes: List of standard OAuth routes from create_auth_routes
+        This method creates the full set of OAuth routes including:
+        - Standard OAuth authorization server routes (/.well-known/oauth-authorization-server, /authorize, /token, etc.)
+        - Optional protected resource routes if resource_server_url is configured
 
         Returns:
-            List of routes (potentially modified)
+            List of OAuth routes
         """
-        return routes
+
+        # Create standard OAuth authorization server routes
+        oauth_routes = create_auth_routes(
+            provider=self,
+            issuer_url=self.issuer_url,
+            service_documentation_url=self.service_documentation_url,
+            client_registration_options=self.client_registration_options,
+            revocation_options=self.revocation_options,
+        )
+
+        # Add protected resource routes if this server is also acting as a resource server
+        if self.resource_server_url:
+            protected_routes = create_protected_resource_routes(
+                resource_url=self.resource_server_url,
+                authorization_servers=[self.issuer_url],
+                scopes_supported=self.required_scopes,
+            )
+            oauth_routes.extend(protected_routes)
+
+        return oauth_routes

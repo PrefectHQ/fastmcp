@@ -11,12 +11,10 @@ from mcp.server.auth.middleware.bearer_auth import (
     RequireAuthMiddleware,
 )
 from mcp.server.auth.provider import TokenVerifier as TokenVerifierProtocol
-from mcp.server.auth.routes import create_auth_routes
 from mcp.server.lowlevel.server import LifespanResultT
 from mcp.server.sse import SseServerTransport
 from mcp.server.streamable_http import EventStore
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
-from pydantic import AnyHttpUrl
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.middleware.authentication import AuthenticationMiddleware
@@ -25,7 +23,7 @@ from starlette.responses import Response
 from starlette.routing import BaseRoute, Mount, Route
 from starlette.types import Lifespan, Receive, Scope, Send
 
-from fastmcp.server.auth.auth import AuthProvider, OAuthProvider, TokenVerifier
+from fastmcp.server.auth.auth import AuthProvider
 from fastmcp.utilities.logging import get_logger
 
 if TYPE_CHECKING:
@@ -69,51 +67,6 @@ class RequestContextMiddleware:
                 await self.app(scope, receive, send)
         else:
             await self.app(scope, receive, send)
-
-
-def setup_auth_middleware_and_routes(
-    auth: AuthProvider,
-) -> tuple[list[Middleware], list[Route], list[str]]:
-    """Set up authentication middleware and routes if auth is enabled.
-
-    Args:
-        auth: An AuthProvider for authentication (TokenVerifier or OAuthProvider)
-
-    Returns:
-        Tuple of (middleware, auth_routes, required_scopes)
-    """
-    middleware: list[Middleware] = [
-        Middleware(
-            AuthenticationMiddleware,
-            backend=BearerAuthBackend(cast(TokenVerifierProtocol, auth)),
-        ),
-        Middleware(AuthContextMiddleware),
-    ]
-
-    auth_routes: list[Route] = []
-    required_scopes: list[str] = auth.required_scopes or []
-
-    # Check if it's an OAuthProvider (has OAuth server capability)
-    if isinstance(auth, OAuthProvider):
-        # OAuthProvider: create standard OAuth routes first
-        standard_routes = list(
-            create_auth_routes(
-                provider=auth,
-                issuer_url=auth.issuer_url,
-                service_documentation_url=auth.service_documentation_url,
-                client_registration_options=auth.client_registration_options,
-                revocation_options=auth.revocation_options,
-            )
-        )
-
-        # Allow provider to customize routes (e.g., for proxy behavior or metadata endpoints)
-        auth_routes = auth.customize_auth_routes(standard_routes)
-    else:
-        # Simple AuthProvider or TokenVerifier: start with empty routes
-        # Allow provider to add custom routes (e.g., metadata endpoints)
-        auth_routes = auth.customize_auth_routes([])
-
-    return middleware, auth_routes, required_scopes
 
 
 def create_base_app(
@@ -183,23 +136,26 @@ def create_sse_app(
             )
         return Response()
 
-    # Get auth middleware and routes
+    # Set up auth if enabled
     if auth:
-        auth_middleware, auth_routes, required_scopes = (
-            setup_auth_middleware_and_routes(auth)
-        )
+        # Create auth middleware
+        auth_middleware = [
+            Middleware(
+                AuthenticationMiddleware,
+                backend=BearerAuthBackend(auth),
+            ),
+            Middleware(AuthContextMiddleware),
+        ]
+
+        # Get auth routes and scopes
+        auth_routes = auth.get_routes()
+        required_scopes = getattr(auth, "required_scopes", None) or []
+
+        # Get resource metadata URL for WWW-Authenticate header
+        resource_metadata_url = auth.get_resource_metadata_url()
 
         server_routes.extend(auth_routes)
         server_middleware.extend(auth_middleware)
-
-        # Determine resource_metadata_url for TokenVerifier
-        resource_metadata_url = None
-        if isinstance(auth, TokenVerifier) and auth.resource_server_url:
-            # Add .well-known path for RFC 9728 compliance
-            resource_metadata_url = AnyHttpUrl(
-                str(auth.resource_server_url).rstrip("/")
-                + "/.well-known/oauth-protected-resource"
-            )
 
         # Auth is enabled, wrap endpoints with RequireAuthMiddleware
         server_routes.append(
@@ -328,21 +284,24 @@ def create_streamable_http_app(
 
     # Add StreamableHTTP routes with or without auth
     if auth:
-        auth_middleware, auth_routes, required_scopes = (
-            setup_auth_middleware_and_routes(auth)
-        )
+        # Create auth middleware
+        auth_middleware = [
+            Middleware(
+                AuthenticationMiddleware,
+                backend=BearerAuthBackend(cast(TokenVerifierProtocol, auth)),
+            ),
+            Middleware(AuthContextMiddleware),
+        ]
+
+        # Get auth routes and scopes
+        auth_routes = auth.get_routes()
+        required_scopes = getattr(auth, "required_scopes", None) or []
+
+        # Get resource metadata URL for WWW-Authenticate header
+        resource_metadata_url = auth.get_resource_metadata_url()
 
         server_routes.extend(auth_routes)
         server_middleware.extend(auth_middleware)
-
-        # Determine resource_metadata_url for TokenVerifier
-        resource_metadata_url = None
-        if isinstance(auth, TokenVerifier) and auth.resource_server_url:
-            # Add .well-known path for RFC 9728 compliance
-            resource_metadata_url = AnyHttpUrl(
-                str(auth.resource_server_url).rstrip("/")
-                + "/.well-known/oauth-protected-resource"
-            )
 
         # Auth is enabled, wrap endpoint with RequireAuthMiddleware
         server_routes.append(

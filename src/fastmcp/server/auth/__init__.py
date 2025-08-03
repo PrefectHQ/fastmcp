@@ -1,4 +1,4 @@
-from .auth import OAuthProvider, TokenVerifier
+from .auth import OAuthProvider, TokenVerifier, RemoteAuthProvider
 from .providers.jwt import JWTVerifier, StaticTokenVerifier
 
 
@@ -7,6 +7,7 @@ __all__ = [
     "TokenVerifier",
     "JWTVerifier",
     "StaticTokenVerifier",
+    "RemoteAuthProvider",
 ]
 
 

@@ -10,159 +10,184 @@ import { VersionBadge } from "/snippets/version-badge.mdx"
 
 <VersionBadge version="2.11.0" />
 
-<Tip>
-Authentication is only relevant for FastMCP's HTTP-based transports (`http` and `sse`). STDIO transport relies on the security of the local environment where it runs.
-</Tip>
+Authentication in MCP presents unique challenges that differ from traditional web applications. MCP clients need to discover authentication requirements automatically, negotiate OAuth flows without user intervention, and work seamlessly across different identity providers. FastMCP addresses these challenges by providing authentication patterns that integrate with the MCP protocol while remaining simple to implement and deploy.
 
-FastMCP provides a powerful and flexible authentication system designed to fit modern application needs. Authentication is a fast-moving and often confusing part of the MCP specification, so FastMCP endeavors to make it as straightforward as possible while adhering to industry best practices as the MCP community evolves new standards.
+<Tip>
+Authentication applies only to FastMCP's HTTP-based transports (`http` and `sse`). The STDIO transport inherits security from its local execution environment.
+</Tip>
 
 <Warning>
 **Authentication is rapidly evolving in MCP.** The specification and best practices are changing quickly. FastMCP aims to provide stable, secure patterns that adapt to these changes while keeping your code simple and maintainable.
 </Warning>
 
-## Authentication Patterns
+## MCP Authentication Challenges
 
-MCP supports a variety of authentication options depending on how much of the authentication complexity you want to pull into your server itself. This can be thought of as a trade-off between whether your MCP server acts as a **Resource Server (RS)** that protects resources, an **Authorization Server (AS)** that handles user authentication and issues tokens, or neither.
+Traditional web authentication assumes a human user with a browser who can interact with login forms and consent screens. MCP clients are often automated systems that need to authenticate without human intervention. This creates several unique requirements:
 
-Think of it as a spectrum:
+**Automatic Discovery**: MCP clients must discover authentication requirements by examining server metadata rather than encountering login redirects.
 
-- **No responsibility:** Your server has no authentication *(none)*
-- **Minimal responsibility:** Your server only validates tokens issued elsewhere *(RS)*
-- **Moderate responsibility:** Your server coordinates with external identity providers *(RS + remote AS)* — **recommended for most users**
-- **Full responsibility:** Your server handles the entire authentication lifecycle *(RS + AS)*
+**Programmatic OAuth**: OAuth flows must work without human interaction, relying on pre-configured credentials or Dynamic Client Registration.
 
-### Unauthenticated
+**Token Management**: Clients need to obtain, refresh, and manage tokens automatically across multiple MCP servers.
 
-Unauthenticated FastMCP servers run without any mechanisms to protect their components. All tools and resources are publicly accessible to any client that can connect to your server.
+**Protocol Integration**: Authentication must integrate cleanly with MCP's transport mechanisms and error handling.
 
-**Use this when:**
-- Building development or testing environments
-- Creating internal tools where network access controls provide sufficient security
-- Prototyping before implementing proper authentication
+These challenges mean that not all authentication approaches work well with MCP. The patterns that do work fall into three categories based on the level of authentication responsibility your server assumes.
 
-<Warning>
+## Understanding Authentication Responsibility
 
-**Security considerations:**
-- Only suitable for trusted environments or carefully designed public APIs
-- Consider network-level security (VPNs, firewalls, private networks)
-- Exercise extreme caution when exposing unauthenticated servers to the public internet
-- Ensure any public endpoints only expose non-sensitive data or operations
-</Warning>
+Authentication responsibility exists on a spectrum. Your MCP server can validate tokens created elsewhere, coordinate with external identity providers, or handle the complete authentication lifecycle internally. Each approach involves different trade-offs between simplicity, security, and control.
 
-### Token Verification
+### Token Validation
 
-Token verification is the conceptually simplest approach to authentication, where your FastMCP server acts as a pure **Resource Server**. Your server validates `Bearer` tokens on incoming requests but has no knowledge of how those tokens were obtained. This is analogous to how a web server validates API keys on incoming requests. Read more in the [token verification documentation](/servers/auth/token-verification).
+Your server validates tokens but delegates their creation to external systems. This approach treats your MCP server as a pure resource server that trusts tokens signed by known issuers.
 
-<Note>
-**Protocol Note:** While simple to implement, this pattern operates somewhat outside the formal MCP authentication flow, which expects OAuth-style interactions. It's best suited for internal systems or when you have full control over token generation.
-</Note>
+Token validation works well when you already have authentication infrastructure that can issue structured tokens like JWTs. Your existing API gateway, microservices platform, or enterprise SSO system becomes the source of truth for user identity, while your MCP server focuses on its core functionality.
 
-**Use this when:**
-- You just need to validate tokens issued by another system
-- Building internal microservices that trust a central auth service
-- Working with static, long-lived API keys
-- You control both the token issuer and your FastMCP server
+The key insight is that token validation separates authentication (proving who you are) from authorization (determining what you can do). Your MCP server receives proof of identity in the form of a signed token and makes access decisions based on the claims within that token.
 
-**Responsibilities you're taking on:**
-- Token validation logic
-- Ensuring tokens are securely transmitted to your server
-- Managing token lifecycle in your issuing system
+This pattern excels in microservices architectures where multiple services need to validate the same tokens, or when integrating MCP servers into existing systems that already handle user authentication.
 
-### Remote OAuth
+### External Identity Providers
 
-This is the **recommended pattern for most FastMCP users** and follows the 2025-6-18 MCP protocol update. Your FastMCP server acts as a **Resource Server** and integrates with an external, trusted **Authorization Server** like WorkOS, Auth0, or Okta. You can learn more about this pattern in the [remote OAuth documentation](/servers/auth/remote-oauth).
+Your server coordinates with established identity providers to create seamless authentication experiences for MCP clients. This approach leverages OAuth 2.0 and OpenID Connect protocols to delegate user authentication while maintaining control over authorization decisions.
 
-**Use this when:**
-- You want to integrate with external identity providers
-- Building user-facing applications that need SSO
-- You want enterprise-grade authentication without building it yourself
-- You need features like multi-factor authentication, social logins, or directory sync
+External identity providers handle the complex aspects of authentication: user credential verification, multi-factor authentication, account recovery, and security monitoring. Your MCP server receives tokens from these trusted providers and validates them using the provider's public keys.
 
-**Responsibilities you're taking on:**
-- Configuring your server to trust the external provider
-- Token validation using the provider's public keys
-- Mapping token claims to your application's user model
+The MCP protocol's support for Dynamic Client Registration makes this pattern particularly powerful. MCP clients can automatically discover your authentication requirements and register themselves with your identity provider without manual configuration.
 
-**What the external provider handles:**
-- User login and consent flows
-- Token issuance and management
-- User account management
-- Security features like MFA and fraud detection
+This approach works best for production applications that need enterprise-grade authentication features without the complexity of building them from scratch. It scales well across multiple applications and provides consistent user experiences.
 
-### Full OAuth Server
+### Full OAuth Implementation
 
-<Warning>
-**This is extremely advanced.** Most people should not build their own OAuth server. It requires deep security expertise and ongoing maintenance. Consider this only if you need complete control and have the resources to implement it securely.
-</Warning>
+Your server implements a complete OAuth 2.0 authorization server, handling everything from user credential verification to token lifecycle management. This approach provides maximum control at the cost of significant complexity.
 
-In this pattern, your FastMCP server acts as both the **Authorization Server** and **Resource Server**, handling the entire authentication lifecycle from user login to token validation. Read more in the [full OAuth server documentation](/servers/auth/full-oauth-server).
+Full OAuth implementation means building user interfaces for login and consent, implementing secure credential storage, managing token lifecycles, and maintaining ongoing security updates. The complexity extends beyond initial implementation to include threat monitoring, compliance requirements, and keeping pace with evolving security best practices.
 
-**Use this when:**
-- Building a completely standalone application with its own user database
-- You need full control over every aspect of authentication
-- Prototyping OAuth flows locally without external dependencies
-- You have the security expertise to implement OAuth securely
+This pattern makes sense only when you need complete control over the authentication process, operate in air-gapped environments, or have specialized requirements that external providers cannot meet.
 
-**Responsibilities you're taking on:**
-- Secure user credential storage and verification
-- OAuth flow implementation
-- Token lifecycle management
-- Security measures like rate limiting and attack prevention
-- User consent and account management interfaces
-- Ongoing security updates and compliance
+## FastMCP Implementation
 
-## Configuring Authentication
+FastMCP translates these authentication responsibility levels into three concrete classes that handle the complexities of MCP protocol integration.
 
-FastMCP provides a variety of `AuthProvider` classes that can be used to configure your server. To use one, instantiate it and pass it to your FastMCP server's `auth` parameter.
+### TokenVerifier
 
-<CodeGroup>
+`TokenVerifier` provides pure token validation without OAuth metadata endpoints. This class focuses on the essential task of determining whether a token is valid and extracting authorization information from its claims.
 
+The implementation handles JWT signature verification, expiration checking, and claim extraction. It validates tokens against known issuers and audiences, ensuring that tokens intended for your server are not accepted by other systems.
 
-```python Token Verification
+```python
 from fastmcp import FastMCP
 from fastmcp.server.auth.providers.jwt import JWTVerifier
 
-jwt_verifier = JWTVerifier(...)
+auth = JWTVerifier(
+    jwks_uri="https://your-auth-system.com/.well-known/jwks.json",
+    issuer="https://your-auth-system.com", 
+    audience="your-mcp-server"
+)
 
-mcp = FastMCP(name="My Server", auth=jwt_verifier)
+mcp = FastMCP(name="Protected Server", auth=auth)
 ```
 
-```python Remote OAuth
+This example configures token validation against a JWT issuer. The `JWTVerifier` will fetch public keys from the JWKS endpoint and validate incoming tokens against those keys. Only tokens with the correct issuer and audience claims will be accepted.
+
+`TokenVerifier` works well when you control both the token issuer and your MCP server, or when integrating with existing JWT-based infrastructure.
+
+→ **Complete guide**: [Token Verification](/servers/auth/token-verification)
+
+### RemoteAuthProvider
+
+`RemoteAuthProvider` combines token validation with OAuth discovery metadata, enabling MCP clients to automatically discover and authenticate with external identity providers.
+
+This class extends `TokenVerifier` functionality by adding OAuth 2.0 protected resource endpoints that advertise your authentication requirements. MCP clients can examine these endpoints to understand which identity providers you trust and how to obtain valid tokens.
+
+The implementation handles the OAuth metadata generation required by the MCP specification while delegating actual token validation to an underlying `TokenVerifier`. This separation allows you to use different token validation strategies while maintaining consistent OAuth discovery behavior.
+
+```python
 from fastmcp import FastMCP
 from fastmcp.server.auth.providers.workos import AuthKitProvider
 
-auth_provider = AuthKitProvider(...)
+auth = AuthKitProvider(
+    authkit_domain="https://your-project.authkit.app",
+    base_url="https://your-fastmcp-server.com"
+)
 
-mcp = FastMCP(name="My Server", auth=auth_provider)
+mcp = FastMCP(name="Enterprise Server", auth=auth)
 ```
-</CodeGroup>
 
-### Environment Variables
+This example uses WorkOS AuthKit as the external identity provider. The `AuthKitProvider` automatically configures token validation against WorkOS and provides the OAuth metadata that MCP clients need for automatic authentication.
 
-For providers that support it, you can configure authentication entirely through environment variables. 
+`RemoteAuthProvider` excels for production applications that need professional identity management without implementation complexity.
 
-There are two steps to this process:
+→ **Complete guide**: [Remote OAuth](/servers/auth/remote-oauth)
 
-1. Set `FASTMCP_SERVER_AUTH` to the registered name of your provider. For example, `JWT` for the `JWTVerifier` or `AUTHKIT` for the `AuthKitProvider`.
-2. Set the appropriate environment variables for your provider in order to configure it. These are provider-specific and can be found in the provider's documentation. Not all providers will support environment variable configuration for all of their settings.
+### OAuthProvider
 
-For example, to configure a JWT verifier, you would set: 
+`OAuthProvider` implements a complete OAuth 2.0 authorization server within your MCP server. This class handles the full authentication lifecycle from user credential verification to token management.
+
+The implementation provides all required OAuth endpoints including authorization, token, and discovery endpoints. It manages client registration, user consent, and token lifecycle while integrating with your user storage and authentication logic.
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.auth.providers.oauth import MyOAuthProvider
+
+auth = MyOAuthProvider(
+    user_store=your_user_database,
+    client_store=your_client_registry,
+    # Additional configuration...
+)
+
+mcp = FastMCP(name="Auth Server", auth=auth)
+```
+
+This example shows the basic structure of a custom OAuth provider. The actual implementation requires significant additional configuration for user management, client registration, and security policies.
+
+`OAuthProvider` should be used only when you have specific requirements that external providers cannot meet and the expertise to implement OAuth securely.
+
+→ **Complete guide**: [Full OAuth Server](/servers/auth/full-oauth-server)
+
+## Configuration Approaches
+
+FastMCP supports both programmatic configuration for maximum flexibility and environment-based configuration for deployment simplicity.
+
+### Programmatic Configuration
+
+Programmatic configuration provides complete control over authentication settings and allows for complex initialization logic. This approach works well during development and when you need to customize authentication behavior based on runtime conditions.
+
+Authentication providers are instantiated directly in your code with their required parameters. This makes dependencies explicit and allows your IDE to provide helpful autocompletion and type checking.
+
+### Environment Configuration
+
+Environment-based configuration separates authentication settings from application code, enabling the same codebase to work across different deployment environments without modification.
+
+FastMCP automatically detects authentication configuration from environment variables when no explicit `auth` parameter is provided. The configuration system supports all authentication providers and their various options.
 
 ```bash
 export FASTMCP_SERVER_AUTH=JWT
-export FASTMCP_SERVER_AUTH_JWT_JWKS_URI="https://your-idp.com/.well-known/jwks.json"
+export FASTMCP_SERVER_AUTH_JWT_JWKS_URI="https://auth.example.com/jwks"
+export FASTMCP_SERVER_AUTH_JWT_ISSUER="https://auth.example.com"
+export FASTMCP_SERVER_AUTH_JWT_AUDIENCE="mcp-server"
 ```
 
-And now your FastMCP server will automatically be configured with the JWT verifier:
+With these environment variables set, creating an authenticated FastMCP server requires no additional configuration:
 
 ```python
 from fastmcp import FastMCP
 
-# Assumes the environment variables are set as above
-mcp = FastMCP(name="My Protected Server")
-
-assert mcp.auth is not None
-assert mcp.auth.jwks_uri == "https://your-idp.com/.well-known/jwks.json"
+# Authentication automatically configured from environment
+mcp = FastMCP(name="My Server")
 ```
 
-Note that if you provide an `auth` parameter to your FastMCP server, it will override the environment variable configuration. You can also set `auth=None` to disable authentication entirely and prohibit environment variable configuration.
+This approach simplifies deployment pipelines and follows twelve-factor app principles for configuration management.
+
+## Choosing Your Implementation
+
+The authentication approach you choose depends on your existing infrastructure, security requirements, and operational constraints.
+
+**For most production applications, external identity providers offer the best balance of security, features, and simplicity.** This approach provides enterprise-grade authentication without implementation complexity and scales well as your application grows. The main trade-off is requiring users to sign up with your chosen identity provider, but this also brings benefits like professional user management, security monitoring, and compliance features.
+
+**Token validation works well when you already have authentication infrastructure that issues structured tokens.** If your organization already uses JWT-based systems, API gateways, or enterprise SSO that can generate tokens, this approach integrates seamlessly while keeping your MCP server focused on its core functionality. The simplicity comes from leveraging existing investment in authentication infrastructure.
+
+**Full OAuth implementation should be avoided unless you have compelling reasons that external providers cannot address.** Air-gapped environments, specialized compliance requirements, or unique organizational constraints might justify this approach, but it requires significant security expertise and ongoing maintenance commitment. The complexity extends far beyond initial implementation to include threat monitoring, security updates, and keeping pace with evolving attack vectors.
+
+FastMCP's architecture supports migration between these approaches as your requirements evolve. You can integrate with existing token systems initially and migrate to external identity providers as your application scales, or implement custom solutions when your requirements outgrow standard patterns.

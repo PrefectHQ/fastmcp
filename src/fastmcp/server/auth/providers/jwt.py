@@ -16,7 +16,7 @@ from pydantic import AnyHttpUrl, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing_extensions import TypedDict
 
-from fastmcp.server.auth.auth import TokenVerifier
+from fastmcp.server.auth import TokenVerifier
 from fastmcp.server.auth.registry import register_provider
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import NotSet, NotSetT

@@ -1,15 +1,12 @@
 from __future__ import annotations
 
 import httpx
-from mcp.server.auth.provider import (
-    AccessToken,
-)
 from pydantic import AnyHttpUrl
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from starlette.responses import JSONResponse
-from starlette.routing import BaseRoute, Route
+from starlette.routing import Route
 
-from fastmcp.server.auth.auth import AuthProvider, TokenVerifier
+from fastmcp.server.auth import RemoteAuthProvider, TokenVerifier
 from fastmcp.server.auth.providers.jwt import JWTVerifier
 from fastmcp.server.auth.registry import register_provider
 from fastmcp.utilities.logging import get_logger
@@ -31,7 +28,7 @@ class AuthKitProviderSettings(BaseSettings):
 
 
 @register_provider("AUTHKIT")
-class AuthKitProvider(AuthProvider):
+class AuthKitProvider(RemoteAuthProvider):
     """AuthKit metadata provider for DCR (Dynamic Client Registration).
 
     This provider implements AuthKit integration using metadata forwarding
@@ -83,8 +80,6 @@ class AuthKitProvider(AuthProvider):
             required_scopes: Optional list of scopes to require for all requests
             token_verifier: Optional token verifier. If None, creates JWT verifier for AuthKit
         """
-        super().__init__()
-
         settings = AuthKitProviderSettings.model_validate(
             {
                 k: v
@@ -109,19 +104,21 @@ class AuthKitProvider(AuthProvider):
                 required_scopes=settings.required_scopes,
             )
 
-        self.token_verifier = token_verifier
+        # Initialize RemoteAuthProvider with AuthKit as the authorization server
+        super().__init__(
+            token_verifier=token_verifier,
+            authorization_servers=[AnyHttpUrl(self.authkit_domain)],
+            resource_server_url=self.base_url,
+        )
 
-    async def verify_token(self, token: str) -> AccessToken | None:
-        """Verify an AuthKit token using the configured token verifier."""
-        return await self.token_verifier.verify_token(token)
+    def get_routes(self) -> list[Route]:
+        """Get OAuth routes including AuthKit authorization server metadata forwarding.
 
-    def customize_auth_routes(self, routes: list[BaseRoute]) -> list[BaseRoute]:
-        """Add AuthKit metadata endpoints.
-
-        This adds:
-        - /.well-known/oauth-authorization-server (forwards AuthKit metadata)
-        - /.well-known/oauth-protected-resource (returns FastMCP resource info)
+        This returns the standard protected resource routes plus an authorization server
+        metadata endpoint that forwards AuthKit's OAuth metadata to clients.
         """
+        # Get the standard protected resource routes from RemoteAuthProvider
+        routes = super().get_routes()
 
         async def oauth_authorization_server_metadata(request):
             """Forward AuthKit OAuth authorization server metadata with FastMCP customizations."""
@@ -142,29 +139,13 @@ class AuthKitProvider(AuthProvider):
                     status_code=500,
                 )
 
-        async def oauth_protected_resource_metadata(request):
-            """Return FastMCP resource server metadata."""
-            return JSONResponse(
-                {
-                    "resource": self.base_url,
-                    "authorization_servers": [self.authkit_domain],
-                    "bearer_methods_supported": ["header"],
-                }
+        # Add AuthKit authorization server metadata forwarding
+        routes.append(
+            Route(
+                "/.well-known/oauth-authorization-server",
+                endpoint=oauth_authorization_server_metadata,
+                methods=["GET"],
             )
-
-        routes.extend(
-            [
-                Route(
-                    "/.well-known/oauth-authorization-server",
-                    endpoint=oauth_authorization_server_metadata,
-                    methods=["GET"],
-                ),
-                Route(
-                    "/.well-known/oauth-protected-resource",
-                    endpoint=oauth_protected_resource_metadata,
-                    methods=["GET"],
-                ),
-            ]
         )
 
         return routes

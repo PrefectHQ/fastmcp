@@ -1,7 +1,7 @@
 ---
 title: Remote OAuth
 sidebarTitle: Remote OAuth
-description: Integrate with external identity providers like WorkOS, Auth0, or Okta by trusting them to handle user authentication.
+description: Integrate your FastMCP server with external identity providers like WorkOS, Auth0, and corporate SSO systems.
 icon: camera-cctv
 tag: NEW
 ---
@@ -10,138 +10,180 @@ import { VersionBadge } from "/snippets/version-badge.mdx"
 
 <VersionBadge version="2.11.0" />
 
-**Remote OAuth** is the recommended pattern for securing most production applications. In this model, your FastMCP server acts as a **Resource Server (RS)** and integrates with an external, trusted **Authorization Server (AS)**, such as WorkOS, Auth0, or a corporate SSO system.
+Remote OAuth integration allows your FastMCP server to leverage external identity providers while maintaining the automated authentication flows that MCP clients require. This approach provides enterprise-grade authentication features without the complexity of implementing them yourself, making it the recommended pattern for most production applications.
 
-This approach lets you leverage robust, feature-rich identity platforms for user management, multi-factor authentication, and social logins, while your FastMCP server focuses on its core job: providing tools and resources.
+<Tip>
+Remote OAuth requires identity providers that support **Dynamic Client Registration (DCR)**. This enables MCP clients to automatically register and authenticate without manual configuration steps.
+</Tip>
 
-### How It Works
+## The Remote OAuth Challenge
 
-The flow relies on the MCP client's ability to discover your server's authentication requirements. Your server doesn't handle logins itself; it tells the client where to find the real identity provider.
+Traditional OAuth flows assume human users with web browsers who can interact with login forms, consent screens, and redirects. MCP clients operate differently - they're often automated systems that need to authenticate programmatically without human intervention.
 
-The key endpoint is **`/.well-known/oauth-protected-resource`** which returns static metadata pointing to the authorization server. You can optionally also provide **`/.well-known/oauth-authorization-server`** that forwards the authorization server's metadata for convenience.
+This creates several unique requirements that standard OAuth implementations don't address well:
+
+**Automatic Discovery**: MCP clients must discover authentication requirements by examining server metadata rather than encountering HTTP redirects. They need to know which identity provider to use and how to reach it before making any authenticated requests.
+
+**Programmatic Registration**: Clients need to register themselves with identity providers automatically. Manual client registration doesn't work when clients might be dynamically created tools or services.
+
+**Seamless Token Management**: Clients must obtain, store, and refresh tokens without user interaction. The authentication flow needs to work in headless environments where no human is available to complete OAuth consent flows.
+
+**Protocol Integration**: The authentication process must integrate cleanly with MCP's JSON-RPC transport layer and error handling mechanisms.
+
+These requirements mean that your MCP server needs to do more than just validate tokens - it needs to provide discovery metadata that enables MCP clients to understand and navigate your authentication requirements automatically.
+
+## MCP Authentication Discovery
+
+MCP authentication discovery relies on well-known endpoints that clients can examine to understand your authentication requirements. Your server becomes a bridge between MCP clients and your chosen identity provider.
+
+The core discovery endpoint is `/.well-known/oauth-protected-resource`, which tells clients that your server requires OAuth authentication and identifies the authorization servers you trust. This endpoint contains static metadata that points clients to your identity provider without requiring any dynamic lookups.
 
 ```mermaid
 sequenceDiagram
     participant Client
-    participant FastMCPServer as FastMCP (RS)
-    participant ExternalIdP as External IdP (AS)
+    participant FastMCPServer as FastMCP Server
+    participant ExternalIdP as Identity Provider
 
     Client->>FastMCPServer: 1. GET /.well-known/oauth-protected-resource
     FastMCPServer-->>Client: 2. "Use https://my-idp.com for auth"
     
     note over Client, ExternalIdP: Client goes directly to the IdP
-    Client->>ExternalIdP: 3. GET /.well-known/oauth-authorization-server
-    ExternalIdP-->>Client: 4. OAuth endpoints & capabilities
+    Client->>ExternalIdP: 3. Authenticate & get token via DCR
+    ExternalIdP-->>Client: 4. Access token
     
-    Client->>ExternalIdP: 5. User authenticates & gets token
-    ExternalIdP-->>Client: 
-    
-    Client->>FastMCPServer: 6. MCP request with Bearer token
-    note right of FastMCPServer: Server verifies the token
-    FastMCPServer->>FastMCPServer: 7. Verify token signature <br/> (using IdP's public keys)
-    FastMCPServer-->>Client: 8. MCP Response
+    Client->>FastMCPServer: 5. MCP request with Bearer token
+    FastMCPServer->>FastMCPServer: 6. Verify token signature
+    FastMCPServer-->>Client: 7. MCP response
 ```
 
-## Building a Custom Provider
+This flow separates concerns cleanly: your MCP server handles resource protection and token validation, while your identity provider handles user authentication and token issuance. The client coordinates between these systems using standardized OAuth discovery mechanisms.
 
-To connect to any identity provider, you create a custom `AuthProvider` subclass. This class has two main responsibilities:
+## FastMCP Remote Authentication
 
-1.  **Verifying Tokens:** Validate tokens issued by the external provider.
-2.  **Forwarding Metadata:** Tell MCP clients where to find the external provider's login pages and token endpoints.
+<VersionBadge version="2.11.1" />
 
-### Step 1: Verifying Tokens
+FastMCP provides `RemoteAuthProvider` to handle the complexities of remote OAuth integration. This class combines token validation capabilities with the OAuth discovery metadata that MCP clients require.
 
-Your provider must implement the `verify_token` method. For most modern identity providers that issue JWTs, you can simply delegate this task to FastMCP's built-in `JWTVerifier`.
+### RemoteAuthProvider
+
+`RemoteAuthProvider` works by composing a [`TokenVerifier`](/servers/auth/token-verification) with authorization server information. A `TokenVerifier` is another FastMCP authentication class that focuses solely on token validation - signature verification, expiration checking, and claim extraction. The `RemoteAuthProvider` takes that token validation capability and adds the OAuth discovery endpoints that enable MCP clients to automatically find and authenticate with your identity provider.
+
+This composition pattern means you can use any token validation strategy (JWT verification, introspection endpoints, custom validation logic) while maintaining consistent OAuth discovery behavior. The separation allows you to change token validation approaches without affecting the client discovery experience.
+
+The class automatically generates the required OAuth metadata endpoints using the MCP SDK's standardized route creation functions. This ensures compatibility with MCP clients while reducing the implementation complexity for server developers.
+
+### Basic Implementation
+
+Most applications can use `RemoteAuthProvider` directly without subclassing. The implementation requires a `TokenVerifier` instance, a list of trusted authorization servers, and your server's URL for metadata generation.
 
 ```python
-from fastmcp.server.auth.auth import AuthProvider
+from fastmcp import FastMCP
+from fastmcp.server.auth import RemoteAuthProvider
 from fastmcp.server.auth.providers.jwt import JWTVerifier
-from mcp.server.auth.provider import AccessToken
+from pydantic import AnyHttpUrl
 
-class MyIdPAuthProvider(AuthProvider):
-    def __init__(self):
-        super().__init__()
-        # The verifier validates tokens from the upstream provider.
-        self.token_verifier = JWTVerifier(
-            jwks_uri="https://my-idp.com/.well-known/jwks.json",
-            issuer="https://my-idp.com",
-            audience="my-fastmcp-api"
-        )
+# Configure token validation for your identity provider
+token_verifier = JWTVerifier(
+    jwks_uri="https://auth.yourcompany.com/.well-known/jwks.json",
+    issuer="https://auth.yourcompany.com",
+    audience="mcp-production-api"
+)
 
-    async def verify_token(self, token: str) -> AccessToken | None:
-        return await self.token_verifier.verify_token(token)
+# Create the remote auth provider
+auth = RemoteAuthProvider(
+    token_verifier=token_verifier,
+    authorization_servers=[AnyHttpUrl("https://auth.yourcompany.com")],
+    resource_server_url="https://api.yourcompany.com"
+)
+
+mcp = FastMCP(name="Company API", auth=auth)
 ```
 
-### Step 2: Adding Discovery Metadata
+This configuration creates a server that accepts tokens issued by `auth.yourcompany.com` and provides the OAuth discovery metadata that MCP clients need. The `JWTVerifier` handles token validation using your identity provider's public keys, while the `RemoteAuthProvider` generates the required OAuth endpoints.
 
-Next, implement the `customize_auth_routes` method. The essential endpoint is `/.well-known/oauth-protected-resource` which tells clients where to find your authorization server. You can optionally add the authorization server forwarding endpoint for convenience.
+The `authorization_servers` list tells MCP clients which identity providers you trust. The `resource_server_url` identifies your server in OAuth metadata, enabling proper token audience validation.
+
+### Custom Endpoints
+
+You can extend `RemoteAuthProvider` to add additional endpoints beyond the standard OAuth protected resource metadata. These don't have to be OAuth-specific - you can add any endpoints your authentication integration requires.
 
 ```python
 import httpx
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
-class MyIdPAuthProvider(AuthProvider):
-    # ... (init and verify_token from above) ...
+class CompanyAuthProvider(RemoteAuthProvider):
+    def __init__(self):
+        token_verifier = JWTVerifier(
+            jwks_uri="https://auth.yourcompany.com/.well-known/jwks.json",
+            issuer="https://auth.yourcompany.com",
+            audience="mcp-production-api"
+        )
+        
+        super().__init__(
+            token_verifier=token_verifier,
+            authorization_servers=[AnyHttpUrl("https://auth.yourcompany.com")],
+            resource_server_url="https://api.yourcompany.com"
+        )
     
-    def customize_auth_routes(self, routes: list[Route]) -> list[Route]:
-        # Essential: Tell clients which authorization server to use
-        async def protected_resource_metadata(request):
-            return JSONResponse({
-                "resource": "https://my-fastmcp-server.com",
-                "authorization_servers": ["https://my-idp.com"],
-                "bearer_methods_supported": ["header"],
-            })
+    def get_routes(self) -> list[Route]:
+        """Add custom endpoints to the standard protected resource routes."""
         
-        routes.append(Route("/.well-known/oauth-protected-resource", protected_resource_metadata))
+        # Get the standard OAuth protected resource routes
+        routes = super().get_routes()
         
-        # Optional: Forward the authorization server's metadata for convenience
-        # (Clients can also fetch this directly from the IdP)
+        # Add authorization server metadata forwarding for client convenience
         async def authorization_server_metadata(request):
             async with httpx.AsyncClient() as client:
-                resp = await client.get("https://my-idp.com/.well-known/oauth-authorization-server")
-                resp.raise_for_status()
-                return JSONResponse(resp.json())
-
-        routes.append(Route("/.well-known/oauth-authorization-server", authorization_server_metadata))
+                response = await client.get(
+                    "https://auth.yourcompany.com/.well-known/oauth-authorization-server"
+                )
+                response.raise_for_status()
+                return JSONResponse(response.json())
+        
+        routes.append(
+            Route("/.well-known/oauth-authorization-server", authorization_server_metadata)
+        )
+        
         return routes
+
+mcp = FastMCP(name="Company API", auth=CompanyAuthProvider())
 ```
 
-### Step 3: Using Your Provider
+This pattern uses `super().get_routes()` to get the standard protected resource routes, then adds additional endpoints as needed. A common use case is providing authorization server metadata forwarding, which allows MCP clients to discover your identity provider's capabilities through your MCP server rather than contacting the identity provider directly.
 
-With these two methods implemented, your auth provider is now fully integrated with your identity provider. You can now use your custom provider with FastMCP by passing it to the `auth` parameter of your `FastMCP` instance:
+## WorkOS AuthKit Integration
 
-```python
-from fastmcp import FastMCP
-
-mcp = FastMCP(name="My Secure Server", auth=MyIdPAuthProvider())
-```
-
-
-## Example: WorkOS AuthKit Provider
-
-FastMCP provides a built-in provider for **WorkOS AuthKit** that handles this entire pattern for you. It's a perfect example of the remote OAuth pattern in action.
-
-**Prerequisites:**
-1. A WorkOS account with an AuthKit project.
-2. **Dynamic Client Registration (DCR)** must be enabled in your WorkOS application settings.
-3. Your FastMCP server's URL must be added as a **Redirect URI** in your WorkOS project (can be localhost for development).
+WorkOS AuthKit provides an excellent example of remote OAuth integration. The `AuthKitProvider` demonstrates how to implement both token validation and OAuth metadata forwarding in a production-ready package.
 
 ```python
 from fastmcp import FastMCP
 from fastmcp.server.auth.providers.workos import AuthKitProvider
 
-# The AuthKitProvider implements both metadata forwarding and token validation.
-auth_provider = AuthKitProvider(
-    # Your unique AuthKit domain from the WorkOS dashboard
+auth = AuthKitProvider(
     authkit_domain="https://your-project.authkit.app",
-    # The URL of THIS FastMCP server (can be localhost for development)
-    base_url="https://your-fastmcp-server.com"
+    base_url="https://your-mcp-server.com"
 )
 
-mcp = FastMCP(name="My WorkOS-Protected Server", auth=auth_provider)
+mcp = FastMCP(name="Protected Application", auth=auth)
 ```
 
-<Tip>
-For a complete, step-by-step tutorial on using this provider, see the [**WorkOS AuthKit Integration Guide**](/integrations/authkit).
-</Tip>
+The `AuthKitProvider` automatically configures JWT validation against WorkOS's public keys and provides both protected resource metadata and authorization server metadata forwarding. This implementation handles the complete remote OAuth integration with minimal configuration.
+
+WorkOS's support for Dynamic Client Registration makes it particularly well-suited for MCP applications. Clients can automatically register themselves with your WorkOS project and obtain the credentials needed for authentication without manual intervention.
+
+→ **Complete WorkOS tutorial**: [AuthKit Integration Guide](/integrations/authkit)
+
+## Implementation Considerations
+
+Remote OAuth integration requires careful attention to several technical details that affect reliability and security.
+
+**Token Validation Performance**: Your server validates every incoming token by checking signatures against your identity provider's public keys. Consider implementing key caching and rotation handling to minimize latency while maintaining security.
+
+**Error Handling**: Network issues with your identity provider can affect token validation. Implement appropriate timeouts, retry logic, and graceful degradation to maintain service availability during identity provider outages.
+
+**Audience Validation**: Ensure that tokens intended for your server are not accepted by other applications. Proper audience validation prevents token misuse across different services in your ecosystem.
+
+**Scope Management**: Map token scopes to your application's permission model consistently. Consider how scope changes affect existing tokens and plan for smooth permission updates.
+
+The complexity of these considerations reinforces why external identity providers are recommended over custom OAuth implementations. Established providers handle these technical details with extensive testing and operational experience.
