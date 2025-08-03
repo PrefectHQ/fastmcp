@@ -82,13 +82,9 @@ def format_array_parameter(
             return values
         else:
             # For path parameters, fallback to string representation without Python syntax
-            str_value = (
-                str(values)
-                .replace("[", "")
-                .replace("]", "")
-                .replace("'", "")
-                .replace('"', "")
-            )
+            # Use str.translate() for efficient character removal
+            translation_table = str.maketrans("", "", "[]'\"")
+            str_value = str(values).translate(translation_table)
             return str_value
 
 
