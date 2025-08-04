@@ -92,7 +92,12 @@ class FastMCPComponent(FastMCPBaseModel):
         return meta or None
 
     def with_key(self, key: str) -> Self:
-        return self.model_copy(update={"_key": key})
+        # `model_copy` has an `update` parameter but it doesn't work for certain private attributes
+        # https://github.com/pydantic/pydantic/issues/12116
+        # So we manually set the private attribute here instead
+        copy = self.model_copy()
+        copy._key = key
+        return copy
 
     def __eq__(self, other: object) -> bool:
         if type(self) is not type(other):

@@ -8,6 +8,8 @@ from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.client.transports import FastMCPTransport, SSETransport
 from fastmcp.server.proxy import FastMCPProxy
+from fastmcp.tools.tool import Tool
+from fastmcp.tools.tool_transform import TransformedTool
 from fastmcp.utilities.tests import caplog_for_fastmcp
 
 
@@ -18,22 +20,29 @@ class TestBasicMount:
         """Test mounting a simple server and accessing its tool."""
         # Create main app and sub-app
         main_app = FastMCP("MainApp")
-        sub_app = FastMCP("SubApp")
 
         # Add a tool to the sub-app
-        @sub_app.tool
-        def sub_tool() -> str:
+        def tool() -> str:
             return "This is from the sub app"
+
+        sub_tool = Tool.from_function(tool)
+
+        transformed_tool = TransformedTool.from_tool(
+            name="transformed_tool", tool=sub_tool
+        )
+
+        sub_app = FastMCP("SubApp", tools=[transformed_tool, sub_tool])
 
         # Mount the sub-app to the main app
         main_app.mount(sub_app, "sub")
 
         # Get tools from main app, should include sub_app's tools
         tools = await main_app.get_tools()
-        assert "sub_sub_tool" in tools
+        assert "sub_tool" in tools
+        assert "sub_transformed_tool" in tools
 
         async with Client(main_app) as client:
-            result = await client.call_tool("sub_sub_tool", {})
+            result = await client.call_tool("sub_tool", {})
             assert result.data == "This is from the sub app"
 
     async def test_mount_with_custom_separator(self):
