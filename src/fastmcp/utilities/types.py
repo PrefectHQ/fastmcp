@@ -101,7 +101,12 @@ def get_cached_typeadapter(cls: T) -> TypeAdapter[T]:
                 new_func.__module__ = cls.__module__
                 new_func.__qualname__ = getattr(cls, "__qualname__", cls.__name__)
                 new_func.__annotations__ = processed_hints
-                return TypeAdapter(new_func)
+
+                if inspect.ismethod(cls):
+                    new_method = types.MethodType(new_func, cls.__self__)
+                    return TypeAdapter(new_method)
+                else:
+                    return TypeAdapter(new_func)
 
     return TypeAdapter(cls)
 

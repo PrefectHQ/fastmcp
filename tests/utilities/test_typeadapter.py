@@ -37,6 +37,19 @@ class SomeComplexModel(BaseModel):
     y: dict[int, str]
 
 
+class ClassWithMethods:
+    def do_something(self, x: int) -> int:
+        return x
+
+    def do_something_annotated(
+        self, x: Annotated[int, Field(description="A description")]
+    ) -> int:
+        return x
+
+    def do_something_return_none(self) -> None:
+        return None
+
+
 def complex_arguments_fn(
     an_int: int,
     must_be_none: None,
@@ -242,3 +255,19 @@ def test_str_vs_int():
     type_adapter = get_cached_typeadapter(func_with_str_and_int)
     result = type_adapter.validate_python({"a": "123", "b": 123})
     assert result == "123"
+
+
+def test_class_with_methods():
+    """Test that class methods are not included in the schema"""
+    class_with_methods = ClassWithMethods()
+    type_adapter = get_cached_typeadapter(class_with_methods.do_something)
+    schema = type_adapter.json_schema()
+    assert "self" not in schema["properties"]
+
+    type_adapter = get_cached_typeadapter(class_with_methods.do_something_annotated)
+    schema = type_adapter.json_schema()
+    assert "self" not in schema["properties"]
+
+    type_adapter = get_cached_typeadapter(class_with_methods.do_something_return_none)
+    schema = type_adapter.json_schema()
+    assert "self" not in schema["properties"]
