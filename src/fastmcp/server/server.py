@@ -140,19 +140,18 @@ class FastMCP(Generic[LifespanResultT]):
             ]
             | None
         ) = None,
-        tool_serializer: Callable[[Any], str] | None = None,
-        cache_expiration_seconds: float | None = None,
-        on_duplicate_tools: DuplicateBehavior | None = None,
-        on_duplicate_resources: DuplicateBehavior | None = None,
-        on_duplicate_prompts: DuplicateBehavior | None = None,
+        dependencies: list[str] | None = None,
         resource_prefix_format: Literal["protocol", "path"] | None = None,
         mask_error_details: bool | None = None,
         tools: list[Tool | Callable[..., Any]] | None = None,
         tool_transformations: dict[str, ToolTransformConfig] | None = None,
-        dependencies: list[str] | None = None,
+        tool_serializer: Callable[[Any], str] | None = None,
         include_tags: set[str] | None = None,
         exclude_tags: set[str] | None = None,
         include_fastmcp_meta: bool | None = None,
+        on_duplicate_tools: DuplicateBehavior | None = None,
+        on_duplicate_resources: DuplicateBehavior | None = None,
+        on_duplicate_prompts: DuplicateBehavior | None = None,
         # ---
         # ---
         # --- The following arguments are DEPRECATED ---

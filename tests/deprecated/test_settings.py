@@ -176,7 +176,6 @@ class TestDeprecatedServerInitKwargs:
             server = FastMCP(
                 name="TestServer",
                 instructions="Test instructions",
-                cache_expiration_seconds=60.0,
                 on_duplicate_tools="warn",
                 on_duplicate_resources="error",
                 on_duplicate_prompts="replace",
