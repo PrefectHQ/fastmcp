@@ -9,6 +9,7 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP as FastMCP1x
 
 import fastmcp
+from fastmcp import Client
 from fastmcp.server.server import FastMCP
 
 
@@ -71,7 +72,7 @@ class FastMCPInfo:
     instructions: str | None
     fastmcp_version: str
     mcp_version: str
-    server_version: str
+    server_version: str | None
     tools: list[ToolInfo]
     prompts: list[PromptInfo]
     resources: list[ResourceInfo]
@@ -170,7 +171,9 @@ async def inspect_fastmcp_v2(mcp: FastMCP[Any]) -> FastMCPInfo:
         instructions=mcp.instructions,
         fastmcp_version=fastmcp.__version__,
         mcp_version=importlib.metadata.version("mcp"),
-        server_version=fastmcp.__version__,  # v2.x uses FastMCP version
+        server_version=(
+            mcp.version if hasattr(mcp, "version") else mcp._mcp_server.version
+        ),
         tools=tool_infos,
         prompts=prompt_infos,
         resources=resource_infos,
@@ -179,7 +182,7 @@ async def inspect_fastmcp_v2(mcp: FastMCP[Any]) -> FastMCPInfo:
     )
 
 
-async def inspect_fastmcp_v1(mcp: Any) -> FastMCPInfo:
+async def inspect_fastmcp_v1(mcp: FastMCP1x) -> FastMCPInfo:
     """Extract information from a FastMCP v1.x instance using a Client.
 
     Args:
@@ -188,7 +191,6 @@ async def inspect_fastmcp_v1(mcp: Any) -> FastMCPInfo:
     Returns:
         FastMCPInfo dataclass containing the extracted information
     """
-    from fastmcp import Client
 
     # Use a client to interact with the FastMCP1x server
     async with Client(mcp) as client:
@@ -288,11 +290,11 @@ async def inspect_fastmcp_v1(mcp: Any) -> FastMCPInfo:
         }
 
         return FastMCPInfo(
-            name=mcp.name,
-            instructions=getattr(mcp, "instructions", None),
-            fastmcp_version=fastmcp.__version__,  # Report current fastmcp version
+            name=mcp._mcp_server.name,
+            instructions=mcp._mcp_server.instructions,
+            fastmcp_version=importlib.metadata.version("mcp"),
             mcp_version=importlib.metadata.version("mcp"),
-            server_version="1.0",  # FastMCP 1.x version
+            server_version=mcp._mcp_server.version,
             tools=tool_infos,
             prompts=prompt_infos,
             resources=resource_infos,
@@ -301,14 +303,7 @@ async def inspect_fastmcp_v1(mcp: Any) -> FastMCPInfo:
         )
 
 
-def _is_fastmcp_v1(mcp: Any) -> bool:
-    """Check if the given instance is a FastMCP v1.x instance."""
-
-    # Check if it's an instance of FastMCP1x and not FastMCP2
-    return isinstance(mcp, FastMCP1x) and not isinstance(mcp, FastMCP)
-
-
-async def inspect_fastmcp(mcp: FastMCP[Any] | Any) -> FastMCPInfo:
+async def inspect_fastmcp(mcp: FastMCP[Any] | FastMCP1x) -> FastMCPInfo:
     """Extract information from a FastMCP instance into a dataclass.
 
     This function automatically detects whether the instance is FastMCP v1.x or v2.x
@@ -320,7 +315,7 @@ async def inspect_fastmcp(mcp: FastMCP[Any] | Any) -> FastMCPInfo:
     Returns:
         FastMCPInfo dataclass containing the extracted information
     """
-    if _is_fastmcp_v1(mcp):
+    if isinstance(mcp, FastMCP1x):
         return await inspect_fastmcp_v1(mcp)
     else:
         return await inspect_fastmcp_v2(mcp)

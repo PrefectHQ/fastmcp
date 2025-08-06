@@ -1,6 +1,7 @@
 """Tests for the inspect.py module."""
 
-# Import FastMCP1x for testing (always available since mcp is a dependency)
+import importlib.metadata
+
 from mcp.server.fastmcp import FastMCP as FastMCP1x
 
 import fastmcp
@@ -8,7 +9,6 @@ from fastmcp import Client, FastMCP
 from fastmcp.utilities.inspect import (
     FastMCPInfo,
     ToolInfo,
-    _is_fastmcp_v1,
     inspect_fastmcp,
     inspect_fastmcp_v1,
 )
@@ -67,15 +67,15 @@ class TestGetFastMCPInfo:
 
     async def test_empty_server(self):
         """Test get_fastmcp_info with an empty server."""
-        mcp = FastMCP("EmptyServer", instructions="Empty server for testing")
+        mcp = FastMCP("EmptyServer")
 
         info = await inspect_fastmcp(mcp)
 
         assert info.name == "EmptyServer"
-        assert info.instructions == "Empty server for testing"
+        assert info.instructions is None
         assert info.fastmcp_version == fastmcp.__version__
-        assert info.mcp_version is not None
-        assert info.server_version == fastmcp.__version__  # v2.x uses FastMCP version
+        assert info.mcp_version == importlib.metadata.version("mcp")
+        assert info.server_version is None
         assert info.tools == []
         assert info.prompts == []
         assert info.resources == []
@@ -84,6 +84,18 @@ class TestGetFastMCPInfo:
         assert "resources" in info.capabilities
         assert "prompts" in info.capabilities
         assert "logging" in info.capabilities
+
+    async def test_server_with_instructions(self):
+        """Test get_fastmcp_info with a server that has instructions."""
+        mcp = FastMCP("InstructionsServer", instructions="Test instructions")
+        info = await inspect_fastmcp(mcp)
+        assert info.instructions == "Test instructions"
+
+    async def test_server_with_version(self):
+        """Test get_fastmcp_info with a server that has a version."""
+        mcp = FastMCP("VersionServer", version="1.2.3")
+        info = await inspect_fastmcp(mcp)
+        assert info.server_version == "1.2.3"
 
     async def test_server_with_tools(self):
         """Test get_fastmcp_info with a server that has tools."""
@@ -246,14 +258,6 @@ class TestGetFastMCPInfo:
 class TestFastMCP1xCompatibility:
     """Tests for FastMCP 1.x compatibility."""
 
-    async def test_fastmcp1x_detection(self):
-        """Test that FastMCP1x instances are correctly detected."""
-        mcp1x = FastMCP1x("Test1x")
-        mcp2x = FastMCP("Test2x")
-
-        assert _is_fastmcp_v1(mcp1x) is True
-        assert _is_fastmcp_v1(mcp2x) is False
-
     async def test_fastmcp1x_empty_server(self):
         """Test get_fastmcp_info_v1 with an empty FastMCP1x server."""
         mcp = FastMCP1x("Test1x")
@@ -262,9 +266,9 @@ class TestFastMCP1xCompatibility:
 
         assert info.name == "Test1x"
         assert info.instructions is None
-        assert info.fastmcp_version == fastmcp.__version__
-        assert info.mcp_version is not None
-        assert info.server_version == "1.0"  # v1.x servers use "1.0"
+        assert info.fastmcp_version == importlib.metadata.version("mcp")
+        assert info.mcp_version == importlib.metadata.version("mcp")
+        assert info.server_version is None
         assert info.tools == []
         assert info.prompts == []
         assert info.resources == []
@@ -380,8 +384,8 @@ class TestFastMCP1xCompatibility:
         assert "tool2x" in tool2x_names
 
         # Check server versions
-        assert info1x.server_version == "1.0"
-        assert info2x.server_version == fastmcp.__version__
+        assert info1x.server_version is None
+        assert info2x.server_version is None
 
         # No templates added in these tests
         assert len(info1x.templates) == 0

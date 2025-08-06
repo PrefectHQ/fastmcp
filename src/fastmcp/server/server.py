@@ -303,6 +303,10 @@ class FastMCP(Generic[LifespanResultT]):
     def instructions(self) -> str | None:
         return self._mcp_server.instructions
 
+    @property
+    def version(self) -> str | None:
+        return self._mcp_server.version
+
     async def run_async(
         self,
         transport: Transport | None = None,
