@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import inspect
 import warnings
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import quote
@@ -48,11 +49,27 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
+# Type alias for client factory functions
+ClientFactoryT = Callable[[], Client] | Callable[[], Awaitable[Client]]
 
-class ProxyToolManager(ToolManager):
+
+class ProxyManagerMixin:
+    """A mixin for proxy managers to provide a unified client retrieval method."""
+
+    client_factory: ClientFactoryT
+
+    async def _get_client(self) -> Client:
+        """Gets a client instance by calling the sync or async factory."""
+        client = self.client_factory()
+        if inspect.isawaitable(client):
+            client = await client
+        return client
+
+
+class ProxyToolManager(ToolManager, ProxyManagerMixin):
     """A ToolManager that sources its tools from a remote client in addition to local and mounted tools."""
 
-    def __init__(self, client_factory: Callable[[], Client], **kwargs):
+    def __init__(self, client_factory: ClientFactoryT, **kwargs):
         super().__init__(**kwargs)
         self.client_factory = client_factory
 
@@ -63,7 +80,7 @@ class ProxyToolManager(ToolManager):
 
         # Then add proxy tools, but don't overwrite existing ones
         try:
-            client = self.client_factory()
+            client = await self._get_client()
             async with client:
                 client_tools = await client.list_tools()
                 for tool in client_tools:
@@ -94,7 +111,7 @@ class ProxyToolManager(ToolManager):
             return await super().call_tool(key, arguments)
         except NotFoundError:
             # If not found locally, try proxy
-            client = self.client_factory()
+            client = await self._get_client()
             async with client:
                 result = await client.call_tool(key, arguments)
                 return ToolResult(
@@ -103,10 +120,10 @@ class ProxyToolManager(ToolManager):
                 )
 
 
-class ProxyResourceManager(ResourceManager):
+class ProxyResourceManager(ResourceManager, ProxyManagerMixin):
     """A ResourceManager that sources its resources from a remote client in addition to local and mounted resources."""
 
-    def __init__(self, client_factory: Callable[[], Client], **kwargs):
+    def __init__(self, client_factory: ClientFactoryT, **kwargs):
         super().__init__(**kwargs)
         self.client_factory = client_factory
 
@@ -117,7 +134,7 @@ class ProxyResourceManager(ResourceManager):
 
         # Then add proxy resources, but don't overwrite existing ones
         try:
-            client = self.client_factory()
+            client = await self._get_client()
             async with client:
                 client_resources = await client.list_resources()
                 for resource in client_resources:
@@ -140,7 +157,7 @@ class ProxyResourceManager(ResourceManager):
 
         # Then add proxy templates, but don't overwrite existing ones
         try:
-            client = self.client_factory()
+            client = await self._get_client()
             async with client:
                 client_templates = await client.list_resource_templates()
                 for template in client_templates:
@@ -173,7 +190,7 @@ class ProxyResourceManager(ResourceManager):
             return await super().read_resource(uri)
         except NotFoundError:
             # If not found locally, try proxy
-            client = self.client_factory()
+            client = await self._get_client()
             async with client:
                 result = await client.read_resource(uri)
                 if isinstance(result[0], TextResourceContents):
@@ -184,10 +201,10 @@ class ProxyResourceManager(ResourceManager):
                     raise ResourceError(f"Unsupported content type: {type(result[0])}")
 
 
-class ProxyPromptManager(PromptManager):
+class ProxyPromptManager(PromptManager, ProxyManagerMixin):
     """A PromptManager that sources its prompts from a remote client in addition to local and mounted prompts."""
 
-    def __init__(self, client_factory: Callable[[], Client], **kwargs):
+    def __init__(self, client_factory: ClientFactoryT, **kwargs):
         super().__init__(**kwargs)
         self.client_factory = client_factory
 
@@ -198,7 +215,7 @@ class ProxyPromptManager(PromptManager):
 
         # Then add proxy prompts, but don't overwrite existing ones
         try:
-            client = self.client_factory()
+            client = await self._get_client()
             async with client:
                 client_prompts = await client.list_prompts()
                 for prompt in client_prompts:
@@ -230,7 +247,7 @@ class ProxyPromptManager(PromptManager):
             return await super().render_prompt(name, arguments)
         except NotFoundError:
             # If not found locally, try proxy
-            client = self.client_factory()
+            client = await self._get_client()
             async with client:
                 result = await client.get_prompt(name, arguments)
                 return result
@@ -444,7 +461,7 @@ class FastMCPProxy(FastMCP):
         self,
         client: Client | None = None,
         *,
-        client_factory: Callable[[], Client] | None = None,
+        client_factory: ClientFactoryT | None = None,
         **kwargs,
     ):
         """
@@ -459,6 +476,7 @@ class FastMCPProxy(FastMCP):
                    created that provides session isolation for backwards compatibility.
             client_factory: A callable that returns a Client instance when called.
                            This gives you full control over session creation and reuse.
+                           Can be either a synchronous or asynchronous function.
             **kwargs: Additional settings for the FastMCP server.
         """
 
