@@ -244,13 +244,10 @@ class Settings(BaseSettings):
         ),
     ] = False
 
-    server_dependencies: Annotated[
-        list[str],
-        Field(
-            default_factory=list,
-            description="List of dependencies to install in the server environment",
-        ),
-    ] = []
+    server_dependencies: list[str] = Field(
+        default_factory=list,
+        description="List of dependencies to install in the server environment",
+    )
 
     # StreamableHTTP settings
     json_response: bool = False
