@@ -23,7 +23,7 @@ def parse_env_var(env_var: str) -> tuple[str, str]:
     return key.strip(), value.strip()
 
 
-def process_common_args(
+async def process_common_args(
     server_spec: str,
     server_name: str | None,
     with_packages: list[str],
@@ -49,7 +49,7 @@ def process_common_args(
     server = None
     if not name:
         try:
-            server = import_server(file, server_object)
+            server = await import_server(file, server_object)
             name = server.name
         except (ImportError, ModuleNotFoundError) as e:
             logger.debug(

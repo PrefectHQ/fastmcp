@@ -1,6 +1,7 @@
 """FastMCP run command implementation with enhanced type hints."""
 
 import importlib.util
+import inspect
 import json
 import re
 import subprocess
@@ -58,15 +59,15 @@ def parse_file_path(server_spec: str) -> tuple[Path, str | None]:
     return file_path, server_object
 
 
-def import_server(file: Path, server_object: str | None = None) -> Any:
+async def import_server(file: Path, server_or_factory: str | None = None) -> Any:
     """Import a MCP server from a file.
 
     Args:
         file: Path to the file
-        server_object: Optional object name in format "module:object" or just "object"
+        server_or_factory: Optional object name in format "module:object" or just "object"
 
     Returns:
-        The server object
+        The server object (or result of calling a factory function)
     """
     # Add parent directory to Python path so imports can be resolved
     file_dir = str(file.parent)
@@ -86,11 +87,12 @@ def import_server(file: Path, server_object: str | None = None) -> Any:
     spec.loader.exec_module(module)
 
     # If no object specified, try common server names
-    if not server_object:
-        # Look for the most common server object names
+    if not server_or_factory:
+        # Look for common server instance names
         for name in ["mcp", "server", "app"]:
             if hasattr(module, name):
-                return getattr(module, name)
+                obj = getattr(module, name)
+                return await _resolve_server_or_factory(obj, file, name)
 
         logger.error(
             f"No server object found in {file}. Please either:\n"
@@ -100,14 +102,14 @@ def import_server(file: Path, server_object: str | None = None) -> Any:
         )
         sys.exit(1)
 
-    assert server_object is not None
+    assert server_or_factory is not None
 
     # Handle module:object syntax
-    if ":" in server_object:
-        module_name, object_name = server_object.split(":", 1)
+    if ":" in server_or_factory:
+        module_name, object_name = server_or_factory.split(":", 1)
         try:
             server_module = importlib.import_module(module_name)
-            server = getattr(server_module, object_name, None)
+            obj = getattr(server_module, object_name, None)
         except ImportError:
             logger.error(
                 f"Could not import module '{module_name}'",
@@ -116,16 +118,62 @@ def import_server(file: Path, server_object: str | None = None) -> Any:
             sys.exit(1)
     else:
         # Just object name
-        server = getattr(module, server_object, None)
+        obj = getattr(module, server_or_factory, None)
 
-    if server is None:
+    if obj is None:
         logger.error(
-            f"Server object '{server_object}' not found",
+            f"Server object '{server_or_factory}' not found",
             extra={"file": str(file)},
         )
         sys.exit(1)
 
-    return server
+    return await _resolve_server_or_factory(obj, file, server_or_factory)
+
+
+async def _resolve_server_or_factory(obj: Any, file: Path, name: str) -> Any:
+    """Resolve a server object or factory function to a server instance.
+
+    Args:
+        obj: The object that might be a server or factory function
+        file: Path to the file for error messages
+        name: Name of the object for error messages
+
+    Returns:
+        A server instance
+    """
+    # Check if it's a function or coroutine function
+    if inspect.isfunction(obj) or inspect.iscoroutinefunction(obj):
+        logger.debug(f"Found factory function '{name}' in {file}")
+
+        try:
+            if inspect.iscoroutinefunction(obj):
+                # Async factory function
+                server = await obj()
+            else:
+                # Sync factory function
+                server = obj()
+
+            # Validate the result is a FastMCP server
+            if not isinstance(server, FastMCP | FastMCP1x):
+                logger.error(
+                    f"Factory function '{name}' must return a FastMCP server instance, "
+                    f"got {type(server).__name__}",
+                    extra={"file": str(file)},
+                )
+                sys.exit(1)
+
+            logger.debug(f"Factory function '{name}' created server: {server.name}")
+            return server
+
+        except Exception as e:
+            logger.error(
+                f"Failed to call factory function '{name}': {e}",
+                extra={"file": str(file)},
+            )
+            sys.exit(1)
+
+    # Not a function, return as-is (should be a server instance)
+    return obj
 
 
 def run_with_uv(
@@ -219,7 +267,7 @@ def create_client_server(url: str) -> Any:
         import fastmcp
 
         client = fastmcp.Client(url)
-        server = fastmcp.FastMCP.from_client(client)
+        server = fastmcp.FastMCP.as_proxy(client)
         return server
     except Exception as e:
         logger.error(f"Failed to create client for URL {url}: {e}")
@@ -237,14 +285,16 @@ def create_mcp_config_server(mcp_config_path: Path) -> FastMCP[None]:
     return server
 
 
-def import_server_with_args(
-    file: Path, server_object: str | None = None, server_args: list[str] | None = None
+async def import_server_with_args(
+    file: Path,
+    server_or_factory: str | None = None,
+    server_args: list[str] | None = None,
 ) -> Any:
     """Import a server with optional command line arguments.
 
     Args:
         file: Path to the server file
-        server_object: Optional server object name
+        server_or_factory: Optional server object or factory function name
         server_args: Optional command line arguments to inject
 
     Returns:
@@ -254,14 +304,14 @@ def import_server_with_args(
         original_argv = sys.argv[:]
         try:
             sys.argv = [str(file)] + server_args
-            return import_server(file, server_object)
+            return await import_server(file, server_or_factory)
         finally:
             sys.argv = original_argv
     else:
-        return import_server(file, server_object)
+        return await import_server(file, server_or_factory)
 
 
-def run_command(
+async def run_command(
     server_spec: str,
     transport: TransportType | None = None,
     host: str | None = None,
@@ -293,8 +343,8 @@ def run_command(
         server = create_mcp_config_server(Path(server_spec))
     else:
         # Handle file case
-        file, server_object = parse_file_path(server_spec)
-        server = import_server_with_args(file, server_object, server_args)
+        file, server_or_factory = parse_file_path(server_spec)
+        server = await import_server_with_args(file, server_or_factory, server_args)
         logger.debug(f'Found server "{server.name}" in {file}')
 
     # Run the server
@@ -320,7 +370,7 @@ def run_command(
         kwargs["show_banner"] = False
 
     try:
-        server.run(**kwargs)
+        await server.run_async(**kwargs)
     except Exception as e:
         logger.error(f"Failed to run server: {e}")
         sys.exit(1)

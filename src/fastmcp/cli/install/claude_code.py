@@ -167,7 +167,7 @@ def install_claude_code(
         return False
 
 
-def claude_code_command(
+async def claude_code_command(
     server_spec: str,
     *,
     server_name: Annotated[
@@ -234,7 +234,7 @@ def claude_code_command(
     Args:
         server_spec: Python file to install, optionally with :object suffix
     """
-    file, server_object, name, packages, env_dict = process_common_args(
+    file, server_object, name, packages, env_dict = await process_common_args(
         server_spec, server_name, with_packages, env_vars, env_file
     )
 

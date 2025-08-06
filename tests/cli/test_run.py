@@ -157,7 +157,7 @@ def greet(name: str) -> str:
     return f"Hello, {name}!"
 """)
 
-        server = import_server(test_file)
+        server = await import_server(test_file)
         assert server.name == "TestServer"
         tools = await server.get_tools()
         assert "greet" in tools
@@ -178,12 +178,12 @@ if __name__ == "__main__":
     app.run()
 """)
 
-        server = import_server(test_file)
+        server = await import_server(test_file)
         assert server.name == "MainServer"
         tools = await server.get_tools()
         assert "calculate" in tools
 
-    def test_import_server_standard_names(self, tmp_path):
+    async def test_import_server_standard_names(self, tmp_path):
         """Test automatic detection of standard names (mcp, server, app)."""
         # Test with 'mcp' name
         mcp_file = tmp_path / "mcp_server.py"
@@ -192,7 +192,7 @@ import fastmcp
 mcp = fastmcp.FastMCP("MCPServer")
 """)
 
-        server = import_server(mcp_file)
+        server = await import_server(mcp_file)
         assert server.name == "MCPServer"
 
         # Test with 'server' name
@@ -202,7 +202,7 @@ import fastmcp
 server = fastmcp.FastMCP("ServerServer")
 """)
 
-        server = import_server(server_file)
+        server = await import_server(server_file)
         assert server.name == "ServerServer"
 
         # Test with 'app' name
@@ -212,7 +212,7 @@ import fastmcp
 app = fastmcp.FastMCP("AppServer")
 """)
 
-        server = import_server(app_file)
+        server = await import_server(app_file)
         assert server.name == "AppServer"
 
     async def test_import_server_nonstandard_name(self, tmp_path):
@@ -228,12 +228,12 @@ def custom_tool() -> str:
     return "custom"
 """)
 
-        server = import_server(test_file, "my_custom_server")
+        server = await import_server(test_file, "my_custom_server")
         assert server.name == "CustomServer"
         tools = await server.get_tools()
         assert "custom_tool" in tools
 
-    def test_import_server_no_standard_names_fails(self, tmp_path):
+    async def test_import_server_no_standard_names_fails(self, tmp_path):
         """Test importing server when no standard names exist fails."""
         test_file = tmp_path / "server.py"
         test_file.write_text("""
@@ -243,10 +243,10 @@ other_name = fastmcp.FastMCP("OtherServer")
 """)
 
         with pytest.raises(SystemExit) as exc_info:
-            import_server(test_file)
+            await import_server(test_file)
         assert exc_info.value.code == 1
 
-    def test_import_server_nonexistent_object_fails(self, tmp_path):
+    async def test_import_server_nonexistent_object_fails(self, tmp_path):
         """Test importing nonexistent server object fails."""
         test_file = tmp_path / "server.py"
         test_file.write_text("""
@@ -256,5 +256,5 @@ mcp = fastmcp.FastMCP("TestServer")
 """)
 
         with pytest.raises(SystemExit) as exc_info:
-            import_server(test_file, "nonexistent")
+            await import_server(test_file, "nonexistent")
         assert exc_info.value.code == 1

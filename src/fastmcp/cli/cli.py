@@ -138,7 +138,7 @@ def version(
 
 
 @app.command
-def dev(
+async def dev(
     server_spec: str,
     *,
     with_editable: Annotated[
@@ -220,7 +220,7 @@ def dev(
 
     try:
         # Import server to get dependencies
-        server: FastMCP = run_module.import_server(file, server_object)
+        server: FastMCP = await run_module.import_server(file, server_object)
         if server.dependencies is not None:
             with_packages = list(set(with_packages + server.dependencies))
 
@@ -283,7 +283,7 @@ def dev(
 
 
 @app.command
-def run(
+async def run(
     server_spec: str,
     *server_args: str,
     transport: Annotated[
@@ -414,7 +414,7 @@ def run(
     else:
         # Use direct import for backwards compatibility
         try:
-            run_module.run_command(
+            await run_module.run_command(
                 server_spec=server_spec,
                 transport=transport,
                 host=host,
@@ -476,7 +476,7 @@ async def inspect(
 
     try:
         # Import the server
-        server = run_module.import_server(file, server_object)
+        server = await run_module.import_server(file, server_object)
 
         # Get server information - using native async support
         info = await inspect_fastmcp(server)

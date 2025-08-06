@@ -18,15 +18,13 @@ fastmcp --help
 
 | Command | Purpose | Dependency Management |
 | ------- | ------- | --------------------- |
-| `run` | Run a FastMCP server directly | Default: Uses your local environment directly. With `--python`, `--with`, `--project`, or `--with-requirements`: Runs via `uv run` subprocess |
-| `dev` | Run a server with the MCP Inspector for testing | Always runs via `uv run` subprocess (never uses your local environment); dependencies must be specified or available in a uv-managed project |
-| `install` | Install a server in MCP client applications | Creates an isolated environment; dependencies must be explicitly specified with `--with` and/or `--with-editable` |
-| `inspect` | Generate a JSON report about a FastMCP server | Uses your current environment; you are responsible for ensuring all dependencies are available |
+| `run` | Run a FastMCP server directly | **Supports:** Local files, factory functions, URLs, MCP configs. **Deps:** Uses your local environment directly. With `--python`, `--with`, `--project`, or `--with-requirements`: Runs via `uv run` subprocess |
+| `dev` | Run a server with the MCP Inspector for testing | **Supports:** Local files only. **Deps:** Always runs via `uv run` subprocess (never uses your local environment); dependencies must be specified or available in a uv-managed project |
+| `install` | Install a server in MCP client applications | **Supports:** Local files only. **Deps:** Creates an isolated environment; dependencies must be explicitly specified with `--with` and/or `--with-editable` |
+| `inspect` | Generate a JSON report about a FastMCP server | **Supports:** Local files only. **Deps:** Uses your current environment; you are responsible for ensuring all dependencies are available |
 | `version` | Display version information | N/A |
 
-## Command Details
-
-### `run`
+## `fastmcp run`
 
 Run a FastMCP server directly or proxy a remote server.
 
@@ -38,7 +36,7 @@ fastmcp run server.py
 By default, this command runs the server directly in your current Python environment. You are responsible for ensuring all dependencies are available. When using `--python`, `--with`, `--project`, or `--with-requirements` options, it runs the server via `uv run` subprocess instead.
 </Tip>
 
-#### Options
+### Options
 
 | Option | Flag | Description |
 | ------ | ---- | ----------- |
@@ -54,106 +52,125 @@ By default, this command runs the server directly in your current Python environ
 | Requirements File | `--with-requirements` | Requirements file to install dependencies from |
 
 
-#### Server Specification
+### Entrypoints
 <VersionBadge version="2.3.5" />
 
-The server can be specified in four ways:
-1. `server.py` - imports the module and looks for a FastMCP object named `mcp`, `server`, or `app`. Errors if no such object is found.
-2. `server.py:custom_name` - imports and uses the specified server object
-3. `http://server-url/path` or `https://server-url/path` - connects to a remote server and creates a proxy
-4. `mcp.json` - runs servers defined in a standard MCP configuration file
+The `fastmcp run` command supports the following entrypoints:
 
-<Tip>
-When using `fastmcp run` with a local file, it **ignores** the `if __name__ == "__main__"` block entirely. Instead, it finds your server object and calls its `run()` method directly with the transport options you specify. This means you can use `fastmcp run` to override the transport specified in your code.
-</Tip>
+1. **[Inferred server instance](#inferred-server-instance)**: `server.py` - imports the module and looks for a FastMCP object named `mcp`, `server`, or `app`. Errors if no such object is found.
+2. **[Explicit server object](#explicit-server-object)**: `server.py:custom_name` - imports and uses the specified server object  
+3. **[Factory function](#factory-function)**: `server.py:create_server` - calls the specified function (sync or async) to create a server instance
+4. **[Remote server proxy](#remote-server-proxy)**: `https://example.com/mcp-server` - connects to a remote server and creates a **local proxy server**
+5. **MCP configuration file**: `mcp.json` - runs servers defined in a standard MCP configuration file
 
-For example, if your code contains:
+<Warning>
+Note: When using `fastmcp run` with a local file, it **completely ignores** the `if __name__ == "__main__"` block. This means:
+- Any setup code in `__main__` will NOT run
+- Server configuration in `__main__` is bypassed  
+- `fastmcp run` finds your server object/factory and runs it with its own transport settings
 
-```python
-# server.py
+If you need setup code to run, use the **factory pattern** instead.
+</Warning>
+
+#### Inferred Server Instance
+
+If you provide a path to a file, `fastmcp run` will load the file and look for a FastMCP server instance stored as a variable named `mcp`, `server`, or `app`. If no such object is found, it will raise an error.
+
+For example, if you have a file called `server.py` with the following content:
+
+```python server.py
 from fastmcp import FastMCP
 
 mcp = FastMCP("MyServer")
-
-@mcp.tool
-def hello(name: str) -> str:
-    return f"Hello, {name}!"
-
-if __name__ == "__main__":
-    # This is ignored when using `fastmcp run`!
-    mcp.run(transport="stdio")
 ```
 
-You can run it with Streamable HTTP transport regardless of what's in the `__main__` block:
+You can run it with:
 
 ```bash
-fastmcp run server.py --transport http --port 8000
+fastmcp run server.py
 ```
 
-**Examples**
+#### Explicit Server Object
+
+If your server is stored as a variable with a custom name, or you want to be explicit about which server to run, you can use the following syntax to load a specific server object:
 
 ```bash
-# Run a local server with Streamable HTTP transport on a custom port
-fastmcp run server.py --transport http --port 8000
-
-# Connect to a remote server and proxy as a stdio server
-fastmcp run https://example.com/mcp-server
-
-# Connect to a remote server with specified log level
-fastmcp run https://example.com/mcp-server --log-level DEBUG
-
-# Run with a specific Python version
-fastmcp run server.py --python 3.11
-
-# Run with additional packages
-fastmcp run server.py --with pandas --with numpy
-
-# Run within a specific project directory
-fastmcp run server.py --project /path/to/project
-
-# Run with dependencies from a requirements file
-fastmcp run server.py --with-requirements requirements.txt
+fastmcp run server.py:custom_name
 ```
 
-#### Running MCP Configuration Files
+For example, if you have a file called `server.py` with the following content:
 
-FastMCP can run servers defined in standard MCP configuration files (typically named `mcp.json`). When you run an mcp.json file, FastMCP creates a proxy server that runs all the servers referenced in the configuration.
+```python
+from fastmcp import FastMCP
 
-**Example mcp.json:**
-```json
-{
-    "mcpServers": {
-        "fetch": {
-            "command": "uvx",
-            "args": [
-                "mcp-server-fetch"
-            ]
-        },
-        "filesystem": {
-            "command": "npx",
-            "args": [
-                "-y",
-                "@modelcontextprotocol/server-filesystem",
-                "/Users/username/Documents"
-            ]
-        }
-    }
-}
+my_server = FastMCP("CustomServer")
+
+@my_server.tool
+def hello() -> str:
+    return "Hello from custom server!"
 ```
 
-**Run the configuration:**
+You can run it with:
+
 ```bash
-# Run with default stdio transport
+fastmcp run server.py:custom_name
+```
+
+#### Factory Function
+<VersionBadge version="2.11.2" />
+
+Since `fastmcp run` ignores the `if __name__ == "__main__"` block, you can use a factory function to run setup code before your server starts. Factory functions are called without any arguments and must return a FastMCP server instance. Both sync and async factory functions are supported.
+
+The syntax for using a factory function is the same as for an explicit server object: `fastmcp run server.py:factory_fn`. FastMCP will automatically detect that you have identified a function rather than a server Instance
+
+For example, if you have a file called `server.py` with the following content:
+
+```python
+from fastmcp import FastMCP
+
+async def create_server() -> FastMCP:
+    mcp = FastMCP("MyServer")
+    
+    @mcp.tool
+    def add(x: int, y: int) -> int:
+        return x + y
+    
+    # Setup that runs with fastmcp run
+    tool = await mcp.get_tool("add")
+    tool.disable()
+    
+    return mcp
+```
+
+You can run it with:
+
+```bash
+fastmcp run server.py:create_server
+```
+
+#### Remote Server Proxy
+
+FastMCP run can also start a local proxy server that connects to a remote server. This is useful when you want to run a remote server locally for testing or development purposes, or to use with a client that doesn't support direct connections to remote servers.
+
+To start a local proxy, you can use the following syntax:
+
+```bash
+fastmcp run https://example.com/mcp
+```
+
+#### MCP Configuration
+
+FastMCP can also run servers defined in a standard MCP configuration file. This is useful when you want to run multiple servers from a single file, or when you want to use a client that doesn't support direct connections to remote servers.
+
+To run a MCP configuration file, you can use the following syntax:
+
+```bash
 fastmcp run mcp.json
-
-# Run with HTTP transport on custom port
-fastmcp run mcp.json --transport http --port 8080
-
-# Run with SSE transport
-fastmcp run mcp.json --transport sse
 ```
 
-### `dev`
+This will run all the servers defined in the file.
+
+## `fastmcp dev`
 
 Run a MCP server with the [MCP Inspector](https://github.com/modelcontextprotocol/inspector) for testing.
 
@@ -182,7 +199,7 @@ This command does not support HTTP testing. To test a server over Streamable HTT
 2. Open the MCP Inspector separately and connect to your running server
 </Warning>
 
-#### Options
+### Options
 
 | Option | Flag | Description |
 | ------ | ---- | ----------- |
@@ -194,6 +211,18 @@ This command does not support HTTP testing. To test a server over Streamable HTT
 | Python Version | `--python` | Python version to use (e.g., 3.10, 3.11) |
 | Project Directory | `--project` | Run the command within the given project directory |
 | Requirements File | `--with-requirements` | Requirements file to install dependencies from |
+
+### Entrypoints
+
+The `dev` command supports local FastMCP server files only:
+
+1. **Inferred server instance**: `server.py` - imports the module and looks for a FastMCP object named `mcp`, `server`, or `app`. Errors if no such object is found.
+2. **Explicit server object**: `server.py:custom_name` - imports and uses the specified server object  
+3. **Factory function**: `server.py:create_server` - calls the specified function (sync or async) to create a server instance
+
+<Warning>
+The `dev` command **only supports local files** - no URLs, remote servers, or MCP configuration files.
+</Warning>
 
 **Examples**
 
@@ -211,7 +240,7 @@ fastmcp dev server.py --with-requirements requirements.txt
 fastmcp dev server.py --project /path/to/project
 ```
 
-### `install`
+## `fastmcp install`
 <VersionBadge version="2.10.3" />
 
 Install a MCP server in MCP client applications. FastMCP currently supports the following clients:
@@ -242,14 +271,7 @@ Note that for security reasons, MCP clients usually run every server in a comple
 **FastMCP `install` commands focus on local server files with STDIO transport.** For remote servers running with HTTP or SSE transport, use your client's native configuration - FastMCP's value is simplifying the complex local setup with dependencies and `uv` commands.
 </Tip>
 
-#### Server Specification
-
-The `install` command supports the same `file.py:object` notation as the `run` command:
-
-1. `server.py` - imports the module and looks for a FastMCP object named `mcp`, `server`, or `app`. Errors if no such object is found.
-2. `server.py:custom_name` - imports and uses the specified server object
-
-#### Options
+### Options
 
 | Option | Flag | Description |
 | ------ | ---- | ----------- |
@@ -261,6 +283,22 @@ The `install` command supports the same `file.py:object` notation as the `run` c
 | Python Version | `--python` | Python version to use (e.g., 3.10, 3.11) |
 | Project Directory | `--project` | Run the command within the given project directory |
 | Requirements File | `--with-requirements` | Requirements file to install dependencies from |
+
+### Entrypoints
+
+The `install` command supports local FastMCP server files only:
+
+1. **Inferred server instance**: `server.py` - imports the module and looks for a FastMCP object named `mcp`, `server`, or `app`. Errors if no such object is found.
+2. **Explicit server object**: `server.py:custom_name` - imports and uses the specified server object  
+3. **Factory function**: `server.py:create_server` - calls the specified function (sync or async) to create a server instance
+
+<Note>
+Factory functions are particularly useful for install commands since they allow setup code to run that would otherwise be ignored when the MCP client runs your server.
+</Note>
+
+<Warning>
+The `install` command **only supports local files** - no URLs, remote servers, or MCP configuration files. For remote servers, use your MCP client's native configuration.
+</Warning>
 
 **Examples**
 
@@ -299,7 +337,7 @@ fastmcp install mcp-json server.py --name "My Server" --with pandas
 fastmcp install mcp-json server.py --copy
 ```
 
-#### MCP JSON Generation
+### MCP JSON Generation
 
 The `mcp-json` subcommand generates standard MCP JSON configuration that can be used with any MCP-compatible client. This is useful when:
 
@@ -339,7 +377,7 @@ To use this configuration with your MCP client, you'll typically need to add it 
 | ------ | ---- | ----------- |
 | Copy to Clipboard | `--copy` | Copy configuration to clipboard instead of printing to stdout |
 
-### `inspect`
+## `fastmcp inspect`
 
 <VersionBadge version="2.9.0" />
 
@@ -349,7 +387,25 @@ Generate a detailed JSON report about a FastMCP server, including information ab
 fastmcp inspect server.py
 ```
 
-The command supports the same server specification format as `run` and `install`:
+### Options
+
+| Option | Flag | Description |
+| ------ | ---- | ----------- |
+| Output File | `--output`, `-o` | Output file path for the JSON report (default: server-info.json) |
+
+### Entrypoints
+
+The `inspect` command supports local FastMCP server files only:
+
+1. **Inferred server instance**: `server.py` - imports the module and looks for a FastMCP object named `mcp`, `server`, or `app`. Errors if no such object is found.
+2. **Explicit server object**: `server.py:custom_name` - imports and uses the specified server object  
+3. **Factory function**: `server.py:create_server` - calls the specified function (sync or async) to create a server instance
+
+<Warning>
+The `inspect` command **only supports local files** - no URLs, remote servers, or MCP configuration files.
+</Warning>
+
+**Examples**
 
 ```bash
 # Auto-detect server object
@@ -362,7 +418,7 @@ fastmcp inspect server.py:my_server
 fastmcp inspect server.py --output analysis.json
 ```
 
-### `version`
+## `fastmcp version`
 
 Display version information about FastMCP and related components.
 
@@ -370,7 +426,7 @@ Display version information about FastMCP and related components.
 fastmcp version
 ```
 
-#### Options
+### Options
 
 | Option | Flag | Description |
 | ------ | ---- | ----------- |
