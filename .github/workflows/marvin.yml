@@ -1,0 +1,80 @@
+name: Marvin Assistant
+
+on:
+  issue_comment: { types: [created] }
+  pull_request_review_comment: { types: [created] }
+  pull_request_review: { types: [submitted] }
+  issues: { types: [opened, edited, assigned, labeled] }
+  discussion: { types: [created, edited, labeled] }
+  discussion_comment: { types: [created] }
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  discussions: write
+  id-token: write
+
+jobs:
+  marvin:
+    if: >
+      contains(github.event?.comment?.body || '', '/marvin') ||
+      contains(
+        (github.event?.comment?.body ||
+         github.event?.issue?.title  || github.event?.issue?.body ||
+         github.event?.pull_request?.title || github.event?.pull_request?.body ||
+         github.event?.discussion?.title || github.event?.discussion?.body || '' ),
+        '@Marvin Context Protocol'
+      ) ||
+      (github.event_name == 'issues' && (
+        (github.event.action == 'assigned' && github.event.assignee?.login == 'Marvin Context Protocol') ||
+        (github.event.action == 'labeled'  && github.event.label?.name == 'marvin')
+      ))
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get Marvin app token
+        id: mtoken
+        uses: tibdex/github-app-token@v2
+        with:
+          app_id: ${{ secrets.MARVIN_APP_ID }}
+          private_key: ${{ secrets.MARVIN_APP_PRIVATE_KEY }}
+
+      # /marvin slash command
+      - name: Claude Code (/marvin)
+        if: contains(github.event?.comment?.body || '', '/marvin')
+        uses: anthropics/claude-code-action@v1
+        with:
+          github-token: ${{ steps.mtoken.outputs.token }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          mode: tag
+          trigger_phrase: "/marvin"
+          allowed_bots: "*"
+
+      # @Marvin Context Protocol mention
+      - name: Claude Code (@Marvin Context Protocol)
+        if: contains(
+          (github.event?.comment?.body ||
+          github.event?.issue?.title  || github.event?.issue?.body ||
+          github.event?.pull_request?.title || github.event?.pull_request?.body ||
+          github.event?.discussion?.title || github.event?.discussion?.body || '' ),
+          '@Marvin Context Protocol'
+          )
+        uses: anthropics/claude-code-action@v1
+        with:
+          github-token: ${{ steps.mtoken.outputs.token }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          mode: tag
+          trigger_phrase: "@Marvin Context Protocol"
+
+      # Optional: assignment/label triggers
+      - name: Claude Code (assignee/label)
+        if: github.event_name == 'issues' && (github.event.action == 'assigned' || github.event.action == 'labeled')
+        uses: anthropics/claude-code-action@v1
+        with:
+          github-token: ${{ steps.mtoken.outputs.token }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          mode: tag
+          assignee_trigger: "Marvin Context Protocol"
+          label_trigger: "marvin"
