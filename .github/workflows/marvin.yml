@@ -55,7 +55,7 @@ jobs:
           (github.event_name == 'discussion_comment' && contains(github.event.comment.body, '/marvin'))
         uses: anthropics/claude-code-action@beta
         with:
-          github-token: ${{ steps.marvin-token.outputs.token }}
+          github_token: ${{ steps.marvin-token.outputs.token }}
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           mode: tag
           trigger_phrase: "/marvin"
@@ -72,7 +72,7 @@ jobs:
           (github.event_name == 'discussion_comment' && contains(github.event.comment.body, '@Marvin Context Protocol'))
         uses: anthropics/claude-code-action@beta
         with:
-          github-token: ${{ steps.marvin-token.outputs.token }}
+          github_token: ${{ steps.marvin-token.outputs.token }}
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           mode: tag
           trigger_phrase: "@Marvin Context Protocol"
@@ -84,7 +84,7 @@ jobs:
           (github.event_name == 'issues' && github.event.action == 'labeled' && github.event.label.name == 'marvin')
         uses: anthropics/claude-code-action@beta
         with:
-          github-token: ${{ steps.marvin-token.outputs.token }}
+          github_token: ${{ steps.marvin-token.outputs.token }}
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           mode: tag
           assignee_trigger: "Marvin Context Protocol"
