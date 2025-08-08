@@ -65,13 +65,36 @@ class TestStaticTokenVerifier:
         # Create HTTP app
         app = server.http_app(transport="http")
 
-        # Test unauthenticated request gets 401
+        # Test unauthenticated request gets 401 (use exact path match to avoid redirect)
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
-            response = await client.post("/mcp/")
+            response = await client.post("/mcp")
             assert response.status_code == 401
             assert "WWW-Authenticate" in response.headers
+
+    async def test_server_with_token_verifier_redirect_behavior(self):
+        """Test that FastMCP server redirects non-matching paths correctly."""
+        verifier = StaticTokenVerifier(
+            {"test-token": {"client_id": "test-client", "scopes": ["read", "write"]}}
+        )
+
+        server = FastMCP("TestServer", auth=verifier)
+
+        @server.tool
+        def greet(name: str) -> str:
+            return f"Hello, {name}!"
+
+        # Create HTTP app (default path is /mcp)
+        app = server.http_app(transport="http")
+
+        # Test that non-matching path gets 307 redirect
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            response = await client.post("/mcp/", follow_redirects=False)
+            assert response.status_code == 307
+            assert response.headers["location"] == "http://test/mcp"
 
     def test_server_rejects_both_oauth_and_token_verifier(self):
         """Test that server raises error when both OAuth and TokenVerifier provided."""

@@ -63,3 +63,8 @@ dmypy.json
 
 # Claude worktree management
 .claude-wt/worktrees
+
+# Common FastMCP test files
+/test.py
+/server.py
+/client.py

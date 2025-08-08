@@ -32,6 +32,38 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
+class StreamableHTTPASGIApp:
+    """ASGI application wrapper for Streamable HTTP server transport."""
+
+    def __init__(self, session_manager):
+        self.session_manager = session_manager
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        try:
+            await self.session_manager.handle_request(scope, receive, send)
+        except RuntimeError as e:
+            if str(e) == "Task group is not initialized. Make sure to use run().":
+                logger.error(
+                    f"Original RuntimeError from mcp library: {e}", exc_info=True
+                )
+                new_error_message = (
+                    "FastMCP's StreamableHTTPSessionManager task group was not initialized. "
+                    "This commonly occurs when the FastMCP application's lifespan is not "
+                    "passed to the parent ASGI application (e.g., FastAPI or Starlette). "
+                    "Please ensure you are setting `lifespan=mcp_app.lifespan` in your "
+                    "parent app's constructor, where `mcp_app` is the application instance "
+                    "returned by `fastmcp_instance.http_app()`. \\n"
+                    "For more details, see the FastMCP ASGI integration documentation: "
+                    "https://gofastmcp.com/deployment/asgi"
+                )
+                # Raise a new RuntimeError that includes the original error's message
+                # for full context, but leads with the more helpful guidance.
+                raise RuntimeError(f"{new_error_message}\\nOriginal error: {e}") from e
+            else:
+                # Re-raise other RuntimeErrors if they don't match the specific message
+                raise
+
+
 _current_http_request: ContextVar[Request | None] = ContextVar(
     "http_request",
     default=None,
@@ -254,33 +286,8 @@ def create_streamable_http_app(
         stateless=stateless_http,
     )
 
-    # Create the ASGI handler
-    async def handle_streamable_http(
-        scope: Scope, receive: Receive, send: Send
-    ) -> None:
-        try:
-            await session_manager.handle_request(scope, receive, send)
-        except RuntimeError as e:
-            if str(e) == "Task group is not initialized. Make sure to use run().":
-                logger.error(
-                    f"Original RuntimeError from mcp library: {e}", exc_info=True
-                )
-                new_error_message = (
-                    "FastMCP's StreamableHTTPSessionManager task group was not initialized. "
-                    "This commonly occurs when the FastMCP application's lifespan is not "
-                    "passed to the parent ASGI application (e.g., FastAPI or Starlette). "
-                    "Please ensure you are setting `lifespan=mcp_app.lifespan` in your "
-                    "parent app's constructor, where `mcp_app` is the application instance "
-                    "returned by `fastmcp_instance.http_app()`. \\n"
-                    "For more details, see the FastMCP ASGI integration documentation: "
-                    "https://gofastmcp.com/deployment/asgi"
-                )
-                # Raise a new RuntimeError that includes the original error's message
-                # for full context, but leads with the more helpful guidance.
-                raise RuntimeError(f"{new_error_message}\\nOriginal error: {e}") from e
-            else:
-                # Re-raise other RuntimeErrors if they don't match the specific message
-                raise
+    # Create the ASGI app wrapper
+    streamable_http_app = StreamableHTTPASGIApp(session_manager)
 
     # Add StreamableHTTP routes with or without auth
     if auth:
@@ -305,19 +312,19 @@ def create_streamable_http_app(
 
         # Auth is enabled, wrap endpoint with RequireAuthMiddleware
         server_routes.append(
-            Mount(
+            Route(
                 streamable_http_path,
-                app=RequireAuthMiddleware(
-                    handle_streamable_http, required_scopes, resource_metadata_url
+                endpoint=RequireAuthMiddleware(
+                    streamable_http_app, required_scopes, resource_metadata_url
                 ),
             )
         )
     else:
         # No auth required
         server_routes.append(
-            Mount(
+            Route(
                 streamable_http_path,
-                app=handle_streamable_http,
+                endpoint=streamable_http_app,
             )
         )
 

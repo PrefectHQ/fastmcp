@@ -88,7 +88,7 @@ def run_server(host: str, port: int, stateless_http: bool = False, **kwargs) -> 
 
 
 def run_nested_server(host: str, port: int) -> None:
-    mcp_app = fastmcp_server().http_app(path="/final/mcp/")
+    mcp_app = fastmcp_server().http_app(path="/final/mcp")
 
     mount = Starlette(routes=[Mount("/nest-inner", app=mcp_app)])
     mount2 = Starlette(
@@ -115,9 +115,7 @@ async def streamable_http_server(
     with run_server_in_process(
         run_server, stateless_http=stateless_http, transport="http"
     ) as url:
-        async with Client(transport=StreamableHttpTransport(f"{url}/mcp/")) as client:
-            assert await client.ping()
-        yield f"{url}/mcp/"
+        yield f"{url}/mcp"
 
 
 @pytest.fixture()
@@ -126,9 +124,7 @@ async def streamable_http_server_with_streamable_http_alias() -> AsyncGenerator[
 ]:
     """Test that the "streamable-http" transport alias works."""
     with run_server_in_process(run_server, transport="streamable-http") as url:
-        async with Client(transport=StreamableHttpTransport(f"{url}/mcp/")) as client:
-            assert await client.ping()
-        yield f"{url}/mcp/"
+        yield f"{url}/mcp"
 
 
 async def test_ping(streamable_http_server: str):
@@ -211,7 +207,7 @@ async def test_nested_streamable_http_server_resolves_correctly():
 
     with run_server_in_process(run_nested_server) as url:
         async with Client(
-            transport=StreamableHttpTransport(f"{url}/nest-outer/nest-inner/final/mcp/")
+            transport=StreamableHttpTransport(f"{url}/nest-outer/nest-inner/final/mcp")
         ) as client:
             result = await client.ping()
             assert result is True
