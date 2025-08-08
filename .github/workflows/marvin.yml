@@ -40,8 +40,8 @@ jobs:
         id: marvin-token
         uses: actions/create-github-app-token@v1
         with:
-          app_id: ${{ secrets.MARVIN_APP_ID }}
-          private_key: ${{ secrets.MARVIN_APP_PRIVATE_KEY }}
+          app-id: ${{ secrets.MARVIN_APP_ID }}
+          private-key: ${{ secrets.MARVIN_APP_PRIVATE_KEY }}
 
       # /marvin slash command
 
