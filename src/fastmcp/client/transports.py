@@ -6,7 +6,7 @@ import os
 import shutil
 import sys
 import warnings
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any, Literal, TypeVar, cast, overload
 
@@ -22,6 +22,7 @@ from mcp.client.session import (
     SamplingFnT,
 )
 from mcp.server.fastmcp import FastMCP as FastMCP1Server
+from mcp.shared._httpx_utils import McpHttpClientFactory
 from mcp.shared.memory import create_client_server_memory_streams
 from pydantic import AnyUrl
 from typing_extensions import TypedDict, Unpack
@@ -161,7 +162,7 @@ class SSETransport(ClientTransport):
         headers: dict[str, str] | None = None,
         auth: httpx.Auth | Literal["oauth"] | str | None = None,
         sse_read_timeout: datetime.timedelta | float | int | None = None,
-        httpx_client_factory: Callable[[], httpx.AsyncClient] | None = None,
+        httpx_client_factory: McpHttpClientFactory | None = None,
     ):
         if isinstance(url, AnyUrl):
             url = str(url)
@@ -233,7 +234,7 @@ class StreamableHttpTransport(ClientTransport):
         headers: dict[str, str] | None = None,
         auth: httpx.Auth | Literal["oauth"] | str | None = None,
         sse_read_timeout: datetime.timedelta | float | int | None = None,
-        httpx_client_factory: Callable[[], httpx.AsyncClient] | None = None,
+        httpx_client_factory: McpHttpClientFactory | None = None,
     ):
         if isinstance(url, AnyUrl):
             url = str(url)
