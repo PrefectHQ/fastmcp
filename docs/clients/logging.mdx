@@ -100,12 +100,12 @@ async def detailed_log_handler(message: LogMessage):
 
 ## Default Log Handling
 
-If you don't provide a custom `log_handler`, FastMCP uses a default handler that emits a DEBUG-level FastMCP log for every log message received from the server, which is useful for visibility without polluting your own logs.
+If you don't provide a custom `log_handler`, FastMCP's default handler routes server logs to the appropriate Python logging levels. The MCP levels are mapped as follows: `notice` → INFO; `alert` and `emergency` → CRITICAL. If the server includes a logger name, it is prefixed in the message, and any `extra` data is forwarded via the logging `extra` parameter.
 
 ```python
 client = Client("my_mcp_server.py")
 
 async with client:
-    # Server logs will be emitted at DEBUG level automatically
+    # Server logs are forwarded at their proper severity (DEBUG/INFO/WARNING/ERROR/CRITICAL)
     await client.call_tool("some_tool")
 ```
