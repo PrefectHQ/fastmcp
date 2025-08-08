@@ -17,19 +17,21 @@ permissions:
 
 jobs:
   marvin:
-    if: >
-      contains(github.event?.comment?.body || '', '/marvin') ||
-      contains(
-        (github.event?.comment?.body ||
-         github.event?.issue?.title  || github.event?.issue?.body ||
-         github.event?.pull_request?.title || github.event?.pull_request?.body ||
-         github.event?.discussion?.title || github.event?.discussion?.body || '' ),
-        '@Marvin Context Protocol'
-      ) ||
-      (github.event_name == 'issues' && (
-        (github.event.action == 'assigned' && github.event.assignee?.login == 'Marvin Context Protocol') ||
-        (github.event.action == 'labeled'  && github.event.label?.name == 'marvin')
-      ))
+    if: |
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '/marvin')) ||
+      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '/marvin')) ||
+      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '/marvin')) ||
+      (github.event_name == 'issues' && (contains(github.event.issue.body, '/marvin') || contains(github.event.issue.title, '/marvin'))) ||
+      (github.event_name == 'discussion' && (contains(github.event.discussion.body, '/marvin') || contains(github.event.discussion.title, '/marvin'))) ||
+      (github.event_name == 'discussion_comment' && contains(github.event.comment.body, '/marvin')) ||
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@Marvin Context Protocol')) ||
+      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@Marvin Context Protocol')) ||
+      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@Marvin Context Protocol')) ||
+      (github.event_name == 'issues' && (contains(github.event.issue.body, '@Marvin Context Protocol') || contains(github.event.issue.title, '@Marvin Context Protocol'))) ||
+      (github.event_name == 'discussion' && (contains(github.event.discussion.body, '@Marvin Context Protocol') || contains(github.event.discussion.title, '@Marvin Context Protocol'))) ||
+      (github.event_name == 'discussion_comment' && contains(github.event.comment.body, '@Marvin Context Protocol')) ||
+      (github.event_name == 'issues' && github.event.action == 'assigned' && github.event.assignee.login == 'Marvin Context Protocol') ||
+      (github.event_name == 'issues' && github.event.action == 'labeled' && github.event.label.name == 'marvin')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -43,7 +45,13 @@ jobs:
 
       # /marvin slash command
       - name: Claude Code (/marvin)
-        if: contains(github.event?.comment?.body || '', '/marvin')
+        if: |
+          (github.event_name == 'issue_comment' && contains(github.event.comment.body, '/marvin')) ||
+          (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '/marvin')) ||
+          (github.event_name == 'pull_request_review' && contains(github.event.review.body, '/marvin')) ||
+          (github.event_name == 'issues' && (contains(github.event.issue.body, '/marvin') || contains(github.event.issue.title, '/marvin'))) ||
+          (github.event_name == 'discussion' && (contains(github.event.discussion.body, '/marvin') || contains(github.event.discussion.title, '/marvin'))) ||
+          (github.event_name == 'discussion_comment' && contains(github.event.comment.body, '/marvin'))
         uses: anthropics/claude-code-action@v1
         with:
           github-token: ${{ steps.mtoken.outputs.token }}
@@ -54,13 +62,13 @@ jobs:
 
       # @Marvin Context Protocol mention
       - name: Claude Code (@Marvin Context Protocol)
-        if: contains(
-          (github.event?.comment?.body ||
-          github.event?.issue?.title  || github.event?.issue?.body ||
-          github.event?.pull_request?.title || github.event?.pull_request?.body ||
-          github.event?.discussion?.title || github.event?.discussion?.body || '' ),
-          '@Marvin Context Protocol'
-          )
+        if: |
+          (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@Marvin Context Protocol')) ||
+          (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@Marvin Context Protocol')) ||
+          (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@Marvin Context Protocol')) ||
+          (github.event_name == 'issues' && (contains(github.event.issue.body, '@Marvin Context Protocol') || contains(github.event.issue.title, '@Marvin Context Protocol'))) ||
+          (github.event_name == 'discussion' && (contains(github.event.discussion.body, '@Marvin Context Protocol') || contains(github.event.discussion.title, '@Marvin Context Protocol'))) ||
+          (github.event_name == 'discussion_comment' && contains(github.event.comment.body, '@Marvin Context Protocol'))
         uses: anthropics/claude-code-action@v1
         with:
           github-token: ${{ steps.mtoken.outputs.token }}
@@ -70,7 +78,9 @@ jobs:
 
       # Optional: assignment/label triggers
       - name: Claude Code (assignee/label)
-        if: github.event_name == 'issues' && (github.event.action == 'assigned' || github.event.action == 'labeled')
+        if: |
+          (github.event_name == 'issues' && github.event.action == 'assigned' && github.event.assignee.login == 'Marvin Context Protocol') ||
+          (github.event_name == 'issues' && github.event.action == 'labeled' && github.event.label.name == 'marvin')
         uses: anthropics/claude-code-action@v1
         with:
           github-token: ${{ steps.mtoken.outputs.token }}
