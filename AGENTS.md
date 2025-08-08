@@ -1,67 +1,83 @@
-# AGENTS
+# FastMCP Development Guidelines
 
-> **Audience**: LLM-driven engineering agents
-
-This file provides guidance for autonomous coding agents working inside the **FastMCP** repository.
-
----
-
-## Repository map
-
-| Path             | Purpose                                                                                  |
-| ---------------- | ---------------------------------------------------------------------------------------- |
-| `src/fastmcp/`   | Library source code (Python ≥ 3.10)                                                      |
-| `  └─server/`    | Server implementation, `FastMCP`, auth, networking                                       |
-| `  └─client/`    | High‑level client SDK + helpers                                                          |
-| `  └─resources/` | MCP resources and resource templates                                                     |
-| `  └─prompts/`   | Prompt templates                                                                         |
-| `  └─tools/`     | Tool implementations                                                                     |
-| `tests/`         | Pytest test‑suite                                                                        |
-| `docs/`          | Mintlify‑flavoured Markdown, published to [https://gofastmcp.com](https://gofastmcp.com) |
-| `examples/`      | Minimal runnable demos                                                                   |
-
----
-
-## Mandatory dev workflow
+## Required Development Workflow
 
 ```bash
-uv sync                              # install dependencies
+uv sync                              # Install dependencies
 uv run pre-commit run --all-files    # Ruff + Prettier + Pyright
-uv run pytest                        # run full test suite
+uv run pytest                        # Run full test suite
 ```
 
-*Tests must pass* and *lint/typing must be clean* before committing.
+**Tests must pass and lint/typing must be clean before committing.**
 
-### Core MCP objects
+## Repository Structure
 
-There are four major MCP object types:
+| Path             | Purpose                                                |
+| ---------------- | ------------------------------------------------------ |
+| `src/fastmcp/`   | Library source code (Python ≥ 3.10)                   |
+| `  └─server/`    | Server implementation, `FastMCP`, auth, networking    |
+| `  └─client/`    | High-level client SDK + helpers                       |
+| `  └─resources/` | MCP resources and resource templates                  |
+| `  └─prompts/`   | Prompt templates                                      |
+| `  └─tools/`     | Tool implementations                                  |
+| `tests/`         | Pytest test suite                                     |
+| `docs/`          | Mintlify documentation (published to gofastmcp.com)   |
+| `examples/`      | Minimal runnable demos                                |
 
-- Tools (`src/tools/`)
-- Resources (`src/resources/`)
-- Resource Templates (`src/resources/`)
-- Prompts (`src/prompts`)
+## Core MCP Objects
 
-While these have slightly different semantics and implementations, in general changes that affect interactions with any one (like adding tags, importing, etc.) will need to be adopted, applied, and tested on all others. Be sure to look at not only the object definition but also the related `Manager` (e.g. `ToolManager`, `ResourceManager`, and `PromptManager`). Also note that while resources and resource templates are different objects, they both are handled by the `ResourceManager`.
+When modifying MCP functionality, changes typically need to be applied across all object types:
+- **Tools** (`src/tools/` + `ToolManager`)
+- **Resources** (`src/resources/` + `ResourceManager`)
+- **Resource Templates** (`src/resources/` + `ResourceManager`)
+- **Prompts** (`src/prompts/` + `PromptManager`)
 
----
+## Testing Best Practices
 
-## Code conventions
+### Always Use In-Memory Transport
 
-* **Language:** Python ≥ 3.10
-* **Style:** Enforced through pre-commit hooks
-* **Type-checking:** Fully typed codebase
-* **Tests:** Each feature should have corresponding tests
+Pass FastMCP servers directly to clients for testing:
 
----
+```python
+mcp = FastMCP("TestServer")
 
-## Development guidelines
+@mcp.tool
+def greet(name: str) -> str:
+    return f"Hello, {name}!"
 
-1. **Set up** the environment:
-   ```bash
-   uv sync && uv run pre-commit run --all-files
-   ```
-2. **Run tests**: `uv run pytest` until they pass.
-3. **Iterate**: if a command fails, read the output, fix the code, retry.
-4. Make the smallest set of changes that achieve the desired outcome.
-5. Always read code before modifying it blindly.
-6. Follow established patterns and maintain consistency.
+# Direct connection - no network complexity
+async with Client(mcp) as client:
+    result = await client.call_tool("greet", {"name": "World"})
+```
+
+Only use HTTP transport when explicitly testing network features:
+```python
+# Network testing only
+async with Client(transport=StreamableHttpTransport(server_url)) as client:
+    result = await client.ping()
+```
+
+## Development Rules
+
+### Git & CI
+- Pre-commit hooks are required (run automatically on commits)
+- Never amend commits to fix pre-commit failures
+- Apply PR labels: bugs/breaking/enhancements/features
+- Improvements = enhancements (not features) unless specified
+
+### Commit Messages and Agent Attribution
+- **NEVER** include agent attribution in commit messages or PR titles/descriptions (no "🤖 Generated with [tool]", "with Claude", etc.)
+- Agent attribution is ONLY allowed in Co-authored-by lines in commits
+- Keep commit messages brief - ideally just headlines, not detailed messages
+- Focus on what changed, not how or why
+
+### Code Standards
+- Python ≥ 3.10 with full type annotations
+- Follow existing patterns and maintain consistency
+- Use `# type: ignore[attr-defined]` in tests for MCP results instead of type assertions
+- Each feature needs corresponding tests
+
+### Documentation
+- Uses Mintlify framework
+- Files must be in docs.json to be included
+- Never modify `docs/python-sdk/**` (auto-generated)
