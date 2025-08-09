@@ -123,9 +123,9 @@ class TestFastMCPComponent:
         result = component.get_meta(include_fastmcp_meta=False)
         assert result is None
 
-    def test_with_key_creates_copy_with_new_key(self, basic_component):
-        """Test that with_key creates a copy with a new key."""
-        new_component = basic_component.with_key("new_key")
+    def test_model_copy_creates_copy_with_new_key(self, basic_component):
+        """Test that model_copy with key creates a copy with a new key."""
+        new_component = basic_component.model_copy(key="new_key")
         assert new_component.key == "new_key"
         assert new_component.name == basic_component.name
         assert new_component is not basic_component  # Should be a copy
@@ -290,8 +290,8 @@ class TestMirroredComponent:
         # Test key property
         assert mirrored_component.key == "mirrored"
 
-        # Test with_key
-        with_key = mirrored_component.with_key("new_key")
+        # Test model_copy with key
+        with_key = mirrored_component.model_copy(key="new_key")
         assert with_key.key == "new_key"
 
         # Test get_meta
@@ -353,8 +353,8 @@ class TestEdgeCasesAndIntegration:
         component = FastMCPComponent(name="test", meta=complex_meta)
         assert component.meta == complex_meta
 
-    def test_with_key_preserves_all_attributes(self):
-        """Test that with_key preserves all component attributes."""
+    def test_model_copy_with_key_preserves_all_attributes(self):
+        """Test that model_copy with key preserves all component attributes."""
         component = FastMCPComponent(
             name="test",
             title="Title",
@@ -363,7 +363,7 @@ class TestEdgeCasesAndIntegration:
             meta={"key": "value"},
             enabled=False,
         )
-        new_component = component.with_key("new_key")
+        new_component = component.model_copy(key="new_key")
 
         assert new_component.name == component.name
         assert new_component.title == component.title
@@ -389,3 +389,50 @@ class TestEdgeCasesAndIntegration:
         assert original.name == "original"
         assert copy1.name == "copy1"
         assert copy2.name == "copy2"
+
+    def test_model_copy_with_update_and_key(self):
+        """Test that model_copy works with both update dict and key parameter."""
+        component = FastMCPComponent(
+            name="test",
+            title="Original Title",
+            description="Original Description",
+            tags=["tag1"],
+            enabled=True,
+        )
+
+        # Test with both update and key
+        updated_component = component.model_copy(
+            update={"title": "New Title", "description": "New Description"},
+            key="new_key",
+        )
+
+        assert updated_component.name == "test"  # Not in update, unchanged
+        assert updated_component.title == "New Title"  # Updated
+        assert updated_component.description == "New Description"  # Updated
+        assert updated_component.tags == {"tag1"}  # Not in update, unchanged
+        assert updated_component.enabled is True  # Not in update, unchanged
+        assert updated_component.key == "new_key"  # Custom key set
+
+        # Original should be unchanged
+        assert component.title == "Original Title"
+        assert component.description == "Original Description"
+        assert component.key == "test"  # Uses name as key
+
+    def test_model_copy_deep_parameter(self):
+        """Test that model_copy respects the deep parameter."""
+        nested_dict = {"nested": {"value": 1}}
+        component = FastMCPComponent(name="test", meta=nested_dict)
+
+        # Shallow copy (default)
+        shallow_copy = component.model_copy()
+        assert shallow_copy.meta is not None
+        assert component.meta is not None
+        shallow_copy.meta["nested"]["value"] = 2
+        assert component.meta["nested"]["value"] == 2  # Original affected
+
+        # Deep copy
+        component.meta["nested"]["value"] = 1  # Reset
+        deep_copy = component.model_copy(deep=True)
+        assert deep_copy.meta is not None
+        deep_copy.meta["nested"]["value"] = 3
+        assert component.meta["nested"]["value"] == 1  # Original unaffected

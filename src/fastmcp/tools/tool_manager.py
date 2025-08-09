@@ -75,7 +75,9 @@ class ToolManager:
                 child_dict = {t.key: t for t in child_results}
                 if mounted.prefix:
                     for tool in child_dict.values():
-                        prefixed_tool = tool.with_key(f"{mounted.prefix}_{tool.key}")
+                        prefixed_tool = tool.model_copy(
+                            key=f"{mounted.prefix}_{tool.key}"
+                        )
                         all_tools[prefixed_tool.key] = prefixed_tool
                 else:
                     all_tools.update(child_dict)

@@ -91,12 +91,27 @@ class FastMCPComponent(FastMCPBaseModel):
 
         return meta or None
 
-    def with_key(self, key: str) -> Self:
+    def model_copy(
+        self,
+        *,
+        update: dict[str, Any] | None = None,
+        deep: bool = False,
+        key: str | None = None,
+    ) -> Self:
+        """
+        Create a copy of the component.
+
+        Args:
+            update: A dictionary of fields to update.
+            deep: Whether to deep copy the component.
+            key: The key to use for the copy.
+        """
         # `model_copy` has an `update` parameter but it doesn't work for certain private attributes
         # https://github.com/pydantic/pydantic/issues/12116
-        # So we manually set the private attribute here instead
-        copy = self.model_copy()
-        copy._key = key
+        # So we manually set the private attribute here instead, such as _key
+        copy = super().model_copy(update=update, deep=deep)
+        if key is not None:
+            copy._key = key
         return copy
 
     def __eq__(self, other: object) -> bool:

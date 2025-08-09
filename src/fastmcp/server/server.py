@@ -1891,7 +1891,7 @@ class FastMCP(Generic[LifespanResultT]):
         # Import tools from the server
         for key, tool in (await server.get_tools()).items():
             if prefix:
-                tool = tool.with_key(f"{prefix}_{key}")
+                tool = tool.model_copy(key=f"{prefix}_{key}")
             self._tool_manager.add_tool(tool)
 
         # Import resources and templates from the server
@@ -1900,7 +1900,9 @@ class FastMCP(Generic[LifespanResultT]):
                 resource_key = add_resource_prefix(
                     key, prefix, self.resource_prefix_format
                 )
-                resource = resource.with_key(resource_key)
+                resource = resource.model_copy(
+                    update={"name": f"{prefix}_{resource.name}"}, key=resource_key
+                )
             self._resource_manager.add_resource(resource)
 
         for key, template in (await server.get_resource_templates()).items():
@@ -1908,13 +1910,15 @@ class FastMCP(Generic[LifespanResultT]):
                 template_key = add_resource_prefix(
                     key, prefix, self.resource_prefix_format
                 )
-                template = template.with_key(template_key)
+                template = template.model_copy(
+                    update={"name": f"{prefix}_{template.name}"}, key=template_key
+                )
             self._resource_manager.add_template(template)
 
         # Import prompts from the server
         for key, prompt in (await server.get_prompts()).items():
             if prefix:
-                prompt = prompt.with_key(f"{prefix}_{key}")
+                prompt = prompt.model_copy(key=f"{prefix}_{key}")
             self._prompt_manager.add_prompt(prompt)
 
         if prefix:

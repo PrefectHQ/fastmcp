@@ -469,8 +469,8 @@ class TestCustomResourceKeys:
             fn=get_data,
         )
 
-        # Use with_key to create a new resource with the custom key
-        resource_with_custom_key = resource.with_key(custom_key)
+        # Use model_copy to create a new resource with the custom key
+        resource_with_custom_key = resource.model_copy(key=custom_key)
         manager.add_resource(resource_with_custom_key)
 
         # Resource should be accessible via custom key
@@ -496,8 +496,8 @@ class TestCustomResourceKeys:
             name="test_template",
         )
 
-        # Use with_key to create a new template with the custom key
-        template_with_custom_key = template.with_key(custom_key)
+        # Use model_copy to create a new template with the custom key
+        template_with_custom_key = template.model_copy(key=custom_key)
         manager.add_template(template_with_custom_key)
 
         # Template should be accessible via custom key
@@ -523,8 +523,8 @@ class TestCustomResourceKeys:
             fn=get_data,
         )
 
-        # Use with_key to create a new resource with the custom key
-        resource_with_custom_key = resource.with_key(custom_key)
+        # Use model_copy to create a new resource with the custom key
+        resource_with_custom_key = resource.model_copy(key=custom_key)
         manager.add_resource(resource_with_custom_key)
 
         # Should be retrievable by the custom key
@@ -552,8 +552,8 @@ class TestCustomResourceKeys:
             name="custom_greeter",
         )
 
-        # Use with_key to create a new template with the custom key
-        template_with_custom_key = template.with_key(custom_key)
+        # Use model_copy to create a new template with the custom key
+        template_with_custom_key = template.model_copy(key=custom_key)
         manager.add_template(template_with_custom_key)
 
         # Using a URI that matches the custom key pattern

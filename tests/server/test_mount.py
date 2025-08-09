@@ -967,3 +967,55 @@ class TestAsProxyKwarg:
         # in the present implementation the sub server will be invoked 3 times
         # to call its tool
         assert lifespan_check.count("start") >= 2
+
+
+class TestResourceNamePrefixing:
+    """Test that resource and resource template names get prefixed when mounted."""
+
+    async def test_resource_name_prefixing(self):
+        """Test that resource names are prefixed when mounted."""
+
+        # Create a sub-app with a resource
+        sub_app = FastMCP("SubApp")
+
+        @sub_app.resource("resource://my_resource")
+        def my_resource() -> str:
+            return "Resource content"
+
+        # Create main app and mount sub-app with prefix
+        main_app = FastMCP("MainApp")
+        main_app.mount(sub_app, "prefix")
+
+        # Get resources from main app
+        resources = await main_app.get_resources()
+
+        # Should have prefixed key (using path format: resource://prefix/resource_name)
+        assert "resource://prefix/my_resource" in resources
+
+        # The resource name should also be prefixed
+        resource = resources["resource://prefix/my_resource"]
+        assert resource.name == "prefix_my_resource"
+
+    async def test_resource_template_name_prefixing(self):
+        """Test that resource template names are prefixed when mounted."""
+
+        # Create a sub-app with a resource template
+        sub_app = FastMCP("SubApp")
+
+        @sub_app.resource("resource://user/{user_id}")
+        def user_template(user_id: str) -> str:
+            return f"User {user_id} data"
+
+        # Create main app and mount sub-app with prefix
+        main_app = FastMCP("MainApp")
+        main_app.mount(sub_app, "prefix")
+
+        # Get resource templates from main app
+        templates = await main_app.get_resource_templates()
+
+        # Should have prefixed key (using path format: resource://prefix/template_uri)
+        assert "resource://prefix/user/{user_id}" in templates
+
+        # The template name should also be prefixed
+        template = templates["resource://prefix/user/{user_id}"]
+        assert template.name == "prefix_user_template"

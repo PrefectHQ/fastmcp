@@ -834,8 +834,8 @@ class TestCustomToolNames:
         # Create a tool with a specific name
         tool = Tool.from_function(fn, name="my_tool")
         manager = ToolManager()
-        # Use with_key to create a new tool with the custom key
-        tool_with_custom_key = tool.with_key("proxy_tool")
+        # Use model_copy to create a new tool with the custom key
+        tool_with_custom_key = tool.model_copy(key="proxy_tool")
         manager.add_tool(tool_with_custom_key)
         # The tool is accessible under the key
         stored = await manager.get_tool("proxy_tool")
