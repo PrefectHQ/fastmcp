@@ -237,6 +237,32 @@ def _combine_schemas_and_map_params(
             route.request_body.content_schema[content_type].copy(),
             route.request_body.description,
         )
+
+        # Handle allOf at the top level by merging all schemas
+        if "allOf" in body_schema and isinstance(body_schema["allOf"], list):
+            merged_props = {}
+            merged_required = []
+
+            for sub_schema in body_schema["allOf"]:
+                if isinstance(sub_schema, dict):
+                    # Merge properties
+                    if "properties" in sub_schema:
+                        merged_props.update(sub_schema["properties"])
+                    # Merge required fields
+                    if "required" in sub_schema:
+                        merged_required.extend(sub_schema["required"])
+
+            # Update body_schema with merged properties
+            body_schema["properties"] = merged_props
+            if merged_required:
+                # Remove duplicates while preserving order
+                seen = set()
+                body_schema["required"] = [
+                    x for x in merged_required if not (x in seen or seen.add(x))
+                ]
+            # Remove the allOf since we've merged it
+            body_schema.pop("allOf", None)
+
         body_props = body_schema.get("properties", {})
 
     # Detect collisions: parameters that exist in both body and path/query/header
