@@ -5,12 +5,12 @@ labels: [bug, pending]
 body:
   - type: markdown
     attributes:
-      value: Thank you for contributing to FastMCP! 🙏
+      value: Thanks for contributing to FastMCP! 🙏
 
   - type: markdown
     attributes:
       value: |
-        ## Before you submit 📝
+        ### Before you submit
 
         To help us help you, please:
 
@@ -18,7 +18,7 @@ body:
         - 🔍 **Check if someone else has already reported this issue** or if it's been fixed on the main branch
         - 📋 **You MUST include a copy/pasteable and properly formatted MRE** (minimal reproducible example) below or your issue may be closed without response
 
-        Thanks for helping make FastMCP better! 🚀
+        Thanks for helping to make FastMCP better! 🚀
 
   - type: textarea
     id: description
@@ -38,17 +38,20 @@ body:
       description: >
         If applicable, please provide a self-contained,
         [minimal, reproducible example](https://stackoverflow.com/help/minimal-reproducible-example)
-        demonstrating the bug.
-
-        If possible, your example should be a single-file script. Instead of `.run()`-ing an MCP server, use a `Client` to directly interact with it (`async with Client(mcp) as client: ...`) and demonstrate the issue.
+        demonstrating the bug. If possible, your example should be a single-file script.
 
       placeholder: |
+        import asyncio
         from fastmcp import FastMCP, Client
 
         mcp = FastMCP()
 
-        async with Client(mcp) as client:
-            ...
+        async def demo():
+            async with Client(mcp) as client:
+                ... # show the bug here
+
+        if __name__ == "__main__":
+            asyncio.run(demo())
       render: Python
 
   - type: textarea
@@ -56,28 +59,13 @@ body:
     attributes:
       label: Version Information
       description: |
-        Please provide information about your FastMCP version, MCP version, Python version, and OS.
+        Please tell us about your FastMCP version, MCP version, Python version, and OS, as well as any other relevant details about your environment.
 
-        To get this information, run the following command in your terminal and paste the output below:
+        To get the basic information, run the following command in your terminal and paste the output below:
 
         ```bash
         fastmcp version --copy
         ```
-
-        *Note: if you're using FastMCP < 2.10.3, run `fastmcp version` instead.*
-
-        If there is other information that would be helpful, please include it as well.
       render: Text
     validations:
       required: true
-
-  - type: textarea
-    id: additional_context
-    attributes:
-      label: Additional Context
-      description: |
-        Add any other context about the problem here. This could include:
-        - The full error message and traceback (if applicable)
-        - Information about your environment (e.g., virtual environment, installed packages)
-        - Steps to reproduce the issue
-        - Any recent changes in your code or setup that might be relevant
