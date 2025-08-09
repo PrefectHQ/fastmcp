@@ -1,4 +1,4 @@
-name: Marvin Assistant
+name: Marvin Context Protocol
 
 on:
   issue_comment: { types: [created] }
