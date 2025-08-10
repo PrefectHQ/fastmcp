@@ -1,9 +1,9 @@
 """Tests for StaticTokenVerifier integration with FastMCP."""
 
 import httpx
-from mcp.server.auth.provider import AccessToken
 
 from fastmcp.server import FastMCP
+from fastmcp.server.auth.auth import AccessToken
 from fastmcp.server.auth.providers.jwt import StaticTokenVerifier
 
 

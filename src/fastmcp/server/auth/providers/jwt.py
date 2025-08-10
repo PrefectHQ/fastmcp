@@ -11,12 +11,12 @@ from authlib.jose import JsonWebKey, JsonWebToken
 from authlib.jose.errors import JoseError
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
-from mcp.server.auth.provider import AccessToken
 from pydantic import AnyHttpUrl, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing_extensions import TypedDict
 
 from fastmcp.server.auth import TokenVerifier
+from fastmcp.server.auth.auth import AccessToken
 from fastmcp.server.auth.registry import register_provider
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import NotSet, NotSetT
@@ -448,6 +448,7 @@ class JWTVerifier(TokenVerifier):
                 client_id=str(client_id),
                 scopes=scopes,
                 expires_at=int(exp) if exp else None,
+                claims=claims,
             )
 
         except JoseError:
@@ -535,4 +536,5 @@ class StaticTokenVerifier(TokenVerifier):
             client_id=token_data["client_id"],
             scopes=scopes,
             expires_at=expires_at,
+            claims=token_data,
         )

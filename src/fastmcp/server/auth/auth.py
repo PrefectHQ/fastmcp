@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+from typing import Any
+
 from mcp.server.auth.provider import (
-    AccessToken,
+    AccessToken as _SDKAccessToken,
+)
+from mcp.server.auth.provider import (
     AuthorizationCode,
     OAuthAuthorizationServerProvider,
     RefreshToken,
@@ -19,6 +23,12 @@ from mcp.server.auth.settings import (
 )
 from pydantic import AnyHttpUrl
 from starlette.routing import Route
+
+
+class AccessToken(_SDKAccessToken):
+    """AccessToken that includes all JWT claims."""
+
+    claims: dict[str, Any] = {}
 
 
 class AuthProvider(TokenVerifierProtocol):

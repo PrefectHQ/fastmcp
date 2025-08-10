@@ -2,9 +2,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, ParamSpec, TypeVar
 
-from mcp.server.auth.middleware.auth_context import get_access_token
-from mcp.server.auth.provider import AccessToken
+from mcp.server.auth.middleware.auth_context import (
+    get_access_token as _sdk_get_access_token,
+)
 from starlette.requests import Request
+
+from fastmcp.server.auth.auth import AccessToken
 
 if TYPE_CHECKING:
     from fastmcp.server.context import Context
@@ -94,3 +97,30 @@ def get_http_headers(include_all: bool = False) -> dict[str, str]:
         return headers
     except RuntimeError:
         return {}
+
+
+# --- Access Token ---
+
+
+def get_access_token() -> AccessToken | None:
+    """
+    Get the FastMCP access token from the current context.
+
+    Returns:
+        The access token if an authenticated user is available, None otherwise.
+    """
+    #
+    obj = _sdk_get_access_token()
+    if obj is None or isinstance(obj, AccessToken):
+        return obj
+
+    # If the object is not a FastMCP AccessToken, convert it to one if the fields are compatible
+    # This is a workaround for the case where the SDK returns a different type
+    # If it fails, it will raise a TypeError
+    try:
+        return AccessToken(**obj.model_dump())
+    except Exception as e:
+        raise TypeError(
+            f"Expected fastmcp.server.auth.auth.AccessToken, got {type(obj).__name__}. "
+            "Ensure the SDK is using the correct AccessToken type."
+        ) from e

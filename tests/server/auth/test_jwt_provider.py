@@ -141,15 +141,25 @@ class TestBearerTokenJWKS:
             url="https://test.example.com/.well-known/jwks.json",
             json=mock_jwks_data,
         )
+
+        username = "test-user"
+        issuer = "https://test.example.com"
+        audience = "https://api.example.com"
+
         token = rsa_key_pair.create_token(
-            subject="test-user",
-            issuer="https://test.example.com",
-            audience="https://api.example.com",
+            subject=username,
+            issuer=issuer,
+            audience=audience,
         )
 
         access_token = await jwks_provider.load_access_token(token)
         assert access_token is not None
-        assert access_token.client_id == "test-user"
+        assert access_token.client_id == username
+
+        # ensure the raw claims are present - #1398
+        assert access_token.claims.get("sub") == username
+        assert access_token.claims.get("iss") == issuer
+        assert access_token.claims.get("aud") == audience
 
     async def test_jwks_token_validation_with_invalid_key(
         self,

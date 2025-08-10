@@ -1,10 +1,9 @@
 import httpx
 import pytest
-from mcp.server.auth.provider import AccessToken
 from pydantic import AnyHttpUrl
 
 from fastmcp import FastMCP
-from fastmcp.server.auth.auth import RemoteAuthProvider, TokenVerifier
+from fastmcp.server.auth.auth import AccessToken, RemoteAuthProvider, TokenVerifier
 
 
 class SimpleTokenVerifier(TokenVerifier):
