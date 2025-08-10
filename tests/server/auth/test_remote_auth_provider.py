@@ -327,3 +327,66 @@ class TestRemoteAuthProviderIntegration:
             # The RemoteAuthProvider correctly returns the full MCP endpoint URL
             assert data["resource"] == "https://my-server.com/mcp/"
             assert data["authorization_servers"] == ["https://accounts.google.com/"]
+
+    async def test_resource_name_field(self):
+        """Test that RemoteAuthProvider correctly returns the resource_name.
+
+        This test confirms that RemoteAuthProvider works correctly and returns
+        the exact resource_name specified.
+        """
+        token_verifier = SimpleTokenVerifier()
+        auth_provider = RemoteAuthProvider(
+            token_verifier=token_verifier,
+            authorization_servers=[AnyHttpUrl("https://accounts.google.com")],
+            resource_server_url="https://my-server.com/mcp/",
+            resource_name="My Test Resource",
+        )
+
+        mcp = FastMCP("test-server", auth=auth_provider)
+        mcp_http_app = mcp.http_app()
+
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=mcp_http_app),
+            base_url="https://my-server.com",
+        ) as client:
+            response = await client.get("/.well-known/oauth-protected-resource")
+
+            assert response.status_code == 200
+            data = response.json()
+
+            # The RemoteAuthProvider correctly returns the resource_name
+            assert data["resource_name"] == "My Test Resource"
+
+    async def test_resource_documentation_field(self):
+        """Test that RemoteAuthProvider correctly returns the resource_documentation.
+
+        This test confirms that RemoteAuthProvider works correctly and returns
+        the exact resource_documentation specified.
+        """
+        token_verifier = SimpleTokenVerifier()
+        auth_provider = RemoteAuthProvider(
+            token_verifier=token_verifier,
+            authorization_servers=[AnyHttpUrl("https://accounts.google.com")],
+            resource_server_url="https://my-server.com/mcp/",
+            resource_documentation=AnyHttpUrl(
+                "https://doc.my-server.com/resource-docs"
+            ),
+        )
+
+        mcp = FastMCP("test-server", auth=auth_provider)
+        mcp_http_app = mcp.http_app()
+
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=mcp_http_app),
+            base_url="https://my-server.com",
+        ) as client:
+            response = await client.get("/.well-known/oauth-protected-resource")
+
+            assert response.status_code == 200
+            data = response.json()
+
+            # The RemoteAuthProvider correctly returns the resource_documentation
+            assert (
+                data["resource_documentation"]
+                == "https://doc.my-server.com/resource-docs"
+            )
