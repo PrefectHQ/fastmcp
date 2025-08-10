@@ -574,7 +574,7 @@ requires-dist = [
     { name = "cyclopts", specifier = ">=3.0.0" },
     { name = "exceptiongroup", specifier = ">=1.2.2" },
     { name = "httpx", specifier = ">=0.28.1" },
-    { name = "mcp", specifier = ">=1.12.4" },
+    { name = "mcp", specifier = ">=1.12.4,<2.0.0" },
     { name = "msgspec", specifier = ">=0.19.0" },
     { name = "openapi-core", specifier = ">=0.19.5" },
     { name = "openapi-pydantic", specifier = ">=0.5.1" },
