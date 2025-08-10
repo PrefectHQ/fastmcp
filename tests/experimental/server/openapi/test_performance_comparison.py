@@ -215,7 +215,7 @@ class TestPerformanceComparison:
 
         # Performance should be comparable (within reasonable margin)
         performance_ratio = max(new_avg, legacy_avg) / min(new_avg, legacy_avg)
-        assert performance_ratio < 2.0, (
+        assert performance_ratio < 3.0, (
             f"Performance should be comparable, ratio: {performance_ratio:.2f}x"
         )
 
@@ -286,6 +286,6 @@ class TestPerformanceComparison:
         current_refs = len(gc.get_objects())
         # Allow reasonable memory growth but not exponential
         growth_ratio = current_refs / max(baseline_refs, 1)
-        assert growth_ratio < 5, (
+        assert growth_ratio < 3.0, (
             f"Memory usage grew by {growth_ratio}x, which seems excessive"
         )

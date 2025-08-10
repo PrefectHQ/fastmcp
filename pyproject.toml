@@ -15,6 +15,7 @@ dependencies = [
     "pydantic[email]>=2.11.7",
     "pyperclip>=1.9.0",
     "openapi-core>=0.19.5",
+    "msgspec>=0.19.0",
 ]
 requires-python = ">=3.10"
 readme = "README.md"

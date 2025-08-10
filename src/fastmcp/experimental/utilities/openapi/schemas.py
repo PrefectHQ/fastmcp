@@ -71,11 +71,11 @@ def clean_schema_for_display(schema: JsonSchema | None) -> JsonSchema | None:
     return cleaned
 
 
-def _replace_ref_with_defs(
+def _replace_ref_with_defs_recursive(
     info: dict[str, Any], description: str | None = None
 ) -> dict[str, Any]:
     """
-    Replace openapi $ref with jsonschema $defs
+    Replace openapi $ref with jsonschema $defs recursively.
 
     Examples:
     - {"type": "object", "properties": {"$ref": "#/components/schemas/..."}}
@@ -106,20 +106,33 @@ def _replace_ref_with_defs(
                 )
     elif properties := schema.get("properties"):
         if "$ref" in properties:
-            schema["properties"] = _replace_ref_with_defs(properties)
+            schema["properties"] = _replace_ref_with_defs_recursive(properties)
         else:
             schema["properties"] = {
-                prop_name: _replace_ref_with_defs(prop_schema)
+                prop_name: _replace_ref_with_defs_recursive(prop_schema)
                 for prop_name, prop_schema in properties.items()
             }
     elif item_schema := schema.get("items"):
-        schema["items"] = _replace_ref_with_defs(item_schema)
+        schema["items"] = _replace_ref_with_defs_recursive(item_schema)
     for section in ["anyOf", "allOf", "oneOf"]:
         for i, item in enumerate(schema.get(section, [])):
-            schema[section][i] = _replace_ref_with_defs(item)
+            schema[section][i] = _replace_ref_with_defs_recursive(item)
     if info.get("description", description) and not schema.get("description"):
         schema["description"] = description
     return schema
+
+
+def _ensure_refs_converted(schema: dict[str, Any]) -> dict[str, Any]:
+    """
+    Ensure all OpenAPI refs are converted to JSON Schema format using recursive approach.
+
+    Args:
+        schema: Schema that may contain OpenAPI refs
+
+    Returns:
+        Schema with all refs converted to JSON Schema format
+    """
+    return _replace_ref_with_defs_recursive(schema)
 
 
 def _make_optional_parameter_nullable(schema: dict[str, Any]) -> dict[str, Any]:
@@ -202,6 +215,7 @@ def _make_optional_parameter_nullable(schema: dict[str, Any]) -> dict[str, Any]:
 
 def _combine_schemas_and_map_params(
     route: HTTPRoute,
+    convert_refs: bool = True,
 ) -> tuple[dict[str, Any], dict[str, dict[str, str]]]:
     """
     Combines parameter and request body schemas into a single schema.
@@ -233,10 +247,17 @@ def _combine_schemas_and_map_params(
 
     if route.request_body and route.request_body.content_schema:
         content_type = next(iter(route.request_body.content_schema))
-        body_schema = _replace_ref_with_defs(
-            route.request_body.content_schema[content_type].copy(),
-            route.request_body.description,
-        )
+
+        # Convert refs if needed
+        if convert_refs:
+            body_schema = _ensure_refs_converted(
+                route.request_body.content_schema[content_type]
+            )
+        else:
+            body_schema = route.request_body.content_schema[content_type]
+
+        if route.request_body.description and not body_schema.get("description"):
+            body_schema["description"] = route.request_body.description
 
         # Handle allOf at the top level by merging all schemas
         if "allOf" in body_schema and isinstance(body_schema["allOf"], list):
@@ -287,10 +308,11 @@ def _combine_schemas_and_map_params(
                 "openapi_name": param.name,
             }
 
-            # Add location info to description
-            param_schema = _replace_ref_with_defs(
-                param.schema_.copy(), param.description
-            )
+            # Convert refs if needed
+            if convert_refs:
+                param_schema = _ensure_refs_converted(param.schema_)
+            else:
+                param_schema = param.schema_
             original_desc = param_schema.get("description", "")
             location_desc = f"({param.location.capitalize()} parameter)"
             if original_desc:
@@ -313,9 +335,11 @@ def _combine_schemas_and_map_params(
                 "openapi_name": param.name,
             }
 
-            param_schema = _replace_ref_with_defs(
-                param.schema_.copy(), param.description
-            )
+            # Convert refs if needed
+            if convert_refs:
+                param_schema = _ensure_refs_converted(param.schema_)
+            else:
+                param_schema = param.schema_
 
             # Don't make optional parameters nullable - they can simply be omitted
             # The OpenAPI specification doesn't require optional parameters to accept null values
@@ -324,14 +348,28 @@ def _combine_schemas_and_map_params(
 
     # Add request body properties (no suffixes for body parameters)
     if route.request_body and route.request_body.content_schema:
-        for prop_name, prop_schema in body_props.items():
-            properties[prop_name] = prop_schema
+        # If body is just a $ref, we need to handle it differently
+        if "$ref" in body_schema and not body_props:
+            # The entire body is a reference to a schema
+            # We need to expand this inline or keep the ref
+            # For simplicity, we'll keep it as a single property
+            properties["body"] = body_schema
+            if route.request_body.required:
+                required.append("body")
+            parameter_map["body"] = {"location": "body", "openapi_name": "body"}
+        else:
+            # Normal case: body has properties
+            for prop_name, prop_schema in body_props.items():
+                properties[prop_name] = prop_schema
 
-            # Track parameter mapping for body properties
-            parameter_map[prop_name] = {"location": "body", "openapi_name": prop_name}
+                # Track parameter mapping for body properties
+                parameter_map[prop_name] = {
+                    "location": "body",
+                    "openapi_name": prop_name,
+                }
 
-        if route.request_body.required:
-            required.extend(body_schema.get("required", []))
+            if route.request_body.required:
+                required.extend(body_schema.get("required", []))
 
     result = {
         "type": "object",
@@ -340,42 +378,51 @@ def _combine_schemas_and_map_params(
     }
     # Add schema definitions if available
     if route.schema_definitions:
-        result["$defs"] = route.schema_definitions.copy()
+        if convert_refs:
+            # Need to convert refs and prune
+            all_defs = route.schema_definitions.copy()
+            # Convert each schema definition recursively
+            for name, schema in all_defs.items():
+                if isinstance(schema, dict):
+                    all_defs[name] = _replace_ref_with_defs_recursive(schema)
 
-    # Use lightweight compression - prune additionalProperties and unused definitions
-    if result.get("additionalProperties") is False:
-        result.pop("additionalProperties")
+            # Prune to only needed schemas
+            used_refs = set()
 
-    # Remove unused definitions (lightweight approach - just check direct $ref usage)
-    if "$defs" in result:
-        used_refs = set()
+            def find_refs_in_value(value):
+                """Recursively find all $ref references."""
+                if isinstance(value, dict):
+                    if "$ref" in value and isinstance(value["$ref"], str):
+                        ref = value["$ref"]
+                        if ref.startswith("#/$defs/"):
+                            used_refs.add(ref.split("/")[-1])
+                    for v in value.values():
+                        find_refs_in_value(v)
+                elif isinstance(value, list):
+                    for item in value:
+                        find_refs_in_value(item)
 
-        def find_refs_in_value(value):
-            if isinstance(value, dict):
-                if "$ref" in value and isinstance(value["$ref"], str):
-                    ref = value["$ref"]
-                    if ref.startswith("#/$defs/"):
-                        used_refs.add(ref.split("/")[-1])
-                for v in value.values():
-                    find_refs_in_value(v)
-            elif isinstance(value, list):
-                for item in value:
-                    find_refs_in_value(item)
+            # Find refs in properties
+            find_refs_in_value(properties)
 
-        # Find refs in the main schema (excluding $defs section)
-        for key, value in result.items():
-            if key != "$defs":
-                find_refs_in_value(value)
+            # Collect transitive dependencies
+            if used_refs:
+                collected_all = False
+                while not collected_all:
+                    initial_count = len(used_refs)
+                    for name in list(used_refs):
+                        if name in all_defs:
+                            find_refs_in_value(all_defs[name])
+                    collected_all = len(used_refs) == initial_count
 
-        # Remove unused definitions
-        if used_refs:
-            result["$defs"] = {
-                name: def_schema
-                for name, def_schema in result["$defs"].items()
-                if name in used_refs
-            }
+                result["$defs"] = {
+                    name: def_schema
+                    for name, def_schema in all_defs.items()
+                    if name in used_refs
+                }
         else:
-            result.pop("$defs")
+            # From parser - already converted and pruned
+            result["$defs"] = route.schema_definitions
 
     return result, parameter_map
 
@@ -466,17 +513,17 @@ def extract_output_schema_from_responses(
     if not schema or not isinstance(schema, dict):
         return None
 
-    # Clean and copy the schema
-    output_schema = schema.copy()
+    # Convert refs if needed
+    output_schema = _ensure_refs_converted(schema)
 
     # If schema has a $ref, resolve it first before processing nullable fields
     if "$ref" in output_schema and schema_definitions:
         ref_path = output_schema["$ref"]
-        if ref_path.startswith("#/components/schemas/"):
+        if ref_path.startswith("#/$defs/"):
             schema_name = ref_path.split("/")[-1]
             if schema_name in schema_definitions:
                 # Replace $ref with the actual schema definition
-                output_schema = schema_definitions[schema_name].copy()
+                output_schema = _ensure_refs_converted(schema_definitions[schema_name])
 
     # Convert OpenAPI schema to JSON Schema format
     # Only needed for OpenAPI 3.0 - 3.1 uses standard JSON Schema null types
@@ -499,56 +546,25 @@ def extract_output_schema_from_responses(
         }
         output_schema = wrapped_schema
 
-    # Add schema definitions if available and handle nullable fields in them
-    # Only add $defs if we didn't resolve the $ref inline above
-    if schema_definitions and "$ref" not in schema.copy():
-        processed_defs = {}
-        for def_name, def_schema in schema_definitions.items():
-            # Convert OpenAPI schema definitions to JSON Schema format
-            if openapi_version and openapi_version.startswith("3.0"):
-                from .json_schema_converter import convert_openapi_schema_to_json_schema
+    # Add schema definitions if available
+    if schema_definitions:
+        # Convert refs if needed
+        processed_defs = schema_definitions.copy()
+        # Convert each schema definition recursively
+        for name, schema in processed_defs.items():
+            if isinstance(schema, dict):
+                processed_defs[name] = _replace_ref_with_defs_recursive(schema)
 
+        # Convert OpenAPI schema definitions to JSON Schema format if needed
+        if openapi_version and openapi_version.startswith("3.0"):
+            from .json_schema_converter import convert_openapi_schema_to_json_schema
+
+            for def_name in list(processed_defs.keys()):
                 processed_defs[def_name] = convert_openapi_schema_to_json_schema(
-                    def_schema, openapi_version
+                    processed_defs[def_name], openapi_version
                 )
-            else:
-                processed_defs[def_name] = def_schema
+
         output_schema["$defs"] = processed_defs
-
-    # Use lightweight compression - prune additionalProperties and unused definitions
-    if output_schema.get("additionalProperties") is False:
-        output_schema.pop("additionalProperties")
-
-    # Remove unused definitions (lightweight approach - just check direct $ref usage)
-    if "$defs" in output_schema:
-        used_refs = set()
-
-        def find_refs_in_value(value):
-            if isinstance(value, dict):
-                if "$ref" in value and isinstance(value["$ref"], str):
-                    ref = value["$ref"]
-                    if ref.startswith("#/$defs/"):
-                        used_refs.add(ref.split("/")[-1])
-                for v in value.values():
-                    find_refs_in_value(v)
-            elif isinstance(value, list):
-                for item in value:
-                    find_refs_in_value(item)
-
-        # Find refs in the main schema (excluding $defs section)
-        for key, value in output_schema.items():
-            if key != "$defs":
-                find_refs_in_value(value)
-
-        # Remove unused definitions
-        if used_refs:
-            output_schema["$defs"] = {
-                name: def_schema
-                for name, def_schema in output_schema["$defs"].items()
-                if name in used_refs
-            }
-        else:
-            output_schema.pop("$defs")
 
     return output_schema
 
@@ -559,6 +575,5 @@ __all__ = [
     "_combine_schemas",
     "_combine_schemas_and_map_params",
     "extract_output_schema_from_responses",
-    "_replace_ref_with_defs",
     "_make_optional_parameter_nullable",
 ]

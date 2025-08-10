@@ -34,7 +34,10 @@ from .models import (
     RequestBodyInfo,
     ResponseInfo,
 )
-from .schemas import _combine_schemas_and_map_params, _replace_ref_with_defs
+from .schemas import (
+    _combine_schemas_and_map_params,
+    _replace_ref_with_defs_recursive,
+)
 
 logger = get_logger(__name__)
 
@@ -63,7 +66,7 @@ def parse_openapi_to_http_routes(openapi_dict: dict[str, Any]) -> list[HTTPRoute
         if openapi_version.startswith("3.0"):
             # Use OpenAPI 3.0 models
             openapi_30 = OpenAPI_30.model_validate(openapi_dict)
-            logger.info(
+            logger.debug(
                 f"Successfully parsed OpenAPI 3.0 schema version: {openapi_30.openapi}"
             )
             parser = OpenAPIParser(
@@ -81,7 +84,7 @@ def parse_openapi_to_http_routes(openapi_dict: dict[str, Any]) -> list[HTTPRoute
         else:
             # Default to OpenAPI 3.1 models
             openapi_31 = OpenAPI.model_validate(openapi_dict)
-            logger.info(
+            logger.debug(
                 f"Successfully parsed OpenAPI 3.1 schema version: {openapi_31.openapi}"
             )
             parser = OpenAPIParser(
@@ -207,7 +210,7 @@ class OpenAPIParser(
         try:
             resolved_schema = self._resolve_ref(schema_obj)
 
-            if isinstance(resolved_schema, (self.schema_cls)):
+            if isinstance(resolved_schema, self.schema_cls):
                 # Convert schema to dictionary
                 result = resolved_schema.model_dump(
                     mode="json", by_alias=True, exclude_none=True
@@ -220,7 +223,10 @@ class OpenAPIParser(
                 )
                 result = {}
 
-            return _replace_ref_with_defs(result)
+            # Convert refs from OpenAPI format to JSON Schema format using recursive approach
+
+            result = _replace_ref_with_defs_recursive(result)
+            return result
         except ValueError as e:
             # Re-raise ValueError for external reference errors and other validation issues
             if "External or non-local reference not supported" in str(e):
@@ -470,6 +476,102 @@ class OpenAPIParser(
 
         return extracted_responses
 
+    def _extract_schema_dependencies(
+        self,
+        schema: dict,
+        all_schemas: dict[str, Any],
+        collected: set[str] | None = None,
+    ) -> set[str]:
+        """
+        Extract all schema names referenced by a schema (including transitive dependencies).
+
+        Args:
+            schema: The schema to analyze
+            all_schemas: All available schema definitions
+            collected: Set of already collected schema names (for recursion)
+
+        Returns:
+            Set of schema names that are referenced
+        """
+        if collected is None:
+            collected = set()
+
+        def find_refs(obj):
+            """Recursively find all $ref references."""
+            if isinstance(obj, dict):
+                if "$ref" in obj and isinstance(obj["$ref"], str):
+                    ref = obj["$ref"]
+                    # Handle both converted and unconverted refs
+                    if ref.startswith("#/$defs/"):
+                        schema_name = ref.split("/")[-1]
+                    elif ref.startswith("#/components/schemas/"):
+                        schema_name = ref.split("/")[-1]
+                    else:
+                        return
+
+                    # Add this schema and recursively find its dependencies
+                    if schema_name not in collected and schema_name in all_schemas:
+                        collected.add(schema_name)
+                        # Recursively find dependencies of this schema
+                        find_refs(all_schemas[schema_name])
+
+                # Continue searching in all values
+                for value in obj.values():
+                    find_refs(value)
+            elif isinstance(obj, list):
+                for item in obj:
+                    find_refs(item)
+
+        find_refs(schema)
+        return collected
+
+    def _extract_route_schema_dependencies(
+        self,
+        parameters: list[ParameterInfo],
+        request_body: RequestBodyInfo | None,
+        responses: dict[str, ResponseInfo],
+        all_schemas: dict[str, Any],
+    ) -> dict[str, Any]:
+        """
+        Extract only the schema definitions needed for a specific route.
+
+        Args:
+            parameters: Route parameters
+            request_body: Route request body
+            responses: Route responses
+            all_schemas: All available schema definitions
+
+        Returns:
+            Dictionary containing only the schemas needed for this route
+        """
+        needed_schemas = set()
+
+        # Check parameters for schema references
+        for param in parameters:
+            if param.schema_:
+                deps = self._extract_schema_dependencies(param.schema_, all_schemas)
+                needed_schemas.update(deps)
+
+        # Check request body for schema references
+        if request_body and request_body.content_schema:
+            for content_schema in request_body.content_schema.values():
+                deps = self._extract_schema_dependencies(content_schema, all_schemas)
+                needed_schemas.update(deps)
+
+        # Check responses for schema references
+        for response in responses.values():
+            if response.content_schema:
+                for content_schema in response.content_schema.values():
+                    deps = self._extract_schema_dependencies(
+                        content_schema, all_schemas
+                    )
+                    needed_schemas.update(deps)
+
+        # Return only the needed schemas
+        return {
+            name: all_schemas[name] for name in needed_schemas if name in all_schemas
+        }
+
     def parse(self) -> list[HTTPRoute]:
         """Parse the OpenAPI schema into HTTP routes."""
         routes: list[HTTPRoute] = []
@@ -498,6 +600,13 @@ class OpenAPIParser(
                         logger.warning(
                             f"Failed to extract schema definition '{name}': {e}"
                         )
+
+        # Convert schema definitions refs from OpenAPI to JSON Schema format (once)
+        if schema_definitions:
+            # Convert each schema definition recursively
+            for name, schema in schema_definitions.items():
+                if isinstance(schema, dict):
+                    schema_definitions[name] = _replace_ref_with_defs_recursive(schema)
 
         # Process paths and operations
         for path_str, path_item_obj in self.openapi.paths.items():
@@ -552,6 +661,14 @@ class OpenAPIParser(
                                 if k.startswith("x-")
                             }
 
+                        # Extract only the schemas needed for this route
+                        route_schemas = self._extract_route_schema_dependencies(
+                            parameters,
+                            request_body_info,
+                            responses,
+                            schema_definitions,
+                        )
+
                         # Create initial route without pre-calculated fields
                         route = HTTPRoute(
                             path=path_str,
@@ -563,7 +680,7 @@ class OpenAPIParser(
                             parameters=parameters,
                             request_body=request_body_info,
                             responses=responses,
-                            schema_definitions=schema_definitions,
+                            schema_definitions=route_schemas,  # Use pre-pruned schemas
                             extensions=extensions,
                             openapi_version=self.openapi_version,
                         )
@@ -571,7 +688,8 @@ class OpenAPIParser(
                         # Pre-calculate schema and parameter mapping for performance
                         try:
                             flat_schema, param_map = _combine_schemas_and_map_params(
-                                route
+                                route,
+                                convert_refs=False,  # Parser already converted refs
                             )
                             route.flat_param_schema = flat_schema
                             route.parameter_map = param_map
@@ -586,9 +704,6 @@ class OpenAPIParser(
                             }
                             route.parameter_map = {}
                         routes.append(route)
-                        logger.info(
-                            f"Successfully extracted route: {method_upper} {path_str}"
-                        )
                     except ValueError as op_error:
                         # Re-raise ValueError for external reference errors
                         if "External or non-local reference not supported" in str(
@@ -607,7 +722,7 @@ class OpenAPIParser(
                             exc_info=True,
                         )
 
-        logger.info(f"Finished parsing. Extracted {len(routes)} HTTP routes.")
+        logger.debug(f"Finished parsing. Extracted {len(routes)} HTTP routes.")
         return routes
 
 

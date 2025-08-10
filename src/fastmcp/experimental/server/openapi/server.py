@@ -151,9 +151,6 @@ class FastMCPOpenAPI(FastMCP):
         try:
             self._spec = SchemaPath.from_dict(openapi_spec)  # type: ignore[arg-type]
             self._director = RequestDirector(self._spec)
-            logger.debug(
-                "Initialized OpenAPI RequestDirector for stateless request building"
-            )
         except Exception as e:
             logger.error(f"Failed to initialize RequestDirector: {e}")
             raise ValueError(f"Invalid OpenAPI specification: {e}") from e
@@ -318,9 +315,6 @@ class FastMCPOpenAPI(FastMCP):
 
         # Register the tool by directly assigning to the tools dictionary
         self._tool_manager._tools[final_tool_name] = tool
-        logger.debug(
-            f"Registered TOOL: {final_tool_name} ({route.method} {route.path}) with tags: {route.tags}"
-        )
 
     def _create_openapi_resource(
         self,
@@ -372,9 +366,6 @@ class FastMCPOpenAPI(FastMCP):
 
         # Register the resource by directly assigning to the resources dictionary
         self._resource_manager._resources[final_resource_uri] = resource
-        logger.debug(
-            f"Registered RESOURCE: {final_resource_uri} ({route.method} {route.path}) with tags: {route.tags}"
-        )
 
     def _create_openapi_template(
         self,
@@ -455,9 +446,6 @@ class FastMCPOpenAPI(FastMCP):
 
         # Register the template by directly assigning to the templates dictionary
         self._resource_manager._templates[final_template_uri] = template
-        logger.debug(
-            f"Registered TEMPLATE: {final_template_uri} ({route.method} {route.path}) with tags: {route.tags}"
-        )
 
 
 # Export public symbols

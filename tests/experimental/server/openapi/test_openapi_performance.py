@@ -22,8 +22,8 @@ def use_new_openapi_parser():
 class TestOpenAPIPerformance:
     """Performance tests for OpenAPI parsing with real-world large schemas."""
 
-    # 20 second maximum timeout for this test no matter what
-    @pytest.mark.timeout(20)
+    # 10 second maximum timeout for this test no matter what
+    @pytest.mark.timeout(10)
     async def test_github_api_schema_performance(self):
         """
         Test that GitHub's full API schema parses quickly.

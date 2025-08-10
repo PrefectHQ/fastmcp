@@ -203,6 +203,135 @@ class TestOpenAPIParser:
         assert param.location == "path"
         assert param.required is True
 
+    def test_parse_simple_transitive_refs(self):
+        """Test that A->B->C transitive references are preserved.
+
+        When a request body references schema A, which references B, which references C:
+        - A is expanded inline (expected optimization)
+        - B and C MUST be included in $defs (the bug fix for #1372)
+        """
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Test", "version": "1.0.0"},
+            "components": {
+                "schemas": {
+                    "SchemaA": {
+                        "type": "object",
+                        "properties": {
+                            "refToB": {"$ref": "#/components/schemas/SchemaB"}
+                        },
+                    },
+                    "SchemaB": {
+                        "type": "object",
+                        "properties": {
+                            "refToC": {"$ref": "#/components/schemas/SchemaC"}
+                        },
+                    },
+                    "SchemaC": {
+                        "type": "string",
+                        "enum": ["value1", "value2"],
+                    },
+                }
+            },
+            "paths": {
+                "/test": {
+                    "post": {
+                        "operationId": "test_op",
+                        "requestBody": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {"$ref": "#/components/schemas/SchemaA"}
+                                }
+                            }
+                        },
+                        "responses": {"200": {"description": "OK"}},
+                    }
+                }
+            },
+        }
+
+        routes = parse_openapi_to_http_routes(spec)
+        route = routes[0]
+
+        # SchemaA is expanded inline, so it's NOT in schema_definitions
+        assert "SchemaA" not in route.schema_definitions
+
+        # But SchemaB and SchemaC MUST be there (transitive dependencies)
+        assert "SchemaB" in route.schema_definitions
+        assert "SchemaC" in route.schema_definitions
+
+        # Same in the flat parameter schema
+        assert "SchemaB" in route.flat_param_schema["$defs"]
+        assert "SchemaC" in route.flat_param_schema["$defs"]
+
+    def test_parse_tspicer_issue_1372(self):
+        """Reproduce the exact bug from issue #1372 (tspicer's report).
+
+        Issue: Profile -> {countryCode, AccountInfo} transitive refs were missing from $defs.
+        """
+        spec = {
+            "openapi": "3.0.1",
+            "info": {"title": "Test", "version": "1.0.0"},
+            "components": {
+                "schemas": {
+                    "Profile": {
+                        "type": "object",
+                        "properties": {
+                            "profileId": {"type": "integer"},
+                            "countryCode": {"$ref": "#/components/schemas/countryCode"},
+                            "accountInfo": {"$ref": "#/components/schemas/AccountInfo"},
+                        },
+                    },
+                    "countryCode": {
+                        "type": "string",
+                        "enum": ["US", "UK", "CA", "AU"],
+                    },
+                    "AccountInfo": {
+                        "type": "object",
+                        "properties": {
+                            "accountId": {"type": "string"},
+                            "accountType": {"type": "string"},
+                        },
+                    },
+                }
+            },
+            "paths": {
+                "/profile": {
+                    "post": {
+                        "operationId": "create_profile",
+                        "requestBody": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {"$ref": "#/components/schemas/Profile"}
+                                }
+                            },
+                        },
+                        "responses": {"200": {"description": "OK"}},
+                    }
+                }
+            },
+        }
+
+        routes = parse_openapi_to_http_routes(spec)
+        route = routes[0]
+
+        # Profile is expanded inline, NOT in schema_defs
+        assert "Profile" not in route.schema_definitions
+
+        # Bug fix: countryCode and AccountInfo MUST be in schema_defs
+        assert "countryCode" in route.schema_definitions  # Was missing in #1372
+        assert "AccountInfo" in route.schema_definitions  # Was missing in #1372
+
+        # Same in flat parameter schema
+        assert "countryCode" in route.flat_param_schema["$defs"]
+        assert "AccountInfo" in route.flat_param_schema["$defs"]
+
+        # Verify Profile's properties were inlined correctly
+        props = route.flat_param_schema["properties"]
+        assert "profileId" in props
+        assert props["countryCode"]["$ref"] == "#/$defs/countryCode"
+        assert props["accountInfo"]["$ref"] == "#/$defs/AccountInfo"
+
     def test_parameter_schema_extraction(self, complex_spec):
         """Test that parameter schemas are properly extracted."""
         routes = parse_openapi_to_http_routes(complex_spec)

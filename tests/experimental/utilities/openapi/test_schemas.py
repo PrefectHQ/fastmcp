@@ -10,8 +10,9 @@ from fastmcp.experimental.utilities.openapi.models import (
 from fastmcp.experimental.utilities.openapi.schemas import (
     _combine_schemas,
     _combine_schemas_and_map_params,
-    _replace_ref_with_defs,
+    _replace_ref_with_defs_recursive,
 )
+from fastmcp.utilities.json_schema import compress_schema
 
 
 class TestSchemaProcessing:
@@ -230,6 +231,7 @@ class TestSchemaProcessing:
 
     def test_replace_ref_with_defs(self):
         """Test replacing $ref with $defs for JSON Schema compatibility."""
+
         schema_with_ref = {
             "type": "object",
             "properties": {
@@ -241,13 +243,15 @@ class TestSchemaProcessing:
             },
         }
 
-        result = _replace_ref_with_defs(schema_with_ref)
+        # Use our recursive replacement approach
+        result = _replace_ref_with_defs_recursive(schema_with_ref)
 
         assert result["properties"]["user"]["$ref"] == "#/$defs/User"
         assert result["properties"]["items"]["items"]["$ref"] == "#/$defs/Item"
 
     def test_replace_ref_with_defs_nested(self):
         """Test replacing $ref in deeply nested structures."""
+
         nested_schema = {
             "type": "object",
             "properties": {
@@ -269,7 +273,8 @@ class TestSchemaProcessing:
             },
         }
 
-        result = _replace_ref_with_defs(nested_schema)
+        # Use our recursive replacement approach
+        result = _replace_ref_with_defs_recursive(nested_schema)
 
         # Check nested object property
         nested_prop = result["properties"]["data"]["properties"]["nested"]
@@ -476,7 +481,6 @@ class TestEdgeCases:
 
     def test_oneof_reference_preserved(self):
         """Test that schemas referenced in oneOf are preserved."""
-        from fastmcp.utilities.json_schema import compress_schema
 
         schema = {
             "type": "object",
@@ -497,7 +501,6 @@ class TestEdgeCases:
 
     def test_anyof_reference_preserved(self):
         """Test that schemas referenced in anyOf are preserved."""
-        from fastmcp.utilities.json_schema import compress_schema
 
         schema = {
             "type": "object",
@@ -515,7 +518,6 @@ class TestEdgeCases:
 
     def test_allof_reference_preserved(self):
         """Test that schemas referenced in allOf are preserved."""
-        from fastmcp.utilities.json_schema import compress_schema
 
         schema = {
             "type": "object",
