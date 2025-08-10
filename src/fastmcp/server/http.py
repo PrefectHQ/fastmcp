@@ -72,7 +72,7 @@ _current_http_request: ContextVar[Request | None] = ContextVar(
 
 class StarletteWithLifespan(Starlette):
     @property
-    def lifespan(self) -> Lifespan:
+    def lifespan(self) -> Lifespan[Starlette]:
         return self.router.lifespan_context
 
 
