@@ -39,7 +39,7 @@ jobs:
           private-key: ${{ secrets.MARVIN_APP_PRIVATE_KEY }}
 
       # Marvin Assistant
-      - name: Marvin
+      - name: Run Marvin
         uses: anthropics/claude-code-action@beta
         with:
           github_token: ${{ steps.marvin-token.outputs.token }}

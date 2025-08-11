@@ -11,9 +11,9 @@ on:
         type: string
 
 jobs:
-  claude-dedupe-issues:
+  marvin-dedupe-issues:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     permissions:
       contents: read
       issues: write
@@ -29,7 +29,7 @@ jobs:
           app-id: ${{ secrets.MARVIN_APP_ID }}
           private-key: ${{ secrets.MARVIN_APP_PRIVATE_KEY }}
 
-      - name: Run Marvin slash command
+      - name: Run Marvin dedupe command
         uses: anthropics/claude-code-base-action@beta
         with:
           prompt: "/dedupe ${{ github.repository }}/issues/${{ github.event.issue.number || inputs.issue_number }}"

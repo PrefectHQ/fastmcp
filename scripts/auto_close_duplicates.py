@@ -169,7 +169,7 @@ class GitHubClient:
         return reactions
 
     def close_issue(self, issue_number: int, comment: str) -> bool:
-        """Close an issue with a comment."""
+        """Close an issue with a comment and add duplicate label."""
         # First add the comment
         comment_url = f"{self.base_url}/issues/{issue_number}/comments"
         with httpx.Client() as client:
@@ -180,6 +180,16 @@ class GitHubClient:
             if response.status_code != 201:
                 print(f"Failed to add comment to issue #{issue_number}")
                 return False
+
+        # Add the duplicate label
+        labels_url = f"{self.base_url}/issues/{issue_number}/labels"
+        with httpx.Client() as client:
+            response = client.post(
+                labels_url, headers=self.headers, json={"labels": ["duplicate"]}
+            )
+
+            if response.status_code not in [200, 201]:
+                print(f"Failed to add duplicate label to issue #{issue_number}")
 
         # Then close the issue
         issue_url = f"{self.base_url}/issues/{issue_number}"
@@ -194,11 +204,10 @@ class GitHubClient:
 def find_duplicate_comment(comments: list[Comment]) -> Comment | None:
     """Find a bot comment marking the issue as duplicate."""
     for comment in comments:
-        # Check for the specific duplicate message format
-        body_lower = comment.body.lower()
+        # Check for the specific duplicate message format from a bot
         if (
-            "possible duplicate issue" in body_lower
-            and "this issue will be automatically closed as a duplicate" in body_lower
+            comment.user_type == "Bot"
+            and "possible duplicate issues" in comment.body.lower()
         ):
             return comment
     return None
