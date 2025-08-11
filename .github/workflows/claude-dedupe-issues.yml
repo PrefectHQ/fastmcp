@@ -13,7 +13,7 @@ on:
 jobs:
   claude-dedupe-issues:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5
     permissions:
       contents: read
       issues: write
@@ -34,4 +34,5 @@ jobs:
         with:
           prompt: "/dedupe ${{ github.repository }}/issues/${{ github.event.issue.number || inputs.issue_number }}"
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          github_token: ${{ steps.marvin-token.outputs.token }}
+          claude_env: |
+            GH_TOKEN: ${{ steps.marvin-token.outputs.token }}
