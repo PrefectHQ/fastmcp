@@ -4,7 +4,7 @@ import pytest
 from mcp.server.auth.middleware.bearer_auth import BearerAuthBackend
 from starlette.requests import HTTPConnection
 
-from fastmcp.server.auth.auth import AccessToken
+from fastmcp.server.auth import AccessToken
 from fastmcp.server.auth.providers.jwt import JWTVerifier, RSAKeyPair
 
 

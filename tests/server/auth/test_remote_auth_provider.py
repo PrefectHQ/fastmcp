@@ -3,7 +3,7 @@ import pytest
 from pydantic import AnyHttpUrl
 
 from fastmcp import FastMCP
-from fastmcp.server.auth.auth import AccessToken, RemoteAuthProvider, TokenVerifier
+from fastmcp.server.auth import AccessToken, RemoteAuthProvider, TokenVerifier
 
 
 class SimpleTokenVerifier(TokenVerifier):

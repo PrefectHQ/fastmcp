@@ -49,7 +49,7 @@ from fastmcp.prompts import Prompt, PromptManager
 from fastmcp.prompts.prompt import FunctionPrompt
 from fastmcp.resources import Resource, ResourceManager
 from fastmcp.resources.template import ResourceTemplate
-from fastmcp.server.auth.auth import AuthProvider
+from fastmcp.server.auth import AuthProvider
 from fastmcp.server.auth.registry import get_registered_provider
 from fastmcp.server.http import (
     StarletteWithLifespan,

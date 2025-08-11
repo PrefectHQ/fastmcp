@@ -7,7 +7,7 @@ from mcp.server.auth.middleware.auth_context import (
 )
 from starlette.requests import Request
 
-from fastmcp.server.auth.auth import AccessToken
+from fastmcp.server.auth import AccessToken
 
 if TYPE_CHECKING:
     from fastmcp.server.context import Context

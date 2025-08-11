@@ -23,7 +23,7 @@ from starlette.responses import Response
 from starlette.routing import BaseRoute, Mount, Route
 from starlette.types import Lifespan, Receive, Scope, Send
 
-from fastmcp.server.auth.auth import AuthProvider
+from fastmcp.server.auth import AuthProvider
 from fastmcp.utilities.logging import get_logger
 
 if TYPE_CHECKING:

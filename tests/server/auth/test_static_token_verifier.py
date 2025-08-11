@@ -3,7 +3,7 @@
 import httpx
 
 from fastmcp.server import FastMCP
-from fastmcp.server.auth.auth import AccessToken
+from fastmcp.server.auth import AccessToken
 from fastmcp.server.auth.providers.jwt import StaticTokenVerifier
 
 

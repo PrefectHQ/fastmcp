@@ -6,7 +6,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, TypeVar
 
 if TYPE_CHECKING:
-    from fastmcp.server.auth.auth import AuthProvider
+    from fastmcp.server.auth import AuthProvider
 
 # Type variable for auth providers
 T = TypeVar("T", bound="AuthProvider")
