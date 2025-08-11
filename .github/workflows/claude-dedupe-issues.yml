@@ -1,0 +1,37 @@
+name: Marvin Issue Dedupe
+description: Automatically dedupe GitHub issues using Marvin
+on:
+  issues:
+    types: [opened]
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: "Issue number to process for duplicate detection"
+        required: true
+        type: string
+
+jobs:
+  claude-dedupe-issues:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Generate Marvin App token
+        id: marvin-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.MARVIN_APP_ID }}
+          private-key: ${{ secrets.MARVIN_APP_PRIVATE_KEY }}
+
+      - name: Run Marvin slash command
+        uses: anthropics/claude-code-base-action@beta
+        with:
+          prompt: "/dedupe ${{ github.repository }}/issues/${{ github.event.issue.number || inputs.issue_number }}"
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ steps.marvin-token.outputs.token }}
