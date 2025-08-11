@@ -6,6 +6,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Annotated, Any, Literal
 
+import pydantic_core
 from mcp.types import ToolAnnotations
 from pydantic import ConfigDict
 from pydantic.fields import Field
@@ -312,11 +313,9 @@ class TransformedTool(Tool):
                         # Custom function returns ToolResult - preserve its content
                         return result
                     else:
-                        # Forwarded call with disabled schema - strip structured content
-                        return ToolResult(
-                            content=result.content,
-                            structured_content=None,
-                        )
+                        # Forwarded call with no explicit schema - preserve parent's structured content
+                        # The parent tool may have generated structured content via its own fallback logic
+                        return result
                 elif self.output_schema.get(
                     "type"
                 ) != "object" and not self.output_schema.get("x-fastmcp-wrap-result"):
@@ -334,17 +333,23 @@ class TransformedTool(Tool):
                 result, serializer=self.serializer
             )
 
-            # Handle structured content based on output schema
+            structured_output = None
+            # First handle structured content based on output schema, if any
             if self.output_schema is not None:
                 if self.output_schema.get("x-fastmcp-wrap-result"):
                     # Schema says wrap - always wrap in result key
                     structured_output = {"result": result}
                 else:
-                    # Object schemas - use result directly
-                    # User is responsible for returning dict-compatible data
                     structured_output = result
-            else:
-                structured_output = None
+            # If no output schema, try to serialize the result. If it is a dict, use
+            # it as structured content. If it is not a dict, ignore it.
+            if structured_output is None:
+                try:
+                    structured_output = pydantic_core.to_jsonable_python(result)
+                    if not isinstance(structured_output, dict):
+                        structured_output = None
+                except Exception:
+                    pass
 
             return ToolResult(
                 content=unstructured_result,
@@ -363,9 +368,9 @@ class TransformedTool(Tool):
         tags: set[str] | None = None,
         transform_fn: Callable[..., Any] | None = None,
         transform_args: dict[str, ArgTransform] | None = None,
-        annotations: ToolAnnotations | None = None,
-        output_schema: dict[str, Any] | None | Literal[False] = None,
-        serializer: Callable[[Any], str] | None = None,
+        annotations: ToolAnnotations | None | NotSetT = NotSet,
+        output_schema: dict[str, Any] | None | NotSetT = NotSet,
+        serializer: Callable[[Any], str] | None | NotSetT = NotSet,
         meta: dict[str, Any] | None | NotSetT = NotSet,
         enabled: bool | None = None,
     ) -> TransformedTool:
@@ -445,6 +450,11 @@ class TransformedTool(Tool):
         """
         transform_args = transform_args or {}
 
+        if transform_fn is not None:
+            parsed_fn = ParsedFunction.from_function(transform_fn, validate=False)
+        else:
+            parsed_fn = None
+
         # Validate transform_args
         parent_params = set(tool.parameters.get("properties", {}).keys())
         unknown_args = set(transform_args.keys()) - parent_params
@@ -457,16 +467,11 @@ class TransformedTool(Tool):
         # Always create the forwarding transform
         schema, forwarding_fn = cls._create_forwarding_transform(tool, transform_args)
 
-        # Handle output schema with smart fallback
-        if output_schema is False:
-            final_output_schema = None
-        elif output_schema is not None:
-            # Explicit schema provided - use as-is
-            final_output_schema = output_schema
-        else:
-            # Smart fallback: try custom function, then parent, then None
+        # Handle output schema
+        if output_schema is NotSet:
+            # Use smart fallback: try custom function, then parent
             if transform_fn is not None:
-                parsed_fn = ParsedFunction.from_function(transform_fn, validate=False)
+                assert parsed_fn is not None
                 final_output_schema = parsed_fn.output_schema
                 if final_output_schema is None:
                     # Check if function returns ToolResult - if so, don't fall back to parent
@@ -479,15 +484,17 @@ class TransformedTool(Tool):
                         final_output_schema = tool.output_schema
             else:
                 final_output_schema = tool.output_schema
+        else:
+            assert isinstance(output_schema, dict | None)
+            final_output_schema = output_schema
 
         if transform_fn is None:
             # User wants pure transformation - use forwarding_fn as the main function
             final_fn = forwarding_fn
             final_schema = schema
         else:
+            assert parsed_fn is not None
             # User provided custom function - merge schemas
-            if "parsed_fn" not in locals():
-                parsed_fn = ParsedFunction.from_function(transform_fn, validate=False)
             final_fn = transform_fn
 
             has_kwargs = cls._function_has_kwargs(transform_fn)
@@ -552,6 +559,13 @@ class TransformedTool(Tool):
         )
         final_title = title if not isinstance(title, NotSetT) else tool.title
         final_meta = meta if not isinstance(meta, NotSetT) else tool.meta
+        final_annotations = (
+            annotations if not isinstance(annotations, NotSetT) else tool.annotations
+        )
+        final_serializer = (
+            serializer if not isinstance(serializer, NotSetT) else tool.serializer
+        )
+        final_enabled = enabled if enabled is not None else tool.enabled
 
         transformed_tool = cls(
             fn=final_fn,
@@ -563,11 +577,11 @@ class TransformedTool(Tool):
             parameters=final_schema,
             output_schema=final_output_schema,
             tags=tags or tool.tags,
-            annotations=annotations or tool.annotations,
-            serializer=serializer or tool.serializer,
+            annotations=final_annotations,
+            serializer=final_serializer,
             meta=final_meta,
             transform_args=transform_args,
-            enabled=enabled if enabled is not None else True,
+            enabled=final_enabled,
         )
 
         return transformed_tool

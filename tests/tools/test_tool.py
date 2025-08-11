@@ -562,7 +562,7 @@ class TestToolFromFunctionOutputSchema:
         def func() -> dict[str, str]:
             return {"message": "Hello, world!"}
 
-        tool = Tool.from_function(func, output_schema=False)
+        tool = Tool.from_function(func, output_schema=None)
         assert tool.output_schema is None
 
         result = await tool.run({})
@@ -729,17 +729,23 @@ class TestToolFromFunctionOutputSchema:
         tool_none = Tool.from_function(func, output_schema=None)
         assert tool_none.output_schema is None
 
-        # False should also disable
-        tool_false = Tool.from_function(func, output_schema=False)
-        assert tool_false.output_schema is None
+        # Default (NotSet) should infer from return type
+        tool_default = Tool.from_function(func)
+        assert (
+            tool_default.output_schema is not None
+        )  # Should infer schema from dict return type
 
-        # Both should have same behavior
+        # Different behavior: None vs inferred
         result_none = await tool_none.run({})
-        result_false = await tool_false.run({})
+        result_default = await tool_default.run({})
 
-        assert result_none.structured_content is None
-        assert result_false.structured_content is None
-        assert result_none.content[0].text == result_false.content[0].text == "123"  # type: ignore[attr-defined]
+        # None should still try fallback generation but fail for non-dict
+        assert result_none.structured_content is None  # Fallback fails for int
+        # Default should use proper schema and wrap the result
+        assert result_default.structured_content == {
+            "result": 123
+        }  # Schema-based generation with wrapping
+        assert result_none.content[0].text == result_default.content[0].text == "123"  # type: ignore[attr-defined]
 
     async def test_non_object_output_schema_raises_error(self):
         """Test that providing a non-object output schema raises a ValueError."""
@@ -1117,7 +1123,7 @@ class TestAutomaticStructuredContent:
             return UserProfile(name="Bob", age=25, email="bob@example.com")
 
         # No explicit output schema, but dataclass should still create structured content
-        tool = Tool.from_function(get_profile, output_schema=False)
+        tool = Tool.from_function(get_profile, output_schema=None)
 
         result = await tool.run({"user_id": "456"})
 
@@ -1144,8 +1150,8 @@ class TestAutomaticStructuredContent:
         def get_user_stats(user_id: str) -> UserData:
             return UserData(username="charlie", score=100, verified=True)
 
-        # Explicitly disable output schema to test automatic structured content
-        tool = Tool.from_function(get_user_stats, output_schema=False)
+        # Explicitly set output schema to None to test automatic structured content
+        tool = Tool.from_function(get_user_stats, output_schema=None)
 
         result = await tool.run({"user_id": "789"})
 

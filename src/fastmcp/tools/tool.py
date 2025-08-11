@@ -8,7 +8,6 @@ from typing import (
     Annotated,
     Any,
     Generic,
-    Literal,
     TypeVar,
     get_type_hints,
 )
@@ -163,7 +162,7 @@ class Tool(FastMCPComponent):
         tags: set[str] | None = None,
         annotations: ToolAnnotations | None = None,
         exclude_args: list[str] | None = None,
-        output_schema: dict[str, Any] | None | NotSetT | Literal[False] = NotSet,
+        output_schema: dict[str, Any] | None | NotSetT = NotSet,
         serializer: Callable[[Any], str] | None = None,
         meta: dict[str, Any] | None = None,
         enabled: bool | None = None,
@@ -199,17 +198,18 @@ class Tool(FastMCPComponent):
     def from_tool(
         cls,
         tool: Tool,
-        transform_fn: Callable[..., Any] | None = None,
+        *,
         name: str | None = None,
         title: str | None | NotSetT = NotSet,
-        transform_args: dict[str, ArgTransform] | None = None,
         description: str | None | NotSetT = NotSet,
         tags: set[str] | None = None,
-        annotations: ToolAnnotations | None = None,
-        output_schema: dict[str, Any] | None | Literal[False] = None,
+        annotations: ToolAnnotations | None | NotSetT = NotSet,
+        output_schema: dict[str, Any] | None | NotSetT = NotSet,
         serializer: Callable[[Any], str] | None = None,
         meta: dict[str, Any] | None | NotSetT = NotSet,
+        transform_args: dict[str, ArgTransform] | None = None,
         enabled: bool | None = None,
+        transform_fn: Callable[..., Any] | None = None,
     ) -> TransformedTool:
         from fastmcp.tools.tool_transform import TransformedTool
 
@@ -242,7 +242,7 @@ class FunctionTool(Tool):
         tags: set[str] | None = None,
         annotations: ToolAnnotations | None = None,
         exclude_args: list[str] | None = None,
-        output_schema: dict[str, Any] | None | NotSetT | Literal[False] = NotSet,
+        output_schema: dict[str, Any] | None | NotSetT = NotSet,
         serializer: Callable[[Any], str] | None = None,
         meta: dict[str, Any] | None = None,
         enabled: bool | None = None,

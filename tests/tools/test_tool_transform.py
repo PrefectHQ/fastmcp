@@ -1020,7 +1020,12 @@ class TestEnableDisable:
         new_add = Tool.from_tool(add, name="new_add")
         mcp.add_tool(new_add)
 
-        assert new_add.enabled
+        # the new tool inherits the disabled state from the parent tool
+        assert new_add.enabled is False
+
+        new_add.enable()
+        assert new_add.enabled is True
+        assert add.enabled is False
 
         async with Client(mcp) as client:
             tools = await client.list_tools()
@@ -1118,15 +1123,15 @@ class TestTransformToolOutputSchema:
         assert new_tool.output_schema == expected_schema
         assert new_tool.output_schema == base_string_tool.output_schema
 
-    def test_transform_with_explicit_output_schema_false(self, base_string_tool):
-        """Test that output_schema=False disables structured output."""
-        new_tool = Tool.from_tool(base_string_tool, output_schema=False)
+    def test_transform_with_explicit_output_schema_none(self, base_string_tool):
+        """Test that output_schema=None sets output schema to None."""
+        new_tool = Tool.from_tool(base_string_tool, output_schema=None)
 
         assert new_tool.output_schema is None
 
-    async def test_transform_output_schema_false_runtime(self, base_string_tool):
-        """Test runtime behavior with output_schema=False."""
-        new_tool = Tool.from_tool(base_string_tool, output_schema=False)
+    async def test_transform_output_schema_none_runtime(self, base_string_tool):
+        """Test runtime behavior with output_schema=None."""
+        new_tool = Tool.from_tool(base_string_tool, output_schema=None)
 
         # Debug: check that output_schema is actually None
         assert new_tool.output_schema is None, (
@@ -1134,7 +1139,8 @@ class TestTransformToolOutputSchema:
         )
 
         result = await new_tool.run({"x": 5})
-        assert result.structured_content is None
+        # Even with output_schema=None, structured content should be generated via fallback logic
+        assert result.structured_content == {"result": "Result: 5"}
         assert result.content[0].text == "Result: 5"  # type: ignore[attr-defined]
 
     def test_transform_with_explicit_output_schema_dict(self, base_string_tool):
@@ -1306,25 +1312,27 @@ class TestTransformToolOutputSchema:
         expected_schema = TypeAdapter(dict[str, str]).json_schema()
         assert new_tool.output_schema == expected_schema
 
-    async def test_transform_output_schema_none_vs_false(self, base_string_tool):
-        """Test None vs False behavior for output_schema in transforms."""
-        # None (default) should use smart fallback (inherit from parent)
-        tool_none = Tool.from_tool(base_string_tool)  # default output_schema=None
-        assert tool_none.output_schema == base_string_tool.output_schema  # Inherits
+    async def test_transform_output_schema_default_vs_none(self, base_string_tool):
+        """Test default (NotSet) vs explicit None behavior for output_schema in transforms."""
+        # Default (NotSet) should use smart fallback (inherit from parent)
+        tool_default = Tool.from_tool(base_string_tool)  # default output_schema=NotSet
+        assert tool_default.output_schema == base_string_tool.output_schema  # Inherits
 
-        # False should explicitly disable
-        tool_false = Tool.from_tool(base_string_tool, output_schema=False)
-        assert tool_false.output_schema is None
+        # None should explicitly set output_schema to None but still generate structured content via fallback
+        tool_explicit_none = Tool.from_tool(base_string_tool, output_schema=None)
+        assert tool_explicit_none.output_schema is None
 
-        # Different behavior at runtime
-        result_none = await tool_none.run({"x": 5})
-        result_false = await tool_false.run({"x": 5})
+        # Both should generate structured content now (via different paths)
+        result_default = await tool_default.run({"x": 5})
+        result_explicit_none = await tool_explicit_none.run({"x": 5})
 
-        assert result_none.structured_content == {
+        assert result_default.structured_content == {
             "result": "Result: 5"
         }  # Inherits wrapping
-        assert result_false.structured_content is None  # Disabled
-        assert result_none.content[0].text == result_false.content[0].text  # type: ignore[attr-defined]
+        assert result_explicit_none.structured_content == {
+            "result": "Result: 5"
+        }  # Generated via fallback logic
+        assert result_default.content[0].text == result_explicit_none.content[0].text  # type: ignore[attr-defined]
 
     async def test_transform_output_schema_with_tool_result_return(
         self, base_string_tool

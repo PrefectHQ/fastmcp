@@ -38,3 +38,31 @@ async def test_transformed_tool_filtering():
 
     tools = list(await mcp._list_tools())
     assert len(tools) == 1
+
+
+async def test_transformed_tool_structured_output_without_annotation():
+    """Test that transformed tools generate structured output when original tool has no return annotation.
+
+    Ref: https://github.com/jlowin/fastmcp/issues/1369
+    """
+    from fastmcp.client import Client
+
+    mcp = FastMCP("Test Server")
+
+    @mcp.tool()
+    def tool_without_annotation(message: str):  # No return annotation
+        """A tool without return type annotation."""
+        return {"result": "processed", "input": message}
+
+    # Create a transformed tool
+    mcp.add_tool_transformation(
+        "tool_without_annotation", ToolTransformConfig(name="transformed_tool")
+    )
+
+    # Test with client to verify structured output is populated
+    async with Client(mcp) as client:
+        result = await client.call_tool("transformed_tool", {"message": "test"})
+
+        # Structured output should be populated even without return annotation
+        assert result.data is not None
+        assert result.data == {"result": "processed", "input": "test"}
