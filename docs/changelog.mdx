@@ -1,6 +1,101 @@
 ---
+title: "Changelog"
 icon: "list-check"
+rss: true
 ---
+
+<Update label="v2.11.3" description="2025-08-11">
+
+**[v2.11.3: API-tite for Change](https://github.com/jlowin/fastmcp/releases/tag/v2.11.3)**
+
+This release includes significant enhancements to the experimental OpenAPI parser and fixes a significant bug that led schemas not to be included in input/output schemas if they were transitive dependencies (e.g. A → B → C implies A depends on C). For users naively transforming large OpenAPI specs into MCP servers, this may result in ballooning payload sizes and necessitate curation.
+
+## What's Changed
+### Enhancements 🔧
+* Improve redirect handling to address 307's by [@jlowin](https://github.com/jlowin) in [#1387](https://github.com/jlowin/fastmcp/pull/1387)
+* Ensure resource + template names are properly prefixed when importing/mounting by [@jlowin](https://github.com/jlowin) in [#1423](https://github.com/jlowin/fastmcp/pull/1423)
+* fixes #1398: Add JWT claims to AccessToken by [@panargirakis](https://github.com/panargirakis) in [#1399](https://github.com/jlowin/fastmcp/pull/1399)
+* Enable Protected Resource Metadata to provide resource_name and resou… by [@yannj-fr](https://github.com/yannj-fr) in [#1371](https://github.com/jlowin/fastmcp/pull/1371)
+* Pin mcp SDK under 2.0 to avoid breaking changes by [@jlowin](https://github.com/jlowin) in [#1428](https://github.com/jlowin/fastmcp/pull/1428)
+* Clean up complexity from PR #1426 by [@jlowin](https://github.com/jlowin) in [#1435](https://github.com/jlowin/fastmcp/pull/1435)
+* Optimize OpenAPI payload size by 46% by [@jlowin](https://github.com/jlowin) in [#1452](https://github.com/jlowin/fastmcp/pull/1452)
+* Update static checks by [@jlowin](https://github.com/jlowin) in [#1448](https://github.com/jlowin/fastmcp/pull/1448)
+### Fixes 🐞
+* Fix client-side logging bug #1394 by [@chi2liu](https://github.com/chi2liu) in [#1397](https://github.com/jlowin/fastmcp/pull/1397)
+* fix: Fix httpx_client_factory type annotation to match MCP SDK (#1402) by [@chi2liu](https://github.com/chi2liu) in [#1405](https://github.com/jlowin/fastmcp/pull/1405)
+* Fix OpenAPI allOf handling at requestBody top level (#1378) by [@chi2liu](https://github.com/chi2liu) in [#1425](https://github.com/jlowin/fastmcp/pull/1425)
+* Fix OpenAPI transitive references and performance (#1372) by [@jlowin](https://github.com/jlowin) in [#1426](https://github.com/jlowin/fastmcp/pull/1426)
+* fix(type): lifespan is partially unknown by [@ykun9](https://github.com/ykun9) in [#1389](https://github.com/jlowin/fastmcp/pull/1389)
+* Ensure transformed tools generate structured content by [@jlowin](https://github.com/jlowin) in [#1443](https://github.com/jlowin/fastmcp/pull/1443)
+### Docs 📚
+* docs(client/logging): reflect corrected default log level mapping by [@jlowin](https://github.com/jlowin) in [#1403](https://github.com/jlowin/fastmcp/pull/1403)
+* Add documentation for get_access_token() dependency function by [@jlowin](https://github.com/jlowin) in [#1446](https://github.com/jlowin/fastmcp/pull/1446)
+### Other Changes 🦾
+* Add comprehensive tests for utilities.components module by [@chi2liu](https://github.com/chi2liu) in [#1395](https://github.com/jlowin/fastmcp/pull/1395)
+* Consolidate agent instructions into AGENTS.md by [@jlowin](https://github.com/jlowin) in [#1404](https://github.com/jlowin/fastmcp/pull/1404)
+* Fix performance test threshold to prevent flaky failures by [@jlowin](https://github.com/jlowin) in [#1406](https://github.com/jlowin/fastmcp/pull/1406)
+* Update agents.md; add github instructions by [@jlowin](https://github.com/jlowin) in [#1410](https://github.com/jlowin/fastmcp/pull/1410)
+* Add Marvin assistant by [@jlowin](https://github.com/jlowin) in [#1412](https://github.com/jlowin/fastmcp/pull/1412)
+* Marvin: fix deprecated variable names by [@jlowin](https://github.com/jlowin) in [#1417](https://github.com/jlowin/fastmcp/pull/1417)
+* Simplify action setup and add github tools for Marvin by [@jlowin](https://github.com/jlowin) in [#1419](https://github.com/jlowin/fastmcp/pull/1419)
+* Update marvin workflow name by [@jlowin](https://github.com/jlowin) in [#1421](https://github.com/jlowin/fastmcp/pull/1421)
+* Improve GitHub templates by [@jlowin](https://github.com/jlowin) in [#1422](https://github.com/jlowin/fastmcp/pull/1422)
+
+## New Contributors
+* [@panargirakis](https://github.com/panargirakis) made their first contribution in [#1399](https://github.com/jlowin/fastmcp/pull/1399)
+* [@ykun9](https://github.com/ykun9) made their first contribution in [#1389](https://github.com/jlowin/fastmcp/pull/1389)
+* [@yannj-fr](https://github.com/yannj-fr) made their first contribution in [#1371](https://github.com/jlowin/fastmcp/pull/1371)
+
+**Full Changelog**: [v2.11.2...v2.11.3](https://github.com/jlowin/fastmcp/compare/v2.11.2...v2.11.3)
+
+</Update>
+
+<Update label="v2.11.2" description="2025-08-06">
+
+## [v2.11.2: Satis-factory](https://github.com/jlowin/fastmcp/releases/tag/v2.11.2)
+
+## What's Changed
+### Enhancements 🔧
+* Support factory functions in fastmcp run by [@jlowin](https://github.com/jlowin) in [#1384](https://github.com/jlowin/fastmcp/pull/1384)
+* Add async support to client_factory in FastMCPProxy  (#1286) by [@bianning](https://github.com/bianning) in [#1375](https://github.com/jlowin/fastmcp/pull/1375)
+### Fixes 🐞
+* Fix server_version field in inspect manifest by [@jlowin](https://github.com/jlowin) in [#1383](https://github.com/jlowin/fastmcp/pull/1383)
+* Fix Settings field with both default and default_factory by [@jlowin](https://github.com/jlowin) in [#1380](https://github.com/jlowin/fastmcp/pull/1380)
+### Other Changes 🦾
+* Remove unused arg by [@jlowin](https://github.com/jlowin) in [#1382](https://github.com/jlowin/fastmcp/pull/1382)
+* Add remote auth provider tests by [@jlowin](https://github.com/jlowin) in [#1351](https://github.com/jlowin/fastmcp/pull/1351)
+
+## New Contributors
+* [@bianning](https://github.com/bianning) made their first contribution in [#1375](https://github.com/jlowin/fastmcp/pull/1375)
+
+**Full Changelog**: [v2.11.1...v2.11.2](https://github.com/jlowin/fastmcp/compare/v2.11.1...v2.11.2)
+
+</Update>
+
+<Update label="v2.11.1" description="2025-08-04">
+
+## [v2.11.1: You're Better Auth Now](https://github.com/jlowin/fastmcp/releases/tag/v2.11.1)
+
+## What's Changed
+### New Features 🎉
+* Introduce `RemoteAuthProvider` for cleaner external identity provider integration, update docs by [@jlowin](https://github.com/jlowin) in [#1346](https://github.com/jlowin/fastmcp/pull/1346)
+### Enhancements 🔧
+* perf: optimize string operations in OpenAPI parameter processing by [@chi2liu](https://github.com/chi2liu) in [#1342](https://github.com/jlowin/fastmcp/pull/1342)
+### Fixes 🐞
+* Fix method-bound FunctionTool schemas by [@strawgate](https://github.com/strawgate) in [#1360](https://github.com/jlowin/fastmcp/pull/1360)
+* Manually set `_key` after `model_copy()` to enable prefixing Transformed Tools by [@strawgate](https://github.com/strawgate) in [#1357](https://github.com/jlowin/fastmcp/pull/1357)
+### Docs 📚
+* Docs updates by [@jlowin](https://github.com/jlowin) in [#1336](https://github.com/jlowin/fastmcp/pull/1336)
+* Add 2.11 to changelog by [@jlowin](https://github.com/jlowin) in [#1337](https://github.com/jlowin/fastmcp/pull/1337)
+* Update AuthKit vocab by [@jlowin](https://github.com/jlowin) in [#1338](https://github.com/jlowin/fastmcp/pull/1338)
+* Fix typo in decorating-methods.mdx by [@Ozzuke](https://github.com/Ozzuke) in [#1344](https://github.com/jlowin/fastmcp/pull/1344)
+
+## New Contributors
+* [@Ozzuke](https://github.com/Ozzuke) made their first contribution in [#1344](https://github.com/jlowin/fastmcp/pull/1344)
+
+**Full Changelog**: [v2.11.0...v2.11.1](https://github.com/jlowin/fastmcp/compare/v2.11.0...v2.11.1)
+
+</Update>
 
 <Update label="v2.11.0" description="2025-08-01">
 
