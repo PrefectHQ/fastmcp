@@ -189,6 +189,39 @@ def format_json_for_description(data: Any, indent: int = 2) -> str:
         return f"```\nCould not serialize to JSON: {data}\n```"
 
 
+def format_simple_description(
+    base_description: str,
+    parameters: list[ParameterInfo] | None = None,
+    request_body: RequestBodyInfo | None = None,
+) -> str:
+    """
+    Formats a simple description for MCP objects (tools, resources, prompts).
+    Excludes response details, examples, and verbose status codes.
+
+    Args:
+        base_description (str): The initial description to be formatted.
+        parameters (list[ParameterInfo] | None, optional): A list of parameter information.
+        request_body (RequestBodyInfo | None, optional): Information about the request body.
+
+    Returns:
+        str: The formatted description string with minimal details.
+    """
+    desc_parts = [base_description]
+
+    # Only add critical parameter information if they have descriptions
+    if parameters:
+        path_params = [p for p in parameters if p.location == "path" and p.description]
+        if path_params:
+            desc_parts.append("\n\n**Path Parameters:**")
+            for param in path_params:
+                desc_parts.append(f"\n- **{param.name}**: {param.description}")
+
+    # Skip query parameters, request body details, and all response information
+    # These are already captured in the inputSchema
+
+    return "\n".join(desc_parts)
+
+
 def format_description_with_responses(
     base_description: str,
     responses: dict[
@@ -351,5 +384,6 @@ __all__ = [
     "format_deep_object_parameter",
     "format_description_with_responses",
     "format_json_for_description",
+    "format_simple_description",
     "generate_example_from_schema",
 ]

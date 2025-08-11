@@ -6,6 +6,7 @@ from fastmcp.experimental.utilities.openapi.models import (
     RequestBodyInfo,
     ResponseInfo,
 )
+from fastmcp.experimental.utilities.openapi.parser import parse_openapi_to_http_routes
 from fastmcp.experimental.utilities.openapi.schemas import (
     _combine_schemas_and_map_params,
     extract_output_schema_from_responses,
@@ -35,7 +36,7 @@ class TestTransitiveAndNestedReferences:
                     }
                 },
             ),
-            schema_definitions={
+            request_schemas={
                 "User": {
                     "type": "object",
                     "properties": {"profile": {"$ref": "#/components/schemas/Profile"}},
@@ -183,7 +184,7 @@ class TestTransitiveAndNestedReferences:
                     "application/json": {"$ref": "#/components/schemas/Profile"}
                 },
             ),
-            schema_definitions={
+            request_schemas={
                 "Profile": {
                     "type": "object",
                     "properties": {
@@ -234,7 +235,7 @@ class TestTransitiveAndNestedReferences:
                     "application/json": {"$ref": "#/components/schemas/User"}
                 },
             ),
-            schema_definitions={
+            request_schemas={
                 "User": {
                     "type": "object",
                     "properties": {
@@ -297,7 +298,7 @@ class TestTransitiveAndNestedReferences:
                     }
                 },
             ),
-            schema_definitions={
+            request_schemas={
                 "User": {
                     "type": "object",
                     "properties": {"profile": {"$ref": "#/components/schemas/Profile"}},
@@ -352,7 +353,7 @@ class TestTransitiveAndNestedReferences:
                     }
                 },
             ),
-            schema_definitions={
+            request_schemas={
                 "TypeA": {
                     "type": "object",
                     "properties": {"nested": {"$ref": "#/components/schemas/Nested"}},
@@ -403,7 +404,7 @@ class TestTransitiveAndNestedReferences:
                     "application/json": {"$ref": "#/components/schemas/Level1"}
                 },
             ),
-            schema_definitions={
+            request_schemas={
                 "Level1": {
                     "type": "object",
                     "properties": {"level2": {"$ref": "#/components/schemas/Level2"}},
@@ -470,7 +471,7 @@ class TestTransitiveAndNestedReferences:
                     "application/json": {"$ref": "#/components/schemas/Node"}
                 },
             ),
-            schema_definitions={
+            request_schemas={
                 "Node": {
                     "type": "object",
                     "properties": {
@@ -511,7 +512,7 @@ class TestTransitiveAndNestedReferences:
                     }
                 },
             ),
-            schema_definitions={
+            request_schemas={
                 "Left": {
                     "type": "object",
                     "properties": {"shared": {"$ref": "#/components/schemas/Shared"}},
@@ -558,7 +559,7 @@ class TestTransitiveAndNestedReferences:
                     "application/json": {"$ref": "#/components/schemas/Content"}
                 },
             ),
-            schema_definitions={
+            request_schemas={
                 "Content": {
                     "type": "object",
                     "properties": {
@@ -612,7 +613,7 @@ class TestTransitiveAndNestedReferences:
                     }
                 },
             ),
-            schema_definitions={
+            request_schemas={
                 "SimpleString": {"type": "string"},
                 "EmptyObject": {"type": "object"},
                 "UnreferencedSchema": {"type": "number"},
@@ -645,7 +646,7 @@ class TestTransitiveAndNestedReferences:
                     "application/json": {"$ref": "#/components/schemas/DirectBody"}
                 },
             ),
-            schema_definitions={
+            request_schemas={
                 "DirectBody": {
                     "type": "object",
                     "properties": {
@@ -674,4 +675,114 @@ class TestTransitiveAndNestedReferences:
         assert (
             combined_schema["$defs"]["DirectBody"]["properties"]["nested"]["$ref"]
             == "#/$defs/NestedBody"
+        )
+
+    def test_separate_input_output_schemas(self):
+        """Test that input and output schemas contain different schema
+        definitions and don't overlap in the ultimate schema definitions."""
+        # OpenAPI spec with transitive dependencies to force schema inclusion
+        openapi_spec = {
+            "openapi": "3.0.1",
+            "info": {"title": "Test API", "version": "1.0.0"},
+            "paths": {
+                "/test": {
+                    "post": {
+                        "summary": "Test endpoint",
+                        "requestBody": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "$ref": "#/components/schemas/InputContainer"
+                                    }
+                                }
+                            }
+                        },
+                        "responses": {
+                            "200": {
+                                "description": "Success",
+                                "content": {
+                                    "application/json": {
+                                        "schema": {
+                                            "$ref": "#/components/schemas/OutputContainer"
+                                        }
+                                    }
+                                },
+                            }
+                        },
+                    }
+                }
+            },
+            "components": {
+                "schemas": {
+                    "InputContainer": {
+                        "type": "object",
+                        "properties": {
+                            "data": {"$ref": "#/components/schemas/InputData"}
+                        },
+                    },
+                    "InputData": {
+                        "type": "object",
+                        "properties": {"input_field": {"type": "string"}},
+                    },
+                    "OutputContainer": {
+                        "type": "object",
+                        "properties": {
+                            "result": {"$ref": "#/components/schemas/OutputData"}
+                        },
+                    },
+                    "OutputData": {
+                        "type": "object",
+                        "properties": {"output_field": {"type": "string"}},
+                    },
+                    "UnusedSchema": {
+                        "type": "object",
+                        "properties": {"unused_field": {"type": "string"}},
+                    },
+                }
+            },
+        }
+
+        routes = parse_openapi_to_http_routes(openapi_spec)
+        assert len(routes) == 1
+
+        route = routes[0]
+
+        # Check that schemas are properly separated
+        input_schema_names = set(route.request_schemas.keys())
+        output_schema_names = set(route.response_schemas.keys())
+
+        # Input should contain transitive dependencies from InputContainer
+        assert "InputData" in input_schema_names, (
+            f"Expected InputData in request schemas: {input_schema_names}"
+        )
+        assert "OutputContainer" not in input_schema_names, (
+            "OutputContainer should not be in request schemas"
+        )
+        assert "OutputData" not in input_schema_names, (
+            "OutputData should not be in request schemas"
+        )
+
+        # Output should contain transitive dependencies from OutputContainer
+        assert "OutputData" in output_schema_names, (
+            f"Expected OutputData in response schemas: {output_schema_names}"
+        )
+        assert "InputContainer" not in output_schema_names, (
+            "InputContainer should not be in response schemas"
+        )
+        assert "InputData" not in output_schema_names, (
+            "InputData should not be in response schemas"
+        )
+
+        # Neither should contain unused schema
+        assert "UnusedSchema" not in input_schema_names, (
+            "UnusedSchema should not be in request schemas"
+        )
+        assert "UnusedSchema" not in output_schema_names, (
+            "UnusedSchema should not be in response schemas"
+        )
+
+        # Verify no overlap
+        overlap = input_schema_names & output_schema_names
+        assert len(overlap) == 0, (
+            f"Found overlapping schemas between input and output: {overlap}"
         )

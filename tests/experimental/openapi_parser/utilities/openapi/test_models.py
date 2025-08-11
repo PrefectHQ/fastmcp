@@ -248,7 +248,7 @@ class TestHTTPRoute:
             parameters=parameters,
             request_body=request_body,
             responses=responses,
-            schema_definitions={"User": {"type": "object"}},
+            request_schemas={"User": {"type": "object"}},
             extensions={"x-custom": "value"},
         )
 
@@ -261,7 +261,7 @@ class TestHTTPRoute:
         assert len(route.parameters) == 1
         assert route.request_body is not None
         assert "200" in route.responses
-        assert "User" in route.schema_definitions
+        assert "User" in route.request_schemas
         assert route.extensions["x-custom"] == "value"
 
     def test_route_pre_calculated_fields(self):
@@ -303,14 +303,15 @@ class TestHTTPRoute:
             tags=[],
             parameters=[],
             responses={},
-            schema_definitions={},
+            request_schemas={},
             extensions={},
         )
 
         assert route.tags == []
         assert route.parameters == []
         assert route.responses == {}
-        assert route.schema_definitions == {}
+        assert route.request_schemas == {}
+        assert route.response_schemas == {}
         assert route.extensions == {}
 
     def test_route_defaults(self):
@@ -327,7 +328,8 @@ class TestHTTPRoute:
         assert route.parameters == []
         assert route.request_body is None
         assert route.responses == {}
-        assert route.schema_definitions == {}
+        assert route.request_schemas == {}
+        assert route.response_schemas == {}
         assert route.extensions == {}
         assert route.flat_param_schema == {}
         assert route.parameter_map == {}

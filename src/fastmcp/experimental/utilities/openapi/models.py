@@ -58,9 +58,12 @@ class HTTPRoute(FastMCPBaseModel):
     responses: dict[str, ResponseInfo] = Field(
         default_factory=dict
     )  # Key: status code str
-    schema_definitions: dict[str, JsonSchema] = Field(
+    request_schemas: dict[str, JsonSchema] = Field(
         default_factory=dict
-    )  # Store component schemas
+    )  # Store schemas needed for input (parameters/request body)
+    response_schemas: dict[str, JsonSchema] = Field(
+        default_factory=dict
+    )  # Store schemas needed for output (responses)
     extensions: dict[str, Any] = Field(default_factory=dict)
     openapi_version: str | None = None
 

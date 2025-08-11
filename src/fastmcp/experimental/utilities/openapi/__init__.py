@@ -20,6 +20,7 @@ from .formatters import (
     format_deep_object_parameter,
     format_description_with_responses,
     format_json_for_description,
+    format_simple_description,
     generate_example_from_schema,
 )
 
@@ -54,6 +55,7 @@ __all__ = [
     "format_deep_object_parameter",
     "format_description_with_responses",
     "format_json_for_description",
+    "format_simple_description",
     "generate_example_from_schema",
     # Schemas
     "_combine_schemas",

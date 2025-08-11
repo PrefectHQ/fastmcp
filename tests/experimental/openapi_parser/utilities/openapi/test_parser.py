@@ -253,12 +253,12 @@ class TestOpenAPIParser:
         routes = parse_openapi_to_http_routes(spec)
         route = routes[0]
 
-        # SchemaA is expanded inline, so it's NOT in schema_definitions
-        assert "SchemaA" not in route.schema_definitions
+        # SchemaA is expanded inline, so it's NOT in request_schemas
+        assert "SchemaA" not in route.request_schemas
 
         # But SchemaB and SchemaC MUST be there (transitive dependencies)
-        assert "SchemaB" in route.schema_definitions
-        assert "SchemaC" in route.schema_definitions
+        assert "SchemaB" in route.request_schemas
+        assert "SchemaC" in route.request_schemas
 
         # Same in the flat parameter schema
         assert "SchemaB" in route.flat_param_schema["$defs"]
@@ -316,11 +316,11 @@ class TestOpenAPIParser:
         route = routes[0]
 
         # Profile is expanded inline, NOT in schema_defs
-        assert "Profile" not in route.schema_definitions
+        assert "Profile" not in route.request_schemas
 
         # Bug fix: countryCode and AccountInfo MUST be in schema_defs
-        assert "countryCode" in route.schema_definitions  # Was missing in #1372
-        assert "AccountInfo" in route.schema_definitions  # Was missing in #1372
+        assert "countryCode" in route.request_schemas  # Was missing in #1372
+        assert "AccountInfo" in route.request_schemas  # Was missing in #1372
 
         # Same in flat parameter schema
         assert "countryCode" in route.flat_param_schema["$defs"]

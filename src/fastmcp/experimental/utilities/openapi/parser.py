@@ -402,77 +402,116 @@ class OpenAPIParser(
             )
             return None
 
+    def _is_success_status_code(self, status_code: str) -> bool:
+        """Check if a status code represents a successful response (2xx)."""
+        try:
+            code_int = int(status_code)
+            return 200 <= code_int < 300
+        except (ValueError, TypeError):
+            # Handle special cases like 'default' or other non-numeric codes
+            return status_code.lower() in ["default", "2xx"]
+
+    def _get_primary_success_response(
+        self, operation_responses: dict[str, Any]
+    ) -> tuple[str, Any] | None:
+        """Get the primary success response for an MCP tool. We only need one success response."""
+        if not operation_responses:
+            return None
+
+        # Priority order: 200, 201, 202, 204, 207, then any other 2xx
+        priority_codes = ["200", "201", "202", "204", "207"]
+
+        # First check priority codes
+        for code in priority_codes:
+            if code in operation_responses:
+                return (code, operation_responses[code])
+
+        # Then check any other 2xx codes
+        for status_code, resp_or_ref in operation_responses.items():
+            if self._is_success_status_code(status_code):
+                return (status_code, resp_or_ref)
+
+        # If no success codes found, return None (tool will have no output schema)
+        return None
+
     def _extract_responses(
         self, operation_responses: dict[str, Any] | None
     ) -> dict[str, ResponseInfo]:
-        """Extract and resolve response information."""
+        """Extract and resolve response information. Only includes the primary success response for MCP tools."""
         extracted_responses: dict[str, ResponseInfo] = {}
 
         if not operation_responses:
             return extracted_responses
 
-        for status_code, resp_or_ref in operation_responses.items():
-            try:
-                response = self._resolve_ref(resp_or_ref)
+        # For MCP tools, we only need the primary success response
+        primary_response = self._get_primary_success_response(operation_responses)
+        if not primary_response:
+            logger.debug("No success responses found, tool will have no output schema")
+            return extracted_responses
 
-                if not isinstance(response, self.response_cls):
-                    logger.warning(
-                        f"Expected Response after resolving for status code {status_code}, "
-                        f"got {type(response)}. Skipping."
-                    )
-                    continue
+        status_code, resp_or_ref = primary_response
+        logger.debug(f"Using primary success response: {status_code}")
 
-                # Create response info
-                resp_info = ResponseInfo(description=response.description)
+        try:
+            response = self._resolve_ref(resp_or_ref)
 
-                # Extract content schemas
-                if hasattr(response, "content") and response.content:
-                    for media_type_str, media_type_obj in response.content.items():
-                        if (
-                            media_type_obj
-                            and hasattr(media_type_obj, "media_type_schema")
-                            and media_type_obj.media_type_schema
-                        ):
-                            try:
-                                schema_dict = self._extract_schema_as_dict(
-                                    media_type_obj.media_type_schema
-                                )
-                                resp_info.content_schema[media_type_str] = schema_dict
-                            except ValueError as e:
-                                # Re-raise ValueError for external reference errors
-                                if (
-                                    "External or non-local reference not supported"
-                                    in str(e)
-                                ):
-                                    raise
-                                logger.error(
-                                    f"Failed to extract schema for media type '{media_type_str}' "
-                                    f"in response {status_code}: {e}"
-                                )
-                            except Exception as e:
-                                logger.error(
-                                    f"Failed to extract schema for media type '{media_type_str}' "
-                                    f"in response {status_code}: {e}"
-                                )
-
-                extracted_responses[str(status_code)] = resp_info
-            except ValueError as e:
-                # Re-raise ValueError for external reference errors
-                if "External or non-local reference not supported" in str(e):
-                    raise
-                ref_name = getattr(resp_or_ref, "ref", "unknown")
-                logger.error(
-                    f"Failed to extract response for status code {status_code} "
-                    f"from reference '{ref_name}': {e}",
-                    exc_info=False,
+            if not isinstance(response, self.response_cls):
+                logger.warning(
+                    f"Expected Response after resolving for status code {status_code}, "
+                    f"got {type(response)}. Returning empty responses."
                 )
-            except Exception as e:
-                ref_name = getattr(resp_or_ref, "ref", "unknown")
-                logger.error(
-                    f"Failed to extract response for status code {status_code} "
-                    f"from reference '{ref_name}': {e}",
-                    exc_info=False,
-                )
+                return extracted_responses
+
+            # Create response info
+            resp_info = ResponseInfo(description=response.description)
+
+            # Extract content schemas
+            if hasattr(response, "content") and response.content:
+                for media_type_str, media_type_obj in response.content.items():
+                    if (
+                        media_type_obj
+                        and hasattr(media_type_obj, "media_type_schema")
+                        and media_type_obj.media_type_schema
+                    ):
+                        try:
+                            schema_dict = self._extract_schema_as_dict(
+                                media_type_obj.media_type_schema
+                            )
+                            resp_info.content_schema[media_type_str] = schema_dict
+                        except ValueError as e:
+                            # Re-raise ValueError for external reference errors
+                            if "External or non-local reference not supported" in str(
+                                e
+                            ):
+                                raise
+                            logger.error(
+                                f"Failed to extract schema for media type '{media_type_str}' "
+                                f"in response {status_code}: {e}"
+                            )
+                        except Exception as e:
+                            logger.error(
+                                f"Failed to extract schema for media type '{media_type_str}' "
+                                f"in response {status_code}: {e}"
+                            )
+
+            extracted_responses[str(status_code)] = resp_info
+        except ValueError as e:
+            # Re-raise ValueError for external reference errors
+            if "External or non-local reference not supported" in str(e):
+                raise
+            ref_name = getattr(resp_or_ref, "ref", "unknown")
+            logger.error(
+                f"Failed to extract response for status code {status_code} "
+                f"from reference '{ref_name}': {e}",
+                exc_info=False,
+            )
+        except Exception as e:
+            ref_name = getattr(resp_or_ref, "ref", "unknown")
+            logger.error(
+                f"Failed to extract response for status code {status_code} "
+                f"from reference '{ref_name}': {e}",
+                exc_info=False,
+            )
 
         return extracted_responses
 
@@ -525,24 +564,22 @@ class OpenAPIParser(
         find_refs(schema)
         return collected
 
-    def _extract_route_schema_dependencies(
+    def _extract_input_schema_dependencies(
         self,
         parameters: list[ParameterInfo],
         request_body: RequestBodyInfo | None,
-        responses: dict[str, ResponseInfo],
         all_schemas: dict[str, Any],
     ) -> dict[str, Any]:
         """
-        Extract only the schema definitions needed for a specific route.
+        Extract only the schema definitions needed for input (parameters and request body).
 
         Args:
             parameters: Route parameters
             request_body: Route request body
-            responses: Route responses
             all_schemas: All available schema definitions
 
         Returns:
-            Dictionary containing only the schemas needed for this route
+            Dictionary containing only the schemas needed for input
         """
         needed_schemas = set()
 
@@ -558,6 +595,28 @@ class OpenAPIParser(
                 deps = self._extract_schema_dependencies(content_schema, all_schemas)
                 needed_schemas.update(deps)
 
+        # Return only the needed input schemas
+        return {
+            name: all_schemas[name] for name in needed_schemas if name in all_schemas
+        }
+
+    def _extract_output_schema_dependencies(
+        self,
+        responses: dict[str, ResponseInfo],
+        all_schemas: dict[str, Any],
+    ) -> dict[str, Any]:
+        """
+        Extract only the schema definitions needed for outputs (responses).
+
+        Args:
+            responses: Route responses
+            all_schemas: All available schema definitions
+
+        Returns:
+            Dictionary containing only the schemas needed for outputs
+        """
+        needed_schemas = set()
+
         # Check responses for schema references
         for response in responses.values():
             if response.content_schema:
@@ -567,7 +626,7 @@ class OpenAPIParser(
                     )
                     needed_schemas.update(deps)
 
-        # Return only the needed schemas
+        # Return only the needed output schemas
         return {
             name: all_schemas[name] for name in needed_schemas if name in all_schemas
         }
@@ -661,10 +720,13 @@ class OpenAPIParser(
                                 if k.startswith("x-")
                             }
 
-                        # Extract only the schemas needed for this route
-                        route_schemas = self._extract_route_schema_dependencies(
+                        # Extract schemas separately for input and output
+                        input_schemas = self._extract_input_schema_dependencies(
                             parameters,
                             request_body_info,
+                            schema_definitions,
+                        )
+                        output_schemas = self._extract_output_schema_dependencies(
                             responses,
                             schema_definitions,
                         )
@@ -680,7 +742,8 @@ class OpenAPIParser(
                             parameters=parameters,
                             request_body=request_body_info,
                             responses=responses,
-                            schema_definitions=route_schemas,  # Use pre-pruned schemas
+                            request_schemas=input_schemas,
+                            response_schemas=output_schemas,
                             extensions=extensions,
                             openapi_version=self.openapi_version,
                         )
