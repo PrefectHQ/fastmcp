@@ -7,14 +7,14 @@ sidebarTitle: workos
 
 ## Classes
 
-### `AuthKitProviderSettings` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/workos.py#L21" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `AuthKitProviderSettings` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/workos.py#L18" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
-### `AuthKitProvider` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/workos.py#L34" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `AuthKitProvider` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/workos.py#L31" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
-WorkOS AuthKit metadata provider for DCR (Dynamic Client Registration).
+AuthKit metadata provider for DCR (Dynamic Client Registration).
 
-This provider implements WorkOS AuthKit integration using metadata forwarding
+This provider implements AuthKit integration using metadata forwarding
 instead of OAuth proxying. This is the recommended approach for WorkOS DCR
 as it allows WorkOS to handle the OAuth flow directly while FastMCP acts
 as a resource server.
@@ -35,24 +35,14 @@ https://workos.com/docs/authkit/mcp/integrating/token-verification
 
 **Methods:**
 
-#### `verify_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/workos.py#L114" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_routes` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/workos.py#L114" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-verify_token(self, token: str) -> AccessToken | None
+get_routes(self) -> list[Route]
 ```
 
-Verify a WorkOS token using the configured token verifier.
+Get OAuth routes including AuthKit authorization server metadata forwarding.
 
-
-#### `customize_auth_routes` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/workos.py#L118" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
-
-```python
-customize_auth_routes(self, routes: list[BaseRoute]) -> list[BaseRoute]
-```
-
-Add AuthKit metadata endpoints.
-
-This adds:
-- /.well-known/oauth-authorization-server (forwards AuthKit metadata)
-- /.well-known/oauth-protected-resource (returns FastMCP resource info)
+This returns the standard protected resource routes plus an authorization server
+metadata endpoint that forwards AuthKit's OAuth metadata to clients.
 

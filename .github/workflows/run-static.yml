@@ -42,7 +42,29 @@ jobs:
           python-version: "3.12"
       - name: Install dependencies
         run: uv sync --dev
+      - name: Install just
+        uses: extractions/setup-just@v3
+      - name: Check lockfile is up to date
+        run: |
+          if ! uv lock --check; then
+            echo "❌ Lockfile is out of date!"
+            echo "To update the lockfile, run 'uv lock'."
+            exit 1
+          fi
+          echo "✅ Lockfile is up to date"
       - name: Run pre-commit
         uses: pre-commit/action@v3.0.1
         env:
           SKIP: no-commit-to-branch
+      - name: Check SDK documentation is up to date
+        run: |
+          just api-ref-all > /dev/null 2>&1
+          if ! git diff --quiet docs/python-sdk/ docs/docs.json; then
+            echo "❌ SDK documentation is out of date!"
+            echo "Files that were updated:"
+            git diff --name-only docs/python-sdk/ docs/docs.json
+            echo ""
+            echo "Run 'just api-ref-all' and commit the changes."
+            exit 1
+          fi
+          echo "✅ SDK documentation is up to date"

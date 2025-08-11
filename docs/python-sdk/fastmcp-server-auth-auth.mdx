@@ -7,7 +7,13 @@ sidebarTitle: auth
 
 ## Classes
 
-### `AuthProvider` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L25" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `AccessToken` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L28" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+AccessToken that includes all JWT claims.
+
+
+### `AuthProvider` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L34" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Base class for all FastMCP authentication providers.
@@ -20,7 +26,7 @@ custom authentication routes.
 
 **Methods:**
 
-#### `verify_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L38" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `verify_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L56" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 verify_token(self, token: str) -> AccessToken | None
@@ -37,25 +43,34 @@ All auth providers must implement token verification.
 - AccessToken object if valid, None if invalid or expired
 
 
-#### `customize_auth_routes` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L51" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_routes` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L69" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-customize_auth_routes(self, routes: list[Route]) -> list[Route]
+get_routes(self) -> list[Route]
 ```
 
-Customize authentication routes after standard creation.
+Get the routes for this authentication provider.
 
-This method allows providers to modify or add to the standard OAuth routes.
-The default implementation returns the routes unchanged.
-
-**Args:**
-- `routes`: List of standard routes (may be empty for token-only providers)
+Each provider is responsible for creating whatever routes it needs:
+- TokenVerifier: typically no routes (default implementation)
+- RemoteAuthProvider: protected resource metadata routes
+- OAuthProvider: full OAuth authorization server routes
+- Custom providers: whatever routes they need
 
 **Returns:**
-- List of routes (potentially modified or extended)
+- List of routes for this provider
 
 
-### `TokenVerifier` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L66" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_resource_metadata_url` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L83" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_resource_metadata_url(self) -> AnyHttpUrl | None
+```
+
+Get the resource metadata URL for RFC 9728 compliance.
+
+
+### `TokenVerifier` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L96" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Base class for token verifiers (Resource Servers).
@@ -66,7 +81,7 @@ Token verifiers typically don't provide authentication routes by default.
 
 **Methods:**
 
-#### `verify_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L97" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `verify_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L120" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 verify_token(self, token: str) -> AccessToken | None
@@ -75,7 +90,46 @@ verify_token(self, token: str) -> AccessToken | None
 Verify a bearer token and return access info if valid.
 
 
-### `OAuthProvider` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L102" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `RemoteAuthProvider` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L125" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Authentication provider for resource servers that verify tokens from known authorization servers.
+
+This provider composes a TokenVerifier with authorization server metadata to create
+standardized OAuth 2.0 Protected Resource endpoints (RFC 9728). Perfect for:
+- JWT verification with known issuers
+- Remote token introspection services
+- Any resource server that knows where its tokens come from
+
+Use this when you have token verification logic and want to advertise
+the authorization servers that issue valid tokens.
+
+
+**Methods:**
+
+#### `verify_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L161" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+verify_token(self, token: str) -> AccessToken | None
+```
+
+Verify token using the configured token verifier.
+
+
+#### `get_routes` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L165" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_routes(self) -> list[Route]
+```
+
+Get OAuth routes for this provider.
+
+By default, returns only the standardized OAuth 2.0 Protected Resource routes.
+Subclasses can override this method to add additional routes by calling
+super().get_routes() and extending the returned list.
+
+
+### `OAuthProvider` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L183" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 OAuth Authorization Server provider.
@@ -86,7 +140,7 @@ authorization flows, token issuance, and token verification.
 
 **Methods:**
 
-#### `verify_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L169" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `verify_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L250" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 verify_token(self, token: str) -> AccessToken | None
@@ -104,21 +158,18 @@ to our existing load_access_token method.
 - AccessToken object if valid, None if invalid or expired
 
 
-#### `customize_auth_routes` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L184" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_routes` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L265" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-customize_auth_routes(self, routes: list[Route]) -> list[Route]
+get_routes(self) -> list[Route]
 ```
 
-Customize OAuth authentication routes after standard creation.
+Get OAuth authorization server routes and optional protected resource routes.
 
-This method allows providers to modify the standard OAuth routes
-returned by create_auth_routes. The default implementation returns
-the routes unchanged.
-
-**Args:**
-- `routes`: List of standard OAuth routes from create_auth_routes
+This method creates the full set of OAuth routes including:
+- Standard OAuth authorization server routes (/.well-known/oauth-authorization-server, /authorize, /token, etc.)
+- Optional protected resource routes if resource_server_url is configured
 
 **Returns:**
-- List of routes (potentially modified)
+- List of OAuth routes
 
