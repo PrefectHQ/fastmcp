@@ -10,7 +10,7 @@ from fastmcp.experimental.utilities.openapi.models import (
 from fastmcp.experimental.utilities.openapi.schemas import (
     _combine_schemas,
     _combine_schemas_and_map_params,
-    _replace_ref_with_defs_recursive,
+    _replace_ref_with_defs,
 )
 from fastmcp.utilities.json_schema import compress_schema
 
@@ -244,7 +244,7 @@ class TestSchemaProcessing:
         }
 
         # Use our recursive replacement approach
-        result = _replace_ref_with_defs_recursive(schema_with_ref)
+        result = _replace_ref_with_defs(schema_with_ref)
 
         assert result["properties"]["user"]["$ref"] == "#/$defs/User"
         assert result["properties"]["items"]["items"]["$ref"] == "#/$defs/Item"
@@ -274,7 +274,7 @@ class TestSchemaProcessing:
         }
 
         # Use our recursive replacement approach
-        result = _replace_ref_with_defs_recursive(nested_schema)
+        result = _replace_ref_with_defs(nested_schema)
 
         # Check nested object property
         nested_prop = result["properties"]["data"]["properties"]["nested"]

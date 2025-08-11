@@ -36,7 +36,7 @@ from .models import (
 )
 from .schemas import (
     _combine_schemas_and_map_params,
-    _replace_ref_with_defs_recursive,
+    _replace_ref_with_defs,
 )
 
 logger = get_logger(__name__)
@@ -225,7 +225,7 @@ class OpenAPIParser(
 
             # Convert refs from OpenAPI format to JSON Schema format using recursive approach
 
-            result = _replace_ref_with_defs_recursive(result)
+            result = _replace_ref_with_defs(result)
             return result
         except ValueError as e:
             # Re-raise ValueError for external reference errors and other validation issues
@@ -606,7 +606,7 @@ class OpenAPIParser(
             # Convert each schema definition recursively
             for name, schema in schema_definitions.items():
                 if isinstance(schema, dict):
-                    schema_definitions[name] = _replace_ref_with_defs_recursive(schema)
+                    schema_definitions[name] = _replace_ref_with_defs(schema)
 
         # Process paths and operations
         for path_str, path_item_obj in self.openapi.paths.items():

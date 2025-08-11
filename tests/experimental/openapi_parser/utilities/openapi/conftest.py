@@ -2,14 +2,6 @@
 
 import pytest
 
-from fastmcp.utilities.tests import temporary_settings
-
-
-@pytest.fixture(autouse=True)
-def use_new_openapi_parser():
-    with temporary_settings(experimental__enable_new_openapi_parser=True):
-        yield
-
 
 @pytest.fixture
 def basic_openapi_30_spec():

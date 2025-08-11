@@ -71,7 +71,7 @@ def clean_schema_for_display(schema: JsonSchema | None) -> JsonSchema | None:
     return cleaned
 
 
-def _replace_ref_with_defs_recursive(
+def _replace_ref_with_defs(
     info: dict[str, Any], description: str | None = None
 ) -> dict[str, Any]:
     """
@@ -106,33 +106,20 @@ def _replace_ref_with_defs_recursive(
                 )
     elif properties := schema.get("properties"):
         if "$ref" in properties:
-            schema["properties"] = _replace_ref_with_defs_recursive(properties)
+            schema["properties"] = _replace_ref_with_defs(properties)
         else:
             schema["properties"] = {
-                prop_name: _replace_ref_with_defs_recursive(prop_schema)
+                prop_name: _replace_ref_with_defs(prop_schema)
                 for prop_name, prop_schema in properties.items()
             }
     elif item_schema := schema.get("items"):
-        schema["items"] = _replace_ref_with_defs_recursive(item_schema)
+        schema["items"] = _replace_ref_with_defs(item_schema)
     for section in ["anyOf", "allOf", "oneOf"]:
         for i, item in enumerate(schema.get(section, [])):
-            schema[section][i] = _replace_ref_with_defs_recursive(item)
+            schema[section][i] = _replace_ref_with_defs(item)
     if info.get("description", description) and not schema.get("description"):
         schema["description"] = description
     return schema
-
-
-def _ensure_refs_converted(schema: dict[str, Any]) -> dict[str, Any]:
-    """
-    Ensure all OpenAPI refs are converted to JSON Schema format using recursive approach.
-
-    Args:
-        schema: Schema that may contain OpenAPI refs
-
-    Returns:
-        Schema with all refs converted to JSON Schema format
-    """
-    return _replace_ref_with_defs_recursive(schema)
 
 
 def _make_optional_parameter_nullable(schema: dict[str, Any]) -> dict[str, Any]:
@@ -250,7 +237,7 @@ def _combine_schemas_and_map_params(
 
         # Convert refs if needed
         if convert_refs:
-            body_schema = _ensure_refs_converted(
+            body_schema = _replace_ref_with_defs(
                 route.request_body.content_schema[content_type]
             )
         else:
@@ -310,7 +297,7 @@ def _combine_schemas_and_map_params(
 
             # Convert refs if needed
             if convert_refs:
-                param_schema = _ensure_refs_converted(param.schema_)
+                param_schema = _replace_ref_with_defs(param.schema_)
             else:
                 param_schema = param.schema_
             original_desc = param_schema.get("description", "")
@@ -337,7 +324,7 @@ def _combine_schemas_and_map_params(
 
             # Convert refs if needed
             if convert_refs:
-                param_schema = _ensure_refs_converted(param.schema_)
+                param_schema = _replace_ref_with_defs(param.schema_)
             else:
                 param_schema = param.schema_
 
@@ -384,7 +371,7 @@ def _combine_schemas_and_map_params(
             # Convert each schema definition recursively
             for name, schema in all_defs.items():
                 if isinstance(schema, dict):
-                    all_defs[name] = _replace_ref_with_defs_recursive(schema)
+                    all_defs[name] = _replace_ref_with_defs(schema)
 
             # Prune to only needed schemas
             used_refs = set()
@@ -514,7 +501,7 @@ def extract_output_schema_from_responses(
         return None
 
     # Convert refs if needed
-    output_schema = _ensure_refs_converted(schema)
+    output_schema = _replace_ref_with_defs(schema)
 
     # If schema has a $ref, resolve it first before processing nullable fields
     if "$ref" in output_schema and schema_definitions:
@@ -523,7 +510,7 @@ def extract_output_schema_from_responses(
             schema_name = ref_path.split("/")[-1]
             if schema_name in schema_definitions:
                 # Replace $ref with the actual schema definition
-                output_schema = _ensure_refs_converted(schema_definitions[schema_name])
+                output_schema = _replace_ref_with_defs(schema_definitions[schema_name])
 
     # Convert OpenAPI schema to JSON Schema format
     # Only needed for OpenAPI 3.0 - 3.1 uses standard JSON Schema null types
@@ -553,7 +540,7 @@ def extract_output_schema_from_responses(
         # Convert each schema definition recursively
         for name, schema in processed_defs.items():
             if isinstance(schema, dict):
-                processed_defs[name] = _replace_ref_with_defs_recursive(schema)
+                processed_defs[name] = _replace_ref_with_defs(schema)
 
         # Convert OpenAPI schema definitions to JSON Schema format if needed
         if openapi_version and openapi_version.startswith("3.0"):
