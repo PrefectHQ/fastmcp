@@ -311,3 +311,7 @@ server = FastMCP("NewServer", resource_prefix_format="path")
 ```
 
 When mounting or importing servers, the prefix format of the parent server is used.
+
+<Note>
+When mounting servers, custom HTTP routes defined with `@server.custom_route()` are also forwarded to the parent server, making them accessible through the parent's HTTP application.
+</Note>
