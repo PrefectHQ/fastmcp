@@ -4,12 +4,20 @@
     "default": "system",
     "strict": false
   },
+  "logo": {
+    "light": "/assets/brand/logo-wordmark.svg",
+    "dark": "/assets/brand/logo-wordmark-dark.svg"
+  },
   "background": {
     "color": {
       "dark": "#222831",
       "light": "#EEEEEE"
     },
     "decoration": "windows"
+  },
+  "thumbnails": {
+    "appearance": "light",
+    "background": "/assets/brand/card-background.png"
   },
   "banner": {
     "content": "Remote MCP that just works. &nbsp; [Try FastMCP Cloud ->](https://fastmcp.link/IhmBxWn)"
@@ -21,8 +29,8 @@
   },
   "description": "The fast, Pythonic way to build MCP servers and clients.",
   "favicon": {
-    "dark": "/assets/favicon.svg",
-    "light": "/assets/favicon.svg"
+    "dark": "/assets/brand/favicon.svg",
+    "light": "/assets/brand/favicon.svg"
   },
   "footer": {
     "socials": {
