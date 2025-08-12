@@ -24,7 +24,7 @@ jobs:
 
       - name: Generate Marvin App token
         id: marvin-token
-        uses: actions/create-github-app-token@v1
+        uses: actions/create-github-app-token@v2
         with:
           app-id: ${{ secrets.MARVIN_APP_ID }}
           private-key: ${{ secrets.MARVIN_APP_PRIVATE_KEY }}
