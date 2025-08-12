@@ -12,7 +12,7 @@
     "decoration": "windows"
   },
   "banner": {
-    "content": "FastMCP Cloud is here! [Join the beta](https://fastmcp.link/x0Kyhy2)."
+    "content": "Remote MCP that just works. &nbsp; [Try FastMCP Cloud ->](https://fastmcp.link/IhmBxWn)"
   },
   "colors": {
     "dark": "#f72585",
@@ -65,10 +65,7 @@
                   {
                     "group": "Essentials",
                     "icon": "cube",
-                    "pages": [
-                      "servers/server",
-                      "deployment/running-server"
-                    ]
+                    "pages": ["servers/server", "deployment/running-server"]
                   },
                   {
                     "group": "Core Components",
@@ -111,10 +108,7 @@
                   {
                     "group": "Essentials",
                     "icon": "cube",
-                    "pages": [
-                      "clients/client",
-                      "clients/transports"
-                    ]
+                    "pages": ["clients/client", "clients/transports"]
                   },
                   {
                     "group": "Core Operations",
@@ -140,10 +134,7 @@
                   {
                     "group": "Authentication",
                     "icon": "user-shield",
-                    "pages": [
-                      "clients/auth/oauth",
-                      "clients/auth/bearer"
-                    ]
+                    "pages": ["clients/auth/oauth", "clients/auth/bearer"]
                   }
                 ]
               },
@@ -189,17 +180,12 @@
           },
           {
             "anchor": "What's New",
-            "pages": [
-              "updates",
-              "changelog"
-            ]
+            "pages": ["updates", "changelog"]
           },
           {
             "anchor": "Community",
             "icon": "users",
-            "pages": [
-              "community/showcase"
-            ]
+            "pages": ["community/showcase"]
           }
         ]
       },
