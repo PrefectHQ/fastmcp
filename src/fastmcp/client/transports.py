@@ -346,8 +346,7 @@ class StdioTransport(ClientTransport):
     ) -> AsyncIterator[ClientSession]:
         try:
             await self.connect(**session_kwargs)
-            assert self._session is not None
-            yield self._session
+            yield cast(ClientSession, self._session)
         finally:
             if not self.keep_alive:
                 await self.disconnect()

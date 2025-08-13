@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import inspect
+import warnings
 from collections.abc import Callable
 from contextvars import ContextVar
 from dataclasses import dataclass
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, cast
 
 import pydantic_core
 from mcp.types import ToolAnnotations
@@ -12,6 +13,7 @@ from pydantic import ConfigDict
 from pydantic.fields import Field
 from pydantic.functional_validators import BeforeValidator
 
+import fastmcp
 from fastmcp.tools.tool import ParsedFunction, Tool, ToolResult, _convert_to_content
 from fastmcp.utilities.components import _convert_set_default_none
 from fastmcp.utilities.json_schema import compress_schema
@@ -369,7 +371,7 @@ class TransformedTool(Tool):
         transform_fn: Callable[..., Any] | None = None,
         transform_args: dict[str, ArgTransform] | None = None,
         annotations: ToolAnnotations | None | NotSetT = NotSet,
-        output_schema: dict[str, Any] | None | NotSetT = NotSet,
+        output_schema: dict[str, Any] | None | NotSetT | Literal[False] = NotSet,
         serializer: Callable[[Any], str] | None | NotSetT = NotSet,
         meta: dict[str, Any] | None | NotSetT = NotSet,
         enabled: bool | None = None,
@@ -471,8 +473,8 @@ class TransformedTool(Tool):
         if output_schema is NotSet:
             # Use smart fallback: try custom function, then parent
             if transform_fn is not None:
-                assert parsed_fn is not None
-                final_output_schema = parsed_fn.output_schema
+                # parsed fn is not none here
+                final_output_schema = cast(ParsedFunction, parsed_fn).output_schema
                 if final_output_schema is None:
                     # Check if function returns ToolResult - if so, don't fall back to parent
                     return_annotation = inspect.signature(
@@ -484,16 +486,25 @@ class TransformedTool(Tool):
                         final_output_schema = tool.output_schema
             else:
                 final_output_schema = tool.output_schema
+        elif output_schema is False:
+            # Handle False as deprecated synonym for None (deprecated in 2.11.4)
+            if fastmcp.settings.deprecation_warnings:
+                warnings.warn(
+                    "Passing output_schema=False is deprecated. Use output_schema=None instead.",
+                    DeprecationWarning,
+                    stacklevel=2,
+                )
+            final_output_schema = None
         else:
-            assert isinstance(output_schema, dict | None)
-            final_output_schema = output_schema
+            final_output_schema = cast(dict | None, output_schema)
 
         if transform_fn is None:
             # User wants pure transformation - use forwarding_fn as the main function
             final_fn = forwarding_fn
             final_schema = schema
         else:
-            assert parsed_fn is not None
+            # parsed fn is not none here
+            parsed_fn = cast(ParsedFunction, parsed_fn)
             # User provided custom function - merge schemas
             final_fn = transform_fn
 

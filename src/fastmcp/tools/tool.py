@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+import warnings
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import (
@@ -8,6 +9,7 @@ from typing import (
     Annotated,
     Any,
     Generic,
+    Literal,
     TypeVar,
     get_type_hints,
 )
@@ -18,6 +20,7 @@ from mcp.types import ContentBlock, TextContent, ToolAnnotations
 from mcp.types import Tool as MCPTool
 from pydantic import Field, PydanticSchemaGenerationError
 
+import fastmcp
 from fastmcp.server.dependencies import get_context
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.json_schema import compress_schema
@@ -162,7 +165,7 @@ class Tool(FastMCPComponent):
         tags: set[str] | None = None,
         annotations: ToolAnnotations | None = None,
         exclude_args: list[str] | None = None,
-        output_schema: dict[str, Any] | None | NotSetT = NotSet,
+        output_schema: dict[str, Any] | None | NotSetT | Literal[False] = NotSet,
         serializer: Callable[[Any], str] | None = None,
         meta: dict[str, Any] | None = None,
         enabled: bool | None = None,
@@ -204,7 +207,7 @@ class Tool(FastMCPComponent):
         description: str | None | NotSetT = NotSet,
         tags: set[str] | None = None,
         annotations: ToolAnnotations | None | NotSetT = NotSet,
-        output_schema: dict[str, Any] | None | NotSetT = NotSet,
+        output_schema: dict[str, Any] | None | NotSetT | Literal[False] = NotSet,
         serializer: Callable[[Any], str] | None = None,
         meta: dict[str, Any] | None | NotSetT = NotSet,
         transform_args: dict[str, ArgTransform] | None = None,
@@ -242,7 +245,7 @@ class FunctionTool(Tool):
         tags: set[str] | None = None,
         annotations: ToolAnnotations | None = None,
         exclude_args: list[str] | None = None,
-        output_schema: dict[str, Any] | None | NotSetT = NotSet,
+        output_schema: dict[str, Any] | None | NotSetT | Literal[False] = NotSet,
         serializer: Callable[[Any], str] | None = None,
         meta: dict[str, Any] | None = None,
         enabled: bool | None = None,
@@ -255,16 +258,26 @@ class FunctionTool(Tool):
             raise ValueError("You must provide a name for lambda functions")
 
         if isinstance(output_schema, NotSetT):
-            output_schema = parsed_fn.output_schema
+            final_output_schema = parsed_fn.output_schema
         elif output_schema is False:
-            output_schema = None
+            # Handle False as deprecated synonym for None (deprecated in 2.11.4)
+            if fastmcp.settings.deprecation_warnings:
+                warnings.warn(
+                    "Passing output_schema=False is deprecated. Use output_schema=None instead.",
+                    DeprecationWarning,
+                    stacklevel=2,
+                )
+            final_output_schema = None
+        else:
+            # At this point output_schema is not NotSetT and not False, so it must be dict | None
+            final_output_schema = output_schema
         # Note: explicit schemas (dict) are used as-is without auto-wrapping
 
         # Validate that explicit schemas are object type for structured content
-        if output_schema is not None and isinstance(output_schema, dict):
-            if output_schema.get("type") != "object":
+        if final_output_schema is not None and isinstance(final_output_schema, dict):
+            if final_output_schema.get("type") != "object":
                 raise ValueError(
-                    f'Output schemas must have "type" set to "object" due to MCP spec limitations. Received: {output_schema!r}'
+                    f'Output schemas must have "type" set to "object" due to MCP spec limitations. Received: {final_output_schema!r}'
                 )
 
         return cls(
@@ -273,7 +286,7 @@ class FunctionTool(Tool):
             title=title,
             description=description or parsed_fn.description,
             parameters=parsed_fn.input_schema,
-            output_schema=output_schema,
+            output_schema=final_output_schema,
             annotations=annotations,
             tags=tags or set(),
             serializer=serializer,

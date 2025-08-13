@@ -7,7 +7,7 @@ sidebarTitle: transports
 
 ## Functions
 
-### `infer_transport` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/transports.py#L904" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `infer_transport` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/transports.py#L903" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 infer_transport(transport: ClientTransport | FastMCP | FastMCP1Server | AnyUrl | Path | MCPConfig | dict[str, Any] | str) -> ClientTransport
@@ -161,61 +161,61 @@ transports like Python, Node, Uvx, etc.
 connect_session(self, **session_kwargs: Unpack[SessionKwargs]) -> AsyncIterator[ClientSession]
 ```
 
-#### `connect` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/transports.py#L357" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `connect` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/transports.py#L356" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 connect(self, **session_kwargs: Unpack[SessionKwargs]) -> ClientSession | None
 ```
 
-#### `disconnect` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/transports.py#L408" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `disconnect` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/transports.py#L407" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 disconnect(self)
 ```
 
-#### `close` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/transports.py#L423" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `close` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/transports.py#L422" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 close(self)
 ```
 
-### `PythonStdioTransport` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/transports.py#L432" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `PythonStdioTransport` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/transports.py#L431" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Transport for running Python scripts.
 
 
-### `FastMCPStdioTransport` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/transports.py#L478" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `FastMCPStdioTransport` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/transports.py#L477" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Transport for running FastMCP servers using the FastMCP CLI.
 
 
-### `NodeStdioTransport` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/transports.py#L505" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `NodeStdioTransport` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/transports.py#L504" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Transport for running Node.js scripts.
 
 
-### `UvStdioTransport` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/transports.py#L547" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `UvStdioTransport` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/transports.py#L546" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Transport for running commands via the uv tool.
 
 
-### `UvxStdioTransport` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/transports.py#L604" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `UvxStdioTransport` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/transports.py#L603" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Transport for running commands via the uvx tool.
 
 
-### `NpxStdioTransport` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/transports.py#L668" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `NpxStdioTransport` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/transports.py#L667" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Transport for running commands via the npx tool.
 
 
-### `FastMCPTransport` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/transports.py#L730" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `FastMCPTransport` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/transports.py#L729" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 In-memory transport for FastMCP servers.
@@ -228,13 +228,13 @@ tests or scenarios where client and server run in the same runtime.
 
 **Methods:**
 
-#### `connect_session` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/transports.py#L749" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `connect_session` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/transports.py#L748" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 connect_session(self, **session_kwargs: Unpack[SessionKwargs]) -> AsyncIterator[ClientSession]
 ```
 
-### `MCPConfigTransport` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/transports.py#L784" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `MCPConfigTransport` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/transports.py#L783" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Transport for connecting to one or more MCP servers defined in an MCPConfig.
@@ -287,7 +287,7 @@ async with client:
 
 **Methods:**
 
-#### `connect_session` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/transports.py#L856" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `connect_session` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/transports.py#L855" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 connect_session(self, **session_kwargs: Unpack[SessionKwargs]) -> AsyncIterator[ClientSession]
