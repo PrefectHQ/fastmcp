@@ -70,14 +70,14 @@ jobs:
             echo "Files that were updated:"
             git diff --name-only docs/python-sdk/
             echo ""
-            echo "Run 'just api-ref-all' and commit the changes."
+            echo "Run `just api-ref-all` to regenerate the SDK docs, then commit the changes. Note: you may need to install `just` (https://github.com/casey/just)"
             exit 1
           fi
 
           # Check if docs.json content changed (ignoring formatting)
           if ! jq --sort-keys . docs/docs.json.orig | diff -q - <(jq --sort-keys . docs/docs.json) > /dev/null 2>&1; then
             echo "❌ docs.json content has changed!"
-            echo "Run 'just api-ref-all' and commit the changes."
+            echo "Run `just api-ref-all` to regenerate the SDK docs, then commit the changes. Note: you may need to install `just` (https://github.com/casey/just)"
             exit 1
           fi
 
