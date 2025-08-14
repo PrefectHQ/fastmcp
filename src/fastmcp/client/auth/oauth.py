@@ -263,8 +263,6 @@ class OAuth(OAuthClientProvider):
             server_url=self.server_base_url,
             response_future=response_future,
         )
-        auth_code: str
-        state: str | None
 
         # Run server until response is received with timeout logic
         async with anyio.create_task_group() as tg:
