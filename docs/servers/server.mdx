@@ -215,6 +215,31 @@ The server can also be run using the FastMCP CLI.
 
 For detailed information on each transport, how to configure them (host, port, paths), and when to use which, please refer to the [**Running Your FastMCP Server**](/deployment/running-server) guide.
 
+## Custom Routes
+
+When running your server with HTTP transport, you can add custom web routes alongside your MCP endpoint using the `@custom_route` decorator. This is useful for simple endpoints like health checks that need to be served alongside your MCP server:
+
+```python
+from fastmcp import FastMCP
+from starlette.requests import Request
+from starlette.responses import PlainTextResponse
+
+mcp = FastMCP("MyServer")
+
+@mcp.custom_route("/health", methods=["GET"])
+async def health_check(request: Request) -> PlainTextResponse:
+    return PlainTextResponse("OK")
+
+if __name__ == "__main__":
+    mcp.run(transport="http")  # Health check at http://localhost:8000/health
+```
+
+Custom routes are served alongside your MCP endpoint and are useful for:
+- Health check endpoints for monitoring
+- Simple status or info endpoints
+- Basic webhooks or callbacks
+
+For more complex web applications, consider [mounting your MCP server into a FastAPI or Starlette app](/deployment/self-hosted#integration-with-web-frameworks).
 
 ## Composing Servers
 

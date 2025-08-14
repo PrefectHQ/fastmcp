@@ -20,7 +20,7 @@
     "background": "/assets/brand/card-background.png"
   },
   "banner": {
-    "content": "Remote MCP that just works. &nbsp; [Try FastMCP Cloud ->](https://fastmcp.link/IhmBxWn)"
+    "content": "Remote MCP that just works:  [FastMCP Cloud is here!](https://fastmcp.link/IhmBxWn) "
   },
   "colors": {
     "dark": "#f72585",
@@ -70,14 +70,7 @@
               {
                 "group": "Servers",
                 "pages": [
-                  {
-                    "group": "Essentials",
-                    "icon": "cube",
-                    "pages": [
-                      "servers/server",
-                      "deployment/running-server"
-                    ]
-                  },
+                  "servers/server",
                   {
                     "group": "Core Components",
                     "icon": "toolbox",
@@ -110,6 +103,16 @@
                       "servers/auth/token-verification",
                       "servers/auth/full-oauth-server"
                     ]
+                  },
+                  {
+                    "group": "Deployment",
+                    "icon": "rocket",
+                    "pages": [
+                      "deployment/running-server",
+                      "deployment/testing",
+                      "deployment/self-hosted",
+                      "deployment/fastmcp-cloud"
+                    ]
                   }
                 ]
               },
@@ -119,10 +122,7 @@
                   {
                     "group": "Essentials",
                     "icon": "cube",
-                    "pages": [
-                      "clients/client",
-                      "clients/transports"
-                    ]
+                    "pages": ["clients/client", "clients/transports"]
                   },
                   {
                     "group": "Core Operations",
@@ -148,10 +148,7 @@
                   {
                     "group": "Authentication",
                     "icon": "user-shield",
-                    "pages": [
-                      "clients/auth/oauth",
-                      "clients/auth/bearer"
-                    ]
+                    "pages": ["clients/auth/oauth", "clients/auth/bearer"]
                   }
                 ]
               },
@@ -166,6 +163,7 @@
                   "integrations/cursor",
                   "integrations/eunomia-authorization",
                   "integrations/fastapi",
+                  "deployment/fastmcp-cloud",
                   "integrations/gemini",
                   "integrations/mcp-json-configuration",
                   "integrations/openai",
@@ -179,7 +177,6 @@
                 "pages": [
                   "patterns/tool-transformation",
                   "patterns/decorating-methods",
-                  "patterns/testing",
                   "patterns/cli",
                   "patterns/contrib"
                 ]
@@ -197,17 +194,12 @@
           },
           {
             "anchor": "What's New",
-            "pages": [
-              "updates",
-              "changelog"
-            ]
+            "pages": ["updates", "changelog"]
           },
           {
             "anchor": "Community",
             "icon": "users",
-            "pages": [
-              "community/showcase"
-            ]
+            "pages": ["community/showcase"]
           }
         ]
       },
