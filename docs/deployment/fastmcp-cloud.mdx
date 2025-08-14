@@ -10,20 +10,51 @@ tag: NEW
 
 FastMCP Cloud is a young product and we welcome your feedback. Please join our [Discord](https://discord.com/invite/aGsSC3yDF4) to share your thoughts and ideas, and you can expect to see new features and improvements every week.
 
+
+<Note>
+FastMCP Cloud supports both **FastMCP 2.0** servers and also **FastMCP 1.0** servers that were created with the official MCP Python SDK.
+</Note>
+
 <Tip>
 FastMCP Cloud is completely free while in beta!
 </Tip>
 
+## Prerequisites
+
+To use FastMCP Cloud, you'll need a [GitHub](https://github.com) account. In addition, you'll need a GitHub repo that contains a FastMCP server instance. If you don't want to create one yet, you can proceed to [step 1](#step-1-create-a-project) and use the FastMCP Cloud quickstart repo. 
+
+Your repo can be public or private, but must include at least a Python file that contains a FastMCP server instance. 
+<Tip>
+To ensure your file is compatible with FastMCP Cloud, you can run `fastmcp inspect <file.py:server_object>` to see what FastMCP Cloud will see when it runs your server.
+</Tip>
+
+If you have a `requirements.txt` or `pyproject.toml` in the repo, FastMCP Cloud will automatically detect your server's dependencies and install them for you. Note that your file *can* have an `if __name__ == "__main__"` block, but it will be ignored by FastMCP Cloud.
+
+For example, a minimal server file might look like:
+
+```python
+from fastmcp import FastMCP
+
+mcp = FastMCP("MyServer")
+
+@mcp.tool
+def hello(name: str) -> str:
+    return f"Hello, {name}!"
+```
+
 ## Getting Started
 
-Deploying to FastMCP Cloud takes just three simple steps.
+There are just three steps to deploying a server to FastMCP Cloud:
 
 ### Step 1: Create a Project
 
-Visit [fastmcp.cloud](https://fastmcp.cloud) and sign in with your GitHub account. Create a project either by selecting an existing repository or using the FastMCP Cloud quickstart repo.
+Visit [fastmcp.cloud](https://fastmcp.cloud) and sign in with your GitHub account. Then, create a project. Each project corresponds to a GitHub repo, and you can create one from either your own repo or using the FastMCP Cloud quickstart repo.
+
 <img src="/assets/images/fastmcp_cloud/quickstart.png" alt="FastMCP Cloud Quickstart Screen" />
 
-### Step 2: Configure Your Server
+Next, you'll be prompted to configure your project.
+
+<img src="/assets/images/fastmcp_cloud/create_project.png" alt="FastMCP Cloud Configuration Screen" />
 
 The configuration screen lets you specify:
 - **Name**: The name of your project. This will be used to generate a unique URL for your server.
@@ -32,31 +63,27 @@ The configuration screen lets you specify:
 
 Note that FastMCP Cloud will automatically detect yours server's Python dependencies from either a `requirements.txt` or `pyproject.toml` file.
 
-<img src="/assets/images/fastmcp_cloud/create_project.png" alt="FastMCP Cloud Configuration Screen" />
+### Step 2: Deploy Your Server
 
-### Step 3: Deploy
-
-Once you create your project, FastMCP Cloud will:
-1. Create the repository (if using quickstart)
+Once you configure your project, FastMCP Cloud will:
+1. Clone the repository
 2. Build your FastMCP server
 3. Deploy it to a unique URL
 4. Make it immediately available for connections
 
 <img src="/assets/images/fastmcp_cloud/deployment.png" alt="FastMCP Cloud Deployment Screen" />
 
+FastMCP Cloud will monitor your repo and redeploy your server whenever you push a change to the `main` branch. In addition, FastMCP Cloud will build and deploy servers for every PR your open, hosting them on unique URLs, so you can test changes before updating your production server.
 
-## Connect to Your Server
+### Step 3: Connect to Your Server
 
-Your deployed server will be accessible at a URL like:
+Once your server is deployed, it will be accessible at a URL like:
 
 ```
 https://your-project-name.fastmcp.app/mcp
 ```
 
-You should be able to connect to it as soon as you see the deployment succeed! In addition, you can instantly connect your server to a variety of popular LLM clients:
+You should be able to connect to it as soon as you see the deployment succeed! FastMCP Cloud provides instant connection options for popular LLM clients:
 
 <img src="/assets/images/fastmcp_cloud/connect.png" alt="FastMCP Cloud Connection Screen" />
 
-## Testing Changes
-
-Any time you open a PR to your connected repo, FastMCP Cloud will create a new server for that branch and deploy it on a unique URL. This allows you to test your changes before merging to production. Each merge to main will trigger a new deployment of the "production" version of your server.
