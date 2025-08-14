@@ -28,7 +28,9 @@ Visit [fastmcp.cloud](https://fastmcp.cloud) and sign in with your GitHub accoun
 The configuration screen lets you specify:
 - **Name**: The name of your project. This will be used to generate a unique URL for your server.
 - **Entrypoint**: The Python file containing your FastMCP server (e.g., `echo.py`). This field has the same syntax as the `fastmcp run` command, for example `echo.py:my_server` to specify a specific object in the file.
-- **Authentication**: Whether to require OAuth for client connections.
+- **Authentication**: If disabled, your server is open to the public. If enabled, only other members of your FastMCP Cloud organization will be able to connect.
+
+Note that FastMCP Cloud will automatically detect yours server's Python dependencies from either a `requirements.txt` or `pyproject.toml` file.
 
 <img src="/assets/images/fastmcp_cloud/create_project.png" alt="FastMCP Cloud Configuration Screen" />
 
