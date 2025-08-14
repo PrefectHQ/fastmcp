@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import webbrowser
-from _asyncio import Future
+from asyncio import Future
 from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import urlparse
