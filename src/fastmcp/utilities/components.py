@@ -117,7 +117,8 @@ class FastMCPComponent(FastMCPBaseModel):
     def __eq__(self, other: object) -> bool:
         if type(self) is not type(other):
             return False
-        assert isinstance(other, type(self))
+        if not isinstance(other, type(self)):
+            return False
         return self.model_dump() == other.model_dump()
 
     def __repr__(self) -> str:

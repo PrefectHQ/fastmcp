@@ -449,7 +449,8 @@ def _create_pydantic_model(
 ) -> type:
     """Create Pydantic BaseModel from object schema with additionalProperties."""
     name = name or schema.get("title", "Root")
-    assert name is not None  # Should not be None after the or operation
+    if name is None:
+        raise ValueError("Name is required")
     sanitized_name = _sanitize_name(name)
     schema_hash = _hash_schema(schema)
     cache_key = (schema_hash, sanitized_name)
@@ -507,7 +508,8 @@ def _create_dataclass(
     """Create dataclass from object schema."""
     name = name or schema.get("title", "Root")
     # Sanitize name for class creation
-    assert name is not None  # Should not be None after the or operation
+    if name is None:
+        raise ValueError("Name is required")
     sanitized_name = _sanitize_name(name)
     schema_hash = _hash_schema(schema)
     cache_key = (schema_hash, sanitized_name)

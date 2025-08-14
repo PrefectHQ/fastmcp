@@ -135,6 +135,8 @@ class RemoteAuthProvider(AuthProvider):
     the authorization servers that issue valid tokens.
     """
 
+    resource_server_url: AnyHttpUrl
+
     def __init__(
         self,
         token_verifier: TokenVerifier,
@@ -169,7 +171,6 @@ class RemoteAuthProvider(AuthProvider):
         Subclasses can override this method to add additional routes by calling
         super().get_routes() and extending the returned list.
         """
-        assert self.resource_server_url is not None
 
         return create_protected_resource_routes(
             resource_url=self.resource_server_url,

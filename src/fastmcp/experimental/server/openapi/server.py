@@ -163,8 +163,6 @@ class FastMCPOpenAPI(FastMCP):
             # Determine route type based on mappings or default rules
             route_map = _determine_route_type(route, route_maps)
 
-            # TODO: remove this once RouteType is removed and mcp_type is typed as MCPType without | None
-            assert route_map.mcp_type is not None
             route_type = route_map.mcp_type
 
             # Call route_map_fn if provided

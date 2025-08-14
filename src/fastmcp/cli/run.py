@@ -80,9 +80,6 @@ async def import_server(file: Path, server_or_factory: str | None = None) -> Any
         logger.error("Could not load module", extra={"file": str(file)})
         sys.exit(1)
 
-    assert spec is not None
-    assert spec.loader is not None
-
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
 
@@ -101,8 +98,6 @@ async def import_server(file: Path, server_or_factory: str | None = None) -> Any
             extra={"file": str(file)},
         )
         sys.exit(1)
-
-    assert server_or_factory is not None
 
     # Handle module:object syntax
     if ":" in server_or_factory:

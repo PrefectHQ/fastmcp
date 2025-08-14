@@ -188,7 +188,8 @@ class Context:
         Returns:
             The resource content as either text or bytes
         """
-        assert self.fastmcp is not None, "Context is not available outside of a request"
+        if self.fastmcp is None:
+            raise ValueError("Context is not available outside of a request")
         return await self.fastmcp._mcp_read_resource(uri)
 
     async def log(
