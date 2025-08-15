@@ -65,7 +65,12 @@ jobs:
           - bug: Reports of broken functionality OR PRs that fix bugs
           - enhancement: New functions/endpoints, improvements to existing features, internal tooling, workflow improvements, minor new capabilities
           - feature: ONLY for major headline functionality worthy of a blog post announcement (2-4 per release, never for issues)
-          - documentation: Primary change is to docs, examples, or guides
+          - documentation: Primary change is to user-facing docs, examples, or guides
+
+          SPECIAL DOCUMENTATION RULES:
+          - DO NOT apply "documentation" label if PR only updates auto-generated SDK docs (docs/python-sdk/**)
+          - DO apply "documentation" label for significant user-facing documentation changes (guides, examples, API docs)
+          - Auto-generated docs updates should get appropriate category label (enhancement, bug, etc.) based on the underlying code changes
 
           FEATURE vs ENHANCEMENT guidance:
           - feature: Major systems like new auth systems, MCP composition, proxying MCP servers, major CLI commands that transform workflows
@@ -95,6 +100,7 @@ jobs:
           - openapi: OpenAPI integration/parsing is the primary topic
           - http: HTTP transport or networking is the main issue
           - contrib: Specifically about community contributions in src/contrib/
+          - tests: Issues primarily about testing infrastructure, CI/CD workflows, or test coverage
 
           IMPORTANT LABELING RULES:
           - Be selective - only apply labels that are clearly relevant
