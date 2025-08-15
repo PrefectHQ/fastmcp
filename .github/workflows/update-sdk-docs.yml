@@ -1,0 +1,81 @@
+name: Update SDK Documentation
+
+# This workflow runs on merges to main to automatically update SDK docs
+# without blocking PRs. SDK doc generation can fail if another PR merges
+# first, so handling it post-merge prevents annoying CI failures for contributors.
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "src/**"
+      - "pyproject.toml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update-sdk-docs:
+    timeout-minutes: 5
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: uv sync --dev
+
+      - name: Install just
+        uses: extractions/setup-just@v3
+
+      - name: Generate SDK documentation
+        run: |
+          echo "🔄 Generating SDK documentation..."
+          just api-ref-all
+
+      - name: Check for changes
+        id: check_changes
+        run: |
+          if git diff --quiet docs/python-sdk/ docs/docs.json; then
+            echo "No changes detected in SDK documentation"
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+          else
+            echo "Changes detected in SDK documentation"
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Commit and push changes
+        if: steps.check_changes.outputs.has_changes == 'true'
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add docs/python-sdk/ docs/docs.json
+          git commit -m "chore: Update SDK documentation
+
+          🤖 Generated with [Claude Code](https://claude.ai/code)
+
+          Co-Authored-By: Claude <noreply@anthropic.com>"
+          git push
+
+      - name: Summary
+        run: |
+          if [ "${{ steps.check_changes.outputs.has_changes }}" == "true" ]; then
+            echo "✅ SDK documentation updated and committed"
+          else
+            echo "✅ SDK documentation is already up to date"
+          fi

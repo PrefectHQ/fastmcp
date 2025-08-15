@@ -42,8 +42,6 @@ jobs:
           python-version: "3.12"
       - name: Install dependencies
         run: uv sync --dev
-      - name: Install just
-        uses: extractions/setup-just@v3
       - name: Check lockfile is up to date
         run: |
           if ! uv lock --check; then
@@ -56,33 +54,3 @@ jobs:
         uses: pre-commit/action@v3.0.1
         env:
           SKIP: no-commit-to-branch
-      - name: Check SDK documentation is up to date
-        run: |
-          # Save original docs.json for comparison
-          cp docs/docs.json docs/docs.json.orig
-
-          # Generate documentation
-          just api-ref-all > /dev/null 2>&1
-
-          # Check if python-sdk files changed
-          if ! git diff --quiet docs/python-sdk/; then
-            echo "❌ SDK documentation is out of date!"
-            echo "Files that were updated:"
-            git diff --name-only docs/python-sdk/
-            echo ""
-            echo "Run `just api-ref-all` to regenerate the SDK docs, then commit the changes. Note: you may need to install `just` (https://github.com/casey/just)"
-            exit 1
-          fi
-
-          # Check if docs.json content changed (ignoring formatting)
-          if ! jq --sort-keys . docs/docs.json.orig | diff -q - <(jq --sort-keys . docs/docs.json) > /dev/null 2>&1; then
-            echo "❌ docs.json content has changed!"
-            echo ""
-            echo "Run `just api-ref-all` to regenerate the SDK docs, then commit the changes. Note: you may need to install `just` (https://github.com/casey/just)"
-            exit 1
-          fi
-
-          # Restore original docs.json to avoid false positives
-          mv docs/docs.json.orig docs/docs.json
-
-          echo "✅ SDK documentation is up to date"
