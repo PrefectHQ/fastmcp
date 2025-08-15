@@ -26,8 +26,8 @@ async with client:
         if tool.inputSchema:
             print(f"Parameters: {tool.inputSchema}")
         # Access tags and other metadata
-        if hasattr(tool, '_meta') and tool._meta:
-            fastmcp_meta = tool._meta.get('_fastmcp', {})
+        if hasattr(tool, 'meta') and tool.meta:
+            fastmcp_meta = tool.meta.get('_fastmcp', {})
             print(f"Tags: {fastmcp_meta.get('tags', [])}")
 ```
 
@@ -44,16 +44,16 @@ async with client:
     # Filter tools by tag
     analysis_tools = [
         tool for tool in tools 
-        if hasattr(tool, '_meta') and tool._meta and
-           tool._meta.get('_fastmcp', {}) and
-           'analysis' in tool._meta.get('_fastmcp', {}).get('tags', [])
+        if hasattr(tool, 'meta') and tool.meta and
+           tool.meta.get('_fastmcp', {}) and
+           'analysis' in tool.meta.get('_fastmcp', {}).get('tags', [])
     ]
     
     print(f"Found {len(analysis_tools)} analysis tools")
 ```
 
 <Note>
-The `_meta` field is part of the standard MCP specification. FastMCP servers include tags and other metadata within a `_fastmcp` namespace (e.g., `_meta._fastmcp.tags`) to avoid conflicts with user-defined metadata. This behavior can be controlled with the server's `include_fastmcp_meta` setting - when disabled, the `_fastmcp` namespace won't be included. Other MCP server implementations may not provide this metadata structure.
+The `meta` field is part of the standard MCP specification. FastMCP servers include tags and other metadata within a `_fastmcp` namespace (e.g., `meta._fastmcp.tags`) to avoid conflicts with user-defined metadata. This behavior can be controlled with the server's `include_fastmcp_meta` setting - when disabled, the `_fastmcp` namespace won't be included. Other MCP server implementations may not provide this metadata structure.
 </Note>
 
 ## Executing Tools
