@@ -47,6 +47,7 @@ dev = [
     "ipython>=8.12.3",
     "pdbpp>=0.10.3",
     "pre-commit",
+    "psutil",
     "pyinstrument>=5.0.2",
     "pyperclip>=1.9.0",
     "pyright>=1.1.389",

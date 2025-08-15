@@ -1,9 +1,27 @@
+import asyncio
+import gc
 import inspect
+import os
+import weakref
 
+import psutil
 import pytest
 
 from fastmcp import Client
 from fastmcp.client.transports import PythonStdioTransport, StdioTransport
+
+
+def running_under_debugger():
+    return os.environ.get("DEBUGPY_RUNNING") == "true"
+
+
+def gc_collect_harder():
+    gc.collect()
+    gc.collect()
+    gc.collect()
+    gc.collect()
+    gc.collect()
+    gc.collect()
 
 
 class TestKeepAlive:
@@ -55,6 +73,77 @@ class TestKeepAlive:
             pid2: int = result2.data
 
         assert pid1 == pid2
+
+    @pytest.mark.skipif(
+        running_under_debugger(), reason="Debugger holds a reference to the transport"
+    )
+    async def test_keep_alive_true_exit_scope_kills_transport(self, stdio_script):
+        transport_weak_ref: weakref.ref[PythonStdioTransport] | None = None
+
+        async def test_server():
+            transport = PythonStdioTransport(script_path=stdio_script, keep_alive=True)
+            nonlocal transport_weak_ref
+            transport_weak_ref = weakref.ref(transport)
+            async with transport.connect_session():
+                pass
+
+        await test_server()
+
+        gc_collect_harder()
+
+        # This test will fail while debugging because the debugger holds a reference to the underlying transport
+        assert transport_weak_ref
+        transport = transport_weak_ref()
+        assert transport is None
+
+    @pytest.mark.skipif(
+        running_under_debugger(), reason="Debugger holds a reference to the transport"
+    )
+    async def test_keep_alive_true_exit_scope_kills_client(self, stdio_script):
+        pid: int | None = None
+
+        async def test_server():
+            transport = PythonStdioTransport(script_path=stdio_script, keep_alive=True)
+            client = Client(transport=transport)
+
+            assert client.transport.keep_alive is True
+
+            async with client:
+                result1 = await client.call_tool("pid")
+                nonlocal pid
+                pid = result1.data
+
+        await test_server()
+
+        gc_collect_harder()
+
+        # This test may fail/hang while debugging because the debugger holds a reference to the underlying transport
+
+        with pytest.raises(psutil.NoSuchProcess):
+            while True:
+                psutil.Process(pid)
+                await asyncio.sleep(0.1)
+
+    async def test_keep_alive_false_exit_scope_kills_server(self, stdio_script):
+        pid: int | None = None
+
+        async def test_server():
+            transport = PythonStdioTransport(script_path=stdio_script, keep_alive=False)
+            client = Client(transport=transport)
+            assert client.transport.keep_alive is False
+            async with client:
+                result1 = await client.call_tool("pid")
+                nonlocal pid
+                pid = result1.data
+
+            del client
+
+        await test_server()
+
+        with pytest.raises(psutil.NoSuchProcess):
+            while True:
+                psutil.Process(pid)
+                await asyncio.sleep(0.1)
 
     async def test_keep_alive_false_starts_new_session_across_multiple_calls(
         self, stdio_script

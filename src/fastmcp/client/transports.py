@@ -359,42 +359,22 @@ class StdioTransport(ClientTransport):
         if self._connect_task is not None:
             return
 
-        async def _connect_task():
-            from mcp.client.stdio import stdio_client
-
-            try:
-                async with contextlib.AsyncExitStack() as stack:
-                    try:
-                        server_params = StdioServerParameters(
-                            command=self.command,
-                            args=self.args,
-                            env=self.env,
-                            cwd=self.cwd,
-                        )
-                        transport = await stack.enter_async_context(
-                            stdio_client(server_params)
-                        )
-                        read_stream, write_stream = transport
-                        self._session = await stack.enter_async_context(
-                            ClientSession(read_stream, write_stream, **session_kwargs)
-                        )
-
-                        logger.debug("Stdio transport connected")
-                        self._ready_event.set()
-
-                        # Wait until disconnect is requested (stop_event is set)
-                        await self._stop_event.wait()
-                    finally:
-                        # Clean up client on exit
-                        self._session = None
-                        logger.debug("Stdio transport disconnected")
-            except Exception:
-                # Ensure ready event is set even if connection fails
-                self._ready_event.set()
-                raise
+        session_future: asyncio.Future[ClientSession] = asyncio.Future()
 
         # start the connection task
-        self._connect_task = asyncio.create_task(_connect_task())
+        self._connect_task = asyncio.create_task(
+            _stdio_transport_connect_task(
+                command=self.command,
+                args=self.args,
+                env=self.env,
+                cwd=self.cwd,
+                session_kwargs=session_kwargs,
+                ready_event=self._ready_event,
+                stop_event=self._stop_event,
+                session_future=session_future,
+            )
+        )
+
         # wait for the client to be ready before returning
         await self._ready_event.wait()
 
@@ -403,6 +383,9 @@ class StdioTransport(ClientTransport):
             exception = self._connect_task.exception()
             if exception is not None:
                 raise exception
+
+        self._session = await session_future
+        return self._session
 
     async def disconnect(self):
         if self._connect_task is None:
@@ -422,10 +405,61 @@ class StdioTransport(ClientTransport):
     async def close(self):
         await self.disconnect()
 
+    def __del__(self):
+        """Ensure that we send a disconnection signal to the transport task if we are being garbage collected."""
+        if not self._stop_event.is_set():
+            self._stop_event.set()
+
     def __repr__(self) -> str:
         return (
             f"<{self.__class__.__name__}(command='{self.command}', args={self.args})>"
         )
+
+
+async def _stdio_transport_connect_task(
+    command: str,
+    args: list[str],
+    env: dict[str, str] | None,
+    cwd: str | None,
+    session_kwargs: SessionKwargs,
+    ready_event: anyio.Event,
+    stop_event: anyio.Event,
+    session_future: asyncio.Future[ClientSession],
+):
+    """A standalone connection task for a stdio transport. It is not a part of the StdioTransport class
+    to ensure that the connection task does not hold a reference to the Transport object."""
+
+    from mcp.client.stdio import stdio_client
+
+    try:
+        async with contextlib.AsyncExitStack() as stack:
+            try:
+                server_params = StdioServerParameters(
+                    command=command,
+                    args=args,
+                    env=env,
+                    cwd=cwd,
+                )
+                transport = await stack.enter_async_context(stdio_client(server_params))
+                read_stream, write_stream = transport
+                session_future.set_result(
+                    await stack.enter_async_context(
+                        ClientSession(read_stream, write_stream, **session_kwargs)
+                    )
+                )
+
+                logger.debug("Stdio transport connected")
+                ready_event.set()
+
+                # Wait until disconnect is requested (stop_event is set)
+                await stop_event.wait()
+            finally:
+                # Clean up client on exit
+                logger.debug("Stdio transport disconnected")
+    except Exception:
+        # Ensure ready event is set even if connection fails
+        ready_event.set()
+        raise
 
 
 class PythonStdioTransport(StdioTransport):
@@ -829,11 +863,13 @@ class MCPConfigTransport(ClientTransport):
     """
 
     def __init__(self, config: MCPConfig | dict, name_as_prefix: bool = True):
-        from fastmcp.utilities.mcp_config import composite_server_from_mcp_config
+        from fastmcp.utilities.mcp_config import mcp_config_to_servers_and_transports
 
         if isinstance(config, dict):
             config = MCPConfig.from_dict(config)
         self.config = config
+
+        self._underlying_transports: list[ClientTransport] = []
 
         # if there are no servers, raise an error
         if len(self.config.mcpServers) == 0:
@@ -842,14 +878,21 @@ class MCPConfigTransport(ClientTransport):
         # if there's exactly one server, create a client for that server
         elif len(self.config.mcpServers) == 1:
             self.transport = list(self.config.mcpServers.values())[0].to_transport()
+            self._underlying_transports.append(self.transport)
 
         # otherwise create a composite client
         else:
-            self.transport = FastMCPTransport(
-                mcp=composite_server_from_mcp_config(
-                    self.config, name_as_prefix=name_as_prefix
+            self._composite_server = FastMCP[Any]()
+
+            for name, server, transport in mcp_config_to_servers_and_transports(
+                self.config
+            ):
+                self._underlying_transports.append(transport)
+                self._composite_server.mount(
+                    server, prefix=name if name_as_prefix else None
                 )
-            )
+
+            self.transport = FastMCPTransport(mcp=self._composite_server)
 
     @contextlib.asynccontextmanager
     async def connect_session(
@@ -857,6 +900,10 @@ class MCPConfigTransport(ClientTransport):
     ) -> AsyncIterator[ClientSession]:
         async with self.transport.connect_session(**session_kwargs) as session:
             yield session
+
+    async def close(self):
+        for transport in self._underlying_transports:
+            await transport.close()
 
     def __repr__(self) -> str:
         return f"<MCPConfigTransport(config='{self.config}')>"

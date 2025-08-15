@@ -1,10 +1,14 @@
+import asyncio
+import gc
 import inspect
 import logging
+import os
 import tempfile
 from collections.abc import AsyncGenerator
 from pathlib import Path
 from typing import Any
 
+import psutil
 import pytest
 
 from fastmcp.client.auth.bearer import BearerAuth
@@ -27,6 +31,19 @@ from fastmcp.mcp_config import (
     TransformingStdioMCPServer,
 )
 from fastmcp.tools.tool import Tool as FastMCPTool
+
+
+def running_under_debugger():
+    return os.environ.get("DEBUGPY_RUNNING") == "true"
+
+
+def gc_collect_harder():
+    gc.collect()
+    gc.collect()
+    gc.collect()
+    gc.collect()
+    gc.collect()
+    gc.collect()
 
 
 def test_parse_single_stdio_config():
@@ -223,6 +240,122 @@ async def test_multi_client(tmp_path: Path):
         result_2 = await client.call_tool("test_2_add", {"a": 1, "b": 2})
         assert result_1.data == 3
         assert result_2.data == 3
+
+
+@pytest.mark.skipif(
+    running_under_debugger(), reason="Debugger holds a reference to the transport"
+)
+async def test_multi_client_lifespan(tmp_path: Path):
+    pid_1: int | None = None
+    pid_2: int | None = None
+
+    async def test_server():
+        server_script = inspect.cleandoc("""
+            from fastmcp import FastMCP
+            import os
+
+            mcp = FastMCP()
+
+            @mcp.tool
+            def pid() -> int:
+                return os.getpid()
+
+            if __name__ == '__main__':
+                mcp.run()
+            """)
+
+        script_path = tmp_path / "test.py"
+        script_path.write_text(server_script)
+
+        config = {
+            "mcpServers": {
+                "test_1": {
+                    "command": "python",
+                    "args": [str(script_path)],
+                },
+                "test_2": {
+                    "command": "python",
+                    "args": [str(script_path)],
+                },
+            }
+        }
+        transport = MCPConfigTransport(config)
+        client = Client(transport)
+
+        async with client:
+            nonlocal pid_1
+            pid_1 = (await client.call_tool("test_1_pid")).data
+
+            nonlocal pid_2
+            pid_2 = (await client.call_tool("test_2_pid")).data
+
+    await test_server()
+
+    gc_collect_harder()
+
+    # This test will fail while debugging because the debugger holds a reference to the underlying transport
+
+    with pytest.raises(psutil.NoSuchProcess):
+        while True:
+            psutil.Process(pid_1)
+            await asyncio.sleep(0.1)
+
+    with pytest.raises(psutil.NoSuchProcess):
+        while True:
+            psutil.Process(pid_2)
+            await asyncio.sleep(0.1)
+
+
+async def test_multi_client_force_close(tmp_path: Path):
+    server_script = inspect.cleandoc("""
+        from fastmcp import FastMCP
+        import os
+
+        mcp = FastMCP()
+
+        @mcp.tool
+        def pid() -> int:
+            return os.getpid()
+
+        if __name__ == '__main__':
+            mcp.run()
+        """)
+
+    script_path = tmp_path / "test.py"
+    script_path.write_text(server_script)
+
+    config = {
+        "mcpServers": {
+            "test_1": {
+                "command": "python",
+                "args": [str(script_path)],
+            },
+            "test_2": {
+                "command": "python",
+                "args": [str(script_path)],
+            },
+        }
+    }
+    transport = MCPConfigTransport(config)
+    client = Client(transport)
+
+    async with client:
+        pid_1 = (await client.call_tool("test_1_pid")).data
+        pid_2 = (await client.call_tool("test_2_pid")).data
+
+    await client.close()
+
+    gc_collect_harder()
+
+    with pytest.raises(psutil.NoSuchProcess):
+        process = psutil.Process(pid_1)
+
+        assert not process
+
+    with pytest.raises(psutil.NoSuchProcess):
+        process = psutil.Process(pid_2)
+
+        assert not process
 
 
 async def test_remote_config_default_no_auth():

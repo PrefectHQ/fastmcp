@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import copy
 import warnings
+import weakref
 from collections.abc import Generator, Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar, Token
@@ -115,10 +116,18 @@ class Context:
     """
 
     def __init__(self, fastmcp: FastMCP):
-        self.fastmcp = fastmcp
+        self._fastmcp: weakref.ref[FastMCP] = weakref.ref(fastmcp)
         self._tokens: list[Token] = []
         self._notification_queue: set[str] = set()  # Dedupe notifications
         self._state: dict[str, Any] = {}
+
+    @property
+    def fastmcp(self) -> FastMCP:
+        """Get the FastMCP instance."""
+        fastmcp = self._fastmcp()
+        if fastmcp is None:
+            raise RuntimeError("FastMCP instance is no longer available")
+        return fastmcp
 
     async def __aenter__(self) -> Context:
         """Enter the context manager and set this context as the current context."""
