@@ -188,10 +188,10 @@ FastMCP intelligently handles different return types from your prompt function:
 -   **`Any`**: If the return type is not one of the above, the return value is attempted to be converted to a string and used as a `PromptMessage`.
 
 ```python
-from fastmcp.prompts.prompt import Message
+from fastmcp.prompts.prompt import PromptMessage
 
 @mcp.prompt
-def roleplay_scenario(character: str, situation: str) -> list[Message]:
+def roleplay_scenario(character: str, situation: str) -> list[PromptMessage]:
     """Sets up a roleplaying scenario with initial messages."""
     return [
         Message(f"Let's roleplay. You are {character}. The situation is: {situation}"),
