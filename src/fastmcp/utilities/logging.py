@@ -1,7 +1,7 @@
 """Logging utilities for FastMCP."""
 
 import logging
-from typing import Literal
+from typing import Any, Literal
 
 from rich.console import Console
 from rich.logging import RichHandler
@@ -23,6 +23,7 @@ def configure_logging(
     level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] | int = "INFO",
     logger: logging.Logger | None = None,
     enable_rich_tracebacks: bool = True,
+    **rich_kwargs: Any,
 ) -> None:
     """
     Configure logging for FastMCP.
@@ -30,6 +31,7 @@ def configure_logging(
     Args:
         logger: the logger to configure
         level: the log level to use
+        rich_kwargs: the parameters to use for creating RichHandler
     """
 
     if logger is None:
@@ -39,6 +41,7 @@ def configure_logging(
     handler = RichHandler(
         console=Console(stderr=True),
         rich_tracebacks=enable_rich_tracebacks,
+        **rich_kwargs,
     )
     formatter = logging.Formatter("%(message)s")
     handler.setFormatter(formatter)
