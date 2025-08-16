@@ -133,6 +133,82 @@ async with Client(transport=StreamableHttpTransport(server_url)) as client:
 - **Content:** User-focused sections, motivate features (why) before mechanics (how)
 - **Style:** Prose over code comments for important information
 
+## Code Review Guidelines
+
+### Philosophy
+
+Code review is about maintaining a healthy codebase while helping contributors succeed. The burden of proof is on the PR to demonstrate it adds value in the intended way. Your job is to help it get there through actionable feedback.
+
+**Critical**: A perfectly written PR that adds unwanted functionality must still be rejected. The code must advance the codebase in the intended direction, not just be well-written. When rejecting, provide clear guidance on how to align with project goals.
+
+Be friendly and welcoming while maintaining high standards. Call out what works well - this reinforces good patterns. When code needs improvement, be specific about why and how to fix it. Remember that PRs serve as documentation for future developers.
+
+### Focus On
+
+- **Does this advance the codebase in the intended direction?** (Even perfect code for unwanted features should be rejected)
+- **API design and naming clarity** - Identify confusing patterns (e.g., parameter values that contradict defaults) or non-idiomatic code (mutable defaults, etc.). Contributed code will need to be maintained indefinitely, and by someone other than the author (unless the author is a maintainer).
+- **Suggest specific improvements**, not generic "add more tests" comments
+- **Think about API ergonomics and learning curve** from a user perspective
+
+### For Agent Reviewers
+
+- **Read the full context**: Always examine related files, tests, and documentation before reviewing
+- **Check against established patterns**: Look for consistency with existing codebase conventions
+- **Verify functionality claims**: Don't just read code - understand what it actually does
+- **Consider edge cases**: Think through error conditions and boundary scenarios
+
+### Avoid
+
+- Generic feedback without specifics
+- Hypothetical problems unlikely to occur
+- Nitpicking organizational choices without strong reason
+- Summarizing what the PR already describes
+- Star ratings or excessive emojis
+- Bikeshedding style preferences when functionality is correct
+- Requesting changes without suggesting solutions
+- Focusing on personal coding style over project conventions
+
+### Tone
+
+- Acknowledge good decisions ("This API design is clean")
+- Be direct but respectful
+- Explain impact ("This will confuse users because...")
+- Remember: Someone else maintains this code forever
+
+### Decision Framework
+
+Before approving, ask yourself:
+
+1. Does this PR achieve its stated purpose?
+2. Is that purpose aligned with where the codebase should go?
+3. Would I be comfortable maintaining this code?
+4. Have I actually understood what it does, not just what it claims?
+5. Does this change introduce technical debt?
+
+If something needs work, your review should help it get there through specific, actionable feedback. If it's solving the wrong problem, say so clearly.
+
+### Review Comment Examples
+
+**Good Review Comments:**
+
+❌ "Add more tests"  
+✅ "The `handle_timeout` method needs tests for the edge case where timeout=0"
+
+❌ "This API is confusing"  
+✅ "The parameter name `data` is ambiguous - consider `message_content` to match the MCP specification"
+
+❌ "This could be better"  
+✅ "This approach works but creates a circular dependency. Consider moving the validation to `utils/validators.py`"
+
+### Review Checklist
+
+Before approving, verify:
+- [ ] All required development workflow steps completed (uv sync, pre-commit, pytest)
+- [ ] Changes align with repository patterns and conventions
+- [ ] API changes are documented and backwards-compatible where possible
+- [ ] Error handling follows project patterns (specific exception types)
+- [ ] Tests cover new functionality and edge cases
+
 ## Key Tools & Commands
 
 ### Environment Setup
@@ -158,8 +234,7 @@ uv sync                    # Installs all deps including dev tools
 ### CLI Usage
 
 - **Run server**: `uv run fastmcp run server.py`
-- **Development**: `uv run fastmcp dev server.py` (with Inspector UI)
-- **Help**: `uv run fastmcp --help`
+- **Inspect server**: `uv run fastmcp inspect server.py`
 
 ## Critical Patterns
 
