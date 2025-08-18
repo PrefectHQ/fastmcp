@@ -29,15 +29,30 @@ def create_callback_html(
     server_url: str | None = None,
 ) -> str:
     """Create a styled HTML response for OAuth callbacks."""
-    status_emoji = "✅" if is_success else "❌"
-    status_color = "#10b981" if is_success else "#ef4444"  # emerald-500 / red-500
+    logo_url = "https://gofastmcp.com/assets/brand/blue-logo.png"
 
-    # Add server info for success cases
-    server_info = ""
+    # Build the main status message
+    if is_success:
+        status_title = "Authentication successful"
+        status_icon = "✓"
+        icon_bg = "#10b98120"
+    else:
+        status_title = "Authentication failed"
+        status_icon = "✕"
+        icon_bg = "#ef444420"
+
+    # Add detail info box for both success and error cases
+    detail_info = ""
     if is_success and server_url:
-        server_info = f"""
-            <div class="server-info">
+        detail_info = f"""
+            <div class="info-box">
                 Connected to: <strong>{server_url}</strong>
+            </div>
+        """
+    elif not is_success:
+        detail_info = f"""
+            <div class="info-box error">
+                {message}
             </div>
         """
 
@@ -49,127 +64,112 @@ def create_callback_html(
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>{title}</title>
         <style>
+            * {{
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }}
+            
             body {{
-                font-family: 'SF Mono', 'Monaco', 'Consolas', 'Roboto Mono', monospace;
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
                 margin: 0;
                 padding: 0;
                 min-height: 100vh;
                 display: flex;
                 align-items: center;
                 justify-content: center;
-                background: linear-gradient(135deg, #0f0f23 0%, #1a1a2e 25%, #16213e 50%, #0f0f23 100%);
-                color: #e2e8f0;
-                overflow: hidden;
-            }}
-            
-            body::before {{
-                content: '';
-                position: fixed;
-                top: 0;
-                left: 0;
-                width: 100%;
-                height: 100%;
-                background: 
-                    radial-gradient(circle at 20% 80%, rgba(120, 119, 198, 0.1) 0%, transparent 50%),
-                    radial-gradient(circle at 80% 20%, rgba(16, 185, 129, 0.1) 0%, transparent 50%),
-                    radial-gradient(circle at 40% 40%, rgba(14, 165, 233, 0.1) 0%, transparent 50%);
-                pointer-events: none;
-                z-index: -1;
+                background: #ffffff;
+                color: #0a0a0a;
             }}
             
             .container {{
-                background: rgba(30, 41, 59, 0.9);
-                backdrop-filter: blur(10px);
-                border: 1px solid rgba(71, 85, 105, 0.3);
+                background: #ffffff;
+                border: 1px solid #e5e5e5;
                 padding: 3rem 2rem;
-                border-radius: 1rem;
-                box-shadow: 
-                    0 25px 50px -12px rgba(0, 0, 0, 0.7),
-                    0 0 0 1px rgba(255, 255, 255, 0.05),
-                    inset 0 1px 0 0 rgba(255, 255, 255, 0.1);
+                border-radius: 0.75rem;
+                box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1);
                 text-align: center;
-                max-width: 500px;
+                max-width: 28rem;
                 margin: 1rem;
                 position: relative;
             }}
             
-            .container::before {{
-                content: '';
-                position: absolute;
-                top: 0;
-                left: 0;
-                right: 0;
-                height: 1px;
-                background: linear-gradient(90deg, transparent, rgba(16, 185, 129, 0.5), transparent);
+            .logo {{
+                width: 60px;
+                height: auto;
+                margin-bottom: 2rem;
+                display: block;
+                margin-left: auto;
+                margin-right: auto;
+            }}
+            
+            .status-message {{
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 0.75rem;
+                margin-bottom: 1.5rem;
             }}
             
             .status-icon {{
-                font-size: 4rem;
-                margin-bottom: 1rem;
-                display: block;
-                filter: drop-shadow(0 0 20px currentColor);
+                font-size: 1.5rem;
+                line-height: 1;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                width: 2rem;
+                height: 2rem;
+                background: {icon_bg};
+                border-radius: 0.5rem;
+                flex-shrink: 0;
             }}
             
             .message {{
-                font-size: 1.25rem;
-                line-height: 1.6;
-                color: {status_color};
-                margin-bottom: 1.5rem;
+                font-size: 1.125rem;
+                line-height: 1.75;
+                color: #0a0a0a;
                 font-weight: 600;
-                text-shadow: 0 0 10px rgba({
-        "16, 185, 129" if is_success else "239, 68, 68"
-    }, 0.3);
+                text-align: left;
             }}
             
-            .server-info {{
-                background: rgba(6, 182, 212, 0.1);
-                border: 1px solid rgba(6, 182, 212, 0.3);
-                border-radius: 0.75rem;
-                padding: 1rem;
-                margin: 1rem 0;
-                font-size: 0.9rem;
-                color: #67e8f9;
-                font-family: 'SF Mono', 'Monaco', 'Consolas', 'Roboto Mono', monospace;
-                text-shadow: 0 0 10px rgba(103, 232, 249, 0.3);
+            .info-box {{
+                background: #f5f5f5;
+                border: 1px solid #e5e5e5;
+                border-radius: 0.5rem;
+                padding: 0.875rem;
+                margin: 1.25rem 0;
+                font-size: 0.875rem;
+                color: #525252;
+                font-family: 'SF Mono', 'Monaco', 'Consolas', 'Courier New', monospace;
+                text-align: left;
             }}
             
-            .server-info strong {{
-                color: #22d3ee;
-                font-weight: 700;
+            .info-box.error {{
+                background: #fef2f2;
+                border-color: #fecaca;
+                color: #991b1b;
             }}
             
-            .subtitle {{
-                font-size: 1rem;
-                color: #94a3b8;
-                margin-top: 1rem;
+            .info-box strong {{
+                color: #0a0a0a;
+                font-weight: 600;
             }}
             
             .close-instruction {{
-                background: rgba(51, 65, 85, 0.8);
-                border: 1px solid rgba(71, 85, 105, 0.4);
-                border-radius: 0.75rem;
-                padding: 1rem;
+                font-size: 0.875rem;
+                color: #737373;
                 margin-top: 1.5rem;
-                font-size: 0.9rem;
-                color: #cbd5e1;
-                font-family: 'SF Mono', 'Monaco', 'Consolas', 'Roboto Mono', monospace;
-            }}
-            
-            @keyframes glow {{
-                0%, 100% {{ opacity: 1; }}
-                50% {{ opacity: 0.7; }}
-            }}
-            
-            .status-icon {{
-                animation: glow 2s ease-in-out infinite;
             }}
         </style>
     </head>
     <body>
         <div class="container">
-            <span class="status-icon">{status_emoji}</span>
-            <div class="message">{message}</div>
-            {server_info}
+            <img src="{logo_url}" alt="FastMCP" class="logo" />
+            <div class="status-message">
+                <span class="status-icon">{status_icon}</span>
+                <div class="message">{status_title}</div>
+            </div>
+            {detail_info}
             <div class="close-instruction">
                 You can safely close this tab now.
             </div>
@@ -277,7 +277,7 @@ def create_oauth_callback_server(
             )
 
         return HTMLResponse(
-            create_callback_html("FastMCP OAuth login complete!", server_url=server_url)
+            create_callback_html("", is_success=True, server_url=server_url)
         )
 
     app = Starlette(routes=[Route(callback_path, callback_handler)])
