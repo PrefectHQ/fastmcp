@@ -80,6 +80,8 @@ class PromptManager:
                 logger.warning(
                     f"Failed to get prompts from server: {mounted.server.name!r}, mounted at: {mounted.prefix!r}: {e}"
                 )
+                if settings.mounted_components_raise_on_load_error:
+                    raise
                 continue
 
         # Finally, add local prompts, which always take precedence

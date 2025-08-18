@@ -13,7 +13,7 @@ from fastmcp.exceptions import NotFoundError, ToolError
 from fastmcp.tools import FunctionTool, ToolManager
 from fastmcp.tools.tool import Tool
 from fastmcp.tools.tool_transform import ArgTransformConfig, ToolTransformConfig
-from fastmcp.utilities.tests import caplog_for_fastmcp
+from fastmcp.utilities.tests import caplog_for_fastmcp, temporary_settings
 from fastmcp.utilities.types import Image
 
 
@@ -996,3 +996,42 @@ class TestToolErrorHandling:
         # Exception message should contain the tool name but not the internal details
         assert "Error calling tool 'async_buggy_tool'" in str(excinfo.value)
         assert "Internal async error details" not in str(excinfo.value)
+
+
+class TestMountedComponentsRaiseOnLoadError:
+    """Test the mounted_components_raise_on_load_error setting."""
+
+    async def test_mounted_components_raise_on_load_error_default_false(self):
+        """Test that by default, mounted component load errors are warned and not raised."""
+        import fastmcp
+
+        # Ensure default setting is False
+        assert fastmcp.settings.mounted_components_raise_on_load_error is False
+
+        parent_mcp = FastMCP("ParentServer")
+        child_mcp = FastMCP("FailingChildServer")
+
+        # Create a failing mounted server by corrupting it
+        parent_mcp.mount(child_mcp, prefix="child")
+        # Corrupt the child server to make it fail during tool loading
+        child_mcp._tool_manager._mounted_servers.append("invalid")  # type: ignore
+
+        # Should not raise, just warn
+        tools = await parent_mcp._tool_manager.list_tools()
+        assert isinstance(tools, list)  # Should return empty list, not raise
+
+    async def test_mounted_components_raise_on_load_error_true(self):
+        """Test that when enabled, mounted component load errors are raised."""
+        parent_mcp = FastMCP("ParentServer")
+        child_mcp = FastMCP("FailingChildServer")
+
+        # Create a failing mounted server
+        parent_mcp.mount(child_mcp, prefix="child")
+        # Corrupt the child server to make it fail during tool loading
+        child_mcp._tool_manager._mounted_servers.append("invalid")  # type: ignore
+
+        # Use temporary settings context manager
+        with temporary_settings(mounted_components_raise_on_load_error=True):
+            # Should raise the exception
+            with pytest.raises(AttributeError, match=""):
+                await parent_mcp._tool_manager.list_tools()
