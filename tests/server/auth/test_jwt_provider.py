@@ -62,7 +62,7 @@ def mcp_server_url(rsa_key_pair: RSAKeyPair) -> Generator[str]:
         public_key=rsa_key_pair.public_key,
         run_kwargs=dict(transport="http"),
     ) as url:
-        yield f"{url}/mcp/"
+        yield f"{url}/mcp"
 
 
 class TestRSAKeyPair:

@@ -70,7 +70,7 @@ def run_server(host: str, port: int, **kwargs) -> None:
 @pytest.fixture(autouse=True, scope="module")
 def sse_server() -> Generator[str, None, None]:
     with run_server_in_process(run_server, transport="sse") as url:
-        yield f"{url}/sse/"
+        yield f"{url}/sse"
 
 
 async def test_ping(sse_server: str):

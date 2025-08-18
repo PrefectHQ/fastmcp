@@ -45,13 +45,13 @@ def run_server(host: str, port: int, **kwargs) -> None:
 @pytest.fixture(autouse=True, scope="module")
 def shttp_server() -> Generator[str, None, None]:
     with run_server_in_process(run_server, transport="http") as url:
-        yield f"{url}/mcp/"
+        yield f"{url}/mcp"
 
 
 @pytest.fixture(autouse=True, scope="module")
 def sse_server() -> Generator[str, None, None]:
     with run_server_in_process(run_server, transport="sse") as url:
-        yield f"{url}/sse/"
+        yield f"{url}/sse"
 
 
 async def test_http_headers_resource_shttp(shttp_server: str):

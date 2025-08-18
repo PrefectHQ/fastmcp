@@ -27,7 +27,7 @@ def run_mcp_server(host: str, port: int) -> None:
 @pytest.fixture(scope="module")
 def mcp_server_url() -> Generator[str]:
     with run_server_in_process(run_mcp_server) as url:
-        yield f"{url}/mcp/"
+        yield f"{url}/mcp"
 
 
 @pytest.fixture()
