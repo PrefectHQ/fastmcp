@@ -99,8 +99,9 @@
                     "icon": "shield-check",
                     "pages": [
                       "servers/auth/authentication",
-                      "servers/auth/remote-oauth",
                       "servers/auth/token-verification",
+                      "servers/auth/remote-oauth",
+                      "servers/auth/oauth-proxy",
                       "servers/auth/full-oauth-server"
                     ]
                   },
@@ -122,10 +123,7 @@
                   {
                     "group": "Essentials",
                     "icon": "cube",
-                    "pages": [
-                      "clients/client",
-                      "clients/transports"
-                    ]
+                    "pages": ["clients/client", "clients/transports"]
                   },
                   {
                     "group": "Core Operations",
@@ -151,10 +149,7 @@
                   {
                     "group": "Authentication",
                     "icon": "user-shield",
-                    "pages": [
-                      "clients/auth/oauth",
-                      "clients/auth/bearer"
-                    ]
+                    "pages": ["clients/auth/oauth", "clients/auth/bearer"]
                   }
                 ]
               },
@@ -163,6 +158,8 @@
                 "pages": [
                   "integrations/anthropic",
                   "integrations/authkit",
+                  "integrations/github",
+                  "integrations/google",
                   "integrations/chatgpt",
                   "integrations/claude-code",
                   "integrations/claude-desktop",
@@ -200,17 +197,12 @@
           },
           {
             "anchor": "What's New",
-            "pages": [
-              "updates",
-              "changelog"
-            ]
+            "pages": ["updates", "changelog"]
           },
           {
             "anchor": "Community",
             "icon": "users",
-            "pages": [
-              "community/showcase"
-            ]
+            "pages": ["community/showcase"]
           }
         ]
       },

@@ -10,11 +10,29 @@ import { VersionBadge } from "/snippets/version-badge.mdx"
 
 <VersionBadge version="2.11.0" />
 
-Remote OAuth integration allows your FastMCP server to leverage external identity providers while maintaining the automated authentication flows that MCP clients require. This approach provides enterprise-grade authentication features without the complexity of implementing them yourself, making it the recommended pattern for most production applications.
+Remote OAuth integration allows your FastMCP server to leverage external identity providers that **support Dynamic Client Registration (DCR)**. With DCR, MCP clients can automatically register themselves with the identity provider and obtain credentials without any manual configuration. This provides enterprise-grade authentication with fully automated flows, making it ideal for production applications with modern identity providers.
 
 <Tip>
-Remote OAuth requires identity providers that support **Dynamic Client Registration (DCR)**. This enables MCP clients to automatically register and authenticate without manual configuration steps.
+**When to use RemoteAuthProvider vs OAuth Proxy:**
+- **RemoteAuthProvider**: For providers WITH Dynamic Client Registration (WorkOS AuthKit, modern OIDC providers)
+- **OAuth Proxy**: For providers WITHOUT Dynamic Client Registration (GitHub, Google, Azure, Discord, etc.)
+
+RemoteAuthProvider requires DCR support for fully automated client registration and authentication.
 </Tip>
+
+## DCR-Enabled Providers
+
+RemoteAuthProvider works with identity providers that support **Dynamic Client Registration (DCR)** - a critical capability that enables automated authentication flows:
+
+| Feature | DCR Providers (RemoteAuth) | Non-DCR Providers (OAuth Proxy) |
+|---------|---------------------------|--------------------------------|
+| **Client Registration** | Automatic via API | Manual in provider console |
+| **Credentials** | Dynamic per client | Fixed app credentials |
+| **Configuration** | Zero client config | Pre-shared credentials |
+| **Examples** | WorkOS AuthKit, modern OIDC | GitHub, Google, Azure |
+| **FastMCP Class** | `RemoteAuthProvider` | [`OAuthProxy`](/servers/auth/oauth-proxy) |
+
+If your provider doesn't support DCR (most traditional OAuth providers), you'll need to use [`OAuth Proxy`](/servers/auth/oauth-proxy) instead, which bridges the gap between MCP's DCR expectations and fixed OAuth credentials.
 
 ## The Remote OAuth Challenge
 

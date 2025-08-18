@@ -1,0 +1,205 @@
+---
+title: GitHub OAuth 🤝 FastMCP
+sidebarTitle: GitHub OAuth
+description: Secure your FastMCP server with GitHub OAuth
+icon: github
+tag: NEW
+---
+
+import { VersionBadge } from "/snippets/version-badge.mdx"
+
+<VersionBadge version="2.12.0" />
+
+This guide shows you how to secure your FastMCP server using **GitHub OAuth**. Since GitHub doesn't support Dynamic Client Registration, this integration uses the [**OAuth Proxy**](/servers/auth/oauth-proxy) pattern to bridge GitHub's traditional OAuth with MCP's authentication requirements.
+
+## Configuration
+
+### Prerequisites
+
+Before you begin, you will need:
+1. A **[GitHub Account](https://github.com/)** with access to create OAuth Apps
+2. Your FastMCP server's URL (can be localhost for development, e.g., `http://localhost:8000`)
+
+### Step 1: Create a GitHub OAuth App
+
+Create an OAuth App in your GitHub settings to get the credentials needed for authentication:
+
+<Steps>
+<Step title="Navigate to OAuth Apps">
+    Go to **Settings → Developer settings → OAuth Apps** in your GitHub account, or visit [github.com/settings/developers](https://github.com/settings/developers).
+    
+    Click **"New OAuth App"** to create a new application.
+</Step>
+
+<Step title="Configure Your OAuth App">
+    Fill in the application details:
+    
+    - **Application name**: Choose a name users will recognize (e.g., "My FastMCP Server")
+    - **Homepage URL**: Your application's homepage or documentation URL
+    - **Authorization callback URL**: Your server URL + `/oauth/callback` (e.g., `http://localhost:8000/oauth/callback`)
+    
+    <Warning>
+    The callback URL must match exactly. The default path is `/oauth/callback`, but you can customize it using the `redirect_path` parameter. For local development, GitHub allows `http://localhost` URLs. For production, you must use HTTPS.
+    </Warning>
+    
+    <Tip>
+    If you want to use a custom callback path (e.g., `/auth/github/callback`), make sure to set the same path in both your GitHub OAuth App settings and the `redirect_path` parameter when configuring the GitHubProvider.
+    </Tip>
+</Step>
+
+<Step title="Save Your Credentials">
+    After creating the app, you'll see:
+    
+    - **Client ID**: A public identifier like `Ov23liAbcDefGhiJkLmN`
+    - **Client Secret**: Click "Generate a new client secret" and save the value securely
+    
+    <Tip>
+    Store these credentials securely. Never commit them to version control. Use environment variables or a secrets manager in production.
+    </Tip>
+</Step>
+</Steps>
+
+### Step 2: FastMCP Configuration
+
+Create your FastMCP server using the `GitHubProvider`, which handles GitHub's OAuth quirks automatically:
+
+```python server.py
+from fastmcp import FastMCP
+from fastmcp.server.auth.providers.github import GitHubProvider
+
+# The GitHubProvider handles GitHub's token format and validation
+auth_provider = GitHubProvider(
+    client_id="Ov23liAbcDefGhiJkLmN",  # Your GitHub OAuth App Client ID
+    client_secret="github_pat_...",     # Your GitHub OAuth App Client Secret
+    base_url="http://localhost:8000",   # Must match your OAuth App configuration
+    # redirect_path="/oauth/callback"   # Default value, customize if needed
+)
+
+mcp = FastMCP(name="GitHub Secured App", auth=auth_provider)
+
+# Add a protected tool to test authentication
+@mcp.tool
+async def get_user_info() -> dict:
+    """Returns information about the authenticated GitHub user."""
+    from fastmcp.server.dependencies import get_access_token
+    
+    token = get_access_token()
+    # The GitHubProvider stores user data in token claims
+    return {
+        "github_user": token.claims.get("login"),
+        "name": token.claims.get("name"),
+        "email": token.claims.get("email")
+    }
+```
+
+## Testing
+
+### Running the Server
+
+Start your FastMCP server with HTTP transport to enable OAuth flows:
+
+```bash
+fastmcp run server.py --transport http --port 8000
+```
+
+Your server is now running and protected by GitHub OAuth authentication.
+
+### Testing with a Client
+
+Create a test client that authenticates with your GitHub-protected server:
+
+```python test_client.py
+from fastmcp import Client
+import asyncio
+
+async def main():
+    # The client will automatically handle GitHub OAuth
+    async with Client("http://localhost:8000/mcp/", auth="oauth") as client:
+        # First-time connection will open GitHub login in your browser
+        print("✓ Authenticated with GitHub!")
+        
+        # Test the protected tool
+        result = await client.call_tool("get_user_info")
+        print(f"GitHub user: {result['github_user']}")
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+When you run the client for the first time:
+1. Your browser will open to GitHub's authorization page
+2. After you authorize the app, you'll be redirected back
+3. The client receives the token and can make authenticated requests
+
+<Info>
+The client caches tokens locally, so you won't need to re-authenticate for subsequent runs unless the token expires or you explicitly clear the cache.
+</Info>
+
+## Environment Variables
+
+For production deployments, use environment variables instead of hardcoding credentials. 
+
+<Info>
+To use the registered GitHub provider, you must set `FASTMCP_SERVER_AUTH=GITHUB`. Learn more about [registered providers](/servers/auth/authentication#registered-providers).
+</Info>
+
+### Provider Selection
+
+<ParamField path="FASTMCP_SERVER_AUTH" default="Not set" required>
+Set to `GITHUB` to use the registered GitHubProvider with default configuration.
+</ParamField>
+
+### GitHub-Specific Configuration
+
+<Card>
+<ParamField path="FASTMCP_SERVER_AUTH_GITHUB_CLIENT_ID" required>
+Your GitHub OAuth App Client ID (e.g., `Ov23liAbcDefGhiJkLmN`)
+</ParamField>
+
+<ParamField path="FASTMCP_SERVER_AUTH_GITHUB_CLIENT_SECRET" required>
+Your GitHub OAuth App Client Secret
+</ParamField>
+
+<ParamField path="FASTMCP_SERVER_AUTH_GITHUB_BASE_URL" default="http://localhost:8000">
+Public URL of your FastMCP server for OAuth callbacks
+</ParamField>
+
+<ParamField path="FASTMCP_SERVER_AUTH_GITHUB_REDIRECT_PATH" default="/oauth/callback">
+Redirect path configured in your GitHub OAuth App
+</ParamField>
+
+<ParamField path="FASTMCP_SERVER_AUTH_GITHUB_REQUIRED_SCOPES" default='["user"]'>
+Comma-separated list of required GitHub scopes (e.g., `user,repo`)
+</ParamField>
+
+<ParamField path="FASTMCP_SERVER_AUTH_GITHUB_TIMEOUT_SECONDS" default="10">
+HTTP request timeout for GitHub API calls
+</ParamField>
+</Card>
+
+Example `.env` file:
+```bash
+# Use the registered GitHub provider
+FASTMCP_SERVER_AUTH=GITHUB
+
+# GitHub OAuth credentials
+FASTMCP_SERVER_AUTH_GITHUB_CLIENT_ID=Ov23liAbcDefGhiJkLmN
+FASTMCP_SERVER_AUTH_GITHUB_CLIENT_SECRET=github_pat_...
+FASTMCP_SERVER_AUTH_GITHUB_BASE_URL=https://your-server.com
+FASTMCP_SERVER_AUTH_GITHUB_REQUIRED_SCOPES=user,repo
+```
+
+With environment variables set, your server code simplifies to:
+
+```python server.py
+from fastmcp import FastMCP
+
+# Authentication is automatically configured from environment
+mcp = FastMCP(name="GitHub Secured App")
+
+@mcp.tool
+async def list_repos() -> list[str]:
+    """List the authenticated user's repositories."""
+    # Your tool implementation here
+    pass
+```

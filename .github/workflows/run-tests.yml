@@ -76,3 +76,5 @@ jobs:
         run: uv run pytest tests -m "integration"
         env:
           FASTMCP_GITHUB_TOKEN: ${{ secrets.FASTMCP_GITHUB_TOKEN }}
+          FASTMCP_TEST_AUTH_GITHUB_CLIENT_ID: ${{ secrets.FASTMCP_TEST_AUTH_GITHUB_CLIENT_ID }}
+          FASTMCP_TEST_AUTH_GITHUB_CLIENT_SECRET: ${{ secrets.FASTMCP_TEST_AUTH_GITHUB_CLIENT_SECRET }}

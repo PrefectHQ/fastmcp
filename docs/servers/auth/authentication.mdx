@@ -34,7 +34,7 @@ Traditional web authentication assumes a human user with a browser who can inter
 
 These challenges mean that not all authentication approaches work well with MCP. The patterns that do work fall into three categories based on the level of authentication responsibility your server assumes.
 
-## Understanding Authentication Responsibility
+## Authentication Responsibility
 
 Authentication responsibility exists on a spectrum. Your MCP server can validate tokens created elsewhere, coordinate with external identity providers, or handle the complete authentication lifecycle internally. Each approach involves different trade-offs between simplicity, security, and control.
 
@@ -66,9 +66,9 @@ Full OAuth implementation means building user interfaces for login and consent, 
 
 This pattern makes sense only when you need complete control over the authentication process, operate in air-gapped environments, or have specialized requirements that external providers cannot meet.
 
-## FastMCP Implementation
+## FastMCP Authentication Providers
 
-FastMCP translates these authentication responsibility levels into three concrete classes that handle the complexities of MCP protocol integration.
+FastMCP translates these authentication responsibility levels into a variety of concrete classes that handle the complexities of MCP protocol integration. You can build on these classes to handle the complexities of MCP protocol integration.
 
 ### TokenVerifier
 
@@ -97,11 +97,13 @@ This example configures token validation against a JWT issuer. The `JWTVerifier`
 
 ### RemoteAuthProvider
 
-`RemoteAuthProvider` combines token validation with OAuth discovery metadata, enabling MCP clients to automatically discover and authenticate with external identity providers.
+`RemoteAuthProvider` enables authentication with identity providers that **support Dynamic Client Registration (DCR)**, such as WorkOS AuthKit. With DCR, MCP clients can automatically register themselves with the identity provider and obtain credentials without any manual configuration.
 
-This class extends `TokenVerifier` functionality by adding OAuth 2.0 protected resource endpoints that advertise your authentication requirements. MCP clients can examine these endpoints to understand which identity providers you trust and how to obtain valid tokens.
+This class combines token validation with OAuth discovery metadata. It extends `TokenVerifier` functionality by adding OAuth 2.0 protected resource endpoints that advertise your authentication requirements. MCP clients examine these endpoints to understand which identity providers you trust and how to obtain valid tokens.
 
-The implementation handles the OAuth metadata generation required by the MCP specification while delegating actual token validation to an underlying `TokenVerifier`. This separation allows you to use different token validation strategies while maintaining consistent OAuth discovery behavior.
+The key requirement is that your identity provider must support DCR - the ability for clients to dynamically register and obtain credentials. This is what enables the seamless, automated authentication flow that MCP requires.
+
+For example, the built-in `AuthKitProvider` uses WorkOS AuthKit, which fully supports DCR:
 
 ```python
 from fastmcp import FastMCP
@@ -117,9 +119,40 @@ mcp = FastMCP(name="Enterprise Server", auth=auth)
 
 This example uses WorkOS AuthKit as the external identity provider. The `AuthKitProvider` automatically configures token validation against WorkOS and provides the OAuth metadata that MCP clients need for automatic authentication.
 
-`RemoteAuthProvider` excels for production applications that need professional identity management without implementation complexity.
+`RemoteAuthProvider` is ideal for production applications when your identity provider supports Dynamic Client Registration (DCR). This enables fully automated authentication without manual client configuration.
 
 → **Complete guide**: [Remote OAuth](/servers/auth/remote-oauth)
+
+### OAuthProxy
+
+<VersionBadge version="2.12.0" />
+
+`OAuthProxy` enables authentication with OAuth providers that **don't support Dynamic Client Registration (DCR)**, such as GitHub, Google, Azure, and most traditional enterprise identity systems.
+
+When identity providers require manual app registration and fixed credentials, `OAuthProxy` bridges the gap. It presents a DCR-compliant interface to MCP clients (accepting any registration request) while using your pre-registered credentials with the upstream provider. The proxy handles the complexity of callback forwarding, enabling dynamic client callbacks to work with providers that require fixed redirect URIs.
+
+This class solves the fundamental incompatibility between MCP's expectation of dynamic registration and traditional OAuth providers' requirement for manual app registration.
+
+For example, the built-in `GitHubProvider` extends `OAuthProxy` to work with GitHub's OAuth system:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.auth.providers.github import GitHubProvider
+
+auth = GitHubProvider(
+    client_id="Ov23li...",  # Your GitHub OAuth App ID
+    client_secret="abc123...",  # Your GitHub OAuth App Secret
+    base_url="https://your-server.com"
+)
+
+mcp = FastMCP(name="GitHub-Protected Server", auth=auth)
+```
+
+This example uses the GitHub provider, which extends `OAuthProxy` with GitHub-specific token validation. The proxy handles the complete OAuth flow while making GitHub's non-DCR authentication work seamlessly with MCP clients.
+
+`OAuthProxy` is essential when integrating with OAuth providers that don't support DCR. This includes most established providers like GitHub, Google, and Azure, which require manual app registration through their developer consoles.
+
+→ **Complete guide**: [OAuth Proxy](/servers/auth/oauth-proxy)
 
 ### OAuthProvider
 
@@ -162,6 +195,37 @@ Environment-based configuration separates authentication settings from applicati
 
 FastMCP automatically detects authentication configuration from environment variables when no explicit `auth` parameter is provided. The configuration system supports all authentication providers and their various options.
 
+#### Registered Providers
+
+FastMCP includes pre-configured providers for popular OAuth services that can be activated with a single environment variable:
+
+<ParamField path="FASTMCP_SERVER_AUTH" type="string">
+The authentication provider to use. Supported values:
+- `GITHUB` - GitHub OAuth (requires additional GitHub-specific env vars)
+- `GOOGLE` - Google OAuth (requires additional Google-specific env vars)
+- `JWT` - JWT token verification
+- `WORKOS` - WorkOS AuthKit
+- Custom provider class names
+</ParamField>
+
+When using registered providers like GitHub or Google, you'll need to set provider-specific environment variables:
+
+```bash
+# GitHub OAuth
+export FASTMCP_SERVER_AUTH=GITHUB
+export FASTMCP_SERVER_AUTH_GITHUB_CLIENT_ID="Ov23li..."
+export FASTMCP_SERVER_AUTH_GITHUB_CLIENT_SECRET="github_pat_..."
+
+# Google OAuth
+export FASTMCP_SERVER_AUTH=GOOGLE
+export FASTMCP_SERVER_AUTH_GOOGLE_CLIENT_ID="123456.apps.googleusercontent.com"
+export FASTMCP_SERVER_AUTH_GOOGLE_CLIENT_SECRET="GOCSPX-..."
+```
+
+#### Custom Provider Configuration
+
+For providers that aren't pre-registered, specify the provider class and its configuration:
+
 ```bash
 export FASTMCP_SERVER_AUTH=JWT
 export FASTMCP_SERVER_AUTH_JWT_JWKS_URI="https://auth.example.com/jwks"
@@ -184,7 +248,9 @@ This approach simplifies deployment pipelines and follows twelve-factor app prin
 
 The authentication approach you choose depends on your existing infrastructure, security requirements, and operational constraints.
 
-**For most production applications, external identity providers offer the best balance of security, features, and simplicity.** This approach provides enterprise-grade authentication without implementation complexity and scales well as your application grows. The main trade-off is requiring users to sign up with your chosen identity provider, but this also brings benefits like professional user management, security monitoring, and compliance features.
+**For OAuth providers without DCR support (GitHub, Google, Azure, most enterprise systems), use OAuth Proxy.** These providers require manual app registration through their developer consoles. OAuth Proxy bridges the gap by presenting a DCR-compliant interface to MCP clients while using your fixed credentials with the provider. The proxy's callback forwarding pattern enables dynamic client ports to work with providers that require fixed redirect URIs.
+
+**For identity providers with DCR support (WorkOS AuthKit, modern auth platforms), use RemoteAuthProvider.** These providers allow clients to dynamically register and obtain credentials without manual configuration. This enables the fully automated authentication flow that MCP is designed for, providing the best user experience and simplest implementation.
 
 **Token validation works well when you already have authentication infrastructure that issues structured tokens.** If your organization already uses JWT-based systems, API gateways, or enterprise SSO that can generate tokens, this approach integrates seamlessly while keeping your MCP server focused on its core functionality. The simplicity comes from leveraging existing investment in authentication infrastructure.
 

@@ -76,6 +76,8 @@ def run_server_in_process(
     server_fn: Callable[..., None],
     *args,
     provide_host_and_port: bool = True,
+    host: str = "127.0.0.1",
+    port: int | None = None,
     **kwargs,
 ) -> Generator[str, None, None]:
     """
@@ -87,13 +89,16 @@ def run_server_in_process(
             not pickleable, so we need a function that creates and runs one.
         *args: Arguments to pass to the server function.
         provide_host_and_port: Whether to provide the host and port to the server function as kwargs.
+        host: Host to bind the server to (default: "127.0.0.1").
+        port: Port to bind the server to (default: find available port).
         **kwargs: Keyword arguments to pass to the server function.
 
     Returns:
         The server URL.
     """
-    host = "127.0.0.1"
-    port = find_available_port()
+    # Use provided port or find an available one
+    if port is None:
+        port = find_available_port()
 
     if provide_host_and_port:
         kwargs |= {"host": host, "port": port}
