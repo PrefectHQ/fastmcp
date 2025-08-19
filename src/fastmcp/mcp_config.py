@@ -36,7 +36,6 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
-    ValidationInfo,
     model_validator,
 )
 from typing_extensions import Self, override
@@ -239,20 +238,24 @@ class MCPConfig(BaseModel):
     For an MCPConfig that is strictly canonical, see the `CanonicalMCPConfig` class.
     """
 
-    mcpServers: dict[str, MCPServerTypes]
+    mcpServers: dict[str, MCPServerTypes] = Field(default_factory=dict)
 
     model_config = ConfigDict(extra="allow")  # Preserve unknown top-level fields
 
     @model_validator(mode="before")
-    def validate_mcp_servers(self, info: ValidationInfo) -> dict[str, Any]:
-        """Validate the MCP servers."""
-        if not isinstance(self, dict):
-            raise ValueError("MCPConfig format requires a dictionary of servers.")
-
-        if "mcpServers" not in self:
-            self = {"mcpServers": self}
-
-        return self
+    @classmethod
+    def wrap_servers_at_root(cls, values: dict[str, Any]) -> dict[str, Any]:
+        """If there's no mcpServers key but there are server configs at root, wrap them."""
+        if "mcpServers" not in values:
+            # Check if any values look like server configs
+            has_servers = any(
+                isinstance(v, dict) and ("command" in v or "url" in v)
+                for v in values.values()
+            )
+            if has_servers:
+                # Move all server-like configs under mcpServers
+                return {"mcpServers": values}
+        return values
 
     def add_server(self, name: str, server: MCPServerTypes) -> None:
         """Add or update a server in the configuration."""
@@ -289,7 +292,7 @@ class CanonicalMCPConfig(MCPConfig):
     The format is designed to be client-agnostic and extensible for future use cases.
     """
 
-    mcpServers: dict[str, CanonicalMCPServerTypes]
+    mcpServers: dict[str, CanonicalMCPServerTypes] = Field(default_factory=dict)
 
     @override
     def add_server(self, name: str, server: CanonicalMCPServerTypes) -> None:

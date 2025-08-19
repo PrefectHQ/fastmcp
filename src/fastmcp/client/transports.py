@@ -21,6 +21,9 @@ from mcp.client.session import (
     MessageHandlerFnT,
     SamplingFnT,
 )
+from mcp.client.sse import sse_client
+from mcp.client.stdio import stdio_client
+from mcp.client.streamable_http import streamablehttp_client
 from mcp.server.fastmcp import FastMCP as FastMCP1Server
 from mcp.shared._httpx_utils import McpHttpClientFactory
 from mcp.shared.memory import create_client_server_memory_streams
@@ -33,6 +36,7 @@ from fastmcp.client.auth.oauth import OAuth
 from fastmcp.mcp_config import MCPConfig, infer_transport_type_from_url
 from fastmcp.server.dependencies import get_http_headers
 from fastmcp.server.server import FastMCP
+from fastmcp.utilities.fastmcp_config.v1.fastmcp_config import EnvironmentConfig
 from fastmcp.utilities.logging import get_logger
 
 logger = get_logger(__name__)
@@ -192,8 +196,6 @@ class SSETransport(ClientTransport):
     async def connect_session(
         self, **session_kwargs: Unpack[SessionKwargs]
     ) -> AsyncIterator[ClientSession]:
-        from mcp.client.sse import sse_client
-
         client_kwargs: dict[str, Any] = {}
 
         # load headers from an active HTTP request, if available. This will only be true
@@ -264,8 +266,6 @@ class StreamableHttpTransport(ClientTransport):
     async def connect_session(
         self, **session_kwargs: Unpack[SessionKwargs]
     ) -> AsyncIterator[ClientSession]:
-        from mcp.client.streamable_http import streamablehttp_client
-
         client_kwargs: dict[str, Any] = {}
 
         # load headers from an active HTTP request, if available. This will only be true
@@ -428,8 +428,6 @@ async def _stdio_transport_connect_task(
 ):
     """A standalone connection task for a stdio transport. It is not a part of the StdioTransport class
     to ensure that the connection task does not hold a reference to the Transport object."""
-
-    from mcp.client.stdio import stdio_client
 
     try:
         async with contextlib.AsyncExitStack() as stack:
@@ -598,16 +596,38 @@ class UvStdioTransport(StdioTransport):
                 f"Project directory not found: {project_directory}"
             )
 
-        # Build uv arguments
-        uv_args: list[str] = ["run"]
-        if project_directory:
-            uv_args.extend(["--directory", str(project_directory)])
-        if python_version:
-            uv_args.extend(["--python", python_version])
-        for pkg in with_packages or []:
-            uv_args.extend(["--with", pkg])
-        if with_requirements:
-            uv_args.extend(["--with-requirements", str(with_requirements)])
+        # Create EnvironmentConfig from provided parameters (internal use)
+        env_config = EnvironmentConfig(
+            python=python_version,
+            dependencies=with_packages,
+            requirements=with_requirements,
+            project=project_directory,
+            editable=None,  # Not exposed in this transport
+        )
+
+        # Build uv arguments using the config
+        uv_args: list[str] = []
+
+        # Check if we need any environment setup
+        if env_config.needs_uv():
+            # Use the config to build args, but we need to handle the command differently
+            # since transport has specific needs
+            uv_args = ["run"]
+
+            if python_version:
+                uv_args.extend(["--python", python_version])
+            if project_directory:
+                uv_args.extend(["--directory", str(project_directory)])
+
+            # Note: Don't add fastmcp as dependency here, transport is for general use
+            for pkg in with_packages or []:
+                uv_args.extend(["--with", pkg])
+            if with_requirements:
+                uv_args.extend(["--with-requirements", str(with_requirements)])
+        else:
+            # No environment setup needed
+            uv_args = ["run"]
+
         if module:
             uv_args.append("--module")
 

@@ -22,12 +22,7 @@ from atproto_mcp.types import (
 )
 from fastmcp import FastMCP
 
-atproto_mcp = FastMCP(
-    "ATProto MCP Server",
-    dependencies=[
-        "atproto_mcp@git+https://github.com/jlowin/fastmcp.git#subdirectory=examples/atproto_mcp",
-    ],
-)
+atproto_mcp = FastMCP("ATProto MCP Server")
 
 
 # Resources - read-only operations

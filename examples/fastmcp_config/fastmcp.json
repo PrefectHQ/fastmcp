@@ -1,0 +1,11 @@
+{
+  "$schema": "https://gofastmcp.com/schemas/fastmcp/v1.json",
+  "entrypoint": "server.py",
+  "environment": {
+    "python": "3.12",
+    "dependencies": ["requests"]
+  },
+  "deployment": {
+    "transport": "stdio"
+  }
+}

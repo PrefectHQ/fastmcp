@@ -52,9 +52,6 @@ The `FastMCP` constructor accepts several arguments:
   A list of tools (or functions to convert to tools) to add to the server. In some cases, providing tools programmatically may be more convenient than using the `@mcp.tool` decorator
 </ParamField>
 
-<ParamField body="dependencies" type="list[str] | None">
-  Optional server dependencies list with package specifications
-</ParamField>
 
 <ParamField body="include_tags" type="set[str] | None">
   Only expose components with at least one matching tag
@@ -202,13 +199,13 @@ if __name__ == "__main__":
     # This runs the server, defaulting to STDIO transport
     mcp.run()
     
-    # To use a different transport, e.g., Streamable HTTP:
+    # To use a different transport, e.g., HTTP:
     # mcp.run(transport="http", host="127.0.0.1", port=9000)
 ```
 
 FastMCP supports several transport options: 
 - STDIO (default, for local tools)
-- Streamable HTTP (recommended for web services)
+- HTTP (recommended for web services, uses Streamable HTTP protocol)
 - SSE (legacy web transport, deprecated)
 
 The server can also be run using the FastMCP CLI.
@@ -319,7 +316,6 @@ from fastmcp import FastMCP
 # Configure server-specific settings
 mcp = FastMCP(
     name="ConfiguredServer",
-    dependencies=["requests", "pandas>=2.0.0"],  # Optional server dependencies
     include_tags={"public", "api"},              # Only expose these tagged components
     exclude_tags={"internal", "deprecated"},     # Hide these tagged components
     on_duplicate_tools="error",                  # Handle duplicate registrations

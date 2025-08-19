@@ -54,9 +54,7 @@ async def news_data():
 
 
 # Main application
-app = FastMCP(
-    "Main App", dependencies=["fastmcp@git+https://github.com/jlowin/fastmcp.git"]
-)
+app = FastMCP("Main App")
 
 
 @app.tool

@@ -1,0 +1,7 @@
+{
+  "$schema": "https://gofastmcp.com/schemas/fastmcp_config/v1.json",
+  "entrypoint": "screenshot.py",
+  "environment": {
+    "dependencies": ["pyautogui", "Pillow"]
+  }
+}

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import inspect
+import json
 import re
 import warnings
 from collections.abc import AsyncIterator, Awaitable, Callable
@@ -222,7 +223,24 @@ class FastMCP(Generic[LifespanResultT]):
 
         # Set up MCP protocol handlers
         self._setup_handlers()
-        self.dependencies = dependencies or fastmcp.settings.server_dependencies
+
+        # Handle dependencies with deprecation warning
+        # TODO: Remove dependencies parameter (deprecated in v2.11.4)
+        if dependencies is not None:
+            import warnings
+
+            warnings.warn(
+                "The 'dependencies' parameter is deprecated as of FastMCP 2.11.4 and will be removed in a future version. "
+                "Please specify dependencies in a fastmcp.json configuration file instead:\n"
+                '{\n  "entrypoint": "your_server.py",\n  "environment": {\n    "dependencies": '
+                f"{json.dumps(dependencies)}\n  }}\n}}\n"
+                "See https://gofastmcp.com/docs/deployment/server-configuration for more information.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        self.dependencies = (
+            dependencies or fastmcp.settings.server_dependencies
+        )  # TODO: Remove (deprecated in v2.11.4)
 
         self.include_fastmcp_meta = (
             include_fastmcp_meta

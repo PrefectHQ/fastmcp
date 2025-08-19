@@ -81,16 +81,21 @@ fastmcp install claude-code server.py --with-requirements requirements.txt
 fastmcp install claude-code server.py --with-editable ./my-local-package
 ```
 
-Alternatively, you can specify dependencies directly in your server code:
+Alternatively, you can use a `fastmcp.json` configuration file (recommended):
 
-```python server.py
-from fastmcp import FastMCP
-
-mcp = FastMCP(
-    name="Dice Roller",
-    dependencies=["pandas", "requests"]
-)
+```json fastmcp.json
+{
+  "$schema": "https://gofastmcp.com/schemas/fastmcp_config/v1.json",
+  "entrypoint": {
+    "file": "server.py",
+    "object": "mcp"
+  },
+  "environment": {
+    "dependencies": ["pandas", "requests"]
+  }
+}
 ```
+
 
 #### Python Version and Project Configuration
 

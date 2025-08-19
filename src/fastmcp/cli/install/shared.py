@@ -30,9 +30,35 @@ async def process_common_args(
     env_vars: list[str],
     env_file: Path | None,
 ) -> tuple[Path, str | None, str, list[str], dict[str, str] | None]:
-    """Process common arguments shared by all install commands."""
-    # Parse server spec
-    file, server_object = parse_file_path(server_spec)
+    """Process common arguments shared by all install commands.
+
+    Handles both fastmcp.json config files and traditional file.py:object syntax.
+    """
+    # Check if server_spec is a fastmcp.json file
+    if server_spec.endswith("fastmcp.json") or "fastmcp.json" in Path(server_spec).name:
+        from fastmcp.utilities.fastmcp_config import FastMCPConfig
+
+        config_path = Path(server_spec).resolve()
+        if not config_path.exists():
+            print(f"[red]Configuration file not found: {config_path}[/red]")
+            sys.exit(1)
+
+        # Load config and get entrypoint
+        config = FastMCPConfig.from_file(config_path)
+        entrypoint = config.get_entrypoint(config_path)
+
+        # Convert to file and server_object
+        file = Path(entrypoint.file)
+        server_object = entrypoint.object
+
+        # Merge packages from config if not overridden
+        if config.environment and config.environment.dependencies:
+            # Merge with CLI packages (CLI takes precedence)
+            config_packages = config.environment.dependencies or []
+            with_packages = list(set(with_packages + config_packages))
+    else:
+        # Parse traditional server spec
+        file, server_object = parse_file_path(server_spec)
 
     logger.debug(
         "Installing server",
@@ -59,8 +85,18 @@ async def process_common_args(
             name = file.stem
 
     # Get server dependencies if available
+    # TODO: Remove dependencies handling (deprecated in v2.11.4)
     server_dependencies = getattr(server, "dependencies", []) if server else []
     if server_dependencies:
+        import warnings
+
+        warnings.warn(
+            "Server uses deprecated 'dependencies' parameter (deprecated in FastMCP 2.11.4). "
+            "Please migrate to fastmcp.json configuration file. "
+            "See https://gofastmcp.com/docs/deployment/server-configuration for details.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         with_packages = list(set(with_packages + server_dependencies))
 
     # Process environment variables if provided

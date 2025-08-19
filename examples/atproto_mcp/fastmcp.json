@@ -1,0 +1,9 @@
+{
+  "$schema": "https://gofastmcp.com/schemas/fastmcp_config/v1.json",
+  "entrypoint": "src/atproto_mcp/server.py",
+  "environment": {
+    "dependencies": [
+      "atproto_mcp@git+https://github.com/jlowin/fastmcp.git#subdirectory=examples/atproto_mcp"
+    ]
+  }
+}

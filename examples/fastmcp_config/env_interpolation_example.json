@@ -1,0 +1,20 @@
+{
+  "$schema": "https://gofastmcp.com/schemas/fastmcp_config/v1.json",
+  "entrypoint": "src/server.py:app",
+  "environment": {
+    "python": "3.12",
+    "dependencies": ["fastmcp", "httpx", "pandas"]
+  },
+  "deployment": {
+    "transport": "http",
+    "host": "0.0.0.0",
+    "port": 8000,
+    "env": {
+      "API_BASE_URL": "https://api.${ENVIRONMENT}.example.com",
+      "DATABASE_URL": "postgres://${DB_USER}:${DB_PASS}@${DB_HOST}:${DB_PORT}/${DB_NAME}",
+      "CACHE_PREFIX": "myapp_${ENVIRONMENT}_v1",
+      "LOG_LEVEL": "${LOG_LEVEL}",
+      "FEATURE_FLAGS": "${FEATURE_FLAGS}"
+    }
+  }
+}
