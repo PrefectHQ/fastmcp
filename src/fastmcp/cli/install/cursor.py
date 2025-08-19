@@ -9,7 +9,7 @@ from typing import Annotated
 import cyclopts
 from rich import print
 
-from fastmcp.mcp_config import StdioMCPServer
+from fastmcp.mcp_config import StdioMCPServer, update_config_file
 from fastmcp.utilities.logging import get_logger
 
 from .shared import process_common_args
@@ -64,6 +64,106 @@ def open_deeplink(deeplink: str) -> bool:
         return False
 
 
+def install_cursor_workspace(
+    file: Path,
+    server_object: str | None,
+    name: str,
+    workspace_path: Path,
+    *,
+    with_editable: Path | None = None,
+    with_packages: list[str] | None = None,
+    env_vars: dict[str, str] | None = None,
+    python_version: str | None = None,
+    with_requirements: Path | None = None,
+    project: Path | None = None,
+) -> bool:
+    """Install FastMCP server to workspace-specific Cursor configuration.
+
+    Args:
+        file: Path to the server file
+        server_object: Optional server object name (for :object suffix)
+        name: Name for the server in Cursor
+        workspace_path: Path to the workspace directory
+        with_editable: Optional directory to install in editable mode
+        with_packages: Optional list of additional packages to install
+        env_vars: Optional dictionary of environment variables
+        python_version: Optional Python version to use
+        with_requirements: Optional requirements file to install from
+        project: Optional project directory to run within
+
+    Returns:
+        True if installation was successful, False otherwise
+    """
+    # Ensure workspace path is absolute and exists
+    workspace_path = workspace_path.resolve()
+    if not workspace_path.exists():
+        print(f"[red]Workspace directory does not exist: {workspace_path}[/red]")
+        return False
+
+    # Create .cursor directory in workspace
+    cursor_dir = workspace_path / ".cursor"
+    cursor_dir.mkdir(exist_ok=True)
+
+    config_file = cursor_dir / "mcp.json"
+
+    # Build uv run command
+    args = ["run"]
+
+    # Add Python version if specified
+    if python_version:
+        args.extend(["--python", python_version])
+
+    # Add project if specified
+    if project:
+        args.extend(["--project", str(project)])
+
+    # Collect all packages in a set to deduplicate
+    packages = {"fastmcp"}
+    if with_packages:
+        packages.update(pkg for pkg in with_packages if pkg)
+
+    # Add all packages with --with
+    for pkg in sorted(packages):
+        args.extend(["--with", pkg])
+
+    if with_editable:
+        args.extend(["--with-editable", str(with_editable)])
+
+    if with_requirements:
+        args.extend(["--with-requirements", str(with_requirements)])
+
+    # Build server spec from parsed components
+    if server_object:
+        server_spec = f"{file.resolve()}:{server_object}"
+    else:
+        server_spec = str(file.resolve())
+
+    # Add fastmcp run command
+    args.extend(["fastmcp", "run", server_spec])
+
+    # Create server configuration
+    server_config = StdioMCPServer(
+        command="uv",
+        args=args,
+        env=env_vars or {},
+    )
+
+    try:
+        # Create the config file if it doesn't exist
+        if not config_file.exists():
+            config_file.write_text('{"mcpServers": {}}')
+
+        # Update configuration with the new server
+        update_config_file(config_file, name, server_config)
+        print(
+            f"[green]Successfully installed '{name}' to workspace at {workspace_path}[/green]"
+        )
+        return True
+    except Exception as e:
+        print(f"[red]Failed to install server to workspace: {e}[/red]")
+        return False
+
+
 def install_cursor(
     file: Path,
     server_object: str | None,
@@ -75,6 +175,7 @@ def install_cursor(
     python_version: str | None = None,
     with_requirements: Path | None = None,
     project: Path | None = None,
+    workspace: Path | None = None,
 ) -> bool:
     """Install FastMCP server in Cursor.
 
@@ -88,6 +189,7 @@ def install_cursor(
         python_version: Optional Python version to use
         with_requirements: Optional requirements file to install from
         project: Optional project directory to run within
+        workspace: Optional workspace directory for project-specific installation
 
     Returns:
         True if installation was successful, False otherwise
@@ -126,6 +228,21 @@ def install_cursor(
 
     # Add fastmcp run command
     args.extend(["fastmcp", "run", server_spec])
+
+    # If workspace is specified, install to workspace-specific config
+    if workspace:
+        return install_cursor_workspace(
+            file=file,
+            server_object=server_object,
+            name=name,
+            workspace_path=workspace,
+            with_editable=with_editable,
+            with_packages=with_packages,
+            env_vars=env_vars,
+            python_version=python_version,
+            with_requirements=with_requirements,
+            project=project,
+        )
 
     # Create server configuration
     server_config = StdioMCPServer(
@@ -211,6 +328,13 @@ async def cursor_command(
             help="Run the command within the given project directory",
         ),
     ] = None,
+    workspace: Annotated[
+        Path | None,
+        cyclopts.Parameter(
+            "--workspace",
+            help="Install to workspace directory (will create .cursor/ inside it) instead of using deeplink",
+        ),
+    ] = None,
 ) -> None:
     """Install an MCP server in Cursor.
 
@@ -231,6 +355,7 @@ async def cursor_command(
         python_version=python,
         with_requirements=with_requirements,
         project=project,
+        workspace=workspace,
     )
 
     if not success:

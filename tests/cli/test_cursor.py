@@ -330,6 +330,7 @@ class TestCursorCommand:
             python_version=None,
             with_requirements=None,
             project=None,
+            workspace=None,
         )
         mock_exit.assert_not_called()
 

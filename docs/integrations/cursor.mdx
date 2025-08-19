@@ -47,6 +47,21 @@ The easiest way to install a FastMCP server in Cursor is using the `fastmcp inst
 fastmcp install cursor server.py
 ```
 
+#### Workspace Installation
+<VersionBadge version="2.12.0" />
+
+By default, FastMCP installs servers globally for Cursor. You can also install servers to project-specific workspaces using the `--workspace` flag:
+
+```bash
+# Install to current directory's .cursor/ folder
+fastmcp install cursor server.py --workspace .
+
+# Install to specific workspace
+fastmcp install cursor server.py --workspace /path/to/project
+```
+
+This creates a `.cursor/mcp.json` configuration file in the specified workspace directory, allowing different projects to have their own MCP server configurations.
+
 The install command supports the same `file.py:object` notation as the `run` command. If no object is specified, it will automatically look for a FastMCP server object named `mcp`, `server`, or `app` in your file:
 
 ```bash
