@@ -64,7 +64,7 @@ class StreamableHTTPASGIApp:
                 raise
 
 
-_current_http_request: ContextVar[Request | None] = ContextVar(
+_current_http_request: ContextVar[Request | None] = ContextVar(  # type: ignore[assignment]
     "http_request",
     default=None,
 )

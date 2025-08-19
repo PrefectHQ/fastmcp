@@ -549,7 +549,11 @@ class OpenAPIParser(
                         return
 
                     # Add this schema and recursively find its dependencies
-                    if schema_name not in collected and schema_name in all_schemas:
+                    if (
+                        collected is not None
+                        and schema_name not in collected
+                        and schema_name in all_schemas
+                    ):
                         collected.add(schema_name)
                         # Recursively find dependencies of this schema
                         find_refs(all_schemas[schema_name])

@@ -22,11 +22,16 @@ repos:
       # Run the formatter.
       - id: ruff-format
 
-  - repo: https://github.com/northisup/pyright-pretty
-    rev: v0.1.0
+  - repo: local
     hooks:
-      - id: pyright-pretty
+      - id: ty
+        name: type check
+        entry: ty check
+        language: system
+        types: [python]
         files: ^src/|^tests/
+        pass_filenames: false
+        require_serial: true
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.3.0

@@ -547,6 +547,8 @@ class TestPatternMatching:
                     return "You declined"
                 case CancelledElicitation():
                     return "Cancelled"
+                case _:
+                    return "Unknown result"
 
         async def elicitation_handler(message, response_type, params, ctx):
             return ElicitResult(action="accept", content={"value": "Alice"})
@@ -570,6 +572,8 @@ class TestPatternMatching:
                     return "You declined"
                 case CancelledElicitation():
                     return "Cancelled"
+                case _:
+                    return "Unknown result"
 
         async def elicitation_handler(message, response_type, params, ctx):
             return ElicitResult(action="decline")
@@ -593,6 +597,8 @@ class TestPatternMatching:
                     return "You declined"
                 case CancelledElicitation():
                     return "Cancelled"
+                case _:
+                    return "Unknown result"
 
         async def elicitation_handler(message, response_type, params, ctx):
             return ElicitResult(action="cancel")

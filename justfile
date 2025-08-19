@@ -6,9 +6,9 @@ build:
 test: build
     uv run --frozen pytest -xvs tests
 
-# Run pyright on all files
+# Run ty type checker on all files
 typecheck:
-    uv run --frozen pyright
+    uv run --frozen ty check
 
 # Serve documentation locally
 docs:

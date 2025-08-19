@@ -36,12 +36,9 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
+
       - name: Install dependencies
-        run: uv sync --dev
+        run: uv sync
       - name: Check lockfile is up to date
         run: |
           if ! uv lock --check; then
@@ -51,6 +48,6 @@ jobs:
           fi
           echo "✅ Lockfile is up to date"
       - name: Run pre-commit
-        uses: pre-commit/action@v3.0.1
+        run: uv run pre-commit run --all-files
         env:
           SKIP: no-commit-to-branch

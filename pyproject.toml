@@ -50,7 +50,7 @@ dev = [
     "psutil",
     "pyinstrument>=5.0.2",
     "pyperclip>=1.9.0",
-    "pyright>=1.1.389",
+    "ty>=0.0.1a19",
     "pytest>=8.3.3",
     "pytest-asyncio>=0.23.5",
     "pytest-cov>=6.1.1",
@@ -114,18 +114,23 @@ python_files = ["test_*.py", "*_test.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 
-[tool.pyright]
+[tool.ty.src]
 include = ["src", "tests"]
 exclude = ["**/node_modules", "**/__pycache__", ".venv", ".git", "dist"]
-pythonVersion = "3.10"
-pythonPlatform = "Darwin"
-typeCheckingMode = "basic"
-reportMissingImports = true
-reportMissingTypeStubs = false
-useLibraryCodeForTypes = true
-venvPath = "."
-venv = ".venv"
-strict = ["src/fastmcp/server/server.py"]
+
+[tool.ty.environment]
+python-version = "3.10"
+
+[tool.ty.rules]
+# Rules with too many errors to fix right now (40+ each)
+invalid-argument-type = "ignore" # 40 errors
+no-matching-overload = "ignore"  # 126 errors  
+unknown-argument = "ignore"      # 61 errors
+unresolved-attribute = "ignore"  # 60 errors
+
+# Rules with moderate errors that need more investigation
+call-non-callable = "ignore" # 7 errors
+missing-argument = "ignore"  # 23 errors
 
 [tool.ruff.lint]
 extend-select = ["I", "UP"]

@@ -107,7 +107,7 @@ async def import_server(file: Path, server_or_factory: str | None = None) -> Any
         sys.exit(1)
 
     # Handle module:object syntax
-    if ":" in server_or_factory:
+    if server_or_factory and ":" in server_or_factory:
         module_name, object_name = server_or_factory.split(":", 1)
         try:
             server_module = importlib.import_module(module_name)

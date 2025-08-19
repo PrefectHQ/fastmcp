@@ -10,7 +10,7 @@ FastMCP is a comprehensive Python framework (Python ≥3.10) for building Model 
 
 ```bash
 uv sync                              # Install dependencies
-uv run pre-commit run --all-files    # Ruff + Prettier + Pyright
+uv run pre-commit run --all-files    # Ruff + Prettier + ty
 uv run pytest                        # Run full test suite
 ```
 
@@ -222,7 +222,7 @@ uv sync                    # Installs all deps including dev tools
 ### Validation Commands (Run Frequently)
 
 - **Linting**: `uv run ruff check` (or with `--fix`)
-- **Type Checking**: `uv run pyright`
+- **Type Checking**: `uv run ty check`
 - **All Checks**: `uv run pre-commit run --all-files`
 
 ### Testing
@@ -247,5 +247,5 @@ uv sync                    # Installs all deps including dev tools
 
 1. **Dependencies**: Always `uv sync` first
 2. **Pre-commit fails**: Run `uv run pre-commit run --all-files` to see failures
-3. **Type errors**: Use `uv run pyright` directly, check `pyproject.toml` config
+3. **Type errors**: Use `uv run ty check` directly, check `pyproject.toml` config
 4. **Test timeouts**: Default 3s - optimize or mark as integration tests

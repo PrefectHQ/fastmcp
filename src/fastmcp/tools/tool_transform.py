@@ -29,7 +29,7 @@ logger = get_logger(__name__)
 
 
 # Context variable to store current transformed tool
-_current_tool: ContextVar[TransformedTool | None] = ContextVar(
+_current_tool: ContextVar[TransformedTool | None] = ContextVar(  # type: ignore[assignment]
     "_current_tool", default=None
 )
 

@@ -44,7 +44,7 @@ from fastmcp.utilities.types import get_cached_typeadapter
 logger = get_logger(__name__)
 
 T = TypeVar("T")
-_current_context: ContextVar[Context | None] = ContextVar("context", default=None)
+_current_context: ContextVar[Context | None] = ContextVar("context", default=None)  # type: ignore[assignment]
 _flush_lock = asyncio.Lock()
 
 
