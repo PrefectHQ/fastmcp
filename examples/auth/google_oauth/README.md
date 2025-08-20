@@ -9,7 +9,7 @@ Demonstrates FastMCP server protection with Google OAuth.
    - Create or select a project
    - Go to APIs & Services > Credentials
    - Create OAuth 2.0 Client ID (Web application)
-   - Add Authorized redirect URI: `http://localhost:8000/oauth/callback`
+   - Add Authorized redirect URI: `http://localhost:8000/auth/callback`
    - Copy the Client ID and Client Secret
 
 2. Set environment variables:

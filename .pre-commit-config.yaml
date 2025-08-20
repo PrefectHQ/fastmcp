@@ -26,7 +26,7 @@ repos:
     hooks:
       - id: ty
         name: type check
-        entry: ty check
+        entry: uv run ty check
         language: system
         types: [python]
         files: ^src/|^tests/
@@ -34,7 +34,7 @@ repos:
         require_serial: true
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.3.0
+    rev: v6.0.0
     hooks:
       - id: no-commit-to-branch
         args: [--branch, main]

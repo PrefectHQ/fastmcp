@@ -1,6 +1,6 @@
 ---
 title: Google OAuth 🤝 FastMCP
-sidebarTitle: Google OAuth
+sidebarTitle: Google
 description: Secure your FastMCP server with Google OAuth
 icon: google
 tag: NEW
@@ -39,10 +39,10 @@ Create an OAuth 2.0 Client ID in your Google Cloud Console to get the credential
     - **Application type**: Web application
     - **Name**: Choose a descriptive name (e.g., "FastMCP Server")
     - **Authorized JavaScript origins**: Add your server's base URL (e.g., `http://localhost:8000`)
-    - **Authorized redirect URIs**: Add your server URL + `/oauth/callback` (e.g., `http://localhost:8000/oauth/callback`)
+    - **Authorized redirect URIs**: Add your server URL + `/auth/callback` (e.g., `http://localhost:8000/auth/callback`)
     
     <Warning>
-    The redirect URI must match exactly. The default path is `/oauth/callback`, but you can customize it using the `redirect_path` parameter. For local development, Google allows `http://localhost` URLs with various ports. For production, you must use HTTPS.
+    The redirect URI must match exactly. The default path is `/auth/callback`, but you can customize it using the `redirect_path` parameter. For local development, Google allows `http://localhost` URLs with various ports. For production, you must use HTTPS.
     </Warning>
     
     <Tip>
@@ -78,7 +78,7 @@ auth_provider = GoogleProvider(
     client_secret="GOCSPX-abc123...",                  # Your Google OAuth Client Secret
     base_url="http://localhost:8000",                  # Must match your OAuth configuration
     required_scopes=["openid", "email", "profile"],    # Request user information
-    # redirect_path="/oauth/callback"                  # Default value, customize if needed
+    # redirect_path="/auth/callback"                  # Default value, customize if needed
 )
 
 mcp = FastMCP(name="Google Secured App", auth=auth_provider)
@@ -174,7 +174,7 @@ Your Google OAuth 2.0 Client Secret (e.g., `GOCSPX-abc123...`)
 Public URL of your FastMCP server for OAuth callbacks
 </ParamField>
 
-<ParamField path="FASTMCP_SERVER_AUTH_GOOGLE_REDIRECT_PATH" default="/oauth/callback">
+<ParamField path="FASTMCP_SERVER_AUTH_GOOGLE_REDIRECT_PATH" default="/auth/callback">
 Redirect path configured in your Google OAuth Client
 </ParamField>
 

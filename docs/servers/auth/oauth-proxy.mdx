@@ -75,10 +75,10 @@ sequenceDiagram
     Note over Client, Proxy: Authorization with Callback Forwarding
     Client->>Proxy: 3. GET /authorize<br/>redirect_uri=localhost:54321/callback
     Note over Proxy: Store transaction with client callback
-    Proxy->>Provider: 4. Redirect to provider<br/>redirect_uri=server:8000/oauth/callback
+    Proxy->>Provider: 4. Redirect to provider<br/>redirect_uri=server:8000/auth/callback
     
     Note over Provider, Proxy: Provider Callback
-    Provider->>Proxy: 5. GET /oauth/callback<br/>with authorization code
+    Provider->>Proxy: 5. GET /auth/callback<br/>with authorization code
     Proxy->>Provider: 6. Exchange code for tokens
     Provider-->>Proxy: 7. Access & refresh tokens
     
@@ -142,7 +142,7 @@ The `OAuthProxy` class provides the complete proxy implementation:
   Public URL of your FastMCP server (e.g., `https://your-server.com`)
 </ParamField>
 
-<ParamField body="redirect_path" type="str" default="/oauth/callback">
+<ParamField body="redirect_path" type="str" default="/auth/callback">
   Path for OAuth callbacks. Must match the redirect URI configured in your OAuth application
 </ParamField>
 
@@ -191,8 +191,8 @@ auth = OAuthProxy(
     # Your FastMCP server URL (string automatically converted to AnyHttpUrl)
     base_url="https://your-server.com",
     
-    # Optional: customize callback path (defaults to "/oauth/callback")
-    redirect_path="/oauth/callback"
+    # Optional: customize callback path (defaults to "/auth/callback")
+    redirect_path="/auth/callback"
 )
 
 mcp = FastMCP(name="My Server", auth=auth)
@@ -203,13 +203,13 @@ mcp = FastMCP(name="My Server", auth=auth)
 When registering your application with your OAuth provider, configure the redirect/callback URL as:
 
 ```
-https://your-server.com/oauth/callback
+https://your-server.com/auth/callback
 ```
 
 For local development with providers that support it (like GitHub):
 
 ```
-http://localhost:8000/oauth/callback
+http://localhost:8000/auth/callback
 ```
 
 The proxy automatically:

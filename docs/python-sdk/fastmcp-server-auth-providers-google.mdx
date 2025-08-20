@@ -1,0 +1,72 @@
+---
+title: google
+sidebarTitle: google
+---
+
+# `fastmcp.server.auth.providers.google`
+
+
+Google OAuth provider for FastMCP.
+
+This module provides a complete Google OAuth integration that's ready to use
+with just a client ID and client secret. It handles all the complexity of
+Google's OAuth flow, token validation, and user management.
+
+Example:
+    ```python
+    from fastmcp import FastMCP
+    from fastmcp.server.auth.providers.google import GoogleProvider
+
+    # Simple Google OAuth protection
+    auth = GoogleProvider(
+        client_id="your-google-client-id.apps.googleusercontent.com",
+        client_secret="your-google-client-secret"
+    )
+
+    mcp = FastMCP("My Protected Server", auth=auth)
+    ```
+
+
+## Classes
+
+### `GoogleProviderSettings` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/google.py#L40" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Settings for Google OAuth provider.
+
+
+### `GoogleTokenVerifier` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/google.py#L57" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Token verifier for Google OAuth tokens.
+
+Google OAuth tokens are opaque (not JWTs), so we verify them
+by calling Google's tokeninfo API to check if they're valid and get user info.
+
+
+**Methods:**
+
+#### `verify_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/google.py#L79" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+verify_token(self, token: str) -> AccessToken | None
+```
+
+Verify Google OAuth token by calling Google's tokeninfo API.
+
+
+### `GoogleProvider` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/google.py#L177" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Complete Google OAuth provider for FastMCP.
+
+This provider makes it trivial to add Google OAuth protection to any
+FastMCP server. Just provide your Google OAuth app credentials and
+a base URL, and you're ready to go.
+
+Features:
+- Transparent OAuth proxy to Google
+- Automatic token validation via Google's tokeninfo API
+- User information extraction from Google APIs
+- Minimal configuration required
+

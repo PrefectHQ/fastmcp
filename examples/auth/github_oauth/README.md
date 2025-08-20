@@ -6,7 +6,7 @@ Demonstrates FastMCP server protection with GitHub OAuth.
 
 1. Create a GitHub OAuth App:
    - Go to GitHub Settings > Developer settings > OAuth Apps
-   - Set Authorization callback URL to: `http://localhost:8000/oauth/callback`
+   - Set Authorization callback URL to: `http://localhost:8000/auth/callback`
    - Copy the Client ID and Client Secret
 
 2. Set environment variables:

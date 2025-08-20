@@ -1,0 +1,319 @@
+---
+title: oauth_proxy
+sidebarTitle: oauth_proxy
+---
+
+# `fastmcp.server.auth.oauth_proxy`
+
+
+OAuth Proxy Provider for FastMCP.
+
+This provider acts as a transparent proxy to an upstream OAuth Authorization Server,
+handling Dynamic Client Registration locally while forwarding all other OAuth flows.
+This enables authentication with upstream providers that don't support DCR or have
+restricted client registration policies.
+
+Key features:
+- Proxies authorization and token endpoints to upstream server
+- Implements local Dynamic Client Registration with fixed upstream credentials
+- Validates tokens using upstream JWKS
+- Maintains minimal local state for bookkeeping
+- Enhanced logging with request correlation
+
+This implementation is based on the OAuth 2.1 specification and is designed for
+production use with enterprise identity providers.
+
+
+## Classes
+
+### `ProxyDCRClient` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy.py#L54" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Client for DCR proxy that accepts any localhost redirect URI.
+
+This special client class is critical for the OAuth proxy to work correctly
+with Dynamic Client Registration (DCR). Here's why it exists:
+
+Problem:
+--------
+When MCP clients use OAuth, they dynamically register with random localhost
+ports (e.g., http://localhost:55454/callback). The OAuth proxy needs to:
+1. Accept these dynamic redirect URIs from clients
+2. Use its own fixed redirect URI with the upstream provider (Google, GitHub, etc.)
+3. Forward the authorization code back to the client's dynamic URI
+
+Solution:
+---------
+This class overrides redirect_uri validation to accept ANY localhost URI,
+while the proxy internally uses its own fixed redirect URI with the upstream
+provider. This allows the flow to work even when clients reconnect with
+different ports or when tokens are cached.
+
+Without this class, clients would get "Redirect URI not registered" errors
+when trying to authenticate with cached tokens, because the stored client
+would have fixed redirect URIs that don't match the new dynamic port.
+
+
+**Methods:**
+
+#### `validate_redirect_uri` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy.py#L80" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+validate_redirect_uri(self, redirect_uri: AnyUrl | None) -> AnyUrl
+```
+
+Accept any localhost redirect URI for DCR clients.
+
+Since we're acting as a proxy and clients register dynamically,
+we need to accept their localhost redirect URIs even though they're
+not pre-registered with us. This is essential for cached token
+scenarios where the client may reconnect with a different port.
+
+
+### `OAuthProxy` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy.py#L107" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+OAuth provider that presents a DCR-compliant interface while proxying to non-DCR IDPs.
+
+Purpose
+-------
+MCP clients expect OAuth providers to support Dynamic Client Registration (DCR),
+where clients can register themselves dynamically and receive unique credentials.
+Most enterprise IDPs (Google, GitHub, Azure AD, etc.) don't support DCR and require
+pre-registered OAuth applications with fixed credentials.
+
+This proxy bridges that gap by:
+- Presenting a full DCR-compliant OAuth interface to MCP clients
+- Translating DCR registration requests to use pre-configured upstream credentials
+- Proxying all OAuth flows to the upstream IDP with appropriate translations
+- Managing the state and security requirements of both protocols
+
+Architecture Overview
+--------------------
+The proxy maintains a single OAuth app registration with the upstream provider
+while allowing unlimited MCP clients to register and authenticate dynamically.
+It implements the complete OAuth 2.1 + DCR specification for clients while
+translating to whatever OAuth variant the upstream provider requires.
+
+Key Translation Challenges Solved
+---------------------------------
+1. Dynamic Client Registration:
+   - MCP clients expect to register dynamically and get unique credentials
+   - Upstream IDPs require pre-registered apps with fixed credentials
+   - Solution: Accept DCR requests, return shared upstream credentials
+
+2. Dynamic Redirect URIs:
+   - MCP clients use random localhost ports that change between sessions
+   - Upstream IDPs require fixed, pre-registered redirect URIs
+   - Solution: Use proxy's fixed callback URL with upstream, forward to client's dynamic URI
+
+3. Authorization Code Mapping:
+   - Upstream returns codes for the proxy's redirect URI
+   - Clients expect codes for their own redirect URIs
+   - Solution: Exchange upstream code server-side, issue new code to client
+
+4. State Parameter Collision:
+   - Both client and proxy need to maintain state through the flow
+   - Only one state parameter available in OAuth
+   - Solution: Use transaction ID as state with upstream, preserve client's state
+
+5. Token Management:
+   - Clients may expect different token formats/claims than upstream provides
+   - Need to track tokens for revocation and refresh
+   - Solution: Store token relationships, forward upstream tokens transparently
+
+OAuth Flow Implementation
+------------------------
+1. Client Registration (DCR):
+   - Accept any client registration request
+   - Store ProxyDCRClient that accepts dynamic redirect URIs
+   - Return shared upstream credentials to all clients
+
+2. Authorization:
+   - Store transaction mapping client details to proxy flow
+   - Redirect to upstream with proxy's fixed redirect URI
+   - Use transaction ID as state parameter with upstream
+
+3. Upstream Callback:
+   - Exchange upstream authorization code for tokens (server-side)
+   - Generate new authorization code bound to client's PKCE challenge
+   - Redirect to client's original dynamic redirect URI
+
+4. Token Exchange:
+   - Validate client's code and PKCE verifier
+   - Return previously obtained upstream tokens
+   - Clean up one-time use authorization code
+
+5. Token Refresh:
+   - Forward refresh requests to upstream using authlib
+   - Handle token rotation if upstream issues new refresh token
+   - Update local token mappings
+
+State Management
+---------------
+The proxy maintains minimal but crucial state:
+- _clients: DCR registrations (all use ProxyDCRClient for flexibility)
+- _oauth_transactions: Active authorization flows with client context
+- _client_codes: Authorization codes with PKCE challenges and upstream tokens
+- _access_tokens, _refresh_tokens: Token storage for revocation
+- Token relationship mappings for cleanup and rotation
+
+Security Considerations
+----------------------
+- PKCE enforced end-to-end (client to proxy, proxy to upstream)
+- Authorization codes are single-use with short expiry
+- Transaction IDs are cryptographically random
+- All state is cleaned up after use to prevent replay
+- Token validation delegates to upstream provider
+
+Provider Compatibility
+---------------------
+Works with any OAuth 2.0 provider that supports:
+- Authorization code flow
+- Fixed redirect URI (configured in provider's app settings)
+- Standard token endpoint
+
+Handles provider-specific requirements:
+- Google: Ensures minimum scope requirements
+- GitHub: Compatible with OAuth Apps and GitHub Apps
+- Azure AD: Handles tenant-specific endpoints
+- Generic: Works with any spec-compliant provider
+
+
+**Methods:**
+
+#### `get_client` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy.py#L333" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_client(self, client_id: str) -> OAuthClientInformationFull | None
+```
+
+Get client information by ID.
+
+For unregistered clients, returns a ProxyDCRClient that accepts
+any localhost redirect URI for DCR clients.
+
+Even registered clients use ProxyDCRClient to ensure they can
+authenticate with different dynamic ports on reconnection. This
+handles the case where a client with cached tokens reconnects
+on a different port.
+
+
+#### `register_client` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy.py#L364" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+register_client(self, client_info: OAuthClientInformationFull) -> None
+```
+
+Register a client locally using fixed upstream credentials.
+
+This implementation always uses the upstream client_id and client_secret
+regardless of what the client requests. It modifies the client_info object
+in place since the MCP framework ignores return values.
+
+This ensures all clients use the same credentials that are registered
+with the upstream server.
+
+Implementation Detail:
+We store a ProxyDCRClient (not the original client_info) to ensure
+the client can reconnect with different dynamic redirect URIs. This is
+essential for cached token scenarios where the client port changes.
+
+The flow:
+1. Client provides its desired redirect URIs (dynamic localhost ports)
+2. We create a ProxyDCRClient that will accept ANY localhost URI
+3. We store this flexible client for future authentications
+4. When client reconnects with a different port, ProxyDCRClient accepts it
+
+
+#### `authorize` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy.py#L421" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+authorize(self, client: OAuthClientInformationFull, params: AuthorizationParams) -> str
+```
+
+Start OAuth transaction and redirect to upstream IdP.
+
+This implements the DCR-compliant proxy pattern:
+1. Store transaction with client details and PKCE challenge
+2. Use transaction ID as state for IdP
+3. Redirect to IdP with our fixed callback URL
+
+
+#### `load_authorization_code` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy.py#L478" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+load_authorization_code(self, client: OAuthClientInformationFull, authorization_code: str) -> AuthorizationCode | None
+```
+
+Load authorization code for validation.
+
+Look up our client code and return authorization code object
+with PKCE challenge for validation.
+
+
+#### `exchange_authorization_code` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy.py#L520" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+exchange_authorization_code(self, client: OAuthClientInformationFull, authorization_code: AuthorizationCode) -> OAuthToken
+```
+
+Exchange authorization code for stored IdP tokens.
+
+For the DCR-compliant proxy flow, we return the IdP tokens that were obtained
+during the IdP callback exchange. PKCE validation is handled by the MCP framework.
+
+
+#### `load_refresh_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy.py#L587" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+load_refresh_token(self, client: OAuthClientInformationFull, refresh_token: str) -> RefreshToken | None
+```
+
+Load refresh token from local storage.
+
+
+#### `exchange_refresh_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy.py#L595" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+exchange_refresh_token(self, client: OAuthClientInformationFull, refresh_token: RefreshToken, scopes: list[str]) -> OAuthToken
+```
+
+Exchange refresh token for new access token using authlib.
+
+
+#### `load_access_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy.py#L670" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+load_access_token(self, token: str) -> AccessToken | None
+```
+
+Validate access token using upstream JWKS.
+
+Delegates to the JWT verifier which handles signature validation,
+expiration checking, and claims validation using the upstream JWKS.
+
+
+#### `revoke_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy.py#L687" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+revoke_token(self, token: AccessToken | RefreshToken) -> None
+```
+
+Revoke token locally and with upstream server if supported.
+
+Removes tokens from local storage and attempts to revoke them with
+the upstream server if a revocation endpoint is configured.
+
+
+#### `get_routes` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy.py#L880" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_routes(self) -> list[Route]
+```
+
+Get OAuth routes with custom proxy token handler.
+
+This method creates standard OAuth routes and replaces the token endpoint
+with our proxy handler that forwards requests to the upstream OAuth server.
+

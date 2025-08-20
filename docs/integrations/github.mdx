@@ -1,6 +1,6 @@
 ---
 title: GitHub OAuth 🤝 FastMCP
-sidebarTitle: GitHub OAuth
+sidebarTitle: GitHub
 description: Secure your FastMCP server with GitHub OAuth
 icon: github
 tag: NEW
@@ -36,10 +36,10 @@ Create an OAuth App in your GitHub settings to get the credentials needed for au
     
     - **Application name**: Choose a name users will recognize (e.g., "My FastMCP Server")
     - **Homepage URL**: Your application's homepage or documentation URL
-    - **Authorization callback URL**: Your server URL + `/oauth/callback` (e.g., `http://localhost:8000/oauth/callback`)
+    - **Authorization callback URL**: Your server URL + `/auth/callback` (e.g., `http://localhost:8000/auth/callback`)
     
     <Warning>
-    The callback URL must match exactly. The default path is `/oauth/callback`, but you can customize it using the `redirect_path` parameter. For local development, GitHub allows `http://localhost` URLs. For production, you must use HTTPS.
+    The callback URL must match exactly. The default path is `/auth/callback`, but you can customize it using the `redirect_path` parameter. For local development, GitHub allows `http://localhost` URLs. For production, you must use HTTPS.
     </Warning>
     
     <Tip>
@@ -72,7 +72,7 @@ auth_provider = GitHubProvider(
     client_id="Ov23liAbcDefGhiJkLmN",  # Your GitHub OAuth App Client ID
     client_secret="github_pat_...",     # Your GitHub OAuth App Client Secret
     base_url="http://localhost:8000",   # Must match your OAuth App configuration
-    # redirect_path="/oauth/callback"   # Default value, customize if needed
+    # redirect_path="/auth/callback"   # Default value, customize if needed
 )
 
 mcp = FastMCP(name="GitHub Secured App", auth=auth_provider)
@@ -164,7 +164,7 @@ Your GitHub OAuth App Client Secret
 Public URL of your FastMCP server for OAuth callbacks
 </ParamField>
 
-<ParamField path="FASTMCP_SERVER_AUTH_GITHUB_REDIRECT_PATH" default="/oauth/callback">
+<ParamField path="FASTMCP_SERVER_AUTH_GITHUB_REDIRECT_PATH" default="/auth/callback">
 Redirect path configured in your GitHub OAuth App
 </ParamField>
 

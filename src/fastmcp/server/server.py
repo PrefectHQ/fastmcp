@@ -463,7 +463,7 @@ class FastMCP(Generic[LifespanResultT]):
         Request and returns a Response.
 
         Args:
-            path: URL path for the route (e.g., "/oauth/callback")
+            path: URL path for the route (e.g., "/auth/callback")
             methods: List of HTTP methods to support (e.g., ["GET", "POST"])
             name: Optional name for the route (to reference this route with
                 Starlette's reverse URL lookup feature)

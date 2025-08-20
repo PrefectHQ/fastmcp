@@ -27,7 +27,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from fastmcp.server.auth import TokenVerifier
 from fastmcp.server.auth.auth import AccessToken
-from fastmcp.server.auth.proxy import OAuthProxy
+from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from fastmcp.server.auth.registry import register_provider
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import NotSet, NotSetT
@@ -202,7 +202,7 @@ class GitHubProvider(OAuthProxy):
             client_id: GitHub OAuth app client ID (e.g., "Ov23li...")
             client_secret: GitHub OAuth app client secret
             base_url: Public URL of your FastMCP server (for OAuth callbacks)
-            redirect_path: Redirect path configured in GitHub OAuth app (defaults to "/oauth/callback")
+            redirect_path: Redirect path configured in GitHub OAuth app (defaults to "/auth/callback")
             required_scopes: Required GitHub scopes (defaults to ["user"])
             timeout_seconds: HTTP request timeout for GitHub API calls
         """
@@ -233,7 +233,7 @@ class GitHubProvider(OAuthProxy):
 
         # Apply defaults
         base_url_final = settings.base_url or "http://localhost:8000"
-        redirect_path_final = settings.redirect_path or "/oauth/callback"
+        redirect_path_final = settings.redirect_path or "/auth/callback"
         timeout_seconds_final = settings.timeout_seconds or 10
         required_scopes_final = settings.required_scopes or ["user"]
 

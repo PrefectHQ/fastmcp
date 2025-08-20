@@ -1,0 +1,72 @@
+---
+title: github
+sidebarTitle: github
+---
+
+# `fastmcp.server.auth.providers.github`
+
+
+GitHub OAuth provider for FastMCP.
+
+This module provides a complete GitHub OAuth integration that's ready to use
+with just a client ID and client secret. It handles all the complexity of
+GitHub's OAuth flow, token validation, and user management.
+
+Example:
+    ```python
+    from fastmcp import FastMCP
+    from fastmcp.server.auth.providers.github import GitHubProvider
+
+    # Simple GitHub OAuth protection
+    auth = GitHubProvider(
+        client_id="your-github-client-id",
+        client_secret="your-github-client-secret"
+    )
+
+    mcp = FastMCP("My Protected Server", auth=auth)
+    ```
+
+
+## Classes
+
+### `GitHubProviderSettings` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/github.py#L38" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Settings for GitHub OAuth provider.
+
+
+### `GitHubTokenVerifier` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/github.py#L55" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Token verifier for GitHub OAuth tokens.
+
+GitHub OAuth tokens are opaque (not JWTs), so we verify them
+by calling GitHub's API to check if they're valid and get user info.
+
+
+**Methods:**
+
+#### `verify_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/github.py#L77" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+verify_token(self, token: str) -> AccessToken | None
+```
+
+Verify GitHub OAuth token by calling GitHub API.
+
+
+### `GitHubProvider` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/github.py#L161" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Complete GitHub OAuth provider for FastMCP.
+
+This provider makes it trivial to add GitHub OAuth protection to any
+FastMCP server. Just provide your GitHub OAuth app credentials and
+a base URL, and you're ready to go.
+
+Features:
+- Transparent OAuth proxy to GitHub
+- Automatic token validation via GitHub API
+- User information extraction
+- Minimal configuration required
+

@@ -19,7 +19,7 @@ auth = GoogleProvider(
     client_id=os.getenv("FASTMCP_SERVER_AUTH_GOOGLE_CLIENT_ID") or "",
     client_secret=os.getenv("FASTMCP_SERVER_AUTH_GOOGLE_CLIENT_SECRET") or "",
     base_url="http://localhost:8000",
-    # redirect_path="/oauth/callback",  # Default path - change if using a different callback URL
+    # redirect_path="/auth/callback",  # Default path - change if using a different callback URL
     # Optional: specify required scopes
     # required_scopes=["openid", "https://www.googleapis.com/auth/userinfo.email"],
 )

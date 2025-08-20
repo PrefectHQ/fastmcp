@@ -1,0 +1,63 @@
+---
+title: azure
+sidebarTitle: azure
+---
+
+# `fastmcp.server.auth.providers.azure`
+
+
+Azure (Microsoft Entra) OAuth provider for FastMCP.
+
+This provider implements Azure/Microsoft Entra ID OAuth authentication
+using the OAuth Proxy pattern for non-DCR OAuth flows.
+
+
+## Classes
+
+### `AzureProviderSettings` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L22" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Settings for Azure OAuth provider.
+
+
+### `AzureTokenVerifier` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L40" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Token verifier for Azure OAuth tokens.
+
+Azure tokens are JWTs, but we verify them by calling the Microsoft Graph API
+to get user information and validate the token.
+
+
+**Methods:**
+
+#### `verify_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L62" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+verify_token(self, token: str) -> AccessToken | None
+```
+
+Verify Azure OAuth token by calling Microsoft Graph API.
+
+
+### `AzureProvider` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L112" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Azure (Microsoft Entra) OAuth provider for FastMCP.
+
+This provider implements Azure/Microsoft Entra ID authentication using the
+OAuth Proxy pattern. It supports both organizational accounts and personal
+Microsoft accounts depending on the tenant configuration.
+
+Features:
+- Transparent OAuth proxy to Azure/Microsoft identity platform
+- Automatic token validation via Microsoft Graph API
+- User information extraction
+- Support for different tenant configurations (common, organizations, consumers)
+
+Setup Requirements:
+1. Register an application in Azure Portal (portal.azure.com)
+2. Configure redirect URI as: http://localhost:8000/auth/callback
+3. Note your Application (client) ID and create a client secret
+4. Optionally note your Directory (tenant) ID for single-tenant apps
+

@@ -4,20 +4,12 @@
     "default": "system",
     "strict": false
   },
-  "logo": {
-    "light": "/assets/brand/logo-wordmark.svg",
-    "dark": "/assets/brand/logo-wordmark-dark.svg"
-  },
   "background": {
     "color": {
       "dark": "#222831",
       "light": "#EEEEEE"
     },
     "decoration": "windows"
-  },
-  "thumbnails": {
-    "appearance": "light",
-    "background": "/assets/brand/card-background.png"
   },
   "banner": {
     "content": "Remote MCP that just works:  [FastMCP Cloud is here!](https://fastmcp.link/IhmBxWn) "
@@ -44,6 +36,10 @@
       "measurementId": "G-64R5W1TJXG"
     }
   },
+  "logo": {
+    "dark": "/assets/brand/logo-wordmark-dark.svg",
+    "light": "/assets/brand/logo-wordmark.svg"
+  },
   "name": "FastMCP",
   "navbar": {
     "primary": {
@@ -54,7 +50,6 @@
   "navigation": {
     "tabs": [
       {
-        "tab": "Documentation",
         "anchors": [
           {
             "anchor": "Documentation",
@@ -157,23 +152,54 @@
               {
                 "group": "Integrations",
                 "pages": [
-                  "integrations/anthropic",
-                  "integrations/authkit",
-                  "integrations/github",
-                  "integrations/google",
-                  "integrations/chatgpt",
-                  "integrations/claude-code",
-                  "integrations/claude-desktop",
-                  "integrations/cursor",
-                  "integrations/eunomia-authorization",
-                  "integrations/fastapi",
-                  "deployment/fastmcp-cloud",
-                  "integrations/gemini",
-                  "integrations/mcp-json-configuration",
-                  "integrations/openai",
-                  "integrations/openapi",
-                  "integrations/permit",
-                  "integrations/starlette"
+                  {
+                    "group": "Authentication",
+                    "icon": "key",
+                    "pages": [
+                      "integrations/authkit",
+                      "integrations/azure",
+                      "integrations/github",
+                      "integrations/google",
+                      "integrations/workos-oauth"
+                    ]
+                  },
+                  {
+                    "group": "Authorization",
+                    "icon": "shield-check",
+                    "pages": [
+                      "integrations/eunomia-authorization",
+                      "integrations/permit"
+                    ]
+                  },
+                  {
+                    "group": "AI Assistants",
+                    "icon": "robot",
+                    "pages": [
+                      "integrations/chatgpt",
+                      "integrations/claude-code",
+                      "integrations/claude-desktop",
+                      "integrations/cursor",
+                      "integrations/mcp-json-configuration"
+                    ]
+                  },
+                  {
+                    "group": "AI SDKs",
+                    "icon": "code",
+                    "pages": [
+                      "integrations/anthropic",
+                      "integrations/gemini",
+                      "integrations/openai"
+                    ]
+                  },
+                  {
+                    "group": "Web Frameworks",
+                    "icon": "globe",
+                    "pages": [
+                      "integrations/asgi",
+                      "integrations/fastapi",
+                      "integrations/openapi"
+                    ]
+                  }
                 ]
               },
               {
@@ -205,10 +231,10 @@
             "icon": "users",
             "pages": ["community/showcase"]
           }
-        ]
+        ],
+        "tab": "Documentation"
       },
       {
-        "tab": "SDK Reference",
         "anchors": [
           {
             "anchor": "Python SDK",
@@ -287,11 +313,15 @@
                     "pages": [
                       "python-sdk/fastmcp-server-auth-__init__",
                       "python-sdk/fastmcp-server-auth-auth",
+                      "python-sdk/fastmcp-server-auth-oauth_proxy",
                       {
                         "group": "providers",
                         "pages": [
                           "python-sdk/fastmcp-server-auth-providers-__init__",
+                          "python-sdk/fastmcp-server-auth-providers-azure",
                           "python-sdk/fastmcp-server-auth-providers-bearer",
+                          "python-sdk/fastmcp-server-auth-providers-github",
+                          "python-sdk/fastmcp-server-auth-providers-google",
                           "python-sdk/fastmcp-server-auth-providers-in_memory",
                           "python-sdk/fastmcp-server-auth-providers-jwt",
                           "python-sdk/fastmcp-server-auth-providers-workos"
@@ -350,7 +380,8 @@
               }
             ]
           }
-        ]
+        ],
+        "tab": "SDK Reference"
       }
     ]
   },
@@ -367,5 +398,9 @@
   "search": {
     "prompt": "Search the docs..."
   },
-  "theme": "mint"
+  "theme": "mint",
+  "thumbnails": {
+    "appearance": "light",
+    "background": "/assets/brand/card-background.png"
+  }
 }

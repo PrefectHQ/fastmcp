@@ -5,11 +5,69 @@ sidebarTitle: workos
 
 # `fastmcp.server.auth.providers.workos`
 
+
+WorkOS authentication providers for FastMCP.
+
+This module provides two WorkOS authentication strategies:
+
+1. WorkOSProvider - OAuth proxy for WorkOS Connect applications (non-DCR)
+2. AuthKitProvider - DCR-compliant provider for WorkOS AuthKit
+
+Choose based on your WorkOS setup and authentication requirements.
+
+
 ## Classes
 
-### `AuthKitProviderSettings` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/workos.py#L18" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `WorkOSProviderSettings` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/workos.py#L29" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
-### `AuthKitProvider` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/workos.py#L31" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+Settings for WorkOS OAuth provider.
+
+
+### `WorkOSTokenVerifier` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/workos.py#L47" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Token verifier for WorkOS OAuth tokens.
+
+WorkOS AuthKit tokens are opaque, so we verify them by calling
+the /oauth2/userinfo endpoint to check validity and get user info.
+
+
+**Methods:**
+
+#### `verify_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/workos.py#L72" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+verify_token(self, token: str) -> AccessToken | None
+```
+
+Verify WorkOS OAuth token by calling userinfo endpoint.
+
+
+### `WorkOSProvider` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/workos.py#L120" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Complete WorkOS OAuth provider for FastMCP.
+
+This provider implements WorkOS AuthKit OAuth using the OAuth Proxy pattern.
+It provides OAuth2 authentication for users through WorkOS Connect applications.
+
+Features:
+- Transparent OAuth proxy to WorkOS AuthKit
+- Automatic token validation via userinfo endpoint
+- User information extraction from ID tokens
+- Support for standard OAuth scopes (openid, profile, email)
+
+Setup Requirements:
+1. Create a WorkOS Connect application in your dashboard
+2. Note your AuthKit domain (e.g., "https://your-app.authkit.app")
+3. Configure redirect URI as: http://localhost:8000/auth/callback
+4. Note your Client ID and Client Secret
+
+
+### `AuthKitProviderSettings` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/workos.py#L247" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+### `AuthKitProvider` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/workos.py#L260" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 AuthKit metadata provider for DCR (Dynamic Client Registration).
@@ -35,7 +93,7 @@ https://workos.com/docs/authkit/mcp/integrating/token-verification
 
 **Methods:**
 
-#### `get_routes` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/workos.py#L114" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_routes` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/workos.py#L343" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_routes(self) -> list[Route]
