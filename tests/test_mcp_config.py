@@ -245,6 +245,7 @@ async def test_multi_client(tmp_path: Path):
 @pytest.mark.skipif(
     running_under_debugger(), reason="Debugger holds a reference to the transport"
 )
+@pytest.mark.timeout(5)
 async def test_multi_client_lifespan(tmp_path: Path):
     pid_1: int | None = None
     pid_2: int | None = None
