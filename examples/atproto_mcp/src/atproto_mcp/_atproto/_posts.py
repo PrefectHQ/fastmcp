@@ -44,9 +44,8 @@ def create_post(
         embed = None
         reply_ref = None
 
-        # Handle rich text facets (links and mentions)
-        if links or mentions:
-            facets = _build_facets(text, links, mentions, client)
+        # Always build facets to handle auto-detected URLs and explicit links/mentions
+        facets = _build_facets(text, links, mentions, client)
 
         # Handle replies
         if reply_to:
@@ -63,7 +62,7 @@ def create_post(
             # Images only - use send_images for proper handling
             return _send_images(text, images, image_alts, facets, reply_ref, client)
 
-        # Send the post
+        # Send the post (always include facets if any were created)
         post = client.send_post(
             text=text,
             facets=facets if facets else None,
@@ -96,10 +95,18 @@ def _build_facets(
     mentions: list[RichTextMention] | None,
     client,
 ):
-    """Build facets for rich text formatting."""
-    facets = []
+    """Build facets for rich text formatting, including auto-detected URLs."""
+    import re
 
-    # Process links
+    facets = []
+    covered_ranges = []
+
+    # URL regex pattern for auto-detection
+    url_pattern = re.compile(
+        r"https?://(?:www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b(?:[-a-zA-Z0-9()@:%_\+.~#?&/=]*)"
+    )
+
+    # Process explicit links first
     if links:
         for link in links:
             start = text.find(link["text"])
@@ -107,9 +114,36 @@ def _build_facets(
                 continue
             end = start + len(link["text"])
 
+            # Track this range as covered
+            covered_ranges.append((start, end))
+
             facets.append(
                 models.AppBskyRichtextFacet.Main(
                     features=[models.AppBskyRichtextFacet.Link(uri=link["url"])],
+                    index=models.AppBskyRichtextFacet.ByteSlice(
+                        byte_start=len(text[:start].encode("UTF-8")),
+                        byte_end=len(text[:end].encode("UTF-8")),
+                    ),
+                )
+            )
+
+    # Auto-detect URLs that aren't already covered by explicit links
+    for match in url_pattern.finditer(text):
+        url = match.group()
+        start = match.start()
+        end = match.end()
+
+        # Check if this URL overlaps with any explicit link
+        overlaps = False
+        for covered_start, covered_end in covered_ranges:
+            if not (end <= covered_start or start >= covered_end):
+                overlaps = True
+                break
+
+        if not overlaps:
+            facets.append(
+                models.AppBskyRichtextFacet.Main(
+                    features=[models.AppBskyRichtextFacet.Link(uri=url)],
                     index=models.AppBskyRichtextFacet.ByteSlice(
                         byte_start=len(text[:start].encode("UTF-8")),
                         byte_end=len(text[:end].encode("UTF-8")),
@@ -253,7 +287,8 @@ def _send_images(
 
     # Send post with images
     # Note: send_images doesn't support facets or reply_to directly
-    # So we need to use send_post with manual image upload if we have those
+    # So we need to use send_post with manual image upload if we have facets or replies
+    # Since we always create facets now (for URL auto-detection), we'll always use this path
     if facets or reply_ref:
         # Manual image upload
         images = []
