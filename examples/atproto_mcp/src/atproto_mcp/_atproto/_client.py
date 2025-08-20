@@ -12,5 +12,5 @@ def get_client() -> Client:
     global _client
     if _client is None:
         _client = Client()
-        _client.login(settings.atproto_handle, settings.atproto_password)
+    _client.login(settings.atproto_handle, settings.atproto_password)
     return _client
