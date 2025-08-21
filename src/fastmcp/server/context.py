@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import inspect
 import warnings
 import weakref
 from collections.abc import Generator, Mapping
@@ -16,15 +17,18 @@ from mcp.server.lowlevel.helper_types import ReadResourceContents
 from mcp.server.lowlevel.server import request_ctx
 from mcp.shared.context import RequestContext
 from mcp.types import (
+    ClientCapabilities,
     ContentBlock,
     CreateMessageResult,
     IncludeContext,
     ModelHint,
     ModelPreferences,
     Root,
+    SamplingCapability,
     SamplingMessage,
     TextContent,
 )
+from mcp.types import CreateMessageRequestParams as SamplingParams
 from pydantic.networks import AnyUrl
 from starlette.requests import Request
 
@@ -386,13 +390,50 @@ class Context:
                 for m in messages
             ]
 
+        should_fallback = (
+            self.fastmcp.sampling_handler_behavior == "fallback"
+            and not self.session.check_client_capability(
+                capability=ClientCapabilities(sampling=SamplingCapability())
+            )
+        )
+
+        if self.fastmcp.sampling_handler_behavior == "always" or should_fallback:
+            if self.fastmcp.sampling_handler is None:
+                raise ValueError("Client does not support sampling")
+
+            create_message_result = self.fastmcp.sampling_handler(
+                sampling_messages,
+                SamplingParams(
+                    systemPrompt=system_prompt,
+                    messages=sampling_messages,
+                    temperature=temperature,
+                    maxTokens=max_tokens,
+                    modelPreferences=_parse_model_preferences(model_preferences),
+                ),
+                self.request_context,
+            )
+
+            if inspect.isawaitable(create_message_result):
+                create_message_result = await create_message_result
+
+            if isinstance(create_message_result, str):
+                return TextContent(text=create_message_result, type="text")
+
+            if isinstance(create_message_result, CreateMessageResult):
+                return create_message_result.content
+
+            else:
+                raise ValueError(
+                    f"Unexpected sampling handler result: {create_message_result}"
+                )
+
         result: CreateMessageResult = await self.session.create_message(
             messages=sampling_messages,
             system_prompt=system_prompt,
             include_context=include_context,
             temperature=temperature,
             max_tokens=max_tokens,
-            model_preferences=self._parse_model_preferences(model_preferences),
+            model_preferences=_parse_model_preferences(model_preferences),
             related_request_id=self.request_id,
         )
 
@@ -592,44 +633,43 @@ class Context:
                 # Don't let notification failures break the request
                 pass
 
-    def _parse_model_preferences(
-        self, model_preferences: ModelPreferences | str | list[str] | None
-    ) -> ModelPreferences | None:
-        """
-        Validates and converts user input for model_preferences into a ModelPreferences object.
 
-        Args:
-            model_preferences (ModelPreferences | str | list[str] | None):
-                The model preferences to use. Accepts:
-                - ModelPreferences (returns as-is)
-                - str (single model hint)
-                - list[str] (multiple model hints)
-                - None (no preferences)
+def _parse_model_preferences(
+    model_preferences: ModelPreferences | str | list[str] | None,
+) -> ModelPreferences | None:
+    """
+    Validates and converts user input for model_preferences into a ModelPreferences object.
 
-        Returns:
-            ModelPreferences | None: The parsed ModelPreferences object, or None if not provided.
+    Args:
+        model_preferences (ModelPreferences | str | list[str] | None):
+            The model preferences to use. Accepts:
+            - ModelPreferences (returns as-is)
+            - str (single model hint)
+            - list[str] (multiple model hints)
+            - None (no preferences)
 
-        Raises:
-            ValueError: If the input is not a supported type or contains invalid values.
-        """
-        if model_preferences is None:
-            return None
-        elif isinstance(model_preferences, ModelPreferences):
-            return model_preferences
-        elif isinstance(model_preferences, str):
-            # Single model hint
-            return ModelPreferences(hints=[ModelHint(name=model_preferences)])
-        elif isinstance(model_preferences, list):
-            # List of model hints (strings)
-            if not all(isinstance(h, str) for h in model_preferences):
-                raise ValueError(
-                    "All elements of model_preferences list must be"
-                    " strings (model name hints)."
-                )
-            return ModelPreferences(
-                hints=[ModelHint(name=h) for h in model_preferences]
-            )
-        else:
+    Returns:
+        ModelPreferences | None: The parsed ModelPreferences object, or None if not provided.
+
+    Raises:
+        ValueError: If the input is not a supported type or contains invalid values.
+    """
+    if model_preferences is None:
+        return None
+    elif isinstance(model_preferences, ModelPreferences):
+        return model_preferences
+    elif isinstance(model_preferences, str):
+        # Single model hint
+        return ModelPreferences(hints=[ModelHint(name=model_preferences)])
+    elif isinstance(model_preferences, list):
+        # List of model hints (strings)
+        if not all(isinstance(h, str) for h in model_preferences):
             raise ValueError(
-                "model_preferences must be one of: ModelPreferences, str, list[str], or None."
+                "All elements of model_preferences list must be"
+                " strings (model name hints)."
             )
+        return ModelPreferences(hints=[ModelHint(name=h) for h in model_preferences])
+    else:
+        raise ValueError(
+            "model_preferences must be one of: ModelPreferences, str, list[str], or None."
+        )

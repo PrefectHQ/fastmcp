@@ -39,6 +39,7 @@ jobs:
 
       - name: Install dependencies
         run: uv sync
+
       - name: Check lockfile is up to date
         run: |
           if ! uv lock --check; then

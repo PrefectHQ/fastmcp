@@ -30,7 +30,11 @@ from fastmcp.client.roots import (
     RootsList,
     create_roots_callback,
 )
-from fastmcp.client.sampling import SamplingHandler, create_sampling_callback
+from fastmcp.client.sampling import (
+    ClientSamplingHandler,
+    SamplingHandler,
+    create_sampling_callback,
+)
 from fastmcp.exceptions import ToolError
 from fastmcp.mcp_config import MCPConfig
 from fastmcp.server import FastMCP
@@ -60,6 +64,7 @@ __all__ = [
     "RootsList",
     "LogHandler",
     "MessageHandler",
+    "ClientSamplingHandler",
     "SamplingHandler",
     "ElicitationHandler",
     "ProgressHandler",
@@ -208,7 +213,7 @@ class Client(Generic[ClientTransportT]):
             | str
         ),
         roots: RootsList | RootsHandler | None = None,
-        sampling_handler: SamplingHandler | None = None,
+        sampling_handler: ClientSamplingHandler | None = None,
         elicitation_handler: ElicitationHandler | None = None,
         log_handler: LogHandler | None = None,
         message_handler: MessageHandlerT | MessageHandler | None = None,
@@ -292,7 +297,7 @@ class Client(Generic[ClientTransportT]):
         """Set the roots for the client. This does not automatically call `send_roots_list_changed`."""
         self._session_kwargs["list_roots_callback"] = create_roots_callback(roots)
 
-    def set_sampling_callback(self, sampling_callback: SamplingHandler) -> None:
+    def set_sampling_callback(self, sampling_callback: ClientSamplingHandler) -> None:
         """Set the sampling callback for the client."""
         self._session_kwargs["sampling_callback"] = create_sampling_callback(
             sampling_callback

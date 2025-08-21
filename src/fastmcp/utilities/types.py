@@ -10,6 +10,7 @@ from pathlib import Path
 from types import EllipsisType, UnionType
 from typing import (
     Annotated,
+    Protocol,
     TypeAlias,
     TypeVar,
     Union,
@@ -19,7 +20,7 @@ from typing import (
 )
 
 import mcp.types
-from mcp.types import Annotations
+from mcp.types import Annotations, ContentBlock, ModelPreferences, SamplingMessage
 from pydantic import AnyUrl, BaseModel, ConfigDict, Field, TypeAdapter, UrlConstraints
 
 T = TypeVar("T")
@@ -407,3 +408,14 @@ def replace_type(type_, type_map: dict[type, type]):
         return Union[new_args]  # type: ignore # noqa: UP007
     else:
         return origin[new_args]
+
+
+class ContextSamplingFallbackProtocol(Protocol):
+    async def __call__(
+        self,
+        messages: str | list[str | SamplingMessage],
+        system_prompt: str | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        model_preferences: ModelPreferences | str | list[str] | None = None,
+    ) -> ContentBlock: ...

@@ -5,7 +5,7 @@ import pytest
 from mcp.types import ModelPreferences
 from starlette.requests import Request
 
-from fastmcp.server.context import Context
+from fastmcp.server.context import Context, _parse_model_preferences
 from fastmcp.server.server import FastMCP
 
 
@@ -68,24 +68,24 @@ def context():
 
 class TestParseModelPreferences:
     def test_parse_model_preferences_string(self, context):
-        mp = context._parse_model_preferences("claude-3-sonnet")
+        mp = _parse_model_preferences("claude-3-sonnet")
         assert isinstance(mp, ModelPreferences)
         assert mp.hints is not None
         assert mp.hints[0].name == "claude-3-sonnet"
 
     def test_parse_model_preferences_list(self, context):
-        mp = context._parse_model_preferences(["claude-3-sonnet", "claude"])
+        mp = _parse_model_preferences(["claude-3-sonnet", "claude"])
         assert isinstance(mp, ModelPreferences)
         assert mp.hints is not None
         assert [h.name for h in mp.hints] == ["claude-3-sonnet", "claude"]
 
     def test_parse_model_preferences_object(self, context):
         obj = ModelPreferences(hints=[])
-        assert context._parse_model_preferences(obj) is obj
+        assert _parse_model_preferences(obj) is obj
 
     def test_parse_model_preferences_invalid_type(self, context):
         with pytest.raises(ValueError):
-            context._parse_model_preferences(123)
+            _parse_model_preferences(model_preferences=123)  # pyright: ignore[reportArgumentType]
 
 
 class TestSessionId:

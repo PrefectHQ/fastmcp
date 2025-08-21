@@ -1,4 +1,6 @@
 import json
+from typing import cast
+from unittest.mock import AsyncMock
 
 import pytest
 from mcp.types import TextContent
@@ -89,8 +91,12 @@ async def test_sampling_with_messages(fastmcp_server: FastMCP):
         messages: list[SamplingMessage], params: SamplingParams, ctx: RequestContext
     ) -> str:
         assert len(messages) == 2
+
+        assert isinstance(messages[0].content, TextContent)
         assert messages[0].content.type == "text"
         assert messages[0].content.text == "Hello!"
+
+        assert isinstance(messages[1].content, TextContent)
         assert messages[1].content.type == "text"
         assert messages[1].content.text == "How can I assist you today?"
         return "I need to think."
@@ -100,6 +106,26 @@ async def test_sampling_with_messages(fastmcp_server: FastMCP):
             "sample_with_messages", {"message": "Hello, world!"}
         )
         assert result.data == "I need to think."
+
+
+async def test_sampling_with_fallback(fastmcp_server: FastMCP):
+    openai_sampling_handler = AsyncMock(return_value="But I need to think")
+
+    fastmcp_server = FastMCP(
+        sampling_handler=openai_sampling_handler,
+    )
+
+    @fastmcp_server.tool
+    async def sample_with_fallback(context: Context) -> str:
+        sampling_result = await context.sample("Do not think.")
+        return cast(TextContent, sampling_result).text
+
+    client = Client(fastmcp_server)
+
+    async with client:
+        call_tool_result = await client.call_tool("sample_with_fallback")
+
+    assert call_tool_result.data == "But I need to think"
 
 
 async def test_sampling_with_image(fastmcp_server: FastMCP):
