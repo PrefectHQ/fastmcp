@@ -6,6 +6,7 @@ from .auth import (
     AuthProvider,
 )
 from .providers.jwt import JWTVerifier, StaticTokenVerifier
+from .oauth_proxy import OAuthProxy
 
 
 __all__ = [
@@ -16,6 +17,7 @@ __all__ = [
     "StaticTokenVerifier",
     "RemoteAuthProvider",
     "AccessToken",
+    "OAuthProxy",
 ]
 
 
