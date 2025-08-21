@@ -1033,5 +1033,7 @@ class TestMountedComponentsRaiseOnLoadError:
         # Use temporary settings context manager
         with temporary_settings(mounted_components_raise_on_load_error=True):
             # Should raise the exception
-            with pytest.raises(AttributeError, match=""):
+            with pytest.raises(
+                AttributeError, match="'str' object has no attribute 'server'"
+            ):
                 await parent_mcp._tool_manager.list_tools()

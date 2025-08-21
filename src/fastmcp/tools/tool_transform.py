@@ -439,7 +439,7 @@ class TransformedTool(Tool):
             })
 
             # Disable structured outputs
-            Tool.from_tool(parent, output_schema=False)
+            Tool.from_tool(parent, output_schema=None)
 
             # Return ToolResult for full control
             async def custom_output(**kwargs) -> ToolResult:

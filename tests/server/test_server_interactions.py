@@ -981,13 +981,13 @@ class TestToolOutputSchema:
             assert result.structured_content == {"message": "Hello, world!"}
             assert result.data == {"message": "Hello, world!"}
 
-    async def test_output_schema_false_full_handshake(self):
-        """Test that output_schema=False works through full client/server
+    async def test_output_schema_none_full_handshake(self):
+        """Test that output_schema=None works through full client/server
         handshake. We test this by returning a scalar, which requires an output
         schema to serialize."""
         mcp = FastMCP()
 
-        @mcp.tool(output_schema=False)  # type: ignore[arg-type]
+        @mcp.tool(output_schema=None)
         def simple_tool() -> int:
             return 42
 
