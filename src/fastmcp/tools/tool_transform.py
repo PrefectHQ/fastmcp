@@ -788,6 +788,45 @@ class TransformedTool(Tool):
         return new_name, new_schema, is_required
 
     @staticmethod
+    def _find_referenced_defs(
+        schema: dict[str, Any], available_defs: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Find all $defs that are actually referenced in the schema.
+
+        Args:
+            schema: The schema to search for references
+            available_defs: All available definitions to check against
+
+        Returns:
+            Dictionary containing only the referenced definitions
+        """
+        referenced = set()
+        visited = set()  # Track visited definitions to prevent infinite recursion
+
+        def find_refs(obj):
+            if isinstance(obj, dict):
+                if "$ref" in obj:
+                    ref = obj["$ref"]
+                    if ref.startswith("#/$defs/"):
+                        def_name = ref[8:]  # Remove "#/$defs/" prefix
+                        if def_name in available_defs and def_name not in visited:
+                            referenced.add(def_name)
+                            visited.add(def_name)  # Mark as visited before recursing
+                            # Recursively check the referenced definition
+                            find_refs(available_defs[def_name])
+                for value in obj.values():
+                    find_refs(value)
+            elif isinstance(obj, list):
+                for item in obj:
+                    find_refs(item)
+
+        find_refs(schema)
+
+        return {
+            name: available_defs[name] for name in referenced if name in available_defs
+        }
+
+    @staticmethod
     def _merge_schema_with_precedence(
         base_schema: dict[str, Any], override_schema: dict[str, Any]
     ) -> dict[str, Any]:
@@ -841,11 +880,24 @@ class TransformedTool(Tool):
             if "default" in param_schema:
                 final_required.discard(param_name)
 
-        return {
+        # Merge $defs from both schemas, with override taking precedence
+        merged_defs = base_schema.get("$defs", {}).copy()
+        override_defs = override_schema.get("$defs", {})
+        merged_defs.update(override_defs)
+
+        result = {
             "type": "object",
             "properties": merged_props,
             "required": list(final_required),
         }
+
+        # Only include $defs that are actually referenced in the schema
+        if merged_defs:
+            referenced_defs = TransformedTool._find_referenced_defs(result, merged_defs)
+            if referenced_defs:
+                result["$defs"] = referenced_defs
+
+        return result
 
     @staticmethod
     def _function_has_kwargs(fn: Callable[..., Any]) -> bool:

@@ -1502,3 +1502,224 @@ def test_tool_transform_config_removes_meta(sample_tool):
     config = ToolTransformConfig(name="config_tool", meta=None)
     transformed = config.apply(sample_tool)
     assert transformed.meta is None
+
+
+# Tests for $defs and _find_referenced_defs functionality
+class TestDefsAndReferences:
+    """Test schema definition handling and reference finding."""
+
+    def test_find_referenced_defs_simple_reference(self):
+        """Test _find_referenced_defs with a simple reference."""
+        schema = {"type": "object", "properties": {"field1": {"$ref": "#/$defs/TypeA"}}}
+        available_defs = {
+            "TypeA": {"type": "string"},
+            "TypeB": {"type": "integer"},  # Not referenced
+        }
+
+        result = TransformedTool._find_referenced_defs(schema, available_defs)
+        assert result == {"TypeA": {"type": "string"}}
+        assert "TypeB" not in result
+
+    def test_find_referenced_defs_nested_references(self):
+        """Test _find_referenced_defs with nested references."""
+        schema = {"type": "object", "properties": {"field1": {"$ref": "#/$defs/TypeA"}}}
+        available_defs = {
+            "TypeA": {
+                "type": "object",
+                "properties": {"nested": {"$ref": "#/$defs/TypeB"}},
+            },
+            "TypeB": {"type": "string"},
+            "TypeC": {"type": "integer"},  # Not referenced
+        }
+
+        result = TransformedTool._find_referenced_defs(schema, available_defs)
+        assert result == {
+            "TypeA": {
+                "type": "object",
+                "properties": {"nested": {"$ref": "#/$defs/TypeB"}},
+            },
+            "TypeB": {"type": "string"},
+        }
+        assert "TypeC" not in result
+
+    def test_find_referenced_defs_circular_references(self):
+        """Test _find_referenced_defs handles circular references."""
+        schema = {"type": "object", "properties": {"field1": {"$ref": "#/$defs/TypeA"}}}
+        available_defs = {
+            "TypeA": {
+                "type": "object",
+                "properties": {"circular": {"$ref": "#/$defs/TypeB"}},
+            },
+            "TypeB": {
+                "type": "object",
+                "properties": {"back_ref": {"$ref": "#/$defs/TypeA"}},
+            },
+            "TypeC": {"type": "string"},  # Not referenced
+        }
+
+        result = TransformedTool._find_referenced_defs(schema, available_defs)
+        assert "TypeA" in result
+        assert "TypeB" in result
+        assert "TypeC" not in result
+
+    def test_find_referenced_defs_array_references(self):
+        """Test _find_referenced_defs with references in arrays."""
+        schema = {
+            "type": "object",
+            "properties": {
+                "field1": {"type": "array", "items": {"$ref": "#/$defs/TypeA"}}
+            },
+        }
+        available_defs = {
+            "TypeA": {"type": "string"},
+            "TypeB": {"type": "integer"},  # Not referenced
+        }
+
+        result = TransformedTool._find_referenced_defs(schema, available_defs)
+        assert result == {"TypeA": {"type": "string"}}
+
+    def test_find_referenced_defs_no_references(self):
+        """Test _find_referenced_defs with no references."""
+        schema = {"type": "object", "properties": {"field1": {"type": "string"}}}
+        available_defs = {"TypeA": {"type": "string"}, "TypeB": {"type": "integer"}}
+
+        result = TransformedTool._find_referenced_defs(schema, available_defs)
+        assert result == {}
+
+    def test_merge_schema_with_defs_precedence(self):
+        """Test _merge_schema_with_precedence merges $defs correctly."""
+        base_schema = {
+            "type": "object",
+            "properties": {"field1": {"$ref": "#/$defs/BaseType"}},
+            "$defs": {
+                "BaseType": {"type": "string", "description": "base"},
+                "SharedType": {"type": "integer", "minimum": 0},
+            },
+        }
+
+        override_schema = {
+            "type": "object",
+            "properties": {"field2": {"$ref": "#/$defs/OverrideType"}},
+            "$defs": {
+                "OverrideType": {"type": "boolean"},
+                "SharedType": {"type": "integer", "minimum": 10},  # Override
+            },
+        }
+
+        result = TransformedTool._merge_schema_with_precedence(
+            base_schema, override_schema
+        )
+
+        # Should have both field1 and field2
+        assert "field1" in result["properties"]
+        assert "field2" in result["properties"]
+
+        # Should only include referenced defs
+        defs = result.get("$defs", {})
+        assert "BaseType" in defs  # Referenced by field1
+        assert "OverrideType" in defs  # Referenced by field2
+
+        # SharedType should use override version, but only if referenced
+        # Since it's not referenced by either field, it shouldn't be included
+        assert "SharedType" not in defs
+
+    def test_transform_tool_with_complex_defs_pruning(self):
+        """Test that tool transformation properly prunes unused $defs."""
+
+        class UsedType(BaseModel):
+            value: str
+
+        class UnusedType(BaseModel):
+            other: int
+
+        @Tool.from_function
+        def complex_tool(
+            used_param: UsedType, unused_param: UnusedType | None = None
+        ) -> str:
+            return used_param.value
+
+        # Transform to hide unused_param
+        transformed = Tool.from_tool(
+            complex_tool, transform_args={"unused_param": ArgTransform(hide=True)}
+        )
+
+        # Only UsedType should be in $defs, not UnusedType
+        defs = transformed.parameters.get("$defs", {})
+        type_names = set(defs.keys())
+
+        # Should contain UsedType but not UnusedType
+        used_type_found = any("UsedType" in name for name in type_names)
+        unused_type_found = any("UnusedType" in name for name in type_names)
+
+        assert used_type_found, f"UsedType not found in defs: {type_names}"
+        assert not unused_type_found, f"UnusedType should not be in defs: {type_names}"
+
+    def test_transform_with_custom_function_preserves_needed_defs(self):
+        """Test that custom transform functions preserve necessary $defs."""
+
+        class InputType(BaseModel):
+            data: str
+
+        class OutputType(BaseModel):
+            result: str
+
+        @Tool.from_function
+        def base_tool(input_data: InputType) -> OutputType:
+            return OutputType(result=input_data.data.upper())
+
+        async def transform_function(renamed_input: InputType):
+            return await forward(renamed_input=renamed_input)
+
+        # Transform with custom function and argument rename
+        transformed = Tool.from_tool(
+            base_tool,
+            transform_fn=transform_function,
+            transform_args={"input_data": ArgTransform(name="renamed_input")},
+        )
+
+        # Both InputType and OutputType should be preserved in defs
+        defs = transformed.parameters.get("$defs", {})
+        type_names = set(defs.keys())
+
+        input_type_found = any("InputType" in name for name in type_names)
+        assert input_type_found, f"InputType not found in defs: {type_names}"
+
+    def test_chained_transforms_preserve_correct_defs(self):
+        """Test that chained transformations preserve correct $defs."""
+
+        class TypeA(BaseModel):
+            a: str
+
+        class TypeB(BaseModel):
+            b: int
+
+        class TypeC(BaseModel):
+            c: bool
+
+        @Tool.from_function
+        def base_tool(param_a: TypeA, param_b: TypeB, param_c: TypeC) -> str:
+            return f"{param_a.a}-{param_b.b}-{param_c.c}"
+
+        # First transform: hide param_c
+        transform1 = Tool.from_tool(
+            base_tool,
+            transform_args={"param_c": ArgTransform(hide=True, default=TypeC(c=True))},
+        )
+
+        # Second transform: hide param_b
+        transform2 = Tool.from_tool(
+            transform1,
+            transform_args={"param_b": ArgTransform(hide=True, default=TypeB(b=42))},
+        )
+
+        # Final schema should only have TypeA in $defs
+        defs = transform2.parameters.get("$defs", {})
+        type_names = set(defs.keys())
+
+        type_a_found = any("TypeA" in name for name in type_names)
+        type_b_found = any("TypeB" in name for name in type_names)
+        type_c_found = any("TypeC" in name for name in type_names)
+
+        assert type_a_found, f"TypeA should be in defs: {type_names}"
+        assert not type_b_found, f"TypeB should not be in defs: {type_names}"
+        assert not type_c_found, f"TypeC should not be in defs: {type_names}"
