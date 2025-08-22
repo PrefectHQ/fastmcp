@@ -43,6 +43,7 @@ from starlette.responses import JSONResponse, RedirectResponse
 from starlette.routing import Route
 
 from fastmcp.server.auth.auth import OAuthProvider, TokenVerifier
+from fastmcp.server.auth.redirect_validation import validate_redirect_uri
 from fastmcp.utilities.logging import get_logger
 
 if TYPE_CHECKING:
@@ -52,7 +53,7 @@ logger = get_logger(__name__)
 
 
 class ProxyDCRClient(OAuthClientInformationFull):
-    """Client for DCR proxy that accepts any localhost redirect URI.
+    """Client for DCR proxy with configurable redirect URI validation.
 
     This special client class is critical for the OAuth proxy to work correctly
     with Dynamic Client Registration (DCR). Here's why it exists:
@@ -61,36 +62,48 @@ class ProxyDCRClient(OAuthClientInformationFull):
     --------
     When MCP clients use OAuth, they dynamically register with random localhost
     ports (e.g., http://localhost:55454/callback). The OAuth proxy needs to:
-    1. Accept these dynamic redirect URIs from clients
+    1. Accept these dynamic redirect URIs from clients based on configured patterns
     2. Use its own fixed redirect URI with the upstream provider (Google, GitHub, etc.)
     3. Forward the authorization code back to the client's dynamic URI
 
     Solution:
     ---------
-    This class overrides redirect_uri validation to accept ANY localhost URI,
+    This class validates redirect URIs against configurable patterns,
     while the proxy internally uses its own fixed redirect URI with the upstream
     provider. This allows the flow to work even when clients reconnect with
     different ports or when tokens are cached.
 
-    Without this class, clients would get "Redirect URI not registered" errors
-    when trying to authenticate with cached tokens, because the stored client
-    would have fixed redirect URIs that don't match the new dynamic port.
+    Without proper validation, clients could get "Redirect URI not registered" errors
+    when trying to authenticate with cached tokens, or security vulnerabilities could
+    arise from accepting arbitrary redirect URIs.
     """
 
+    def __init__(
+        self, *args, allowed_redirect_uri_patterns: list[str] | None = None, **kwargs
+    ):
+        """Initialize with allowed redirect URI patterns.
+
+        Args:
+            allowed_redirect_uri_patterns: List of allowed redirect URI patterns with wildcard support.
+                                          If None, defaults to localhost-only patterns.
+                                          If empty list, allows all redirect URIs.
+        """
+        super().__init__(*args, **kwargs)
+        self._allowed_redirect_uri_patterns = allowed_redirect_uri_patterns
+
     def validate_redirect_uri(self, redirect_uri: AnyUrl | None) -> AnyUrl:
-        """Accept any localhost redirect URI for DCR clients.
+        """Validate redirect URI against allowed patterns.
 
         Since we're acting as a proxy and clients register dynamically,
-        we need to accept their localhost redirect URIs even though they're
-        not pre-registered with us. This is essential for cached token
-        scenarios where the client may reconnect with a different port.
+        we validate their redirect URIs against configurable patterns.
+        This is essential for cached token scenarios where the client may
+        reconnect with a different port.
         """
         if redirect_uri is not None:
-            # Accept any localhost redirect URI for DCR clients
-            uri_str = str(redirect_uri)
-            if uri_str.startswith(("http://localhost", "http://127.0.0.1")):
+            # Validate against allowed patterns
+            if validate_redirect_uri(redirect_uri, self._allowed_redirect_uri_patterns):
                 return redirect_uri
-            # Fall back to normal validation for non-localhost URIs
+            # Fall back to normal validation if not in allowed patterns
             return super().validate_redirect_uri(redirect_uri)
         # If no redirect_uri provided, use default behavior
         return super().validate_redirect_uri(redirect_uri)
@@ -229,6 +242,8 @@ class OAuthProxy(OAuthProvider):
         issuer_url: AnyHttpUrl | str | None = None,
         service_documentation_url: AnyHttpUrl | str | None = None,
         resource_server_url: AnyHttpUrl | str | None = None,
+        # Client redirect URI validation
+        allowed_client_redirect_uris: list[str] | None = None,
     ):
         """Initialize the OAuth proxy provider.
 
@@ -244,6 +259,11 @@ class OAuthProxy(OAuthProvider):
             issuer_url: Issuer URL for OAuth metadata (defaults to base_url)
             service_documentation_url: Optional service documentation URL
             resource_server_url: Resource server URL (defaults to base_url)
+            allowed_client_redirect_uris: List of allowed redirect URI patterns for MCP clients.
+                Patterns support wildcards (e.g., "http://localhost:*", "https://*.example.com/*").
+                If None (default), only localhost redirect URIs are allowed.
+                If empty list, all redirect URIs are allowed (not recommended for production).
+                These are for MCP clients performing loopback redirects, NOT for the upstream OAuth app.
         """
         # Convert string URLs to AnyHttpUrl for parent class
         base_url_parsed = (
@@ -302,6 +322,7 @@ class OAuthProxy(OAuthProvider):
         self._redirect_path = (
             redirect_path if redirect_path.startswith("/") else f"/{redirect_path}"
         )
+        self._allowed_client_redirect_uris = allowed_client_redirect_uris
 
         # Local state for DCR and token bookkeeping
         self._clients: dict[str, OAuthClientInformationFull] = {}
@@ -353,9 +374,10 @@ class OAuthProxy(OAuthProvider):
                 client_secret=None,
                 redirect_uris=[
                     AnyUrl("http://localhost")
-                ],  # Placeholder - we accept any localhost URI
+                ],  # Placeholder, validation uses allowed_patterns
                 grant_types=["authorization_code", "refresh_token"],
                 token_endpoint_auth_method="none",
+                allowed_redirect_uri_patterns=self._allowed_client_redirect_uris,
             )
             logger.debug("Created ProxyDCRClient for unregistered client %s", client_id)
 
@@ -386,7 +408,7 @@ class OAuthProxy(OAuthProvider):
         upstream_id = self._upstream_client_id
         upstream_secret = self._upstream_client_secret.get_secret_value()
 
-        # Create a ProxyDCRClient that accepts any localhost redirect URI
+        # Create a ProxyDCRClient with configured redirect URI validation
         proxy_client = ProxyDCRClient(
             client_id=upstream_id,
             client_secret=upstream_secret,
@@ -394,6 +416,7 @@ class OAuthProxy(OAuthProvider):
             grant_types=client_info.grant_types
             or ["authorization_code", "refresh_token"],
             token_endpoint_auth_method="none",
+            allowed_redirect_uri_patterns=self._allowed_client_redirect_uris,
         )
 
         # Modify the client_info object in place (framework ignores return values)

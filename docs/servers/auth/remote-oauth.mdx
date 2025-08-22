@@ -111,7 +111,9 @@ token_verifier = JWTVerifier(
 auth = RemoteAuthProvider(
     token_verifier=token_verifier,
     authorization_servers=[AnyHttpUrl("https://auth.yourcompany.com")],
-    resource_server_url="https://api.yourcompany.com"
+    resource_server_url="https://api.yourcompany.com",
+    # Optional: customize allowed client redirect URIs (defaults to localhost only)
+    allowed_client_redirect_uris=["http://localhost:*", "http://127.0.0.1:*"]
 )
 
 mcp = FastMCP(name="Company API", auth=auth)
@@ -191,6 +193,18 @@ The `AuthKitProvider` automatically configures JWT validation against WorkOS's p
 WorkOS's support for Dynamic Client Registration makes it particularly well-suited for MCP applications. Clients can automatically register themselves with your WorkOS project and obtain the credentials needed for authentication without manual intervention.
 
 → **Complete WorkOS tutorial**: [AuthKit Integration Guide](/integrations/authkit)
+
+## Client Redirect URI Security
+
+<Note>
+`RemoteAuthProvider` also supports the `allowed_client_redirect_uris` parameter for controlling which redirect URIs are accepted from MCP clients during DCR:
+
+- `None` (default): Only localhost patterns allowed
+- Custom list: Specify allowed patterns with wildcard support
+- Empty list `[]`: Allow all (not recommended)
+
+This provides defense-in-depth even though DCR providers typically validate redirect URIs themselves.
+</Note>
 
 ## Implementation Considerations
 
