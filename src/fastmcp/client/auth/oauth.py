@@ -217,8 +217,13 @@ class OAuth(OAuthClientProvider):
         self.redirect_port = callback_port or find_available_port()
         redirect_uri = f"http://localhost:{self.redirect_port}/callback"
 
+        scopes_str: str
         if isinstance(scopes, list):
-            scopes = " ".join(scopes)
+            scopes_str = " ".join(scopes)
+        elif scopes is not None:
+            scopes_str = str(scopes)
+        else:
+            scopes_str = ""
 
         client_metadata = OAuthClientMetadata(
             client_name=client_name,
@@ -226,7 +231,7 @@ class OAuth(OAuthClientProvider):
             grant_types=["authorization_code", "refresh_token"],
             response_types=["code"],
             # token_endpoint_auth_method="client_secret_post",
-            scope=scopes,
+            scope=scopes_str,
             **(additional_client_metadata or {}),
         )
 

@@ -1027,7 +1027,7 @@ class FastMCP(Generic[LifespanResultT]):
                 description=description,
                 tags=tags,
                 output_schema=output_schema,
-                annotations=annotations,
+                annotations=cast(ToolAnnotations | None, annotations),
                 exclude_args=exclude_args,
                 meta=meta,
                 serializer=self._tool_serializer,
@@ -1257,7 +1257,7 @@ class FastMCP(Generic[LifespanResultT]):
                     mime_type=mime_type,
                     tags=tags,
                     enabled=enabled,
-                    annotations=annotations,
+                    annotations=cast(Annotations | None, annotations),
                     meta=meta,
                 )
                 self.add_template(template)
@@ -1272,7 +1272,7 @@ class FastMCP(Generic[LifespanResultT]):
                     mime_type=mime_type,
                     tags=tags,
                     enabled=enabled,
-                    annotations=annotations,
+                    annotations=cast(Annotations | None, annotations),
                     meta=meta,
                 )
                 self.add_resource(resource)

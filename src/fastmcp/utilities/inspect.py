@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import importlib.metadata
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from mcp.server.fastmcp import FastMCP as FastMCP1x
 
@@ -318,4 +318,4 @@ async def inspect_fastmcp(mcp: FastMCP[Any] | FastMCP1x) -> FastMCPInfo:
     if isinstance(mcp, FastMCP1x):
         return await inspect_fastmcp_v1(mcp)
     else:
-        return await inspect_fastmcp_v2(mcp)
+        return await inspect_fastmcp_v2(cast(FastMCP[Any], mcp))

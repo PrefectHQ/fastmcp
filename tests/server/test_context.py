@@ -85,7 +85,7 @@ class TestParseModelPreferences:
 
     def test_parse_model_preferences_invalid_type(self, context):
         with pytest.raises(ValueError):
-            _parse_model_preferences(model_preferences=123)  # pyright: ignore[reportArgumentType]
+            _parse_model_preferences(model_preferences=123)  # pyright: ignore[reportArgumentType] # type: ignore[invalid-argument-type]
 
 
 class TestSessionId:
@@ -97,7 +97,7 @@ class TestSessionId:
         mock_headers = {"mcp-session-id": "test-session-123"}
 
         token = request_ctx.set(
-            RequestContext(
+            RequestContext(  # type: ignore[arg-type]
                 request_id=0,
                 meta=None,
                 session=MagicMock(wraps={}),
@@ -118,7 +118,7 @@ class TestSessionId:
         from mcp.shared.context import RequestContext
 
         token = request_ctx.set(
-            RequestContext(
+            RequestContext(  # type: ignore[arg-type]
                 request_id=0,
                 meta=None,
                 session=MagicMock(wraps={}),

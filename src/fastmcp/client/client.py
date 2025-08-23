@@ -236,7 +236,7 @@ class Client(Generic[ClientTransportT]):
         self._progress_handler = progress_handler
 
         if isinstance(timeout, int | float):
-            timeout = datetime.timedelta(seconds=timeout)
+            timeout = datetime.timedelta(seconds=float(timeout))
 
         # handle init handshake timeout
         if init_timeout is None:
@@ -819,7 +819,7 @@ class Client(Generic[ClientTransportT]):
         """
 
         if isinstance(timeout, int | float):
-            timeout = datetime.timedelta(seconds=timeout)
+            timeout = datetime.timedelta(seconds=float(timeout))
         result = await self.session.call_tool(
             name=name,
             arguments=arguments,
