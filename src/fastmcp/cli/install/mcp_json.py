@@ -9,6 +9,7 @@ import cyclopts
 import pyperclip
 from rich import print
 
+from fastmcp.utilities.cli import build_uv_run_args
 from fastmcp.utilities.logging import get_logger
 
 from .shared import process_common_args
@@ -47,31 +48,14 @@ def install_mcp_json(
         True if generation was successful, False otherwise
     """
     try:
-        # Build uv run command
-        args = ["run"]
-
-        # Add Python version if specified
-        if python_version:
-            args.extend(["--python", python_version])
-
-        # Add project if specified
-        if project:
-            args.extend(["--project", str(project)])
-
-        # Collect all packages in a set to deduplicate
-        packages = {"fastmcp"}
-        if with_packages:
-            packages.update(pkg for pkg in with_packages if pkg)
-
-        # Add all packages with --with
-        for pkg in sorted(packages):
-            args.extend(["--with", pkg])
-
-        if with_editable:
-            args.extend(["--with-editable", str(with_editable)])
-
-        if with_requirements:
-            args.extend(["--with-requirements", str(with_requirements)])
+        # Build uv run command using centralized function
+        args = build_uv_run_args(
+            with_editable=with_editable,
+            with_packages=with_packages,
+            python_version=python_version,
+            with_requirements=with_requirements,
+            project=project,
+        )
 
         # Build server spec from parsed components
         if server_object:
