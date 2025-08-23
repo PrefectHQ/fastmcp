@@ -18,7 +18,7 @@ from fastmcp.utilities.fastmcp_config import (
 def sample_config(tmp_path):
     """Create a sample fastmcp.json configuration file with nested structure."""
     config_data = {
-        "$schema": "https://gofastmcp.com/schemas/fastmcp_config/v1.json",
+        "$schema": "https://gofastmcp.com/public/schemas/fastmcp.json/v1.json",
         "entrypoint": "server.py",
         "environment": {"python": "3.11", "dependencies": ["requests"]},
         "deployment": {"transport": "stdio", "env": {"TEST_VAR": "test_value"}},

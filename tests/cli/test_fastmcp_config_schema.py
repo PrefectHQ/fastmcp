@@ -43,7 +43,7 @@ def test_schema_has_correct_id():
     assert "$id" in generated_schema
     assert (
         generated_schema["$id"]
-        == "https://gofastmcp.com/schemas/fastmcp_config/v1.json"
+        == "https://gofastmcp.com/public/schemas/fastmcp.json/v1.json"
     )
 
 

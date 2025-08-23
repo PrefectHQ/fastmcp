@@ -33,7 +33,7 @@ FastMCP provides JSON schemas for IDE autocomplete and validation. Add the schem
 
 ```json
 {
-  "$schema": "https://gofastmcp.com/schemas/fastmcp_config/v1.json",
+  "$schema": "https://gofastmcp.com/public/schemas/fastmcp.json/v1.json",
   "entrypoint": {
     "file": "server.py",
     "object": "mcp"
@@ -42,8 +42,8 @@ FastMCP provides JSON schemas for IDE autocomplete and validation. Add the schem
 ```
 
 Two schema URLs are available:
-- **Version-specific**: `https://gofastmcp.com/schemas/fastmcp_config/v1.json`
-- **Latest version**: `https://gofastmcp.com/schemas/fastmcp_config/latest.json`
+- **Version-specific**: `https://gofastmcp.com/public/schemas/fastmcp.json/v1.json`
+- **Latest version**: `https://gofastmcp.com/public/schemas/fastmcp.json/latest.json`
 
 Modern IDEs like VS Code will automatically provide autocomplete suggestions, validation, and inline documentation when the schema is specified.
 
@@ -53,7 +53,7 @@ The `fastmcp.json` file has three main sections, each controlling a different as
 
 ```json
 {
-  "$schema": "https://gofastmcp.com/schemas/fastmcp_config/v1.json",
+  "$schema": "https://gofastmcp.com/public/schemas/fastmcp.json/v1.json",
   "entrypoint": {
     "file": "server.py",
     "object": "mcp"
@@ -261,7 +261,7 @@ A minimal configuration for a simple server:
 
 ```json
 {
-  "$schema": "https://gofastmcp.com/schemas/fastmcp_config/v1.json",
+  "$schema": "https://gofastmcp.com/public/schemas/fastmcp.json/v1.json",
   "entrypoint": {
     "file": "server.py",
     "object": "mcp"
@@ -276,7 +276,7 @@ A configuration optimized for local development:
 
 ```json
 {
-  "$schema": "https://gofastmcp.com/schemas/fastmcp_config/v1.json",
+  "$schema": "https://gofastmcp.com/public/schemas/fastmcp.json/v1.json",
   "entrypoint": "src/server.py:app",
   "environment": {
     "python": "3.12",
@@ -302,7 +302,7 @@ A production-ready configuration with full dependency management:
 
 ```json
 {
-  "$schema": "https://gofastmcp.com/schemas/fastmcp_config/v1.json",
+  "$schema": "https://gofastmcp.com/public/schemas/fastmcp.json/v1.json",
   "entrypoint": {
     "file": "app/main.py",
     "object": "mcp_server"
@@ -335,7 +335,7 @@ Configuration for a data analysis server with scientific packages:
 
 ```json
 {
-  "$schema": "https://gofastmcp.com/schemas/fastmcp_config/v1.json",
+  "$schema": "https://gofastmcp.com/public/schemas/fastmcp.json/v1.json",
   "entrypoint": {
     "file": "analysis_server.py",
     "object": "mcp"
@@ -367,7 +367,7 @@ You can maintain multiple configuration files for different environments:
 **dev.fastmcp.json**:
 ```json
 {
-  "$schema": "https://gofastmcp.com/schemas/fastmcp_config/v1.json",
+  "$schema": "https://gofastmcp.com/public/schemas/fastmcp.json/v1.json",
   "entrypoint": {
     "file": "server.py",
     "object": "mcp"
@@ -382,7 +382,7 @@ You can maintain multiple configuration files for different environments:
 **prod.fastmcp.json**:
 ```json
 {
-  "$schema": "https://gofastmcp.com/schemas/fastmcp_config/v1.json",
+  "$schema": "https://gofastmcp.com/public/schemas/fastmcp.json/v1.json",
   "entrypoint": {
     "file": "server.py",
     "object": "mcp"
@@ -515,7 +515,7 @@ uv run --with pandas --with requests \
 **Equivalent fastmcp.json**:
 ```json
 {
-  "$schema": "https://gofastmcp.com/schemas/fastmcp_config/v1.json",
+  "$schema": "https://gofastmcp.com/public/schemas/fastmcp.json/v1.json",
   "entrypoint": {
     "file": "server.py",
     "object": "mcp"

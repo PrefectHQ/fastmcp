@@ -20,7 +20,7 @@ from fastmcp.utilities.logging import get_logger
 logger = get_logger("cli.config")
 
 # JSON Schema for IDE support
-FASTMCP_JSON_SCHEMA = "https://gofastmcp.com/schemas/fastmcp_config/v1.json"
+FASTMCP_JSON_SCHEMA = "https://gofastmcp.com/public/schemas/fastmcp.json/v1.json"
 
 
 class EntrypointConfig(BaseModel):
@@ -324,7 +324,7 @@ class FastMCPConfig(BaseModel):
 
     # Schema field for IDE support
     schema_: str | None = Field(
-        default="https://gofastmcp.com/schemas/fastmcp_config/v1.json",
+        default="https://gofastmcp.com/public/schemas/fastmcp.json/v1.json",
         alias="$schema",
         description="JSON schema for IDE support and validation",
     )

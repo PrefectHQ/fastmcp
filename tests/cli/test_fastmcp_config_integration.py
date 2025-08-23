@@ -37,7 +37,7 @@ if __name__ == "__main__":
 
     # Create config file
     config_data = {
-        "$schema": "https://gofastmcp.com/schemas/fastmcp_config/v1.json",
+        "$schema": "https://gofastmcp.com/public/schemas/fastmcp.json/v1.json",
         "entrypoint": "server.py",
         "environment": {
             "python": sys.version.split()[0],  # Use current Python version

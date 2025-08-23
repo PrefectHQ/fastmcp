@@ -365,7 +365,7 @@ class TestFastMCPConfig:
     def test_from_file(self, tmp_path):
         """Test loading config from JSON file with nested structure."""
         config_data = {
-            "$schema": "https://gofastmcp.com/schemas/fastmcp_config/v1.json",
+            "$schema": "https://gofastmcp.com/public/schemas/fastmcp.json/v1.json",
             "entrypoint": {"file": "src/server.py", "object": "app"},
             "environment": {"python": "3.12", "dependencies": ["requests"]},
             "deployment": {"transport": "http", "port": 8000},
