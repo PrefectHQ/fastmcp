@@ -6,11 +6,11 @@ from fastmcp.settings import Settings
 from fastmcp.utilities.logging import configure_logging as _configure_logging
 
 settings = Settings()
-# if False:
-_configure_logging(
-    level=settings.log_level,
-    enable_rich_tracebacks=settings.enable_rich_tracebacks,
-)
+if settings.log_enabled:
+    _configure_logging(
+        level=settings.log_level,
+        enable_rich_tracebacks=settings.enable_rich_tracebacks,
+    )
 
 from fastmcp.server.server import FastMCP
 from fastmcp.server.context import Context
