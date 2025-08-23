@@ -25,7 +25,7 @@ repos:
   - repo: local
     hooks:
       - id: ty
-        name: type check
+        name: ty check
         entry: uv run ty check
         language: system
         types: [python]
@@ -37,4 +37,5 @@ repos:
     rev: v6.0.0
     hooks:
       - id: no-commit-to-branch
+        name: prevent commits to main
         args: [--branch, main]

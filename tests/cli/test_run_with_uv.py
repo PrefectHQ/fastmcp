@@ -65,18 +65,12 @@ class TestRunWithUv:
         assert exc_info.value.code == 0
 
         cmd = mock_run.call_args[0][0]
-        expected = [
-            "uv",
-            "run",
-            "--project",
-            str(Path("/my/project")),
-            "--with",
-            "fastmcp",
-            "fastmcp",
-            "run",
-            "server.py",
-        ]
-        assert cmd == expected
+        # Check the basic structure
+        assert cmd[:3] == ["uv", "run", "--project"]
+        # Check that the project path is absolute
+        assert Path(cmd[3]).is_absolute()
+        # Check the rest of the command
+        assert cmd[4:] == ["--with", "fastmcp", "fastmcp", "run", "server.py"]
 
     @patch("subprocess.run")
     def test_run_with_uv_with_packages(self, mock_run):
@@ -95,9 +89,9 @@ class TestRunWithUv:
             "--with",
             "fastmcp",
             "--with",
-            "pandas",
+            "numpy",  # sorted alphabetically
             "--with",
-            "numpy",
+            "pandas",  # sorted alphabetically
             "fastmcp",
             "run",
             "server.py",
@@ -122,7 +116,7 @@ class TestRunWithUv:
             "--with",
             "fastmcp",
             "--with-requirements",
-            "requirements.txt",
+            str(req_path.expanduser().resolve()),  # resolved to absolute path
             "fastmcp",
             "run",
             "server.py",
@@ -190,19 +184,16 @@ class TestRunWithUv:
         assert exc_info.value.code == 0
 
         cmd = mock_run.call_args[0][0]
-        expected = [
-            "uv",
-            "run",
-            "--python",
-            "3.10",
-            "--project",
-            str(Path("/workspace")),
-            "--with",
-            "fastmcp",
-            "--with",
-            "pandas",
-            "--with-requirements",
-            "reqs.txt",
+
+        # Check the structure piece by piece to be platform-agnostic
+        assert cmd[:5] == ["uv", "run", "--python", "3.10", "--project"]
+        # Check project path is absolute
+        assert Path(cmd[5]).is_absolute()
+        assert cmd[6:10] == ["--with", "fastmcp", "--with", "pandas"]
+        assert cmd[10] == "--with-requirements"
+        # Check requirements path is absolute
+        assert Path(cmd[11]).is_absolute()
+        assert cmd[12:] == [
             "fastmcp",
             "run",
             "server.py",
@@ -212,7 +203,6 @@ class TestRunWithUv:
             "9000",
             "--no-banner",
         ]
-        assert cmd == expected
 
     @patch("subprocess.run")
     def test_run_with_uv_error_handling(self, mock_run):

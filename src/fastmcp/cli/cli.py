@@ -19,6 +19,7 @@ import fastmcp
 from fastmcp.cli import run as run_module
 from fastmcp.cli.install import install_app
 from fastmcp.server.server import FastMCP
+from fastmcp.utilities.cli import build_uv_command
 from fastmcp.utilities.inspect import FastMCPInfo, inspect_fastmcp
 from fastmcp.utilities.logging import get_logger
 
@@ -57,46 +58,8 @@ def _parse_env_var(env_var: str) -> tuple[str, str]:
     return key.strip(), value.strip()
 
 
-def _build_uv_command(
-    server_spec: str,
-    with_editable: Path | None = None,
-    with_packages: list[str] | None = None,
-    no_banner: bool = False,
-    python_version: str | None = None,
-    with_requirements: Path | None = None,
-    project: Path | None = None,
-) -> list[str]:
-    """Build the uv run command that runs a MCP server through mcp run."""
-    cmd = ["uv", "run"]
-
-    # Add Python version if specified
-    if python_version:
-        cmd.extend(["--python", python_version])
-
-    # Add project if specified
-    if project:
-        cmd.extend(["--project", str(project)])
-
-    cmd.extend(["--with", "fastmcp"])
-
-    if with_editable:
-        cmd.extend(["--with-editable", str(with_editable)])
-
-    if with_packages:
-        for pkg in with_packages:
-            if pkg:
-                cmd.extend(["--with", pkg])
-
-    if with_requirements:
-        cmd.extend(["--with-requirements", str(with_requirements)])
-
-    # Add mcp run command
-    cmd.extend(["fastmcp", "run", server_spec])
-
-    if no_banner:
-        cmd.append("--no-banner")
-
-    return cmd
+# The _build_uv_command function has been moved to cli/utils.py
+# and is now imported as build_uv_command
 
 
 @app.command
@@ -302,15 +265,17 @@ async def dev(
         if inspector_version:
             inspector_cmd += f"@{inspector_version}"
 
-        uv_cmd = _build_uv_command(
+        uv_cmd = build_uv_command(
             server_spec,
-            with_editable,
-            with_packages,
-            no_banner=True,
+            with_editable=with_editable,
+            with_packages=with_packages,
             python_version=python,
             with_requirements=with_requirements,
             project=project,
         )
+
+        # Add --no-banner flag for dev command
+        uv_cmd.append("--no-banner")
 
         # Run the MCP Inspector command with shell=True on Windows
         shell = sys.platform == "win32"

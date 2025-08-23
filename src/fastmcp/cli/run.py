@@ -13,6 +13,7 @@ from typing import Any, Literal
 from mcp.server.fastmcp import FastMCP as FastMCP1x
 
 from fastmcp.server.server import FastMCP
+from fastmcp.utilities.cli import build_uv_command
 from fastmcp.utilities.fastmcp_config import (
     DeploymentConfig,
     EntrypointConfig,
@@ -255,31 +256,14 @@ def run_with_uv(
                 port = merged_deploy["port"]
                 path = merged_deploy["path"]
                 log_level = merged_deploy["log_level"]
-    cmd = ["uv", "run"]
-
-    # Add Python version if specified
-    if python_version:
-        cmd.extend(["--python", python_version])
-
-    # Add project if specified
-    if project:
-        cmd.extend(["--project", str(project)])
-
-    # Add fastmcp package
-    cmd.extend(["--with", "fastmcp"])
-
-    # Add additional packages
-    if with_packages:
-        for pkg in with_packages:
-            if pkg:
-                cmd.extend(["--with", pkg])
-
-    # Add requirements file
-    if with_requirements:
-        cmd.extend(["--with-requirements", str(with_requirements)])
-
-    # Add fastmcp run command
-    cmd.extend(["fastmcp", "run", server_spec])
+    # Build uv command using centralized function
+    cmd = build_uv_command(
+        server_spec,
+        with_packages=with_packages,
+        python_version=python_version,
+        with_requirements=with_requirements,
+        project=project,
+    )
 
     # Add transport options
     if transport:
