@@ -39,10 +39,8 @@ def mcp_server_type_to_servers_and_transports(
     server: FastMCP[Any]
     transport: ClientTransport
 
-    token = secrets.token_hex(2)
-
-    client_name = ProxyClient.generate_name(f"MCP_{name}_{token}")
-    server_name = FastMCP.generate_name(f"MCP_{name}_{token}")
+    client_name = ProxyClient.generate_name(f"MCP_{name}")
+    server_name = FastMCP.generate_name(f"MCP_{name}")
 
     if isinstance(mcp_server, TransformingRemoteMCPServer | TransformingStdioMCPServer):
         server, transport = mcp_server._to_server_and_underlying_transport(
