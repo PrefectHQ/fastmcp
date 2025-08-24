@@ -902,7 +902,8 @@ class MCPConfigTransport(ClientTransport):
 
         # otherwise create a composite client
         else:
-            self._composite_server = FastMCP[Any]()
+            name = FastMCP.generate_name("MCPRouter")
+            self._composite_server = FastMCP[Any](name=name)
 
             for name, server, transport in mcp_config_to_servers_and_transports(
                 self.config
