@@ -343,7 +343,7 @@ class Client(Generic[ClientTransportT]):
         # Reset session state to fresh state
         new_client._session_state = ClientSessionState()
 
-        new_client.name += f"-{secrets.token_hex(2)}"
+        new_client.name += f":{secrets.token_hex(2)}"
 
         return new_client
 
