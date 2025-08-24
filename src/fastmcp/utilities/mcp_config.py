@@ -1,11 +1,18 @@
 from typing import Any
 
-from fastmcp.client.transports import ClientTransport
+from fastmcp.client import Client
+from fastmcp.client.transports import (
+    ClientTransport,
+    SSETransport,
+    StdioTransport,
+    StreamableHttpTransport,
+)
 from fastmcp.mcp_config import (
     MCPConfig,
     MCPServerTypes,
 )
 from fastmcp.server.server import FastMCP
+from fastmcp.server.proxy import ProxyClient
 
 
 def mcp_config_to_servers_and_transports(
@@ -23,6 +30,8 @@ def mcp_server_type_to_servers_and_transports(
     mcp_server: MCPServerTypes,
 ) -> tuple[str, FastMCP[Any], ClientTransport]:
     """A utility function to convert each entry of an MCP Config into a transport and server."""
+    import secrets
+
     from fastmcp.mcp_config import (
         TransformingRemoteMCPServer,
         TransformingStdioMCPServer,
@@ -31,10 +40,21 @@ def mcp_server_type_to_servers_and_transports(
     server: FastMCP[Any]
     transport: ClientTransport
 
+    token = secrets.token_hex(2)
+
+    client_name = ProxyClient.generate_name(f"MCP_{name}_{token}")
+    server_name = FastMCP.generate_name(f"MCP_{name}_{token}")
+
     if isinstance(mcp_server, TransformingRemoteMCPServer | TransformingStdioMCPServer):
-        server, transport = mcp_server._to_server_and_underlying_transport()
+        server, transport = mcp_server._to_server_and_underlying_transport(
+            server_name=server_name,
+            client_name=client_name,
+        )
     else:
         transport = mcp_server.to_transport()
-        server = FastMCP.as_proxy(backend=transport)
+        client: ProxyClient[StreamableHttpTransport | SSETransport | StdioTransport] = (
+            ProxyClient(transport=transport, name=client_name)
+        )
+        server = FastMCP.as_proxy(name=server_name, backend=client)
 
     return name, server, transport

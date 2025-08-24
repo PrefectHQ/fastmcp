@@ -225,10 +225,7 @@ class Client(Generic[ClientTransportT]):
         client_info: mcp.types.Implementation | None = None,
         auth: httpx.Auth | Literal["oauth"] | str | None = None,
     ) -> None:
-        # Generate random ID if no name provided
-        if name is None:
-            name = f"FastMCP-Client-{secrets.token_hex(4)}"
-        self.name = name
+        self.name = name or self.generate_name()
 
         self.transport = cast(ClientTransportT, infer_transport(transport))
         if auth is not None:
@@ -345,6 +342,8 @@ class Client(Generic[ClientTransportT]):
 
         # Reset session state to fresh state
         new_client._session_state = ClientSessionState()
+
+        new_client.name += f"-{secrets.token_hex(2)}"
 
         return new_client
 
@@ -545,6 +544,8 @@ class Client(Generic[ClientTransportT]):
         Raises:
             RuntimeError: If called while the client is not connected.
         """
+        logger.debug(f"[{self.name}] called list_resources")
+
         result = await self.session.list_resources()
         return result
 
@@ -572,6 +573,8 @@ class Client(Generic[ClientTransportT]):
         Raises:
             RuntimeError: If called while the client is not connected.
         """
+        logger.debug(f"[{self.name}] called list_resource_templates")
+
         result = await self.session.list_resource_templates()
         return result
 
@@ -604,6 +607,8 @@ class Client(Generic[ClientTransportT]):
         Raises:
             RuntimeError: If called while the client is not connected.
         """
+        logger.debug(f"[{self.name}] called read_resource: {uri}")
+
         if isinstance(uri, str):
             uri = AnyUrl(uri)  # Ensure AnyUrl
         result = await self.session.read_resource(uri)
@@ -658,6 +663,8 @@ class Client(Generic[ClientTransportT]):
         Raises:
             RuntimeError: If called while the client is not connected.
         """
+        logger.debug(f"[{self.name}] called list_prompts")
+
         result = await self.session.list_prompts()
         return result
 
@@ -690,6 +697,8 @@ class Client(Generic[ClientTransportT]):
         Raises:
             RuntimeError: If called while the client is not connected.
         """
+        logger.debug(f"[{self.name}] called get_prompt: {name}")
+
         # Serialize arguments for MCP protocol - convert non-string values to JSON
         serialized_arguments: dict[str, str] | None = None
         if arguments:
@@ -747,6 +756,8 @@ class Client(Generic[ClientTransportT]):
         Raises:
             RuntimeError: If called while the client is not connected.
         """
+        logger.debug(f"[{self.name}] called complete: {ref}")
+
         result = await self.session.complete(ref=ref, argument=argument)
         return result
 
@@ -782,6 +793,8 @@ class Client(Generic[ClientTransportT]):
         Raises:
             RuntimeError: If called while the client is not connected.
         """
+        logger.debug(f"[{self.name}] called list_tools")
+
         result = await self.session.list_tools()
         return result
 
@@ -824,6 +837,7 @@ class Client(Generic[ClientTransportT]):
         Raises:
             RuntimeError: If called while the client is not connected.
         """
+        logger.debug(f"[{self.name}] called call_tool: {name}")
 
         if isinstance(timeout, int | float):
             timeout = datetime.timedelta(seconds=float(timeout))
@@ -904,6 +918,14 @@ class Client(Generic[ClientTransportT]):
             data=data,
             is_error=result.isError,
         )
+
+    @classmethod
+    def generate_name(cls, name: str | None = None) -> str:
+        class_name = cls.__name__
+        if name is None:
+            return f"{class_name}-{secrets.token_hex(2)}"
+        else:
+            return f"{class_name}-{name}-{secrets.token_hex(2)}"
 
 
 @dataclass

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+import secrets
 import warnings
 from collections.abc import Awaitable, Callable
 from pathlib import Path
@@ -482,6 +483,9 @@ class FastMCPProxy(FastMCP):
 
         super().__init__(**kwargs)
 
+        if "name" not in kwargs:
+            kwargs["name"] = self.generate_name()
+
         # Handle client and client_factory parameters
         if client is not None and client_factory is not None:
             raise ValueError("Cannot specify both 'client' and 'client_factory'")
@@ -546,6 +550,9 @@ class ProxyClient(Client[ClientTransportT]):
         | str,
         **kwargs,
     ):
+
+        if "name" not in kwargs:
+            kwargs["name"] = self.generate_name()
         if "roots" not in kwargs:
             kwargs["roots"] = default_proxy_roots_handler
         if "sampling_handler" not in kwargs:
