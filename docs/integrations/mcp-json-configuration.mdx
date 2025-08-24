@@ -179,9 +179,9 @@ You can also use a `fastmcp.json` configuration file (recommended):
 ```json fastmcp.json
 {
   "$schema": "https://gofastmcp.com/public/schemas/fastmcp.json/v1.json",
-  "entrypoint": {
-    "file": "server.py",
-    "object": "mcp"
+  "source": {
+    "path": "server.py",
+    "entrypoint": "mcp"
   },
   "environment": {
     "dependencies": ["pandas", "matplotlib", "seaborn"]

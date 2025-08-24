@@ -40,6 +40,7 @@ def test_schema_has_correct_id():
     """Test that the schema has the correct $id field."""
     generated_schema = generate_schema()
 
+    assert generated_schema is not None
     assert "$id" in generated_schema
     assert (
         generated_schema["$id"]
@@ -51,19 +52,21 @@ def test_schema_has_required_fields():
     """Test that the schema specifies the required fields correctly."""
     generated_schema = generate_schema()
 
-    # Check that entrypoint is required
+    assert generated_schema is not None
+    # Check that source is required
     assert "required" in generated_schema
-    assert "entrypoint" in generated_schema["required"]
+    assert "source" in generated_schema["required"]
 
-    # Check that entrypoint is in properties
+    # Check that source is in properties
     assert "properties" in generated_schema
-    assert "entrypoint" in generated_schema["properties"]
+    assert "source" in generated_schema["properties"]
 
 
 def test_schema_nested_structure():
     """Test that the schema has the correct nested structure."""
     generated_schema = generate_schema()
 
+    assert generated_schema is not None
     properties = generated_schema["properties"]
 
     # Check environment section
@@ -95,6 +98,7 @@ def test_schema_transport_enum():
     """Test that transport field has correct enum values."""
     generated_schema = generate_schema()
 
+    assert generated_schema is not None
     # Navigate to transport field
     deploy_schema = generated_schema["properties"]["deployment"]
 
@@ -129,6 +133,7 @@ def test_schema_log_level_enum():
     """Test that log_level field has correct enum values."""
     generated_schema = generate_schema()
 
+    assert generated_schema is not None
     # Navigate to log_level field
     deploy_schema = generated_schema["properties"]["deployment"]
 

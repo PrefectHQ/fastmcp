@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from fastmcp.utilities.cli import build_uv_run_args
+from fastmcp.utilities.fastmcp_config import Environment
 from fastmcp.utilities.logging import get_logger
 
 logger = get_logger(__name__)
@@ -90,11 +90,20 @@ def update_claude_config(
             else:
                 env_vars = existing_env
 
-        # Build uv run command using centralized function
-        args = build_uv_run_args(
-            with_editable=with_editable,
-            with_packages=with_packages,
+        # Deduplicate packages and exclude 'fastmcp' since Environment adds it automatically
+        deduplicated_packages = None
+        if with_packages:
+            deduplicated = list(dict.fromkeys(with_packages))
+            deduplicated_packages = [pkg for pkg in deduplicated if pkg != "fastmcp"]
+            if not deduplicated_packages:
+                deduplicated_packages = None
+
+        # Build uv run command using Environment.build_uv_args()
+        env_config = Environment(
+            dependencies=deduplicated_packages,
+            editable=str(with_editable) if with_editable else None,
         )
+        args = env_config.build_uv_args()
 
         # Convert file path to absolute before adding to command
         # Split off any :object suffix first

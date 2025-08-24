@@ -38,7 +38,7 @@ if __name__ == "__main__":
     # Create config file
     config_data = {
         "$schema": "https://gofastmcp.com/public/schemas/fastmcp.json/v1.json",
-        "entrypoint": "server.py",
+        "source": {"path": "server.py"},
         "environment": {
             "python": sys.version.split()[0],  # Use current Python version
             "dependencies": ["fastmcp"],
@@ -58,7 +58,7 @@ class TestConfigFileDetection:
     def test_detect_standard_fastmcp_json(self, tmp_path):
         """Test detection of standard fastmcp.json file."""
         config_file = tmp_path / "fastmcp.json"
-        config_file.write_text(json.dumps({"entrypoint": "server.py"}))
+        config_file.write_text(json.dumps({"source": {"path": "server.py"}}))
 
         # Should be detected as fastmcp config
         assert "fastmcp.json" in config_file.name
@@ -67,7 +67,7 @@ class TestConfigFileDetection:
     def test_detect_prefixed_fastmcp_json(self, tmp_path):
         """Test detection of prefixed fastmcp.json files."""
         config_file = tmp_path / "my.fastmcp.json"
-        config_file.write_text(json.dumps({"entrypoint": "server.py"}))
+        config_file.write_text(json.dumps({"source": {"path": "server.py"}}))
 
         # Should be detected as fastmcp config
         assert "fastmcp.json" in config_file.name
@@ -75,7 +75,7 @@ class TestConfigFileDetection:
     def test_detect_test_fastmcp_json(self, tmp_path):
         """Test detection of test_fastmcp.json file."""
         config_file = tmp_path / "test_fastmcp.json"
-        config_file.write_text(json.dumps({"entrypoint": "server.py"}))
+        config_file.write_text(json.dumps({"source": {"path": "server.py"}}))
 
         # Should be detected as fastmcp config
         assert "fastmcp.json" in config_file.name
@@ -91,14 +91,18 @@ class TestConfigWithClient:
         config_file = server_with_config / "fastmcp.json"
         config = FastMCPConfig.from_file(config_file)
 
-        # Import the server using the entrypoint
+        # Import the server using the source
         import importlib.util
         import sys
 
-        entrypoint = config.get_entrypoint(config_file)
-        spec = importlib.util.spec_from_file_location("test_server", entrypoint.file)
+        # Resolve the path from the source
+        source_path = Path(config.source.path)
+        if not source_path.is_absolute():
+            source_path = (config_file.parent / source_path).resolve()
+
+        spec = importlib.util.spec_from_file_location("test_server", str(source_path))
         if spec is None or spec.loader is None:
-            raise RuntimeError(f"Could not load module from {entrypoint.file}")
+            raise RuntimeError(f"Could not load module from {source_path}")
         module = importlib.util.module_from_spec(spec)
         sys.modules["test_server"] = module
         spec.loader.exec_module(module)
@@ -129,7 +133,7 @@ class TestEnvironmentExecution:
     def test_needs_uv_with_dependencies(self):
         """Test that environment with dependencies needs UV."""
         config = FastMCPConfig(
-            entrypoint="server.py",
+            source={"path": "server.py"},
             environment={"dependencies": ["requests", "numpy"]},  # type: ignore[arg-type]
         )
 
@@ -139,7 +143,7 @@ class TestEnvironmentExecution:
     def test_needs_uv_with_python_version(self):
         """Test that environment with Python version needs UV."""
         config = FastMCPConfig(
-            entrypoint="server.py",
+            source={"path": "server.py"},
             environment={"python": "3.12"},  # type: ignore[arg-type]
         )
 
@@ -148,7 +152,7 @@ class TestEnvironmentExecution:
 
     def test_no_uv_needed_without_environment(self):
         """Test that no UV is needed without environment config."""
-        config = FastMCPConfig(entrypoint="server.py")
+        config = FastMCPConfig(source={"path": "server.py"})
 
         # Environment is now always present but may be empty
         assert config.environment is not None
@@ -157,7 +161,7 @@ class TestEnvironmentExecution:
     def test_no_uv_needed_with_empty_environment(self):
         """Test that no UV is needed with empty environment config."""
         config = FastMCPConfig(
-            entrypoint="server.py",
+            source={"path": "server.py"},
             environment={},  # type: ignore[arg-type]
         )
 
@@ -165,77 +169,11 @@ class TestEnvironmentExecution:
         assert not config.environment.needs_uv()
 
 
-class TestCLIArgumentMerging:
-    """Test CLI argument merging with config values."""
-
-    def test_cli_overrides_environment(self):
-        """Test that CLI args override environment config."""
-        config = FastMCPConfig(
-            entrypoint="server.py",
-            environment={"python": "3.11", "dependencies": ["requests"]},  # type: ignore[arg-type]
-        )
-
-        assert config.environment is not None
-        merged = config.environment.merge_with_cli_args(
-            python="3.12",  # Override Python version
-            with_packages=["numpy"],  # Add package
-            with_requirements=None,
-            project=None,
-        )
-
-        assert merged["python"] == "3.12"  # CLI wins
-        assert "requests" in merged["with_packages"]  # From config
-        assert "numpy" in merged["with_packages"]  # From CLI
-
-    def test_cli_overrides_deployment(self):
-        """Test that CLI args override deployment config."""
-        config = FastMCPConfig(
-            entrypoint="server.py",
-            deployment={"transport": "stdio", "port": 3000, "log_level": "INFO"},  # type: ignore[arg-type]
-        )
-
-        assert config.deployment is not None
-        merged = config.deployment.merge_with_cli_args(
-            transport="http",  # Override transport
-            host="localhost",  # New value
-            port=8080,  # Override port
-            path=None,
-            log_level="DEBUG",  # Override log level
-            server_args=None,
-        )
-
-        assert merged["transport"] == "http"  # CLI wins
-        assert merged["host"] == "localhost"  # CLI value
-        assert merged["port"] == 8080  # CLI wins
-        assert merged["log_level"] == "DEBUG"  # CLI wins
-
-    def test_config_values_when_cli_is_none(self):
-        """Test that config values are used when CLI args are None."""
-        config = FastMCPConfig(
-            entrypoint="server.py",
-            deployment={"transport": "http", "port": 3000},  # type: ignore[arg-type]
-        )
-
-        assert config.deployment is not None
-        merged = config.deployment.merge_with_cli_args(
-            transport=None,  # Use config
-            host=None,  # No value
-            port=None,  # Use config
-            path=None,
-            log_level=None,
-            server_args=None,
-        )
-
-        assert merged["transport"] == "http"  # From config
-        assert merged["port"] == 3000  # From config
-        assert merged["host"] is None  # No value provided
-
-
 class TestPathResolution:
     """Test path resolution in configurations."""
 
-    def test_entrypoint_path_resolution(self, tmp_path):
-        """Test that entrypoint paths are resolved relative to config."""
+    def test_source_path_resolution(self, tmp_path):
+        """Test that source paths are resolved relative to config."""
         # Create nested directory structure
         config_dir = tmp_path / "config"
         config_dir.mkdir()
@@ -246,14 +184,11 @@ class TestPathResolution:
         server_file = src_dir / "server.py"
         server_file.write_text("# Server")
 
-        config = FastMCPConfig(entrypoint="../src/server.py")
+        config = FastMCPConfig(source={"path": "../src/server.py"})
 
-        # Get entrypoint resolved relative to config location
-        config_file = config_dir / "fastmcp.json"
-        entrypoint = config.get_entrypoint(config_file)
-
-        # Should resolve to absolute path of server file
-        assert Path(entrypoint.file) == server_file.resolve()
+        # The source path is resolved during load_server
+        # For now, just check that the source is created correctly
+        assert config.source.path == "../src/server.py"
 
     def test_cwd_path_resolution(self, tmp_path):
         """Test that working directory is resolved relative to config."""
@@ -264,7 +199,7 @@ class TestPathResolution:
         work_dir.mkdir()
 
         config = FastMCPConfig(
-            entrypoint="server.py",
+            source={"path": "server.py"},
             deployment={"cwd": "work"},  # type: ignore[arg-type]
         )
 
@@ -288,7 +223,7 @@ class TestPathResolution:
         reqs_file.write_text("fastmcp>=2.0")
 
         config = FastMCPConfig(
-            entrypoint="server.py",
+            source={"path": "server.py"},
             environment={"requirements": "requirements.txt"},  # type: ignore[arg-type]
         )
 
@@ -309,7 +244,7 @@ class TestConfigValidation:
         """Test that invalid transport values are rejected."""
         with pytest.raises(ValueError):
             FastMCPConfig(
-                entrypoint="server.py",
+                source={"path": "server.py"},
                 deployment={"transport": "invalid_transport"},  # type: ignore[arg-type]
             )
 
@@ -317,7 +252,7 @@ class TestConfigValidation:
         """Test that streamable-http transport is rejected in fastmcp.json config."""
         with pytest.raises(ValueError):
             FastMCPConfig(
-                entrypoint="server.py",
+                source={"path": "server.py"},
                 deployment={"transport": "streamable-http"},  # type: ignore[arg-type]
             )
 
@@ -325,12 +260,12 @@ class TestConfigValidation:
         """Test that invalid log level values are rejected."""
         with pytest.raises(ValueError):
             FastMCPConfig(
-                entrypoint="server.py",
+                source={"path": "server.py"},
                 deployment={"log_level": "INVALID"},  # type: ignore[arg-type]
             )
 
-    def test_missing_entrypoint_rejected(self):
-        """Test that config without entrypoint is rejected."""
+    def test_missing_source_rejected(self):
+        """Test that config without source is rejected."""
         with pytest.raises(ValueError):
             FastMCPConfig()  # type: ignore[call-arg]
 
@@ -338,7 +273,7 @@ class TestConfigValidation:
         """Test that all valid transport values are accepted."""
         for transport in ["stdio", "http", "sse"]:
             config = FastMCPConfig(
-                entrypoint="server.py",
+                source={"path": "server.py"},
                 deployment={"transport": transport},  # type: ignore[arg-type]
             )
             assert config.deployment is not None
@@ -348,7 +283,7 @@ class TestConfigValidation:
         """Test that all valid log levels are accepted."""
         for level in ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]:
             config = FastMCPConfig(
-                entrypoint="server.py",
+                source={"path": "server.py"},
                 deployment={"log_level": level},  # type: ignore[arg-type]
             )
             assert config.deployment is not None

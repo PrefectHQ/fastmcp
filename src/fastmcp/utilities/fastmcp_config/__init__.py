@@ -5,17 +5,19 @@ The current version is v1, which is re-exported here for convenience.
 """
 
 from fastmcp.utilities.fastmcp_config.v1.fastmcp_config import (
-    DeploymentConfig,
-    EntrypointConfig,
-    EnvironmentConfig,
+    BaseSource,
+    Deployment,
+    Environment,
     FastMCPConfig,
+    FileSystemSource,
     generate_schema,
 )
 
 __all__ = [
+    "BaseSource",
+    "Deployment",
+    "Environment",
     "FastMCPConfig",
-    "EntrypointConfig",
-    "EnvironmentConfig",
-    "DeploymentConfig",
+    "FileSystemSource",
     "generate_schema",
 ]
