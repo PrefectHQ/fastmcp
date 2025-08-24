@@ -10,7 +10,7 @@ from fastmcp.mcp_config import (
     MCPConfig,
     MCPServerTypes,
 )
-from fastmcp.server.proxy import ProxyClient
+from fastmcp.server.proxy import FastMCPProxy, ProxyClient
 from fastmcp.server.server import FastMCP
 
 
@@ -29,7 +29,6 @@ def mcp_server_type_to_servers_and_transports(
     mcp_server: MCPServerTypes,
 ) -> tuple[str, FastMCP[Any], ClientTransport]:
     """A utility function to convert each entry of an MCP Config into a transport and server."""
-    import secrets
 
     from fastmcp.mcp_config import (
         TransformingRemoteMCPServer,
@@ -40,7 +39,7 @@ def mcp_server_type_to_servers_and_transports(
     transport: ClientTransport
 
     client_name = ProxyClient.generate_name(f"MCP_{name}")
-    server_name = FastMCP.generate_name(f"MCP_{name}")
+    server_name = FastMCPProxy.generate_name(f"MCP_{name}")
 
     if isinstance(mcp_server, TransformingRemoteMCPServer | TransformingStdioMCPServer):
         server, transport = mcp_server._to_server_and_underlying_transport(
