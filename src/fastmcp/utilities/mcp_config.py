@@ -1,6 +1,5 @@
 from typing import Any
 
-from fastmcp.client import Client
 from fastmcp.client.transports import (
     ClientTransport,
     SSETransport,
@@ -11,8 +10,8 @@ from fastmcp.mcp_config import (
     MCPConfig,
     MCPServerTypes,
 )
-from fastmcp.server.server import FastMCP
 from fastmcp.server.proxy import ProxyClient
+from fastmcp.server.server import FastMCP
 
 
 def mcp_config_to_servers_and_transports(

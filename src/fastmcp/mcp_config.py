@@ -27,7 +27,7 @@ from __future__ import annotations
 import datetime
 import re
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Any, Literal
+from typing import TYPE_CHECKING, Annotated, Any, Literal, cast
 from urllib.parse import urlparse
 
 import httpx
@@ -97,8 +97,12 @@ class _TransformingMCPServerMixin(FastMCPBaseModel):
         """Turn the Transforming MCPServer into a FastMCP Server and also return the underlying transport."""
         from fastmcp import FastMCP
         from fastmcp.client import Client
+        from fastmcp.client.transports import (
+            ClientTransport,  # pyright: ignore[reportUnusedImport]
+        )
 
-        transport: ClientTransport = self.to_transport()
+        transport: ClientTransport = super().to_transport()  # pyright: ignore[reportUnknownMemberType, reportAttributeAccessIssue, reportUnknownVariableType]
+        transport = cast(ClientTransport, transport)
 
         client: Client[ClientTransport] = Client(transport=transport, name=client_name)
 

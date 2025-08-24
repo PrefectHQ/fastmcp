@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import inspect
-import secrets
 import warnings
 from collections.abc import Awaitable, Callable
 from pathlib import Path
@@ -550,7 +549,6 @@ class ProxyClient(Client[ClientTransportT]):
         | str,
         **kwargs,
     ):
-
         if "name" not in kwargs:
             kwargs["name"] = self.generate_name()
         if "roots" not in kwargs:

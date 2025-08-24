@@ -290,18 +290,21 @@ class TestMultipleServerMount:
 
         # Use an unreachable port
         unreachable_client = Client(
-            transport=SSETransport("http://127.0.0.1:9999/sse/")
+            transport=SSETransport("http://127.0.0.1:9999/sse/"),
+            name="unreachable_client",
         )
 
         # Create a proxy server that will fail to connect
-        unreachable_proxy = FastMCP.as_proxy(unreachable_client)
+        unreachable_proxy = FastMCP.as_proxy(
+            unreachable_client, name="unreachable_proxy"
+        )
 
         # Mount the unreachable proxy
         main_app.mount(unreachable_proxy, "unreachable")
 
         # All object types should work from working server despite unreachable proxy
         with caplog_for_fastmcp(caplog):
-            async with Client(main_app) as client:
+            async with Client(main_app, name="main_app_client") as client:
                 # Test tools
                 tools = await client.list_tools()
                 tool_names = [tool.name for tool in tools]
@@ -326,17 +329,17 @@ class TestMultipleServerMount:
             record.message for record in caplog.records if record.levelname == "WARNING"
         ]
         assert any(
-            "Failed to get tools from server: 'FastMCP', mounted at: 'unreachable'"
+            "Failed to get tools from server: 'unreachable_proxy', mounted at: 'unreachable'"
             in msg
             for msg in warning_messages
         )
         assert any(
-            "Failed to get resources from server: 'FastMCP', mounted at: 'unreachable'"
+            "Failed to get resources from server: 'unreachable_proxy', mounted at: 'unreachable'"
             in msg
             for msg in warning_messages
         )
         assert any(
-            "Failed to get prompts from server: 'FastMCP', mounted at: 'unreachable'"
+            "Failed to get prompts from server: 'unreachable_proxy', mounted at: 'unreachable'"
             in msg
             for msg in warning_messages
         )
