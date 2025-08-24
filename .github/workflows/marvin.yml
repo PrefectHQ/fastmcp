@@ -33,12 +33,6 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      # Set up Python environment
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
       # Install UV package manager
       - name: Install UV
         uses: astral-sh/setup-uv@v6
@@ -48,7 +42,7 @@ jobs:
 
       # Install project dependencies
       - name: Install dependencies
-        run: uv sync --dev
+        run: uv sync --python 3.12
 
       # Install pre-commit hooks automatically
       - name: Install pre-commit hooks
