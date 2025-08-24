@@ -29,7 +29,7 @@ from fastmcp.utilities.tests import caplog_for_fastmcp, temporary_settings
 class TestCreateServer:
     async def test_create_server(self):
         mcp = FastMCP(instructions="Server instructions")
-        assert mcp.name == "FastMCP"
+        assert mcp.name.startswith("FastMCP-")
         assert mcp.instructions == "Server instructions"
 
     async def test_non_ascii_description(self):

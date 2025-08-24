@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import copy
 import datetime
+import secrets
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -212,6 +213,7 @@ class Client(Generic[ClientTransportT]):
             | dict[str, Any]
             | str
         ),
+        name: str | None = None,
         roots: RootsList | RootsHandler | None = None,
         sampling_handler: ClientSamplingHandler | None = None,
         elicitation_handler: ElicitationHandler | None = None,
@@ -223,6 +225,11 @@ class Client(Generic[ClientTransportT]):
         client_info: mcp.types.Implementation | None = None,
         auth: httpx.Auth | Literal["oauth"] | str | None = None,
     ) -> None:
+        # Generate random ID if no name provided
+        if name is None:
+            name = f"FastMCP-Client-{secrets.token_hex(4)}"
+        self.name = name
+
         self.transport = cast(ClientTransportT, infer_transport(transport))
         if auth is not None:
             self.transport._set_auth(auth)
@@ -889,7 +896,7 @@ class Client(Generic[ClientTransportT]):
                     else:
                         data = result.structuredContent
             except Exception as e:
-                logger.error(f"Error parsing structured content: {e}")
+                logger.error(f"[{self.name}] Error parsing structured content: {e}")
 
         return CallToolResult(
             content=result.content,

@@ -5,6 +5,7 @@ from __future__ import annotations
 import inspect
 import json
 import re
+import secrets
 import warnings
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import (
@@ -197,8 +198,11 @@ class FastMCP(Generic[LifespanResultT]):
             lifespan = default_lifespan
         else:
             self._has_lifespan = True
+        # Generate random ID if no name provided
+        if name is None:
+            name = f"FastMCP-{secrets.token_hex(4)}"
         self._mcp_server = LowLevelServer[LifespanResultT](
-            name=name or "FastMCP",
+            name=name,
             version=version,
             instructions=instructions,
             lifespan=_lifespan_wrapper(self, lifespan),
@@ -519,7 +523,7 @@ class FastMCP(Generic[LifespanResultT]):
         return routes
 
     async def _mcp_list_tools(self) -> list[MCPTool]:
-        logger.debug("Handler called: list_tools")
+        logger.debug(f"[{self.name}] Handler called: list_tools")
 
         async with fastmcp.server.context.Context(fastmcp=self):
             tools = await self._list_tools()
@@ -563,7 +567,7 @@ class FastMCP(Generic[LifespanResultT]):
             return await self._apply_middleware(mw_context, _handler)
 
     async def _mcp_list_resources(self) -> list[MCPResource]:
-        logger.debug("Handler called: list_resources")
+        logger.debug(f"[{self.name}] Handler called: list_resources")
 
         async with fastmcp.server.context.Context(fastmcp=self):
             resources = await self._list_resources()
@@ -608,7 +612,7 @@ class FastMCP(Generic[LifespanResultT]):
             return await self._apply_middleware(mw_context, _handler)
 
     async def _mcp_list_resource_templates(self) -> list[MCPResourceTemplate]:
-        logger.debug("Handler called: list_resource_templates")
+        logger.debug(f"[{self.name}] Handler called: list_resource_templates")
 
         async with fastmcp.server.context.Context(fastmcp=self):
             templates = await self._list_resource_templates()
@@ -653,7 +657,7 @@ class FastMCP(Generic[LifespanResultT]):
             return await self._apply_middleware(mw_context, _handler)
 
     async def _mcp_list_prompts(self) -> list[MCPPrompt]:
-        logger.debug("Handler called: list_prompts")
+        logger.debug(f"[{self.name}] Handler called: list_prompts")
 
         async with fastmcp.server.context.Context(fastmcp=self):
             prompts = await self._list_prompts()
@@ -712,7 +716,9 @@ class FastMCP(Generic[LifespanResultT]):
         Returns:
             List of MCP Content objects containing the tool results
         """
-        logger.debug("Handler called: call_tool %s with %s", key, arguments)
+        logger.debug(
+            f"[{self.name}] Handler called: call_tool %s with %s", key, arguments
+        )
 
         async with fastmcp.server.context.Context(fastmcp=self):
             try:
@@ -754,7 +760,7 @@ class FastMCP(Generic[LifespanResultT]):
 
         Delegates to _read_resource, which should be overridden by FastMCP subclasses.
         """
-        logger.debug("Handler called: read_resource %s", uri)
+        logger.debug(f"[{self.name}] Handler called: read_resource %s", uri)
 
         async with fastmcp.server.context.Context(fastmcp=self):
             try:
@@ -809,7 +815,9 @@ class FastMCP(Generic[LifespanResultT]):
 
         Delegates to _get_prompt, which should be overridden by FastMCP subclasses.
         """
-        logger.debug("Handler called: get_prompt %s with %s", name, arguments)
+        logger.debug(
+            f"[{self.name}] Handler called: get_prompt %s with %s", name, arguments
+        )
 
         async with fastmcp.server.context.Context(fastmcp=self):
             try:
@@ -1966,9 +1974,11 @@ class FastMCP(Generic[LifespanResultT]):
             self._prompt_manager.add_prompt(prompt)
 
         if prefix:
-            logger.debug(f"Imported server {server.name} with prefix '{prefix}'")
+            logger.debug(
+                f"[{self.name}] Imported server {server.name} with prefix '{prefix}'"
+            )
         else:
-            logger.debug(f"Imported server {server.name}")
+            logger.debug(f"[{self.name}] Imported server {server.name}")
 
     @classmethod
     def from_openapi(
@@ -2194,6 +2204,119 @@ class FastMCP(Generic[LifespanResultT]):
                 return False
 
         return True
+
+    def generate_hierarchy_diagram(self, format: Literal["mermaid"] = "mermaid") -> str:
+        """Generate a diagram showing the hierarchy of servers, mounted servers, proxies, clients and transports.
+
+        Args:
+            format: Output format, currently only "mermaid" is supported
+
+        Returns:
+            A string containing the diagram in the requested format
+
+        Example:
+            ```python
+            server = FastMCP("MyServer")
+            print(server.generate_hierarchy_diagram())
+            ```
+        """
+        if format != "mermaid":
+            raise ValueError("Only 'mermaid' format is currently supported")
+
+        def get_server_type(server: FastMCP[Any]) -> str:
+            """Determine the type of server for display"""
+            from fastmcp.server.proxy import FastMCPProxy
+
+            if isinstance(server, FastMCPProxy):
+                return "Proxy"
+            return "Server"
+
+        lines = ["graph TD"]
+        node_id = 0
+
+        def add_node(name: str, node_type: str = "Server") -> str:
+            """Add a node and return its ID"""
+            nonlocal node_id
+            current_id = f"N{node_id}"
+            node_id += 1
+
+            # Choose appropriate mermaid shape based on type
+            if node_type == "Proxy":
+                shape = f'{current_id}[["{name}<br/>({node_type})"]'
+            elif node_type == "Client":
+                shape = f'{current_id}({{"{name}<br/>({node_type})"}})'
+            elif node_type == "Transport":
+                shape = f'{current_id}[["{name}<br/>({node_type})"]'
+            else:  # Server
+                shape = f'{current_id}["{name}<br/>({node_type})"]'
+
+            lines.append(f"    {shape}")
+            return current_id
+
+        def add_connection(from_id: str, to_id: str, label: str = "") -> None:
+            """Add a connection between nodes"""
+            if label:
+                lines.append(f"    {from_id} -->|{label}| {to_id}")
+            else:
+                lines.append(f"    {from_id} --> {to_id}")
+
+        # Add the main server
+        main_server_id = add_node(self.name, get_server_type(self))
+
+        # Add mounted servers recursively
+        def process_server(server: FastMCP[Any], parent_id: str) -> None:
+            for mounted in server._mounted_servers:
+                server_type = get_server_type(mounted.server)
+                mounted_id = add_node(mounted.server.name, server_type)
+
+                # Add connection with prefix label if it exists
+                prefix_label = (
+                    f"prefix: {mounted.prefix}" if mounted.prefix else "no prefix"
+                )
+                add_connection(parent_id, mounted_id, prefix_label)
+
+                # Recursively process this mounted server's mounts
+                process_server(mounted.server, mounted_id)
+
+                # If this is a proxy, try to show its client info
+                from fastmcp.server.proxy import FastMCPProxy
+
+                if isinstance(mounted.server, FastMCPProxy):
+                    try:
+                        # Add a representation of the proxy's client factory
+                        client_id = add_node("Client Factory", "Client")
+                        add_connection(mounted_id, client_id, "uses")
+                    except Exception:
+                        # In case of any issues accessing proxy internals, skip
+                        pass
+
+        # Process all mounted servers
+        process_server(self, main_server_id)
+
+        # If this is a proxy server, show its client connection
+        from fastmcp.server.proxy import FastMCPProxy
+
+        if isinstance(self, FastMCPProxy):
+            try:
+                client_id = add_node("Client Factory", "Client")
+                add_connection(main_server_id, client_id, "proxies to")
+            except Exception:
+                # In case of any issues, skip
+                pass
+
+        # Add styling
+        lines.extend(
+            [
+                "",
+                "    %% Styling",
+                "    classDef serverClass fill:#e1f5fe,stroke:#01579b,stroke-width:2px",
+                "    classDef proxyClass fill:#fff3e0,stroke:#e65100,stroke-width:2px",
+                "    classDef clientClass fill:#f3e5f5,stroke:#4a148c,stroke-width:2px",
+                "    classDef transportClass fill:#e8f5e8,stroke:#1b5e20,stroke-width:2px",
+            ]
+        )
+
+        return "\n".join(lines)
 
 
 @dataclass
