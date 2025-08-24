@@ -36,7 +36,7 @@ from fastmcp.client.auth.oauth import OAuth
 from fastmcp.mcp_config import MCPConfig, infer_transport_type_from_url
 from fastmcp.server.dependencies import get_http_headers
 from fastmcp.server.server import FastMCP
-from fastmcp.utilities.fastmcp_config.v1.fastmcp_config import EnvironmentConfig
+from fastmcp.utilities.fastmcp_config.v1.fastmcp_config import Environment
 from fastmcp.utilities.logging import get_logger
 
 logger = get_logger(__name__)
@@ -596,8 +596,8 @@ class UvStdioTransport(StdioTransport):
                 f"Project directory not found: {project_directory}"
             )
 
-        # Create EnvironmentConfig from provided parameters (internal use)
-        env_config = EnvironmentConfig(
+        # Create Environment from provided parameters (internal use)
+        env_config = Environment(
             python=python_version,
             dependencies=with_packages,
             requirements=with_requirements,

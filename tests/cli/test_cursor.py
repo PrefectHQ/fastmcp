@@ -239,11 +239,14 @@ class TestInstallCursor:
         """Test cursor installation with editable package."""
         mock_open_deeplink.return_value = True
 
+        # Use an absolute path that works on all platforms
+        editable_path = Path.cwd() / "local" / "package"
+
         result = install_cursor(
             file=Path("/path/to/server.py"),
             server_object="custom_app",
             name="test-server",
-            with_editable=Path("/local/package"),
+            with_editable=editable_path,
         )
 
         assert result is True

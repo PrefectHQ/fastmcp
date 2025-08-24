@@ -1,13 +1,16 @@
 """Shared utilities for install commands."""
 
+import json
 import sys
 from pathlib import Path
 
 from dotenv import dotenv_values
+from pydantic import ValidationError
 from rich import print
 
 from fastmcp.cli.run import import_server, parse_file_path
 from fastmcp.utilities.logging import get_logger
+from fastmcp.utilities.types import get_cached_typeadapter
 
 logger = get_logger(__name__)
 
@@ -34,28 +37,46 @@ async def process_common_args(
 
     Handles both fastmcp.json config files and traditional file.py:object syntax.
     """
-    # Check if server_spec is a fastmcp.json file
-    if server_spec.endswith("fastmcp.json") or "fastmcp.json" in Path(server_spec).name:
-        from fastmcp.utilities.fastmcp_config import FastMCPConfig
-
+    # Check if server_spec is a .json file
+    if server_spec.endswith(".json"):
         config_path = Path(server_spec).resolve()
         if not config_path.exists():
             print(f"[red]Configuration file not found: {config_path}[/red]")
             sys.exit(1)
 
-        # Load config and get entrypoint
-        config = FastMCPConfig.from_file(config_path)
-        entrypoint = config.get_entrypoint(config_path)
+        # Try to load as JSON and discriminate between FastMCPConfig and MCPConfig
+        try:
+            with open(config_path) as f:
+                data = json.load(f)
 
-        # Convert to file and server_object
-        file = Path(entrypoint.file)
-        server_object = entrypoint.object
+            # Check if it's an MCPConfig first (has canonical mcpServers key)
+            from fastmcp.utilities.fastmcp_config import FastMCPConfig
 
-        # Merge packages from config if not overridden
-        if config.environment and config.environment.dependencies:
-            # Merge with CLI packages (CLI takes precedence)
-            config_packages = config.environment.dependencies or []
-            with_packages = list(set(with_packages + config_packages))
+            if "mcpServers" in data:
+                # It's an MCPConfig, treat as regular server spec
+                file, server_object = parse_file_path(server_spec)
+            else:
+                # Try to parse as FastMCPConfig
+                try:
+                    adapter = get_cached_typeadapter(FastMCPConfig)
+                    config = adapter.validate_python(data)
+                    entrypoint = config.get_entrypoint(config_path)
+
+                    # Convert to file and server_object
+                    file = Path(entrypoint.file)
+                    server_object = entrypoint.object
+
+                    # Merge packages from config if not overridden
+                    if config.environment and config.environment.dependencies:
+                        # Merge with CLI packages (CLI takes precedence)
+                        config_packages = config.environment.dependencies or []
+                        with_packages = list(set(with_packages + config_packages))
+                except ValidationError:
+                    # Not a valid FastMCPConfig, treat as regular server spec
+                    file, server_object = parse_file_path(server_spec)
+        except (json.JSONDecodeError, FileNotFoundError):
+            # Not a valid JSON file, treat as regular server spec
+            file, server_object = parse_file_path(server_spec)
     else:
         # Parse traditional server spec
         file, server_object = parse_file_path(server_spec)

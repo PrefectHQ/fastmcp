@@ -1,6 +1,8 @@
 {
   "$schema": "https://gofastmcp.com/public/schemas/fastmcp.json/v1.json",
-  "entrypoint": "server.py",
+  "source": {
+    "path": "server.py"
+  },
   "environment": {
     "python": "3.11",
     "dependencies": ["pyautogui", "Pillow"]

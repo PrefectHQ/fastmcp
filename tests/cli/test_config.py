@@ -8,77 +8,52 @@ import pytest
 from pydantic import ValidationError
 
 from fastmcp.utilities.fastmcp_config import (
-    DeploymentConfig,
-    EntrypointConfig,
-    EnvironmentConfig,
+    Deployment,
+    Environment,
     FastMCPConfig,
+    FileSystemSource,
 )
 
 
-class TestEntrypointConfig:
-    """Test EntrypointConfig class."""
+class TestFileSystemSource:
+    """Test FileSystemSource class."""
 
-    def test_string_entrypoint(self):
-        """Test that string entrypoint is converted to EntrypointConfig."""
-        config = FastMCPConfig(entrypoint="server.py")
-        # With the new validator, this should be converted to EntrypointConfig
-        assert isinstance(config.entrypoint, EntrypointConfig)
-        assert config.entrypoint.file == "server.py"
-        assert config.entrypoint.object is None
+    def test_dict_source_minimal(self):
+        """Test that dict source is converted to FileSystemSource."""
+        config = FastMCPConfig(source={"path": "server.py"})
+        # Dict is converted to FileSystemSource
+        assert isinstance(config.source, FileSystemSource)
+        assert config.source.path == "server.py"
+        assert config.source.entrypoint is None
+        assert config.source.type == "filesystem"
 
-        # get_entrypoint should return the same object
-        entrypoint = config.get_entrypoint()
-        assert isinstance(entrypoint, EntrypointConfig)
-        assert entrypoint.file == "server.py"
-        assert entrypoint.object is None
+    def test_dict_source_with_entrypoint(self):
+        """Test dict source with entrypoint field."""
+        config = FastMCPConfig(source={"path": "server.py", "entrypoint": "app"})
+        # Dict with entrypoint is converted to FileSystemSource
+        assert isinstance(config.source, FileSystemSource)
+        assert config.source.path == "server.py"
+        assert config.source.entrypoint == "app"
+        assert config.source.type == "filesystem"
 
-    def test_string_entrypoint_with_object(self):
-        """Test string entrypoint with :object syntax."""
-        config = FastMCPConfig(entrypoint="server.py:app")
-        # With the new validator, this should be converted to EntrypointConfig
-        assert isinstance(config.entrypoint, EntrypointConfig)
-        assert config.entrypoint.file == "server.py"
-        assert config.entrypoint.object == "app"
-
-        # get_entrypoint should return the same object
-        entrypoint = config.get_entrypoint()
-        assert isinstance(entrypoint, EntrypointConfig)
-        assert entrypoint.file == "server.py"
-        assert entrypoint.object == "app"
-
-    def test_object_entrypoint(self):
-        """Test EntrypointConfig object format."""
+    def test_filesystem_source_entrypoint(self):
+        """Test FileSystemSource entrypoint format."""
         config = FastMCPConfig(
-            entrypoint=EntrypointConfig(file="src/server.py", object="mcp")
+            source=FileSystemSource(path="src/server.py", entrypoint="mcp")
         )
-        assert isinstance(config.entrypoint, EntrypointConfig)
-        assert config.entrypoint.file == "src/server.py"
-        assert config.entrypoint.object == "mcp"
-
-    def test_get_entrypoint_path_resolution(self, tmp_path):
-        """Test that get_entrypoint resolves paths relative to config file."""
-        config_dir = tmp_path / "config"
-        config_dir.mkdir()
-        server_dir = tmp_path / "src"
-        server_dir.mkdir()
-        server_file = server_dir / "server.py"
-        server_file.write_text("# server")
-
-        config = FastMCPConfig(entrypoint="../src/server.py")
-        entrypoint = config.get_entrypoint(config_dir / "fastmcp.json")
-
-        # Should resolve to absolute path
-        assert Path(entrypoint.file).is_absolute()
-        assert Path(entrypoint.file) == server_file.resolve()
+        assert isinstance(config.source, FileSystemSource)
+        assert config.source.path == "src/server.py"
+        assert config.source.entrypoint == "mcp"
+        assert config.source.type == "filesystem"
 
 
-class TestEnvironmentConfig:
-    """Test EnvironmentConfig class."""
+class TestEnvironment:
+    """Test Environment class."""
 
     def test_environment_config_fields(self):
-        """Test all EnvironmentConfig fields."""
+        """Test all Environment fields."""
         config = FastMCPConfig(
-            entrypoint="server.py",
+            source={"path": "server.py"},
             environment={
                 "python": "3.12",
                 "dependencies": ["requests", "numpy>=2.0"],
@@ -98,27 +73,29 @@ class TestEnvironmentConfig:
     def test_needs_uv(self):
         """Test needs_uv() method."""
         # No environment config - doesn't need UV
-        config = FastMCPConfig(entrypoint="server.py")
+        config = FastMCPConfig(source={"path": "server.py"})
         assert not config.environment.needs_uv()
 
         # Empty environment - doesn't need UV
-        config = FastMCPConfig(entrypoint="server.py", environment={})
+        config = FastMCPConfig(source={"path": "server.py"}, environment={})
         assert not config.environment.needs_uv()
 
         # With dependencies - needs UV
         config = FastMCPConfig(
-            entrypoint="server.py", environment={"dependencies": ["requests"]}
+            source={"path": "server.py"}, environment={"dependencies": ["requests"]}
         )
         assert config.environment.needs_uv()
 
         # With Python version - needs UV
-        config = FastMCPConfig(entrypoint="server.py", environment={"python": "3.12"})
+        config = FastMCPConfig(
+            source={"path": "server.py"}, environment={"python": "3.12"}
+        )
         assert config.environment.needs_uv()
 
     def test_build_uv_args(self):
         """Test build_uv_args() method."""
         config = FastMCPConfig(
-            entrypoint="server.py",
+            source={"path": "server.py"},
             environment={
                 "python": "3.12",
                 "dependencies": ["requests", "numpy"],
@@ -143,33 +120,10 @@ class TestEnvironmentConfig:
         assert "run" in args[-2:]
         assert "server.py" in args[-1:]
 
-    def test_merge_with_cli_args(self):
-        """Test merge_with_cli_args() method."""
-        config = FastMCPConfig(
-            entrypoint="server.py",
-            environment={
-                "python": "3.11",
-                "dependencies": ["requests"],
-            },
-        )
-
-        # CLI args should take precedence
-        merged = config.environment.merge_with_cli_args(
-            python="3.12",  # Override
-            with_packages=["numpy"],  # Add to dependencies
-            with_requirements=None,
-            project=None,
-        )
-
-        assert merged["python"] == "3.12"  # CLI override
-        assert set(merged["with_packages"]) == {"requests", "numpy"}  # Merged
-        assert merged["with_requirements"] is None
-        assert merged["project"] is None
-
     def test_run_with_uv(self):
         """Test run_with_uv() subprocess execution."""
         config = FastMCPConfig(
-            entrypoint="server.py", environment={"dependencies": ["requests"]}
+            source={"path": "server.py"}, environment={"dependencies": ["requests"]}
         )
 
         # run_with_uv calls sys.exit, so we expect SystemExit
@@ -182,13 +136,13 @@ class TestEnvironmentConfig:
         assert exc_info.value.code == 1
 
 
-class TestDeploymentConfig:
-    """Test DeploymentConfig class."""
+class TestDeployment:
+    """Test Deployment class."""
 
     def test_deployment_config_fields(self):
-        """Test all DeploymentConfig fields."""
+        """Test all Deployment fields."""
         config = FastMCPConfig(
-            entrypoint="server.py",
+            source={"path": "server.py"},
             deployment={
                 "transport": "http",
                 "host": "0.0.0.0",
@@ -211,33 +165,6 @@ class TestDeploymentConfig:
         assert deploy.cwd == "./work"
         assert deploy.args == ["--debug"]
 
-    def test_merge_with_cli_args(self):
-        """Test DeploymentConfig merge_with_cli_args() method."""
-        config = FastMCPConfig(
-            entrypoint="server.py",
-            deployment={
-                "transport": "stdio",
-                "port": 3000,
-                "log_level": "INFO",
-            },
-        )
-
-        # CLI args should take precedence
-        merged = config.deployment.merge_with_cli_args(
-            transport="http",  # Override
-            host="localhost",  # New value
-            port=None,  # Keep config value
-            path=None,
-            log_level="DEBUG",  # Override
-            server_args=["--test"],
-        )
-
-        assert merged["transport"] == "http"  # CLI override
-        assert merged["host"] == "localhost"  # CLI value
-        assert merged["port"] == 3000  # Config value (CLI was None)
-        assert merged["log_level"] == "DEBUG"  # CLI override
-        assert merged["server_args"] == ["--test"]  # CLI value
-
     def test_apply_runtime_settings(self, tmp_path):
         """Test apply_runtime_settings() method."""
         import os
@@ -247,7 +174,7 @@ class TestDeploymentConfig:
         work_dir.mkdir()
 
         config = FastMCPConfig(
-            entrypoint="server.py",
+            source={"path": "server.py"},
             deployment={
                 "env": {"TEST_VAR": "test_value"},
                 "cwd": "work",
@@ -283,7 +210,7 @@ class TestDeploymentConfig:
         os.environ["ENV_NAME"] = "production"
 
         config = FastMCPConfig(
-            entrypoint="server.py",
+            source={"path": "server.py"},
             deployment={
                 "env": {
                     "API_URL": "https://api.${BASE_URL}/v1",
@@ -328,24 +255,24 @@ class TestFastMCPConfig:
 
     def test_minimal_config(self):
         """Test creating a config with only required fields."""
-        config = FastMCPConfig(entrypoint="server.py")
-        assert isinstance(config.entrypoint, EntrypointConfig)
-        assert config.entrypoint.file == "server.py"
-        assert config.entrypoint.object is None
+        config = FastMCPConfig(source={"path": "server.py"})
+        assert isinstance(config.source, FileSystemSource)
+        assert config.source.path == "server.py"
+        assert config.source.entrypoint is None
         # Environment and deployment are now always present but empty
-        assert isinstance(config.environment, EnvironmentConfig)
-        assert isinstance(config.deployment, DeploymentConfig)
+        assert isinstance(config.environment, Environment)
+        assert isinstance(config.deployment, Deployment)
         # Check they have no values set
         assert not config.environment.needs_uv()
         assert all(
             getattr(config.deployment, field, None) is None
-            for field in DeploymentConfig.model_fields
+            for field in Deployment.model_fields
         )
 
     def test_nested_structure(self):
         """Test the nested configuration structure."""
         config = FastMCPConfig(
-            entrypoint="server.py",
+            source={"path": "server.py"},
             environment={
                 "python": "3.12",
                 "dependencies": ["fastmcp"],
@@ -356,17 +283,17 @@ class TestFastMCPConfig:
             },
         )
 
-        assert isinstance(config.entrypoint, EntrypointConfig)
-        assert config.entrypoint.file == "server.py"
-        assert config.entrypoint.object is None
-        assert isinstance(config.environment, EnvironmentConfig)
-        assert isinstance(config.deployment, DeploymentConfig)
+        assert isinstance(config.source, FileSystemSource)
+        assert config.source.path == "server.py"
+        assert config.source.entrypoint is None
+        assert isinstance(config.environment, Environment)
+        assert isinstance(config.deployment, Deployment)
 
     def test_from_file(self, tmp_path):
         """Test loading config from JSON file with nested structure."""
         config_data = {
             "$schema": "https://gofastmcp.com/public/schemas/fastmcp.json/v1.json",
-            "entrypoint": {"file": "src/server.py", "object": "app"},
+            "source": {"path": "src/server.py", "entrypoint": "app"},
             "environment": {"python": "3.12", "dependencies": ["requests"]},
             "deployment": {"transport": "http", "port": 8000},
         }
@@ -376,19 +303,19 @@ class TestFastMCPConfig:
 
         config = FastMCPConfig.from_file(config_file)
 
-        # When loaded from JSON with object format, it becomes EntrypointConfig
-        assert isinstance(config.entrypoint, EntrypointConfig)
-        assert config.entrypoint.file == "src/server.py"
-        assert config.entrypoint.object == "app"
+        # When loaded from JSON with entrypoint format, it becomes EntrypointConfig
+        assert isinstance(config.source, FileSystemSource)
+        assert config.source.path == "src/server.py"
+        assert config.source.entrypoint == "app"
         assert config.environment.python == "3.12"
         assert config.environment.dependencies == ["requests"]
         assert config.deployment.transport == "http"
         assert config.deployment.port == 8000
 
     def test_from_file_with_string_entrypoint(self, tmp_path):
-        """Test loading config with string entrypoint."""
+        """Test loading config with dict source format."""
         config_data = {
-            "entrypoint": "server.py:mcp",
+            "source": {"path": "server.py", "entrypoint": "mcp"},
             "environment": {"dependencies": ["fastmcp"]},
         }
 
@@ -397,19 +324,14 @@ class TestFastMCPConfig:
 
         config = FastMCPConfig.from_file(config_file)
         # String entrypoint with : should be converted to EntrypointConfig
-        assert isinstance(config.entrypoint, EntrypointConfig)
-        assert config.entrypoint.file == "server.py"
-        assert config.entrypoint.object == "mcp"
+        assert isinstance(config.source, FileSystemSource)
+        assert config.source.path == "server.py"
+        assert config.source.entrypoint == "mcp"
 
-        # get_entrypoint should return the same
-        entrypoint = config.get_entrypoint()
-        assert entrypoint.file == "server.py"
-        assert entrypoint.object == "mcp"
-
-    def test_string_entrypoint_with_object_and_environment(self, tmp_path):
-        """Test that file.py:object syntax works with environment config."""
+    def test_string_entrypoint_with_entrypoint_and_environment(self, tmp_path):
+        """Test that file.py:entrypoint syntax works with environment config."""
         config_data = {
-            "entrypoint": "src/server.py:app",
+            "source": {"path": "src/server.py", "entrypoint": "app"},
             "environment": {"python": "3.12", "dependencies": ["fastmcp", "requests"]},
             "deployment": {"transport": "http", "port": 8000},
         }
@@ -420,9 +342,9 @@ class TestFastMCPConfig:
         config = FastMCPConfig.from_file(config_file)
 
         # Should be parsed into EntrypointConfig
-        assert isinstance(config.entrypoint, EntrypointConfig)
-        assert config.entrypoint.file == "src/server.py"
-        assert config.entrypoint.object == "app"
+        assert isinstance(config.source, FileSystemSource)
+        assert config.source.path == "src/server.py"
+        assert config.source.entrypoint == "app"
 
         # Environment config should still work
         assert config.environment.python == "3.12"
@@ -435,7 +357,7 @@ class TestFastMCPConfig:
     def test_find_config_in_current_dir(self, tmp_path):
         """Test finding config in current directory."""
         config_file = tmp_path / "fastmcp.json"
-        config_file.write_text(json.dumps({"entrypoint": "server.py"}))
+        config_file.write_text(json.dumps({"source": {"path": "server.py"}}))
 
         original_cwd = os.getcwd()
         try:
@@ -448,7 +370,7 @@ class TestFastMCPConfig:
     def test_find_config_not_in_parent_dir(self, tmp_path):
         """Test that config is NOT found in parent directory."""
         config_file = tmp_path / "fastmcp.json"
-        config_file.write_text(json.dumps({"entrypoint": "server.py"}))
+        config_file.write_text(json.dumps({"source": {"path": "server.py"}}))
 
         subdir = tmp_path / "subdir"
         subdir.mkdir()
@@ -460,7 +382,7 @@ class TestFastMCPConfig:
     def test_find_config_in_specified_dir(self, tmp_path):
         """Test finding config in the specified directory."""
         config_file = tmp_path / "fastmcp.json"
-        config_file.write_text(json.dumps({"entrypoint": "server.py"}))
+        config_file.write_text(json.dumps({"source": {"path": "server.py"}}))
 
         # Should find config when looking in the directory that contains it
         found = FastMCPConfig.find_config(tmp_path)
@@ -474,7 +396,7 @@ class TestFastMCPConfig:
     def test_invalid_transport(self, tmp_path):
         """Test loading config with invalid transport value."""
         config_data = {
-            "entrypoint": "server.py",
+            "source": {"path": "server.py"},
             "deployment": {"transport": "invalid_transport"},
         }
 
@@ -485,29 +407,33 @@ class TestFastMCPConfig:
             FastMCPConfig.from_file(config_file)
 
     def test_optional_sections(self):
-        """Test that all config sections are optional except entrypoint."""
-        # Only entrypoint is required
-        config = FastMCPConfig(entrypoint="server.py")
-        assert isinstance(config.entrypoint, EntrypointConfig)
-        assert config.entrypoint.file == "server.py"
+        """Test that all config sections are optional except source."""
+        # Only source is required
+        config = FastMCPConfig(source={"path": "server.py"})
+        assert isinstance(config.source, FileSystemSource)
+        assert config.source.path == "server.py"
         # Environment and deployment are now always present but may be empty
-        assert isinstance(config.environment, EnvironmentConfig)
-        assert isinstance(config.deployment, DeploymentConfig)
+        assert isinstance(config.environment, Environment)
+        assert isinstance(config.deployment, Deployment)
 
         # Only environment with values
-        config = FastMCPConfig(entrypoint="server.py", environment={"python": "3.12"})
+        config = FastMCPConfig(
+            source={"path": "server.py"}, environment={"python": "3.12"}
+        )
         assert config.environment.python == "3.12"
-        assert isinstance(config.deployment, DeploymentConfig)
+        assert isinstance(config.deployment, Deployment)
         assert all(
             getattr(config.deployment, field, None) is None
-            for field in DeploymentConfig.model_fields
+            for field in Deployment.model_fields
         )
 
         # Only deployment with values
-        config = FastMCPConfig(entrypoint="server.py", deployment={"transport": "http"})
-        assert isinstance(config.environment, EnvironmentConfig)
+        config = FastMCPConfig(
+            source={"path": "server.py"}, deployment={"transport": "http"}
+        )
+        assert isinstance(config.environment, Environment)
         assert all(
             getattr(config.environment, field, None) is None
-            for field in EnvironmentConfig.model_fields
+            for field in Environment.model_fields
         )
         assert config.deployment.transport == "http"

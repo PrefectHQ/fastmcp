@@ -9,7 +9,7 @@ import cyclopts
 from rich import print
 
 from fastmcp.mcp_config import StdioMCPServer, update_config_file
-from fastmcp.utilities.cli import build_uv_run_args
+from fastmcp.utilities.fastmcp_config import Environment
 from fastmcp.utilities.logging import get_logger
 
 from .shared import process_common_args
@@ -73,14 +73,22 @@ def install_claude_desktop(
 
     config_file = config_dir / "claude_desktop_config.json"
 
-    # Build uv run command using centralized function
-    args = build_uv_run_args(
-        with_editable=with_editable,
-        with_packages=with_packages,
-        python_version=python_version,
-        with_requirements=with_requirements,
-        project=project,
+    # Deduplicate packages and exclude 'fastmcp' since Environment adds it automatically
+    deduplicated_packages = None
+    if with_packages:
+        deduplicated = list(dict.fromkeys(with_packages))
+        deduplicated_packages = [pkg for pkg in deduplicated if pkg != "fastmcp"]
+        if not deduplicated_packages:
+            deduplicated_packages = None
+
+    env_config = Environment(
+        python=python_version,
+        dependencies=deduplicated_packages,
+        requirements=str(with_requirements) if with_requirements else None,
+        project=str(project) if project else None,
+        editable=str(with_editable) if with_editable else None,
     )
+    args = env_config.build_uv_args()
 
     # Build server spec from parsed components
     if server_object:

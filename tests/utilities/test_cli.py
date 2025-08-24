@@ -1,39 +1,38 @@
-from pathlib import Path
-
-from fastmcp.utilities.cli import build_uv_command
+from fastmcp.utilities.fastmcp_config.v1.fastmcp_config import Environment
 
 
-class TestBuildUVCommand:
-    """Test the build_uv_command function."""
+class TestEnvironmentBuildUVArgs:
+    """Test the Environment.build_uv_args() method."""
 
-    def test_build_uv_command_basic(self):
-        """Test building basic uv command."""
-        cmd = build_uv_command("server.py")
-        expected = ["uv", "run", "--with", "fastmcp", "fastmcp", "run", "server.py"]
-        assert cmd == expected
+    def test_build_uv_args_basic(self):
+        """Test building basic uv args."""
+        env = Environment()
+        args = env.build_uv_args(["fastmcp", "run", "server.py"])
+        expected = ["run", "--with", "fastmcp", "fastmcp", "run", "server.py"]
+        assert args == expected
 
-    def test_build_uv_command_with_editable(self):
-        """Test building uv command with editable package."""
-        editable_path = Path("/path/to/package")
-        cmd = build_uv_command("server.py", with_editable=editable_path)
+    def test_build_uv_args_with_editable(self):
+        """Test building uv args with editable package."""
+        editable_path = "/path/to/package"
+        env = Environment(editable=editable_path)
+        args = env.build_uv_args(["fastmcp", "run", "server.py"])
         expected = [
-            "uv",
             "run",
             "--with",
             "fastmcp",
             "--with-editable",
-            str(editable_path.expanduser().resolve()),
+            editable_path,
             "fastmcp",
             "run",
             "server.py",
         ]
-        assert cmd == expected
+        assert args == expected
 
-    def test_build_uv_command_with_packages(self):
-        """Test building uv command with additional packages."""
-        cmd = build_uv_command("server.py", with_packages=["pkg1", "pkg2"])
+    def test_build_uv_args_with_packages(self):
+        """Test building uv args with additional packages."""
+        env = Environment(dependencies=["pkg1", "pkg2"])
+        args = env.build_uv_args(["fastmcp", "run", "server.py"])
         expected = [
-            "uv",
             "run",
             "--with",
             "fastmcp",
@@ -45,13 +44,13 @@ class TestBuildUVCommand:
             "run",
             "server.py",
         ]
-        assert cmd == expected
+        assert args == expected
 
-    def test_build_uv_command_with_python_version(self):
-        """Test building uv command with Python version."""
-        cmd = build_uv_command("server.py", python_version="3.11")
+    def test_build_uv_args_with_python_version(self):
+        """Test building uv args with Python version."""
+        env = Environment(python="3.11")
+        args = env.build_uv_args(["fastmcp", "run", "server.py"])
         expected = [
-            "uv",
             "run",
             "--python",
             "3.11",
@@ -61,113 +60,109 @@ class TestBuildUVCommand:
             "run",
             "server.py",
         ]
-        assert cmd == expected
+        assert args == expected
 
-    def test_build_uv_command_with_project(self):
-        """Test building uv command with project directory."""
-        project_path = Path("/path/to/project")
-        cmd = build_uv_command("server.py", project=project_path)
+    def test_build_uv_args_with_project(self):
+        """Test building uv args with project directory."""
+        project_path = "/path/to/project"
+        env = Environment(project=project_path)
+        args = env.build_uv_args(["fastmcp", "run", "server.py"])
         expected = [
-            "uv",
             "run",
             "--project",
-            str(project_path.expanduser().resolve()),
+            project_path,
             "--with",
             "fastmcp",
             "fastmcp",
             "run",
             "server.py",
         ]
-        assert cmd == expected
+        assert args == expected
 
-    def test_build_uv_command_with_requirements(self):
-        """Test building uv command with requirements file."""
-        req_path = Path("requirements.txt")
-        cmd = build_uv_command("server.py", with_requirements=req_path)
+    def test_build_uv_args_with_requirements(self):
+        """Test building uv args with requirements file."""
+        req_path = "requirements.txt"
+        env = Environment(requirements=req_path)
+        args = env.build_uv_args(["fastmcp", "run", "server.py"])
         expected = [
-            "uv",
             "run",
             "--with",
             "fastmcp",
             "--with-requirements",
-            str(req_path.expanduser().resolve()),
+            req_path,
             "fastmcp",
             "run",
             "server.py",
         ]
-        assert cmd == expected
+        assert args == expected
 
-    def test_build_uv_command_with_all_options(self):
-        """Test building uv command with all options."""
-        project_path = Path("/my/project")
-        editable_path = Path("/local/pkg")
-        requirements_path = Path("reqs.txt")
-        cmd = build_uv_command(
-            "server.py",
-            python_version="3.10",
+    def test_build_uv_args_with_all_options(self):
+        """Test building uv args with all options."""
+        project_path = "/my/project"
+        editable_path = "/local/pkg"
+        requirements_path = "reqs.txt"
+        env = Environment(
+            python="3.10",
             project=project_path,
-            with_packages=["pandas", "numpy"],
-            with_requirements=requirements_path,
-            with_editable=editable_path,
+            dependencies=["pandas", "numpy"],
+            requirements=requirements_path,
+            editable=editable_path,
         )
+        args = env.build_uv_args(["fastmcp", "run", "server.py"])
         expected = [
-            "uv",
             "run",
             "--python",
             "3.10",
             "--project",
-            str(project_path.expanduser().resolve()),
+            project_path,
             "--with",
             "fastmcp",
             "--with",
-            "numpy",
-            "--with",
             "pandas",
-            "--with-editable",
-            str(editable_path.expanduser().resolve()),
+            "--with",
+            "numpy",
             "--with-requirements",
-            str(requirements_path.expanduser().resolve()),
+            requirements_path,
+            "--with-editable",
+            editable_path,
             "fastmcp",
             "run",
             "server.py",
         ]
-        assert cmd == expected
+        assert args == expected
 
-    def test_with_editable_resolves_dot(self):
-        """Test that '.' in with_editable becomes absolute."""
-        cmd = build_uv_command("server.py", with_editable=Path("."))
-        idx = cmd.index("--with-editable") + 1
-        assert Path(cmd[idx]).is_absolute()
+    def test_build_uv_args_no_command(self):
+        """Test building uv args with no command."""
+        env = Environment(python="3.11")
+        args = env.build_uv_args()
+        expected = ["run", "--python", "3.11", "--with", "fastmcp"]
+        assert args == expected
 
-    def test_with_editable_resolves_tilde(self):
-        """Test that '~' in with_editable is expanded."""
-        cmd = build_uv_command("server.py", with_editable=Path("~/project"))
-        idx = cmd.index("--with-editable") + 1
-        assert Path(cmd[idx]).is_absolute()
-        assert "~" not in cmd[idx]
+    def test_build_uv_args_string_command(self):
+        """Test building uv args with string command."""
+        env = Environment()
+        args = env.build_uv_args("python")
+        expected = ["run", "--with", "fastmcp", "python"]
+        assert args == expected
 
-    def test_with_requirements_resolves_dot(self):
-        """Test that '.' in with_requirements becomes absolute."""
-        cmd = build_uv_command("server.py", with_requirements=Path("./reqs.txt"))
-        idx = cmd.index("--with-requirements") + 1
-        assert Path(cmd[idx]).is_absolute()
+    def test_needs_uv_true(self):
+        """Test that needs_uv returns True when environment settings are present."""
+        env = Environment(python="3.11")
+        assert env.needs_uv() is True
 
-    def test_with_requirements_resolves_tilde(self):
-        """Test that '~' in with_requirements is expanded."""
-        cmd = build_uv_command("server.py", with_requirements=Path("~/reqs.txt"))
-        idx = cmd.index("--with-requirements") + 1
-        assert Path(cmd[idx]).is_absolute()
-        assert "~" not in cmd[idx]
+        env = Environment(dependencies=["pkg"])
+        assert env.needs_uv() is True
 
-    def test_project_resolves_relative(self):
-        """Test that relative path in project becomes absolute."""
-        cmd = build_uv_command("server.py", project=Path("../project"))
-        idx = cmd.index("--project") + 1
-        assert Path(cmd[idx]).is_absolute()
+        env = Environment(requirements="reqs.txt")
+        assert env.needs_uv() is True
 
-    def test_project_resolves_tilde(self):
-        """Test that '~' in project is expanded."""
-        cmd = build_uv_command("server.py", project=Path("~/work"))
-        idx = cmd.index("--project") + 1
-        assert Path(cmd[idx]).is_absolute()
-        assert "~" not in cmd[idx]
+        env = Environment(project="/project")
+        assert env.needs_uv() is True
+
+        env = Environment(editable="/pkg")
+        assert env.needs_uv() is True
+
+    def test_needs_uv_false(self):
+        """Test that needs_uv returns False when no environment settings are present."""
+        env = Environment()
+        assert env.needs_uv() is False
