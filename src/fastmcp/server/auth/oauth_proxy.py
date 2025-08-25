@@ -419,15 +419,6 @@ class OAuthProxy(OAuthProvider):
             allowed_redirect_uri_patterns=self._allowed_client_redirect_uris,
         )
 
-        # Modify the client_info object in place (framework ignores return values)
-        client_info.client_id = upstream_id
-        client_info.client_secret = upstream_secret
-        client_info.token_endpoint_auth_method = "none"
-
-        # Ensure correct grant types
-        if not client_info.grant_types:
-            client_info.grant_types = ["authorization_code", "refresh_token"]
-
         # Store the ProxyDCRClient using the upstream ID
         self._clients[upstream_id] = proxy_client
 
