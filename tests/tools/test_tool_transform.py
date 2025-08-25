@@ -4,6 +4,7 @@ from typing import Annotated, Any
 
 import pytest
 from dirty_equals import IsList
+from inline_snapshot import snapshot
 from mcp.types import TextContent
 from pydantic import BaseModel, Field, TypeAdapter
 from typing_extensions import TypedDict
@@ -1055,38 +1056,6 @@ class TestEnableDisable:
                 await client.call_tool("new_add", {"x": 1, "y": 2})
 
 
-def test_arg_transform_examples_in_schema(add_tool):
-    # Simple example
-    new_tool = Tool.from_tool(
-        add_tool,
-        transform_args={
-            "old_x": ArgTransform(examples=[1, 2, 3]),
-        },
-    )
-    prop = get_property(new_tool, "old_x")
-    assert prop["examples"] == [1, 2, 3]
-
-    # Nested example (e.g., for array type)
-    new_tool2 = Tool.from_tool(
-        add_tool,
-        transform_args={
-            "old_x": ArgTransform(examples=[["a", "b"], ["c", "d"]]),
-        },
-    )
-    prop2 = get_property(new_tool2, "old_x")
-    assert prop2["examples"] == [["a", "b"], ["c", "d"]]
-
-    # If not set, should not be present
-    new_tool3 = Tool.from_tool(
-        add_tool,
-        transform_args={
-            "old_x": ArgTransform(),
-        },
-    )
-    prop3 = get_property(new_tool3, "old_x")
-    assert "examples" not in prop3
-
-
 class TestTransformToolOutputSchema:
     """Test output schema handling in transformed tools."""
 
@@ -1504,9 +1473,39 @@ def test_tool_transform_config_removes_meta(sample_tool):
     assert transformed.meta is None
 
 
-# Tests for $defs and _find_referenced_defs functionality
-class TestDefsAndReferences:
+class TestInputSchema:
     """Test schema definition handling and reference finding."""
+
+    def test_arg_transform_examples_in_schema(self, add_tool: Tool):
+        # Simple example
+        new_tool = Tool.from_tool(
+            add_tool,
+            transform_args={
+                "old_x": ArgTransform(examples=[1, 2, 3]),
+            },
+        )
+        prop = get_property(new_tool, "old_x")
+        assert prop["examples"] == [1, 2, 3]
+
+        # Nested example (e.g., for array type)
+        new_tool2 = Tool.from_tool(
+            add_tool,
+            transform_args={
+                "old_x": ArgTransform(examples=[["a", "b"], ["c", "d"]]),
+            },
+        )
+        prop2 = get_property(new_tool2, "old_x")
+        assert prop2["examples"] == [["a", "b"], ["c", "d"]]
+
+        # If not set, should not be present
+        new_tool3 = Tool.from_tool(
+            add_tool,
+            transform_args={
+                "old_x": ArgTransform(),
+            },
+        )
+        prop3 = get_property(new_tool3, "old_x")
+        assert "examples" not in prop3
 
     def test_merge_schema_with_defs_precedence(self):
         """Test _merge_schema_with_precedence merges $defs correctly."""
@@ -1528,22 +1527,27 @@ class TestDefsAndReferences:
             },
         }
 
-        result = TransformedTool._merge_schema_with_precedence(
+        transformed_tool_schema = TransformedTool._merge_schema_with_precedence(
             base_schema, override_schema
         )
 
-        # Should have both field1 and field2
-        assert "field1" in result["properties"]
-        assert "field2" in result["properties"]
+        # SharedType should no longer be present on the schema
+        assert "SharedType" not in transformed_tool_schema["$defs"]
 
-        # Should only include referenced defs
-        defs = result.get("$defs", {})
-        assert "BaseType" in defs  # Referenced by field1
-        assert "OverrideType" in defs  # Referenced by field2
-
-        # SharedType should use override version, but only if referenced
-        # Since it's not referenced by either field, it shouldn't be included
-        assert "SharedType" not in defs
+        assert transformed_tool_schema == snapshot(
+            {
+                "type": "object",
+                "properties": {
+                    "field1": {"$ref": "#/$defs/BaseType"},
+                    "field2": {"$ref": "#/$defs/OverrideType"},
+                },
+                "required": [],
+                "$defs": {
+                    "BaseType": {"type": "string", "description": "base"},
+                    "OverrideType": {"type": "boolean"},
+                },
+            }
+        )
 
     def test_transform_tool_with_complex_defs_pruning(self):
         """Test that tool transformation properly prunes unused $defs."""
@@ -1561,20 +1565,29 @@ class TestDefsAndReferences:
             return used_param.value
 
         # Transform to hide unused_param
-        transformed = Tool.from_tool(
+        transformed_tool: TransformedTool = Tool.from_tool(
             complex_tool, transform_args={"unused_param": ArgTransform(hide=True)}
         )
 
-        # Only UsedType should be in $defs, not UnusedType
-        defs = transformed.parameters.get("$defs", {})
-        type_names = set(defs.keys())
+        assert "UnusedType" not in transformed_tool.parameters["$defs"]
 
-        # Should contain UsedType but not UnusedType
-        used_type_found = any("UsedType" in name for name in type_names)
-        unused_type_found = any("UnusedType" in name for name in type_names)
-
-        assert used_type_found, f"UsedType not found in defs: {type_names}"
-        assert not unused_type_found, f"UnusedType should not be in defs: {type_names}"
+        assert transformed_tool.parameters == snapshot(
+            {
+                "type": "object",
+                "properties": {
+                    "used_param": {"$ref": "#/$defs/UsedType", "title": "Used Param"}
+                },
+                "required": ["used_param"],
+                "$defs": {
+                    "UsedType": {
+                        "properties": {"value": {"title": "Value", "type": "string"}},
+                        "required": ["value"],
+                        "title": "UsedType",
+                        "type": "object",
+                    }
+                },
+            }
+        )
 
     def test_transform_with_custom_function_preserves_needed_defs(self):
         """Test that custom transform functions preserve necessary $defs."""
@@ -1599,12 +1612,26 @@ class TestDefsAndReferences:
             transform_args={"input_data": ArgTransform(name="renamed_input")},
         )
 
-        # Both InputType and OutputType should be preserved in defs
-        defs = transformed.parameters.get("$defs", {})
-        type_names = set(defs.keys())
-
-        input_type_found = any("InputType" in name for name in type_names)
-        assert input_type_found, f"InputType not found in defs: {type_names}"
+        assert transformed.parameters == snapshot(
+            {
+                "type": "object",
+                "properties": {
+                    "renamed_input": {
+                        "$ref": "#/$defs/InputType",
+                        "title": "Input Data",
+                    }
+                },
+                "required": ["renamed_input"],
+                "$defs": {
+                    "InputType": {
+                        "properties": {"data": {"title": "Data", "type": "string"}},
+                        "required": ["data"],
+                        "title": "InputType",
+                        "type": "object",
+                    }
+                },
+            }
+        )
 
     def test_chained_transforms_preserve_correct_defs(self):
         """Test that chained transformations preserve correct $defs."""
@@ -1628,20 +1655,55 @@ class TestDefsAndReferences:
             transform_args={"param_c": ArgTransform(hide=True, default=TypeC(c=True))},
         )
 
+        assert transform1.parameters == snapshot(
+            {
+                "type": "object",
+                "properties": {
+                    "param_a": {"$ref": "#/$defs/TypeA", "title": "Param A"},
+                    "param_b": {"$ref": "#/$defs/TypeB", "title": "Param B"},
+                },
+                "required": IsList("param_b", "param_a", check_order=False),
+                "$defs": {
+                    "TypeA": {
+                        "properties": {"a": {"title": "A", "type": "string"}},
+                        "required": ["a"],
+                        "title": "TypeA",
+                        "type": "object",
+                    },
+                    "TypeB": {
+                        "properties": {"b": {"title": "B", "type": "integer"}},
+                        "required": ["b"],
+                        "title": "TypeB",
+                        "type": "object",
+                    },
+                },
+            }
+        )
+
+        assert "TypeA" in transform1.parameters["$defs"]
+
         # Second transform: hide param_b
         transform2 = Tool.from_tool(
             transform1,
             transform_args={"param_b": ArgTransform(hide=True, default=TypeB(b=42))},
         )
 
-        # Final schema should only have TypeA in $defs
-        defs = transform2.parameters.get("$defs", {})
-        type_names = set(defs.keys())
+        assert "TypeB" not in transform2.parameters["$defs"]
 
-        type_a_found = any("TypeA" in name for name in type_names)
-        type_b_found = any("TypeB" in name for name in type_names)
-        type_c_found = any("TypeC" in name for name in type_names)
-
-        assert type_a_found, f"TypeA should be in defs: {type_names}"
-        assert not type_b_found, f"TypeB should not be in defs: {type_names}"
-        assert not type_c_found, f"TypeC should not be in defs: {type_names}"
+        assert transform2.parameters == snapshot(
+            {
+                "type": "object",
+                "properties": {
+                    "param_a": {"$ref": "#/$defs/TypeA", "title": "Param A"}
+                },
+                "required": ["param_a"],
+                "$defs": {
+                    "TypeA": {
+                        "properties": {"a": {"title": "A", "type": "string"}},
+                        "required": ["a"],
+                        "title": "TypeA",
+                        "type": "object",
+                    }
+                },
+            }
+        )
