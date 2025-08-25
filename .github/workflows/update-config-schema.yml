@@ -42,32 +42,29 @@ jobs:
       - name: Generate config schema
         run: |
           echo "🔄 Generating fastmcp.json schema..."
+
+          # Generate schema in docs/public for web access
           uv run python -c "
           from fastmcp.utilities.fastmcp_config import generate_schema
           generate_schema('docs/public/schemas/fastmcp.json/latest.json')
-          print('✅ Schema generated successfully')
+          print('✅ Latest schema generated in docs/public')
           "
 
-          # Also update the v1 schema for consistency
+          # Also update the v1 schema in docs/public
           uv run python -c "
           from fastmcp.utilities.fastmcp_config import generate_schema
           generate_schema('docs/public/schemas/fastmcp.json/v1.json')
-          print('✅ v1 schema updated')
+          print('✅ v1 schema generated in docs/public')
           "
 
-      - name: Check for changes
-        id: check_changes
-        run: |
-          if git diff --quiet docs/public/schemas/fastmcp.json/; then
-            echo "No changes detected in config schema"
-            echo "has_changes=false" >> $GITHUB_OUTPUT
-          else
-            echo "Changes detected in config schema"
-            echo "has_changes=true" >> $GITHUB_OUTPUT
-          fi
+          # Generate schema in the source directory for local development
+          uv run python -c "
+          from fastmcp.utilities.fastmcp_config import generate_schema
+          generate_schema('src/fastmcp/utilities/fastmcp_config/v1/schema.json')
+          print('✅ Schema generated in utilities/fastmcp_config/v1/')
+          "
 
       - name: Create Pull Request
-        if: steps.check_changes.outputs.has_changes == 'true'
         uses: peter-evans/create-pull-request@v7
         with:
           token: ${{ steps.marvin-token.outputs.token }}
@@ -86,8 +83,5 @@ jobs:
 
       - name: Summary
         run: |
-          if [ "${{ steps.check_changes.outputs.has_changes }}" == "true" ]; then
-            echo "✅ Config schema PR created"
-          else
-            echo "✅ Config schema is already up to date"
-          fi
+          echo "✅ Config schema generation workflow completed"
+          echo "PR will be created if there are changes, or closed if schema is already up to date"
