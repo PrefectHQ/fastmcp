@@ -119,7 +119,10 @@
                   {
                     "group": "Essentials",
                     "icon": "cube",
-                    "pages": ["clients/client", "clients/transports"]
+                    "pages": [
+                      "clients/client",
+                      "clients/transports"
+                    ]
                   },
                   {
                     "group": "Core Operations",
@@ -145,7 +148,10 @@
                   {
                     "group": "Authentication",
                     "icon": "user-shield",
-                    "pages": ["clients/auth/oauth", "clients/auth/bearer"]
+                    "pages": [
+                      "clients/auth/oauth",
+                      "clients/auth/bearer"
+                    ]
                   }
                 ]
               },
@@ -224,12 +230,17 @@
           },
           {
             "anchor": "What's New",
-            "pages": ["updates", "changelog"]
+            "pages": [
+              "updates",
+              "changelog"
+            ]
           },
           {
             "anchor": "Community",
             "icon": "users",
-            "pages": ["community/showcase"]
+            "pages": [
+              "community/showcase"
+            ]
           }
         ],
         "tab": "Documentation"
@@ -327,6 +338,7 @@
                           "python-sdk/fastmcp-server-auth-providers-workos"
                         ]
                       },
+                      "python-sdk/fastmcp-server-auth-redirect_validation",
                       "python-sdk/fastmcp-server-auth-registry"
                     ]
                   },
@@ -367,6 +379,7 @@
                   "python-sdk/fastmcp-utilities-cli",
                   "python-sdk/fastmcp-utilities-components",
                   "python-sdk/fastmcp-utilities-exceptions",
+                  "python-sdk/fastmcp-utilities-fastmcp_config",
                   "python-sdk/fastmcp-utilities-http",
                   "python-sdk/fastmcp-utilities-inspect",
                   "python-sdk/fastmcp-utilities-json_schema",

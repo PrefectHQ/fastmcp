@@ -268,7 +268,7 @@ Supports forwarding roots, sampling, elicitation, logging, and progress.
 
 **Methods:**
 
-#### `default_sampling_handler` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/proxy.py#L562" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `default_sampling_handler` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/proxy.py#L564" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 default_sampling_handler(cls, messages: list[mcp.types.SamplingMessage], params: mcp.types.CreateMessageRequestParams, context: RequestContext[ClientSession, LifespanContextT]) -> mcp.types.CreateMessageResult
@@ -277,7 +277,7 @@ default_sampling_handler(cls, messages: list[mcp.types.SamplingMessage], params:
 A handler that forwards the sampling request from the remote server to the proxy's connected clients and relays the response back to the remote server.
 
 
-#### `default_elicitation_handler` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/proxy.py#L588" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `default_elicitation_handler` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/proxy.py#L590" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 default_elicitation_handler(cls, message: str, response_type: type, params: mcp.types.ElicitRequestParams, context: RequestContext[ClientSession, LifespanContextT]) -> ElicitResult
@@ -286,7 +286,7 @@ default_elicitation_handler(cls, message: str, response_type: type, params: mcp.
 A handler that forwards the elicitation request from the remote server to the proxy's connected clients and relays the response back to the remote server.
 
 
-#### `default_log_handler` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/proxy.py#L607" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `default_log_handler` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/proxy.py#L609" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 default_log_handler(cls, message: LogMessage) -> None
@@ -295,7 +295,7 @@ default_log_handler(cls, message: LogMessage) -> None
 A handler that forwards the log notification from the remote server to the proxy's connected clients.
 
 
-#### `default_progress_handler` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/proxy.py#L617" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `default_progress_handler` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/proxy.py#L619" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 default_progress_handler(cls, progress: float, total: float | None, message: str | None) -> None
@@ -304,7 +304,7 @@ default_progress_handler(cls, progress: float, total: float | None, message: str
 A handler that forwards the progress notification from the remote server to the proxy's connected clients.
 
 
-### `StatefulProxyClient` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/proxy.py#L630" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `StatefulProxyClient` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/proxy.py#L632" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 A proxy client that provides a stateful client factory for the proxy server.
@@ -318,7 +318,7 @@ Note that it is essential to ensure that the proxy server itself is also statefu
 
 **Methods:**
 
-#### `clear` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/proxy.py#L652" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `clear` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/proxy.py#L654" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 clear(self)
@@ -327,7 +327,7 @@ clear(self)
 Clear all cached clients and force disconnect them.
 
 
-#### `new_stateful` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/proxy.py#L660" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `new_stateful` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/proxy.py#L662" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 new_stateful(self) -> Client[ClientTransportT]
