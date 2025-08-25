@@ -72,8 +72,9 @@ jobs:
       - name: Run Marvin dedupe command
         uses: anthropics/claude-code-base-action@beta
         with:
+          model: claude-3-5-haiku-latest
           prompt_file: /tmp/claude-prompts/dedupe-prompt.txt
           allowed_tools: "Bash(gh issue view:*),Bash(gh search:*),Bash(gh issue list:*),Bash(gh api:*),Bash(gh issue comment:*),Task"
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY_FOR_CI }}
           claude_env: |
             GH_TOKEN: ${{ steps.marvin-token.outputs.token }}

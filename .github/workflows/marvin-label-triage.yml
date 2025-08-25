@@ -148,10 +148,11 @@ jobs:
       - name: Run Marvin for Issue Triage
         uses: anthropics/claude-code-base-action@beta
         with:
+          model: claude-3-5-haiku-latest
           prompt_file: /tmp/claude-prompts/triage-prompt.txt
           allowed_tools: "Bash(gh label list),mcp__github__get_issue,mcp__github__get_issue_comments,mcp__github__update_issue,mcp__github__get_pull_request_files"
           timeout_minutes: "5"
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY_FOR_CI }}
           mcp_config: /tmp/mcp-config/mcp-servers.json
           claude_env: |
             GH_TOKEN: ${{ steps.marvin-token.outputs.token }}
