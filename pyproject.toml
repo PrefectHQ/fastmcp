@@ -45,6 +45,7 @@ dev = [
     "copychat>=0.5.2",
     "dirty-equals>=0.9.0",
     "fastapi>=0.115.12",
+    "inline-snapshot[dirty-equals]>=0.27.2",
     "ipython>=8.12.3",
     "pdbpp>=0.10.3",
     "pre-commit",

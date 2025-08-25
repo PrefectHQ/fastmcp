@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 2
 requires-python = ">=3.10"
 resolution-markers = [
     "python_full_version >= '3.11'",
@@ -231,10 +231,9 @@ wheels = [
 
 [[package]]
 name = "copychat"
-version = "0.7.2"
+version = "0.6.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "fastmcp" },
     { name = "gitpython" },
     { name = "pathspec" },
     { name = "pyperclip" },
@@ -242,9 +241,9 @@ dependencies = [
     { name = "tiktoken" },
     { name = "typer" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/d4/77/a72f890207b33eb542e9507a9d167e8ff734080a9d265472d7a774bd46e4/copychat-0.7.2.tar.gz", hash = "sha256:3f8c21039f0f8874fb84d2163e467e2e003ac625d218225800732244c55176fa", size = 95779, upload-time = "2025-06-19T18:20:27.501Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/06/d9/112fd77fdc21e89dee79583d326edca3597493be5666281b87e393de2cf9/copychat-0.6.3.tar.gz", hash = "sha256:39ffb493506f20e72d26673490d5a7228cf40f3712d6a60ad6a9ac9f7106f5e4", size = 78328, upload-time = "2025-06-03T15:53:13.368Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/fb/b7/266a72b4e843c61bffe2082539c7b634bbe42dd47d8110a5c15e3ee8d66a/copychat-0.7.2-py3-none-any.whl", hash = "sha256:ac2dcb86b70abeb5f8483fc6c70695c93c60b4e851a5b57b165edd36f3e15e8c", size = 23920, upload-time = "2025-06-19T18:20:26.405Z" },
+    { url = "https://files.pythonhosted.org/packages/05/0b/e2f61f7bba857850b5022ce609ba9fcff8308458f1608ec20b35132263b9/copychat-0.6.3-py3-none-any.whl", hash = "sha256:1460cd02c09b6495550f6a4aa2ab0bacbf2b95176e876fc268b35d22243a4d97", size = 21617, upload-time = "2025-06-03T15:53:11.378Z" },
 ]
 
 [[package]]
@@ -561,6 +560,7 @@ dev = [
     { name = "copychat" },
     { name = "dirty-equals" },
     { name = "fastapi" },
+    { name = "inline-snapshot", extra = ["dirty-equals"] },
     { name = "ipython", version = "8.37.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "ipython", version = "9.4.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "pdbpp" },
@@ -604,6 +604,7 @@ dev = [
     { name = "copychat", specifier = ">=0.5.2" },
     { name = "dirty-equals", specifier = ">=0.9.0" },
     { name = "fastapi", specifier = ">=0.115.12" },
+    { name = "inline-snapshot", extras = ["dirty-equals"], specifier = ">=0.27.2" },
     { name = "ipython", specifier = ">=8.12.3" },
     { name = "pdbpp", specifier = ">=0.10.3" },
     { name = "pre-commit" },
@@ -727,6 +728,27 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/f2/97/ebf4da567aa6827c909642694d71c9fcf53e5b504f2d96afea02718862f3/iniconfig-2.1.0.tar.gz", hash = "sha256:3abbd2e30b36733fee78f9c7f7308f2d0050e88f0087fd25c2645f63c773e1c7", size = 4793, upload-time = "2025-03-19T20:09:59.721Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/2c/e1/e6716421ea10d38022b952c159d5161ca1193197fb744506875fbb87ea7b/iniconfig-2.1.0-py3-none-any.whl", hash = "sha256:9deba5723312380e77435581c6bf4935c94cbfab9b1ed33ef8d238ea168eb760", size = 6050, upload-time = "2025-03-19T20:10:01.071Z" },
+]
+
+[[package]]
+name = "inline-snapshot"
+version = "0.28.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "asttokens" },
+    { name = "executing" },
+    { name = "pytest" },
+    { name = "rich" },
+    { name = "tomli", marker = "python_full_version < '3.11'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/e4/9e/83aaa750e9c8115d34b2d80646c1988941f2252c5548caf35aad5e529bad/inline_snapshot-0.28.0.tar.gz", hash = "sha256:6904bfc383240b6bea64de2f5d2992f04109b13def19395bdd13fb0ebcf5cf20", size = 348554, upload-time = "2025-08-24T21:48:04.056Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e6/04/190b336a006d4e1275c2dde1bf953336e818d18b779f24947579bb4ba48d/inline_snapshot-0.28.0-py3-none-any.whl", hash = "sha256:9988f82ee5e719445bbc437d0dc01e0a3c4c94f0ba910f8ad8b573cf15aa8348", size = 69026, upload-time = "2025-08-24T21:48:02.342Z" },
+]
+
+[package.optional-dependencies]
+dirty-equals = [
+    { name = "dirty-equals" },
 ]
 
 [[package]]

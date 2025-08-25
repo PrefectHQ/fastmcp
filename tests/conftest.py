@@ -7,3 +7,11 @@ def pytest_collection_modifyitems(items):
         # Check if the test is in the integration_tests folder
         if "integration_tests" in str(item.fspath):
             item.add_marker(pytest.mark.integration)
+
+
+@pytest.fixture(autouse=True)
+def import_rich_rule():
+    # What a hack
+    import rich.rule  # noqa: F401
+
+    yield

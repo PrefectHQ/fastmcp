@@ -1,12 +1,17 @@
 """Tests for the OpenAPI parsing utilities."""
 
+from collections.abc import Sequence
 from typing import Any
 
 import pytest
 from fastapi import Body, FastAPI, Path, Query
+from inline_snapshot import snapshot
 from pydantic import BaseModel, Field
 
 from fastmcp.utilities.openapi import (
+    HttpMethod,
+    HTTPRoute,
+    ParameterInfo,
     _combine_schemas,
     _replace_ref_with_defs,
     parse_openapi_to_http_routes,
@@ -107,7 +112,7 @@ def petstore_schema() -> dict[str, Any]:
 
 
 @pytest.fixture
-def parsed_petstore_routes(petstore_schema):
+def parsed_petstore_routes(petstore_schema: dict[str, Any]) -> list[HTTPRoute]:
     """Return parsed routes from the PetStore schema."""
     return parse_openapi_to_http_routes(petstore_schema)
 
@@ -214,9 +219,28 @@ def bookstore_schema() -> dict[str, Any]:
 
 
 @pytest.fixture
-def parsed_bookstore_routes(bookstore_schema):
+def parsed_bookstore_routes(bookstore_schema: dict[str, Any]) -> list[HTTPRoute]:
     """Return parsed routes from the BookStore schema."""
     return parse_openapi_to_http_routes(bookstore_schema)
+
+
+def get_route(
+    routes: list[HTTPRoute], method: HttpMethod, path: str
+) -> HTTPRoute | None:
+    """Get a route by method and path."""
+    return next((r for r in routes if r.method == method and r.path == path), None)
+
+
+def get_parameter(
+    parameters: Sequence[ParameterInfo], name: str
+) -> ParameterInfo | None:
+    """Get a parameter by name."""
+    return next((p for p in parameters if p.name == name), None)
+
+
+def dump_models(models: Sequence[BaseModel], **kwargs: Any) -> list[dict[str, Any]]:
+    """Dump a list of models to a list of dictionaries."""
+    return [m.model_dump(**kwargs) for m in models]
 
 
 # --- FastAPI App Fixtures --- #
@@ -302,13 +326,13 @@ def fastapi_openapi_schema(fastapi_app) -> dict[str, Any]:
 
 
 @pytest.fixture
-def parsed_fastapi_routes(fastapi_openapi_schema):
+def parsed_fastapi_routes(fastapi_openapi_schema: dict[str, Any]) -> list[HTTPRoute]:
     """Return parsed routes from a FastAPI OpenAPI schema."""
     return parse_openapi_to_http_routes(fastapi_openapi_schema)
 
 
 @pytest.fixture
-def fastapi_route_map(parsed_fastapi_routes):
+def fastapi_route_map(parsed_fastapi_routes: list[HTTPRoute]) -> dict[str, HTTPRoute]:
     """Return a dictionary of routes by operation ID."""
     return {
         r.operation_id: r for r in parsed_fastapi_routes if r.operation_id is not None
@@ -484,115 +508,104 @@ def openapi_31_with_references() -> dict[str, Any]:
 # --- Tests for PetStore schema --- #
 
 
-def test_petstore_route_count(parsed_petstore_routes):
+def test_petstore_route_count(parsed_petstore_routes: list[HTTPRoute]):
     """Test that parsing the PetStore schema correctly identifies the number of routes."""
     assert len(parsed_petstore_routes) == 3
 
 
-def test_petstore_get_pets_operation_id(parsed_petstore_routes):
+def test_petstore_get_pets_operation_id(parsed_petstore_routes: list[HTTPRoute]):
     """Test that GET /pets operation_id is correctly parsed."""
-    get_pets = next(
-        (r for r in parsed_petstore_routes if r.method == "GET" and r.path == "/pets"),
-        None,
-    )
+    get_pets = get_route(parsed_petstore_routes, "GET", "/pets")
     assert get_pets is not None
     assert get_pets.operation_id == "listPets"
 
 
-def test_petstore_query_parameter(parsed_petstore_routes):
+def test_petstore_query_parameter(parsed_petstore_routes: list[HTTPRoute]):
     """Test that query parameter 'limit' is correctly parsed from the schema."""
-    get_pets = next(
-        (r for r in parsed_petstore_routes if r.method == "GET" and r.path == "/pets"),
-        None,
-    )
+    get_pets = get_route(parsed_petstore_routes, "GET", "/pets")
 
     assert get_pets is not None
-    assert len(get_pets.parameters) == 1
-    param = get_pets.parameters[0]
-    assert param.name == "limit"
-    assert param.location == "query"
-    assert param.required is False
-    assert param.schema_.get("type") == "integer"
-    assert param.schema_.get("format") == "int32"
+    assert dump_models(get_pets.parameters, exclude_none=True) == snapshot(
+        [
+            {
+                "name": "limit",
+                "location": "query",
+                "required": False,
+                "schema_": {"type": "integer", "format": "int32"},
+                "description": "How many items to return",
+            }
+        ]
+    )
 
 
-def test_petstore_path_parameter(parsed_petstore_routes):
+def test_petstore_path_parameter(parsed_petstore_routes: list[HTTPRoute]):
     """Test that path parameter 'petId' is correctly parsed from the schema."""
-    get_pet = next(
-        (
-            r
-            for r in parsed_petstore_routes
-            if r.method == "GET" and r.path == "/pets/{petId}"
-        ),
-        None,
-    )
-
+    get_pet = get_route(parsed_petstore_routes, "GET", "/pets/{petId}")
     assert get_pet is not None
-    path_param = next((p for p in get_pet.parameters if p.name == "petId"), None)
+
+    path_param = get_parameter(get_pet.parameters, "petId")
     assert path_param is not None
-    assert path_param.location == "path"
-    assert path_param.required is True
-    assert path_param.schema_.get("type") == "string"
+
+    assert path_param.model_dump(exclude_none=True) == snapshot(
+        {
+            "name": "petId",
+            "location": "path",
+            "required": True,
+            "schema_": {"type": "string"},
+            "description": "The id of the pet",
+        }
+    )
 
 
-def test_petstore_header_parameters(parsed_petstore_routes):
+def test_petstore_header_parameters(parsed_petstore_routes: list[HTTPRoute]):
     """Test that header parameters are correctly parsed from the schema."""
-    get_pet = next(
-        (
-            r
-            for r in parsed_petstore_routes
-            if r.method == "GET" and r.path == "/pets/{petId}"
-        ),
-        None,
+    get_pet = get_route(parsed_petstore_routes, "GET", "/pets/{petId}")
+    assert get_pet is not None
+
+    header_params = [p for p in get_pet.parameters if p.location == "header"]
+    assert dump_models(header_params, exclude_none=True) == snapshot(
+        [
+            {
+                "name": "X-Request-ID",
+                "location": "header",
+                "required": False,
+                "schema_": {"type": "string", "format": "uuid"},
+            },
+            {
+                "name": "traceId",
+                "location": "header",
+                "required": False,
+                "schema_": {"type": "string"},
+                "description": "Common trace ID",
+            },
+        ]
     )
 
-    assert get_pet is not None
-    header_params = [p for p in get_pet.parameters if p.location == "header"]
-    assert len(header_params) == 2
 
-
-def test_petstore_header_parameter_names(parsed_petstore_routes):
-    """Test that header parameter names are correctly parsed."""
-    get_pet = next(
-        (
-            r
-            for r in parsed_petstore_routes
-            if r.method == "GET" and r.path == "/pets/{petId}"
-        ),
-        None,
-    )
-
-    assert get_pet is not None
-    header_params = [p for p in get_pet.parameters if p.location == "header"]
-    header_names = [p.name for p in header_params]
-    assert "X-Request-ID" in header_names
-    assert "traceId" in header_names
-
-
-def test_petstore_path_level_parameters(parsed_petstore_routes):
+def test_petstore_path_level_parameters(parsed_petstore_routes: list[HTTPRoute]):
     """Test that path-level parameters are correctly merged into the operation."""
-    get_pet = next(
-        (
-            r
-            for r in parsed_petstore_routes
-            if r.method == "GET" and r.path == "/pets/{petId}"
-        ),
-        None,
-    )
-
+    get_pet = get_route(parsed_petstore_routes, "GET", "/pets/{petId}")
     assert get_pet is not None
-    trace_param = next((p for p in get_pet.parameters if p.name == "traceId"), None)
+
+    trace_param = get_parameter(get_pet.parameters, "traceId")
     assert trace_param is not None
-    assert trace_param.location == "header"
-    assert trace_param.required is False
 
-
-def test_petstore_request_body_reference_resolution(parsed_petstore_routes):
-    """Test that request body references are correctly resolved."""
-    create_pet = next(
-        (r for r in parsed_petstore_routes if r.method == "POST" and r.path == "/pets"),
-        None,
+    assert trace_param.model_dump(exclude_none=True) == snapshot(
+        {
+            "name": "traceId",
+            "location": "header",
+            "required": False,
+            "schema_": {"type": "string"},
+            "description": "Common trace ID",
+        }
     )
+
+
+def test_petstore_request_body_reference_resolution(
+    parsed_petstore_routes: list[HTTPRoute],
+):
+    """Test that request body references are correctly resolved."""
+    create_pet = get_route(parsed_petstore_routes, "POST", "/pets")
 
     assert create_pet is not None
     assert create_pet.request_body is not None
@@ -600,12 +613,9 @@ def test_petstore_request_body_reference_resolution(parsed_petstore_routes):
     assert "application/json" in create_pet.request_body.content_schema
 
 
-def test_petstore_schema_reference_resolution(parsed_petstore_routes):
+def test_petstore_schema_reference_resolution(parsed_petstore_routes: list[HTTPRoute]):
     """Test that schema references in request bodies are correctly resolved."""
-    create_pet = next(
-        (r for r in parsed_petstore_routes if r.method == "POST" and r.path == "/pets"),
-        None,
-    )
+    create_pet = get_route(parsed_petstore_routes, "POST", "/pets")
 
     assert create_pet is not None
     assert create_pet.request_body is not None
@@ -617,12 +627,9 @@ def test_petstore_schema_reference_resolution(parsed_petstore_routes):
     assert "tag" in properties
 
 
-def test_petstore_required_fields_resolution(parsed_petstore_routes):
+def test_petstore_required_fields_resolution(parsed_petstore_routes: list[HTTPRoute]):
     """Test that required fields are correctly resolved from referenced schemas."""
-    create_pet = next(
-        (r for r in parsed_petstore_routes if r.method == "POST" and r.path == "/pets"),
-        None,
-    )
+    create_pet = get_route(parsed_petstore_routes, "POST", "/pets")
 
     assert create_pet is not None
     assert create_pet.request_body is not None
@@ -630,7 +637,7 @@ def test_petstore_required_fields_resolution(parsed_petstore_routes):
     assert json_schema.get("required") == ["id", "name"]
 
 
-def test_tags_parsing_in_petstore_routes(parsed_petstore_routes):
+def test_tags_parsing_in_petstore_routes(parsed_petstore_routes: list[HTTPRoute]):
     """Test that tags are correctly parsed from the OpenAPI schema."""
     # All petstore routes should have the "pets" tag
     for route in parsed_petstore_routes:
@@ -639,7 +646,7 @@ def test_tags_parsing_in_petstore_routes(parsed_petstore_routes):
         )
 
 
-def test_tag_list_structure(parsed_petstore_routes):
+def test_tag_list_structure(parsed_petstore_routes: list[HTTPRoute]):
     """Test that tags are stored as a list of strings."""
     for route in parsed_petstore_routes:
         assert isinstance(route.tags, list), "Tags should be stored as a list"
@@ -647,7 +654,7 @@ def test_tag_list_structure(parsed_petstore_routes):
             assert isinstance(tag, str), "Each tag should be a string"
 
 
-def test_empty_tags_handling(bookstore_schema):
+def test_empty_tags_handling(bookstore_schema: dict[str, Any]):
     """Test that routes with no tags are handled correctly with empty lists."""
     # Modify a route to remove tags
     if "tags" in bookstore_schema["paths"]["/books"]["get"]:
@@ -657,16 +664,14 @@ def test_empty_tags_handling(bookstore_schema):
     routes = parse_openapi_to_http_routes(bookstore_schema)
 
     # Find the GET /books route
-    get_books = next(
-        (r for r in routes if r.method == "GET" and r.path == "/books"), None
-    )
+    get_books = get_route(routes, "GET", "/books")
     assert get_books is not None
 
     # Should have an empty list, not None
     assert get_books.tags == [], "Routes without tags should have empty tag lists"
 
 
-def test_multiple_tags_preserved(bookstore_schema):
+def test_multiple_tags_preserved(bookstore_schema: dict[str, Any]):
     """Test that multiple tags are preserved during parsing."""
     # Add multiple tags to a route
     bookstore_schema["paths"]["/books"]["get"]["tags"] = ["books", "catalog", "api"]
@@ -675,9 +680,7 @@ def test_multiple_tags_preserved(bookstore_schema):
     routes = parse_openapi_to_http_routes(bookstore_schema)
 
     # Find the GET /books route
-    get_books = next(
-        (r for r in routes if r.method == "GET" and r.path == "/books"), None
-    )
+    get_books = get_route(routes, "GET", "/books")
     assert get_books is not None
 
     # Should have all tags
@@ -687,7 +690,7 @@ def test_multiple_tags_preserved(bookstore_schema):
     assert len(get_books.tags) == 3
 
 
-def test_openapi_extensions(petstore_schema):
+def test_openapi_extensions(petstore_schema: dict[str, Any]):
     """Test that OpenAPI extensions (x-*) are correctly parsed from operations."""
     # Add extensions to a route
     petstore_schema["paths"]["/pets"]["get"]["x-rate-limit"] = 100
@@ -698,9 +701,7 @@ def test_openapi_extensions(petstore_schema):
     routes = parse_openapi_to_http_routes(petstore_schema)
 
     # Find the GET /pets route
-    get_pets = next(
-        (r for r in routes if r.method == "GET" and r.path == "/pets"), None
-    )
+    get_pets = get_route(routes, "GET", "/pets")
     assert get_pets is not None
 
     # Should have extensions
@@ -713,26 +714,22 @@ def test_openapi_extensions(petstore_schema):
 # --- Tests for BookStore schema --- #
 
 
-def test_bookstore_route_count(parsed_bookstore_routes):
+def test_bookstore_route_count(parsed_bookstore_routes: list[HTTPRoute]):
     """Test that parsing the BookStore schema correctly identifies the number of routes."""
     assert len(parsed_bookstore_routes) == 4
 
 
-def test_bookstore_query_parameter_count(parsed_bookstore_routes):
+def test_bookstore_query_parameter_count(parsed_bookstore_routes: list[HTTPRoute]):
     """Test that the correct number of query parameters are parsed."""
-    list_books = next(
-        (r for r in parsed_bookstore_routes if r.operation_id == "listBooks"), None
-    )
+    list_books = get_route(parsed_bookstore_routes, "GET", "/books")
 
     assert list_books is not None
     assert len(list_books.parameters) == 3
 
 
-def test_bookstore_query_parameter_names(parsed_bookstore_routes):
+def test_bookstore_query_parameter_names(parsed_bookstore_routes: list[HTTPRoute]):
     """Test that query parameter names are correctly parsed."""
-    list_books = next(
-        (r for r in parsed_bookstore_routes if r.operation_id == "listBooks"), None
-    )
+    list_books = get_route(parsed_bookstore_routes, "GET", "/books")
 
     assert list_books is not None
     param_map = {p.name: p for p in list_books.parameters}
@@ -741,33 +738,29 @@ def test_bookstore_query_parameter_names(parsed_bookstore_routes):
     assert "limit" in param_map
 
 
-def test_bookstore_query_parameter_formats(parsed_bookstore_routes):
+def test_bookstore_query_parameter_formats(parsed_bookstore_routes: list[HTTPRoute]):
     """Test that query parameter formats are correctly parsed."""
-    list_books = next(
-        (r for r in parsed_bookstore_routes if r.operation_id == "listBooks"), None
-    )
+    list_books = get_route(parsed_bookstore_routes, "GET", "/books")
 
     assert list_books is not None
     param_map = {p.name: p for p in list_books.parameters}
     assert param_map["published_after"].schema_.get("format") == "date"
 
 
-def test_bookstore_query_parameter_defaults(parsed_bookstore_routes):
+def test_bookstore_query_parameter_defaults(parsed_bookstore_routes: list[HTTPRoute]):
     """Test that query parameter default values are correctly parsed."""
-    list_books = next(
-        (r for r in parsed_bookstore_routes if r.operation_id == "listBooks"), None
-    )
+    list_books = get_route(parsed_bookstore_routes, "GET", "/books")
 
     assert list_books is not None
     param_map = {p.name: p for p in list_books.parameters}
     assert param_map["limit"].schema_.get("default") == 10
 
 
-def test_bookstore_inline_request_body_presence(parsed_bookstore_routes):
+def test_bookstore_inline_request_body_presence(
+    parsed_bookstore_routes: list[HTTPRoute],
+):
     """Test that request bodies with inline schemas are present."""
-    create_book = next(
-        (r for r in parsed_bookstore_routes if r.operation_id == "createBook"), None
-    )
+    create_book = get_route(parsed_bookstore_routes, "POST", "/books")
 
     assert create_book is not None
     assert create_book.request_body is not None
@@ -775,30 +768,36 @@ def test_bookstore_inline_request_body_presence(parsed_bookstore_routes):
     assert "application/json" in create_book.request_body.content_schema
 
 
-def test_bookstore_inline_request_body_properties(parsed_bookstore_routes):
+def test_bookstore_inline_request_body_properties(
+    parsed_bookstore_routes: list[HTTPRoute],
+):
     """Test that request body properties are correctly parsed from inline schemas."""
-    create_book = next(
-        (r for r in parsed_bookstore_routes if r.operation_id == "createBook"), None
-    )
+    create_book = get_route(parsed_bookstore_routes, "POST", "/books")
 
     assert create_book is not None
     assert create_book.request_body is not None
 
     json_schema = create_book.request_body.content_schema["application/json"]
-    properties = json_schema.get("properties", {})
-
-    assert "title" in properties
-    assert "author" in properties
-    assert "isbn" in properties
-    assert "published" in properties
-    assert "genre" in properties
-
-
-def test_bookstore_inline_request_body_required_fields(parsed_bookstore_routes):
-    """Test that required fields in inline schema are correctly parsed."""
-    create_book = next(
-        (r for r in parsed_bookstore_routes if r.operation_id == "createBook"), None
+    assert json_schema == snapshot(
+        {
+            "properties": {
+                "title": {"type": "string"},
+                "author": {"type": "string"},
+                "isbn": {"type": "string"},
+                "published": {"type": "string", "format": "date"},
+                "genre": {"type": "string"},
+            },
+            "type": "object",
+            "required": ["title", "author"],
+        }
     )
+
+
+def test_bookstore_inline_request_body_required_fields(
+    parsed_bookstore_routes: list[HTTPRoute],
+):
+    """Test that required fields in inline schema are correctly parsed."""
+    create_book = get_route(parsed_bookstore_routes, "POST", "/books")
 
     assert create_book is not None
     assert create_book.request_body is not None
@@ -807,22 +806,18 @@ def test_bookstore_inline_request_body_required_fields(parsed_bookstore_routes):
     assert json_schema.get("required") == ["title", "author"]
 
 
-def test_bookstore_delete_method(parsed_bookstore_routes):
+def test_bookstore_delete_method(parsed_bookstore_routes: list[HTTPRoute]):
     """Test that DELETE method is correctly parsed from the schema."""
-    delete_book = next(
-        (r for r in parsed_bookstore_routes if r.method == "DELETE"), None
-    )
+    delete_book = get_route(parsed_bookstore_routes, "DELETE", "/books/{isbn}")
 
     assert delete_book is not None
     assert delete_book.operation_id == "deleteBook"
     assert delete_book.path == "/books/{isbn}"
 
 
-def test_bookstore_delete_method_parameters(parsed_bookstore_routes):
+def test_bookstore_delete_method_parameters(parsed_bookstore_routes: list[HTTPRoute]):
     """Test that parameters for DELETE method are correctly parsed."""
-    delete_book = next(
-        (r for r in parsed_bookstore_routes if r.method == "DELETE"), None
-    )
+    delete_book = get_route(parsed_bookstore_routes, "DELETE", "/books/{isbn}")
 
     assert delete_book is not None
     assert len(delete_book.parameters) == 1
@@ -832,12 +827,12 @@ def test_bookstore_delete_method_parameters(parsed_bookstore_routes):
 # --- Tests for FastAPI Generated Schema --- #
 
 
-def test_fastapi_route_count(parsed_fastapi_routes):
+def test_fastapi_route_count(parsed_fastapi_routes: list[HTTPRoute]):
     """Test that parsing a FastAPI-generated schema correctly identifies the number of routes."""
     assert len(parsed_fastapi_routes) == 7
 
 
-def test_fastapi_parameter_default_values(fastapi_route_map):
+def test_fastapi_parameter_default_values(fastapi_route_map: dict[str, HTTPRoute]):
     """Test that default parameter values are correctly parsed from the schema."""
     list_items = fastapi_route_map["list_items"]
 
@@ -846,7 +841,7 @@ def test_fastapi_parameter_default_values(fastapi_route_map):
     assert "limit" in param_map
 
 
-def test_fastapi_skip_parameter_default(fastapi_route_map):
+def test_fastapi_skip_parameter_default(fastapi_route_map: dict[str, HTTPRoute]):
     """Test that skip parameter default value is correctly parsed."""
     list_items = fastapi_route_map["list_items"]
 
@@ -854,7 +849,7 @@ def test_fastapi_skip_parameter_default(fastapi_route_map):
     assert param_map["skip"].schema_.get("default") == 0
 
 
-def test_fastapi_limit_parameter_default(fastapi_route_map):
+def test_fastapi_limit_parameter_default(fastapi_route_map: dict[str, HTTPRoute]):
     """Test that limit parameter default value is correctly parsed."""
     list_items = fastapi_route_map["list_items"]
 
@@ -862,7 +857,7 @@ def test_fastapi_limit_parameter_default(fastapi_route_map):
     assert param_map["limit"].schema_.get("default") == 10
 
 
-def test_fastapi_request_body_from_pydantic(fastapi_route_map):
+def test_fastapi_request_body_from_pydantic(fastapi_route_map: dict[str, HTTPRoute]):
     """Test that request bodies from Pydantic models are present."""
     create_item = fastapi_route_map["create_item"]
 
@@ -870,9 +865,11 @@ def test_fastapi_request_body_from_pydantic(fastapi_route_map):
     assert "application/json" in create_item.request_body.content_schema
 
 
-def test_fastapi_request_body_properties(fastapi_route_map):
+def test_fastapi_request_body_properties(fastapi_route_map: dict[str, HTTPRoute]):
     """Test that request body properties from Pydantic models are correctly parsed."""
     create_item = fastapi_route_map["create_item"]
+
+    assert create_item.request_body is not None
 
     json_schema = create_item.request_body.content_schema["application/json"]
     properties = json_schema.get("properties", {})
@@ -884,9 +881,11 @@ def test_fastapi_request_body_properties(fastapi_route_map):
     assert "tags" in properties
 
 
-def test_fastapi_request_body_required_fields(fastapi_route_map):
+def test_fastapi_request_body_required_fields(fastapi_route_map: dict[str, HTTPRoute]):
     """Test that required fields from Pydantic models are correctly parsed."""
     create_item = fastapi_route_map["create_item"]
+
+    assert create_item.request_body is not None
 
     json_schema = create_item.request_body.content_schema["application/json"]
     required = json_schema.get("required", [])
@@ -895,7 +894,7 @@ def test_fastapi_request_body_required_fields(fastapi_route_map):
     assert "price" in required
 
 
-def test_fastapi_path_parameter_presence(fastapi_route_map):
+def test_fastapi_path_parameter_presence(fastapi_route_map: dict[str, HTTPRoute]):
     """Test that path parameters are present in FastAPI schema."""
     get_item = fastapi_route_map["get_item"]
 
@@ -903,7 +902,7 @@ def test_fastapi_path_parameter_presence(fastapi_route_map):
     assert len(path_params) == 1
 
 
-def test_fastapi_path_parameter_properties(fastapi_route_map):
+def test_fastapi_path_parameter_properties(fastapi_route_map: dict[str, HTTPRoute]):
     """Test that path parameters properties are correctly parsed."""
     get_item = fastapi_route_map["get_item"]
 
@@ -912,7 +911,7 @@ def test_fastapi_path_parameter_properties(fastapi_route_map):
     assert path_params[0].required is True
 
 
-def test_fastapi_optional_query_parameter(fastapi_route_map):
+def test_fastapi_optional_query_parameter(fastapi_route_map: dict[str, HTTPRoute]):
     """Test that optional query parameters are correctly parsed."""
     get_item = fastapi_route_map["get_item"]
 
@@ -922,7 +921,7 @@ def test_fastapi_optional_query_parameter(fastapi_route_map):
     assert query_params[0].required is False
 
 
-def test_fastapi_multiple_path_parameter_count(fastapi_route_map):
+def test_fastapi_multiple_path_parameter_count(fastapi_route_map: dict[str, HTTPRoute]):
     """Test that multiple path parameters count is correct."""
     get_item_tag = fastapi_route_map["get_item_tag"]
 
@@ -930,7 +929,7 @@ def test_fastapi_multiple_path_parameter_count(fastapi_route_map):
     assert len(path_params) == 2
 
 
-def test_fastapi_multiple_path_parameter_names(fastapi_route_map):
+def test_fastapi_multiple_path_parameter_names(fastapi_route_map: dict[str, HTTPRoute]):
     """Test that multiple path parameter names are correctly parsed."""
     get_item_tag = fastapi_route_map["get_item_tag"]
 
@@ -940,16 +939,41 @@ def test_fastapi_multiple_path_parameter_names(fastapi_route_map):
     assert "tag_id" in param_names
 
 
-def test_fastapi_post_with_query_parameters(fastapi_route_map):
+def test_fastapi_post_with_query_parameters(fastapi_route_map: dict[str, HTTPRoute]):
     """Test that query parameters for POST methods are correctly parsed."""
     upload_file = fastapi_route_map["upload_file"]
 
     assert upload_file.method == "POST"
     query_params = [p for p in upload_file.parameters if p.location == "query"]
-    assert len(query_params) == 2
+    assert dump_models(query_params, exclude_none=True) == snapshot(
+        [
+            {
+                "name": "file_name",
+                "location": "query",
+                "required": True,
+                "schema_": {
+                    "type": "string",
+                    "title": "File Name",
+                    "description": "Name of the file to upload",
+                },
+                "description": "Name of the file to upload",
+            },
+            {
+                "name": "content_type",
+                "location": "query",
+                "required": True,
+                "schema_": {
+                    "type": "string",
+                    "title": "Content Type",
+                    "description": "Content type of the file",
+                },
+                "description": "Content type of the file",
+            },
+        ]
+    )
 
 
-def test_fastapi_post_query_parameter_names(fastapi_route_map):
+def test_fastapi_post_query_parameter_names(fastapi_route_map: dict[str, HTTPRoute]):
     """Test that query parameter names for POST methods are correctly parsed."""
     upload_file = fastapi_route_map["upload_file"]
 
@@ -959,7 +983,7 @@ def test_fastapi_post_query_parameter_names(fastapi_route_map):
     assert "content_type" in param_names
 
 
-def test_openapi_30_compatibility(openapi_30_schema):
+def test_openapi_30_compatibility(openapi_30_schema: dict[str, Any]):
     """Test that OpenAPI 3.0 schemas can be parsed correctly."""
     # This will raise an exception if the parser doesn't support 3.0.0
     routes = parse_openapi_to_http_routes(openapi_30_schema)
@@ -974,7 +998,7 @@ def test_openapi_30_compatibility(openapi_30_schema):
     assert route.parameters[0].name == "limit"
 
 
-def test_openapi_31_compatibility(openapi_31_schema):
+def test_openapi_31_compatibility(openapi_31_schema: dict[str, Any]):
     """Test that OpenAPI 3.1 schemas can be parsed correctly."""
     routes = parse_openapi_to_http_routes(openapi_31_schema)
 
@@ -1017,7 +1041,7 @@ def test_version_detection_logic():
             pytest.fail(f"Failed to parse OpenAPI {version} schema: {e}")
 
 
-def test_openapi_30_reference_resolution(openapi_30_with_references):
+def test_openapi_30_reference_resolution(openapi_30_with_references: dict[str, Any]):
     """Test that references are correctly resolved in OpenAPI 3.0 schemas."""
     routes = parse_openapi_to_http_routes(openapi_30_with_references)
 
@@ -1031,30 +1055,46 @@ def test_openapi_30_reference_resolution(openapi_30_with_references):
     assert route.request_body.required is True
     assert "application/json" in route.request_body.content_schema
 
-    # Check schema structure
+    # Check schema structure with snapshots
     json_schema = route.request_body.content_schema["application/json"]
-    assert json_schema["type"] == "object"
-    assert "properties" in json_schema
-    assert set(json_schema["required"]) == {"name", "price"}
-
-    # Check primary fields are properly resolved
-    props = json_schema["properties"]
-    assert "id" in props
-    assert "name" in props
-    assert "price" in props
-    assert "category" in props
-
-    # The category might be a reference or resolved object
-    category = props["category"]
-    # Either it's directly resolved with properties
-    # or it still has a $ref field
-    assert "properties" in category or "$ref" in category
+    assert json_schema == snapshot(
+        {
+            "required": ["name", "price"],
+            "type": "object",
+            "properties": {
+                "id": {"type": "string", "format": "uuid"},
+                "name": {"type": "string"},
+                "price": {"type": "number"},
+                "category": {"$ref": "#/$defs/Category"},
+            },
+        }
+    )
 
     combined_schema = _combine_schemas(route)
-    assert "#/$defs/" in combined_schema["properties"]["category"]["$ref"]
+    assert combined_schema == snapshot(
+        {
+            "type": "object",
+            "properties": {
+                "id": {"type": "string", "format": "uuid"},
+                "name": {"type": "string"},
+                "price": {"type": "number"},
+                "category": {"$ref": "#/$defs/Category"},
+            },
+            "required": ["name", "price"],
+            "$defs": {
+                "Category": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "integer"},
+                        "name": {"type": "string"},
+                    },
+                }
+            },
+        }
+    )
 
 
-def test_openapi_31_reference_resolution(openapi_31_with_references):
+def test_openapi_31_reference_resolution(openapi_31_with_references: dict[str, Any]):
     """Test that references are correctly resolved in OpenAPI 3.1 schemas."""
     routes = parse_openapi_to_http_routes(openapi_31_with_references)
 
@@ -1070,29 +1110,46 @@ def test_openapi_31_reference_resolution(openapi_31_with_references):
 
     # Check schema structure
     json_schema = route.request_body.content_schema["application/json"]
-    assert json_schema["type"] == "object"
-    assert "properties" in json_schema
-    assert set(json_schema["required"]) == {"name", "price"}
-
-    # Check primary fields are properly resolved
-    props = json_schema["properties"]
-    assert "id" in props
-    assert "name" in props
-    assert "price" in props
-    assert "category" in props
-
-    # The category might be a reference or resolved object
-    category = props["category"]
-    # Either it's directly resolved with properties
-    # or it still has a $ref field
-    assert "properties" in category or "$ref" in category
+    assert json_schema == snapshot(
+        {
+            "properties": {
+                "id": {"type": "string", "format": "uuid"},
+                "name": {"type": "string"},
+                "price": {"type": "number"},
+                "category": {"$ref": "#/$defs/Category"},
+            },
+            "type": "object",
+            "required": ["name", "price"],
+        }
+    )
 
     combined_schema = _combine_schemas(route)
-    assert "#/$defs/" in combined_schema["properties"]["category"]["$ref"]
+    assert combined_schema == snapshot(
+        {
+            "type": "object",
+            "properties": {
+                "id": {"type": "string", "format": "uuid"},
+                "name": {"type": "string"},
+                "price": {"type": "number"},
+                "category": {"$ref": "#/$defs/Category"},
+            },
+            "required": ["name", "price"],
+            "$defs": {
+                "Category": {
+                    "properties": {
+                        "id": {"type": "integer"},
+                        "name": {"type": "string"},
+                    },
+                    "type": "object",
+                }
+            },
+        }
+    )
 
 
 def test_consistent_output_across_versions(
-    openapi_30_with_references, openapi_31_with_references
+    openapi_30_with_references: dict[str, Any],
+    openapi_31_with_references: dict[str, Any],
 ):
     """Test that both parsers produce equivalent output for equivalent schemas."""
     routes_30 = parse_openapi_to_http_routes(openapi_30_with_references)
