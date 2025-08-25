@@ -148,7 +148,6 @@ jobs:
       - name: Run Marvin for Issue Triage
         uses: anthropics/claude-code-base-action@beta
         with:
-          model: claude-3-5-haiku-latest
           prompt_file: /tmp/claude-prompts/triage-prompt.txt
           allowed_tools: "Bash(gh label list),mcp__github__get_issue,mcp__github__get_issue_comments,mcp__github__update_issue,mcp__github__get_pull_request_files"
           timeout_minutes: "5"
