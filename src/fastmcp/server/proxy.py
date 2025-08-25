@@ -546,6 +546,8 @@ class ProxyClient(Client[ClientTransportT]):
         | str,
         **kwargs,
     ):
+        if "name" not in kwargs:
+            kwargs["name"] = self.generate_name()
         if "roots" not in kwargs:
             kwargs["roots"] = default_proxy_roots_handler
         if "sampling_handler" not in kwargs:

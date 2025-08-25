@@ -9,6 +9,7 @@ from typing import Annotated
 import cyclopts
 from rich import print
 
+from fastmcp.utilities.fastmcp_config import Environment
 from fastmcp.utilities.logging import get_logger
 
 from .shared import process_common_args
@@ -106,31 +107,23 @@ def install_claude_code(
         )
         return False
 
-    # Build uv run command
-    args = ["run"]
-
-    # Add Python version if specified
-    if python_version:
-        args.extend(["--python", python_version])
-
-    # Add project if specified
-    if project:
-        args.extend(["--project", str(project)])
-
-    # Collect all packages in a set to deduplicate
-    packages = {"fastmcp"}
+    # Deduplicate packages and exclude 'fastmcp' since Environment adds it automatically
+    deduplicated_packages = None
     if with_packages:
-        packages.update(pkg for pkg in with_packages if pkg)
+        deduplicated = list(dict.fromkeys(with_packages))
+        deduplicated_packages = [pkg for pkg in deduplicated if pkg != "fastmcp"]
+        if not deduplicated_packages:
+            deduplicated_packages = None
 
-    # Add all packages with --with
-    for pkg in sorted(packages):
-        args.extend(["--with", pkg])
-
-    if with_editable:
-        args.extend(["--with-editable", str(with_editable)])
-
-    if with_requirements:
-        args.extend(["--with-requirements", str(with_requirements)])
+    # Build uv run command using Environment.build_uv_args()
+    env_config = Environment(
+        python=python_version,
+        dependencies=deduplicated_packages,
+        requirements=str(with_requirements) if with_requirements else None,
+        project=str(project) if project else None,
+        editable=str(with_editable) if with_editable else None,
+    )
+    args = env_config.build_uv_args()
 
     # Build server spec from parsed components
     if server_object:
@@ -189,7 +182,7 @@ async def claude_code_command(
         cyclopts.Parameter(
             "--with",
             help="Additional packages to install",
-            negative=False,
+            negative="",
         ),
     ] = [],
     env_vars: Annotated[
@@ -197,7 +190,7 @@ async def claude_code_command(
         cyclopts.Parameter(
             "--env",
             help="Environment variables in KEY=VALUE format",
-            negative=False,
+            negative="",
         ),
     ] = [],
     env_file: Annotated[

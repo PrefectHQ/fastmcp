@@ -36,7 +36,7 @@ from fastmcp.client.auth.oauth import OAuth
 from fastmcp.mcp_config import MCPConfig, infer_transport_type_from_url
 from fastmcp.server.dependencies import get_http_headers
 from fastmcp.server.server import FastMCP
-from fastmcp.utilities.fastmcp_config.v1.fastmcp_config import EnvironmentConfig
+from fastmcp.utilities.fastmcp_config.v1.fastmcp_config import Environment
 from fastmcp.utilities.logging import get_logger
 
 logger = get_logger(__name__)
@@ -182,7 +182,7 @@ class SSETransport(ClientTransport):
         self.httpx_client_factory = httpx_client_factory
 
         if isinstance(sse_read_timeout, int | float):
-            sse_read_timeout = datetime.timedelta(seconds=sse_read_timeout)
+            sse_read_timeout = datetime.timedelta(seconds=float(sse_read_timeout))
         self.sse_read_timeout = sse_read_timeout
 
     def _set_auth(self, auth: httpx.Auth | Literal["oauth"] | str | None):
@@ -252,7 +252,7 @@ class StreamableHttpTransport(ClientTransport):
         self.httpx_client_factory = httpx_client_factory
 
         if isinstance(sse_read_timeout, int | float):
-            sse_read_timeout = datetime.timedelta(seconds=sse_read_timeout)
+            sse_read_timeout = datetime.timedelta(seconds=float(sse_read_timeout))
         self.sse_read_timeout = sse_read_timeout
 
     def _set_auth(self, auth: httpx.Auth | Literal["oauth"] | str | None):
@@ -596,8 +596,8 @@ class UvStdioTransport(StdioTransport):
                 f"Project directory not found: {project_directory}"
             )
 
-        # Create EnvironmentConfig from provided parameters (internal use)
-        env_config = EnvironmentConfig(
+        # Create Environment from provided parameters (internal use)
+        env_config = Environment(
             python=python_version,
             dependencies=with_packages,
             requirements=with_requirements,
@@ -902,7 +902,8 @@ class MCPConfigTransport(ClientTransport):
 
         # otherwise create a composite client
         else:
-            self._composite_server = FastMCP[Any]()
+            name = FastMCP.generate_name("MCPRouter")
+            self._composite_server = FastMCP[Any](name=name)
 
             for name, server, transport in mcp_config_to_servers_and_transports(
                 self.config
@@ -1024,28 +1025,36 @@ def infer_transport(
 
     # the transport is a FastMCP server (2.x or 1.0)
     elif isinstance(transport, FastMCP | FastMCP1Server):
-        inferred_transport = FastMCPTransport(mcp=transport)
+        inferred_transport = FastMCPTransport(
+            mcp=cast(FastMCP[Any] | FastMCP1Server, transport)
+        )
 
     # the transport is a path to a script
     elif isinstance(transport, Path | str) and Path(transport).exists():
         if str(transport).endswith(".py"):
-            inferred_transport = PythonStdioTransport(script_path=transport)
+            inferred_transport = PythonStdioTransport(script_path=cast(Path, transport))
         elif str(transport).endswith(".js"):
-            inferred_transport = NodeStdioTransport(script_path=transport)
+            inferred_transport = NodeStdioTransport(script_path=cast(Path, transport))
         else:
             raise ValueError(f"Unsupported script type: {transport}")
 
     # the transport is an http(s) URL
     elif isinstance(transport, AnyUrl | str) and str(transport).startswith("http"):
-        inferred_transport_type = infer_transport_type_from_url(transport)
+        inferred_transport_type = infer_transport_type_from_url(
+            cast(AnyUrl | str, transport)
+        )
         if inferred_transport_type == "sse":
-            inferred_transport = SSETransport(url=transport)
+            inferred_transport = SSETransport(url=cast(AnyUrl | str, transport))
         else:
-            inferred_transport = StreamableHttpTransport(url=transport)
+            inferred_transport = StreamableHttpTransport(
+                url=cast(AnyUrl | str, transport)
+            )
 
     # if the transport is a config dict or MCPConfig
     elif isinstance(transport, dict | MCPConfig):
-        inferred_transport = MCPConfigTransport(config=transport)
+        inferred_transport = MCPConfigTransport(
+            config=cast(dict | MCPConfig, transport)
+        )
 
     # the transport is an unknown type
     else:

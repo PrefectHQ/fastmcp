@@ -2,16 +2,18 @@
 
 import importlib.metadata
 import importlib.util
+import json
 import os
 import platform
 import subprocess
 import sys
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Annotated, Literal
 
 import cyclopts
 import pyperclip
-from pydantic import TypeAdapter
+from pydantic import TypeAdapter, ValidationError
 from rich.console import Console
 from rich.table import Table
 
@@ -21,6 +23,7 @@ from fastmcp.cli.install import install_app
 from fastmcp.server.server import FastMCP
 from fastmcp.utilities.inspect import FastMCPInfo, inspect_fastmcp
 from fastmcp.utilities.logging import get_logger
+from fastmcp.utilities.types import get_cached_typeadapter
 
 logger = get_logger("cli")
 console = Console()
@@ -57,46 +60,27 @@ def _parse_env_var(env_var: str) -> tuple[str, str]:
     return key.strip(), value.strip()
 
 
-def _build_uv_command(
-    server_spec: str,
-    with_editable: Path | None = None,
-    with_packages: list[str] | None = None,
-    no_banner: bool = False,
-    python_version: str | None = None,
-    with_requirements: Path | None = None,
-    project: Path | None = None,
-) -> list[str]:
-    """Build the uv run command that runs a MCP server through mcp run."""
-    cmd = ["uv", "run"]
+@contextmanager
+def with_argv(args: list[str] | None):
+    """Temporarily replace sys.argv if args provided.
 
-    # Add Python version if specified
-    if python_version:
-        cmd.extend(["--python", python_version])
+    This context manager is used at the CLI boundary to inject
+    server arguments when needed, without mutating sys.argv deep
+    in the source loading logic.
 
-    # Add project if specified
-    if project:
-        cmd.extend(["--project", str(project)])
-
-    cmd.extend(["--with", "fastmcp"])
-
-    if with_editable:
-        cmd.extend(["--with-editable", str(with_editable)])
-
-    if with_packages:
-        for pkg in with_packages:
-            if pkg:
-                cmd.extend(["--with", pkg])
-
-    if with_requirements:
-        cmd.extend(["--with-requirements", str(with_requirements)])
-
-    # Add mcp run command
-    cmd.extend(["fastmcp", "run", server_spec])
-
-    if no_banner:
-        cmd.append("--no-banner")
-
-    return cmd
+    Args are provided without the script name, so we preserve sys.argv[0]
+    and replace the rest.
+    """
+    if args is not None:
+        original = sys.argv[:]
+        try:
+            # Preserve the script name (sys.argv[0]) and replace the rest
+            sys.argv = [sys.argv[0]] + args
+            yield
+        finally:
+            sys.argv = original
+    else:
+        yield
 
 
 @app.command
@@ -107,7 +91,7 @@ def version(
         cyclopts.Parameter(
             "--copy",
             help="Copy version information to clipboard",
-            negative=False,
+            negative="",
         ),
     ] = False,
 ):
@@ -153,7 +137,7 @@ async def dev(
         cyclopts.Parameter(
             "--with",
             help="Additional packages to install",
-            negative=False,
+            negative="",
         ),
     ] = [],
     inspector_version: Annotated[
@@ -204,12 +188,16 @@ async def dev(
     Args:
         server_spec: Python file to run, optionally with :object suffix, or None to auto-detect fastmcp.json
     """
+    from pathlib import Path
+
+    from fastmcp.utilities.fastmcp_config import FastMCPConfig
+    from fastmcp.utilities.fastmcp_config.v1.sources.filesystem import FileSystemSource
+
+    config = None
+    config_path = None
+
     # Auto-detect fastmcp.json if no server_spec provided
     if server_spec is None:
-        from pathlib import Path
-
-        from fastmcp.utilities.fastmcp_config import FastMCPConfig
-
         config_path = Path("fastmcp.json")
         if not config_path.exists():
             # Check if fastmcp.json exists in current directory
@@ -222,44 +210,50 @@ async def dev(
                     "Please specify a server file or create a fastmcp.json configuration."
                 )
                 sys.exit(1)
+        server_spec = str(config_path)
+        logger.info(f"Using configuration from {config_path}")
 
-        # Load the config to get settings
-        config = FastMCPConfig.from_file(config_path)
-        entrypoint = config.get_entrypoint(config_path)
-
-        # Convert entrypoint to string format for dev command
-        if entrypoint.object:
-            server_spec = f"{entrypoint.file}:{entrypoint.object}"
-        else:
-            server_spec = entrypoint.file
+    # Create FastMCPConfig from server_spec
+    if server_spec.endswith(".json"):
+        # Load existing config
+        config = FastMCPConfig.from_file(Path(server_spec))
 
         # Merge environment settings with CLI args (CLI takes precedence)
         if config.environment:
-            merged_env = config.environment.merge_with_cli_args(
-                python=python,
-                with_packages=with_packages,
-                with_requirements=with_requirements,
-                project=project,
-                with_editable=with_editable,
+            python = python or config.environment.python
+            project = project or (
+                Path(config.environment.project) if config.environment.project else None
             )
-            python = merged_env["python"]
-            with_packages = merged_env["with_packages"]
-            with_requirements = merged_env["with_requirements"]
-            project = merged_env["project"]
-            with_editable = merged_env["with_editable"]
+            with_requirements = with_requirements or (
+                Path(config.environment.requirements)
+                if config.environment.requirements
+                else None
+            )
+            with_editable = with_editable or (
+                Path(config.environment.editable)
+                if config.environment.editable
+                else None
+            )
+
+            # Merge packages from both sources
+            if config.environment.dependencies:
+                packages = list(config.environment.dependencies)
+                if with_packages:
+                    packages.extend(with_packages)
+                with_packages = packages
 
         # Get server port from deployment config if not specified
         if config.deployment and config.deployment.port:
             server_port = server_port or config.deployment.port
-
-        logger.info(f"Using configuration from {config_path}")
-    file, server_object = run_module.parse_file_path(server_spec)
+    else:
+        # Create config from file path
+        source = FileSystemSource(path=server_spec)
+        config = FastMCPConfig(source=source)
 
     logger.debug(
         "Starting dev server",
         extra={
-            "file": str(file),
-            "server_object": server_object,
+            "server_spec": server_spec,
             "with_editable": str(with_editable) if with_editable else None,
             "with_packages": with_packages,
             "ui_port": ui_port,
@@ -268,9 +262,8 @@ async def dev(
     )
 
     try:
-        # Import server to get dependencies
-        # TODO: Remove dependencies handling (deprecated in v2.11.4)
-        server: FastMCP = await run_module.import_server(file, server_object)
+        # Load server to check for deprecated dependencies
+        server: FastMCP = await config.source.load_server()
         if server.dependencies:
             import warnings
 
@@ -302,15 +295,20 @@ async def dev(
         if inspector_version:
             inspector_cmd += f"@{inspector_version}"
 
-        uv_cmd = _build_uv_command(
-            server_spec,
-            with_editable,
-            with_packages,
-            no_banner=True,
-            python_version=python,
-            with_requirements=with_requirements,
-            project=project,
+        # Create Environment object from CLI args
+        from fastmcp.utilities.fastmcp_config import Environment
+
+        env_config = Environment(
+            python=python,
+            dependencies=with_packages if with_packages else None,
+            requirements=str(with_requirements) if with_requirements else None,
+            project=str(project) if project else None,
+            editable=str(with_editable) if with_editable else None,
         )
+        uv_cmd = ["uv"] + env_config.build_uv_args(["fastmcp", "run", server_spec])
+
+        # Add --no-banner flag for dev command
+        uv_cmd.append("--no-banner")
 
         # Run the MCP Inspector command with shell=True on Windows
         shell = sys.platform == "win32"
@@ -325,7 +323,7 @@ async def dev(
         logger.error(
             "Dev server failed",
             extra={
-                "file": str(file),
+                "file": str(server_spec),
                 "error": str(e),
                 "returncode": e.returncode,
             },
@@ -336,7 +334,7 @@ async def dev(
             "npx not found. Please ensure Node.js and npm are properly installed "
             "and added to your system PATH. You may need to restart your terminal "
             "after installation.",
-            extra={"file": str(file)},
+            extra={"file": str(server_spec)},
         )
         sys.exit(1)
 
@@ -385,7 +383,7 @@ async def run(
         cyclopts.Parameter(
             "--no-banner",
             help="Don't show the server banner",
-            negative=False,
+            negative="",
         ),
     ] = False,
     python: Annotated[
@@ -400,7 +398,7 @@ async def run(
         cyclopts.Parameter(
             "--with",
             help="Additional packages to install (can be used multiple times)",
-            negative=False,
+            negative="",
         ),
     ] = [],
     project: Annotated[
@@ -417,6 +415,22 @@ async def run(
             help="Requirements file to install dependencies from",
         ),
     ] = None,
+    skip_env: Annotated[
+        bool,
+        cyclopts.Parameter(
+            "--skip-env",
+            help="Skip environment setup with uv (use when already in a uv environment)",
+            negative="",
+        ),
+    ] = False,
+    skip_source: Annotated[
+        bool,
+        cyclopts.Parameter(
+            "--skip-source",
+            help="Skip source preparation step (use when source is already prepared)",
+            negative="",
+        ),
+    ] = False,
 ) -> None:
     """Run an MCP server or connect to a remote one.
 
@@ -441,6 +455,7 @@ async def run(
 
     config = None
     config_path = None
+    editable = None  # Initialize editable variable
 
     # Auto-detect fastmcp.json if no server_spec provided
     if server_spec is None:
@@ -460,41 +475,69 @@ async def run(
         server_spec = str(config_path)
         logger.info(f"Using configuration from {config_path}")
 
-    # Load config if server_spec is a fastmcp.json file
-    if server_spec.endswith("fastmcp.json"):
+    # Load config if server_spec is a .json file
+    if server_spec.endswith(".json"):
         config_path = Path(server_spec)
         if config_path.exists():
-            config = FastMCPConfig.from_file(config_path)
+            # Try to load as JSON and discriminate between FastMCPConfig and MCPConfig
+            try:
+                with open(config_path) as f:
+                    data = json.load(f)
 
-            # Merge deployment config with CLI values (CLI takes precedence)
-            if config.deployment:
-                merged_deploy = config.deployment.merge_with_cli_args(
-                    transport=transport,
-                    host=host,
-                    port=port,
-                    path=path,
-                    log_level=log_level,
-                    server_args=list(server_args) if server_args else None,
-                )
-                transport = merged_deploy["transport"]
-                host = merged_deploy["host"]
-                port = merged_deploy["port"]
-                path = merged_deploy["path"]
-                log_level = merged_deploy["log_level"]
-                server_args = merged_deploy["server_args"] or ()
+                # Check if it's an MCPConfig first (has canonical mcpServers key)
+                if "mcpServers" in data:
+                    # It's an MCPConfig, we don't process these in the run command
+                    # They should be handled through different code paths
+                    config = None
+                else:
+                    # Try to parse as FastMCPConfig
+                    try:
+                        adapter = get_cached_typeadapter(FastMCPConfig)
+                        config = adapter.validate_python(data)
 
-            # Merge environment config with CLI values (CLI takes precedence)
-            if config.environment:
-                merged_env = config.environment.merge_with_cli_args(
-                    python=python,
-                    with_packages=with_packages,
-                    with_requirements=with_requirements,
-                    project=project,
-                )
-                python = merged_env["python"]
-                with_packages = merged_env["with_packages"]
-                with_requirements = merged_env["with_requirements"]
-                project = merged_env["project"]
+                        # Merge deployment config with CLI values (CLI takes precedence)
+                        if config.deployment:
+                            transport = transport or config.deployment.transport
+                            host = host or config.deployment.host
+                            port = port or config.deployment.port
+                            path = path or config.deployment.path
+                            log_level = log_level or config.deployment.log_level
+                            server_args = (
+                                tuple(server_args)
+                                if server_args
+                                else tuple(config.deployment.args or ())
+                            )
+
+                        # Merge environment config with CLI values (CLI takes precedence)
+                        if config.environment:
+                            python = python or config.environment.python
+                            project = project or (
+                                Path(config.environment.project)
+                                if config.environment.project
+                                else None
+                            )
+                            with_requirements = with_requirements or (
+                                Path(config.environment.requirements)
+                                if config.environment.requirements
+                                else None
+                            )
+                            # Extract editable from config (no CLI override for this)
+                            editable = config.environment.editable
+
+                            # Merge packages from both sources
+                            if config.environment.dependencies:
+                                packages = list(config.environment.dependencies)
+                                if with_packages:
+                                    packages.extend(with_packages)
+                                with_packages = packages
+                    except ValidationError:
+                        # Not a valid FastMCPConfig, treat as regular server spec
+                        config = None
+            except (json.JSONDecodeError, FileNotFoundError):
+                # Not a valid JSON file, treat as regular server spec
+                config = None
+        else:
+            config = None
     logger.debug(
         "Running server or client",
         extra={
@@ -509,8 +552,11 @@ async def run(
     )
 
     # Check if we need to use uv run (either from CLI args or config)
-    needs_uv = python or with_packages or with_requirements or project
-    if not needs_uv and config and config.environment:
+    # Skip if --skip-env flag is set (we're already in a uv environment)
+    needs_uv = not skip_env and (
+        python or with_packages or with_requirements or project or editable
+    )
+    if not skip_env and not needs_uv and config and config.environment:
         # Check if config's environment needs uv
         needs_uv = config.environment.needs_uv()
 
@@ -529,6 +575,7 @@ async def run(
                 path=path,
                 log_level=log_level,
                 show_banner=not no_banner,
+                editable=editable,
             )
         except Exception as e:
             logger.error(
@@ -551,6 +598,7 @@ async def run(
                 log_level=log_level,
                 server_args=list(server_args),
                 show_banner=not no_banner,
+                skip_source=skip_source,
             )
         except Exception as e:
             logger.error(
@@ -586,7 +634,7 @@ async def inspect(
         cyclopts.Parameter(
             "--with",
             help="Additional packages to install (can be used multiple times)",
-            negative=False,
+            negative="",
         ),
     ] = [],
     project: Annotated[
@@ -621,10 +669,10 @@ async def inspect(
     Args:
         server_spec: Python file to inspect, optionally with :object suffix, or fastmcp.json
     """
-    # Load configuration if needed
     from pathlib import Path
 
     from fastmcp.utilities.fastmcp_config import FastMCPConfig
+    from fastmcp.utilities.fastmcp_config.v1.sources.filesystem import FileSystemSource
 
     config = None
     config_path = None
@@ -647,31 +695,53 @@ async def inspect(
         server_spec = str(config_path)
         logger.info(f"Using configuration from {config_path}")
 
-    # Load config if server_spec is a fastmcp.json file
-    if server_spec.endswith("fastmcp.json"):
+    # Create FastMCPConfig from server_spec
+    if server_spec.endswith(".json"):
         config_path = Path(server_spec)
         if config_path.exists():
-            config = FastMCPConfig.from_file(config_path)
-            # Get the actual entrypoint with resolved paths
-            entrypoint = config.get_entrypoint(config_path)
+            try:
+                with open(config_path) as f:
+                    data = json.load(f)
 
-            if entrypoint.object:
-                server_spec = f"{entrypoint.file}:{entrypoint.object}"
-            else:
-                server_spec = entrypoint.file
+                # Check if it's an MCPConfig (has mcpServers key)
+                if "mcpServers" in data:
+                    # MCPConfig - we don't process these in inspect
+                    logger.error("MCPConfig files are not supported by inspect command")
+                    sys.exit(1)
+                else:
+                    # It's a FastMCPConfig
+                    config = FastMCPConfig.from_file(config_path)
 
-            # Merge environment settings from config with CLI (CLI takes precedence)
-            if config.environment:
-                merged_env = config.environment.merge_with_cli_args(
-                    python=python,
-                    with_packages=with_packages,
-                    with_requirements=with_requirements,
-                    project=project,
-                )
-                python = merged_env["python"]
-                with_packages = merged_env["with_packages"]
-                with_requirements = merged_env["with_requirements"]
-                project = merged_env["project"]
+                    # Merge environment settings from config with CLI (CLI takes precedence)
+                    if config.environment:
+                        python = python or config.environment.python
+                        project = project or (
+                            Path(config.environment.project)
+                            if config.environment.project
+                            else None
+                        )
+                        with_requirements = with_requirements or (
+                            Path(config.environment.requirements)
+                            if config.environment.requirements
+                            else None
+                        )
+
+                        # Merge packages from both sources
+                        if config.environment.dependencies:
+                            packages = list(config.environment.dependencies)
+                            if with_packages:
+                                packages.extend(with_packages)
+                            with_packages = packages
+            except (json.JSONDecodeError, ValidationError) as e:
+                logger.error(f"Invalid configuration file: {e}")
+                sys.exit(1)
+        else:
+            logger.error(f"Configuration file not found: {config_path}")
+            sys.exit(1)
+    else:
+        # Create config from file path
+        source = FileSystemSource(path=server_spec)
+        config = FastMCPConfig(source=source)
 
     # Check if we need to use uv run
     needs_uv = python or with_packages or with_requirements or project
@@ -680,54 +750,37 @@ async def inspect(
 
     if needs_uv:
         # Build and run uv command
-        if config and config.environment:
-            # Use environment config's run_with_uv method
-            inspect_command = [
-                "fastmcp",
-                "inspect",
-                server_spec,
-                "--output",
-                str(output),
-            ]
-            config.environment.run_with_uv(inspect_command)
-        else:
-            # Build an EnvironmentConfig from CLI args for consistency
-            from fastmcp.utilities.fastmcp_config import (
-                EnvironmentConfig,
-            )
+        from fastmcp.utilities.fastmcp_config import Environment
 
-            env_config = EnvironmentConfig(
-                python=python,
-                dependencies=with_packages,
-                requirements=str(with_requirements) if with_requirements else None,
-                project=str(project) if project else None,
-            )
+        # Create or update environment config
+        env_config = Environment(
+            python=python,
+            dependencies=with_packages if with_packages else None,
+            requirements=str(with_requirements) if with_requirements else None,
+            project=str(project) if project else None,
+        )
 
-            inspect_command = [
-                "fastmcp",
-                "inspect",
-                server_spec,
-                "--output",
-                str(output),
-            ]
-            env_config.run_with_uv(inspect_command)
-
-    # Direct import path (no uv needed)
-    # Parse the server specification
-    file, server_object = run_module.parse_file_path(server_spec)
+        inspect_command = [
+            "fastmcp",
+            "inspect",
+            server_spec,
+            "--output",
+            str(output),
+        ]
+        env_config.run_with_uv(inspect_command)
+        return  # run_with_uv exits the process
 
     logger.debug(
         "Inspecting server",
         extra={
-            "file": str(file),
-            "server_object": server_object,
+            "server_spec": server_spec,
             "output": str(output),
         },
     )
 
     try:
-        # Import the server
-        server = await run_module.import_server(file, server_object)
+        # Load the server using the config
+        server = await config.source.load_server()
 
         # Get server information - using native async support
         info = await inspect_fastmcp(server)
@@ -763,43 +816,6 @@ async def inspect(
         )
         console.print(f"[bold red]✗[/bold red] Failed to inspect server: {e}")
         sys.exit(1)
-
-
-@app.command
-def generate_schema(
-    *,
-    output: Annotated[
-        Path | None,
-        cyclopts.Parameter(
-            name=["--output", "-o"],
-            help="Output file path for the JSON schema",
-        ),
-    ] = None,
-) -> None:
-    """Generate JSON schema for fastmcp.json configuration files.
-
-    This generates a JSON schema that can be used by IDEs and validators
-    to provide auto-completion and validation for fastmcp.json files.
-
-    Examples:
-        fastmcp generate-schema
-        fastmcp generate-schema -o schema.json
-    """
-    import json
-
-    from fastmcp.utilities.fastmcp_config import (
-        generate_schema as gen_schema,
-    )
-
-    schema = gen_schema()
-    schema_json = json.dumps(schema, indent=2)
-
-    if output:
-        output.parent.mkdir(parents=True, exist_ok=True)
-        output.write_text(schema_json)
-        logger.info(f"Schema written to {output}")
-    else:
-        console.print(schema_json)
 
 
 # Add install subcommands using proper Cyclopts pattern

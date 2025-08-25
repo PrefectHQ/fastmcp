@@ -1,5 +1,5 @@
 {
-  "$schema": "https://gofastmcp.com/schemas/fastmcp_config/v1.json",
+  "$schema": "https://gofastmcp.com/public/schemas/fastmcp.json/v1.json",
   "entrypoint": "src/smart_home/hub.py",
   "environment": {
     "dependencies": [

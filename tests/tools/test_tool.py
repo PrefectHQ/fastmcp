@@ -3,6 +3,8 @@ from dataclasses import dataclass
 from typing import Annotated, Any
 
 import pytest
+from dirty_equals import HasName
+from inline_snapshot import snapshot
 from mcp.types import (
     AudioContent,
     EmbeddedResource,
@@ -13,7 +15,7 @@ from mcp.types import (
 from pydantic import AnyUrl, BaseModel, Field, TypeAdapter
 from typing_extensions import TypedDict
 
-from fastmcp.tools.tool import Tool, _convert_to_content
+from fastmcp.tools.tool import Tool, ToolResult, _convert_to_content
 from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.tests import caplog_for_fastmcp
 from fastmcp.utilities.types import Audio, File, Image
@@ -29,20 +31,30 @@ class TestToolFromFunction:
 
         tool = Tool.from_function(add)
 
-        assert tool.name == "add"
-        assert tool.description == "Add two numbers."
-        assert len(tool.parameters["properties"]) == 2
-        assert tool.parameters["properties"]["a"]["type"] == "integer"
-        assert tool.parameters["properties"]["b"]["type"] == "integer"
-        # With primitive wrapping, int return type becomes object with result property
-        expected_schema = {
-            "type": "object",
-            "properties": {"result": {"type": "integer", "title": "Result"}},
-            "required": ["result"],
-            "title": "_WrappedResult",
-            "x-fastmcp-wrap-result": True,
-        }
-        assert tool.output_schema == expected_schema
+        assert tool.model_dump(exclude_none=True) == snapshot(
+            {
+                "name": "add",
+                "description": "Add two numbers.",
+                "tags": set(),
+                "enabled": True,
+                "parameters": {
+                    "properties": {
+                        "a": {"title": "A", "type": "integer"},
+                        "b": {"title": "B", "type": "integer"},
+                    },
+                    "required": ["a", "b"],
+                    "type": "object",
+                },
+                "output_schema": {
+                    "properties": {"result": {"title": "Result", "type": "integer"}},
+                    "required": ["result"],
+                    "title": "_WrappedResult",
+                    "type": "object",
+                    "x-fastmcp-wrap-result": True,
+                },
+                "fn": HasName("add"),
+            }
+        )
 
     def test_meta_parameter(self):
         """Test that meta parameter is properly handled."""
@@ -56,6 +68,7 @@ class TestToolFromFunction:
 
         assert tool.meta == meta_data
         mcp_tool = tool.to_mcp_tool()
+
         # MCP tool includes fastmcp meta, so check that our meta is included
         assert mcp_tool.meta is not None
         assert meta_data.items() <= mcp_tool.meta.items()
@@ -69,9 +82,27 @@ class TestToolFromFunction:
 
         tool = Tool.from_function(fetch_data)
 
-        assert tool.name == "fetch_data"
-        assert tool.description == "Fetch data from URL."
-        assert tool.parameters["properties"]["url"]["type"] == "string"
+        assert tool.model_dump(exclude_none=True) == snapshot(
+            {
+                "name": "fetch_data",
+                "description": "Fetch data from URL.",
+                "tags": set(),
+                "enabled": True,
+                "parameters": {
+                    "properties": {"url": {"title": "Url", "type": "string"}},
+                    "required": ["url"],
+                    "type": "object",
+                },
+                "output_schema": {
+                    "properties": {"result": {"title": "Result", "type": "string"}},
+                    "required": ["result"],
+                    "title": "_WrappedResult",
+                    "type": "object",
+                    "x-fastmcp-wrap-result": True,
+                },
+                "fn": HasName("fetch_data"),
+            }
+        )
 
     def test_callable_object(self):
         class Adder:
@@ -82,11 +113,30 @@ class TestToolFromFunction:
                 return x + y
 
         tool = Tool.from_function(Adder())
-        assert tool.name == "Adder"
-        assert tool.description == "Adds two numbers."
-        assert len(tool.parameters["properties"]) == 2
-        assert tool.parameters["properties"]["x"]["type"] == "integer"
-        assert tool.parameters["properties"]["y"]["type"] == "integer"
+
+        assert tool.model_dump(exclude_none=True, exclude={"fn"}) == snapshot(
+            {
+                "name": "Adder",
+                "description": "Adds two numbers.",
+                "tags": set(),
+                "enabled": True,
+                "parameters": {
+                    "properties": {
+                        "x": {"title": "X", "type": "integer"},
+                        "y": {"title": "Y", "type": "integer"},
+                    },
+                    "required": ["x", "y"],
+                    "type": "object",
+                },
+                "output_schema": {
+                    "properties": {"result": {"title": "Result", "type": "integer"}},
+                    "required": ["result"],
+                    "title": "_WrappedResult",
+                    "type": "object",
+                    "x-fastmcp-wrap-result": True,
+                },
+            }
+        )
 
     def test_async_callable_object(self):
         class Adder:
@@ -97,11 +147,30 @@ class TestToolFromFunction:
                 return x + y
 
         tool = Tool.from_function(Adder())
-        assert tool.name == "Adder"
-        assert tool.description == "Adds two numbers."
-        assert len(tool.parameters["properties"]) == 2
-        assert tool.parameters["properties"]["x"]["type"] == "integer"
-        assert tool.parameters["properties"]["y"]["type"] == "integer"
+
+        assert tool.model_dump(exclude_none=True, exclude={"fn"}) == snapshot(
+            {
+                "name": "Adder",
+                "description": "Adds two numbers.",
+                "tags": set(),
+                "enabled": True,
+                "parameters": {
+                    "properties": {
+                        "x": {"title": "X", "type": "integer"},
+                        "y": {"title": "Y", "type": "integer"},
+                    },
+                    "required": ["x", "y"],
+                    "type": "object",
+                },
+                "output_schema": {
+                    "properties": {"result": {"title": "Result", "type": "integer"}},
+                    "required": ["result"],
+                    "title": "_WrappedResult",
+                    "type": "object",
+                    "x-fastmcp-wrap-result": True,
+                },
+            }
+        )
 
     def test_pydantic_model_function(self):
         """Test registering a function that takes a Pydantic model."""
@@ -116,20 +185,45 @@ class TestToolFromFunction:
 
         tool = Tool.from_function(create_user)
 
-        assert tool.name == "create_user"
-        assert tool.description == "Create a new user."
-        assert "name" in tool.parameters["$defs"]["UserInput"]["properties"]
-        assert "age" in tool.parameters["$defs"]["UserInput"]["properties"]
-        assert "flag" in tool.parameters["properties"]
+        assert tool.model_dump(exclude_none=True) == snapshot(
+            {
+                "name": "create_user",
+                "description": "Create a new user.",
+                "tags": set(),
+                "enabled": True,
+                "parameters": {
+                    "$defs": {
+                        "UserInput": {
+                            "properties": {
+                                "name": {"title": "Name", "type": "string"},
+                                "age": {"title": "Age", "type": "integer"},
+                            },
+                            "required": ["name", "age"],
+                            "title": "UserInput",
+                            "type": "object",
+                        }
+                    },
+                    "properties": {
+                        "user": {"$ref": "#/$defs/UserInput", "title": "User"},
+                        "flag": {"title": "Flag", "type": "boolean"},
+                    },
+                    "required": ["user", "flag"],
+                    "type": "object",
+                },
+                "output_schema": {"additionalProperties": True, "type": "object"},
+                "fn": HasName("create_user"),
+            }
+        )
 
     async def test_tool_with_image_return(self):
         def image_tool(data: bytes) -> Image:
             return Image(data=data)
 
         tool = Tool.from_function(image_tool)
+        assert tool.parameters["properties"]["data"]["type"] == "string"
+        assert tool.output_schema is None
 
         result = await tool.run({"data": "test.png"})
-        assert tool.parameters["properties"]["data"]["type"] == "string"
         assert isinstance(result.content[0], ImageContent)
 
     async def test_tool_with_audio_return(self):
@@ -137,9 +231,10 @@ class TestToolFromFunction:
             return Audio(data=data)
 
         tool = Tool.from_function(audio_tool)
+        assert tool.parameters["properties"]["data"]["type"] == "string"
+        assert tool.output_schema is None
 
         result = await tool.run({"data": "test.wav"})
-        assert tool.parameters["properties"]["data"]["type"] == "string"
         assert isinstance(result.content[0], AudioContent)
 
     async def test_tool_with_file_return(self):
@@ -147,15 +242,20 @@ class TestToolFromFunction:
             return File(data=data, format="octet-stream")
 
         tool = Tool.from_function(file_tool)
-
-        result = await tool.run({"data": "test.bin"})
         assert tool.parameters["properties"]["data"]["type"] == "string"
-        assert len(result.content) == 1
-        assert isinstance(result.content[0], EmbeddedResource)
-        assert result.content[0].type == "resource"
-        assert hasattr(result.content[0], "resource")
-        resource = result.content[0].resource
-        assert resource.mimeType == "application/octet-stream"
+        assert tool.output_schema is None
+
+        result: ToolResult = await tool.run({"data": "test.bin"})
+        assert result.content[0].model_dump(exclude_none=True) == snapshot(
+            {
+                "type": "resource",
+                "resource": {
+                    "uri": AnyUrl("file:///resource.octet-stream"),
+                    "mimeType": "application/octet-stream",
+                    "blob": "dGVzdC5iaW4=",
+                },
+            }
+        )
 
     def test_non_callable_fn(self):
         with pytest.raises(TypeError, match="not a callable object"):
@@ -163,7 +263,18 @@ class TestToolFromFunction:
 
     def test_lambda(self):
         tool = Tool.from_function(lambda x: x, name="my_tool")
-        assert tool.name == "my_tool"
+        assert tool.model_dump(exclude_none=True, exclude={"fn"}) == snapshot(
+            {
+                "name": "my_tool",
+                "tags": set(),
+                "enabled": True,
+                "parameters": {
+                    "properties": {"x": {"title": "X"}},
+                    "required": ["x"],
+                    "type": "object",
+                },
+            }
+        )
 
     def test_lambda_with_no_name(self):
         with pytest.raises(
@@ -177,8 +288,25 @@ class TestToolFromFunction:
             return _a + _b
 
         tool = Tool.from_function(add)
-        assert tool.parameters["properties"]["_a"]["type"] == "integer"
-        assert tool.parameters["properties"]["_b"]["type"] == "integer"
+
+        assert tool.model_dump(
+            exclude_none=True, exclude={"output_schema", "fn"}
+        ) == snapshot(
+            {
+                "name": "add",
+                "description": "Add two numbers.",
+                "tags": set(),
+                "enabled": True,
+                "parameters": {
+                    "properties": {
+                        "_a": {"title": "A", "type": "integer"},
+                        "_b": {"title": "B", "type": "integer"},
+                    },
+                    "required": ["_a", "_b"],
+                    "type": "object",
+                },
+            }
+        )
 
     def test_tool_with_varargs_not_allowed(self):
         def func(a: int, b: int, *args: int) -> int:
@@ -209,9 +337,31 @@ class TestToolFromFunction:
         obj = MyClass()
 
         tool = Tool.from_function(obj.add)
-        assert tool.name == "add"
-        assert tool.description == "Add two numbers."
         assert "self" not in tool.parameters["properties"]
+
+        assert tool.model_dump(exclude_none=True, exclude={"fn"}) == snapshot(
+            {
+                "name": "add",
+                "description": "Add two numbers.",
+                "tags": set(),
+                "enabled": True,
+                "parameters": {
+                    "properties": {
+                        "x": {"title": "X", "type": "integer"},
+                        "y": {"title": "Y", "type": "integer"},
+                    },
+                    "required": ["x", "y"],
+                    "type": "object",
+                },
+                "output_schema": {
+                    "properties": {"result": {"title": "Result", "type": "integer"}},
+                    "required": ["result"],
+                    "title": "_WrappedResult",
+                    "type": "object",
+                    "x-fastmcp-wrap-result": True,
+                },
+            }
+        )
 
     async def test_instance_method_with_varargs_not_allowed(self):
         class MyClass:
@@ -322,6 +472,7 @@ class TestToolFromFunctionOutputSchema:
                 "x-fastmcp-wrap-result": True,
             }
             assert tool.output_schema == expected_schema
+            # # Note: Parameterized test - keeping original assertion for multiple parameter values
         else:
             # Object types remain unwrapped
             assert tool.output_schema == base_schema
@@ -339,8 +490,8 @@ class TestToolFromFunctionOutputSchema:
             return 1
 
         tool = Tool.from_function(func)
-        base_schema = TypeAdapter(annotation).json_schema()
 
+        base_schema = TypeAdapter(annotation).json_schema()
         expected_schema = {
             "type": "object",
             "properties": {"result": {**base_schema, "title": "Result"}},
@@ -405,8 +556,18 @@ class TestToolFromFunctionOutputSchema:
             return Person(name="John", age=30)
 
         tool = Tool.from_function(func)
-        expected_schema = compress_schema(TypeAdapter(Person).json_schema())
-        assert tool.output_schema == expected_schema
+
+        assert tool.output_schema == snapshot(
+            {
+                "properties": {
+                    "name": {"title": "Name", "type": "string"},
+                    "age": {"title": "Age", "type": "integer"},
+                },
+                "required": ["name", "age"],
+                "title": "Person",
+                "type": "object",
+            }
+        )
 
     async def test_typeddict_return_annotation(self):
         class Person(TypedDict):
@@ -417,8 +578,17 @@ class TestToolFromFunctionOutputSchema:
             return Person(name="John", age=30)
 
         tool = Tool.from_function(func)
-        expected_schema = compress_schema(TypeAdapter(Person).json_schema())
-        assert tool.output_schema == expected_schema
+        assert tool.output_schema == snapshot(
+            {
+                "properties": {
+                    "name": {"title": "Name", "type": "string"},
+                    "age": {"title": "Age", "type": "integer"},
+                },
+                "required": ["name", "age"],
+                "title": "Person",
+                "type": "object",
+            }
+        )
 
     async def test_unserializable_return_annotation(self):
         class Unserializable:
@@ -593,14 +763,15 @@ class TestToolFromFunctionOutputSchema:
 
         # Don't specify output_schema - should infer and wrap
         tool = Tool.from_function(func)
-        expected_schema = {
-            "type": "object",
-            "properties": {"result": {"type": "integer", "title": "Result"}},
-            "required": ["result"],
-            "title": "_WrappedResult",
-            "x-fastmcp-wrap-result": True,
-        }
-        assert tool.output_schema == expected_schema
+        assert tool.output_schema == snapshot(
+            {
+                "properties": {"result": {"title": "Result", "type": "integer"}},
+                "required": ["result"],
+                "title": "_WrappedResult",
+                "type": "object",
+                "x-fastmcp-wrap-result": True,
+            }
+        )
 
         result = await tool.run({})
         assert result.structured_content == {"result": 42}
@@ -665,14 +836,15 @@ class TestToolFromFunctionOutputSchema:
 
         # Inferred schema should wrap string type
         tool = Tool.from_function(func)
-        expected_schema = {
-            "type": "object",
-            "properties": {"result": {"type": "string", "title": "Result"}},
-            "required": ["result"],
-            "title": "_WrappedResult",
-            "x-fastmcp-wrap-result": True,
-        }
-        assert tool.output_schema == expected_schema
+        assert tool.output_schema == snapshot(
+            {
+                "properties": {"result": {"title": "Result", "type": "string"}},
+                "required": ["result"],
+                "title": "_WrappedResult",
+                "type": "object",
+                "x-fastmcp-wrap-result": True,
+            }
+        )
 
         result = await tool.run({})
         # Unstructured content

@@ -1,15 +1,12 @@
 {
-  "$schema": "https://gofastmcp.com/schemas/fastmcp_config/v1.json",
-  "entrypoint": {
-    "file": "server.py",
-    "object": "mcp"
+  "$schema": "https://gofastmcp.com/public/schemas/fastmcp.json/v1.json",
+  "source": {
+    "path": "server.py",
+    "entrypoint": "mcp"
   },
   "environment": {
     "python": "3.12",
-    "dependencies": [
-      "requests>=2.31.0",
-      "httpx"
-    ],
+    "dependencies": ["requests>=2.31.0", "httpx"],
     "requirements": null,
     "project": null,
     "editable": null

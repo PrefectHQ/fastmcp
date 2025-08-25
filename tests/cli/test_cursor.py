@@ -239,11 +239,14 @@ class TestInstallCursor:
         """Test cursor installation with editable package."""
         mock_open_deeplink.return_value = True
 
+        # Use an absolute path that works on all platforms
+        editable_path = Path.cwd() / "local" / "package"
+
         result = install_cursor(
             file=Path("/path/to/server.py"),
             server_object="custom_app",
             name="test-server",
-            with_editable=Path("/local/package"),
+            with_editable=editable_path,
         )
 
         assert result is True
@@ -255,9 +258,10 @@ class TestInstallCursor:
         config_data = json.loads(decoded)
 
         assert "--with-editable" in config_data["args"]
-        # Check for the editable path in a platform-agnostic way
-        editable_path_str = str(Path("/local/package"))
-        assert editable_path_str in config_data["args"]
+        # Check that the path was resolved (should be absolute)
+        editable_idx = config_data["args"].index("--with-editable") + 1
+        resolved_path = config_data["args"][editable_idx]
+        assert Path(resolved_path).is_absolute()
         assert "server.py:custom_app" in " ".join(config_data["args"])
 
     @patch("fastmcp.cli.install.cursor.open_deeplink")
@@ -276,7 +280,11 @@ class TestInstallCursor:
         # Verify failure message was printed
         mock_print.assert_called()
 
-    def test_install_cursor_deduplicate_packages(self):
+    @patch(
+        "fastmcp.utilities.fastmcp_config.v1.fastmcp_config.Environment._find_fastmcp_dev_path",
+        return_value=None,  # Mock to disable dev mode so "fastmcp" count is predictable
+    )
+    def test_install_cursor_deduplicate_packages(self, mock_find_dev):
         """Test that duplicate packages are deduplicated."""
         with patch("fastmcp.cli.install.cursor.open_deeplink") as mock_open:
             mock_open.return_value = True

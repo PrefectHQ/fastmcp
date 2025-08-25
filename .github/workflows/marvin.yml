@@ -31,24 +31,18 @@ jobs:
       (github.event_name == 'issues' && github.event.action == 'labeled' && github.event.label.name == 'marvin')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
-      # Set up Python environment
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
+      - uses: actions/checkout@v5
 
       # Install UV package manager
       - name: Install UV
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
 
       # Install project dependencies
       - name: Install dependencies
-        run: uv sync --dev
+        run: uv sync --python 3.12
 
       # Install pre-commit hooks automatically
       - name: Install pre-commit hooks

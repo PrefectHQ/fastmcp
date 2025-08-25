@@ -7,14 +7,13 @@ from pydantic import ValidationError
 
 from fastmcp.cli.run import (
     create_mcp_config_server,
-    import_server,
     is_url,
-    parse_file_path,
 )
 from fastmcp.client.client import Client
 from fastmcp.client.transports import FastMCPTransport
 from fastmcp.mcp_config import MCPConfig, StdioMCPServer
 from fastmcp.server.server import FastMCP
+from fastmcp.utilities.fastmcp_config.v1.sources.filesystem import FileSystemSource
 
 
 class TestUrlDetection:
@@ -41,52 +40,54 @@ class TestUrlDetection:
         assert not is_url("file:///path/to/file")
 
 
-class TestFilePathParsing:
-    """Test file path parsing functionality."""
+class TestFileSystemSource:
+    """Test FileSystemSource path parsing functionality."""
 
-    def test_parse_file_path_simple(self, tmp_path):
+    def test_parse_simple_path(self, tmp_path):
         """Test parsing simple file path without object."""
         test_file = tmp_path / "server.py"
         test_file.write_text("# test server")
 
-        file_path, server_object = parse_file_path(str(test_file))
-        assert file_path == test_file.resolve()
-        assert server_object is None
+        source = FileSystemSource(path=str(test_file))
+        assert Path(source.path).resolve() == test_file.resolve()
+        assert source.entrypoint is None
 
-    def test_parse_file_path_with_object(self, tmp_path):
+    def test_parse_path_with_object(self, tmp_path):
         """Test parsing file path with object specification."""
         test_file = tmp_path / "server.py"
         test_file.write_text("# test server")
 
-        file_path, server_object = parse_file_path(f"{test_file}:app")
-        assert file_path == test_file.resolve()
-        assert server_object == "app"
+        source = FileSystemSource(path=f"{test_file}:app")
+        assert Path(source.path).resolve() == test_file.resolve()
+        assert source.entrypoint == "app"
 
-    def test_parse_file_path_complex_object(self, tmp_path):
+    def test_parse_complex_object(self, tmp_path):
         """Test parsing file path with complex object specification."""
         test_file = tmp_path / "server.py"
         test_file.write_text("# test server")
 
-        # The current implementation splits on the last colon, so file:module:app
-        # becomes file_path="file:module" and server_object="app"
+        # The implementation splits on the last colon, so file:module:app
+        # becomes file_path="file:module" and entrypoint="app"
         # We need to create a file with a colon in the name for this test
         complex_file = tmp_path / "server:module.py"
         complex_file.write_text("# test server")
 
-        file_path, server_object = parse_file_path(f"{complex_file}:app")
-        assert file_path == complex_file.resolve()
-        assert server_object == "app"
+        source = FileSystemSource(path=f"{complex_file}:app")
+        assert Path(source.path).resolve() == complex_file.resolve()
+        assert source.entrypoint == "app"
 
-    def test_parse_file_path_nonexistent(self):
-        """Test parsing nonexistent file path exits."""
+    async def test_load_server_nonexistent(self):
+        """Test loading nonexistent file path exits."""
+        source = FileSystemSource(path="nonexistent.py")
         with pytest.raises(SystemExit) as exc_info:
-            parse_file_path("nonexistent.py")
+            await source.load_server()
         assert exc_info.value.code == 1
 
-    def test_parse_file_path_directory(self, tmp_path):
-        """Test parsing directory path exits."""
+    async def test_load_server_directory(self, tmp_path):
+        """Test loading directory path exits."""
+        source = FileSystemSource(path=str(tmp_path))
         with pytest.raises(SystemExit) as exc_info:
-            parse_file_path(str(tmp_path))
+            await source.load_server()
         assert exc_info.value.code == 1
 
 
@@ -157,7 +158,8 @@ def greet(name: str) -> str:
     return f"Hello, {name}!"
 """)
 
-        server = await import_server(test_file)
+        source = FileSystemSource(path=str(test_file))
+        server = await source.load_server()
         assert server.name == "TestServer"
         tools = await server.get_tools()
         assert "greet" in tools
@@ -178,7 +180,8 @@ if __name__ == "__main__":
     app.run()
 """)
 
-        server = await import_server(test_file)
+        source = FileSystemSource(path=str(test_file))
+        server = await source.load_server()
         assert server.name == "MainServer"
         tools = await server.get_tools()
         assert "calculate" in tools
@@ -192,7 +195,8 @@ import fastmcp
 mcp = fastmcp.FastMCP("MCPServer")
 """)
 
-        server = await import_server(mcp_file)
+        source = FileSystemSource(path=str(mcp_file))
+        server = await source.load_server()
         assert server.name == "MCPServer"
 
         # Test with 'server' name
@@ -202,7 +206,8 @@ import fastmcp
 server = fastmcp.FastMCP("ServerServer")
 """)
 
-        server = await import_server(server_file)
+        source = FileSystemSource(path=str(server_file))
+        server = await source.load_server()
         assert server.name == "ServerServer"
 
         # Test with 'app' name
@@ -212,7 +217,8 @@ import fastmcp
 app = fastmcp.FastMCP("AppServer")
 """)
 
-        server = await import_server(app_file)
+        source = FileSystemSource(path=str(app_file))
+        server = await source.load_server()
         assert server.name == "AppServer"
 
     async def test_import_server_nonstandard_name(self, tmp_path):
@@ -228,7 +234,8 @@ def custom_tool() -> str:
     return "custom"
 """)
 
-        server = await import_server(test_file, "my_custom_server")
+        source = FileSystemSource(path=f"{test_file}:my_custom_server")
+        server = await source.load_server()
         assert server.name == "CustomServer"
         tools = await server.get_tools()
         assert "custom_tool" in tools
@@ -242,8 +249,9 @@ import fastmcp
 other_name = fastmcp.FastMCP("OtherServer")
 """)
 
+        source = FileSystemSource(path=str(test_file))
         with pytest.raises(SystemExit) as exc_info:
-            await import_server(test_file)
+            await source.load_server()
         assert exc_info.value.code == 1
 
     async def test_import_server_nonexistent_object_fails(self, tmp_path):
@@ -255,6 +263,131 @@ import fastmcp
 mcp = fastmcp.FastMCP("TestServer")
 """)
 
+        source = FileSystemSource(path=f"{test_file}:nonexistent")
         with pytest.raises(SystemExit) as exc_info:
-            await import_server(test_file, "nonexistent")
+            await source.load_server()
         assert exc_info.value.code == 1
+
+
+class TestSkipSource:
+    """Test the --skip-source functionality."""
+
+    async def test_run_command_calls_prepare_by_default(self, tmp_path):
+        """Test that run_command calls source.prepare() by default."""
+        from unittest.mock import AsyncMock, patch
+
+        from fastmcp.cli.run import run_command
+
+        # Create a test server file
+        test_file = tmp_path / "server.py"
+        test_file.write_text("""
+import fastmcp
+mcp = fastmcp.FastMCP("TestServer")
+""")
+
+        # Create a test config file
+        config_file = tmp_path / "fastmcp.json"
+        config_data = {"source": {"path": str(test_file), "entrypoint": "mcp"}}
+        config_file.write_text(json.dumps(config_data))
+
+        # Mock the prepare method and server run
+        with (
+            patch.object(
+                FileSystemSource, "prepare", new_callable=AsyncMock
+            ) as prepare_mock,
+            patch("fastmcp.server.server.FastMCP.run_async", new_callable=AsyncMock),
+        ):
+            # Run the command
+            await run_command(str(config_file))
+
+            # Verify prepare was called
+            prepare_mock.assert_called_once()
+
+    async def test_run_command_skips_prepare_with_flag(self, tmp_path):
+        """Test that run_command skips source.prepare() when skip_source=True."""
+        from unittest.mock import AsyncMock, patch
+
+        from fastmcp.cli.run import run_command
+
+        # Create a test server file
+        test_file = tmp_path / "server.py"
+        test_file.write_text("""
+import fastmcp
+mcp = fastmcp.FastMCP("TestServer")
+""")
+
+        # Create a test config file
+        config_file = tmp_path / "fastmcp.json"
+        config_data = {"source": {"path": str(test_file), "entrypoint": "mcp"}}
+        config_file.write_text(json.dumps(config_data))
+
+        # Mock the prepare method and server run
+        with (
+            patch.object(
+                FileSystemSource, "prepare", new_callable=AsyncMock
+            ) as prepare_mock,
+            patch("fastmcp.server.server.FastMCP.run_async", new_callable=AsyncMock),
+        ):
+            # Run the command with skip_source=True
+            await run_command(str(config_file), skip_source=True)
+
+            # Verify prepare was NOT called
+            prepare_mock.assert_not_called()
+
+    async def test_filesystem_source_prepare_by_default(self, tmp_path):
+        """Test that FileSystemSource is prepared when using direct file spec."""
+        from unittest.mock import AsyncMock, patch
+
+        from fastmcp.cli.run import run_command
+        from fastmcp.utilities.fastmcp_config.v1.sources.filesystem import (
+            FileSystemSource,
+        )
+
+        # Create a test server file
+        test_file = tmp_path / "server.py"
+        test_file.write_text("""
+import fastmcp
+mcp = fastmcp.FastMCP("TestServer")
+""")
+
+        # Mock the prepare method and server run
+        with (
+            patch.object(
+                FileSystemSource, "prepare", new_callable=AsyncMock
+            ) as prepare_mock,
+            patch("fastmcp.server.server.FastMCP.run_async", new_callable=AsyncMock),
+        ):
+            # Run with direct file specification
+            await run_command(str(test_file))
+
+            # Verify prepare was called
+            prepare_mock.assert_called_once()
+
+    async def test_filesystem_source_skip_prepare_with_flag(self, tmp_path):
+        """Test that FileSystemSource.prepare() is skipped with skip_source flag."""
+        from unittest.mock import AsyncMock, patch
+
+        from fastmcp.cli.run import run_command
+        from fastmcp.utilities.fastmcp_config.v1.sources.filesystem import (
+            FileSystemSource,
+        )
+
+        # Create a test server file
+        test_file = tmp_path / "server.py"
+        test_file.write_text("""
+import fastmcp
+mcp = fastmcp.FastMCP("TestServer")
+""")
+
+        # Mock the prepare method and server run
+        with (
+            patch.object(
+                FileSystemSource, "prepare", new_callable=AsyncMock
+            ) as prepare_mock,
+            patch("fastmcp.server.server.FastMCP.run_async", new_callable=AsyncMock),
+        ):
+            # Run with direct file specification and skip_source=True
+            await run_command(str(test_file), skip_source=True)
+
+            # Verify prepare was NOT called
+            prepare_mock.assert_not_called()

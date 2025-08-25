@@ -10,6 +10,7 @@ from pathlib import Path
 from types import EllipsisType, UnionType
 from typing import (
     Annotated,
+    Any,
     Protocol,
     TypeAlias,
     TypeVar,
@@ -122,7 +123,7 @@ def issubclass_safe(cls: type, base: type) -> bool:
         return False
 
 
-def is_class_member_of_type(cls: type, base: type) -> bool:
+def is_class_member_of_type(cls: Any, base: type) -> bool:
     """
     Check if cls is a member of base, even if cls is a type variable.
 

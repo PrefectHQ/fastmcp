@@ -15,36 +15,20 @@ from typing import TYPE_CHECKING, Any, Literal, overload
 
 from pydantic import BaseModel, Field, field_validator
 
+from fastmcp.utilities.fastmcp_config.v1.sources.filesystem import FileSystemSource
 from fastmcp.utilities.logging import get_logger
 
 logger = get_logger("cli.config")
 
 # JSON Schema for IDE support
-FASTMCP_JSON_SCHEMA = "https://gofastmcp.com/schemas/fastmcp_config/v1.json"
+FASTMCP_JSON_SCHEMA = "https://gofastmcp.com/public/schemas/fastmcp.json/v1.json"
 
 
-class EntrypointConfig(BaseModel):
-    """Configuration for server entrypoint when using object format."""
-
-    file: str = Field(
-        description="Path to Python file containing the server",
-        examples=["server.py", "src/server.py", "app/main.py"],
-    )
-
-    object: str | None = Field(
-        default=None,
-        description="Name of the server object in the file (defaults to searching for mcp/server/app)",
-        examples=["app", "mcp", "server"],
-    )
-
-    repo: str | None = Field(
-        default=None,
-        description="Git repository URL",
-        examples=["https://github.com/user/repo"],
-    )
+# Type alias for source union (will expand with GitSource, etc in future)
+SourceType = FileSystemSource
 
 
-class EnvironmentConfig(BaseModel):
+class Environment(BaseModel):
     """Configuration for Python environment setup."""
 
     python: str | None = Field(
@@ -96,13 +80,18 @@ class EnvironmentConfig(BaseModel):
         if self.project:
             args.extend(["--project", str(self.project)])
 
-        # Add fastmcp as a base dependency
-        args.extend(["--with", "fastmcp"])
+        # Add fastmcp dependency - use editable install if in development mode
+        dev_path = self._find_fastmcp_dev_path()
+        if dev_path:
+            args.extend(["--with-editable", str(dev_path)])
+        else:
+            args.extend(["--with", "fastmcp"])
 
-        # Add additional dependencies
+        # Add additional dependencies (skip fastmcp if already added)
         if self.dependencies:
             for dep in self.dependencies:
-                args.extend(["--with", dep])
+                if dep != "fastmcp":  # Skip fastmcp since we already added it
+                    args.extend(["--with", dep])
 
         # Add requirements file
         if self.requirements:
@@ -120,6 +109,34 @@ class EnvironmentConfig(BaseModel):
                 args.extend(command)
 
         return args
+
+    def _find_fastmcp_dev_path(self) -> Path | None:
+        """Find the fastmcp development directory by looking for pyproject.toml.
+
+        Searches from the current working directory up the directory tree
+        looking for a pyproject.toml file that contains name = "fastmcp".
+
+        Returns:
+            Path to the fastmcp project directory if found, None otherwise
+        """
+        current_path = Path.cwd()
+
+        # Search up the directory tree
+        for path in [current_path] + list(current_path.parents):
+            pyproject_path = path / "pyproject.toml"
+            if pyproject_path.exists():
+                try:
+                    # Read and check if this is the fastmcp project
+                    content = pyproject_path.read_text(encoding="utf-8")
+                    if 'name = "fastmcp"' in content or "name='fastmcp'" in content:
+                        logger.debug(f"Found fastmcp development project at: {path}")
+                        return path
+                except (OSError, UnicodeDecodeError):
+                    # Skip files that can't be read
+                    continue
+
+        logger.debug("No fastmcp development project found, using PyPI package")
+        return None
 
     def run_with_uv(self, command: list[str]) -> None:
         """Execute a command using uv run with this environment configuration.
@@ -150,51 +167,18 @@ class EnvironmentConfig(BaseModel):
         Returns:
             True if any environment settings require uv run
         """
-        return bool(
-            self.python
-            or self.dependencies
-            or self.requirements
-            or self.project
-            or self.editable
+        return any(
+            [
+                self.python is not None,
+                self.dependencies is not None,
+                self.requirements is not None,
+                self.project is not None,
+                self.editable is not None,
+            ]
         )
 
-    def merge_with_cli_args(
-        self,
-        python: str | None = None,
-        with_packages: list[str] | None = None,
-        with_requirements: Path | None = None,
-        project: Path | None = None,
-        with_editable: Path | None = None,
-    ) -> dict[str, Any]:
-        """Merge environment config with CLI arguments, with CLI taking precedence.
 
-        For packages, combines both config and CLI packages.
-        For other fields, CLI takes precedence if provided.
-
-        Returns:
-            Dictionary with merged arguments suitable for CLI commands
-        """
-        from pathlib import Path
-
-        # Merge packages from both sources
-        packages = []
-        if self.dependencies:
-            packages.extend(self.dependencies)
-        if with_packages:
-            packages.extend(with_packages)
-
-        return {
-            "python": python or self.python,
-            "with_packages": packages,
-            "with_requirements": with_requirements
-            or (Path(self.requirements) if self.requirements else None),
-            "project": project or (Path(self.project) if self.project else None),
-            "with_editable": with_editable
-            or (Path(self.editable) if self.editable else None),
-        }
-
-
-class DeploymentConfig(BaseModel):
+class Deployment(BaseModel):
     """Configuration for server deployment and runtime settings."""
 
     transport: Literal["stdio", "http", "sse"] | None = Field(
@@ -242,29 +226,6 @@ class DeploymentConfig(BaseModel):
         description="Arguments to pass to the server (after --)",
         examples=[["--config", "config.json", "--debug"]],
     )
-
-    def merge_with_cli_args(
-        self,
-        transport: str | None = None,
-        host: str | None = None,
-        port: int | None = None,
-        path: str | None = None,
-        log_level: str | None = None,
-        server_args: list[str] | None = None,
-    ) -> dict[str, Any]:
-        """Merge deployment config with CLI arguments, with CLI taking precedence.
-
-        Returns:
-            Dictionary with merged arguments suitable for CLI commands
-        """
-        return {
-            "transport": transport or self.transport,
-            "host": host or self.host,
-            "port": port or self.port,
-            "path": path or self.path,
-            "log_level": log_level or self.log_level,
-            "server_args": server_args if server_args is not None else self.args,
-        }
 
     def apply_runtime_settings(self, config_path: Path | None = None) -> None:
         """Apply runtime settings like environment variables and working directory.
@@ -324,149 +285,99 @@ class FastMCPConfig(BaseModel):
 
     # Schema field for IDE support
     schema_: str | None = Field(
-        default="https://gofastmcp.com/schemas/fastmcp_config/v1.json",
+        default="https://gofastmcp.com/public/schemas/fastmcp.json/v1.json",
         alias="$schema",
         description="JSON schema for IDE support and validation",
     )
 
-    # Server entrypoint - supports both string and object format
-    entrypoint: EntrypointConfig = Field(
-        description="Server entrypoint as a string (file or file:object) or object with file/object/repo",
+    # Server source - defines where and how to load the server
+    source: SourceType = Field(
+        description="Source configuration for the server",
         examples=[
-            "server.py",
-            "server.py:app",
-            {"file": "src/server.py", "object": "app"},
+            {"path": "server.py"},
+            {"path": "server.py", "entrypoint": "app"},
+            {"type": "filesystem", "path": "src/server.py", "entrypoint": "mcp"},
         ],
     )
 
     # Environment configuration
-    environment: EnvironmentConfig = Field(
-        default_factory=lambda: EnvironmentConfig(),
+    environment: Environment = Field(
+        default_factory=lambda: Environment(),
         description="Python environment setup configuration",
     )
 
     # Deployment configuration
-    deployment: DeploymentConfig = Field(
-        default_factory=lambda: DeploymentConfig(),
+    deployment: Deployment = Field(
+        default_factory=lambda: Deployment(),
         description="Server deployment and runtime settings",
     )
 
-    # purely for static type checkers to avoid issues with providng str entrypoint
+    # purely for static type checkers to avoid issues with providing dict source
     if TYPE_CHECKING:
 
         @overload
-        def __init__(
-            self, *, entrypoint: str | dict | EntrypointConfig, **data
-        ) -> None: ...
+        def __init__(self, *, source: dict | FileSystemSource, **data) -> None: ...
         @overload
-        def __init__(
-            self, *, environment: dict | EnvironmentConfig, **data
-        ) -> None: ...
+        def __init__(self, *, environment: dict | Environment, **data) -> None: ...
         @overload
-        def __init__(self, *, deployment: dict | DeploymentConfig, **data) -> None: ...
+        def __init__(self, *, deployment: dict | Deployment, **data) -> None: ...
         def __init__(self, **data) -> None: ...
 
-    @field_validator("entrypoint", mode="before")
+    @field_validator("source", mode="before")
     @classmethod
-    def validate_entrypoint(cls, v: str | EntrypointConfig) -> EntrypointConfig:
-        """Validate and convert entrypoint to proper format.
+    def validate_source(cls, v: dict | FileSystemSource) -> FileSystemSource:
+        """Validate and convert source to proper format.
 
         Supports:
-        - String format: "server.py" or "server.py:object"
-        - Object format: {"file": "server.py", "object": "app"}
-        - EntrypointConfig instance (passed through)
+        - Dict format: {"path": "server.py", "entrypoint": "app"}
+        - FileSystemSource instance (passed through)
 
-        The string format with :object syntax is automatically parsed into
-        the object format for consistency.
+        No string parsing happens here - that's only at CLI boundaries.
+        FastMCPConfig works only with properly typed objects.
         """
-        if isinstance(v, EntrypointConfig):
-            # Already an EntrypointConfig instance, return as-is
+        if isinstance(v, FileSystemSource):
+            # Already a FileSystemSource instance, return as-is
             return v
         elif isinstance(v, dict):
-            return EntrypointConfig(**v)
-        elif isinstance(v, str):
-            # Parse file.py:object syntax into object format if present
-            if ":" in v:
-                # Check if it's a Windows path (e.g., C:\...)
-                has_windows_drive = len(v) > 1 and v[1] == ":"
-
-                # Only split if colon is not part of Windows drive
-                if ":" in (v[2:] if has_windows_drive else v):
-                    file, obj = v.rsplit(":", 1)
-                    return EntrypointConfig(file=file, object=obj)
-            else:
-                return EntrypointConfig(file=v)
-
-        raise ValueError("entrypoint must be a string, EntrypointConfig instance")
+            # Dict can have type field or not (filesystem is default)
+            if "type" not in v:
+                v["type"] = "filesystem"
+            return FileSystemSource(**v)
+        else:
+            raise ValueError("source must be a dict or FileSystemSource instance")
 
     @field_validator("environment", mode="before")
     @classmethod
-    def validate_environment(cls, v: dict | EnvironmentConfig) -> EnvironmentConfig:
-        """Validate and convert environment to EnvironmentConfig.
+    def validate_environment(cls, v: dict | Environment) -> Environment:
+        """Validate and convert environment to Environment.
 
         Accepts:
-        - EnvironmentConfig instance
-        - dict that can be converted to EnvironmentConfig
+        - Environment instance
+        - dict that can be converted to Environment
         """
-        if isinstance(v, EnvironmentConfig):
+        if isinstance(v, Environment):
             return v
         elif isinstance(v, dict):
-            return EnvironmentConfig(**v)  # type: ignore[arg-type]
+            return Environment(**v)  # type: ignore[arg-type]
         else:
-            raise ValueError("environment must be a dict, EnvironmentConfig instance")
+            raise ValueError("environment must be a dict, Environment instance")
 
     @field_validator("deployment", mode="before")
     @classmethod
-    def validate_deployment(cls, v: dict | DeploymentConfig) -> DeploymentConfig:
-        """Validate and convert deployment to DeploymentConfig.
+    def validate_deployment(cls, v: dict | Deployment) -> Deployment:
+        """Validate and convert deployment to Deployment.
 
         Accepts:
-        - DeploymentConfig instance
-        - dict that can be converted to DeploymentConfig
+        - Deployment instance
+        - dict that can be converted to Deployment
 
         """
-        if isinstance(v, DeploymentConfig):
+        if isinstance(v, Deployment):
             return v
         elif isinstance(v, dict):
-            return DeploymentConfig(**v)  # type: ignore[arg-type]
+            return Deployment(**v)  # type: ignore[arg-type]
         else:
-            raise ValueError("deployment must be a dict, DeploymentConfig instance")
-
-    def get_entrypoint(self, config_path: Path | None = None) -> EntrypointConfig:
-        """Get the entrypoint as a structured object with resolved paths.
-
-        Args:
-            config_path: Path to config file for resolving relative paths
-
-        Returns:
-            EntrypointConfig object with file, object, and repo fields.
-            If config_path is provided, relative file paths are resolved
-            relative to the config file location.
-        """
-        if isinstance(self.entrypoint, str):
-            # Parse string format into structured object
-            if ":" in self.entrypoint:
-                file, obj = self.entrypoint.rsplit(":", 1)
-                entrypoint = EntrypointConfig(file=file, object=obj)
-            else:
-                entrypoint = EntrypointConfig(file=self.entrypoint)
-        else:
-            # Already an EntrypointConfig
-            entrypoint = self.entrypoint
-
-        # Resolve relative paths if config_path provided
-        if config_path:
-            file_path = Path(entrypoint.file)
-            if not file_path.is_absolute():
-                resolved_path = (config_path.parent / file_path).resolve()
-                # Create new EntrypointConfig with resolved path
-                entrypoint = EntrypointConfig(
-                    file=str(resolved_path),
-                    object=entrypoint.object,
-                    repo=entrypoint.repo,
-                )
-
-        return entrypoint
+            raise ValueError("deployment must be a dict, Deployment instance")
 
     @classmethod
     def from_file(cls, file_path: Path) -> FastMCPConfig:
@@ -494,7 +405,7 @@ class FastMCPConfig(BaseModel):
     @classmethod
     def from_cli_args(
         cls,
-        entrypoint: str,
+        source: FileSystemSource,
         transport: Literal["stdio", "http", "sse", "streamable-http"] | None = None,
         host: str | None = None,
         port: int | None = None,
@@ -516,7 +427,7 @@ class FastMCPConfig(BaseModel):
         goes through a config object.
 
         Args:
-            entrypoint: Server entrypoint (file or file:object)
+            source: Server source (FileSystemSource instance)
             transport: Transport protocol
             host: Host for HTTP transport
             port: Port for HTTP transport
@@ -537,7 +448,7 @@ class FastMCPConfig(BaseModel):
         # Build environment config if any env args provided
         environment = None
         if any([python, dependencies, requirements, project, editable]):
-            environment = EnvironmentConfig(
+            environment = Environment(
                 python=python,
                 dependencies=dependencies,
                 requirements=requirements,
@@ -551,7 +462,7 @@ class FastMCPConfig(BaseModel):
             # Convert streamable-http to http for backward compatibility
             if transport == "streamable-http":
                 transport = "http"  # type: ignore[assignment]
-            deployment = DeploymentConfig(
+            deployment = Deployment(
                 transport=transport,  # type: ignore[arg-type]
                 host=host,
                 port=port,
@@ -563,7 +474,7 @@ class FastMCPConfig(BaseModel):
             )
 
         return cls(
-            entrypoint=entrypoint,
+            source=source,
             environment=environment,
             deployment=deployment,
         )
@@ -588,48 +499,6 @@ class FastMCPConfig(BaseModel):
 
         return None
 
-    async def load_server(self, config_path: Path | None = None) -> Any:
-        """Load the server from the configuration.
-
-        This handles environment setup, working directory changes,
-        and imports the server module.
-
-        Args:
-            config_path: Path to the config file (for resolving relative paths)
-
-        Returns:
-            The imported server object
-        """
-        import os
-        from pathlib import Path
-
-        # Set environment variables if specified
-        if self.deployment and self.deployment.env:
-            for key, value in self.deployment.env.items():
-                os.environ[key] = value
-
-        # Change working directory if specified
-        if self.deployment and self.deployment.cwd:
-            cwd_path = Path(self.deployment.cwd)
-            if not cwd_path.is_absolute():
-                # If config_path provided, resolve relative to it
-                if config_path:
-                    cwd_path = (config_path.parent / cwd_path).resolve()
-                else:
-                    cwd_path = cwd_path.resolve()
-            os.chdir(cwd_path)
-
-        # Get structured entrypoint with resolved paths
-        entrypoint = self.get_entrypoint(config_path)
-
-        # Import the server
-        from fastmcp.cli.run import import_server_with_args
-
-        file_path = Path(entrypoint.file)
-        server_args = self.deployment.args if self.deployment else None
-
-        return await import_server_with_args(file_path, entrypoint.object, server_args)
-
     async def run_server(self, **kwargs: Any) -> None:
         """Load and run the server with this configuration.
 
@@ -637,7 +506,12 @@ class FastMCPConfig(BaseModel):
             **kwargs: Additional arguments to pass to server.run_async()
                      These override config settings
         """
-        server = await self.load_server()
+        # Apply deployment settings (env vars, cwd)
+        if self.deployment:
+            self.deployment.apply_runtime_settings()
+
+        # Load the server
+        server = await self.source.load_server()
 
         # Build run arguments from config
         run_args = {}
@@ -659,14 +533,19 @@ class FastMCPConfig(BaseModel):
         await server.run_async(**run_args)
 
 
-def generate_schema() -> dict[str, Any]:
+def generate_schema(output_path: Path | str | None = None) -> dict[str, Any] | None:
     """Generate JSON schema for fastmcp.json files.
 
     This is used to create the schema file that IDEs can use for
     validation and auto-completion.
 
+    Args:
+        output_path: Optional path to write the schema to. If provided,
+                    writes the schema and returns None. If not provided,
+                    returns the schema as a dictionary.
+
     Returns:
-        JSON schema as a dictionary
+        JSON schema as a dictionary if output_path is None, otherwise None
     """
     schema = FastMCPConfig.model_json_schema()
 
@@ -674,5 +553,15 @@ def generate_schema() -> dict[str, Any]:
     schema["$id"] = FASTMCP_JSON_SCHEMA
     schema["title"] = "FastMCP Configuration"
     schema["description"] = "Configuration file for FastMCP servers"
+
+    if output_path:
+        import json
+
+        output = Path(output_path)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        with open(output, "w") as f:
+            json.dump(schema, f, indent=2)
+            f.write("\n")  # Add trailing newline
+        return None
 
     return schema

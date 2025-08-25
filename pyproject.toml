@@ -45,6 +45,7 @@ dev = [
     "copychat>=0.5.2",
     "dirty-equals>=0.9.0",
     "fastapi>=0.115.12",
+    "inline-snapshot[dirty-equals]>=0.27.2",
     "ipython>=8.12.3",
     "pdbpp>=0.10.3",
     "pre-commit",
@@ -124,7 +125,6 @@ python-version = "3.10"
 
 [tool.ty.rules]
 # Rules with too many errors to fix right now (40+ each)
-invalid-argument-type = "ignore" # 40 errors
 no-matching-overload = "ignore"  # 126 errors  
 unknown-argument = "ignore"      # 61 errors
 unresolved-attribute = "ignore"  # 60 errors

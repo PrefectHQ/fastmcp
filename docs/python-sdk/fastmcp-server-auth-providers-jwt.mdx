@@ -69,23 +69,26 @@ Settings for JWT token verification.
 ### `JWTVerifier` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/jwt.py#L160" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
-JWT token verifier using public key or JWKS.
+JWT token verifier supporting both asymmetric (RSA/ECDSA) and symmetric (HMAC) algorithms.
 
-This verifier validates JWT tokens signed by an external issuer. It's ideal for
-scenarios where you have a centralized identity provider (like Auth0, Okta, or
-your own OAuth server) that issues JWTs, and your FastMCP server acts as a
-resource server validating those tokens.
+This verifier validates JWT tokens using various signing algorithms:
+- **Asymmetric algorithms** (RS256/384/512, ES256/384/512, PS256/384/512):
+  Uses public/private key pairs. Ideal for external clients and services where
+  only the authorization server has the private key.
+- **Symmetric algorithms** (HS256/384/512): Uses a shared secret for both
+  signing and verification. Perfect for internal microservices and trusted
+  environments where the secret can be securely shared.
 
 Use this when:
-- You have JWT tokens issued by an external service
-- You want asymmetric key verification (public/private key pairs)
-- You need JWKS support for automatic key rotation
+- You have JWT tokens issued by an external service (asymmetric)
+- You need JWKS support for automatic key rotation (asymmetric)
+- You have internal microservices sharing a secret key (symmetric)
 - Your tokens contain standard OAuth scopes and claims
 
 
 **Methods:**
 
-#### `load_access_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/jwt.py#L356" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `load_access_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/jwt.py#L362" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 load_access_token(self, token: str) -> AccessToken | None
@@ -100,7 +103,7 @@ Validates the provided JWT bearer token.
 - AccessToken object if valid, None if invalid or expired
 
 
-#### `verify_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/jwt.py#L458" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `verify_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/jwt.py#L464" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 verify_token(self, token: str) -> AccessToken | None
@@ -118,7 +121,7 @@ to our existing load_access_token method.
 - AccessToken object if valid, None if invalid or expired
 
 
-### `StaticTokenVerifier` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/jwt.py#L474" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `StaticTokenVerifier` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/jwt.py#L480" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Simple static token verifier for testing and development.
@@ -139,7 +142,7 @@ WARNING: Never use this in production - tokens are stored in plain text!
 
 **Methods:**
 
-#### `verify_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/jwt.py#L508" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `verify_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/jwt.py#L514" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 verify_token(self, token: str) -> AccessToken | None

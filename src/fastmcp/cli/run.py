@@ -1,25 +1,23 @@
 """FastMCP run command implementation with enhanced type hints."""
 
-import importlib.util
-import inspect
 import json
 import re
 import subprocess
 import sys
-from functools import partial
 from pathlib import Path
 from typing import Any, Literal
 
 from mcp.server.fastmcp import FastMCP as FastMCP1x
+from pydantic import ValidationError
 
 from fastmcp.server.server import FastMCP
 from fastmcp.utilities.fastmcp_config import (
-    DeploymentConfig,
-    EntrypointConfig,
-    EnvironmentConfig,
+    Environment,
     FastMCPConfig,
 )
+from fastmcp.utilities.fastmcp_config.v1.sources.filesystem import FileSystemSource
 from fastmcp.utilities.logging import get_logger
+from fastmcp.utilities.types import get_cached_typeadapter
 
 logger = get_logger("cli.run")
 
@@ -34,150 +32,6 @@ def is_url(path: str) -> bool:
     return bool(url_pattern.match(path))
 
 
-def parse_file_path(server_spec: str) -> tuple[Path, str | None]:
-    """Parse a file path that may include a server object specification.
-
-    Args:
-        server_spec: Path to file, optionally with :object suffix
-
-    Returns:
-        Tuple of (file_path, server_object)
-    """
-    # First check if we have a Windows path (e.g., C:\...)
-    has_windows_drive = len(server_spec) > 1 and server_spec[1] == ":"
-
-    # Split on the last colon, but only if it's not part of the Windows drive letter
-    # and there's actually another colon in the string after the drive letter
-    if ":" in (server_spec[2:] if has_windows_drive else server_spec):
-        file_str, server_object = server_spec.rsplit(":", 1)
-    else:
-        file_str, server_object = server_spec, None
-
-    # Resolve the file path
-    file_path = Path(file_str).expanduser().resolve()
-    if not file_path.exists():
-        logger.error(f"File not found: {file_path}")
-        sys.exit(1)
-    if not file_path.is_file():
-        logger.error(f"Not a file: {file_path}")
-        sys.exit(1)
-
-    return file_path, server_object
-
-
-async def import_server(file: Path, server_or_factory: str | None = None) -> Any:
-    """Import a MCP server from a file.
-
-    Args:
-        file: Path to the file
-        server_or_factory: Optional object name in format "module:object" or just "object"
-
-    Returns:
-        The server object (or result of calling a factory function)
-    """
-    # Add parent directory to Python path so imports can be resolved
-    file_dir = str(file.parent)
-    if file_dir not in sys.path:
-        sys.path.insert(0, file_dir)
-
-    # Import the module
-    spec = importlib.util.spec_from_file_location("server_module", file)
-    if not spec or not spec.loader:
-        logger.error("Could not load module", extra={"file": str(file)})
-        sys.exit(1)
-
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-
-    # If no object specified, try common server names
-    if not server_or_factory:
-        # Look for common server instance names
-        for name in ["mcp", "server", "app"]:
-            if hasattr(module, name):
-                obj = getattr(module, name)
-                if isinstance(obj, FastMCP | FastMCP1x):
-                    return await _resolve_server_or_factory(obj, file, name)
-
-        logger.error(
-            f"No server object found in {file}. Please either:\n"
-            "1. Use a standard variable name (mcp, server, or app)\n"
-            "2. Specify the object name in fastmcp.json or use `file.py:object` syntax as your path.",
-            extra={"file": str(file)},
-        )
-        sys.exit(1)
-
-    # Handle module:object syntax
-    if server_or_factory and ":" in server_or_factory:
-        module_name, object_name = server_or_factory.split(":", 1)
-        try:
-            server_module = importlib.import_module(module_name)
-            obj = getattr(server_module, object_name, None)
-        except ImportError:
-            logger.error(
-                f"Could not import module '{module_name}'",
-                extra={"file": str(file)},
-            )
-            sys.exit(1)
-    else:
-        # Just object name
-        obj = getattr(module, server_or_factory, None)
-
-    if obj is None:
-        logger.error(
-            f"Server object '{server_or_factory}' not found",
-            extra={"file": str(file)},
-        )
-        sys.exit(1)
-
-    return await _resolve_server_or_factory(obj, file, server_or_factory)
-
-
-async def _resolve_server_or_factory(obj: Any, file: Path, name: str) -> Any:
-    """Resolve a server object or factory function to a server instance.
-
-    Args:
-        obj: The object that might be a server or factory function
-        file: Path to the file for error messages
-        name: Name of the object for error messages
-
-    Returns:
-        A server instance
-    """
-    # Check if it's a function or coroutine function
-    if inspect.isfunction(obj) or inspect.iscoroutinefunction(obj):
-        logger.debug(f"Found factory function '{name}' in {file}")
-
-        try:
-            if inspect.iscoroutinefunction(obj):
-                # Async factory function
-                server = await obj()
-            else:
-                # Sync factory function
-                server = obj()
-
-            # Validate the result is a FastMCP server
-            if not isinstance(server, FastMCP | FastMCP1x):
-                logger.error(
-                    f"Factory function '{name}' must return a FastMCP server instance, "
-                    f"got {type(server).__name__}",
-                    extra={"file": str(file)},
-                )
-                sys.exit(1)
-
-            logger.debug(f"Factory function '{name}' created server: {server.name}")
-            return server
-
-        except Exception as e:
-            logger.error(
-                f"Failed to call factory function '{name}': {e}",
-                extra={"file": str(file)},
-            )
-            sys.exit(1)
-
-    # Not a function, return as-is (should be a server instance)
-    return obj
-
-
 def run_with_uv(
     server_spec: str,
     python_version: str | None = None,
@@ -190,6 +44,7 @@ def run_with_uv(
     path: str | None = None,
     log_level: LogLevelType | None = None,
     show_banner: bool = True,
+    editable: str | None = None,
 ) -> None:
     """Run a MCP server using uv run subprocess.
 
@@ -206,80 +61,83 @@ def run_with_uv(
         log_level: Log level
         show_banner: Whether to show the server banner
     """
-    # Check if server_spec is a fastmcp.json file
-    if server_spec.endswith("fastmcp.json") or "fastmcp.json" in Path(server_spec).name:
+    # Check if server_spec is a .json file
+    if server_spec.endswith(".json"):
         config_path = Path(server_spec).resolve()  # Get absolute path
         if config_path.exists():
-            # Load config
-            config = FastMCPConfig.from_file(config_path)
+            # Try to load as JSON and discriminate between FastMCPConfig and MCPConfig
+            try:
+                with open(config_path) as f:
+                    data = json.load(f)
 
-            # Get entrypoint with resolved paths
-            entrypoint = config.get_entrypoint(config_path)
-            if entrypoint.object:
-                server_spec = f"{entrypoint.file}:{entrypoint.object}"
-            else:
-                server_spec = entrypoint.file
+                # Check if it's an MCPConfig first (has canonical mcpServers key)
+                if "mcpServers" in data:
+                    # It's an MCPConfig, we don't process it here - just pass through
+                    pass
+                else:
+                    # Try to parse as FastMCPConfig
+                    try:
+                        adapter = get_cached_typeadapter(FastMCPConfig)
+                        config: FastMCPConfig = adapter.validate_python(data)
 
-            # Merge environment config with CLI args
-            # Check if environment has any non-None values
-            if config.environment and any(
-                getattr(config.environment, field, None) is not None
-                for field in EnvironmentConfig.model_fields
-            ):
-                merged_env = config.environment.merge_with_cli_args(
-                    python=python_version,
-                    with_packages=with_packages,
-                    with_requirements=with_requirements,
-                    project=project,
-                )
-                python_version = merged_env["python"]
-                with_packages = merged_env["with_packages"]
-                with_requirements = merged_env["with_requirements"]
-                project = merged_env["project"]
+                        # Apply deployment settings
+                        if config.deployment:
+                            config.deployment.apply_runtime_settings(config_path)
 
-            # Merge deployment config with CLI args
-            # Check if deployment has any non-None values
-            if config.deployment and any(
-                getattr(config.deployment, field, None) is not None
-                for field in DeploymentConfig.model_fields
-            ):
-                merged_deploy = config.deployment.merge_with_cli_args(
-                    transport=transport,
-                    host=host,
-                    port=port,
-                    path=path,
-                    log_level=log_level,
-                )
-                transport = merged_deploy["transport"]
-                host = merged_deploy["host"]
-                port = merged_deploy["port"]
-                path = merged_deploy["path"]
-                log_level = merged_deploy["log_level"]
-    cmd = ["uv", "run"]
+                        # Merge environment config with CLI args (CLI takes precedence)
+                        if config.environment:
+                            # Use CLI values if provided, otherwise fall back to config
+                            python_version = python_version or config.environment.python
+                            project = project or (
+                                Path(config.environment.project)
+                                if config.environment.project
+                                else None
+                            )
+                            with_requirements = with_requirements or (
+                                Path(config.environment.requirements)
+                                if config.environment.requirements
+                                else None
+                            )
+                            editable = editable or config.environment.editable
 
-    # Add Python version if specified
-    if python_version:
-        cmd.extend(["--python", python_version])
+                            # Merge packages from both sources
+                            # Only merge if with_packages doesn't already contain them
+                            # (they may have been merged already in CLI)
+                            if config.environment.dependencies and not with_packages:
+                                with_packages = list(config.environment.dependencies)
 
-    # Add project if specified
-    if project:
-        cmd.extend(["--project", str(project)])
+                        # Merge deployment config with CLI args (CLI takes precedence)
+                        if config.deployment:
+                            transport = transport or config.deployment.transport
+                            host = host or config.deployment.host
+                            port = port or config.deployment.port
+                            path = path or config.deployment.path
+                            log_level = log_level or config.deployment.log_level
+                    except ValidationError:
+                        # Not a valid FastMCPConfig, just pass through
+                        pass
+            except (json.JSONDecodeError, FileNotFoundError):
+                # Not a valid JSON file, just pass through
+                pass
 
-    # Add fastmcp package
-    cmd.extend(["--with", "fastmcp"])
-
-    # Add additional packages
-    if with_packages:
-        for pkg in with_packages:
-            if pkg:
-                cmd.extend(["--with", pkg])
-
-    # Add requirements file
-    if with_requirements:
-        cmd.extend(["--with-requirements", str(with_requirements)])
-
-    # Add fastmcp run command
-    cmd.extend(["fastmcp", "run", server_spec])
+    # Build uv command using Environment.build_uv_args()
+    env_config = Environment(
+        python=python_version,
+        dependencies=with_packages if with_packages else None,
+        requirements=str(with_requirements.resolve()) if with_requirements else None,
+        project=str(project.resolve()) if project else None,
+        editable=editable,
+    )
+    # IMPORTANT: We add --skip-env to prevent infinite recursion.
+    # When this function executes `uv run ... fastmcp run server.py`, the inner
+    # `fastmcp run` command will be executed inside the uv environment we're creating.
+    # Without --skip-env, that inner command would detect it needs uv (due to the same
+    # CLI args) and try to spawn ANOTHER uv subprocess, creating infinite recursion.
+    # The --skip-env flag tells the inner fastmcp: "skip environment setup, we're already
+    # inside the uv environment that was just created for us."
+    cmd = ["uv"] + env_config.build_uv_args(
+        ["fastmcp", "run", server_spec, "--skip-env"]
+    )
 
     # Add transport options
     if transport:
@@ -336,16 +194,14 @@ def create_mcp_config_server(mcp_config_path: Path) -> FastMCP[None]:
     return server
 
 
-def load_fastmcp_config(
-    config_path: Path,
-) -> tuple[EntrypointConfig, DeploymentConfig | None, EnvironmentConfig | None]:
+def load_fastmcp_config(config_path: Path) -> FastMCPConfig:
     """Load a FastMCP configuration from a fastmcp.json file.
 
     Args:
         config_path: Path to fastmcp.json file
 
     Returns:
-        Tuple of (entrypoint, deployment config, environment config)
+        FastMCPConfig object
     """
     config = FastMCPConfig.from_file(config_path)
 
@@ -353,55 +209,7 @@ def load_fastmcp_config(
     if config.deployment:
         config.deployment.apply_runtime_settings(config_path)
 
-    # Get entrypoint as structured object with resolved paths
-    entrypoint = config.get_entrypoint(config_path)
-
-    # Return None for empty configs (backward compatibility)
-    deployment = (
-        config.deployment
-        if any(
-            getattr(config.deployment, field, None) is not None
-            for field in DeploymentConfig.model_fields
-        )
-        else None
-    )
-
-    environment = (
-        config.environment
-        if any(
-            getattr(config.environment, field, None) is not None
-            for field in EnvironmentConfig.model_fields
-        )
-        else None
-    )
-
-    return entrypoint, deployment, environment
-
-
-async def import_server_with_args(
-    file: Path,
-    server_or_factory: str | None = None,
-    server_args: list[str] | None = None,
-) -> Any:
-    """Import a server with optional command line arguments.
-
-    Args:
-        file: Path to the server file
-        server_or_factory: Optional server object or factory function name
-        server_args: Optional command line arguments to inject
-
-    Returns:
-        The imported server object
-    """
-    if server_args:
-        original_argv = sys.argv[:]
-        try:
-            sys.argv = [str(file)] + server_args
-            return await import_server(file, server_or_factory)
-        finally:
-            sys.argv = original_argv
-    else:
-        return await import_server(file, server_or_factory)
+    return config
 
 
 async def run_command(
@@ -414,6 +222,7 @@ async def run_command(
     server_args: list[str] | None = None,
     show_banner: bool = True,
     use_direct_import: bool = False,
+    skip_source: bool = False,
 ) -> None:
     """Run a MCP server or connect to a remote one.
 
@@ -427,49 +236,76 @@ async def run_command(
         server_args: Additional arguments to pass to the server
         show_banner: Whether to show the server banner
         use_direct_import: Whether to use direct import instead of subprocess
+        skip_source: Whether to skip source preparation step
     """
+    # Special case: URLs
     if is_url(server_spec):
         # Handle URL case
         server = create_client_server(server_spec)
         logger.debug(f"Created client proxy server for {server_spec}")
-    elif (
-        server_spec.endswith("fastmcp.json") or "fastmcp.json" in Path(server_spec).name
-    ):
-        # Handle fastmcp.json configuration file (matches test_fastmcp.json, my.fastmcp.json, etc)
-        config_path = Path(server_spec)
-        entrypoint, deployment, environment = load_fastmcp_config(config_path)
-
-        # Merge deployment config with CLI arguments (CLI takes precedence)
-        if deployment:
-            merged = deployment.merge_with_cli_args(
-                transport=transport,
-                host=host,
-                port=port,
-                path=path,
-                log_level=log_level,
-                server_args=server_args,
-            )
-            transport = merged["transport"]
-            host = merged["host"]
-            port = merged["port"]
-            path = merged["path"]
-            log_level = merged["log_level"]
-            server_args = merged["server_args"]
-
-        # Import the server from the structured entrypoint
-        file_path = Path(entrypoint.file)
-        server = await import_server_with_args(
-            file_path, entrypoint.object, server_args
-        )
-        logger.debug(f'Found server "{server.name}" from config {config_path}')
+    # Special case: MCPConfig files (legacy)
     elif server_spec.endswith(".json"):
-        # Handle other JSON files as MCPConfig
-        server = create_mcp_config_server(Path(server_spec))
+        # Load JSON and check which type of config it is
+        config_path = Path(server_spec)
+        with open(config_path) as f:
+            data = json.load(f)
+
+        # Check if it's an MCPConfig first (has canonical mcpServers key)
+        if "mcpServers" in data:
+            # It's an MCP config
+            server = create_mcp_config_server(config_path)
+        else:
+            # It's a FastMCP config - load it properly
+            config = load_fastmcp_config(config_path)
+
+            # Merge deployment config with CLI arguments (CLI takes precedence)
+            if config.deployment:
+                transport = transport or config.deployment.transport
+                host = host or config.deployment.host
+                port = port or config.deployment.port
+                path = path or config.deployment.path
+                log_level = log_level or config.deployment.log_level
+                server_args = (
+                    server_args if server_args is not None else config.deployment.args
+                )
+
+            # Prepare the source if needed (e.g., clone git repo, download from cloud)
+            if not skip_source:
+                await config.source.prepare()
+
+            # Load the server using the source
+            from contextlib import nullcontext
+
+            from fastmcp.cli.cli import with_argv
+
+            # Use sys.argv context manager if deployment args specified
+            argv_context = with_argv(server_args) if server_args else nullcontext()
+
+            with argv_context:
+                server = await config.source.load_server()
+
+            logger.debug(f'Found server "{server.name}" from config {config_path}')
     else:
-        # Handle file case
-        file, server_or_factory = parse_file_path(server_spec)
-        server = await import_server_with_args(file, server_or_factory, server_args)
-        logger.debug(f'Found server "{server.name}" in {file}')
+        # Regular file case - create a FastMCPConfig with FileSystemSource
+        source = FileSystemSource(path=server_spec)
+        config = FastMCPConfig(source=source)
+
+        # Prepare the source if needed
+        if not skip_source:
+            await config.source.prepare()
+
+        # Load the server
+        from contextlib import nullcontext
+
+        from fastmcp.cli.cli import with_argv
+
+        # Use sys.argv context manager if server_args specified
+        argv_context = with_argv(server_args) if server_args else nullcontext()
+
+        with argv_context:
+            server = await config.source.load_server()
+
+        logger.debug(f'Found server "{server.name}" in {source.path}')
 
     # Run the server
 
@@ -506,6 +342,8 @@ def run_v1_server(
     port: int | None = None,
     transport: TransportType | None = None,
 ) -> None:
+    from functools import partial
+
     if host:
         server.settings.host = host
     if port:

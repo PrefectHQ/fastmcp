@@ -102,10 +102,10 @@ Alternatively, you can use a `fastmcp.json` configuration file (recommended):
 
 ```json fastmcp.json
 {
-  "$schema": "https://gofastmcp.com/schemas/fastmcp_config/v1.json",
-  "entrypoint": {
-    "file": "server.py",
-    "object": "mcp"
+  "$schema": "https://gofastmcp.com/public/schemas/fastmcp.json/v1.json",
+  "source": {
+    "path": "server.py",
+    "entrypoint": "mcp"
   },
   "environment": {
     "dependencies": ["pandas", "requests"]

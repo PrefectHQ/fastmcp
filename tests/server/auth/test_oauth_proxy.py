@@ -159,7 +159,7 @@ class TestOAuthProxyComprehensive:
         assert proxy._upstream_revocation_endpoint is None
 
     async def test_register_client(self, oauth_proxy):
-        """Test client registration always uses upstream credentials."""
+        """Test client registration stores ProxyDCRClient without modifying original."""
         client_info = OAuthClientInformationFull(
             client_id="original-client-id",
             client_secret="original-secret",
@@ -170,20 +170,19 @@ class TestOAuthProxyComprehensive:
 
         await oauth_proxy.register_client(client_info)
 
-        # Verify client was modified to use upstream credentials
-        assert client_info.client_id == "test-client-id"
-        assert client_info.client_secret == "test-client-secret"
-        assert client_info.token_endpoint_auth_method == "none"
-        assert "authorization_code" in client_info.grant_types
-        # refresh_token is only added if grant_types was empty
+        assert client_info.client_id == "original-client-id"
+        assert client_info.client_secret == "original-secret"
+        assert client_info.token_endpoint_auth_method == "client_secret_post"
+        assert client_info.grant_types == ["authorization_code"]
 
-        # Verify client was stored
+        # Verify ProxyDCRClient was stored with upstream credentials
         stored_client = oauth_proxy._clients.get("test-client-id")
         assert stored_client is not None
         assert stored_client.client_id == "test-client-id"
+        assert stored_client.client_secret == "test-client-secret"
 
     async def test_register_client_empty_grant_types(self, oauth_proxy):
-        """Test client registration adds grant types when empty."""
+        """Test client registration with empty grant types."""
         client_info = OAuthClientInformationFull(
             client_id="original-client-id",
             client_secret="original-secret",
@@ -193,8 +192,12 @@ class TestOAuthProxyComprehensive:
 
         await oauth_proxy.register_client(client_info)
 
-        # Should add both authorization_code and refresh_token
-        assert client_info.grant_types == ["authorization_code", "refresh_token"]
+        assert client_info.grant_types == []
+
+        # Verify stored ProxyDCRClient has proper grant types
+        stored_client = oauth_proxy._clients.get("test-client-id")
+        assert stored_client is not None
+        assert stored_client.grant_types == ["authorization_code", "refresh_token"]
 
     async def test_get_client_existing(self, oauth_proxy):
         """Test getting an existing registered client."""

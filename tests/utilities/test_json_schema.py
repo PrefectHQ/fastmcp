@@ -74,6 +74,7 @@ class TestPruneUnusedDefs:
             prune_additional_properties=False,
             prune_titles=False,
         )
+
         assert "foo_def" in result["$defs"]
         assert "unused_def" not in result["$defs"]
 

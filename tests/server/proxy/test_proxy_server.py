@@ -87,7 +87,7 @@ async def test_create_proxy(fastmcp_server):
 
     assert isinstance(server, FastMCPProxy)
     assert isinstance(server, FastMCP)
-    assert server.name == "FastMCP"
+    assert server.name.startswith("FastMCPProxy-")
 
 
 async def test_as_proxy_with_server(fastmcp_server):

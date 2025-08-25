@@ -548,7 +548,7 @@ class Context:
                 if isinstance(validated_data, ScalarElicitationType):
                     return AcceptedElicitation[T](data=validated_data.value)
                 else:
-                    return AcceptedElicitation[T](data=validated_data)
+                    return AcceptedElicitation[T](data=cast(T, validated_data))
             elif result.content:
                 raise ValueError(
                     "Elicitation expected an empty response, but received: "
