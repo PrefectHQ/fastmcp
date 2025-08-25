@@ -841,11 +841,29 @@ class TransformedTool(Tool):
             if "default" in param_schema:
                 final_required.discard(param_name)
 
-        return {
+        # Merge $defs from both schemas, with override taking precedence
+        merged_defs = base_schema.get("$defs", {}).copy()
+        override_defs = override_schema.get("$defs", {})
+
+        for def_name, def_schema in override_defs.items():
+            if def_name in merged_defs:
+                base_def = merged_defs[def_name].copy()
+                base_def.update(def_schema)
+                merged_defs[def_name] = base_def
+            else:
+                merged_defs[def_name] = def_schema.copy()
+
+        result = {
             "type": "object",
             "properties": merged_props,
             "required": list(final_required),
         }
+
+        if merged_defs:
+            result["$defs"] = merged_defs
+            result = compress_schema(result, prune_defs=True)
+
+        return result
 
     @staticmethod
     def _function_has_kwargs(fn: Callable[..., Any]) -> bool:
