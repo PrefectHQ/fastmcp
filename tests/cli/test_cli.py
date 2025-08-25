@@ -328,6 +328,47 @@ class TestRunCommand:
                 ]
             )
 
+    def test_run_command_parsing_skip_env_flag(self):
+        """Test run command parsing with --skip-env flag."""
+        command, bound, _ = app.parse_args(
+            [
+                "run",
+                "server.py",
+                "--skip-env",
+            ]
+        )
+        assert command is not None
+        assert bound.arguments["server_spec"] == "server.py"
+        assert bound.arguments["skip_env"] is True
+
+    def test_run_command_parsing_skip_source_flag(self):
+        """Test run command parsing with --skip-source flag."""
+        command, bound, _ = app.parse_args(
+            [
+                "run",
+                "server.py",
+                "--skip-source",
+            ]
+        )
+        assert command is not None
+        assert bound.arguments["server_spec"] == "server.py"
+        assert bound.arguments["skip_source"] is True
+
+    def test_run_command_parsing_both_skip_flags(self):
+        """Test run command parsing with both --skip-env and --skip-source flags."""
+        command, bound, _ = app.parse_args(
+            [
+                "run",
+                "server.py",
+                "--skip-env",
+                "--skip-source",
+            ]
+        )
+        assert command is not None
+        assert bound.arguments["server_spec"] == "server.py"
+        assert bound.arguments["skip_env"] is True
+        assert bound.arguments["skip_source"] is True
+
 
 class TestWindowsSpecific:
     """Test Windows-specific functionality."""
@@ -413,22 +454,27 @@ class TestWindowsSpecific:
 
     def test_windows_path_parsing_with_colon(self, tmp_path):
         """Test parsing Windows paths with drive letters and colons."""
-        from fastmcp.cli.run import parse_file_path
+        from pathlib import Path
+
+        from fastmcp.utilities.fastmcp_config.v1.sources.filesystem import (
+            FileSystemSource,
+        )
 
         # Create a real test file to test the logic
         test_file = tmp_path / "server.py"
         test_file.write_text("# test server")
 
         # Test normal file parsing (works on all platforms)
-        file_path, obj = parse_file_path(str(test_file))
-        assert obj is None
+        source = FileSystemSource(path=str(test_file))
+        assert source.entrypoint is None
+        assert Path(source.path).resolve() == test_file.resolve()
 
         # Test file:object parsing
-        file_path, obj = parse_file_path(f"{test_file}:myapp")
-        assert obj == "myapp"
+        source = FileSystemSource(path=f"{test_file}:myapp")
+        assert source.entrypoint == "myapp"
 
         # Test that the file portion resolves correctly when object is specified
-        assert file_path == test_file.resolve()
+        assert Path(source.path).resolve() == test_file.resolve()
 
 
 class TestInspectCommand:

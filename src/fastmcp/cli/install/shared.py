@@ -8,9 +8,9 @@ from dotenv import dotenv_values
 from pydantic import ValidationError
 from rich import print
 
-from fastmcp.cli.run import import_server, parse_file_path
+from fastmcp.utilities.fastmcp_config import FastMCPConfig
+from fastmcp.utilities.fastmcp_config.v1.sources.filesystem import FileSystemSource
 from fastmcp.utilities.logging import get_logger
-from fastmcp.utilities.types import get_cached_typeadapter
 
 logger = get_logger(__name__)
 
@@ -37,49 +37,46 @@ async def process_common_args(
 
     Handles both fastmcp.json config files and traditional file.py:object syntax.
     """
-    # Check if server_spec is a .json file
+    # Create FastMCPConfig from server_spec
+    config = None
     if server_spec.endswith(".json"):
         config_path = Path(server_spec).resolve()
         if not config_path.exists():
             print(f"[red]Configuration file not found: {config_path}[/red]")
             sys.exit(1)
 
-        # Try to load as JSON and discriminate between FastMCPConfig and MCPConfig
         try:
             with open(config_path) as f:
                 data = json.load(f)
 
-            # Check if it's an MCPConfig first (has canonical mcpServers key)
-            from fastmcp.utilities.fastmcp_config import FastMCPConfig
-
+            # Check if it's an MCPConfig (has mcpServers key)
             if "mcpServers" in data:
-                # It's an MCPConfig, treat as regular server spec
-                file, server_object = parse_file_path(server_spec)
+                # MCPConfig files aren't supported for install
+                print("[red]MCPConfig files are not supported for installation[/red]")
+                sys.exit(1)
             else:
-                # Try to parse as FastMCPConfig
-                try:
-                    adapter = get_cached_typeadapter(FastMCPConfig)
-                    config = adapter.validate_python(data)
-                    entrypoint = config.get_entrypoint(config_path)
+                # It's a FastMCPConfig
+                config = FastMCPConfig.from_file(config_path)
 
-                    # Convert to file and server_object
-                    file = Path(entrypoint.file)
-                    server_object = entrypoint.object
-
-                    # Merge packages from config if not overridden
-                    if config.environment and config.environment.dependencies:
-                        # Merge with CLI packages (CLI takes precedence)
-                        config_packages = config.environment.dependencies or []
-                        with_packages = list(set(with_packages + config_packages))
-                except ValidationError:
-                    # Not a valid FastMCPConfig, treat as regular server spec
-                    file, server_object = parse_file_path(server_spec)
-        except (json.JSONDecodeError, FileNotFoundError):
-            # Not a valid JSON file, treat as regular server spec
-            file, server_object = parse_file_path(server_spec)
+                # Merge packages from config if not overridden
+                if config.environment and config.environment.dependencies:
+                    # Merge with CLI packages (CLI takes precedence)
+                    config_packages = list(config.environment.dependencies) or []
+                    with_packages = list(set(with_packages + config_packages))
+        except (json.JSONDecodeError, ValidationError) as e:
+            print(f"[red]Invalid configuration file: {e}[/red]")
+            sys.exit(1)
     else:
-        # Parse traditional server spec
-        file, server_object = parse_file_path(server_spec)
+        # Create config from file path
+        source = FileSystemSource(path=server_spec)
+        config = FastMCPConfig(source=source)
+
+    # Extract file and server_object from the source
+    # The FileSystemSource handles parsing path:object syntax
+    file = Path(config.source.path).resolve()
+    server_object = (
+        config.source.entrypoint if hasattr(config.source, "entrypoint") else None
+    )
 
     logger.debug(
         "Installing server",
@@ -96,7 +93,7 @@ async def process_common_args(
     server = None
     if not name:
         try:
-            server = await import_server(file, server_object)
+            server = await config.source.load_server()
             name = server.name
         except (ImportError, ModuleNotFoundError) as e:
             logger.debug(

@@ -304,23 +304,48 @@ fastmcp run prod.fastmcp.json
 
 # Skip environment setup when already in a uv environment
 fastmcp run fastmcp.json --skip-env
+
+# Skip source preparation when source is already prepared
+fastmcp run fastmcp.json --skip-source
+
+# Skip both environment and source preparation
+fastmcp run fastmcp.json --skip-env --skip-source
 ```
 
-### Environment Setup Control
+### Using an Existing Environment
 
-By default, FastMCP uses `uv` to create an isolated environment based on your configuration. The `--skip-env` flag allows you to skip this automatic environment setup:
+By default, FastMCP creates an isolated environment with `uv` based on your configuration. When you already have a suitable Python environment, use the `--skip-env` flag to skip environment creation:
 
 ```bash
 fastmcp run fastmcp.json --skip-env
 ```
 
-**When to use `--skip-env`:**
-- You're already in an activated virtual environment with all dependencies installed
-- You're inside a Docker container with pre-installed dependencies
-- You're in a uv-managed environment and want to prevent infinite recursion
-- You want to test the server without environment setup for debugging purposes
+**When you already have an environment:**
+- You're in an activated virtual environment with all dependencies installed
+- You're inside a Docker container with pre-installed dependencies  
+- You're in a CI/CD pipeline that pre-builds the environment
+- You're using a system-wide installation with all required packages
+- You're in a uv-managed environment (prevents infinite recursion)
 
-This flag is particularly useful in CI/CD pipelines, Docker containers, or when you're managing the Python environment yourself.
+This flag tells FastMCP: "I already have everything installed, just run the server."
+
+### Using an Existing Source
+
+When working with source types that require preparation (future support for git repositories or cloud sources), use the `--skip-source` flag when you already have the source code available:
+
+```bash
+fastmcp run fastmcp.json --skip-source
+```
+
+**When you already have the source:**
+- You've previously cloned a git repository and don't need to re-fetch
+- You have a cached copy of a cloud-hosted server
+- You're in a CI/CD pipeline where source checkout is a separate step
+- You're iterating locally on already-downloaded code
+
+This flag tells FastMCP: "I already have the source code, skip any download/clone steps."
+
+Note: For filesystem sources (local Python files), this flag has no effect since they don't require preparation.
 
 The configuration file works with all FastMCP commands:
 - **`run`** - Start the server in production mode

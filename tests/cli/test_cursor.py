@@ -280,7 +280,11 @@ class TestInstallCursor:
         # Verify failure message was printed
         mock_print.assert_called()
 
-    def test_install_cursor_deduplicate_packages(self):
+    @patch(
+        "fastmcp.utilities.fastmcp_config.v1.fastmcp_config.Environment._find_fastmcp_dev_path",
+        return_value=None,  # Mock to disable dev mode so "fastmcp" count is predictable
+    )
+    def test_install_cursor_deduplicate_packages(self, mock_find_dev):
         """Test that duplicate packages are deduplicated."""
         with patch("fastmcp.cli.install.cursor.open_deeplink") as mock_open:
             mock_open.return_value = True

@@ -12,8 +12,12 @@ from fastmcp.cli.run import run_with_uv
 class TestRunWithUv:
     """Test the run_with_uv function."""
 
+    @patch(
+        "fastmcp.utilities.fastmcp_config.v1.fastmcp_config.Environment._find_fastmcp_dev_path",
+        return_value=None,
+    )
     @patch("subprocess.run")
-    def test_run_with_uv_basic(self, mock_run):
+    def test_run_with_uv_basic(self, mock_run, mock_find_dev_path):
         """Test basic run_with_uv execution."""
         mock_run.return_value = Mock(returncode=0)
 
@@ -38,8 +42,12 @@ class TestRunWithUv:
         ]
         assert cmd == expected
 
+    @patch(
+        "fastmcp.utilities.fastmcp_config.v1.fastmcp_config.Environment._find_fastmcp_dev_path",
+        return_value=None,
+    )
     @patch("subprocess.run")
-    def test_run_with_uv_python_version(self, mock_run):
+    def test_run_with_uv_python_version(self, mock_run, mock_find_dev_path):
         """Test run_with_uv with Python version."""
         mock_run.return_value = Mock(returncode=0)
 
@@ -63,8 +71,12 @@ class TestRunWithUv:
         ]
         assert cmd == expected
 
+    @patch(
+        "fastmcp.utilities.fastmcp_config.v1.fastmcp_config.Environment._find_fastmcp_dev_path",
+        return_value=None,
+    )
     @patch("subprocess.run")
-    def test_run_with_uv_project(self, mock_run):
+    def test_run_with_uv_project(self, mock_run, mock_find_dev_path):
         """Test run_with_uv with project directory."""
         mock_run.return_value = Mock(returncode=0)
         # Use an absolute path that works on all platforms
@@ -90,8 +102,12 @@ class TestRunWithUv:
             "--skip-env",
         ]
 
+    @patch(
+        "fastmcp.utilities.fastmcp_config.v1.fastmcp_config.Environment._find_fastmcp_dev_path",
+        return_value=None,
+    )
     @patch("subprocess.run")
-    def test_run_with_uv_with_packages(self, mock_run):
+    def test_run_with_uv_with_packages(self, mock_run, mock_find_dev_path):
         """Test run_with_uv with additional packages."""
         mock_run.return_value = Mock(returncode=0)
 
@@ -117,8 +133,12 @@ class TestRunWithUv:
         ]
         assert cmd == expected
 
+    @patch(
+        "fastmcp.utilities.fastmcp_config.v1.fastmcp_config.Environment._find_fastmcp_dev_path",
+        return_value=None,
+    )
     @patch("subprocess.run")
-    def test_run_with_uv_with_requirements(self, mock_run):
+    def test_run_with_uv_with_requirements(self, mock_run, mock_find_dev_path):
         """Test run_with_uv with requirements file."""
         mock_run.return_value = Mock(returncode=0)
         req_path = Path("requirements.txt")
@@ -143,8 +163,12 @@ class TestRunWithUv:
         ]
         assert cmd == expected
 
+    @patch(
+        "fastmcp.utilities.fastmcp_config.v1.fastmcp_config.Environment._find_fastmcp_dev_path",
+        return_value=None,
+    )
     @patch("subprocess.run")
-    def test_run_with_uv_transport_options(self, mock_run):
+    def test_run_with_uv_transport_options(self, mock_run, mock_find_dev_path):
         """Test run_with_uv with transport-related options."""
         mock_run.return_value = Mock(returncode=0)
 
@@ -185,8 +209,12 @@ class TestRunWithUv:
         ]
         assert cmd == expected
 
+    @patch(
+        "fastmcp.utilities.fastmcp_config.v1.fastmcp_config.Environment._find_fastmcp_dev_path",
+        return_value=None,
+    )
     @patch("subprocess.run")
-    def test_run_with_uv_all_options(self, mock_run):
+    def test_run_with_uv_all_options(self, mock_run, mock_find_dev_path):
         """Test run_with_uv with all options combined."""
         mock_run.return_value = Mock(returncode=0)
 
@@ -230,8 +258,12 @@ class TestRunWithUv:
             "--no-banner",
         ]
 
+    @patch(
+        "fastmcp.utilities.fastmcp_config.v1.fastmcp_config.Environment._find_fastmcp_dev_path",
+        return_value=None,
+    )
     @patch("subprocess.run")
-    def test_run_with_uv_error_handling(self, mock_run):
+    def test_run_with_uv_error_handling(self, mock_run, mock_find_dev_path):
         """Test run_with_uv error handling."""
         mock_run.side_effect = subprocess.CalledProcessError(1, ["uv", "run"])
 
@@ -240,9 +272,13 @@ class TestRunWithUv:
 
         assert exc_info.value.code == 1
 
+    @patch(
+        "fastmcp.utilities.fastmcp_config.v1.fastmcp_config.Environment._find_fastmcp_dev_path",
+        return_value=None,
+    )
     @patch("fastmcp.cli.run.logger")
     @patch("subprocess.run")
-    def test_run_with_uv_logging(self, mock_run, mock_logger):
+    def test_run_with_uv_logging(self, mock_run, mock_logger, mock_find_dev_path):
         """Test that run_with_uv logs the command."""
         mock_run.return_value = Mock(returncode=0)
 

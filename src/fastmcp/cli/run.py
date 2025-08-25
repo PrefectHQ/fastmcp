@@ -1,12 +1,9 @@
 """FastMCP run command implementation with enhanced type hints."""
 
-import importlib.util
-import inspect
 import json
 import re
 import subprocess
 import sys
-from functools import partial
 from pathlib import Path
 from typing import Any, Literal
 
@@ -17,8 +14,8 @@ from fastmcp.server.server import FastMCP
 from fastmcp.utilities.fastmcp_config import (
     Environment,
     FastMCPConfig,
-    FileSystemSource,
 )
+from fastmcp.utilities.fastmcp_config.v1.sources.filesystem import FileSystemSource
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import get_cached_typeadapter
 
@@ -33,150 +30,6 @@ def is_url(path: str) -> bool:
     """Check if a string is a URL."""
     url_pattern = re.compile(r"^https?://")
     return bool(url_pattern.match(path))
-
-
-def parse_file_path(server_spec: str) -> tuple[Path, str | None]:
-    """Parse a file path that may include a server object specification.
-
-    Args:
-        server_spec: Path to file, optionally with :object suffix
-
-    Returns:
-        Tuple of (file_path, server_object)
-    """
-    # First check if we have a Windows path (e.g., C:\...)
-    has_windows_drive = len(server_spec) > 1 and server_spec[1] == ":"
-
-    # Split on the last colon, but only if it's not part of the Windows drive letter
-    # and there's actually another colon in the string after the drive letter
-    if ":" in (server_spec[2:] if has_windows_drive else server_spec):
-        file_str, server_object = server_spec.rsplit(":", 1)
-    else:
-        file_str, server_object = server_spec, None
-
-    # Resolve the file path
-    file_path = Path(file_str).expanduser().resolve()
-    if not file_path.exists():
-        logger.error(f"File not found: {file_path}")
-        sys.exit(1)
-    if not file_path.is_file():
-        logger.error(f"Not a file: {file_path}")
-        sys.exit(1)
-
-    return file_path, server_object
-
-
-async def import_server(file: Path, server_or_factory: str | None = None) -> Any:
-    """Import a MCP server from a file.
-
-    Args:
-        file: Path to the file
-        server_or_factory: Optional object name in format "module:object" or just "object"
-
-    Returns:
-        The server object (or result of calling a factory function)
-    """
-    # Add parent directory to Python path so imports can be resolved
-    file_dir = str(file.parent)
-    if file_dir not in sys.path:
-        sys.path.insert(0, file_dir)
-
-    # Import the module
-    spec = importlib.util.spec_from_file_location("server_module", file)
-    if not spec or not spec.loader:
-        logger.error("Could not load module", extra={"file": str(file)})
-        sys.exit(1)
-
-    module = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]
-    spec.loader.exec_module(module)  # type: ignore[union-attr]
-
-    # If no object specified, try common server names
-    if not server_or_factory:
-        # Look for common server instance names
-        for name in ["mcp", "server", "app"]:
-            if hasattr(module, name):
-                obj = getattr(module, name)
-                if isinstance(obj, FastMCP | FastMCP1x):
-                    return await _resolve_server_or_factory(obj, file, name)
-
-        logger.error(
-            f"No server object found in {file}. Please either:\n"
-            "1. Use a standard variable name (mcp, server, or app)\n"
-            "2. Specify the entrypoint name in fastmcp.json or use `file.py:object` syntax as your path.",
-            extra={"file": str(file)},
-        )
-        sys.exit(1)
-
-    # Handle module:object syntax
-    if server_or_factory and ":" in server_or_factory:
-        module_name, object_name = server_or_factory.split(":", 1)
-        try:
-            server_module = importlib.import_module(module_name)
-            obj = getattr(server_module, object_name, None)
-        except ImportError:
-            logger.error(
-                f"Could not import module '{module_name}'",
-                extra={"file": str(file)},
-            )
-            sys.exit(1)
-    else:
-        # Just object name
-        obj = getattr(module, server_or_factory, None)
-
-    if obj is None:
-        logger.error(
-            f"Server object '{server_or_factory}' not found",
-            extra={"file": str(file)},
-        )
-        sys.exit(1)
-
-    return await _resolve_server_or_factory(obj, file, server_or_factory)  # type: ignore[arg-type]
-
-
-async def _resolve_server_or_factory(obj: Any, file: Path, name: str) -> Any:
-    """Resolve a server object or factory function to a server instance.
-
-    Args:
-        obj: The object that might be a server or factory function
-        file: Path to the file for error messages
-        name: Name of the object for error messages
-
-    Returns:
-        A server instance
-    """
-    # Check if it's a function or coroutine function
-    if inspect.isfunction(obj) or inspect.iscoroutinefunction(obj):
-        logger.debug(f"Found factory function '{name}' in {file}")
-
-        try:
-            if inspect.iscoroutinefunction(obj):
-                # Async factory function
-                server = await obj()
-            else:
-                # Sync factory function
-                server = obj()
-
-            # Validate the result is a FastMCP server
-            if not isinstance(server, FastMCP | FastMCP1x):
-                logger.error(
-                    f"Factory function '{name}' must return a FastMCP server instance, "
-                    f"got {type(server).__name__}",
-                    extra={"file": str(file)},
-                )
-                sys.exit(1)
-
-            logger.debug(f"Factory function '{name}' created server: {server.name}")
-            return server
-
-        except Exception as e:
-            logger.error(
-                f"Failed to call factory function '{name}': {e}",
-                extra={"file": str(file)},
-            )
-            sys.exit(1)
-
-    # Not a function, return as-is (should be a server instance)
-    return obj
 
 
 def run_with_uv(
@@ -359,32 +212,6 @@ def load_fastmcp_config(config_path: Path) -> FastMCPConfig:
     return config
 
 
-async def import_server_with_args(
-    file: Path,
-    server_or_factory: str | None = None,
-    server_args: list[str] | None = None,
-) -> Any:
-    """Import a server with optional command line arguments.
-
-    Args:
-        file: Path to the server file
-        server_or_factory: Optional server object or factory function name
-        server_args: Optional command line arguments to inject
-
-    Returns:
-        The imported server object
-    """
-    if server_args:
-        original_argv = sys.argv[:]
-        try:
-            sys.argv = [str(file)] + server_args
-            return await import_server(file, server_or_factory)
-        finally:
-            sys.argv = original_argv
-    else:
-        return await import_server(file, server_or_factory)
-
-
 async def run_command(
     server_spec: str,
     transport: TransportType | None = None,
@@ -395,6 +222,7 @@ async def run_command(
     server_args: list[str] | None = None,
     show_banner: bool = True,
     use_direct_import: bool = False,
+    skip_source: bool = False,
 ) -> None:
     """Run a MCP server or connect to a remote one.
 
@@ -408,11 +236,14 @@ async def run_command(
         server_args: Additional arguments to pass to the server
         show_banner: Whether to show the server banner
         use_direct_import: Whether to use direct import instead of subprocess
+        skip_source: Whether to skip source preparation step
     """
+    # Special case: URLs
     if is_url(server_spec):
         # Handle URL case
         server = create_client_server(server_spec)
         logger.debug(f"Created client proxy server for {server_spec}")
+    # Special case: MCPConfig files (legacy)
     elif server_spec.endswith(".json"):
         # Load JSON and check which type of config it is
         config_path = Path(server_spec)
@@ -424,10 +255,7 @@ async def run_command(
             # It's an MCP config
             server = create_mcp_config_server(config_path)
         else:
-            # Try to parse as FastMCPConfig
-            adapter = get_cached_typeadapter(FastMCPConfig)
-            adapter.validate_python(data)  # Validate but don't need to store
-            # It's a FastMCP config - load it properly with runtime settings
+            # It's a FastMCP config - load it properly
             config = load_fastmcp_config(config_path)
 
             # Merge deployment config with CLI arguments (CLI takes precedence)
@@ -441,27 +269,42 @@ async def run_command(
                     server_args if server_args is not None else config.deployment.args
                 )
 
+            # Prepare the source if needed (e.g., clone git repo, download from cloud)
+            if not skip_source:
+                await config.source.prepare()
+
             # Load the server using the source
-            server = await config.source.load_server(config_path, server_args)
+            from contextlib import nullcontext
+
+            from fastmcp.cli.cli import with_argv
+
+            # Use sys.argv context manager if deployment args specified
+            argv_context = with_argv(server_args) if server_args else nullcontext()
+
+            with argv_context:
+                server = await config.source.load_server()
+
             logger.debug(f'Found server "{server.name}" from config {config_path}')
     else:
-        # Handle file case - parse into FileSystemSource immediately
-        if ":" in server_spec:
-            # Check if it's a Windows path (e.g., C:\...)
-            has_windows_drive = len(server_spec) > 1 and server_spec[1] == ":"
-
-            # Only split if colon is not part of Windows drive
-            if ":" in (server_spec[2:] if has_windows_drive else server_spec):
-                file_str, obj = server_spec.rsplit(":", 1)
-                source = FileSystemSource(path=file_str, object=obj)
-            else:
-                source = FileSystemSource(path=server_spec)
-        else:
-            source = FileSystemSource(path=server_spec)
-
-        # Create a temporary config with just the source
+        # Regular file case - create a FastMCPConfig with FileSystemSource
+        source = FileSystemSource(path=server_spec)
         config = FastMCPConfig(source=source)
-        server = await config.source.load_server(None, server_args)
+
+        # Prepare the source if needed
+        if not skip_source:
+            await config.source.prepare()
+
+        # Load the server
+        from contextlib import nullcontext
+
+        from fastmcp.cli.cli import with_argv
+
+        # Use sys.argv context manager if server_args specified
+        argv_context = with_argv(server_args) if server_args else nullcontext()
+
+        with argv_context:
+            server = await config.source.load_server()
+
         logger.debug(f'Found server "{server.name}" in {source.path}')
 
     # Run the server
@@ -499,6 +342,8 @@ def run_v1_server(
     port: int | None = None,
     transport: TransportType | None = None,
 ) -> None:
+    from functools import partial
+
     if host:
         server.settings.host = host
     if port:

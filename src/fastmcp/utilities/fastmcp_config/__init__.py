@@ -5,13 +5,13 @@ The current version is v1, which is re-exported here for convenience.
 """
 
 from fastmcp.utilities.fastmcp_config.v1.fastmcp_config import (
-    BaseSource,
     Deployment,
     Environment,
     FastMCPConfig,
-    FileSystemSource,
     generate_schema,
 )
+from fastmcp.utilities.fastmcp_config.v1.sources.base import BaseSource
+from fastmcp.utilities.fastmcp_config.v1.sources.filesystem import FileSystemSource
 
 __all__ = [
     "BaseSource",

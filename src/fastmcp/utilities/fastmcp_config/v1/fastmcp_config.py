@@ -10,68 +10,18 @@ from __future__ import annotations
 import json
 import os
 import re
-from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, overload
 
 from pydantic import BaseModel, Field, field_validator
 
+from fastmcp.utilities.fastmcp_config.v1.sources.filesystem import FileSystemSource
 from fastmcp.utilities.logging import get_logger
 
 logger = get_logger("cli.config")
 
 # JSON Schema for IDE support
 FASTMCP_JSON_SCHEMA = "https://gofastmcp.com/public/schemas/fastmcp.json/v1.json"
-
-
-class BaseSource(BaseModel, ABC):
-    """Abstract base class for all source types."""
-
-    type: str = Field(description="Source type identifier")
-
-    async def prepare(self, config_path: Path | None = None) -> Path | None:
-        """Prepare the source (download, clone, install, etc).
-
-        Returns:
-            Path to prepared source directory, or None if no preparation needed.
-            This path may contain a nested fastmcp.json for configuration chaining.
-        """
-        # Default implementation for sources that don't need preparation
-        return None
-
-    @abstractmethod
-    async def load_server(
-        self, config_path: Path | None = None, server_args: list[str] | None = None
-    ) -> Any:
-        """Load and return the FastMCP server instance.
-
-        Must be called after prepare() if the source requires preparation.
-        """
-        ...
-
-
-class FileSystemSource(BaseSource):
-    """Source for local Python files."""
-
-    type: Literal["filesystem"] = Field(default="filesystem", description="Source type")
-    path: str = Field(description="Path to Python file containing the server")
-    entrypoint: str | None = Field(
-        default=None,
-        description="Name of server instance or factory function (a no-arg function that returns a FastMCP server)",
-    )
-
-    async def load_server(
-        self, config_path: Path | None = None, server_args: list[str] | None = None
-    ) -> Any:
-        """Load server from filesystem."""
-        from fastmcp.cli.run import import_server_with_args
-
-        # Resolve relative paths if config_path provided
-        file_path = Path(self.path)
-        if not file_path.is_absolute() and config_path:
-            file_path = (config_path.parent / file_path).resolve()
-
-        return await import_server_with_args(file_path, self.entrypoint, server_args)
 
 
 # Type alias for source union (will expand with GitSource, etc in future)
@@ -130,8 +80,12 @@ class Environment(BaseModel):
         if self.project:
             args.extend(["--project", str(self.project)])
 
-        # Add fastmcp as a base dependency
-        args.extend(["--with", "fastmcp"])
+        # Add fastmcp dependency - use editable install if in development mode
+        dev_path = self._find_fastmcp_dev_path()
+        if dev_path:
+            args.extend(["--with-editable", str(dev_path)])
+        else:
+            args.extend(["--with", "fastmcp"])
 
         # Add additional dependencies (skip fastmcp if already added)
         if self.dependencies:
@@ -155,6 +109,34 @@ class Environment(BaseModel):
                 args.extend(command)
 
         return args
+
+    def _find_fastmcp_dev_path(self) -> Path | None:
+        """Find the fastmcp development directory by looking for pyproject.toml.
+
+        Searches from the current working directory up the directory tree
+        looking for a pyproject.toml file that contains name = "fastmcp".
+
+        Returns:
+            Path to the fastmcp project directory if found, None otherwise
+        """
+        current_path = Path.cwd()
+
+        # Search up the directory tree
+        for path in [current_path] + list(current_path.parents):
+            pyproject_path = path / "pyproject.toml"
+            if pyproject_path.exists():
+                try:
+                    # Read and check if this is the fastmcp project
+                    content = pyproject_path.read_text(encoding="utf-8")
+                    if 'name = "fastmcp"' in content or "name='fastmcp'" in content:
+                        logger.debug(f"Found fastmcp development project at: {path}")
+                        return path
+                except (OSError, UnicodeDecodeError):
+                    # Skip files that can't be read
+                    continue
+
+        logger.debug("No fastmcp development project found, using PyPI package")
+        return None
 
     def run_with_uv(self, command: list[str]) -> None:
         """Execute a command using uv run with this environment configuration.
@@ -517,47 +499,6 @@ class FastMCPConfig(BaseModel):
 
         return None
 
-    async def load_server(
-        self, config_path: Path | None = None, server_args: list[str] | None = None
-    ) -> Any:
-        """Load the server from the configuration.
-
-        This handles environment setup, working directory changes,
-        and delegates to the source's load_server method.
-
-        Args:
-            config_path: Path to the config file (for resolving relative paths)
-            server_args: Optional arguments to pass to the server
-
-        Returns:
-            The imported server object
-        """
-        import os
-        from pathlib import Path
-
-        # Set environment variables if specified
-        if self.deployment and self.deployment.env:
-            for key, value in self.deployment.env.items():
-                os.environ[key] = value
-
-        # Change working directory if specified
-        if self.deployment and self.deployment.cwd:
-            cwd_path = Path(self.deployment.cwd)
-            if not cwd_path.is_absolute():
-                # If config_path provided, resolve relative to it
-                if config_path:
-                    cwd_path = (config_path.parent / cwd_path).resolve()
-                else:
-                    cwd_path = cwd_path.resolve()
-            os.chdir(cwd_path)
-
-        # Use server_args from deployment if not provided
-        if server_args is None and self.deployment:
-            server_args = self.deployment.args
-
-        # Delegate to the source's load_server method
-        return await self.source.load_server(config_path, server_args)
-
     async def run_server(self, **kwargs: Any) -> None:
         """Load and run the server with this configuration.
 
@@ -565,7 +506,12 @@ class FastMCPConfig(BaseModel):
             **kwargs: Additional arguments to pass to server.run_async()
                      These override config settings
         """
-        server = await self.load_server()
+        # Apply deployment settings (env vars, cwd)
+        if self.deployment:
+            self.deployment.apply_runtime_settings()
+
+        # Load the server
+        server = await self.source.load_server()
 
         # Build run arguments from config
         run_args = {}
