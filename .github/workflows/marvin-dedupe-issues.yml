@@ -45,7 +45,7 @@ jobs:
 
           4. Next, feed the results from steps 2 and 3 into another agent using the Task tool, so that it can filter out false positives that are likely not actually duplicates of the original issue. If there are no duplicates remaining, do not proceed.
 
-          5. Finally, comment back on the issue with a list of up to three duplicate issues (or zero, if there are no likely duplicates)
+          5. Finally, comment back on the issue with a list of up to three duplicate issues (or zero, if there are no likely duplicates). If there are no duplicates, DO NOT COMMENT. Just exit.
 
           Notes for your agents:
           - Use `gh` to interact with GitHub, rather than web fetch
