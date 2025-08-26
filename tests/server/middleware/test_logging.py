@@ -191,6 +191,57 @@ class TestStructuredLoggingMiddleware:
         assert error_entry["error_type"] == "ValueError"
         assert error_entry["error_message"] == "test error"
 
+    async def test_on_message_with_pydantic_types_in_payload(
+        self, mock_context, mock_call_next, caplog
+    ):
+        """Ensure Pydantic AnyUrl in payload serializes correctly when include_payloads=True."""
+        from pydantic import AnyUrl
+
+        mock_context.message.__dict__["url"] = AnyUrl("test://example/1")
+
+        middleware = StructuredLoggingMiddleware(include_payloads=True)
+
+        with caplog.at_level(logging.INFO):
+            result = await middleware.on_message(mock_context, mock_call_next)
+
+        assert result == "test_result"
+
+        log_lines = [record.message for record in caplog.records]
+        assert len(log_lines) == 2
+        start_entry = json.loads(log_lines[0])
+
+        assert start_entry["event"] == "request_start"
+        assert start_entry["payload"]["url"] == "test://example/1"
+
+    async def test_on_message_with_resource_template_in_payload(
+        self, mock_context, mock_call_next, caplog
+    ):
+        """Ensure ResourceTemplate in payload serializes via default=str without errors."""
+        from fastmcp.resources import ResourceTemplate
+
+        template = ResourceTemplate(
+            name="tmpl",
+            uri_template="tmpl://{id}",
+            parameters={"id": {"type": "string"}},
+        )
+
+        mock_context.message.__dict__["template"] = template
+
+        middleware = StructuredLoggingMiddleware(include_payloads=True)
+
+        with caplog.at_level(logging.INFO):
+            result = await middleware.on_message(mock_context, mock_call_next)
+
+        assert result == "test_result"
+
+        log_lines = [record.message for record in caplog.records]
+        assert len(log_lines) == 2
+        start_entry = json.loads(log_lines[0])
+        assert start_entry["event"] == "request_start"
+        assert "template" in start_entry["payload"]
+        # After json.loads, default=str ensures complex object became a JSON string
+        assert isinstance(start_entry["payload"]["template"], str)
+
 
 @pytest.fixture
 def logging_server():
