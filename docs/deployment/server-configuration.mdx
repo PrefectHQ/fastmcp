@@ -165,10 +165,14 @@ These settings leverage standard `uv` arguments for environment creation. When a
       ```
     </ParamField>
     
-    <ParamField body="editable" type="string">
-      Path to a package to install in editable/development mode. Useful for local development when you want changes to be reflected immediately.
+    <ParamField body="editable" type="list[string]">
+      List of paths to packages to install in editable/development mode. Useful for local development when you want changes to be reflected immediately. Supports multiple packages for monorepo setups or shared libraries.
       ```json
-      "editable": "."
+      "editable": ["."]
+      ```
+      Or with multiple packages:
+      ```json
+      "editable": [".", "../shared-lib", "/path/to/another-package"]
       ```
     </ParamField>
   </Expandable>
@@ -311,6 +315,20 @@ fastmcp run fastmcp.json --skip-source
 # Skip both environment and source preparation
 fastmcp run fastmcp.json --skip-env --skip-source
 ```
+
+### Pre-building Environments
+
+You can use `fastmcp project prepare` to create a persistent uv project with all dependencies pre-installed:
+
+```bash
+# Create a persistent environment
+fastmcp project prepare fastmcp.json --output-dir ./env
+
+# Use the pre-built environment to run the server
+fastmcp run fastmcp.json --project ./env
+```
+
+This pattern separates environment setup (slow) from server execution (fast), useful for deployment scenarios.
 
 ### Using an Existing Environment
 

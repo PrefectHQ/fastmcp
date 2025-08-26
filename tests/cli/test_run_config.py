@@ -248,7 +248,7 @@ def test_environment_config_path_resolution(tmp_path):
         "environment": {
             "requirements": "requirements.txt",
             "project": ".",
-            "editable": "../other-project",
+            "editable": ["../other-project"],
         },
     }
 

@@ -10,6 +10,8 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
+import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, overload
 
@@ -55,10 +57,10 @@ class Environment(BaseModel):
         examples=[".", "../my-project"],
     )
 
-    editable: str | None = Field(
+    editable: list[str] | None = Field(
         default=None,
-        description="Directory to install in editable mode",
-        examples=[".", "../my-package"],
+        description="Directories to install in editable mode",
+        examples=[[".", "../my-package"], ["/path/to/package"]],
     )
 
     def build_uv_args(self, command: str | list[str] | None = None) -> list[str]:
@@ -72,34 +74,28 @@ class Environment(BaseModel):
         """
         args = ["run"]
 
-        # Add Python version if specified
-        if self.python:
-            args.extend(["--python", self.python])
-
-        # Add project directory if specified
+        # Add project if specified
         if self.project:
             args.extend(["--project", str(self.project)])
 
-        # Add fastmcp dependency - use editable install if in development mode
-        dev_path = self._find_fastmcp_dev_path()
-        if dev_path:
-            args.extend(["--with-editable", str(dev_path)])
-        else:
-            args.extend(["--with", "fastmcp"])
+        # Add Python version if specified (only if no project, as project has its own Python)
+        if self.python and not self.project:
+            args.extend(["--python", self.python])
 
-        # Add additional dependencies (skip fastmcp if already added)
+        # Always add dependencies, requirements, and editable packages
+        # These work with --project to add additional packages on top of the project env
         if self.dependencies:
             for dep in self.dependencies:
-                if dep != "fastmcp":  # Skip fastmcp since we already added it
-                    args.extend(["--with", dep])
+                args.extend(["--with", dep])
 
         # Add requirements file
         if self.requirements:
             args.extend(["--with-requirements", str(self.requirements)])
 
-        # Add editable package
+        # Add editable packages
         if self.editable:
-            args.extend(["--with-editable", str(self.editable)])
+            for editable_path in self.editable:
+                args.extend(["--with-editable", str(editable_path)])
 
         # Add the command if provided
         if command:
@@ -109,34 +105,6 @@ class Environment(BaseModel):
                 args.extend(command)
 
         return args
-
-    def _find_fastmcp_dev_path(self) -> Path | None:
-        """Find the fastmcp development directory by looking for pyproject.toml.
-
-        Searches from the current working directory up the directory tree
-        looking for a pyproject.toml file that contains name = "fastmcp".
-
-        Returns:
-            Path to the fastmcp project directory if found, None otherwise
-        """
-        current_path = Path.cwd()
-
-        # Search up the directory tree
-        for path in [current_path] + list(current_path.parents):
-            pyproject_path = path / "pyproject.toml"
-            if pyproject_path.exists():
-                try:
-                    # Read and check if this is the fastmcp project
-                    content = pyproject_path.read_text(encoding="utf-8")
-                    if 'name = "fastmcp"' in content or "name='fastmcp'" in content:
-                        logger.debug(f"Found fastmcp development project at: {path}")
-                        return path
-                except (OSError, UnicodeDecodeError):
-                    # Skip files that can't be read
-                    continue
-
-        logger.debug("No fastmcp development project found, using PyPI package")
-        return None
 
     def run_with_uv(self, command: list[str]) -> None:
         """Execute a command using uv run with this environment configuration.
@@ -176,6 +144,170 @@ class Environment(BaseModel):
                 self.editable is not None,
             ]
         )
+
+    async def prepare(self, output_dir: Path | None = None) -> None:
+        """Prepare the Python environment using uv.
+
+        Args:
+            output_dir: Directory where the persistent uv project will be created.
+                       If None, creates a temporary directory for ephemeral use.
+        """
+
+        # Check if uv is available
+        if not shutil.which("uv"):
+            raise RuntimeError(
+                "uv is not installed. Please install it with: "
+                "curl -LsSf https://astral.sh/uv/install.sh | sh"
+            )
+
+        # Only prepare environment if there are actual settings to apply
+        if not self.needs_uv():
+            logger.debug("No environment settings configured, skipping preparation")
+            return
+
+        # Handle None case for ephemeral use
+        if output_dir is None:
+            import tempfile
+
+            output_dir = Path(tempfile.mkdtemp(prefix="fastmcp-env-"))
+            logger.info(f"Creating ephemeral environment in {output_dir}")
+        else:
+            logger.info(f"Creating persistent environment in {output_dir}")
+            output_dir = Path(output_dir).resolve()
+
+        # Initialize the project
+        logger.debug(f"Initializing uv project in {output_dir}")
+        try:
+            subprocess.run(
+                [
+                    "uv",
+                    "init",
+                    "--project",
+                    str(output_dir),
+                    "--name",
+                    "fastmcp-env",
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        except subprocess.CalledProcessError as e:
+            # If project already exists, that's fine - continue
+            if "already initialized" in e.stderr.lower():
+                logger.debug(
+                    f"Project already initialized at {output_dir}, continuing..."
+                )
+            else:
+                logger.error(f"Failed to initialize project: {e.stderr}")
+                raise RuntimeError(f"Failed to initialize project: {e.stderr}") from e
+
+        # Pin Python version if specified
+        if self.python:
+            logger.debug(f"Pinning Python version to {self.python}")
+            try:
+                subprocess.run(
+                    [
+                        "uv",
+                        "python",
+                        "pin",
+                        self.python,
+                        "--project",
+                        str(output_dir),
+                    ],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+            except subprocess.CalledProcessError as e:
+                logger.error(f"Failed to pin Python version: {e.stderr}")
+                raise RuntimeError(f"Failed to pin Python version: {e.stderr}") from e
+
+        # Add dependencies with --no-sync to defer installation
+        # dependencies ALWAYS include fastmcp; this is compatible with
+        # specific fastmcp versions that might be in the dependencies list
+        dependencies = (self.dependencies or []) + ["fastmcp"]
+        logger.debug(f"Adding dependencies: {', '.join(dependencies)}")
+        try:
+            subprocess.run(
+                [
+                    "uv",
+                    "add",
+                    *dependencies,
+                    "--no-sync",
+                    "--project",
+                    str(output_dir),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Failed to add dependencies: {e.stderr}")
+            raise RuntimeError(f"Failed to add dependencies: {e.stderr}") from e
+
+        # Add requirements file if specified
+        if self.requirements:
+            logger.debug(f"Adding requirements from {self.requirements}")
+            # Resolve requirements path relative to current directory
+            req_path = Path(self.requirements).resolve()
+            try:
+                subprocess.run(
+                    [
+                        "uv",
+                        "add",
+                        "-r",
+                        str(req_path),
+                        "--no-sync",
+                        "--project",
+                        str(output_dir),
+                    ],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+            except subprocess.CalledProcessError as e:
+                logger.error(f"Failed to add requirements: {e.stderr}")
+                raise RuntimeError(f"Failed to add requirements: {e.stderr}") from e
+
+        # Add editable packages if specified
+        if self.editable:
+            editable_paths = [str(Path(e).resolve()) for e in self.editable]
+            logger.debug(f"Adding editable packages: {', '.join(editable_paths)}")
+            try:
+                subprocess.run(
+                    [
+                        "uv",
+                        "add",
+                        "--editable",
+                        *editable_paths,
+                        "--no-sync",
+                        "--project",
+                        str(output_dir),
+                    ],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+            except subprocess.CalledProcessError as e:
+                logger.error(f"Failed to add editable packages: {e.stderr}")
+                raise RuntimeError(
+                    f"Failed to add editable packages: {e.stderr}"
+                ) from e
+
+        # Final sync to install everything
+        logger.info("Installing dependencies...")
+        try:
+            subprocess.run(
+                ["uv", "sync", "--project", str(output_dir)],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Failed to sync dependencies: {e.stderr}")
+            raise RuntimeError(f"Failed to sync dependencies: {e.stderr}") from e
+
+        logger.info(f"Environment prepared successfully in {output_dir}")
 
 
 class Deployment(BaseModel):
@@ -453,7 +585,7 @@ class FastMCPConfig(BaseModel):
                 dependencies=dependencies,
                 requirements=requirements,
                 project=project,
-                editable=editable,
+                editable=[editable] if editable else None,
             )
 
         # Build deployment config if any deployment args provided
@@ -498,6 +630,45 @@ class FastMCPConfig(BaseModel):
             return config_path
 
         return None
+
+    async def prepare(
+        self,
+        skip_source: bool = False,
+        output_dir: Path | None = None,
+    ) -> None:
+        """Prepare environment and source for execution.
+
+        When output_dir is provided, creates a persistent uv project.
+        When output_dir is None, does ephemeral caching (for backwards compatibility).
+
+        Args:
+            skip_source: Skip source preparation if True
+            output_dir: Directory to create the persistent uv project in (optional)
+        """
+        # Prepare environment (persistent if output_dir provided, ephemeral otherwise)
+        if self.environment:
+            await self.prepare_environment(output_dir=output_dir)
+
+        if not skip_source:
+            await self.prepare_source()
+
+    async def prepare_environment(self, output_dir: Path | None = None) -> None:
+        """Prepare the Python environment.
+
+        Args:
+            output_dir: If provided, creates a persistent uv project in this directory.
+                       If None, just populates uv's cache for ephemeral use.
+
+        Delegates to the environment's prepare() method
+        """
+        await self.environment.prepare(output_dir=output_dir)
+
+    async def prepare_source(self) -> None:
+        """Prepare the source for loading.
+
+        Delegates to the source's prepare() method.
+        """
+        await self.source.prepare()
 
     async def run_server(self, **kwargs: Any) -> None:
         """Load and run the server with this configuration.

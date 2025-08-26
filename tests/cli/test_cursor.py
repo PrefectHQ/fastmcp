@@ -280,11 +280,7 @@ class TestInstallCursor:
         # Verify failure message was printed
         mock_print.assert_called()
 
-    @patch(
-        "fastmcp.utilities.fastmcp_config.v1.fastmcp_config.Environment._find_fastmcp_dev_path",
-        return_value=None,  # Mock to disable dev mode so "fastmcp" count is predictable
-    )
-    def test_install_cursor_deduplicate_packages(self, mock_find_dev):
+    def test_install_cursor_deduplicate_packages(self):
         """Test that duplicate packages are deduplicated."""
         with patch("fastmcp.cli.install.cursor.open_deeplink") as mock_open:
             mock_open.return_value = True
@@ -305,8 +301,8 @@ class TestInstallCursor:
             args_str = " ".join(config_data["args"])
             assert args_str.count("numpy") == 1
             assert args_str.count("pandas") == 1
-            # fastmcp appears twice: once as --with fastmcp and once as the command
-            assert args_str.count("fastmcp") == 2
+            # fastmcp appears once in the command only (no longer automatically added as --with)
+            assert args_str.count("fastmcp") == 1
 
 
 class TestCursorCommand:

@@ -22,6 +22,7 @@ fastmcp --help
 | `dev` | Run a server with the MCP Inspector for testing | **Supports:** Local files and fastmcp.json configs. **Deps:** Always runs via `uv run` subprocess (never uses your local environment); dependencies must be specified or available in a uv-managed project. With fastmcp.json: Uses configured dependencies |
 | `install` | Install a server in MCP client applications | **Supports:** Local files and fastmcp.json configs. **Deps:** Creates an isolated environment; dependencies must be explicitly specified with `--with` and/or `--with-editable`. With fastmcp.json: Uses configured dependencies |
 | `inspect` | Generate a JSON report about a FastMCP server | **Supports:** Local files and fastmcp.json configs. **Deps:** Uses your current environment; you are responsible for ensuring all dependencies are available |
+| `project prepare` | Create a persistent uv project from fastmcp.json environment config | **Supports:** fastmcp.json configs only. **Deps:** Creates a uv project directory with all dependencies pre-installed for reuse with `--project` flag |
 | `version` | Display version information | N/A |
 
 ## `fastmcp run`
@@ -472,6 +473,37 @@ fastmcp inspect server.py:my_server
 # Custom output location
 fastmcp inspect server.py --output analysis.json
 ```
+
+## `fastmcp project prepare`
+
+Create a persistent uv project directory from a fastmcp.json file's environment configuration. This allows you to pre-install all dependencies once and reuse them with the `--project` flag.
+
+```bash
+fastmcp project prepare fastmcp.json --output-dir ./env
+```
+
+### Options
+
+| Option | Flag | Description |
+| ------ | ---- | ----------- |
+| Output Directory | `--output-dir` | **Required.** Directory where the persistent uv project will be created |
+
+### Usage Pattern
+
+```bash
+# Step 1: Prepare the environment (installs dependencies)
+fastmcp project prepare fastmcp.json --output-dir ./my-env
+
+# Step 2: Run using the prepared environment (fast, no dependency installation)
+fastmcp run fastmcp.json --project ./my-env
+```
+
+The prepare command creates a uv project with:
+- A `pyproject.toml` containing all dependencies from the fastmcp.json
+- A `.venv` with all packages pre-installed
+- A `uv.lock` file for reproducible environments
+
+This is useful when you want to separate environment setup from server execution, such as in deployment scenarios where dependencies are installed once and the server is run multiple times.
 
 ## `fastmcp version`
 

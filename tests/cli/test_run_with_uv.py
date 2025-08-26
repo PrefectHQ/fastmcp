@@ -12,12 +12,8 @@ from fastmcp.cli.run import run_with_uv
 class TestRunWithUv:
     """Test the run_with_uv function."""
 
-    @patch(
-        "fastmcp.utilities.fastmcp_config.v1.fastmcp_config.Environment._find_fastmcp_dev_path",
-        return_value=None,
-    )
     @patch("subprocess.run")
-    def test_run_with_uv_basic(self, mock_run, mock_find_dev_path):
+    def test_run_with_uv_basic(self, mock_run):
         """Test basic run_with_uv execution."""
         mock_run.return_value = Mock(returncode=0)
 
@@ -33,21 +29,15 @@ class TestRunWithUv:
         expected = [
             "uv",
             "run",
-            "--with",
-            "fastmcp",
             "fastmcp",
             "run",
-            "server.py",
             "--skip-env",
+            "server.py",
         ]
         assert cmd == expected
 
-    @patch(
-        "fastmcp.utilities.fastmcp_config.v1.fastmcp_config.Environment._find_fastmcp_dev_path",
-        return_value=None,
-    )
     @patch("subprocess.run")
-    def test_run_with_uv_python_version(self, mock_run, mock_find_dev_path):
+    def test_run_with_uv_python_version(self, mock_run):
         """Test run_with_uv with Python version."""
         mock_run.return_value = Mock(returncode=0)
 
@@ -62,21 +52,15 @@ class TestRunWithUv:
             "run",
             "--python",
             "3.11",
-            "--with",
-            "fastmcp",
             "fastmcp",
             "run",
-            "server.py",
             "--skip-env",
+            "server.py",
         ]
         assert cmd == expected
 
-    @patch(
-        "fastmcp.utilities.fastmcp_config.v1.fastmcp_config.Environment._find_fastmcp_dev_path",
-        return_value=None,
-    )
     @patch("subprocess.run")
-    def test_run_with_uv_project(self, mock_run, mock_find_dev_path):
+    def test_run_with_uv_project(self, mock_run):
         """Test run_with_uv with project directory."""
         mock_run.return_value = Mock(returncode=0)
         # Use an absolute path that works on all platforms
@@ -94,20 +78,14 @@ class TestRunWithUv:
         assert Path(cmd[3]).is_absolute()
         # Check the rest of the command
         assert cmd[4:] == [
-            "--with",
-            "fastmcp",
             "fastmcp",
             "run",
-            "server.py",
             "--skip-env",
+            "server.py",
         ]
 
-    @patch(
-        "fastmcp.utilities.fastmcp_config.v1.fastmcp_config.Environment._find_fastmcp_dev_path",
-        return_value=None,
-    )
     @patch("subprocess.run")
-    def test_run_with_uv_with_packages(self, mock_run, mock_find_dev_path):
+    def test_run_with_uv_with_packages(self, mock_run):
         """Test run_with_uv with additional packages."""
         mock_run.return_value = Mock(returncode=0)
 
@@ -121,24 +99,18 @@ class TestRunWithUv:
             "uv",
             "run",
             "--with",
-            "fastmcp",
-            "--with",
             "pandas",  # original order preserved
             "--with",
             "numpy",  # original order preserved
             "fastmcp",
             "run",
-            "server.py",
             "--skip-env",
+            "server.py",
         ]
         assert cmd == expected
 
-    @patch(
-        "fastmcp.utilities.fastmcp_config.v1.fastmcp_config.Environment._find_fastmcp_dev_path",
-        return_value=None,
-    )
     @patch("subprocess.run")
-    def test_run_with_uv_with_requirements(self, mock_run, mock_find_dev_path):
+    def test_run_with_uv_with_requirements(self, mock_run):
         """Test run_with_uv with requirements file."""
         mock_run.return_value = Mock(returncode=0)
         req_path = Path("requirements.txt")
@@ -152,23 +124,17 @@ class TestRunWithUv:
         expected = [
             "uv",
             "run",
-            "--with",
-            "fastmcp",
             "--with-requirements",
             str(req_path.resolve()),  # auto-resolved to absolute path
             "fastmcp",
             "run",
-            "server.py",
             "--skip-env",
+            "server.py",
         ]
         assert cmd == expected
 
-    @patch(
-        "fastmcp.utilities.fastmcp_config.v1.fastmcp_config.Environment._find_fastmcp_dev_path",
-        return_value=None,
-    )
     @patch("subprocess.run")
-    def test_run_with_uv_transport_options(self, mock_run, mock_find_dev_path):
+    def test_run_with_uv_transport_options(self, mock_run):
         """Test run_with_uv with transport-related options."""
         mock_run.return_value = Mock(returncode=0)
 
@@ -189,12 +155,10 @@ class TestRunWithUv:
         expected = [
             "uv",
             "run",
-            "--with",
-            "fastmcp",
             "fastmcp",
             "run",
-            "server.py",
             "--skip-env",
+            "server.py",
             "--transport",
             "http",
             "--host",
@@ -209,12 +173,8 @@ class TestRunWithUv:
         ]
         assert cmd == expected
 
-    @patch(
-        "fastmcp.utilities.fastmcp_config.v1.fastmcp_config.Environment._find_fastmcp_dev_path",
-        return_value=None,
-    )
     @patch("subprocess.run")
-    def test_run_with_uv_all_options(self, mock_run, mock_find_dev_path):
+    def test_run_with_uv_all_options(self, mock_run):
         """Test run_with_uv with all options combined."""
         mock_run.return_value = Mock(returncode=0)
 
@@ -237,20 +197,31 @@ class TestRunWithUv:
 
         cmd = mock_run.call_args[0][0]
 
-        # Check the structure piece by piece to be platform-agnostic
-        assert cmd[:5] == ["uv", "run", "--python", "3.10", "--project"]
-        # Check project path is absolute
-        assert Path(cmd[5]).is_absolute()
-        assert cmd[6:10] == ["--with", "fastmcp", "--with", "pandas"]
-        assert cmd[10] == "--with-requirements"
-        # Check requirements path is now auto-resolved to absolute
-        assert Path(cmd[11]).is_absolute()
-        assert Path(cmd[11]).name == "reqs.txt"
-        assert cmd[12:] == [
+        # When project is specified, Python version is not included
+        # Build expected command step by step
+        expected_start = ["uv", "run", "--project"]
+
+        # Check start and that project path is absolute
+        assert cmd[:3] == expected_start
+        assert Path(cmd[3]).is_absolute()
+
+        # Find the index where packages and requirements start
+        next_idx = 4
+        assert cmd[next_idx : next_idx + 2] == ["--with", "pandas"]
+        next_idx += 2
+        assert cmd[next_idx : next_idx + 1] == ["--with-requirements"]
+        next_idx += 1
+        # Check requirements path is absolute
+        assert Path(cmd[next_idx]).is_absolute()
+        assert Path(cmd[next_idx]).name == "reqs.txt"
+        next_idx += 1
+
+        # Rest should be the fastmcp command with options
+        assert cmd[next_idx:] == [
             "fastmcp",
             "run",
-            "server.py",
             "--skip-env",
+            "server.py",
             "--transport",
             "http",
             "--port",
@@ -258,12 +229,8 @@ class TestRunWithUv:
             "--no-banner",
         ]
 
-    @patch(
-        "fastmcp.utilities.fastmcp_config.v1.fastmcp_config.Environment._find_fastmcp_dev_path",
-        return_value=None,
-    )
     @patch("subprocess.run")
-    def test_run_with_uv_error_handling(self, mock_run, mock_find_dev_path):
+    def test_run_with_uv_error_handling(self, mock_run):
         """Test run_with_uv error handling."""
         mock_run.side_effect = subprocess.CalledProcessError(1, ["uv", "run"])
 
@@ -272,13 +239,9 @@ class TestRunWithUv:
 
         assert exc_info.value.code == 1
 
-    @patch(
-        "fastmcp.utilities.fastmcp_config.v1.fastmcp_config.Environment._find_fastmcp_dev_path",
-        return_value=None,
-    )
     @patch("fastmcp.cli.run.logger")
     @patch("subprocess.run")
-    def test_run_with_uv_logging(self, mock_run, mock_logger, mock_find_dev_path):
+    def test_run_with_uv_logging(self, mock_run, mock_logger):
         """Test that run_with_uv logs the command."""
         mock_run.return_value = Mock(returncode=0)
 

@@ -44,7 +44,7 @@ def run_with_uv(
     path: str | None = None,
     log_level: LogLevelType | None = None,
     show_banner: bool = True,
-    editable: str | None = None,
+    editable: str | list[str] | None = None,
 ) -> None:
     """Run a MCP server using uv run subprocess.
 
@@ -98,7 +98,10 @@ def run_with_uv(
                                 if config.environment.requirements
                                 else None
                             )
-                            editable = editable or config.environment.editable
+                            # Note: config editable is a list but CLI currently only supports single path
+                            # Just pass through for now - Environment will handle the list
+                            if not editable and config.environment.editable:
+                                editable = config.environment.editable
 
                             # Merge packages from both sources
                             # Only merge if with_packages doesn't already contain them
@@ -126,32 +129,33 @@ def run_with_uv(
         dependencies=with_packages if with_packages else None,
         requirements=str(with_requirements.resolve()) if with_requirements else None,
         project=str(project.resolve()) if project else None,
-        editable=editable,
+        editable=editable
+        if isinstance(editable, list)
+        else ([editable] if editable else None),
     )
-    # IMPORTANT: We add --skip-env to prevent infinite recursion.
-    # When this function executes `uv run ... fastmcp run server.py`, the inner
-    # `fastmcp run` command will be executed inside the uv environment we're creating.
-    # Without --skip-env, that inner command would detect it needs uv (due to the same
-    # CLI args) and try to spawn ANOTHER uv subprocess, creating infinite recursion.
-    # The --skip-env flag tells the inner fastmcp: "skip environment setup, we're already
-    # inside the uv environment that was just created for us."
-    cmd = ["uv"] + env_config.build_uv_args(
-        ["fastmcp", "run", server_spec, "--skip-env"]
-    )
+    # Build the uv command
+    # Build the inner fastmcp command with --skip-env to prevent infinite recursion
+    inner_cmd = ["fastmcp", "run", "--skip-env", server_spec]
 
-    # Add transport options
+    # Add transport options to the inner command
     if transport:
-        cmd.extend(["--transport", transport])
-    if host:
-        cmd.extend(["--host", host])
-    if port:
-        cmd.extend(["--port", str(port)])
-    if path:
-        cmd.extend(["--path", path])
+        inner_cmd.extend(["--transport", transport])
+    # Only add HTTP-specific options for non-stdio transports
+    if transport != "stdio":
+        if host:
+            inner_cmd.extend(["--host", host])
+        if port:
+            inner_cmd.extend(["--port", str(port)])
+        if path:
+            inner_cmd.extend(["--path", path])
     if log_level:
-        cmd.extend(["--log-level", log_level])
+        inner_cmd.extend(["--log-level", log_level])
     if not show_banner:
-        cmd.append("--no-banner")
+        inner_cmd.append("--no-banner")
+
+    # Build the full uv command
+    uv_args = env_config.build_uv_args(inner_cmd)
+    cmd = ["uv"] + uv_args
 
     # Run the command
     logger.debug(f"Running command: {' '.join(cmd)}")
@@ -269,9 +273,8 @@ async def run_command(
                     server_args if server_args is not None else config.deployment.args
                 )
 
-            # Prepare the source if needed (e.g., clone git repo, download from cloud)
-            if not skip_source:
-                await config.source.prepare()
+            # Prepare source only (environment is handled by uv run)
+            await config.prepare_source() if not skip_source else None
 
             # Load the server using the source
             from contextlib import nullcontext
@@ -290,9 +293,8 @@ async def run_command(
         source = FileSystemSource(path=server_spec)
         config = FastMCPConfig(source=source)
 
-        # Prepare the source if needed
-        if not skip_source:
-            await config.source.prepare()
+        # Prepare source only (environment is handled by uv run)
+        await config.prepare_source() if not skip_source else None
 
         # Load the server
         from contextlib import nullcontext
