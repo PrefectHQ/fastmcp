@@ -797,7 +797,7 @@ class Client(Generic[ClientTransportT]):
         Raises:
             RuntimeError: If called while the client is not connected.
         """
-        logger.debug(f"[{self.name}] called list_tools: {self.session._client_info}")
+        logger.debug(f"[{self.name}] called list_tools")
 
         result = await self.session.list_tools()
         return result
