@@ -31,7 +31,14 @@ class TestAzureProvider:
         parsed_token = urlparse(provider._upstream_token_endpoint)
         assert "87654321-4321-4321-4321-210987654321" in parsed_token.path
 
-    def test_init_with_env_vars(self):
+    @pytest.mark.parametrize(
+        "scopes_env",
+        [
+            "User.Read,Calendar.Read",
+            '["User.Read", "Calendar.Read"]',
+        ],
+    )
+    def test_init_with_env_vars(self, scopes_env):
         """Test AzureProvider initialization from environment variables."""
         with patch.dict(
             os.environ,
@@ -40,7 +47,7 @@ class TestAzureProvider:
                 "FASTMCP_SERVER_AUTH_AZURE_CLIENT_SECRET": "env-secret",
                 "FASTMCP_SERVER_AUTH_AZURE_TENANT_ID": "env-tenant-id",
                 "FASTMCP_SERVER_AUTH_AZURE_BASE_URL": "https://envserver.com",
-                "FASTMCP_SERVER_AUTH_AZURE_REQUIRED_SCOPES": '["User.Read", "Calendar.Read"]',
+                "FASTMCP_SERVER_AUTH_AZURE_REQUIRED_SCOPES": scopes_env,
             },
         ):
             provider = AzureProvider()
@@ -48,6 +55,10 @@ class TestAzureProvider:
             assert provider._upstream_client_id == "env-client-id"
             assert provider._upstream_client_secret.get_secret_value() == "env-secret"
             assert str(provider.base_url) == "https://envserver.com/"
+            assert provider._token_validator.required_scopes == [
+                "User.Read",
+                "Calendar.Read",
+            ]
             # Check tenant is in the endpoints
             parsed_auth = urlparse(provider._upstream_authorization_endpoint)
             assert "env-tenant-id" in parsed_auth.path

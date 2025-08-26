@@ -24,7 +24,14 @@ class TestGoogleProvider:
         assert provider._upstream_client_secret.get_secret_value() == "GOCSPX-test123"
         assert str(provider.base_url) == "https://myserver.com/"
 
-    def test_init_with_env_vars(self):
+    @pytest.mark.parametrize(
+        "scopes_env",
+        [
+            "openid,https://www.googleapis.com/auth/userinfo.email",
+            '["openid", "https://www.googleapis.com/auth/userinfo.email"]',
+        ],
+    )
+    def test_init_with_env_vars(self, scopes_env):
         """Test GoogleProvider initialization from environment variables."""
         with patch.dict(
             os.environ,
@@ -32,7 +39,7 @@ class TestGoogleProvider:
                 "FASTMCP_SERVER_AUTH_GOOGLE_CLIENT_ID": "env123.apps.googleusercontent.com",
                 "FASTMCP_SERVER_AUTH_GOOGLE_CLIENT_SECRET": "GOCSPX-env456",
                 "FASTMCP_SERVER_AUTH_GOOGLE_BASE_URL": "https://envserver.com",
-                "FASTMCP_SERVER_AUTH_GOOGLE_REQUIRED_SCOPES": '["openid", "https://www.googleapis.com/auth/userinfo.email"]',
+                "FASTMCP_SERVER_AUTH_GOOGLE_REQUIRED_SCOPES": scopes_env,
             },
         ):
             provider = GoogleProvider()
@@ -42,6 +49,10 @@ class TestGoogleProvider:
                 provider._upstream_client_secret.get_secret_value() == "GOCSPX-env456"
             )
             assert str(provider.base_url) == "https://envserver.com/"
+            assert provider._token_validator.required_scopes == [
+                "openid",
+                "https://www.googleapis.com/auth/userinfo.email",
+            ]
 
     def test_init_missing_client_id_raises_error(self):
         """Test that missing client_id raises ValueError."""
