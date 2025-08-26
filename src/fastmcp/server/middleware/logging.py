@@ -152,7 +152,7 @@ class StructuredLoggingMiddleware(Middleware):
         if self.methods and context.method not in self.methods:
             return await call_next(context)
 
-        self.logger.log(self.log_level, json.dumps(start_entry))
+        self.logger.log(self.log_level, json.dumps(start_entry, default=str))
 
         try:
             result = await call_next(context)
@@ -162,7 +162,7 @@ class StructuredLoggingMiddleware(Middleware):
                 "request_success",
                 result_type=type(result).__name__ if result else None,
             )
-            self.logger.log(self.log_level, json.dumps(success_entry))
+            self.logger.log(self.log_level, json.dumps(success_entry, default=str))
 
             return result
         except Exception as e:
@@ -172,5 +172,5 @@ class StructuredLoggingMiddleware(Middleware):
                 error_type=type(e).__name__,
                 error_message=str(e),
             )
-            self.logger.log(logging.ERROR, json.dumps(error_entry))
+            self.logger.log(logging.ERROR, json.dumps(error_entry, default=str))
             raise
