@@ -101,7 +101,7 @@ def update_claude_config(
         # Build uv run command using Environment.build_uv_args()
         env_config = Environment(
             dependencies=deduplicated_packages,
-            editable=str(with_editable) if with_editable else None,
+            editable=[str(with_editable)] if with_editable else None,
         )
         args = env_config.build_uv_args()
 

@@ -59,7 +59,7 @@ class TestEnvironment:
                 "dependencies": ["requests", "numpy>=2.0"],
                 "requirements": "requirements.txt",
                 "project": ".",
-                "editable": "../my-package",
+                "editable": ["../my-package"],
             },
         )
 
@@ -68,7 +68,7 @@ class TestEnvironment:
         assert env.dependencies == ["requests", "numpy>=2.0"]
         assert env.requirements == "requirements.txt"
         assert env.project == "."
-        assert env.editable == "../my-package"
+        assert env.editable == ["../my-package"]
 
     def test_needs_uv(self):
         """Test needs_uv() method."""
@@ -107,15 +107,17 @@ class TestEnvironment:
         args = config.environment.build_uv_args(["fastmcp", "run", "server.py"])
 
         assert args[0] == "run"
-        assert "--python" in args
-        assert "3.12" in args
+        # Python version not added when project is specified (project defines its own Python)
+        assert "--python" not in args
+        assert "3.12" not in args
         assert "--project" in args
+        assert "." in args
         assert "--with" in args
-        assert "fastmcp" in args
         assert "requests" in args
         assert "numpy" in args
         assert "--with-requirements" in args
         assert "requirements.txt" in args
+        # Command args should be at the end
         assert "fastmcp" in args[-3:]
         assert "run" in args[-2:]
         assert "server.py" in args[-1:]

@@ -8,6 +8,8 @@ from mcp.server.elicitation import (
     DeclinedElicitation,
 )
 from pydantic import BaseModel
+from pydantic.json_schema import GenerateJsonSchema, JsonSchemaValue
+from pydantic_core import core_schema
 
 from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.logging import get_logger
@@ -24,6 +26,60 @@ __all__ = [
 logger = get_logger(__name__)
 
 T = TypeVar("T")
+
+
+class ElicitationJsonSchema(GenerateJsonSchema):
+    """Custom JSON schema generator for MCP elicitation that always inlines enums.
+
+    MCP elicitation requires inline enum schemas without $ref/$defs references.
+    This generator ensures enums are always generated inline for compatibility.
+    Optionally adds enumNames for better UI display when available.
+    """
+
+    def generate_inner(self, schema: core_schema.CoreSchema) -> JsonSchemaValue:
+        """Override to prevent ref generation for enums."""
+        # For enum schemas, bypass the ref mechanism entirely
+        if schema["type"] == "enum":
+            # Directly call our custom enum_schema without going through handler
+            # This prevents the ref/defs mechanism from being invoked
+            return self.enum_schema(schema)
+        # For all other types, use the default implementation
+        return super().generate_inner(schema)
+
+    def enum_schema(self, schema: core_schema.EnumSchema) -> JsonSchemaValue:
+        """Generate inline enum schema with optional enumNames for better UI.
+
+        If enum members have a _display_name_ attribute or custom __str__,
+        we'll include enumNames for better UI representation.
+        """
+        # Get the base schema from parent
+        result = super().enum_schema(schema)
+
+        # Try to add enumNames if the enum has display-friendly names
+        enum_cls = schema.get("cls")
+        if enum_cls:
+            members = schema.get("members", [])
+            enum_names = []
+            has_custom_names = False
+
+            for member in members:
+                # Check if member has a custom display name attribute
+                if hasattr(member, "_display_name_"):
+                    enum_names.append(member._display_name_)
+                    has_custom_names = True
+                # Or use the member name with better formatting
+                else:
+                    # Convert SNAKE_CASE to Title Case for display
+                    display_name = member.name.replace("_", " ").title()
+                    enum_names.append(display_name)
+                    if display_name != member.value:
+                        has_custom_names = True
+
+            # Only add enumNames if they differ from the values
+            if has_custom_names:
+                result["enumNames"] = enum_names
+
+        return result
 
 
 # we can't use the low-level AcceptedElicitation because it only works with BaseModels
@@ -46,7 +102,10 @@ def get_elicitation_schema(response_type: type[T]) -> dict[str, Any]:
         response_type: The type of the response
     """
 
-    schema = get_cached_typeadapter(response_type).json_schema()
+    # Use custom schema generator that inlines enums for MCP compatibility
+    schema = get_cached_typeadapter(response_type).json_schema(
+        schema_generator=ElicitationJsonSchema
+    )
     schema = compress_schema(schema)
 
     # Validate the schema to ensure it follows MCP elicitation requirements

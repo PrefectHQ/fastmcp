@@ -328,18 +328,19 @@ class TestRunCommand:
                 ]
             )
 
-    def test_run_command_parsing_skip_env_flag(self):
-        """Test run command parsing with --skip-env flag."""
+    def test_run_command_parsing_project_flag(self):
+        """Test run command parsing with --project flag."""
         command, bound, _ = app.parse_args(
             [
                 "run",
                 "server.py",
-                "--skip-env",
+                "--project",
+                "./test-env",
             ]
         )
         assert command is not None
         assert bound.arguments["server_spec"] == "server.py"
-        assert bound.arguments["skip_env"] is True
+        assert bound.arguments["project"] == Path("./test-env")
 
     def test_run_command_parsing_skip_source_flag(self):
         """Test run command parsing with --skip-source flag."""
@@ -354,19 +355,20 @@ class TestRunCommand:
         assert bound.arguments["server_spec"] == "server.py"
         assert bound.arguments["skip_source"] is True
 
-    def test_run_command_parsing_both_skip_flags(self):
-        """Test run command parsing with both --skip-env and --skip-source flags."""
+    def test_run_command_parsing_project_and_skip_source(self):
+        """Test run command parsing with --project and --skip-source flags."""
         command, bound, _ = app.parse_args(
             [
                 "run",
                 "server.py",
-                "--skip-env",
+                "--project",
+                "./test-env",
                 "--skip-source",
             ]
         )
         assert command is not None
         assert bound.arguments["server_spec"] == "server.py"
-        assert bound.arguments["skip_env"] is True
+        assert bound.arguments["project"] == Path("./test-env")
         assert bound.arguments["skip_source"] is True
 
 
