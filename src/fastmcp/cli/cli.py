@@ -126,20 +126,21 @@ async def dev(
     server_spec: str | None = None,
     *,
     with_editable: Annotated[
-        Path | None,
+        list[Path] | None,
         cyclopts.Parameter(
-            name=["--with-editable", "-e"],
-            help="Directory containing pyproject.toml to install in editable mode",
+            "--with-editable",
+            help="Directory containing pyproject.toml to install in editable mode (can be used multiple times)",
+            negative="",
         ),
     ] = None,
     with_packages: Annotated[
-        list[str],
+        list[str] | None,
         cyclopts.Parameter(
             "--with",
-            help="Additional packages to install",
+            help="Additional packages to install (can be used multiple times)",
             negative="",
         ),
-    ] = [],
+    ] = None,
     inspector_version: Annotated[
         str | None,
         cyclopts.Parameter(
@@ -188,6 +189,9 @@ async def dev(
     Args:
         server_spec: Python file to run, optionally with :object suffix, or None to auto-detect fastmcp.json
     """
+    # Convert None to empty lists for list parameters
+    with_editable = with_editable or []
+    with_packages = with_packages or []
     from pathlib import Path
 
     from fastmcp.utilities.fastmcp_config import FastMCPConfig
@@ -229,13 +233,9 @@ async def dev(
                 if config.environment.requirements
                 else None
             )
-            # Note: config.environment.editable is a list, but CLI only supports single path
-            # Take the first editable path if available
-            with_editable = with_editable or (
-                Path(config.environment.editable[0])
-                if config.environment.editable and config.environment.editable[0]
-                else None
-            )
+            # Merge editable paths from config with CLI args
+            if config.environment.editable and not with_editable:
+                with_editable = [Path(p) for p in config.environment.editable]
 
             # Merge packages from both sources
             if config.environment.dependencies:
@@ -256,7 +256,7 @@ async def dev(
         "Starting dev server",
         extra={
             "server_spec": server_spec,
-            "with_editable": str(with_editable) if with_editable else None,
+            "with_editable": [str(p) for p in with_editable] if with_editable else None,
             "with_packages": with_packages,
             "ui_port": ui_port,
             "server_port": server_port,
@@ -305,7 +305,7 @@ async def dev(
             dependencies=with_packages if with_packages else None,
             requirements=str(with_requirements) if with_requirements else None,
             project=str(project) if project else None,
-            editable=[str(with_editable)] if with_editable else None,
+            editable=[str(p) for p in with_editable] if with_editable else None,
         )
         uv_cmd = ["uv"] + env_config.build_uv_args(["fastmcp", "run", server_spec])
 
@@ -396,13 +396,13 @@ async def run(
         ),
     ] = None,
     with_packages: Annotated[
-        list[str],
+        list[str] | None,
         cyclopts.Parameter(
             "--with",
             help="Additional packages to install (can be used multiple times)",
             negative="",
         ),
-    ] = [],
+    ] = None,
     project: Annotated[
         Path | None,
         cyclopts.Parameter(
@@ -450,6 +450,8 @@ async def run(
     Args:
         server_spec: Python file, object specification (file:obj), config file, URL, or None to auto-detect
     """
+    # Convert None to empty lists for list parameters
+    with_packages = with_packages or []
     # Load configuration if needed
     from pathlib import Path
 
@@ -631,13 +633,13 @@ async def inspect(
         ),
     ] = None,
     with_packages: Annotated[
-        list[str],
+        list[str] | None,
         cyclopts.Parameter(
             "--with",
             help="Additional packages to install (can be used multiple times)",
             negative="",
         ),
-    ] = [],
+    ] = None,
     project: Annotated[
         Path | None,
         cyclopts.Parameter(
@@ -670,6 +672,8 @@ async def inspect(
     Args:
         server_spec: Python file to inspect, optionally with :object suffix, or fastmcp.json
     """
+    # Convert None to empty lists for list parameters
+    with_packages = with_packages or []
     from pathlib import Path
 
     from fastmcp.utilities.fastmcp_config import FastMCPConfig
