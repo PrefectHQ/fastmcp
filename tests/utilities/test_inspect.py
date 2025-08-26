@@ -8,7 +8,11 @@ import fastmcp
 from fastmcp import Client, FastMCP
 from fastmcp.utilities.inspect import (
     FastMCPInfo,
+    InspectFormat,
     ToolInfo,
+    format_fastmcp_info,
+    format_info,
+    format_mcp_info,
     inspect_fastmcp,
     inspect_fastmcp_v1,
 )
@@ -20,14 +24,22 @@ class TestFastMCPInfo:
     def test_fastmcp_info_creation(self):
         """Test that FastMCPInfo can be created with all required fields."""
         tool = ToolInfo(
-            key="tool1", name="tool1", description="Test tool", input_schema={}
+            key="tool1",
+            name="tool1",
+            description="Test tool",
+            input_schema={},
+            output_schema={
+                "type": "object",
+                "properties": {"result": {"type": "string"}},
+            },
         )
         info = FastMCPInfo(
             name="TestServer",
             instructions="Test instructions",
             fastmcp_version="1.0.0",
             mcp_version="1.0.0",
-            server_version="1.0.0",
+            server_generation=2,
+            version="1.0.0",
             tools=[tool],
             prompts=[],
             resources=[],
@@ -39,7 +51,8 @@ class TestFastMCPInfo:
         assert info.instructions == "Test instructions"
         assert info.fastmcp_version == "1.0.0"
         assert info.mcp_version == "1.0.0"
-        assert info.server_version == "1.0.0"
+        assert info.server_generation == 2
+        assert info.version == "1.0.0"
         assert len(info.tools) == 1
         assert info.tools[0].name == "tool1"
         assert info.capabilities == {"tools": {"listChanged": True}}
@@ -51,7 +64,8 @@ class TestFastMCPInfo:
             instructions=None,
             fastmcp_version="1.0.0",
             mcp_version="1.0.0",
-            server_version="1.0.0",
+            server_generation=2,
+            version="1.0.0",
             tools=[],
             prompts=[],
             resources=[],
@@ -75,7 +89,8 @@ class TestGetFastMCPInfo:
         assert info.instructions is None
         assert info.fastmcp_version == fastmcp.__version__
         assert info.mcp_version == importlib.metadata.version("mcp")
-        assert info.server_version is None
+        assert info.server_generation == 2  # v2 server
+        assert info.version is None
         assert info.tools == []
         assert info.prompts == []
         assert info.resources == []
@@ -95,7 +110,7 @@ class TestGetFastMCPInfo:
         """Test get_fastmcp_info with a server that has a version."""
         mcp = FastMCP("VersionServer", version="1.2.3")
         info = await inspect_fastmcp(mcp)
-        assert info.server_version == "1.2.3"
+        assert info.version == "1.2.3"
 
     async def test_server_with_tools(self):
         """Test get_fastmcp_info with a server that has tools."""
@@ -266,9 +281,10 @@ class TestFastMCP1xCompatibility:
 
         assert info.name == "Test1x"
         assert info.instructions is None
-        assert info.fastmcp_version == importlib.metadata.version("mcp")
+        assert info.fastmcp_version == fastmcp.__version__  # CLI version
         assert info.mcp_version == importlib.metadata.version("mcp")
-        assert info.server_version is None
+        assert info.server_generation == 1  # v1 server
+        assert info.version is None
         assert info.tools == []
         assert info.prompts == []
         assert info.resources == []
@@ -310,6 +326,7 @@ class TestFastMCP1xCompatibility:
         resource_uris = [res.uri for res in info.resources]
         assert "resource://data" in resource_uris
         assert len(info.templates) == 0  # No templates added in this test
+        assert info.server_generation == 1  # v1 server
 
     async def test_fastmcp1x_with_prompts(self):
         """Test get_fastmcp_info_v1 with a FastMCP1x server that has prompts."""
@@ -341,6 +358,7 @@ class TestFastMCP1xCompatibility:
         tool_names = [tool.name for tool in info.tools]
         assert "test_tool" in tool_names
         assert len(info.templates) == 0  # No templates added in this test
+        assert info.server_generation == 1  # v1 server
 
     async def test_dispatcher_with_fastmcp2x(self):
         """Test that the main get_fastmcp_info function correctly dispatches to v2."""
@@ -384,9 +402,191 @@ class TestFastMCP1xCompatibility:
         assert "tool2x" in tool2x_names
 
         # Check server versions
-        assert info1x.server_version is None
-        assert info2x.server_version is None
+        assert info1x.server_generation == 1  # v1
+        assert info2x.server_generation == 2  # v2
+        assert info1x.version is None
+        assert info2x.version is None
 
         # No templates added in these tests
         assert len(info1x.templates) == 0
         assert len(info2x.templates) == 0
+
+
+class TestFormatFunctions:
+    """Tests for the formatting functions."""
+
+    async def test_format_fastmcp_info(self):
+        """Test formatting as FastMCP-specific JSON."""
+        mcp = FastMCP("TestServer", instructions="Test instructions", version="1.2.3")
+
+        @mcp.tool
+        def test_tool(x: int) -> dict:
+            """A test tool."""
+            return {"result": x * 2}
+
+        info = await inspect_fastmcp(mcp)
+        json_bytes = await format_fastmcp_info(info)
+
+        # Verify it's valid JSON
+        import json
+
+        data = json.loads(json_bytes)
+
+        # Check FastMCP-specific fields are present
+        assert "server" in data
+        assert data["server"]["name"] == "TestServer"
+        assert data["server"]["instructions"] == "Test instructions"
+        assert data["server"]["generation"] == 2  # v2 server
+        assert data["server"]["version"] == "1.2.3"
+        assert "capabilities" in data["server"]
+
+        # Check environment information
+        assert "environment" in data
+        assert data["environment"]["fastmcp"] == fastmcp.__version__
+        assert data["environment"]["mcp"] == importlib.metadata.version("mcp")
+
+        # Check tools
+        assert len(data["tools"]) == 1
+        assert data["tools"][0]["name"] == "test_tool"
+        assert data["tools"][0]["enabled"] is True
+        assert "tags" in data["tools"][0]
+
+    async def test_format_mcp_info(self):
+        """Test formatting as MCP protocol JSON."""
+        mcp = FastMCP("TestServer", instructions="Test instructions", version="2.0.0")
+
+        @mcp.tool
+        def add(a: int, b: int) -> int:
+            """Add two numbers."""
+            return a + b
+
+        @mcp.prompt
+        def test_prompt(name: str) -> list:
+            """Test prompt."""
+            return [{"role": "user", "content": f"Hello {name}"}]
+
+        json_bytes = await format_mcp_info(mcp)
+
+        # Verify it's valid JSON
+        import json
+
+        data = json.loads(json_bytes)
+
+        # Check MCP protocol structure with camelCase
+        assert "serverInfo" in data
+        assert data["serverInfo"]["name"] == "TestServer"
+
+        # Check server version in MCP format
+        assert data["serverInfo"]["version"] == "2.0.0"
+
+        # MCP format SHOULD have environment fields
+        assert "environment" in data
+        assert data["environment"]["fastmcp"] == fastmcp.__version__
+        assert data["environment"]["mcp"] == importlib.metadata.version("mcp")
+        assert "capabilities" in data
+
+        assert "tools" in data
+        assert "prompts" in data
+        assert "resources" in data
+        assert "resourceTemplates" in data
+
+        # Check tools have MCP format (camelCase fields)
+        assert len(data["tools"]) == 1
+        assert data["tools"][0]["name"] == "add"
+        assert "inputSchema" in data["tools"][0]
+
+        # FastMCP-specific fields should not be present
+        assert "tags" not in data["tools"][0]
+        assert "enabled" not in data["tools"][0]
+
+    async def test_format_info_with_fastmcp_format(self):
+        """Test format_info with fastmcp format."""
+        mcp = FastMCP("TestServer")
+
+        @mcp.tool
+        def test() -> str:
+            return "test"
+
+        # Test with string format
+        json_bytes = await format_info(mcp, "fastmcp")
+        import json
+
+        data = json.loads(json_bytes)
+        assert data["server"]["name"] == "TestServer"
+        assert "tags" in data["tools"][0]  # FastMCP-specific field
+
+        # Test with enum format
+        json_bytes = await format_info(mcp, InspectFormat.FASTMCP)
+        data = json.loads(json_bytes)
+        assert data["server"]["name"] == "TestServer"
+
+    async def test_format_info_with_mcp_format(self):
+        """Test format_info with mcp format."""
+        mcp = FastMCP("TestServer")
+
+        @mcp.tool
+        def test() -> str:
+            return "test"
+
+        json_bytes = await format_info(mcp, "mcp")
+
+        import json
+
+        data = json.loads(json_bytes)
+        assert "serverInfo" in data
+        assert "tools" in data
+        assert "inputSchema" in data["tools"][0]  # MCP uses camelCase
+
+    async def test_format_info_requires_format(self):
+        """Test that format_info requires a format parameter."""
+        mcp = FastMCP("TestServer")
+
+        @mcp.tool
+        def test() -> str:
+            return "test"
+
+        # Should work with valid formats
+        json_bytes = await format_info(mcp, "fastmcp")
+        assert json_bytes
+
+        json_bytes = await format_info(mcp, "mcp")
+        assert json_bytes
+
+        # Should fail with invalid format
+        import pytest
+
+        with pytest.raises(ValueError, match="not a valid InspectFormat"):
+            await format_info(mcp, "invalid")  # type: ignore
+
+    async def test_tool_with_output_schema(self):
+        """Test that output_schema is properly extracted and included."""
+        mcp = FastMCP("TestServer")
+
+        @mcp.tool(
+            output_schema={
+                "type": "object",
+                "properties": {
+                    "result": {"type": "number"},
+                    "message": {"type": "string"},
+                },
+            }
+        )
+        def compute(x: int) -> dict:
+            """Compute something."""
+            return {"result": x * 2, "message": f"Doubled {x}"}
+
+        info = await inspect_fastmcp(mcp)
+
+        # Check output_schema is captured
+        assert len(info.tools) == 1
+        assert info.tools[0].output_schema is not None
+        assert info.tools[0].output_schema["type"] == "object"
+        assert "result" in info.tools[0].output_schema["properties"]
+
+        # Verify it's included in FastMCP format
+        json_bytes = await format_fastmcp_info(info)
+        import json
+
+        data = json.loads(json_bytes)
+        # Tools are at the top level, not nested
+        assert data["tools"][0]["output_schema"]["type"] == "object"

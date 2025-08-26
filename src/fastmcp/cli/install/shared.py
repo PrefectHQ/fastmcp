@@ -29,14 +29,17 @@ def parse_env_var(env_var: str) -> tuple[str, str]:
 async def process_common_args(
     server_spec: str,
     server_name: str | None,
-    with_packages: list[str],
-    env_vars: list[str],
+    with_packages: list[str] | None,
+    env_vars: list[str] | None,
     env_file: Path | None,
 ) -> tuple[Path, str | None, str, list[str], dict[str, str] | None]:
     """Process common arguments shared by all install commands.
 
     Handles both fastmcp.json config files and traditional file.py:object syntax.
     """
+    # Convert None to empty lists for list parameters
+    with_packages = with_packages or []
+    env_vars = env_vars or []
     # Create FastMCPConfig from server_spec
     config = None
     if server_spec.endswith(".json"):

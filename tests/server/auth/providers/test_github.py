@@ -83,7 +83,14 @@ class TestGitHubProvider:
         )  # URLs get normalized with trailing slash
         assert provider._redirect_path == "/custom/callback"
 
-    def test_init_with_env_vars(self):
+    @pytest.mark.parametrize(
+        "scopes_env",
+        [
+            "user,repo",
+            '["user", "repo"]',
+        ],
+    )
+    def test_init_with_env_vars(self, scopes_env):
         """Test initialization with environment variables."""
         with patch.dict(
             os.environ,
@@ -91,6 +98,7 @@ class TestGitHubProvider:
                 "FASTMCP_SERVER_AUTH_GITHUB_CLIENT_ID": "env_client_id",
                 "FASTMCP_SERVER_AUTH_GITHUB_CLIENT_SECRET": "env_secret",
                 "FASTMCP_SERVER_AUTH_GITHUB_BASE_URL": "https://env-example.com",
+                "FASTMCP_SERVER_AUTH_GITHUB_REQUIRED_SCOPES": scopes_env,
             },
         ):
             provider = GitHubProvider()
@@ -98,6 +106,7 @@ class TestGitHubProvider:
             assert provider._upstream_client_id == "env_client_id"
             assert provider._upstream_client_secret.get_secret_value() == "env_secret"
             assert str(provider.base_url) == "https://env-example.com/"
+            assert provider._token_validator.required_scopes == ["user", "repo"]
 
     def test_init_explicit_overrides_env(self):
         """Test that explicit parameters override environment variables."""

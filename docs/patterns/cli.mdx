@@ -436,17 +436,45 @@ To use this configuration with your MCP client, you'll typically need to add it 
 
 <VersionBadge version="2.9.0" />
 
-Generate a detailed JSON report about a FastMCP server, including information about its tools, prompts, resources, and capabilities.
+Inspect a FastMCP server to view summary information or generate a detailed JSON report.
 
 ```bash
+# Show text summary
 fastmcp inspect server.py
+
+# Output FastMCP JSON to stdout
+fastmcp inspect server.py --format fastmcp
+
+# Save MCP JSON to file (format required with -o)
+fastmcp inspect server.py --format mcp -o manifest.json
 ```
 
 ### Options
 
 | Option | Flag | Description |
 | ------ | ---- | ----------- |
-| Output File | `--output`, `-o` | Output file path for the JSON report (default: server-info.json) |
+| Format | `--format`, `-f` | Output format: `fastmcp` (FastMCP-specific) or `mcp` (MCP protocol). Required when using `-o` |
+| Output File | `--output`, `-o` | Save JSON report to file instead of stdout. Requires `--format` |
+
+### Output Formats
+
+#### FastMCP Format (`--format fastmcp`)
+The default and most comprehensive format, includes all FastMCP-specific metadata:
+- Server name, instructions, and version
+- FastMCP version and MCP version
+- Tool tags and enabled status
+- Output schemas for tools
+- Annotations and custom metadata
+- Uses snake_case field names
+- **Use this for**: Complete server introspection and debugging FastMCP servers
+
+#### MCP Protocol Format (`--format mcp`)
+Shows exactly what MCP clients will see via the protocol:
+- Only includes standard MCP protocol fields
+- Matches output from `client.list_tools()`, `client.list_prompts()`, etc.
+- Uses camelCase field names (e.g., `inputSchema`)
+- Excludes FastMCP-specific fields like tags and enabled status
+- **Use this for**: Debugging client visibility and ensuring MCP compatibility
 
 ### Entrypoints
 
@@ -461,17 +489,46 @@ The `inspect` command supports local FastMCP server files and configuration:
 The `inspect` command **only supports local files and fastmcp.json** - no URLs, remote servers, or standard MCP configuration files.
 </Warning>
 
-**Examples**
+### Examples
 
 ```bash
-# Auto-detect server entrypoint
+# Show text summary (no JSON output)
 fastmcp inspect server.py
+# Output: 
+# Server: MyServer
+# Instructions: A helpful MCP server
+# Version: 1.0.0
+#
+# Components:
+#   Tools: 5
+#   Prompts: 2
+#   Resources: 3
+#   Templates: 1
+#
+# Environment:
+#   FastMCP: 2.0.0
+#   MCP: 1.0.0
+#
+# Use --format [fastmcp|mcp] for complete JSON output
+
+# Output FastMCP format to stdout
+fastmcp inspect server.py --format fastmcp
 
 # Specify server entrypoint
 fastmcp inspect server.py:my_server
 
-# Custom output location
-fastmcp inspect server.py --output analysis.json
+# Output MCP protocol format to stdout
+fastmcp inspect server.py --format mcp
+
+# Save to file (format required)
+fastmcp inspect server.py --format fastmcp -o server-manifest.json
+
+# Save MCP format with custom server object
+fastmcp inspect server.py:my_server --format mcp -o mcp-manifest.json
+
+# Error: format required with output file
+fastmcp inspect server.py -o output.json
+# Error: --format is required when using -o/--output
 ```
 
 ## `fastmcp project prepare`

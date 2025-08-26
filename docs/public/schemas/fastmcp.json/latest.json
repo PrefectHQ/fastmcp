@@ -243,17 +243,25 @@
         "editable": {
           "anyOf": [
             {
-              "type": "string"
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             },
             {
               "type": "null"
             }
           ],
           "default": null,
-          "description": "Directory to install in editable mode",
+          "description": "Directories to install in editable mode",
           "examples": [
-            ".",
-            "../my-package"
+            [
+              ".",
+              "../my-package"
+            ],
+            [
+              "/path/to/package"
+            ]
           ],
           "title": "Editable"
         }

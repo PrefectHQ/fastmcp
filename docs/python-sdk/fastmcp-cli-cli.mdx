@@ -10,7 +10,24 @@ FastMCP CLI tools using Cyclopts.
 
 ## Functions
 
-### `version` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/cli/cli.py#L63" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `with_argv` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/cli/cli.py#L70" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+with_argv(args: list[str] | None)
+```
+
+
+Temporarily replace sys.argv if args provided.
+
+This context manager is used at the CLI boundary to inject
+server arguments when needed, without mutating sys.argv deep
+in the source loading logic.
+
+Args are provided without the script name, so we preserve sys.argv[0]
+and replace the rest.
+
+
+### `version` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/cli/cli.py#L93" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 version()
@@ -20,7 +37,7 @@ version()
 Display version information and platform details.
 
 
-### `dev` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/cli/cli.py#L101" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `dev` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/cli/cli.py#L131" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 dev(server_spec: str | None = None) -> None
@@ -33,7 +50,7 @@ Run an MCP server with the MCP Inspector for development.
 - `server_spec`: Python file to run, optionally with \:object suffix, or None to auto-detect fastmcp.json
 
 
-### `run` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/cli/cli.py#L319" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `run` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/cli/cli.py#L349" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 run(server_spec: str | None = None, *server_args: str) -> None
@@ -57,28 +74,56 @@ fastmcp run server.py -- --config config.json --debug
 - `server_spec`: Python file, object specification (file\:obj), config file, URL, or None to auto-detect
 
 
-### `inspect` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/cli/cli.py#L582" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `inspect` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/cli/cli.py#L622" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 inspect(server_spec: str | None = None) -> None
 ```
 
 
-Inspect an MCP server and generate a JSON report.
+Inspect an MCP server and display information or generate a JSON report.
 
-This command analyzes an MCP server and generates a comprehensive JSON report
-containing information about the server's name, instructions, version, tools,
-prompts, resources, templates, and capabilities.
+This command analyzes an MCP server. Without flags, it displays a text summary.
+Use --format to output complete JSON data.
 
 **Examples:**
 
+# Show text summary
 fastmcp inspect server.py
-fastmcp inspect server.py -o report.json
-fastmcp inspect server.py:mcp -o analysis.json
-fastmcp inspect path/to/server.py:app -o /tmp/server-info.json
+
+# Output FastMCP format JSON to stdout
+fastmcp inspect server.py --format fastmcp
+
+# Save MCP protocol format to file (format required with -o)
+fastmcp inspect server.py --format mcp -o manifest.json
+
+# Inspect from fastmcp.json configuration
 fastmcp inspect fastmcp.json
 fastmcp inspect  # auto-detect fastmcp.json
 
 **Args:**
 - `server_spec`: Python file to inspect, optionally with \:object suffix, or fastmcp.json
+
+
+### `prepare` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/cli/cli.py#L904" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+prepare(config_path: Annotated[str | None, cyclopts.Parameter(help='Path to fastmcp.json configuration file')] = None, output_dir: Annotated[str | None, cyclopts.Parameter(help='Directory to create the persistent environment in')] = None, skip_source: Annotated[bool, cyclopts.Parameter(help='Skip source preparation (e.g., git clone)')] = False) -> None
+```
+
+
+Prepare a FastMCP project by creating a persistent uv environment.
+
+This command creates a persistent uv project with all dependencies installed:
+- Creates a pyproject.toml with dependencies from the config
+- Installs all Python packages into a .venv
+- Prepares the source (git clone, download, etc.) unless --skip-source
+
+After running this command, you can use:
+fastmcp run &lt;config&gt; --project &lt;output-dir&gt;
+
+This is useful for:
+- CI/CD pipelines with separate build and run stages
+- Docker images where you prepare during build
+- Production deployments where you want fast startup times
 

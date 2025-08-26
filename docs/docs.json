@@ -376,10 +376,31 @@
                 "group": "fastmcp.utilities",
                 "pages": [
                   "python-sdk/fastmcp-utilities-__init__",
+                  "python-sdk/fastmcp-utilities-auth",
                   "python-sdk/fastmcp-utilities-cli",
                   "python-sdk/fastmcp-utilities-components",
                   "python-sdk/fastmcp-utilities-exceptions",
-                  "python-sdk/fastmcp-utilities-fastmcp_config",
+                  {
+                    "group": "fastmcp_config",
+                    "pages": [
+                      "python-sdk/fastmcp-utilities-fastmcp_config-__init__",
+                      {
+                        "group": "v1",
+                        "pages": [
+                          "python-sdk/fastmcp-utilities-fastmcp_config-v1-__init__",
+                          "python-sdk/fastmcp-utilities-fastmcp_config-v1-fastmcp_config",
+                          {
+                            "group": "sources",
+                            "pages": [
+                              "python-sdk/fastmcp-utilities-fastmcp_config-v1-sources-__init__",
+                              "python-sdk/fastmcp-utilities-fastmcp_config-v1-sources-base",
+                              "python-sdk/fastmcp-utilities-fastmcp_config-v1-sources-filesystem"
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  },
                   "python-sdk/fastmcp-utilities-http",
                   "python-sdk/fastmcp-utilities-inspect",
                   "python-sdk/fastmcp-utilities-json_schema",

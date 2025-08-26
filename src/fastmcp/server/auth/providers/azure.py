@@ -7,12 +7,13 @@ using the OAuth Proxy pattern for non-DCR OAuth flows.
 from __future__ import annotations
 
 import httpx
-from pydantic import SecretStr
+from pydantic import SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from fastmcp.server.auth import AccessToken, TokenVerifier
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from fastmcp.server.auth.registry import register_provider
+from fastmcp.utilities.auth import parse_scopes
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import NotSet, NotSetT
 
@@ -35,6 +36,11 @@ class AzureProviderSettings(BaseSettings):
     redirect_path: str | None = None
     required_scopes: list[str] | None = None
     timeout_seconds: int | None = None
+
+    @field_validator("required_scopes", mode="before")
+    @classmethod
+    def _parse_scopes(cls, v):
+        return parse_scopes(v)
 
 
 class AzureTokenVerifier(TokenVerifier):

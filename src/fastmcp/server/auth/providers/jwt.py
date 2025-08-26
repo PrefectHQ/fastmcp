@@ -11,12 +11,13 @@ from authlib.jose import JsonWebKey, JsonWebToken
 from authlib.jose.errors import JoseError
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
-from pydantic import AnyHttpUrl, SecretStr
+from pydantic import AnyHttpUrl, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing_extensions import TypedDict
 
 from fastmcp.server.auth import AccessToken, TokenVerifier
 from fastmcp.server.auth.registry import register_provider
+from fastmcp.utilities.auth import parse_scopes
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import NotSet, NotSetT
 
@@ -154,6 +155,11 @@ class JWTVerifierSettings(BaseSettings):
     audience: str | list[str] | None = None
     required_scopes: list[str] | None = None
     resource_server_url: AnyHttpUrl | str | None = None
+
+    @field_validator("required_scopes", mode="before")
+    @classmethod
+    def _parse_scopes(cls, v):
+        return parse_scopes(v)
 
 
 @register_provider("JWT")

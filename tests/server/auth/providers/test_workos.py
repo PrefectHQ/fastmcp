@@ -26,7 +26,14 @@ class TestWorkOSProvider:
         assert provider._upstream_client_secret.get_secret_value() == "secret_test456"
         assert str(provider.base_url) == "https://myserver.com/"
 
-    def test_init_with_env_vars(self):
+    @pytest.mark.parametrize(
+        "scopes_env",
+        [
+            "openid,email",
+            '["openid", "email"]',
+        ],
+    )
+    def test_init_with_env_vars(self, scopes_env):
         """Test WorkOSProvider initialization from environment variables."""
         with patch.dict(
             os.environ,
@@ -35,7 +42,7 @@ class TestWorkOSProvider:
                 "FASTMCP_SERVER_AUTH_WORKOS_CLIENT_SECRET": "env_secret",
                 "FASTMCP_SERVER_AUTH_WORKOS_AUTHKIT_DOMAIN": "https://env.authkit.app",
                 "FASTMCP_SERVER_AUTH_WORKOS_BASE_URL": "https://envserver.com",
-                "FASTMCP_SERVER_AUTH_WORKOS_REQUIRED_SCOPES": '["openid", "email"]',
+                "FASTMCP_SERVER_AUTH_WORKOS_REQUIRED_SCOPES": scopes_env,
             },
         ):
             provider = WorkOSProvider()
@@ -43,6 +50,10 @@ class TestWorkOSProvider:
             assert provider._upstream_client_id == "env_client"
             assert provider._upstream_client_secret.get_secret_value() == "env_secret"
             assert str(provider.base_url) == "https://envserver.com/"
+            assert provider._token_validator.required_scopes == [
+                "openid",
+                "email",
+            ]
 
     def test_init_missing_client_id_raises_error(self):
         """Test that missing client_id raises ValueError."""
