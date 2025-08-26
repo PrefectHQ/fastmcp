@@ -2,7 +2,10 @@
 
 import json
 import logging
+from collections.abc import Callable
 from typing import Any
+
+import pydantic_core
 
 from .middleware import CallNext, Middleware, MiddlewareContext
 
@@ -111,6 +114,7 @@ class StructuredLoggingMiddleware(Middleware):
         log_level: int = logging.INFO,
         include_payloads: bool = False,
         methods: list[str] | None = None,
+        serializer: Callable[[Any], Any] | None = None,
     ):
         """Initialize structured logging middleware.
 
@@ -119,11 +123,33 @@ class StructuredLoggingMiddleware(Middleware):
             log_level: Log level for messages (default: INFO)
             include_payloads: Whether to include message payloads in logs
             methods: List of methods to log. If None, logs all methods.
+            serializer: Optional callable to convert objects to JSON-serializable
+                values when logging. Defaults to a safe converter that tries
+                pydantic_core.to_jsonable_python and falls back to str.
         """
         self.logger = logger or logging.getLogger("fastmcp.structured")
         self.log_level = log_level
         self.include_payloads = include_payloads
         self.methods = methods
+        self.serializer = serializer
+
+    def _json_default(self, obj: Any) -> Any:
+        """Default converter for json.dumps to handle non-serializable objects.
+
+        Tries a user-provided serializer first, then pydantic conversion, then str.
+        """
+        if self.serializer is not None:
+            try:
+                return self.serializer(obj)
+            except Exception:
+                pass
+        try:
+            return pydantic_core.to_jsonable_python(obj)
+        except Exception:
+            try:
+                return str(obj)
+            except Exception:
+                return "<non-serializable>"
 
     def _create_log_entry(
         self, context: MiddlewareContext, event: str, **extra_fields
@@ -152,7 +178,9 @@ class StructuredLoggingMiddleware(Middleware):
         if self.methods and context.method not in self.methods:
             return await call_next(context)
 
-        self.logger.log(self.log_level, json.dumps(start_entry, default=str))
+        self.logger.log(
+            self.log_level, json.dumps(start_entry, default=self._json_default)
+        )
 
         try:
             result = await call_next(context)
@@ -162,7 +190,9 @@ class StructuredLoggingMiddleware(Middleware):
                 "request_success",
                 result_type=type(result).__name__ if result else None,
             )
-            self.logger.log(self.log_level, json.dumps(success_entry, default=str))
+            self.logger.log(
+                self.log_level, json.dumps(success_entry, default=self._json_default)
+            )
 
             return result
         except Exception as e:
@@ -172,5 +202,7 @@ class StructuredLoggingMiddleware(Middleware):
                 error_type=type(e).__name__,
                 error_message=str(e),
             )
-            self.logger.log(logging.ERROR, json.dumps(error_entry, default=str))
+            self.logger.log(
+                logging.ERROR, json.dumps(error_entry, default=self._json_default)
+            )
             raise
