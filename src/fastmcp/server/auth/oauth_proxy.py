@@ -474,9 +474,8 @@ class OAuthProxy(OAuthProvider):
             query_params["scope"] = " ".join(scopes_to_use)
 
         # Build the upstream authorization URL
-        upstream_url = (
-            f"{self._upstream_authorization_endpoint}?{urlencode(query_params)}"
-        )
+        separator = "&" if "?" in self._upstream_authorization_endpoint else "?"
+        upstream_url = f"{self._upstream_authorization_endpoint}{separator}{urlencode(query_params)}"
 
         logger.debug(
             "Starting OAuth transaction %s for client %s, redirecting to IdP",

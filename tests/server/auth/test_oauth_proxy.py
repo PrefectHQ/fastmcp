@@ -114,6 +114,46 @@ class TestOAuthProxyComprehensive:
         )
         assert proxy2._redirect_path == "/auth/callback"
 
+    async def test_authorize_url_with_ampersand_separator(self, jwt_verifier):
+        """Test that authorize builds URLs with & separator when upstream endpoint has existing query parameters."""
+        # Test case: upstream endpoint with existing query parameters
+        proxy = OAuthProxy(
+            upstream_authorization_endpoint="https://auth.example.com/authorize?version=2.0",
+            upstream_token_endpoint="https://auth.example.com/token",
+            upstream_client_id="client-123",
+            upstream_client_secret="secret-456",
+            token_verifier=jwt_verifier,
+            base_url="https://myserver.com",
+        )
+
+        client = OAuthClientInformationFull(
+            client_id="test-client",
+            client_secret="test-secret",
+            redirect_uris=[AnyUrl("http://localhost:54321/callback")],
+        )
+
+        params = AuthorizationParams(
+            redirect_uri=AnyUrl("http://localhost:54321/callback"),
+            redirect_uri_provided_explicitly=True,
+            state="client-state",
+            code_challenge="challenge",
+            scopes=["read"],
+        )
+
+        # Should use "&" separator
+        redirect_url = await proxy.authorize(client, params)
+        parsed = urlparse(redirect_url)
+        query_params = parse_qs(parsed.query)
+
+        assert parsed.scheme == "https"
+        assert parsed.netloc == "auth.example.com"
+        assert parsed.path == "/authorize"
+        # Params in the original url are kept
+        assert "version" in query_params
+        assert query_params["version"] == ["2.0"]
+        # New params added correctly
+        assert query_params["response_type"] == ["code"]
+
     def test_dcr_always_enabled(self, jwt_verifier):
         """Test that DCR is always enabled for OAuth Proxy."""
         proxy = OAuthProxy(
