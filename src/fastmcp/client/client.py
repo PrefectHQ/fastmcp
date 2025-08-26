@@ -337,22 +337,15 @@ class Client(Generic[ClientTransportT]):
                 await fresh_client.call_tool("some_tool", {})
             ```
         """
-        # Warn if using stdio transport - it may cause race conditions
         from .transports import StdioTransport
-
-        if isinstance(self.transport, StdioTransport):
-            logger.warning(
-                "Creating new client instance for stdio transport. This may cause "
-                "race conditions as stdio servers have only one session. Consider "
-                "reusing the same client instance instead."
-            )
 
         new_client = copy.copy(self)
 
-        # Reset session state to fresh state
-        new_client._session_state = ClientSessionState()
+        if not isinstance(self.transport, StdioTransport):
+            # Reset session state to fresh state
+            new_client._session_state = ClientSessionState()
 
-        new_client.name += f":{secrets.token_hex(2)}"
+        new_client.name += f":{secrets.token_hex(nbytes=2)}"
 
         return new_client
 
@@ -403,6 +396,7 @@ class Client(Generic[ClientTransportT]):
                 self._session_state.session_task is None
                 or self._session_state.session_task.done()
             )
+
             if need_to_start:
                 if self._session_state.nesting_counter != 0:
                     raise RuntimeError(
@@ -428,6 +422,7 @@ class Client(Generic[ClientTransportT]):
                     ) from exception
 
             self._session_state.nesting_counter += 1
+
         return self
 
     async def _disconnect(self, force: bool = False):
@@ -802,7 +797,7 @@ class Client(Generic[ClientTransportT]):
         Raises:
             RuntimeError: If called while the client is not connected.
         """
-        logger.debug(f"[{self.name}] called list_tools")
+        logger.debug(f"[{self.name}] called list_tools: {self.session._client_info}")
 
         result = await self.session.list_tools()
         return result

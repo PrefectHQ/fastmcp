@@ -243,6 +243,50 @@ async def test_multi_client(tmp_path: Path):
         assert result_2.data == 3
 
 
+async def test_multi_client_parallel_calls(tmp_path: Path):
+    server_script = inspect.cleandoc("""
+        from fastmcp import FastMCP
+
+        mcp = FastMCP()
+
+        @mcp.tool
+        def add(a: int, b: int) -> int:
+            return a + b
+
+        if __name__ == '__main__':
+            mcp.run()
+        """)
+
+    script_path = tmp_path / "test.py"
+    script_path.write_text(server_script)
+
+    config = {
+        "mcpServers": {
+            "test_1": {
+                "command": "python",
+                "args": [str(script_path)],
+            },
+            "test_2": {
+                "command": "python",
+                "args": [str(script_path)],
+            },
+        }
+    }
+
+    client = Client(config)
+
+    async with client:
+        _ = await client.list_tools()
+
+        tasks = [client.list_tools() for _ in range(40)]
+
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        exceptions = [result for result in results if isinstance(result, Exception)]
+        assert len(exceptions) == 0
+        assert len(results) == 40
+        assert all(len(result) == 2 for result in results)
+
+
 @pytest.mark.skipif(
     running_under_debugger() or sys.platform.startswith("win32"),
     reason="Debugger holds a reference to the transport; Windows has process lifecycle issues",
