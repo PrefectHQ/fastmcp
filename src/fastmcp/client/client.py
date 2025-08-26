@@ -337,6 +337,15 @@ class Client(Generic[ClientTransportT]):
                 await fresh_client.call_tool("some_tool", {})
             ```
         """
+        # Warn if using stdio transport - it may cause race conditions
+        from .transports import StdioTransport
+
+        if isinstance(self.transport, StdioTransport):
+            logger.warning(
+                "Creating new client instance for stdio transport. This may cause "
+                "race conditions as stdio servers have only one session. Consider "
+                "reusing the same client instance instead."
+            )
 
         new_client = copy.copy(self)
 

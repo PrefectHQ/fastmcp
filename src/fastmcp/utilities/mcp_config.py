@@ -51,6 +51,16 @@ def mcp_server_type_to_servers_and_transports(
         client: ProxyClient[StreamableHttpTransport | SSETransport | StdioTransport] = (
             ProxyClient(transport=transport, name=client_name)
         )
-        server = FastMCP.as_proxy(name=server_name, backend=client)
+
+        # For stdio transports, create a client factory that reuses the same client
+        # to prevent race conditions from multiple initialization attempts
+        if isinstance(transport, StdioTransport):
+
+            def stdio_client_factory():
+                return client  # Reuse the same client instance
+
+            server = FastMCPProxy(name=server_name, client_factory=stdio_client_factory)
+        else:
+            server = FastMCP.as_proxy(name=server_name, backend=client)
 
     return name, server, transport
