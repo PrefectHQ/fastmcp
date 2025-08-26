@@ -216,7 +216,7 @@ class TestStructuredLoggingMiddleware:
     async def test_on_message_with_resource_template_in_payload(
         self, mock_context, mock_call_next, caplog
     ):
-        """Ensure ResourceTemplate in payload serializes via default=str without errors."""
+        """Ensure ResourceTemplate in payload serializes via pydantic conversion without errors."""
         from fastmcp.resources import ResourceTemplate
 
         template = ResourceTemplate(
@@ -239,8 +239,63 @@ class TestStructuredLoggingMiddleware:
         start_entry = json.loads(log_lines[0])
         assert start_entry["event"] == "request_start"
         assert "template" in start_entry["payload"]
-        # After json.loads, default=str ensures complex object became a JSON string
-        assert isinstance(start_entry["payload"]["template"], str)
+        # With pydantic conversion, complex object becomes a JSONable dict
+        assert isinstance(start_entry["payload"]["template"], dict)
+        assert start_entry["payload"]["template"]["uri_template"] == "tmpl://{id}"
+
+    async def test_on_message_with_nonserializable_payload_falls_back_to_str(
+        self, mock_context, mock_call_next, caplog
+    ):
+        """Ensure non-JSONable objects fall back to string serialization in payload."""
+
+        class NonSerializable:
+            def __str__(self) -> str:
+                return "NON_SERIALIZABLE"
+
+        mock_context.message.__dict__["obj"] = NonSerializable()
+
+        middleware = StructuredLoggingMiddleware(include_payloads=True)
+
+        with caplog.at_level(logging.INFO):
+            result = await middleware.on_message(mock_context, mock_call_next)
+
+        assert result == "test_result"
+
+        log_lines = [record.message for record in caplog.records]
+        assert len(log_lines) >= 2
+        start_entry = json.loads(log_lines[0])
+        assert start_entry["event"] == "request_start"
+        assert start_entry["payload"]["obj"] == "NON_SERIALIZABLE"
+
+    async def test_on_message_with_custom_serializer_applied(
+        self, mock_context, mock_call_next, caplog
+    ):
+        """Ensure a custom serializer is used for non-JSONable payloads."""
+
+        class CustomType:
+            pass
+
+        def custom_serializer(o):
+            if isinstance(o, CustomType):
+                return "CUSTOM:CustomType"
+            raise TypeError("unsupported")
+
+        mock_context.message.__dict__["special"] = CustomType()
+
+        middleware = StructuredLoggingMiddleware(
+            include_payloads=True, serializer=custom_serializer
+        )
+
+        with caplog.at_level(logging.INFO):
+            result = await middleware.on_message(mock_context, mock_call_next)
+
+        assert result == "test_result"
+
+        log_lines = [record.message for record in caplog.records]
+        assert len(log_lines) >= 2
+        start_entry = json.loads(log_lines[0])
+        assert start_entry["event"] == "request_start"
+        assert start_entry["payload"]["special"] == "CUSTOM:CustomType"
 
 
 @pytest.fixture
