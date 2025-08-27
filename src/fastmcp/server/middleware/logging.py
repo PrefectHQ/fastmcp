@@ -5,7 +5,7 @@ import logging
 from collections.abc import Callable
 from typing import Any
 
-import pydantic_core
+from fastmcp.tools.tool import default_serializer
 
 from .middleware import CallNext, Middleware, MiddlewareContext
 
@@ -114,7 +114,7 @@ class StructuredLoggingMiddleware(Middleware):
         log_level: int = logging.INFO,
         include_payloads: bool = False,
         methods: list[str] | None = None,
-        serializer: Callable[[Any], Any] | None = None,
+        serializer: Callable[[Any], str] | None = None,
     ):
         """Initialize structured logging middleware.
 
@@ -123,48 +123,14 @@ class StructuredLoggingMiddleware(Middleware):
             log_level: Log level for messages (default: INFO)
             include_payloads: Whether to include message payloads in logs
             methods: List of methods to log. If None, logs all methods.
-            serializer: Optional callable to convert objects to JSON-serializable
-                values when logging. Defaults to a safe converter that tries
-                pydantic_core.to_jsonable_python and falls back to str.
+            serializer: Callable that converts objects to a JSON string for the
+                payload. If not provided, uses FastMCP's default tool serializer.
         """
         self.logger = logger or logging.getLogger("fastmcp.structured")
         self.log_level = log_level
         self.include_payloads = include_payloads
         self.methods = methods
-        self.serializer = serializer
-
-    def _normalize(self, value: Any) -> Any:
-        """Normalize a Python object to a JSON-serializable value.
-
-        Order: custom serializer → primitives → mappings/sequences (recursive)
-        → pydantic conversion → str fallback.
-        """
-        if self.serializer is not None:
-            try:
-                value = self.serializer(value)
-            except Exception:
-                pass
-
-        if value is None or isinstance(value, (str, int, float, bool)):  # noqa: UP038
-            return value
-
-        if isinstance(value, dict):
-            return {str(k): self._normalize(v) for k, v in value.items()}
-
-        if isinstance(value, (list, tuple, set)):  # noqa: UP038
-            return [self._normalize(v) for v in list(value)]
-
-        try:
-            converted = pydantic_core.to_jsonable_python(value)
-            if converted is not value:
-                return self._normalize(converted)
-        except Exception:
-            pass
-
-        try:
-            return str(value)
-        except Exception:
-            return "<non-serializable>"
+        self.serializer = serializer or default_serializer
 
     def _create_log_entry(
         self, context: MiddlewareContext, event: str, **extra_fields
@@ -186,7 +152,12 @@ class StructuredLoggingMiddleware(Middleware):
                 else context.message
             )
 
-            entry["payload"] = self._normalize(payload_obj)
+            try:
+                payload_str = self.serializer(payload_obj)
+            except Exception:
+                payload_str = default_serializer(payload_obj)
+
+            entry["payload"] = payload_str
 
         return entry
 

@@ -2,6 +2,7 @@
 
 import json
 import logging
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -137,8 +138,8 @@ class TestStructuredLoggingMiddleware:
         """Test creating log entry with payload."""
         middleware = StructuredLoggingMiddleware(include_payloads=True)
         entry = middleware._create_log_entry(mock_context, "test_event")
-
-        assert entry["payload"] == {"param": "value"}
+        assert isinstance(entry["payload"], str)
+        assert json.loads(entry["payload"]) == {"param": "value"}
 
     def test_create_log_entry_with_extra_fields(self, mock_context):
         """Test creating log entry with extra fields."""
@@ -211,7 +212,8 @@ class TestStructuredLoggingMiddleware:
         start_entry = json.loads(log_lines[0])
 
         assert start_entry["event"] == "request_start"
-        assert start_entry["payload"]["url"] == "test://example/1"
+        payload = json.loads(start_entry["payload"])
+        assert payload["url"] == "test://example/1"
 
     async def test_on_message_with_resource_template_in_payload(
         self, mock_context, mock_call_next, caplog
@@ -238,10 +240,10 @@ class TestStructuredLoggingMiddleware:
         assert len(log_lines) == 2
         start_entry = json.loads(log_lines[0])
         assert start_entry["event"] == "request_start"
-        assert "template" in start_entry["payload"]
-        # With pydantic conversion, complex object becomes a JSONable dict
-        assert isinstance(start_entry["payload"]["template"], dict)
-        assert start_entry["payload"]["template"]["uri_template"] == "tmpl://{id}"
+        payload = json.loads(start_entry["payload"])
+        assert "template" in payload
+        assert isinstance(payload["template"], dict)
+        assert payload["template"]["uri_template"] == "tmpl://{id}"
 
     async def test_on_message_with_nonserializable_payload_falls_back_to_str(
         self, mock_context, mock_call_next, caplog
@@ -265,22 +267,19 @@ class TestStructuredLoggingMiddleware:
         assert len(log_lines) >= 2
         start_entry = json.loads(log_lines[0])
         assert start_entry["event"] == "request_start"
-        assert start_entry["payload"]["obj"] == "NON_SERIALIZABLE"
+        payload = json.loads(start_entry["payload"])
+        assert payload["obj"] == "NON_SERIALIZABLE"
 
     async def test_on_message_with_custom_serializer_applied(
         self, mock_context, mock_call_next, caplog
     ):
         """Ensure a custom serializer is used for non-JSONable payloads."""
 
-        class CustomType:
-            pass
+        # Provide a serializer that replaces entire payload with a fixed string
+        def custom_serializer(_: Any) -> str:
+            return "CUSTOM_PAYLOAD"
 
-        def custom_serializer(o):
-            if isinstance(o, CustomType):
-                return "CUSTOM:CustomType"
-            raise TypeError("unsupported")
-
-        mock_context.message.__dict__["special"] = CustomType()
+        mock_context.message.__dict__["special"] = object()
 
         middleware = StructuredLoggingMiddleware(
             include_payloads=True, serializer=custom_serializer
@@ -295,7 +294,7 @@ class TestStructuredLoggingMiddleware:
         assert len(log_lines) >= 2
         start_entry = json.loads(log_lines[0])
         assert start_entry["event"] == "request_start"
-        assert start_entry["payload"]["special"] == "CUSTOM:CustomType"
+        assert start_entry["payload"] == "CUSTOM_PAYLOAD"
 
 
 @pytest.fixture
