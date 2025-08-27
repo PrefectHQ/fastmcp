@@ -246,7 +246,7 @@ class TestInstallCursor:
             file=Path("/path/to/server.py"),
             server_object="custom_app",
             name="test-server",
-            with_editable=editable_path,
+            with_editable=[editable_path],
         )
 
         assert result is True
@@ -328,7 +328,7 @@ class TestCursorCommand:
             file=Path("server.py"),
             server_object=None,
             name="test-server",
-            with_editable=None,
+            with_editable=[],
             with_packages=[],
             env_vars={},
             python_version=None,

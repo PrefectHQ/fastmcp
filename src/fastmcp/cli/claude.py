@@ -34,7 +34,7 @@ def update_claude_config(
     file_spec: str,
     server_name: str,
     *,
-    with_editable: Path | None = None,
+    with_editable: list[Path] | None = None,
     with_packages: list[str] | None = None,
     env_vars: dict[str, str] | None = None,
 ) -> bool:
@@ -43,7 +43,7 @@ def update_claude_config(
     Args:
         file_spec: Path to the server file, optionally with :object suffix
         server_name: Name for the server in Claude's config
-        with_editable: Optional directory to install in editable mode
+        with_editable: Optional list of directories to install in editable mode
         with_packages: Optional list of additional packages to install
         env_vars: Optional dictionary of environment variables. These are merged with
             any existing variables, with new values taking precedence.
@@ -101,7 +101,7 @@ def update_claude_config(
         # Build uv run command using Environment.build_uv_args()
         env_config = Environment(
             dependencies=deduplicated_packages,
-            editable=[str(with_editable)] if with_editable else None,
+            editable=[str(p) for p in with_editable] if with_editable else None,
         )
         args = env_config.build_uv_args()
 
