@@ -509,6 +509,42 @@ class TestInspectCommand:
         # Output is parsed as a Path object
         assert bound.arguments["output"] == output_file
 
+    async def test_inspect_command_text_summary(self, tmp_path, capsys):
+        """Test inspect command with no format shows text summary."""
+        # Create a real server file
+        server_file = tmp_path / "test_server.py"
+        server_file.write_text("""
+import fastmcp
+
+mcp = fastmcp.FastMCP("InspectTestServer", instructions="Test instructions", version="1.0.0")
+
+@mcp.tool
+def test_tool(x: int) -> int:
+    return x * 2
+""")
+
+        # Parse and execute the command without format or output
+        command, bound, _ = app.parse_args(
+            [
+                "inspect",
+                str(server_file),
+            ]
+        )
+
+        await command(**bound.arguments)
+
+        # Check the console output
+        captured = capsys.readouterr()
+        # Check for the table format output
+        assert "InspectTestServer" in captured.out
+        assert "Test instructions" in captured.out
+        assert "1.0.0" in captured.out
+        assert "Tools" in captured.out
+        assert "1" in captured.out  # number of tools
+        assert "FastMCP" in captured.out
+        assert "MCP" in captured.out
+        assert "Use --format [fastmcp|mcp] for complete JSON output" in captured.out
+
     async def test_inspect_command_with_real_server(self, tmp_path):
         """Test inspect command with a real server file."""
         # Create a real server file
@@ -529,11 +565,13 @@ def test_prompt(name: str) -> str:
 
         output_file = tmp_path / "inspect_output.json"
 
-        # Parse and execute the command
+        # Parse and execute the command with format and output file
         command, bound, _ = app.parse_args(
             [
                 "inspect",
                 str(server_file),
+                "--format",
+                "fastmcp",
                 "--output",
                 str(output_file),
             ]
@@ -545,7 +583,10 @@ def test_prompt(name: str) -> str:
         assert output_file.exists()
         content = output_file.read_text()
 
-        # Basic checks that the inspection worked
-        assert "InspectTestServer" in content
-        assert "test_tool" in content
-        assert "test_prompt" in content
+        # Basic checks that the fastmcp format worked
+        import json
+
+        data = json.loads(content)
+        assert data["server"]["name"] == "InspectTestServer"
+        assert len(data["tools"]) == 1
+        assert len(data["prompts"]) == 1

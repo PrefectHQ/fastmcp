@@ -51,6 +51,7 @@ def mcp_server_type_to_servers_and_transports(
         client: ProxyClient[StreamableHttpTransport | SSETransport | StdioTransport] = (
             ProxyClient(transport=transport, name=client_name)
         )
+
         server = FastMCP.as_proxy(name=server_name, backend=client)
 
     return name, server, transport

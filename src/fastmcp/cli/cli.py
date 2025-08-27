@@ -13,7 +13,7 @@ from typing import Annotated, Literal
 
 import cyclopts
 import pyperclip
-from pydantic import TypeAdapter, ValidationError
+from pydantic import ValidationError
 from rich.console import Console
 from rich.table import Table
 
@@ -21,7 +21,13 @@ import fastmcp
 from fastmcp.cli import run as run_module
 from fastmcp.cli.install import install_app
 from fastmcp.server.server import FastMCP
-from fastmcp.utilities.inspect import FastMCPInfo, inspect_fastmcp
+from fastmcp.utilities.fastmcp_config import Environment, FastMCPConfig
+from fastmcp.utilities.fastmcp_config.v1.sources.filesystem import FileSystemSource
+from fastmcp.utilities.inspect import (
+    InspectFormat,
+    format_info,
+    inspect_fastmcp,
+)
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import get_cached_typeadapter
 
@@ -298,8 +304,6 @@ async def dev(
             inspector_cmd += f"@{inspector_version}"
 
         # Create Environment object from CLI args
-        from fastmcp.utilities.fastmcp_config import Environment
-
         env_config = Environment(
             python=python,
             dependencies=with_packages if with_packages else None,
@@ -618,13 +622,20 @@ async def run(
 async def inspect(
     server_spec: str | None = None,
     *,
+    format: Annotated[
+        InspectFormat | None,
+        cyclopts.Parameter(
+            name=["--format", "-f"],
+            help="Output format: fastmcp (FastMCP-specific) or mcp (MCP protocol). Required when using -o.",
+        ),
+    ] = None,
     output: Annotated[
-        Path,
+        Path | None,
         cyclopts.Parameter(
             name=["--output", "-o"],
-            help="Output file path for the JSON report (default: server-info.json)",
+            help="Output file path for the JSON report. If not specified, outputs to stdout when format is provided.",
         ),
-    ] = Path("server-info.json"),
+    ] = None,
     python: Annotated[
         str | None,
         cyclopts.Parameter(
@@ -654,18 +665,31 @@ async def inspect(
             help="Requirements file to install dependencies from",
         ),
     ] = None,
+    skip_env: Annotated[
+        bool,
+        cyclopts.Parameter(
+            "--skip-env",
+            help="Skip environment configuration (for internal use when already in a uv environment)",
+            negative="",
+        ),
+    ] = False,
 ) -> None:
-    """Inspect an MCP server and generate a JSON report.
+    """Inspect an MCP server and display information or generate a JSON report.
 
-    This command analyzes an MCP server and generates a comprehensive JSON report
-    containing information about the server's name, instructions, version, tools,
-    prompts, resources, templates, and capabilities.
+    This command analyzes an MCP server. Without flags, it displays a text summary.
+    Use --format to output complete JSON data.
 
     Examples:
+        # Show text summary
         fastmcp inspect server.py
-        fastmcp inspect server.py -o report.json
-        fastmcp inspect server.py:mcp -o analysis.json
-        fastmcp inspect path/to/server.py:app -o /tmp/server-info.json
+
+        # Output FastMCP format JSON to stdout
+        fastmcp inspect server.py --format fastmcp
+
+        # Save MCP protocol format to file (format required with -o)
+        fastmcp inspect server.py --format mcp -o manifest.json
+
+        # Inspect from fastmcp.json configuration
         fastmcp inspect fastmcp.json
         fastmcp inspect  # auto-detect fastmcp.json
 
@@ -674,11 +698,6 @@ async def inspect(
     """
     # Convert None to empty lists for list parameters
     with_packages = with_packages or []
-    from pathlib import Path
-
-    from fastmcp.utilities.fastmcp_config import FastMCPConfig
-    from fastmcp.utilities.fastmcp_config.v1.sources.filesystem import FileSystemSource
-
     config = None
     config_path = None
 
@@ -748,14 +767,15 @@ async def inspect(
         source = FileSystemSource(path=server_spec)
         config = FastMCPConfig(source=source)
 
-    # Check if we need to use uv run
-    needs_uv = python or with_packages or with_requirements or project
-    if not needs_uv and config and config.environment:
-        needs_uv = config.environment.needs_uv()
+    # Check if we need to use uv run (skip if --skip-env is set)
+    needs_uv = False
+    if not skip_env:
+        needs_uv = python or with_packages or with_requirements or project
+        if not needs_uv and config and config.environment:
+            needs_uv = config.environment.needs_uv()
 
     if needs_uv:
         # Build and run uv command
-        from fastmcp.utilities.fastmcp_config import Environment
 
         # Create or update environment config
         env_config = Environment(
@@ -769,9 +789,14 @@ async def inspect(
             "fastmcp",
             "inspect",
             server_spec,
-            "--output",
-            str(output),
+            "--skip-env",  # Prevent infinite loop when calling through uv
         ]
+
+        # Add format and output flags if specified
+        if format:
+            inspect_command.extend(["--format", format.value])
+        if output:
+            inspect_command.extend(["--output", str(output)])
         env_config.run_with_uv(inspect_command)
         return  # run_with_uv exits the process
 
@@ -779,7 +804,8 @@ async def inspect(
         "Inspecting server",
         extra={
             "server_spec": server_spec,
-            "output": str(output),
+            "format": format,
+            "output": str(output) if output else None,
         },
     )
 
@@ -787,29 +813,76 @@ async def inspect(
         # Load the server using the config
         server = await config.source.load_server()
 
-        # Get server information - using native async support
+        # Get basic server information
         info = await inspect_fastmcp(server)
 
-        info_json = TypeAdapter(FastMCPInfo).dump_json(info, indent=2)
+        # Check for invalid combination
+        if output and not format:
+            console.print(
+                "[bold red]Error:[/bold red] --format is required when using -o/--output"
+            )
+            console.print(
+                "[dim]Use --format fastmcp or --format mcp to specify the output format[/dim]"
+            )
+            sys.exit(1)
 
-        # Ensure output directory exists
-        output.parent.mkdir(parents=True, exist_ok=True)
+        # If no format specified, show text summary
+        if format is None:
+            # Display text summary
+            console.print()
 
-        # Write JSON report (always pretty-printed)
-        with output.open("w", encoding="utf-8") as f:
-            f.write(info_json.decode("utf-8"))
+            # Server section
+            console.print("[bold]Server[/bold]")
+            console.print(f"  Name:         {info.name}")
+            if info.version:
+                console.print(f"  Version:      {info.version}")
+            console.print(f"  Generation:   {info.server_generation}")
+            if info.instructions:
+                console.print(f"  Instructions: {info.instructions}")
+            console.print()
 
-        logger.info(f"Server inspection complete. Report saved to {output}")
+            # Components section
+            console.print("[bold]Components[/bold]")
+            console.print(f"  Tools:        {len(info.tools)}")
+            console.print(f"  Prompts:      {len(info.prompts)}")
+            console.print(f"  Resources:    {len(info.resources)}")
+            console.print(f"  Templates:    {len(info.templates)}")
+            console.print()
 
-        # Print summary to console
-        console.print(
-            f"[bold green]✓[/bold green] Inspected server: [bold]{info.name}[/bold]"
-        )
-        console.print(f"  Tools: {len(info.tools)}")
-        console.print(f"  Prompts: {len(info.prompts)}")
-        console.print(f"  Resources: {len(info.resources)}")
-        console.print(f"  Templates: {len(info.templates)}")
-        console.print(f"  Report saved to: [cyan]{output}[/cyan]")
+            # Environment section
+            console.print("[bold]Environment[/bold]")
+            console.print(f"  FastMCP:      {info.fastmcp_version}")
+            console.print(f"  MCP:          {info.mcp_version}")
+            console.print()
+
+            console.print(
+                "[dim]Use --format \\[fastmcp|mcp] for complete JSON output[/dim]"
+            )
+            return
+
+        # Generate formatted JSON output
+        formatted_json = await format_info(server, format, info)
+
+        # Output to file or stdout
+        if output:
+            # Ensure output directory exists
+            output.parent.mkdir(parents=True, exist_ok=True)
+
+            # Write JSON report
+            with output.open("wb") as f:
+                f.write(formatted_json)
+
+            logger.info(f"Server inspection complete. Report saved to {output}")
+
+            # Print confirmation to console
+            console.print(
+                f"[bold green]✓[/bold green] Server inspection saved to: [cyan]{output}[/cyan]"
+            )
+            console.print(f"  Server: [bold]{info.name}[/bold]")
+            console.print(f"  Format: {format.value}")
+        else:
+            # Output JSON to stdout
+            console.print(formatted_json.decode("utf-8"))
 
     except Exception as e:
         logger.error(

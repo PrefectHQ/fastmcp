@@ -11,7 +11,7 @@ Choose based on your WorkOS setup and authentication requirements.
 from __future__ import annotations
 
 import httpx
-from pydantic import AnyHttpUrl, SecretStr
+from pydantic import AnyHttpUrl, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from starlette.responses import JSONResponse
 from starlette.routing import Route
@@ -20,6 +20,7 @@ from fastmcp.server.auth import AccessToken, RemoteAuthProvider, TokenVerifier
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from fastmcp.server.auth.providers.jwt import JWTVerifier
 from fastmcp.server.auth.registry import register_provider
+from fastmcp.utilities.auth import parse_scopes
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import NotSet, NotSetT
 
@@ -42,6 +43,11 @@ class WorkOSProviderSettings(BaseSettings):
     redirect_path: str | None = None
     required_scopes: list[str] | None = None
     timeout_seconds: int | None = None
+
+    @field_validator("required_scopes", mode="before")
+    @classmethod
+    def _parse_scopes(cls, v):
+        return parse_scopes(v)
 
 
 class WorkOSTokenVerifier(TokenVerifier):
@@ -254,6 +260,11 @@ class AuthKitProviderSettings(BaseSettings):
     authkit_domain: AnyHttpUrl
     base_url: AnyHttpUrl
     required_scopes: list[str] | None = None
+
+    @field_validator("required_scopes", mode="before")
+    @classmethod
+    def _parse_scopes(cls, v):
+        return parse_scopes(v)
 
 
 @register_provider("AUTHKIT")

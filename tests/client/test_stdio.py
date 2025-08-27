@@ -7,7 +7,7 @@ import weakref
 import psutil
 import pytest
 
-from fastmcp import Client
+from fastmcp import Client, FastMCP
 from fastmcp.client.transports import PythonStdioTransport, StdioTransport
 
 
@@ -22,6 +22,44 @@ def gc_collect_harder():
     gc.collect()
     gc.collect()
     gc.collect()
+
+
+class TestParallelCalls:
+    @pytest.fixture
+    def stdio_script(self, tmp_path):
+        script = inspect.cleandoc('''
+            import os
+            from fastmcp import FastMCP
+
+            mcp = FastMCP()
+
+            @mcp.tool
+            def pid() -> int:
+                """Gets PID of server"""
+                return os.getpid()
+
+            if __name__ == "__main__":
+                mcp.run()
+            ''')
+        script_file = tmp_path / "stdio.py"
+        script_file.write_text(script)
+        return script_file
+
+    async def test_parallel_calls(self, stdio_script):
+        backend_transport = PythonStdioTransport(script_path=stdio_script)
+        backend_client = Client(transport=backend_transport)
+
+        proxy = FastMCP.as_proxy(backend=backend_client, name="PROXY")
+
+        count = 10
+
+        tasks = [proxy.get_tools() for _ in range(count)]
+
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        assert len(results) == count
+        errors = [result for result in results if isinstance(result, Exception)]
+        assert len(errors) == 0
 
 
 class TestKeepAlive:
