@@ -133,23 +133,38 @@ class StructuredLoggingMiddleware(Middleware):
         self.methods = methods
         self.serializer = serializer
 
-    def _json_default(self, obj: Any) -> Any:
-        """Default converter for json.dumps to handle non-serializable objects.
+    def _normalize(self, value: Any) -> Any:
+        """Normalize a Python object to a JSON-serializable value.
 
-        Tries a user-provided serializer first, then pydantic conversion, then str.
+        Order: custom serializer → primitives → mappings/sequences (recursive)
+        → pydantic conversion → str fallback.
         """
         if self.serializer is not None:
             try:
-                return self.serializer(obj)
+                value = self.serializer(value)
             except Exception:
                 pass
+
+        if value is None or isinstance(value, (str, int, float, bool)):  # noqa: UP038
+            return value
+
+        if isinstance(value, dict):
+            return {str(k): self._normalize(v) for k, v in value.items()}
+
+        if isinstance(value, (list, tuple, set)):  # noqa: UP038
+            return [self._normalize(v) for v in list(value)]
+
         try:
-            return pydantic_core.to_jsonable_python(obj)
+            converted = pydantic_core.to_jsonable_python(value)
+            if converted is not value:
+                return self._normalize(converted)
         except Exception:
-            try:
-                return str(obj)
-            except Exception:
-                return "<non-serializable>"
+            pass
+
+        try:
+            return str(value)
+        except Exception:
+            return "<non-serializable>"
 
     def _create_log_entry(
         self, context: MiddlewareContext, event: str, **extra_fields
@@ -164,11 +179,14 @@ class StructuredLoggingMiddleware(Middleware):
             **extra_fields,
         }
 
-        if self.include_payloads and hasattr(context.message, "__dict__"):
-            try:
-                entry["payload"] = context.message.__dict__
-            except (TypeError, ValueError):
-                entry["payload"] = "<non-serializable>"
+        if self.include_payloads:
+            payload_obj = (
+                context.message.__dict__
+                if hasattr(context.message, "__dict__")
+                else context.message
+            )
+
+            entry["payload"] = self._normalize(payload_obj)
 
         return entry
 
@@ -178,9 +196,7 @@ class StructuredLoggingMiddleware(Middleware):
         if self.methods and context.method not in self.methods:
             return await call_next(context)
 
-        self.logger.log(
-            self.log_level, json.dumps(start_entry, default=self._json_default)
-        )
+        self.logger.log(self.log_level, json.dumps(start_entry))
 
         try:
             result = await call_next(context)
@@ -190,9 +206,7 @@ class StructuredLoggingMiddleware(Middleware):
                 "request_success",
                 result_type=type(result).__name__ if result else None,
             )
-            self.logger.log(
-                self.log_level, json.dumps(success_entry, default=self._json_default)
-            )
+            self.logger.log(self.log_level, json.dumps(success_entry))
 
             return result
         except Exception as e:
@@ -202,7 +216,5 @@ class StructuredLoggingMiddleware(Middleware):
                 error_type=type(e).__name__,
                 error_message=str(e),
             )
-            self.logger.log(
-                logging.ERROR, json.dumps(error_entry, default=self._json_default)
-            )
+            self.logger.log(logging.ERROR, json.dumps(error_entry))
             raise
