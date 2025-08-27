@@ -54,6 +54,7 @@ from .transports import (
     PythonStdioTransport,
     SessionKwargs,
     SSETransport,
+    StdioTransport,
     StreamableHttpTransport,
     infer_transport,
 )
@@ -337,15 +338,13 @@ class Client(Generic[ClientTransportT]):
                 await fresh_client.call_tool("some_tool", {})
             ```
         """
-        from .transports import StdioTransport
-
         new_client = copy.copy(self)
 
         if not isinstance(self.transport, StdioTransport):
             # Reset session state to fresh state
             new_client._session_state = ClientSessionState()
 
-        new_client.name += f":{secrets.token_hex(nbytes=2)}"
+        new_client.name += f":{secrets.token_hex(2)}"
 
         return new_client
 
