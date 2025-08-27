@@ -54,6 +54,7 @@ from .transports import (
     PythonStdioTransport,
     SessionKwargs,
     SSETransport,
+    StdioTransport,
     StreamableHttpTransport,
     infer_transport,
 )
@@ -337,11 +338,11 @@ class Client(Generic[ClientTransportT]):
                 await fresh_client.call_tool("some_tool", {})
             ```
         """
-
         new_client = copy.copy(self)
 
-        # Reset session state to fresh state
-        new_client._session_state = ClientSessionState()
+        if not isinstance(self.transport, StdioTransport):
+            # Reset session state to fresh state
+            new_client._session_state = ClientSessionState()
 
         new_client.name += f":{secrets.token_hex(2)}"
 
@@ -394,6 +395,7 @@ class Client(Generic[ClientTransportT]):
                 self._session_state.session_task is None
                 or self._session_state.session_task.done()
             )
+
             if need_to_start:
                 if self._session_state.nesting_counter != 0:
                     raise RuntimeError(
@@ -419,6 +421,7 @@ class Client(Generic[ClientTransportT]):
                     ) from exception
 
             self._session_state.nesting_counter += 1
+
         return self
 
     async def _disconnect(self, force: bool = False):
