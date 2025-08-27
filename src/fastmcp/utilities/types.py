@@ -13,7 +13,6 @@ from typing import (
     Any,
     Protocol,
     TypeAlias,
-    TypeVar,
     Union,
     get_args,
     get_origin,
@@ -23,8 +22,9 @@ from typing import (
 import mcp.types
 from mcp.types import Annotations, ContentBlock, ModelPreferences, SamplingMessage
 from pydantic import AnyUrl, BaseModel, ConfigDict, Field, TypeAdapter, UrlConstraints
+from typing_extensions import TypeVar
 
-T = TypeVar("T")
+T = TypeVar("T", default=Any)
 
 # sentinel values for optional arguments
 NotSet = ...

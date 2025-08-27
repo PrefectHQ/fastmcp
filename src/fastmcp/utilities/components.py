@@ -1,15 +1,15 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Annotated, Any, TypedDict, TypeVar
+from typing import Annotated, Any, TypedDict
 
 from pydantic import BeforeValidator, Field, PrivateAttr
-from typing_extensions import Self
+from typing_extensions import Self, TypeVar
 
 import fastmcp
 from fastmcp.utilities.types import FastMCPBaseModel
 
-T = TypeVar("T")
+T = TypeVar("T", default=Any)
 
 
 class FastMCPMeta(TypedDict, total=False):

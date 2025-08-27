@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Generic, Literal, TypeVar
+from typing import Any, Generic, Literal
 
 from mcp.server.elicitation import (
     CancelledElicitation,
@@ -10,6 +10,7 @@ from mcp.server.elicitation import (
 from pydantic import BaseModel
 from pydantic.json_schema import GenerateJsonSchema, JsonSchemaValue
 from pydantic_core import core_schema
+from typing_extensions import TypeVar
 
 from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.logging import get_logger
@@ -25,7 +26,7 @@ __all__ = [
 
 logger = get_logger(__name__)
 
-T = TypeVar("T")
+T = TypeVar("T", default=Any)
 
 
 class ElicitationJsonSchema(GenerateJsonSchema):
