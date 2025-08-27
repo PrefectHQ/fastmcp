@@ -78,7 +78,7 @@ class LoggingMiddleware(Middleware):
                     payload = self.payload_serializer(context.message)
                 except Exception as e:
                     self.logger.warning(
-                        f"Failed {str(e)} to serialize payload: {context.type} {context.method} {context.source}."
+                        f"Failed {e} to serialize payload: {context.type} {context.method} {context.source}."
                     )
                     payload = default_serializer(context.message)
 
