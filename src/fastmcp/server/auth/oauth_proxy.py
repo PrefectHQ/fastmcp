@@ -422,6 +422,15 @@ class OAuthProxy(OAuthProvider):
         # Store the ProxyDCRClient using the upstream ID
         self._clients[upstream_id] = proxy_client
 
+        # Log redirect URIs to help users discover what patterns they might need
+        if client_info.redirect_uris:
+            for uri in client_info.redirect_uris:
+                logger.debug(
+                    "Client registered with redirect_uri: %s - if restricting redirect URIs, "
+                    "ensure this pattern is allowed in allowed_client_redirect_uris",
+                    uri,
+                )
+
         logger.debug(
             "Registered client %s with %d redirect URIs",
             upstream_id,

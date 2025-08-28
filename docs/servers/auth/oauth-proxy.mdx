@@ -164,8 +164,8 @@ The `OAuthProxy` class provides the complete proxy implementation:
 
 <ParamField body="allowed_client_redirect_uris" type="list[str] | None">
   List of allowed redirect URI patterns for MCP clients. Patterns support wildcards (e.g., `"http://localhost:*"`, `"https://*.example.com/*"`). 
-  - `None` (default): Only localhost redirect URIs allowed (`http://localhost:*`, `http://127.0.0.1:*`)
-  - Empty list `[]`: All redirect URIs allowed (not recommended for production)
+  - `None` (default): All redirect URIs allowed (for MCP/DCR compatibility)
+  - Empty list `[]`: No redirect URIs allowed
   - Custom list: Only matching patterns allowed
   
   These patterns apply to MCP client loopback redirects, NOT the upstream OAuth app redirect URI.
@@ -230,29 +230,45 @@ The proxy automatically:
 
 ## Client Redirect URI Security
 
-<Warning>
-By default, OAuth Proxy only accepts localhost redirect URIs from MCP clients for security. You can customize this with the `allowed_client_redirect_uris` parameter:
+<Note>
+OAuth Proxy accepts all redirect URIs by default to maintain compatibility with MCP's Dynamic Client Registration (DCR) pattern, where clients register with unpredictable redirect URIs.
+
+If you know which clients will connect, you can restrict redirect URIs using the `allowed_client_redirect_uris` parameter:
 
 ```python
-# Default: localhost only (secure)
+# Default: allow all (for DCR compatibility)
 auth = OAuthProxy(...) 
+
+# Restrict to localhost only
+auth = OAuthProxy(
+    ...,
+    allowed_client_redirect_uris=[
+        "http://localhost:*",
+        "http://127.0.0.1:*"
+    ]
+)
+
+# Allow specific known clients (e.g., Claude.ai)
+auth = OAuthProxy(
+    ...,
+    allowed_client_redirect_uris=[
+        "http://localhost:*",
+        "https://claude.ai/api/mcp/auth_callback"
+    ]
+)
 
 # Custom patterns with wildcards
 auth = OAuthProxy(
     ...,
     allowed_client_redirect_uris=[
         "http://localhost:*",
-        "https://app.example.com/auth/*"
+        "https://*.example.com/auth/*"
     ]
 )
-
-# Allow all (NOT recommended for production)
-auth = OAuthProxy(
-    ...,
-    allowed_client_redirect_uris=[]
-)
 ```
-</Warning>
+
+**Tip:** Check your server logs for debug messages that say "Client registered with redirect_uri" messages to see what redirect URIs your clients are using.
+</Note>
 
 ## Client Compatibility
 

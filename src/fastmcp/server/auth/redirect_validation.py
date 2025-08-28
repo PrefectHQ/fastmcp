@@ -33,8 +33,9 @@ def validate_redirect_uri(
 
     Args:
         redirect_uri: The redirect URI to validate
-        allowed_patterns: List of allowed patterns. If None, defaults to localhost.
-                         If empty list, all URIs are allowed.
+        allowed_patterns: List of allowed patterns. If None, all URIs are allowed (for DCR compatibility).
+                         If empty list, no URIs are allowed.
+                         To restrict to localhost only, explicitly pass DEFAULT_LOCALHOST_PATTERNS.
 
     Returns:
         True if the redirect URI is allowed
@@ -44,15 +45,9 @@ def validate_redirect_uri(
 
     uri_str = str(redirect_uri)
 
-    # If no patterns specified, default to localhost only
+    # If no patterns specified, allow all for DCR compatibility
+    # (clients need to dynamically register with their own redirect URIs)
     if allowed_patterns is None:
-        allowed_patterns = [
-            "http://localhost:*",
-            "http://127.0.0.1:*",
-        ]
-
-    # Empty list means allow all
-    if len(allowed_patterns) == 0:
         return True
 
     # Check if URI matches any allowed pattern
