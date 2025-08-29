@@ -317,6 +317,7 @@ class OAuthProxy(OAuthProvider):
         self._upstream_client_id = upstream_client_id
         self._upstream_client_secret = SecretStr(upstream_client_secret)
         self._upstream_revocation_endpoint = upstream_revocation_endpoint
+        self._default_scope_str = " ".join(self.required_scopes or [])
 
         # Store redirect configuration
         self._redirect_path = (
@@ -376,6 +377,7 @@ class OAuthProxy(OAuthProvider):
                     AnyUrl("http://localhost")
                 ],  # Placeholder, validation uses allowed_patterns
                 grant_types=["authorization_code", "refresh_token"],
+                scope=self._default_scope_str,
                 token_endpoint_auth_method="none",
                 allowed_redirect_uri_patterns=self._allowed_client_redirect_uris,
             )
@@ -415,6 +417,7 @@ class OAuthProxy(OAuthProvider):
             redirect_uris=client_info.redirect_uris or [AnyUrl("http://localhost")],
             grant_types=client_info.grant_types
             or ["authorization_code", "refresh_token"],
+            scope=self._default_scope_str,
             token_endpoint_auth_method="none",
             allowed_redirect_uri_patterns=self._allowed_client_redirect_uris,
         )

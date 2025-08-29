@@ -220,6 +220,7 @@ class TestOAuthProxyComprehensive:
         assert stored_client is not None
         assert stored_client.client_id == "test-client-id"
         assert stored_client.client_secret == "test-client-secret"
+        assert stored_client.scope == "read write"
 
     async def test_register_client_empty_grant_types(self, oauth_proxy):
         """Test client registration with empty grant types."""
@@ -266,6 +267,7 @@ class TestOAuthProxyComprehensive:
         assert len(temp_client.redirect_uris) >= 1
         # ProxyDCRClient uses a placeholder URL but accepts any localhost URI
         assert str(temp_client.redirect_uris[0]) == "http://localhost/"
+        assert temp_client.scope == "read write"
 
         # Test that it accepts any localhost redirect URI
         from pydantic import AnyUrl
@@ -378,6 +380,20 @@ class TestOAuthProxyComprehensive:
 
         # Proxy should NOT add any scopes - providers handle their own defaults
         assert "scope" not in query_params
+
+    async def test_client_scope_empty_when_no_required_scopes(self):
+        """When required_scopes is None/empty, client scope should be empty string."""
+        proxy = OAuthProxy(
+            upstream_authorization_endpoint="https://auth.example.com/authorize",
+            upstream_token_endpoint="https://auth.example.com/token",
+            upstream_client_id="client-123",
+            upstream_client_secret="secret-456",
+            token_verifier=Mock(required_scopes=None),
+            base_url="https://api.example.com",
+        )
+
+        temp_client = await proxy.get_client("any-client")
+        assert temp_client.scope == ""
 
     async def test_load_authorization_code_valid(self, oauth_proxy):
         """Test loading a valid authorization code."""

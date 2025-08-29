@@ -172,6 +172,33 @@ The `OAuthProxy` class provides the complete proxy implementation:
 </ParamField>
 </Card>
 
+### Dynamic client scope
+
+When `OAuthProxy` creates a dynamic client (`ProxyDCRClient`) during registration or for temporary/unregistered access, it sets the client's `scope` string from your `TokenVerifier.required_scopes` (joined with spaces). If `required_scopes` is empty or `None`, the client's `scope` will be an empty string.
+
+```python
+from fastmcp.server.auth.providers.jwt import JWTVerifier
+from fastmcp.server.auth.oauth_proxy import OAuthProxy
+
+token_verifier = JWTVerifier(
+    jwks_uri="https://provider/.well-known/jwks.json",
+    issuer="https://provider",
+    audience="my-app",
+)
+token_verifier.required_scopes = ["read", "write"]
+
+auth = OAuthProxy(
+    upstream_authorization_endpoint="https://provider/authorize",
+    upstream_token_endpoint="https://provider/token",
+    upstream_client_id="cid",
+    upstream_client_secret="secret",
+    token_verifier=token_verifier,
+    base_url="https://your-server.com",
+)
+
+# Any dynamic client created by the proxy will have scope "read write"
+```
+
 ```python
 from fastmcp import FastMCP
 from fastmcp.server.auth import OAuthProxy
