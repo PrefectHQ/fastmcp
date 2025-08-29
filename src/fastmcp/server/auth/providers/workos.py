@@ -167,6 +167,7 @@ class WorkOSProvider(OAuthProxy):
         redirect_path: str | NotSetT = NotSet,
         required_scopes: list[str] | None | NotSetT = NotSet,
         timeout_seconds: int | NotSetT = NotSet,
+        allowed_client_redirect_uris: list[str] | None = None,
     ):
         """Initialize WorkOS OAuth provider.
 
@@ -178,6 +179,8 @@ class WorkOSProvider(OAuthProxy):
             redirect_path: Redirect path configured in WorkOS (defaults to "/auth/callback")
             required_scopes: Required OAuth scopes (no default)
             timeout_seconds: HTTP request timeout for WorkOS API calls
+            allowed_client_redirect_uris: List of allowed redirect URI patterns for MCP clients.
+                If None (default), all URIs are allowed. If empty list, no URIs are allowed.
         """
         settings = WorkOSProviderSettings.model_validate(
             {
@@ -241,6 +244,7 @@ class WorkOSProvider(OAuthProxy):
             base_url=base_url_final,
             redirect_path=redirect_path_final,
             issuer_url=base_url_final,
+            allowed_client_redirect_uris=allowed_client_redirect_uris,
         )
 
         logger.info(

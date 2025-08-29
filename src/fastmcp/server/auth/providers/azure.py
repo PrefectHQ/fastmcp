@@ -160,6 +160,7 @@ class AzureProvider(OAuthProxy):
         redirect_path: str | NotSetT = NotSet,
         required_scopes: list[str] | None | NotSetT = NotSet,
         timeout_seconds: int | NotSetT = NotSet,
+        allowed_client_redirect_uris: list[str] | None = None,
     ):
         """Initialize Azure OAuth provider.
 
@@ -171,6 +172,8 @@ class AzureProvider(OAuthProxy):
             redirect_path: Redirect path configured in Azure (defaults to "/auth/callback")
             required_scopes: Required scopes (defaults to ["User.Read", "email", "openid", "profile"])
             timeout_seconds: HTTP request timeout for Azure API calls
+            allowed_client_redirect_uris: List of allowed redirect URI patterns for MCP clients.
+                If None (default), all URIs are allowed. If empty list, no URIs are allowed.
         """
         settings = AzureProviderSettings.model_validate(
             {
@@ -247,6 +250,7 @@ class AzureProvider(OAuthProxy):
             base_url=base_url_final,
             redirect_path=redirect_path_final,
             issuer_url=base_url_final,
+            allowed_client_redirect_uris=allowed_client_redirect_uris,
         )
 
         logger.info(
