@@ -29,8 +29,9 @@ The choice of importing or mounting depends on your use case and requirements.
 | **Method** | `FastMCP.import_server(server, prefix=None)` | `FastMCP.mount(server, prefix=None)` |
 | **Composition Type** | One-time copy (static) | Live link (dynamic) |
 | **Updates** | Changes to subserver NOT reflected | Changes to subserver immediately reflected |
+| **Performance** | Fast - no runtime delegation | Slower - affected by slowest mounted server |
 | **Prefix** | Optional - omit for original names | Optional - omit for original names |
-| **Best For** | Bundling finalized components | Modular runtime composition |
+| **Best For** | Bundling finalized components, performance-critical setups | Modular runtime composition |
 
 ### Proxy Servers
 
@@ -151,6 +152,10 @@ When importing multiple servers with the same prefix, or no prefix, components f
 ## Mounting (Live Linking)
 
 The `mount()` method creates a **live link** between the `main_mcp` server and the `subserver`. Instead of copying components, requests for components matching the optional `prefix` are **delegated** to the `subserver` at runtime. If no prefix is provided, the subserver's components are accessible without prefixing. When multiple servers are mounted with the same prefix (or no prefix), the most recently mounted server takes precedence for conflicting component names.
+
+<Warning>
+**Performance Impact**: Operations like `list_tools()` will be impacted by the speed of the slowest mounted server. HTTP-based mounted servers can introduce significant latency (300-400ms vs 1-2ms for local tools), and this slowdown affects **all** tools, not just the remote ones. If performance is critical, consider using [`import_server()`](#importing-static-composition) instead, which copies components once at startup rather than delegating requests at runtime.
+</Warning>
 
 ```python
 import asyncio
