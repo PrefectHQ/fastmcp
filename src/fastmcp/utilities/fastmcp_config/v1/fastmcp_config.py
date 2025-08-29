@@ -63,16 +63,16 @@ class Environment(BaseModel):
         examples=[[".", "../my-package"], ["/path/to/package"]],
     )
 
-    def build_uv_args(self, command: str | list[str] | None = None) -> list[str]:
-        """Build uv run arguments from this environment configuration.
+    def build_uv_run_command(self, command: list[str]) -> list[str]:
+        """Build complete uv run command with environment args and command to execute.
 
         Args:
-            command: Optional command to append (string or list of args)
+            command: Command to execute (e.g., ["fastmcp", "run", "server.py"])
 
         Returns:
-            List of arguments for uv run command
+            Complete command ready for subprocess.run, including "uv" prefix
         """
-        args = ["run"]
+        args = ["uv", "run"]
 
         # Add project if specified
         if self.project:
@@ -97,12 +97,8 @@ class Environment(BaseModel):
             for editable_path in self.editable:
                 args.extend(["--with-editable", str(editable_path)])
 
-        # Add the command if provided
-        if command:
-            if isinstance(command, str):
-                args.append(command)
-            else:
-                args.extend(command)
+        # Add the command
+        args.extend(command)
 
         return args
 
@@ -116,14 +112,16 @@ class Environment(BaseModel):
         import sys
 
         # Build the full uv command
-        uv_args = self.build_uv_args(command)
-        cmd = ["uv"] + uv_args
+        cmd = self.build_uv_run_command(command)
+
+        # Set marker to prevent infinite loops when subprocess calls FastMCP again
+        env = os.environ | {"FASTMCP_UV_SPAWNED": "1"}
 
         logger.debug(f"Running command: {' '.join(cmd)}")
 
         try:
             # Run without capturing output so it flows through naturally
-            process = subprocess.run(cmd, check=True)
+            process = subprocess.run(cmd, check=True, env=env)
             sys.exit(process.returncode)
         except subprocess.CalledProcessError as e:
             logger.error(f"Command failed: {e}")

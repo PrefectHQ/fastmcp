@@ -62,9 +62,9 @@ async def process_common_args(
                 config = FastMCPConfig.from_file(config_path)
 
                 # Merge packages from config if not overridden
-                if config.environment and config.environment.dependencies:
+                if config.environment.dependencies:
                     # Merge with CLI packages (CLI takes precedence)
-                    config_packages = list(config.environment.dependencies) or []
+                    config_packages = list(config.environment.dependencies)
                     with_packages = list(set(with_packages + config_packages))
         except (json.JSONDecodeError, ValidationError) as e:
             print(f"[red]Invalid configuration file: {e}[/red]")

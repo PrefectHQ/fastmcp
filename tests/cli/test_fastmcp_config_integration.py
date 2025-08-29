@@ -227,14 +227,14 @@ class TestPathResolution:
             environment={"requirements": "requirements.txt"},  # type: ignore[arg-type]
         )
 
-        # Build UV args
+        # Build UV command
         assert config.environment is not None
-        uv_args = config.environment.build_uv_args(["fastmcp", "run"])
+        uv_cmd = config.environment.build_uv_run_command(["fastmcp", "run"])
 
         # Should include requirements file
-        assert "--with-requirements" in uv_args
-        req_idx = uv_args.index("--with-requirements") + 1
-        assert uv_args[req_idx] == "requirements.txt"
+        assert "--with-requirements" in uv_cmd
+        req_idx = uv_cmd.index("--with-requirements") + 1
+        assert uv_cmd[req_idx] == "requirements.txt"
 
 
 class TestConfigValidation:

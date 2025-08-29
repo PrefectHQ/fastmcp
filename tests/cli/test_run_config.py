@@ -261,13 +261,11 @@ def test_environment_config_path_resolution(tmp_path):
 
     config = load_fastmcp_config(config_file)
 
-    # Check that UV args are built with resolved paths
-    uv_args = config.environment.build_uv_args(["fastmcp", "run", "server.py"])
+    # Check that UV command is built with resolved paths
+    uv_cmd = config.environment.build_uv_run_command(["fastmcp", "run", "server.py"])
 
-    assert "--with-requirements" in uv_args
-    assert "--project" in uv_args
+    assert "--with-requirements" in uv_cmd
+    assert "--project" in uv_cmd
     # Path should be resolved relative to config file
-    req_idx = uv_args.index("--with-requirements") + 1
-    assert (
-        Path(uv_args[req_idx]).is_absolute() or uv_args[req_idx] == "requirements.txt"
-    )
+    req_idx = uv_cmd.index("--with-requirements") + 1
+    assert Path(uv_cmd[req_idx]).is_absolute() or uv_cmd[req_idx] == "requirements.txt"

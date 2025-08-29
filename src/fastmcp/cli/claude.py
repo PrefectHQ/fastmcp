@@ -98,12 +98,11 @@ def update_claude_config(
             if not deduplicated_packages:
                 deduplicated_packages = None
 
-        # Build uv run command using Environment.build_uv_args()
+        # Build uv run command using Environment.build_uv_run_command()
         env_config = Environment(
             dependencies=deduplicated_packages,
             editable=[str(p) for p in with_editable] if with_editable else None,
         )
-        args = env_config.build_uv_args()
 
         # Convert file path to absolute before adding to command
         # Split off any :object suffix first
@@ -113,10 +112,14 @@ def update_claude_config(
         else:
             file_spec = str(Path(file_spec).resolve())
 
-        # Add fastmcp run command
-        args.extend(["fastmcp", "run", file_spec])
+        # Build the full command
+        full_command = env_config.build_uv_run_command(["fastmcp", "run", file_spec])
 
-        server_config: dict[str, Any] = {"command": "uv", "args": args}
+        # Extract command and args for the config
+        server_config: dict[str, Any] = {
+            "command": full_command[0],
+            "args": full_command[1:],
+        }
 
         # Add environment variables if specified
         if env_vars:

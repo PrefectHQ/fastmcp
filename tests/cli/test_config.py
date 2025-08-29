@@ -92,8 +92,8 @@ class TestEnvironment:
         )
         assert config.environment.needs_uv()
 
-    def test_build_uv_args(self):
-        """Test build_uv_args() method."""
+    def test_build_uv_run_command(self):
+        """Test build_uv_run_command() method."""
         config = FastMCPConfig(
             source={"path": "server.py"},
             environment={
@@ -104,23 +104,24 @@ class TestEnvironment:
             },
         )
 
-        args = config.environment.build_uv_args(["fastmcp", "run", "server.py"])
+        cmd = config.environment.build_uv_run_command(["fastmcp", "run", "server.py"])
 
-        assert args[0] == "run"
+        assert cmd[0] == "uv"
+        assert cmd[1] == "run"
         # Python version not added when project is specified (project defines its own Python)
-        assert "--python" not in args
-        assert "3.12" not in args
-        assert "--project" in args
-        assert "." in args
-        assert "--with" in args
-        assert "requests" in args
-        assert "numpy" in args
-        assert "--with-requirements" in args
-        assert "requirements.txt" in args
+        assert "--python" not in cmd
+        assert "3.12" not in cmd
+        assert "--project" in cmd
+        assert "." in cmd
+        assert "--with" in cmd
+        assert "requests" in cmd
+        assert "numpy" in cmd
+        assert "--with-requirements" in cmd
+        assert "requirements.txt" in cmd
         # Command args should be at the end
-        assert "fastmcp" in args[-3:]
-        assert "run" in args[-2:]
-        assert "server.py" in args[-1:]
+        assert "fastmcp" in cmd[-3:]
+        assert "run" in cmd[-2:]
+        assert "server.py" in cmd[-1:]
 
     def test_run_with_uv(self):
         """Test run_with_uv() subprocess execution."""

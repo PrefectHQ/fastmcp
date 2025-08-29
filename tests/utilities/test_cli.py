@@ -3,22 +3,23 @@
 from fastmcp.utilities.fastmcp_config.v1.fastmcp_config import Environment
 
 
-class TestEnvironmentBuildUVArgs:
-    """Test the Environment.build_uv_args() method."""
+class TestEnvironmentBuildUVRunCommand:
+    """Test the Environment.build_uv_run_command() method."""
 
-    def test_build_uv_args_basic(self):
-        """Test building basic uv args with no environment config."""
+    def test_build_uv_run_command_basic(self):
+        """Test building basic uv command with no environment config."""
         env = Environment()
-        args = env.build_uv_args(["fastmcp", "run", "server.py"])
-        expected = ["run", "fastmcp", "run", "server.py"]
-        assert args == expected
+        cmd = env.build_uv_run_command(["fastmcp", "run", "server.py"])
+        expected = ["uv", "run", "fastmcp", "run", "server.py"]
+        assert cmd == expected
 
-    def test_build_uv_args_with_editable(self):
-        """Test building uv args with editable package."""
+    def test_build_uv_run_command_with_editable(self):
+        """Test building uv command with editable package."""
         editable_path = "/path/to/package"
         env = Environment(editable=[editable_path])
-        args = env.build_uv_args(["fastmcp", "run", "server.py"])
+        cmd = env.build_uv_run_command(["fastmcp", "run", "server.py"])
         expected = [
+            "uv",
             "run",
             "--with-editable",
             editable_path,
@@ -26,13 +27,14 @@ class TestEnvironmentBuildUVArgs:
             "run",
             "server.py",
         ]
-        assert args == expected
+        assert cmd == expected
 
-    def test_build_uv_args_with_packages(self):
-        """Test building uv args with additional packages."""
+    def test_build_uv_run_command_with_packages(self):
+        """Test building uv command with additional packages."""
         env = Environment(dependencies=["pkg1", "pkg2"])
-        args = env.build_uv_args(["fastmcp", "run", "server.py"])
+        cmd = env.build_uv_run_command(["fastmcp", "run", "server.py"])
         expected = [
+            "uv",
             "run",
             "--with",
             "pkg1",
@@ -42,13 +44,14 @@ class TestEnvironmentBuildUVArgs:
             "run",
             "server.py",
         ]
-        assert args == expected
+        assert cmd == expected
 
-    def test_build_uv_args_with_python_version(self):
-        """Test building uv args with Python version."""
+    def test_build_uv_run_command_with_python_version(self):
+        """Test building uv command with Python version."""
         env = Environment(python="3.10")
-        args = env.build_uv_args(["fastmcp", "run", "server.py"])
+        cmd = env.build_uv_run_command(["fastmcp", "run", "server.py"])
         expected = [
+            "uv",
             "run",
             "--python",
             "3.10",
@@ -56,14 +59,15 @@ class TestEnvironmentBuildUVArgs:
             "run",
             "server.py",
         ]
-        assert args == expected
+        assert cmd == expected
 
-    def test_build_uv_args_with_requirements(self):
-        """Test building uv args with requirements file."""
+    def test_build_uv_run_command_with_requirements(self):
+        """Test building uv command with requirements file."""
         requirements_path = "/path/to/requirements.txt"
         env = Environment(requirements=requirements_path)
-        args = env.build_uv_args(["fastmcp", "run", "server.py"])
+        cmd = env.build_uv_run_command(["fastmcp", "run", "server.py"])
         expected = [
+            "uv",
             "run",
             "--with-requirements",
             requirements_path,
@@ -71,18 +75,26 @@ class TestEnvironmentBuildUVArgs:
             "run",
             "server.py",
         ]
-        assert args == expected
+        assert cmd == expected
 
-    def test_build_uv_args_with_project(self):
-        """Test building uv args with project directory."""
+    def test_build_uv_run_command_with_project(self):
+        """Test building uv command with project directory."""
         project_path = "/path/to/project"
         env = Environment(project=project_path)
-        args = env.build_uv_args(["fastmcp", "run", "server.py"])
-        expected = ["run", "--project", project_path, "fastmcp", "run", "server.py"]
-        assert args == expected
+        cmd = env.build_uv_run_command(["fastmcp", "run", "server.py"])
+        expected = [
+            "uv",
+            "run",
+            "--project",
+            project_path,
+            "fastmcp",
+            "run",
+            "server.py",
+        ]
+        assert cmd == expected
 
-    def test_build_uv_args_with_everything(self):
-        """Test building uv args with all options."""
+    def test_build_uv_run_command_with_everything(self):
+        """Test building uv command with all options."""
         requirements_path = "/path/to/requirements.txt"
         editable_path = "/local/pkg"
         env = Environment(
@@ -91,8 +103,9 @@ class TestEnvironmentBuildUVArgs:
             requirements=requirements_path,
             editable=[editable_path],
         )
-        args = env.build_uv_args(["fastmcp", "run", "server.py"])
+        cmd = env.build_uv_run_command(["fastmcp", "run", "server.py"])
         expected = [
+            "uv",
             "run",
             "--python",
             "3.10",
@@ -108,23 +121,12 @@ class TestEnvironmentBuildUVArgs:
             "run",
             "server.py",
         ]
-        assert args == expected
+        assert cmd == expected
 
-    def test_build_uv_args_no_command(self):
-        """Test building uv args without command."""
-        env = Environment(dependencies=["pkg1"])
-        args = env.build_uv_args()
-        expected = ["run", "--with", "pkg1"]
-        assert args == expected
+    # Note: These tests are removed because build_uv_run_command now requires a command
+    # and only accepts a list, not optional or string commands
 
-    def test_build_uv_args_with_string_command(self):
-        """Test building uv args with string command."""
-        env = Environment()
-        args = env.build_uv_args("python")
-        expected = ["run", "python"]
-        assert args == expected
-
-    def test_build_uv_args_project_with_extras(self):
+    def test_build_uv_run_command_project_with_extras(self):
         """Test that project flag works with additional dependencies."""
         project_path = "/path/to/project"
         env = Environment(
@@ -133,8 +135,9 @@ class TestEnvironmentBuildUVArgs:
             dependencies=["pandas"],  # Should be added on top of project
             editable=["/pkg"],  # Should be added on top of project
         )
-        args = env.build_uv_args(["fastmcp", "run", "server.py"])
+        cmd = env.build_uv_run_command(["fastmcp", "run", "server.py"])
         expected = [
+            "uv",
             "run",
             "--project",
             project_path,
@@ -146,7 +149,7 @@ class TestEnvironmentBuildUVArgs:
             "run",
             "server.py",
         ]
-        assert args == expected
+        assert cmd == expected
 
 
 class TestEnvironmentNeedsUV:

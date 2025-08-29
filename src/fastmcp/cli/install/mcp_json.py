@@ -63,21 +63,19 @@ def install_mcp_json(
             project=str(project) if project else None,
             editable=[str(p) for p in with_editable] if with_editable else None,
         )
-        args = env_config.build_uv_args()
-
         # Build server spec from parsed components
         if server_object:
             server_spec = f"{file.resolve()}:{server_object}"
         else:
             server_spec = str(file.resolve())
 
-        # Add fastmcp run command
-        args.extend(["fastmcp", "run", server_spec])
+        # Build the full command
+        full_command = env_config.build_uv_run_command(["fastmcp", "run", server_spec])
 
         # Build MCP server configuration
         server_config = {
-            "command": "uv",
-            "args": args,
+            "command": full_command[0],
+            "args": full_command[1:],
         }
 
         # Add environment variables if provided

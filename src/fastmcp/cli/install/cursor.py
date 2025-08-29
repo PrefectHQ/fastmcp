@@ -122,21 +122,19 @@ def install_cursor_workspace(
         project=str(project.resolve()) if project else None,
         editable=[str(p.resolve()) for p in with_editable] if with_editable else None,
     )
-    args = env_config.build_uv_args()
-
     # Build server spec from parsed components
     if server_object:
         server_spec = f"{file.resolve()}:{server_object}"
     else:
         server_spec = str(file.resolve())
 
-    # Add fastmcp run command
-    args.extend(["fastmcp", "run", server_spec])
+    # Build the full command
+    full_command = env_config.build_uv_run_command(["fastmcp", "run", server_spec])
 
     # Create server configuration
     server_config = StdioMCPServer(
-        command="uv",
-        args=args,
+        command=full_command[0],
+        args=full_command[1:],
         env=env_vars or {},
     )
 
@@ -202,16 +200,14 @@ def install_cursor(
         project=str(project.resolve()) if project else None,
         editable=[str(p.resolve()) for p in with_editable] if with_editable else None,
     )
-    args = env_config.build_uv_args()
-
     # Build server spec from parsed components
     if server_object:
         server_spec = f"{file.resolve()}:{server_object}"
     else:
         server_spec = str(file.resolve())
 
-    # Add fastmcp run command
-    args.extend(["fastmcp", "run", server_spec])
+    # Build the full command
+    full_command = env_config.build_uv_run_command(["fastmcp", "run", server_spec])
 
     # If workspace is specified, install to workspace-specific config
     if workspace:
@@ -230,8 +226,8 @@ def install_cursor(
 
     # Create server configuration
     server_config = StdioMCPServer(
-        command="uv",
-        args=args,
+        command=full_command[0],
+        args=full_command[1:],
         env=env_vars or {},
     )
 
