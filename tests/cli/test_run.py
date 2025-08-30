@@ -13,7 +13,7 @@ from fastmcp.client.client import Client
 from fastmcp.client.transports import FastMCPTransport
 from fastmcp.mcp_config import MCPConfig, StdioMCPServer
 from fastmcp.server.server import FastMCP
-from fastmcp.utilities.fastmcp_config.v1.sources.filesystem import FileSystemSource
+from fastmcp.utilities.mcp_server_config.v1.sources.filesystem import FileSystemSource
 
 
 class TestUrlDetection:
@@ -339,7 +339,7 @@ mcp = fastmcp.FastMCP("TestServer")
         from unittest.mock import AsyncMock, patch
 
         from fastmcp.cli.run import run_command
-        from fastmcp.utilities.fastmcp_config.v1.sources.filesystem import (
+        from fastmcp.utilities.mcp_server_config.v1.sources.filesystem import (
             FileSystemSource,
         )
 
@@ -368,7 +368,7 @@ mcp = fastmcp.FastMCP("TestServer")
         from unittest.mock import AsyncMock, patch
 
         from fastmcp.cli.run import run_command
-        from fastmcp.utilities.fastmcp_config.v1.sources.filesystem import (
+        from fastmcp.utilities.mcp_server_config.v1.sources.filesystem import (
             FileSystemSource,
         )
 

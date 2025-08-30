@@ -9,8 +9,8 @@ import cyclopts
 import pyperclip
 from rich import print
 
-from fastmcp.utilities.fastmcp_config import Environment
 from fastmcp.utilities.logging import get_logger
+from fastmcp.utilities.mcp_server_config import Environment
 
 from .shared import process_common_args
 

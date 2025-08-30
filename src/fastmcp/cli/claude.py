@@ -6,8 +6,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from fastmcp.utilities.fastmcp_config import Environment
 from fastmcp.utilities.logging import get_logger
+from fastmcp.utilities.mcp_server_config import Environment
 
 logger = get_logger(__name__)
 

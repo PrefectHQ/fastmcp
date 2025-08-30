@@ -6,8 +6,8 @@ from typing import Any, Literal
 
 from pydantic import Field, field_validator
 
-from fastmcp.utilities.fastmcp_config.v1.sources.base import BaseSource
 from fastmcp.utilities.logging import get_logger
+from fastmcp.utilities.mcp_server_config.v1.sources.base import BaseSource
 
 logger = get_logger(__name__)
 

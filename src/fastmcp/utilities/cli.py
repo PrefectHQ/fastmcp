@@ -14,9 +14,9 @@ from rich.table import Table
 from rich.text import Text
 
 import fastmcp
-from fastmcp.utilities.fastmcp_config import FastMCPConfig
-from fastmcp.utilities.fastmcp_config.v1.sources.filesystem import FileSystemSource
 from fastmcp.utilities.logging import get_logger
+from fastmcp.utilities.mcp_server_config import MCPServerConfig
+from fastmcp.utilities.mcp_server_config.v1.sources.filesystem import FileSystemSource
 from fastmcp.utilities.types import get_cached_typeadapter
 
 if TYPE_CHECKING:
@@ -33,7 +33,7 @@ def is_already_in_uv_subprocess() -> bool:
 def load_and_merge_config(
     server_spec: str | None,
     **cli_overrides,
-) -> tuple[FastMCPConfig, str]:
+) -> tuple[MCPServerConfig, str]:
     """Load config from server_spec and apply CLI overrides.
 
     This consolidates the config parsing logic that was duplicated across
@@ -44,7 +44,7 @@ def load_and_merge_config(
         cli_overrides: CLI arguments that override config values
 
     Returns:
-        Tuple of (FastMCPConfig, resolved_server_spec)
+        Tuple of (MCPServerConfig, resolved_server_spec)
     """
     config = None
     config_path = None
@@ -53,7 +53,7 @@ def load_and_merge_config(
     if server_spec is None:
         config_path = Path("fastmcp.json")
         if not config_path.exists():
-            found_config = FastMCPConfig.find_config()
+            found_config = MCPServerConfig.find_config()
             if found_config:
                 config_path = found_config
             else:
@@ -81,9 +81,9 @@ def load_and_merge_config(
                     # MCPConfig - we don't process these here, just pass through
                     pass
                 else:
-                    # Try to parse as FastMCPConfig
+                    # Try to parse as MCPServerConfig
                     try:
-                        adapter = get_cached_typeadapter(FastMCPConfig)
+                        adapter = get_cached_typeadapter(MCPServerConfig)
                         config = adapter.validate_python(data)
 
                         # Apply deployment settings
@@ -91,7 +91,7 @@ def load_and_merge_config(
                             config.deployment.apply_runtime_settings(config_path)
 
                     except ValidationError:
-                        # Not a valid FastMCPConfig, just pass through
+                        # Not a valid MCPServerConfig, just pass through
                         pass
             except (json.JSONDecodeError, FileNotFoundError):
                 # Not a valid JSON file, just pass through
@@ -100,7 +100,7 @@ def load_and_merge_config(
     # If we don't have a config object yet, create one from filesystem source
     if config is None:
         source = FileSystemSource(path=resolved_spec)
-        config = FastMCPConfig(source=source)
+        config = MCPServerConfig(source=source)
 
     # Convert to dict for immutable transformation
     config_dict = config.model_dump()
@@ -134,7 +134,7 @@ def load_and_merge_config(
         config_dict["deployment"]["args"] = server_args_override
 
     # Create new config from modified dict
-    new_config = FastMCPConfig(**config_dict)
+    new_config = MCPServerConfig(**config_dict)
     return new_config, resolved_spec
 
 

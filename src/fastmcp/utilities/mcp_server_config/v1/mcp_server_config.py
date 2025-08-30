@@ -17,8 +17,8 @@ from typing import TYPE_CHECKING, Any, Literal, overload
 
 from pydantic import BaseModel, Field, field_validator
 
-from fastmcp.utilities.fastmcp_config.v1.sources.filesystem import FileSystemSource
 from fastmcp.utilities.logging import get_logger
+from fastmcp.utilities.mcp_server_config.v1.sources.filesystem import FileSystemSource
 
 logger = get_logger("cli.config")
 
@@ -406,7 +406,7 @@ class Deployment(BaseModel):
         return re.sub(r"\$\{([^}]+)\}", replace_var, value)
 
 
-class FastMCPConfig(BaseModel):
+class MCPServerConfig(BaseModel):
     """Configuration for a FastMCP server.
 
     This configuration file allows you to specify all settings needed to run
@@ -463,7 +463,7 @@ class FastMCPConfig(BaseModel):
         - FileSystemSource instance (passed through)
 
         No string parsing happens here - that's only at CLI boundaries.
-        FastMCPConfig works only with properly typed objects.
+        MCPServerConfig works only with properly typed objects.
         """
         if isinstance(v, FileSystemSource):
             # Already a FileSystemSource instance, return as-is
@@ -510,14 +510,14 @@ class FastMCPConfig(BaseModel):
             raise ValueError("deployment must be a dict, Deployment instance")
 
     @classmethod
-    def from_file(cls, file_path: Path) -> FastMCPConfig:
+    def from_file(cls, file_path: Path) -> MCPServerConfig:
         """Load configuration from a JSON file.
 
         Args:
             file_path: Path to the configuration file
 
         Returns:
-            FastMCPConfig instance
+            MCPServerConfig instance
 
         Raises:
             FileNotFoundError: If the file doesn't exist
@@ -550,7 +550,7 @@ class FastMCPConfig(BaseModel):
         env: dict[str, str] | None = None,
         cwd: str | None = None,
         args: list[str] | None = None,
-    ) -> FastMCPConfig:
+    ) -> MCPServerConfig:
         """Create a config from CLI arguments.
 
         This allows us to have a single code path where everything
@@ -573,7 +573,7 @@ class FastMCPConfig(BaseModel):
             args: Server arguments
 
         Returns:
-            FastMCPConfig instance
+            MCPServerConfig instance
         """
         # Build environment config if any env args provided
         environment = None
@@ -716,7 +716,7 @@ def generate_schema(output_path: Path | str | None = None) -> dict[str, Any] | N
     Returns:
         JSON schema as a dictionary if output_path is None, otherwise None
     """
-    schema = FastMCPConfig.model_json_schema()
+    schema = MCPServerConfig.model_json_schema()
 
     # Add some metadata
     schema["$id"] = FASTMCP_JSON_SCHEMA

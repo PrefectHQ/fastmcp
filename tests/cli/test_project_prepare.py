@@ -6,24 +6,24 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from fastmcp.utilities.fastmcp_config import Environment, FastMCPConfig
-from fastmcp.utilities.fastmcp_config.v1.sources.filesystem import FileSystemSource
+from fastmcp.utilities.mcp_server_config import Environment, MCPServerConfig
+from fastmcp.utilities.mcp_server_config.v1.sources.filesystem import FileSystemSource
 
 
-class TestFastMCPConfigPrepare:
-    """Test the FastMCPConfig.prepare() method."""
+class TestMCPServerConfigPrepare:
+    """Test the MCPServerConfig.prepare() method."""
 
     @patch(
-        "fastmcp.utilities.fastmcp_config.v1.fastmcp_config.FastMCPConfig.prepare_source",
+        "fastmcp.utilities.mcp_server_config.v1.mcp_server_config.MCPServerConfig.prepare_source",
         new_callable=AsyncMock,
     )
     @patch(
-        "fastmcp.utilities.fastmcp_config.v1.fastmcp_config.FastMCPConfig.prepare_environment",
+        "fastmcp.utilities.mcp_server_config.v1.mcp_server_config.MCPServerConfig.prepare_environment",
         new_callable=AsyncMock,
     )
     async def test_prepare_calls_both_methods(self, mock_env, mock_src):
         """Test that prepare() calls both prepare_environment and prepare_source."""
-        config = FastMCPConfig(
+        config = MCPServerConfig(
             source=FileSystemSource(path="server.py"),
             environment=Environment(python="3.10"),
         )
@@ -34,16 +34,16 @@ class TestFastMCPConfigPrepare:
         mock_src.assert_called_once()
 
     @patch(
-        "fastmcp.utilities.fastmcp_config.v1.fastmcp_config.FastMCPConfig.prepare_source",
+        "fastmcp.utilities.mcp_server_config.v1.mcp_server_config.MCPServerConfig.prepare_source",
         new_callable=AsyncMock,
     )
     @patch(
-        "fastmcp.utilities.fastmcp_config.v1.fastmcp_config.FastMCPConfig.prepare_environment",
+        "fastmcp.utilities.mcp_server_config.v1.mcp_server_config.MCPServerConfig.prepare_environment",
         new_callable=AsyncMock,
     )
     async def test_prepare_with_output_dir(self, mock_env, mock_src):
         """Test that prepare() with output_dir calls prepare_environment with it."""
-        config = FastMCPConfig(
+        config = MCPServerConfig(
             source=FileSystemSource(path="server.py"),
             environment=Environment(python="3.10"),
         )
@@ -55,16 +55,16 @@ class TestFastMCPConfigPrepare:
         mock_src.assert_called_once()
 
     @patch(
-        "fastmcp.utilities.fastmcp_config.v1.fastmcp_config.FastMCPConfig.prepare_source",
+        "fastmcp.utilities.mcp_server_config.v1.mcp_server_config.MCPServerConfig.prepare_source",
         new_callable=AsyncMock,
     )
     @patch(
-        "fastmcp.utilities.fastmcp_config.v1.fastmcp_config.FastMCPConfig.prepare_environment",
+        "fastmcp.utilities.mcp_server_config.v1.mcp_server_config.MCPServerConfig.prepare_environment",
         new_callable=AsyncMock,
     )
     async def test_prepare_skip_source(self, mock_env, mock_src):
         """Test that prepare() skips source when skip_source=True."""
-        config = FastMCPConfig(
+        config = MCPServerConfig(
             source=FileSystemSource(path="server.py"),
             environment=Environment(python="3.10"),
         )
@@ -75,16 +75,16 @@ class TestFastMCPConfigPrepare:
         mock_src.assert_not_called()
 
     @patch(
-        "fastmcp.utilities.fastmcp_config.v1.fastmcp_config.FastMCPConfig.prepare_source",
+        "fastmcp.utilities.mcp_server_config.v1.mcp_server_config.MCPServerConfig.prepare_source",
         new_callable=AsyncMock,
     )
     @patch(
-        "fastmcp.utilities.fastmcp_config.v1.fastmcp_config.Environment.prepare",
+        "fastmcp.utilities.mcp_server_config.v1.mcp_server_config.Environment.prepare",
         new_callable=AsyncMock,
     )
     async def test_prepare_no_environment_settings(self, mock_env_prepare, mock_src):
         """Test that prepare() works with default empty environment config."""
-        config = FastMCPConfig(
+        config = MCPServerConfig(
             source=FileSystemSource(path="server.py"),
             # environment defaults to empty Environment()
         )
@@ -188,8 +188,8 @@ class TestEnvironmentPrepare:
 class TestProjectPrepareCommand:
     """Test the CLI project prepare command."""
 
-    @patch("fastmcp.utilities.fastmcp_config.FastMCPConfig.from_file")
-    @patch("fastmcp.utilities.fastmcp_config.FastMCPConfig.find_config")
+    @patch("fastmcp.utilities.mcp_server_config.MCPServerConfig.from_file")
+    @patch("fastmcp.utilities.mcp_server_config.MCPServerConfig.find_config")
     async def test_project_prepare_auto_detect(self, mock_find, mock_from_file):
         """Test project prepare with auto-detected config."""
         from fastmcp.cli.cli import prepare
@@ -220,7 +220,7 @@ class TestProjectPrepareCommand:
         assert "Project prepared successfully" in success_call
 
     @patch("pathlib.Path.exists")
-    @patch("fastmcp.utilities.fastmcp_config.FastMCPConfig.from_file")
+    @patch("fastmcp.utilities.mcp_server_config.MCPServerConfig.from_file")
     async def test_project_prepare_explicit_path(self, mock_from_file, mock_exists):
         """Test project prepare with explicit config path."""
         from fastmcp.cli.cli import prepare
@@ -243,7 +243,7 @@ class TestProjectPrepareCommand:
             output_dir=Path("./test-env"),
         )
 
-    @patch("fastmcp.utilities.fastmcp_config.FastMCPConfig.find_config")
+    @patch("fastmcp.utilities.mcp_server_config.MCPServerConfig.find_config")
     async def test_project_prepare_no_config_found(self, mock_find):
         """Test project prepare when no config is found."""
         from fastmcp.cli.cli import prepare
@@ -280,7 +280,7 @@ class TestProjectPrepareCommand:
         assert "--output-dir parameter is required" in error_msg
 
     @patch("pathlib.Path.exists")
-    @patch("fastmcp.utilities.fastmcp_config.FastMCPConfig.from_file")
+    @patch("fastmcp.utilities.mcp_server_config.MCPServerConfig.from_file")
     async def test_project_prepare_failure(self, mock_from_file, mock_exists):
         """Test project prepare when prepare() fails."""
         from fastmcp.cli.cli import prepare

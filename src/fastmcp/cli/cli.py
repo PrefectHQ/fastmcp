@@ -20,13 +20,13 @@ import fastmcp
 from fastmcp.cli import run as run_module
 from fastmcp.cli.install import install_app
 from fastmcp.server.server import FastMCP
-from fastmcp.utilities.fastmcp_config import Environment, FastMCPConfig
 from fastmcp.utilities.inspect import (
     InspectFormat,
     format_info,
     inspect_fastmcp,
 )
 from fastmcp.utilities.logging import get_logger
+from fastmcp.utilities.mcp_server_config import Environment, MCPServerConfig
 
 logger = get_logger("cli")
 console = Console()
@@ -796,7 +796,7 @@ async def prepare(
 
     # Auto-detect fastmcp.json if not provided
     if config_path is None:
-        found_config = FastMCPConfig.find_config()
+        found_config = MCPServerConfig.find_config()
         if found_config:
             config_path = str(found_config)
             logger.info(f"Using configuration from {config_path}")
@@ -816,7 +816,7 @@ async def prepare(
 
     try:
         # Load the configuration
-        config = FastMCPConfig.from_file(config_file)
+        config = MCPServerConfig.from_file(config_file)
 
         # Prepare environment and source
         await config.prepare(

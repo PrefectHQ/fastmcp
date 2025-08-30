@@ -26,14 +26,14 @@ With the configuration file in place, you can run the server in several ways:
 
 ```bash
 # Auto-detect fastmcp.json in current directory
-cd examples/fastmcp_config_demo
+cd examples/mcp_server_config_demo
 fastmcp run
 
 # Or specify the config file explicitly
-fastmcp run examples/fastmcp_config_demo/fastmcp.json
+fastmcp run examples/mcp_server_config_demo/fastmcp.json
 
 # Or use development mode with the Inspector UI
-fastmcp dev examples/fastmcp_config_demo/fastmcp.json
+fastmcp dev examples/mcp_server_config_demo/fastmcp.json
 ```
 
 ## Benefits

@@ -3,7 +3,7 @@
 import json
 from pathlib import Path
 
-from fastmcp.utilities.fastmcp_config.v1.fastmcp_config import generate_schema
+from fastmcp.utilities.mcp_server_config.v1.mcp_server_config import generate_schema
 
 
 def test_schema_file_matches_pydantic_model():
@@ -14,7 +14,7 @@ def test_schema_file_matches_pydantic_model():
         / "src"
         / "fastmcp"
         / "utilities"
-        / "fastmcp_config"
+        / "mcp_server_config"
         / "v1"
         / "schema.json"
     )
@@ -30,7 +30,7 @@ def test_schema_file_matches_pydantic_model():
     assert file_schema == generated_schema, (
         "The schema.json file does not match the Pydantic model schema. "
         "Please regenerate the schema file by running:\n"
-        'uv run python -c "from fastmcp.utilities.fastmcp_config.v1.fastmcp_config import generate_schema; '
+        'uv run python -c "from fastmcp.utilities.mcp_server_config.v1.mcp_server_config import generate_schema; '
         'import json; print(json.dumps(generate_schema(), indent=2))" > '
         f"{schema_file}"
     )

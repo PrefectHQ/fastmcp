@@ -1,6 +1,6 @@
 """Tests for CLI utility functions."""
 
-from fastmcp.utilities.fastmcp_config.v1.fastmcp_config import Environment
+from fastmcp.utilities.mcp_server_config.v1.mcp_server_config import Environment
 
 
 class TestEnvironmentBuildUVRunCommand:

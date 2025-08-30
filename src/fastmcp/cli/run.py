@@ -11,12 +11,12 @@ from typing import Any, Literal
 from mcp.server.fastmcp import FastMCP as FastMCP1x
 
 from fastmcp.server.server import FastMCP
-from fastmcp.utilities.fastmcp_config import (
-    Environment,
-    FastMCPConfig,
-)
-from fastmcp.utilities.fastmcp_config.v1.sources.filesystem import FileSystemSource
 from fastmcp.utilities.logging import get_logger
+from fastmcp.utilities.mcp_server_config import (
+    Environment,
+    MCPServerConfig,
+)
+from fastmcp.utilities.mcp_server_config.v1.sources.filesystem import FileSystemSource
 
 logger = get_logger("cli.run")
 
@@ -143,16 +143,16 @@ def create_mcp_config_server(mcp_config_path: Path) -> FastMCP[None]:
     return server
 
 
-def load_fastmcp_config(config_path: Path) -> FastMCPConfig:
+def load_mcp_server_config(config_path: Path) -> MCPServerConfig:
     """Load a FastMCP configuration from a fastmcp.json file.
 
     Args:
         config_path: Path to fastmcp.json file
 
     Returns:
-        FastMCPConfig object
+        MCPServerConfig object
     """
-    config = FastMCPConfig.from_file(config_path)
+    config = MCPServerConfig.from_file(config_path)
 
     # Apply runtime settings from deployment config
     config.deployment.apply_runtime_settings(config_path)
@@ -204,7 +204,7 @@ async def run_command(
             server = create_mcp_config_server(config_path)
         else:
             # It's a FastMCP config - load it properly
-            config = load_fastmcp_config(config_path)
+            config = load_mcp_server_config(config_path)
 
             # Merge deployment config with CLI arguments (CLI takes precedence)
             transport = transport or config.deployment.transport
@@ -232,9 +232,9 @@ async def run_command(
 
             logger.debug(f'Found server "{server.name}" from config {config_path}')
     else:
-        # Regular file case - create a FastMCPConfig with FileSystemSource
+        # Regular file case - create a MCPServerConfig with FileSystemSource
         source = FileSystemSource(path=server_spec)
-        config = FastMCPConfig(source=source)
+        config = MCPServerConfig(source=source)
 
         # Prepare source only (environment is handled by uv run)
         await config.prepare_source() if not skip_source else None
