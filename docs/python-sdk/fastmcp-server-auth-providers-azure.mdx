@@ -20,7 +20,7 @@ using the OAuth Proxy pattern for non-DCR OAuth flows.
 Settings for Azure OAuth provider.
 
 
-### `AzureTokenVerifier` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L46" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `AzureTokenVerifier` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L48" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Token verifier for Azure OAuth tokens.
@@ -31,7 +31,7 @@ to get user information and validate the token.
 
 **Methods:**
 
-#### `verify_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L68" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `verify_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L70" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 verify_token(self, token: str) -> AccessToken | None
@@ -40,7 +40,7 @@ verify_token(self, token: str) -> AccessToken | None
 Verify Azure OAuth token by calling Microsoft Graph API.
 
 
-### `AzureProvider` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L118" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `AzureProvider` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L120" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Azure (Microsoft Entra) OAuth provider for FastMCP.

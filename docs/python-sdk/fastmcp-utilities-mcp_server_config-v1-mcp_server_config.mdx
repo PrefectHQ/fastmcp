@@ -15,7 +15,7 @@ command-line arguments.
 
 ## Functions
 
-### `generate_schema` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/mcp_server_config/v1/mcp_server_config.py#L428" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `generate_schema` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/mcp_server_config/v1/mcp_server_config.py#L415" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 generate_schema(output_path: Path | str | None = None) -> dict[str, Any] | None
@@ -38,7 +38,7 @@ validation and auto-completion.
 
 ## Classes
 
-### `Deployment` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/mcp_server_config/v1/mcp_server_config.py#L34" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `Deployment` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/mcp_server_config/v1/mcp_server_config.py#L36" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Configuration for server deployment and runtime settings.
@@ -46,7 +46,7 @@ Configuration for server deployment and runtime settings.
 
 **Methods:**
 
-#### `apply_runtime_settings` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/mcp_server_config/v1/mcp_server_config.py#L83" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `apply_runtime_settings` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/mcp_server_config/v1/mcp_server_config.py#L85" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 apply_runtime_settings(self, config_path: Path | None = None) -> None
@@ -62,7 +62,7 @@ For example: "API_URL": "https://api.${ENVIRONMENT}.example.com"
 will substitute the value of the ENVIRONMENT variable at runtime.
 
 
-### `MCPServerConfig` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/mcp_server_config/v1/mcp_server_config.py#L132" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `MCPServerConfig` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/mcp_server_config/v1/mcp_server_config.py#L134" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Configuration for a FastMCP server.
@@ -73,10 +73,10 @@ a FastMCP server in a declarative format.
 
 **Methods:**
 
-#### `validate_source` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/mcp_server_config/v1/mcp_server_config.py#L181" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `validate_source` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/mcp_server_config/v1/mcp_server_config.py#L183" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-validate_source(cls, v: dict | FileSystemSource) -> FileSystemSource
+validate_source(cls, v: dict | Source) -> SourceType
 ```
 
 Validate and convert source to proper format.
@@ -89,20 +89,18 @@ No string parsing happens here - that's only at CLI boundaries.
 MCPServerConfig works only with properly typed objects.
 
 
-#### `validate_environment` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/mcp_server_config/v1/mcp_server_config.py#L204" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `validate_environment` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/mcp_server_config/v1/mcp_server_config.py#L199" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-validate_environment(cls, v: dict | UVEnvironment) -> UVEnvironment
+validate_environment(cls, v: dict | Any) -> EnvironmentType
 ```
 
-Validate and convert environment to Environment.
+Ensure environment has a type field for discrimination.
 
-Accepts:
-- Environment instance
-- dict that can be converted to Environment
+For backward compatibility, if no type is specified, default to "uv".
 
 
-#### `validate_deployment` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/mcp_server_config/v1/mcp_server_config.py#L220" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `validate_deployment` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/mcp_server_config/v1/mcp_server_config.py#L210" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 validate_deployment(cls, v: dict | Deployment) -> Deployment
@@ -115,7 +113,7 @@ Accepts:
 - dict that can be converted to Deployment
 
 
-#### `from_file` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/mcp_server_config/v1/mcp_server_config.py#L236" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `from_file` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/mcp_server_config/v1/mcp_server_config.py#L223" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 from_file(cls, file_path: Path) -> MCPServerConfig
@@ -135,7 +133,7 @@ Load configuration from a JSON file.
 - `pydantic.ValidationError`: If the configuration is invalid
 
 
-#### `from_cli_args` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/mcp_server_config/v1/mcp_server_config.py#L259" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `from_cli_args` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/mcp_server_config/v1/mcp_server_config.py#L246" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 from_cli_args(cls, source: FileSystemSource, transport: Literal['stdio', 'http', 'sse', 'streamable-http'] | None = None, host: str | None = None, port: int | None = None, path: str | None = None, log_level: Literal['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'] | None = None, python: str | None = None, dependencies: list[str] | None = None, requirements: str | None = None, project: str | None = None, editable: str | None = None, env: dict[str, str] | None = None, cwd: str | None = None, args: list[str] | None = None) -> MCPServerConfig
@@ -166,7 +164,7 @@ goes through a config object.
 - MCPServerConfig instance
 
 
-#### `find_config` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/mcp_server_config/v1/mcp_server_config.py#L336" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `find_config` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/mcp_server_config/v1/mcp_server_config.py#L323" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 find_config(cls, start_path: Path | None = None) -> Path | None
@@ -181,7 +179,7 @@ Find a fastmcp.json file in the specified directory.
 - Path to the configuration file, or None if not found
 
 
-#### `prepare` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/mcp_server_config/v1/mcp_server_config.py#L355" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `prepare` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/mcp_server_config/v1/mcp_server_config.py#L342" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 prepare(self, skip_source: bool = False, output_dir: Path | None = None) -> None
@@ -197,7 +195,7 @@ When output_dir is None, does ephemeral caching (for backwards compatibility).
 - `output_dir`: Directory to create the persistent uv project in (optional)
 
 
-#### `prepare_environment` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/mcp_server_config/v1/mcp_server_config.py#L376" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `prepare_environment` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/mcp_server_config/v1/mcp_server_config.py#L363" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 prepare_environment(self, output_dir: Path | None = None) -> None
@@ -212,7 +210,7 @@ Prepare the Python environment.
 Delegates to the environment's prepare() method
 
 
-#### `prepare_source` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/mcp_server_config/v1/mcp_server_config.py#L387" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `prepare_source` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/mcp_server_config/v1/mcp_server_config.py#L374" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 prepare_source(self) -> None
@@ -223,7 +221,7 @@ Prepare the source for loading.
 Delegates to the source's prepare() method.
 
 
-#### `run_server` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/mcp_server_config/v1/mcp_server_config.py#L394" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `run_server` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/mcp_server_config/v1/mcp_server_config.py#L381" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 run_server(self, **kwargs: Any) -> None
