@@ -6,7 +6,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from fastmcp.utilities.mcp_server_config import Environment, MCPServerConfig
+from fastmcp.utilities.mcp_server_config import MCPServerConfig
+from fastmcp.utilities.mcp_server_config.v1.environments.uv import UVEnvironment
 from fastmcp.utilities.mcp_server_config.v1.sources.filesystem import FileSystemSource
 
 
@@ -25,7 +26,7 @@ class TestMCPServerConfigPrepare:
         """Test that prepare() calls both prepare_environment and prepare_source."""
         config = MCPServerConfig(
             source=FileSystemSource(path="server.py"),
-            environment=Environment(python="3.10"),
+            environment=UVEnvironment(python="3.10"),
         )
 
         await config.prepare()
@@ -45,7 +46,7 @@ class TestMCPServerConfigPrepare:
         """Test that prepare() with output_dir calls prepare_environment with it."""
         config = MCPServerConfig(
             source=FileSystemSource(path="server.py"),
-            environment=Environment(python="3.10"),
+            environment=UVEnvironment(python="3.10"),
         )
 
         output_path = Path("/tmp/test-env")
@@ -66,7 +67,7 @@ class TestMCPServerConfigPrepare:
         """Test that prepare() skips source when skip_source=True."""
         config = MCPServerConfig(
             source=FileSystemSource(path="server.py"),
-            environment=Environment(python="3.10"),
+            environment=UVEnvironment(python="3.10"),
         )
 
         await config.prepare(skip_source=True)
@@ -79,7 +80,7 @@ class TestMCPServerConfigPrepare:
         new_callable=AsyncMock,
     )
     @patch(
-        "fastmcp.utilities.mcp_server_config.v1.mcp_server_config.Environment.prepare",
+        "fastmcp.utilities.mcp_server_config.v1.environments.uv.UVEnvironment.prepare",
         new_callable=AsyncMock,
     )
     async def test_prepare_no_environment_settings(self, mock_env_prepare, mock_src):
@@ -104,7 +105,7 @@ class TestEnvironmentPrepare:
         """Test that prepare() raises error when uv is not installed."""
         mock_which.return_value = None
 
-        env = Environment(python="3.10")
+        env = UVEnvironment(python="3.10")
 
         with pytest.raises(RuntimeError, match="uv is not installed"):
             await env.prepare(tmp_path / "test-env")
@@ -115,7 +116,7 @@ class TestEnvironmentPrepare:
         """Test that prepare() does nothing when no settings are configured."""
         mock_which.return_value = "/usr/bin/uv"
 
-        env = Environment()  # No settings
+        env = UVEnvironment()  # No settings
 
         await env.prepare(tmp_path / "test-env")
 
@@ -131,7 +132,7 @@ class TestEnvironmentPrepare:
             returncode=0, stdout="Environment cached", stderr=""
         )
 
-        env = Environment(python="3.10")
+        env = UVEnvironment(python="3.10")
 
         await env.prepare(tmp_path / "test-env")
 
@@ -150,7 +151,7 @@ class TestEnvironmentPrepare:
         mock_which.return_value = "/usr/bin/uv"
         mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
 
-        env = Environment(dependencies=["numpy", "pandas"])
+        env = UVEnvironment(dependencies=["numpy", "pandas"])
 
         await env.prepare(tmp_path / "test-env")
 
@@ -179,7 +180,7 @@ class TestEnvironmentPrepare:
             1, ["uv"], stderr="Package not found"
         )
 
-        env = Environment(python="3.10")
+        env = UVEnvironment(python="3.10")
 
         with pytest.raises(RuntimeError, match="Failed to initialize project"):
             await env.prepare(tmp_path / "test-env")

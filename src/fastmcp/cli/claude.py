@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from fastmcp.utilities.logging import get_logger
-from fastmcp.utilities.mcp_server_config import Environment
+from fastmcp.utilities.mcp_server_config.v1.environments.uv import UVEnvironment
 
 logger = get_logger(__name__)
 
@@ -99,7 +99,7 @@ def update_claude_config(
                 deduplicated_packages = None
 
         # Build uv run command using Environment.build_uv_run_command()
-        env_config = Environment(
+        env_config = UVEnvironment(
             dependencies=deduplicated_packages,
             editable=[str(p) for p in with_editable] if with_editable else None,
         )
@@ -113,7 +113,7 @@ def update_claude_config(
             file_spec = str(Path(file_spec).resolve())
 
         # Build the full command
-        full_command = env_config.build_uv_run_command(["fastmcp", "run", file_spec])
+        full_command = env_config.build_command(["fastmcp", "run", file_spec])
 
         # Extract command and args for the config
         server_config: dict[str, Any] = {

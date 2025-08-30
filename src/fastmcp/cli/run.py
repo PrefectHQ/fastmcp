@@ -13,9 +13,9 @@ from mcp.server.fastmcp import FastMCP as FastMCP1x
 from fastmcp.server.server import FastMCP
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.mcp_server_config import (
-    Environment,
     MCPServerConfig,
 )
+from fastmcp.utilities.mcp_server_config.v1.environments.uv import UVEnvironment
 from fastmcp.utilities.mcp_server_config.v1.sources.filesystem import FileSystemSource
 
 logger = get_logger("cli.run")
@@ -67,7 +67,7 @@ def run_with_uv(
     """
 
     # Build uv command using Environment.build_uv_run_command()
-    env_config = Environment(
+    env_config = UVEnvironment(
         python=python_version,
         dependencies=with_packages if with_packages else None,
         requirements=str(with_requirements.resolve()) if with_requirements else None,
@@ -97,7 +97,7 @@ def run_with_uv(
         inner_cmd.append("--no-banner")
 
     # Build the full uv command
-    cmd = env_config.build_uv_run_command(inner_cmd)
+    cmd = env_config.build_command(inner_cmd)
 
     # Set marker to prevent infinite loops when subprocess calls FastMCP again
     env = os.environ | {"FASTMCP_UV_SPAWNED": "1"}

@@ -11,7 +11,7 @@ from rich import print
 
 from fastmcp.mcp_config import StdioMCPServer, update_config_file
 from fastmcp.utilities.logging import get_logger
-from fastmcp.utilities.mcp_server_config import Environment
+from fastmcp.utilities.mcp_server_config.v1.environments.uv import UVEnvironment
 
 from .shared import process_common_args
 
@@ -115,7 +115,7 @@ def install_cursor_workspace(
         if not deduplicated_packages:
             deduplicated_packages = None
 
-    env_config = Environment(
+    env_config = UVEnvironment(
         python=python_version,
         dependencies=deduplicated_packages,
         requirements=str(with_requirements.resolve()) if with_requirements else None,
@@ -129,7 +129,7 @@ def install_cursor_workspace(
         server_spec = str(file.resolve())
 
     # Build the full command
-    full_command = env_config.build_uv_run_command(["fastmcp", "run", server_spec])
+    full_command = env_config.build_command(["fastmcp", "run", server_spec])
 
     # Create server configuration
     server_config = StdioMCPServer(
@@ -193,7 +193,7 @@ def install_cursor(
         if not deduplicated_packages:
             deduplicated_packages = None
 
-    env_config = Environment(
+    env_config = UVEnvironment(
         python=python_version,
         dependencies=deduplicated_packages,
         requirements=str(with_requirements.resolve()) if with_requirements else None,
@@ -207,7 +207,7 @@ def install_cursor(
         server_spec = str(file.resolve())
 
     # Build the full command
-    full_command = env_config.build_uv_run_command(["fastmcp", "run", server_spec])
+    full_command = env_config.build_command(["fastmcp", "run", server_spec])
 
     # If workspace is specified, install to workspace-specific config
     if workspace:

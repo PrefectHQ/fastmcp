@@ -4,9 +4,10 @@ This module provides versioned configuration support for FastMCP servers.
 The current version is v1, which is re-exported here for convenience.
 """
 
+from fastmcp.utilities.mcp_server_config.v1.environments.base import Environment
+from fastmcp.utilities.mcp_server_config.v1.environments.uv import UVEnvironment
 from fastmcp.utilities.mcp_server_config.v1.mcp_server_config import (
     Deployment,
-    Environment,
     MCPServerConfig,
     generate_schema,
 )
@@ -17,6 +18,7 @@ __all__ = [
     "BaseSource",
     "Deployment",
     "Environment",
+    "UVEnvironment",
     "MCPServerConfig",
     "FileSystemSource",
     "generate_schema",

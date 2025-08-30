@@ -10,7 +10,7 @@ import pyperclip
 from rich import print
 
 from fastmcp.utilities.logging import get_logger
-from fastmcp.utilities.mcp_server_config import Environment
+from fastmcp.utilities.mcp_server_config.v1.environments.uv import UVEnvironment
 
 from .shared import process_common_args
 
@@ -56,7 +56,7 @@ def install_mcp_json(
             if not deduplicated_packages:
                 deduplicated_packages = None
 
-        env_config = Environment(
+        env_config = UVEnvironment(
             python=python_version,
             dependencies=deduplicated_packages,
             requirements=str(with_requirements) if with_requirements else None,
@@ -70,7 +70,7 @@ def install_mcp_json(
             server_spec = str(file.resolve())
 
         # Build the full command
-        full_command = env_config.build_uv_run_command(["fastmcp", "run", server_spec])
+        full_command = env_config.build_command(["fastmcp", "run", server_spec])
 
         # Build MCP server configuration
         server_config = {

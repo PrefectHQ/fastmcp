@@ -9,9 +9,9 @@ from pydantic import ValidationError
 
 from fastmcp.utilities.mcp_server_config import (
     Deployment,
-    Environment,
     MCPServerConfig,
 )
+from fastmcp.utilities.mcp_server_config.v1.environments.uv import UVEnvironment
 from fastmcp.utilities.mcp_server_config.v1.sources.filesystem import FileSystemSource
 
 
@@ -104,7 +104,7 @@ class TestEnvironment:
             },
         )
 
-        cmd = config.environment.build_uv_run_command(["fastmcp", "run", "server.py"])
+        cmd = config.environment.build_command(["fastmcp", "run", "server.py"])
 
         assert cmd[0] == "uv"
         assert cmd[1] == "run"
@@ -263,7 +263,7 @@ class TestMCPServerConfig:
         assert config.source.path == "server.py"
         assert config.source.entrypoint is None
         # Environment and deployment are now always present but empty
-        assert isinstance(config.environment, Environment)
+        assert isinstance(config.environment, UVEnvironment)
         assert isinstance(config.deployment, Deployment)
         # Check they have no values set
         assert not config.environment.needs_uv()
@@ -289,7 +289,7 @@ class TestMCPServerConfig:
         assert isinstance(config.source, FileSystemSource)
         assert config.source.path == "server.py"
         assert config.source.entrypoint is None
-        assert isinstance(config.environment, Environment)
+        assert isinstance(config.environment, UVEnvironment)
         assert isinstance(config.deployment, Deployment)
 
     def test_from_file(self, tmp_path):
@@ -416,7 +416,7 @@ class TestMCPServerConfig:
         assert isinstance(config.source, FileSystemSource)
         assert config.source.path == "server.py"
         # Environment and deployment are now always present but may be empty
-        assert isinstance(config.environment, Environment)
+        assert isinstance(config.environment, UVEnvironment)
         assert isinstance(config.deployment, Deployment)
 
         # Only environment with values
@@ -434,9 +434,9 @@ class TestMCPServerConfig:
         config = MCPServerConfig(
             source={"path": "server.py"}, deployment={"transport": "http"}
         )
-        assert isinstance(config.environment, Environment)
+        assert isinstance(config.environment, UVEnvironment)
         assert all(
             getattr(config.environment, field, None) is None
-            for field in Environment.model_fields
+            for field in UVEnvironment.model_fields
         )
         assert config.deployment.transport == "http"

@@ -9,9 +9,9 @@ import pytest
 from fastmcp.cli.run import load_mcp_server_config
 from fastmcp.utilities.mcp_server_config import (
     Deployment,
-    Environment,
     MCPServerConfig,
 )
+from fastmcp.utilities.mcp_server_config.v1.environments.uv import UVEnvironment
 from fastmcp.utilities.mcp_server_config.v1.sources.filesystem import FileSystemSource
 
 
@@ -56,7 +56,7 @@ def test_load_mcp_server_config(sample_config, monkeypatch):
         assert isinstance(config, MCPServerConfig)
         assert isinstance(config.source, FileSystemSource)
         assert isinstance(config.deployment, Deployment)
-        assert isinstance(config.environment, Environment)
+        assert isinstance(config.environment, UVEnvironment)
 
         # Check source - path is not resolved yet, only during load_server
         assert config.source.path == "server.py"
@@ -262,7 +262,7 @@ def test_environment_config_path_resolution(tmp_path):
     config = load_mcp_server_config(config_file)
 
     # Check that UV command is built with resolved paths
-    uv_cmd = config.environment.build_uv_run_command(["fastmcp", "run", "server.py"])
+    uv_cmd = config.environment.build_command(["fastmcp", "run", "server.py"])
 
     assert "--with-requirements" in uv_cmd
     assert "--project" in uv_cmd

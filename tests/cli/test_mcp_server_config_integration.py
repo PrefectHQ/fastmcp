@@ -229,7 +229,7 @@ class TestPathResolution:
 
         # Build UV command
         assert config.environment is not None
-        uv_cmd = config.environment.build_uv_run_command(["fastmcp", "run"])
+        uv_cmd = config.environment.build_command(["fastmcp", "run"])
 
         # Should include requirements file
         assert "--with-requirements" in uv_cmd

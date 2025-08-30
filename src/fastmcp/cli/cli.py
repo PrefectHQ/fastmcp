@@ -26,7 +26,8 @@ from fastmcp.utilities.inspect import (
     inspect_fastmcp,
 )
 from fastmcp.utilities.logging import get_logger
-from fastmcp.utilities.mcp_server_config import Environment, MCPServerConfig
+from fastmcp.utilities.mcp_server_config import MCPServerConfig
+from fastmcp.utilities.mcp_server_config.v1.environments.uv import UVEnvironment
 
 logger = get_logger("cli")
 console = Console()
@@ -245,7 +246,7 @@ async def dev(
             env_deps = config.environment.dependencies or []
             all_deps = list(set(env_deps + server.dependencies))
             if not config.environment:
-                config.environment = Environment(dependencies=all_deps)
+                config.environment = UVEnvironment(dependencies=all_deps)
             else:
                 config.environment.dependencies = all_deps
 
@@ -269,7 +270,7 @@ async def dev(
             inspector_cmd += f"@{inspector_version}"
 
         # Use the environment from config (already has CLI overrides applied)
-        uv_cmd = config.environment.build_uv_run_command(
+        uv_cmd = config.environment.build_command(
             ["fastmcp", "run", server_spec, "--no-banner"]
         )
 
@@ -460,7 +461,9 @@ async def run(
     )
 
     # Check if we need to use uv run (but skip if we're already in uv or user said to skip)
-    needs_uv = config.environment.needs_uv() and not skip_env
+    # We check if the environment would modify the command
+    test_cmd = ["test"]
+    needs_uv = config.environment.build_command(test_cmd) != test_cmd and not skip_env
 
     if needs_uv:
         # Use uv run subprocess - always use run_with_uv which handles output correctly
@@ -627,7 +630,9 @@ async def inspect(
         sys.exit(1)
 
     # Check if we need to use uv run (but skip if we're already in uv or user said to skip)
-    needs_uv = config.environment.needs_uv() and not skip_env
+    # We check if the environment would modify the command
+    test_cmd = ["test"]
+    needs_uv = config.environment.build_command(test_cmd) != test_cmd and not skip_env
 
     if needs_uv:
         # Build and run uv command
@@ -643,8 +648,14 @@ async def inspect(
             inspect_command.extend(["--format", format.value])
         if output:
             inspect_command.extend(["--output", str(output)])
-        config.environment.run_with_uv(inspect_command)
-        return  # run_with_uv exits the process
+
+        # Run the command using subprocess
+        import subprocess
+
+        cmd = config.environment.build_command(inspect_command)
+        env = os.environ | {"FASTMCP_UV_SPAWNED": "1"}
+        process = subprocess.run(cmd, check=True, env=env)
+        sys.exit(process.returncode)
 
     logger.debug(
         "Inspecting server",

@@ -27,9 +27,8 @@ class TestRunWithUv:
         cmd = mock_run.call_args[0][0]
         env = mock_run.call_args.kwargs.get("env", {})
 
+        # With no environment config, the command should be returned unchanged
         expected = [
-            "uv",
-            "run",
             "fastmcp",
             "run",
             "server.py",
@@ -150,9 +149,8 @@ class TestRunWithUv:
         assert exc_info.value.code == 0
 
         cmd = mock_run.call_args[0][0]
+        # With no environment config, no uv run prefix
         expected = [
-            "uv",
-            "run",
             "fastmcp",
             "run",
             "server.py",
