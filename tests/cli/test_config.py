@@ -435,8 +435,10 @@ class TestMCPServerConfig:
             source={"path": "server.py"}, deployment={"transport": "http"}
         )
         assert isinstance(config.environment, UVEnvironment)
+        # Check all fields except 'type' which has a default value
         assert all(
             getattr(config.environment, field, None) is None
             for field in UVEnvironment.model_fields
+            if field != "type"
         )
         assert config.deployment.transport == "http"

@@ -3,6 +3,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import Literal
 
 from pydantic import Field
 
@@ -14,6 +15,8 @@ logger = get_logger("cli.config")
 
 class UVEnvironment(Environment):
     """Configuration for Python environment setup."""
+
+    type: Literal["uv"] = "uv"
 
     python: str | None = Field(
         default=None,

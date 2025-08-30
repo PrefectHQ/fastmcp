@@ -7,15 +7,16 @@ from typing import Any, Literal
 from pydantic import Field, field_validator
 
 from fastmcp.utilities.logging import get_logger
-from fastmcp.utilities.mcp_server_config.v1.sources.base import BaseSource
+from fastmcp.utilities.mcp_server_config.v1.sources.base import Source
 
 logger = get_logger(__name__)
 
 
-class FileSystemSource(BaseSource):
+class FileSystemSource(Source):
     """Source for local Python files."""
 
-    type: Literal["filesystem"] = Field(default="filesystem", description="Source type")
+    type: Literal["filesystem"] = "filesystem"
+
     path: str = Field(description="Path to Python file containing the server")
     entrypoint: str | None = Field(
         default=None,

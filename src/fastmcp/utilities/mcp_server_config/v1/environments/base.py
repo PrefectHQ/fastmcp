@@ -1,11 +1,13 @@
 from abc import ABC, abstractmethod
 from pathlib import Path
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class Environment(BaseModel, ABC):
     """Base class for environment configuration."""
+
+    type: str = Field(description="Environment type identifier")
 
     @abstractmethod
     def build_command(self, command: list[str]) -> list[str]:

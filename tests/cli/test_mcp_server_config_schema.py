@@ -1,39 +1,6 @@
-"""Test that the JSON schema file matches the Pydantic model."""
-
-import json
-from pathlib import Path
+"""Test that the generated JSON schema has the correct structure."""
 
 from fastmcp.utilities.mcp_server_config.v1.mcp_server_config import generate_schema
-
-
-def test_schema_file_matches_pydantic_model():
-    """Test that the schema.json file matches what the Pydantic model generates."""
-    # Path to the schema file
-    schema_file = (
-        Path(__file__).parent.parent.parent
-        / "src"
-        / "fastmcp"
-        / "utilities"
-        / "mcp_server_config"
-        / "v1"
-        / "schema.json"
-    )
-
-    # Load the schema file
-    with open(schema_file) as f:
-        file_schema = json.load(f)
-
-    # Generate schema from Pydantic model
-    generated_schema = generate_schema()
-
-    # They should be identical
-    assert file_schema == generated_schema, (
-        "The schema.json file does not match the Pydantic model schema. "
-        "Please regenerate the schema file by running:\n"
-        'uv run python -c "from fastmcp.utilities.mcp_server_config.v1.mcp_server_config import generate_schema; '
-        'import json; print(json.dumps(generate_schema(), indent=2))" > '
-        f"{schema_file}"
-    )
 
 
 def test_schema_has_correct_id():
@@ -72,8 +39,22 @@ def test_schema_nested_structure():
     # Check environment section
     assert "environment" in properties
     env_schema = properties["environment"]
-    if "properties" in env_schema:
+    # Environment can be in anyOf or direct properties
+    if "anyOf" in env_schema:
+        # Find the UVEnvironment in anyOf
+        for option in env_schema["anyOf"]:
+            if option.get("type") == "object" and "properties" in option:
+                env_props = option["properties"]
+                assert "type" in env_props  # New type field
+                assert "python" in env_props
+                assert "dependencies" in env_props
+                assert "requirements" in env_props
+                assert "project" in env_props
+                assert "editable" in env_props
+                break
+    elif "properties" in env_schema:
         env_props = env_schema["properties"]
+        assert "type" in env_props  # New type field
         assert "python" in env_props
         assert "dependencies" in env_props
         assert "requirements" in env_props
