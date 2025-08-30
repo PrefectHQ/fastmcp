@@ -394,6 +394,14 @@
                         "group": "v1",
                         "pages": [
                           "python-sdk/fastmcp-utilities-mcp_server_config-v1-__init__",
+                          {
+                            "group": "environments",
+                            "pages": [
+                              "python-sdk/fastmcp-utilities-mcp_server_config-v1-environments-__init__",
+                              "python-sdk/fastmcp-utilities-mcp_server_config-v1-environments-base",
+                              "python-sdk/fastmcp-utilities-mcp_server_config-v1-environments-uv"
+                            ]
+                          },
                           "python-sdk/fastmcp-utilities-mcp_server_config-v1-mcp_server_config",
                           {
                             "group": "sources",
