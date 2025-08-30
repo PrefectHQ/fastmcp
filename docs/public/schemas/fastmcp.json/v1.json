@@ -168,7 +168,6 @@
         "type": {
           "const": "filesystem",
           "default": "filesystem",
-          "description": "Source type",
           "title": "Type",
           "type": "string"
         },
@@ -200,6 +199,12 @@
     "UVEnvironment": {
       "description": "Configuration for Python environment setup.",
       "properties": {
+        "type": {
+          "const": "uv",
+          "default": "uv",
+          "title": "Type",
+          "type": "string"
+        },
         "python": {
           "anyOf": [
             {
