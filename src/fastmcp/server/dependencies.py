@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, ParamSpec, TypeVar
+from typing import TYPE_CHECKING
 
 from mcp.server.auth.middleware.auth_context import (
     get_access_token as _sdk_get_access_token,
@@ -11,9 +11,6 @@ from fastmcp.server.auth import AccessToken
 
 if TYPE_CHECKING:
     from fastmcp.server.context import Context
-
-P = ParamSpec("P")
-R = TypeVar("R")
 
 __all__ = [
     "get_context",

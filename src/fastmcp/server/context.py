@@ -10,7 +10,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar, Token
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Literal, TypeVar, cast, get_origin, overload
+from typing import Any, Literal, cast, get_origin, overload
 
 from mcp import LoggingLevel, ServerSession
 from mcp.server.lowlevel.helper_types import ReadResourceContents
@@ -31,6 +31,7 @@ from mcp.types import (
 from mcp.types import CreateMessageRequestParams as SamplingParams
 from pydantic.networks import AnyUrl
 from starlette.requests import Request
+from typing_extensions import TypeVar
 
 import fastmcp.server.dependencies
 from fastmcp import settings
@@ -47,7 +48,7 @@ from fastmcp.utilities.types import get_cached_typeadapter
 
 logger = get_logger(__name__)
 
-T = TypeVar("T")
+T = TypeVar("T", default=Any)
 _current_context: ContextVar[Context | None] = ContextVar("context", default=None)  # type: ignore[assignment]
 _flush_lock = asyncio.Lock()
 

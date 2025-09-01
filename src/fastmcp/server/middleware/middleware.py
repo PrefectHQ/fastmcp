@@ -11,11 +11,11 @@ from typing import (
     Generic,
     Literal,
     Protocol,
-    TypeVar,
     runtime_checkable,
 )
 
 import mcp.types as mt
+from typing_extensions import TypeVar
 
 from fastmcp.prompts.prompt import Prompt
 from fastmcp.resources.resource import Resource
@@ -34,8 +34,8 @@ __all__ = [
 logger = logging.getLogger(__name__)
 
 
-T = TypeVar("T")
-R = TypeVar("R", covariant=True)
+T = TypeVar("T", default=Any)
+R = TypeVar("R", covariant=True, default=Any)
 
 
 @runtime_checkable

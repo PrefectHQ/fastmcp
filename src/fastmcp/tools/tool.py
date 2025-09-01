@@ -10,7 +10,6 @@ from typing import (
     Any,
     Generic,
     Literal,
-    TypeVar,
     get_type_hints,
 )
 
@@ -19,6 +18,7 @@ import pydantic_core
 from mcp.types import ContentBlock, TextContent, ToolAnnotations
 from mcp.types import Tool as MCPTool
 from pydantic import Field, PydanticSchemaGenerationError
+from typing_extensions import TypeVar
 
 import fastmcp
 from fastmcp.server.dependencies import get_context
@@ -41,7 +41,7 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
-T = TypeVar("T")
+T = TypeVar("T", default=Any)
 
 
 @dataclass
