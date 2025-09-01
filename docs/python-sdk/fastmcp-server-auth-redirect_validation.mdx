@@ -44,8 +44,9 @@ Validate a redirect URI against allowed patterns.
 
 **Args:**
 - `redirect_uri`: The redirect URI to validate
-- `allowed_patterns`: List of allowed patterns. If None, defaults to localhost.
-             If empty list, all URIs are allowed.
+- `allowed_patterns`: List of allowed patterns. If None, all URIs are allowed (for DCR compatibility).
+             If empty list, no URIs are allowed.
+             To restrict to localhost only, explicitly pass DEFAULT_LOCALHOST_PATTERNS.
 
 **Returns:**
 - True if the redirect URI is allowed

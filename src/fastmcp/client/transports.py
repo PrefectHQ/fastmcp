@@ -36,8 +36,8 @@ from fastmcp.client.auth.oauth import OAuth
 from fastmcp.mcp_config import MCPConfig, infer_transport_type_from_url
 from fastmcp.server.dependencies import get_http_headers
 from fastmcp.server.server import FastMCP
-from fastmcp.utilities.fastmcp_config.v1.fastmcp_config import Environment
 from fastmcp.utilities.logging import get_logger
+from fastmcp.utilities.mcp_server_config.v1.environments.uv import UVEnvironment
 
 logger = get_logger(__name__)
 
@@ -597,7 +597,7 @@ class UvStdioTransport(StdioTransport):
             )
 
         # Create Environment from provided parameters (internal use)
-        env_config = Environment(
+        env_config = UVEnvironment(
             python=python_version,
             dependencies=with_packages,
             requirements=with_requirements,

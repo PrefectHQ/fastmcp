@@ -8,9 +8,9 @@ from dotenv import dotenv_values
 from pydantic import ValidationError
 from rich import print
 
-from fastmcp.utilities.fastmcp_config import FastMCPConfig
-from fastmcp.utilities.fastmcp_config.v1.sources.filesystem import FileSystemSource
 from fastmcp.utilities.logging import get_logger
+from fastmcp.utilities.mcp_server_config import MCPServerConfig
+from fastmcp.utilities.mcp_server_config.v1.sources.filesystem import FileSystemSource
 
 logger = get_logger(__name__)
 
@@ -40,7 +40,7 @@ async def process_common_args(
     # Convert None to empty lists for list parameters
     with_packages = with_packages or []
     env_vars = env_vars or []
-    # Create FastMCPConfig from server_spec
+    # Create MCPServerConfig from server_spec
     config = None
     if server_spec.endswith(".json"):
         config_path = Path(server_spec).resolve()
@@ -58,8 +58,8 @@ async def process_common_args(
                 print("[red]MCPConfig files are not supported for installation[/red]")
                 sys.exit(1)
             else:
-                # It's a FastMCPConfig
-                config = FastMCPConfig.from_file(config_path)
+                # It's a MCPServerConfig
+                config = MCPServerConfig.from_file(config_path)
 
                 # Merge packages from config if not overridden
                 if config.environment.dependencies:
@@ -72,7 +72,7 @@ async def process_common_args(
     else:
         # Create config from file path
         source = FileSystemSource(path=server_spec)
-        config = FastMCPConfig(source=source)
+        config = MCPServerConfig(source=source)
 
     # Extract file and server_object from the source
     # The FileSystemSource handles parsing path:object syntax

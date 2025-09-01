@@ -458,7 +458,7 @@ class TestWindowsSpecific:
         """Test parsing Windows paths with drive letters and colons."""
         from pathlib import Path
 
-        from fastmcp.utilities.fastmcp_config.v1.sources.filesystem import (
+        from fastmcp.utilities.mcp_server_config.v1.sources.filesystem import (
             FileSystemSource,
         )
 

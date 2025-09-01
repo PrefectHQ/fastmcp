@@ -4,6 +4,60 @@ icon: "list-check"
 rss: true
 ---
 
+<Update label="v2.12.0" description="2025-08-31">
+
+**[v2.12.0: Auth to the Races](https://github.com/jlowin/fastmcp/releases/tag/v2.12.0)**
+
+This release introduces major authentication and configuration enhancements that make FastMCP more accessible and powerful for developers working with various identity providers and deployment scenarios.
+
+## OAuth Proxy: Broader Provider Support
+
+The OAuth Proxy bridges the gap for authentication providers that don't support Dynamic Client Registration (DCR), a requirement for standard MCP OAuth flows. This feature enables seamless integration with major platforms that previously required complex workarounds.
+
+**Native integrations now available:**
+- GitHub
+- Google  
+- WorkOS
+- Azure
+
+With the OAuth Proxy, you can authenticate users through these providers with minimal configuration, expanding the ecosystem of supported identity platforms and making FastMCP servers more accessible to enterprise environments.
+
+## Declarative JSON Configuration
+
+The new `fastmcp.json` configuration system establishes a single source of truth for server settings, replacing scattered configuration across multiple files and environment variables.
+
+**Configure everything in one place:**
+- Dependencies and requirements
+- Transport settings
+- Server entrypoints
+- Metadata and descriptions
+- Environment variables
+
+This standardization not only simplifies deployment but also enables portable server descriptions that can be shared and reused across projects. The typed source system provides validation and autocompletion, reducing configuration errors.
+
+## Sampling API Fallback
+
+Not all MCP clients support advanced features like the Sampling API for LLM completions. The new fallback mechanism solves this adoption challenge by allowing servers to generate sampling completions server-side when clients lack support.
+
+This approach:
+- Maintains compatibility with all clients
+- Encourages feature adoption without breaking existing integrations
+- Provides a smooth upgrade path as client capabilities evolve
+
+## Breaking Changes
+- The `inspect` command now provides structured output with format options for better integration with tooling
+
+## Additional Enhancements
+- Improved CLI configuration parsing with better error messages
+- Support for multiple `--with-editable` flags for development workflows
+- Comma-separated OAuth scope support for fine-grained permissions
+- Configurable logging middleware for better debugging
+- Support for importing custom route endpoints
+
+**Full Changelog**: [v2.11.3...v2.12.0](https://github.com/jlowin/fastmcp/compare/v2.11.3...v2.12.0)
+
+</Update>
+
 <Update label="v2.11.3" description="2025-08-11">
 
 **[v2.11.3: API-tite for Change](https://github.com/jlowin/fastmcp/releases/tag/v2.11.3)**

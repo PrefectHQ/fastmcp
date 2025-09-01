@@ -254,45 +254,20 @@ class OAuthProxy(OAuthProvider):
             upstream_client_secret: Client secret for upstream server
             upstream_revocation_endpoint: Optional upstream revocation endpoint
             token_verifier: Token verifier for validating access tokens
-            base_url: Public URL of this FastMCP server
+            base_url: Public URL of the server that exposes this FastMCP server; redirect path is
+                relative to this URL
             redirect_path: Redirect path configured in upstream OAuth app (defaults to "/auth/callback")
             issuer_url: Issuer URL for OAuth metadata (defaults to base_url)
             service_documentation_url: Optional service documentation URL
-            resource_server_url: Resource server URL (defaults to base_url)
+            resource_server_url: Path of the FastMCP server. If None, FastMCP will
+                attempt to overwrite this with the correct path to the server
+                e.g. {base_url}/mcp
             allowed_client_redirect_uris: List of allowed redirect URI patterns for MCP clients.
                 Patterns support wildcards (e.g., "http://localhost:*", "https://*.example.com/*").
                 If None (default), only localhost redirect URIs are allowed.
                 If empty list, all redirect URIs are allowed (not recommended for production).
                 These are for MCP clients performing loopback redirects, NOT for the upstream OAuth app.
         """
-        # Convert string URLs to AnyHttpUrl for parent class
-        base_url_parsed = (
-            AnyHttpUrl(base_url) if isinstance(base_url, str) else base_url
-        )
-        issuer_url_parsed = (
-            (AnyHttpUrl(issuer_url) if isinstance(issuer_url, str) else issuer_url)
-            if issuer_url
-            else None
-        )
-        service_documentation_url_parsed = (
-            (
-                AnyHttpUrl(service_documentation_url)
-                if isinstance(service_documentation_url, str)
-                else service_documentation_url
-            )
-            if service_documentation_url
-            else None
-        )
-        resource_server_url_parsed = (
-            (
-                AnyHttpUrl(resource_server_url)
-                if isinstance(resource_server_url, str)
-                else resource_server_url
-            )
-            if resource_server_url
-            else None
-        )
-
         # Always enable DCR since we implement it locally for MCP clients
         client_registration_options = ClientRegistrationOptions(enabled=True)
 
@@ -302,13 +277,13 @@ class OAuthProxy(OAuthProvider):
         )
 
         super().__init__(
-            base_url=base_url_parsed,
-            issuer_url=issuer_url_parsed,
-            service_documentation_url=service_documentation_url_parsed,
+            base_url=base_url,
+            issuer_url=issuer_url,
+            service_documentation_url=service_documentation_url,
             client_registration_options=client_registration_options,
             revocation_options=revocation_options,
             required_scopes=token_verifier.required_scopes,
-            resource_server_url=resource_server_url_parsed,
+            resource_server_url=resource_server_url,
         )
 
         # Store upstream configuration

@@ -51,6 +51,8 @@ class GitHubProviderSettings(BaseSettings):
     redirect_path: str | None = None
     required_scopes: list[str] | None = None
     timeout_seconds: int | None = None
+    resource_server_url: AnyHttpUrl | str | None = None
+    allowed_client_redirect_uris: list[str] | None = None
 
     @field_validator("required_scopes", mode="before")
     @classmethod
@@ -199,9 +201,10 @@ class GitHubProvider(OAuthProxy):
         client_secret: str | NotSetT = NotSet,
         base_url: AnyHttpUrl | str | NotSetT = NotSet,
         redirect_path: str | NotSetT = NotSet,
-        required_scopes: list[str] | None | NotSetT = NotSet,
+        required_scopes: list[str] | NotSetT = NotSet,
         timeout_seconds: int | NotSetT = NotSet,
-        allowed_client_redirect_uris: list[str] | None = None,
+        resource_server_url: AnyHttpUrl | str | NotSetT = NotSet,
+        allowed_client_redirect_uris: list[str] | NotSetT = NotSet,
     ):
         """Initialize GitHub OAuth provider.
 
@@ -212,6 +215,8 @@ class GitHubProvider(OAuthProxy):
             redirect_path: Redirect path configured in GitHub OAuth app (defaults to "/auth/callback")
             required_scopes: Required GitHub scopes (defaults to ["user"])
             timeout_seconds: HTTP request timeout for GitHub API calls
+            resource_server_url: Path of the FastMCP server (defaults to base_url). If your MCP endpoint is at
+                a different path like {base_url}/mcp, specify it here for RFC 8707 compliance.
             allowed_client_redirect_uris: List of allowed redirect URI patterns for MCP clients.
                 If None (default), all URIs are allowed. If empty list, no URIs are allowed.
         """
@@ -225,6 +230,8 @@ class GitHubProvider(OAuthProxy):
                     "redirect_path": redirect_path,
                     "required_scopes": required_scopes,
                     "timeout_seconds": timeout_seconds,
+                    "resource_server_url": resource_server_url,
+                    "allowed_client_redirect_uris": allowed_client_redirect_uris,
                 }.items()
                 if v is not NotSet
             }
@@ -245,6 +252,8 @@ class GitHubProvider(OAuthProxy):
         redirect_path_final = settings.redirect_path or "/auth/callback"
         timeout_seconds_final = settings.timeout_seconds or 10
         required_scopes_final = settings.required_scopes or ["user"]
+        resource_server_url_final = settings.resource_server_url or base_url_final
+        allowed_client_redirect_uris_final = settings.allowed_client_redirect_uris
 
         # Create GitHub token verifier
         token_verifier = GitHubTokenVerifier(
@@ -267,7 +276,8 @@ class GitHubProvider(OAuthProxy):
             base_url=base_url_final,
             redirect_path=redirect_path_final,
             issuer_url=base_url_final,  # We act as the issuer for client registration
-            allowed_client_redirect_uris=allowed_client_redirect_uris,
+            allowed_client_redirect_uris=allowed_client_redirect_uris_final,
+            resource_server_url=resource_server_url_final,
         )
 
         logger.info(

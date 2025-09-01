@@ -159,7 +159,7 @@ The `OAuthProxy` class provides the complete proxy implementation:
 </ParamField>
 
 <ParamField body="resource_server_url" type="AnyHttpUrl | str | None">
-  Resource server URL (defaults to base_url)
+  Path of the FastMCP server (defaults to base_url). **Important**: This should point to your MCP endpoint path. For example, if your MCP server is accessible at `{base_url}/mcp`, specify `https://your-server.com/mcp` here for proper RFC 8707 compliance.
 </ParamField>
 
 <ParamField body="allowed_client_redirect_uris" type="list[str] | None">
@@ -228,7 +228,10 @@ auth = OAuthProxy(
     base_url="https://your-server.com",
     
     # Optional: customize callback path (defaults to "/auth/callback")
-    redirect_path="/auth/callback"
+    redirect_path="/auth/callback",
+    
+    # Optional: specify MCP endpoint path if different from base_url
+    # resource_server_url="https://your-server.com/mcp"
 )
 
 mcp = FastMCP(name="My Server", auth=auth)
