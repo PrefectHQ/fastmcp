@@ -259,9 +259,7 @@ class OAuthProxy(OAuthProvider):
             redirect_path: Redirect path configured in upstream OAuth app (defaults to "/auth/callback")
             issuer_url: Issuer URL for OAuth metadata (defaults to base_url)
             service_documentation_url: Optional service documentation URL
-            resource_server_url: Path of the FastMCP server. If None, FastMCP will
-                attempt to overwrite this with the correct path to the server
-                e.g. {base_url}/mcp
+            resource_server_url: Path of the FastMCP server.
             allowed_client_redirect_uris: List of allowed redirect URI patterns for MCP clients.
                 Patterns support wildcards (e.g., "http://localhost:*", "https://*.example.com/*").
                 If None (default), only localhost redirect URIs are allowed.

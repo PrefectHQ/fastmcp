@@ -77,7 +77,10 @@ auth_provider = GoogleProvider(
     client_id="123456789.apps.googleusercontent.com",  # Your Google OAuth Client ID
     client_secret="GOCSPX-abc123...",                  # Your Google OAuth Client Secret
     base_url="http://localhost:8000",                  # Must match your OAuth configuration
-    required_scopes=["openid", "email", "profile"],    # Request user information
+    required_scopes=[                                  # Request user information
+        "openid",
+        "https://www.googleapis.com/auth/userinfo.email",
+    ],
     # redirect_path="/auth/callback"                  # Default value, customize if needed
 )
 
@@ -179,7 +182,7 @@ Redirect path configured in your Google OAuth Client
 </ParamField>
 
 <ParamField path="FASTMCP_SERVER_AUTH_GOOGLE_REQUIRED_SCOPES" default="[]">
-Comma-, space-, or JSON-separated list of required Google scopes (e.g., `openid,profile` or `["openid","profile"]`)
+Comma-, space-, or JSON-separated list of required Google scopes (e.g., `"openid,https://www.googleapis.com/auth/userinfo.email"` or `["openid", "https://www.googleapis.com/auth/userinfo.email"]`)
 </ParamField>
 
 <ParamField path="FASTMCP_SERVER_AUTH_GOOGLE_TIMEOUT_SECONDS" default="10">
@@ -196,7 +199,7 @@ FASTMCP_SERVER_AUTH=GOOGLE
 FASTMCP_SERVER_AUTH_GOOGLE_CLIENT_ID=123456789.apps.googleusercontent.com
 FASTMCP_SERVER_AUTH_GOOGLE_CLIENT_SECRET=GOCSPX-abc123...
 FASTMCP_SERVER_AUTH_GOOGLE_BASE_URL=https://your-server.com
-FASTMCP_SERVER_AUTH_GOOGLE_REQUIRED_SCOPES=openid,email,profile
+FASTMCP_SERVER_AUTH_GOOGLE_REQUIRED_SCOPES=openid,https://www.googleapis.com/auth/userinfo.email
 ```
 
 With environment variables set, your server code simplifies to:
