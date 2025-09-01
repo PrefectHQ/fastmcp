@@ -38,6 +38,12 @@ sequenceDiagram
 - **Security**: Acts as a controlled gateway to backend servers
 - **Simplicity**: Single endpoint even if backend location or transport changes
 
+### Performance Considerations
+
+When using proxy servers, especially those connecting to HTTP-based backend servers, be aware that latency can be significant. Operations like `list_tools()` may take hundreds of milliseconds compared to 1-2ms for local tools. When mounting proxy servers, this latency affects all operations on the parent server, not just interactions with the proxied tools.
+
+If low latency is a requirement for your use-case, consider using [`import_server()`](/servers/composition#importing-static-composition) to copy tools at startup rather than proxying them at runtime.
+
 ## Quick Start
 
 <VersionBadge version="2.10.3" />

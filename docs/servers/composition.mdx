@@ -29,8 +29,9 @@ The choice of importing or mounting depends on your use case and requirements.
 | **Method** | `FastMCP.import_server(server, prefix=None)` | `FastMCP.mount(server, prefix=None)` |
 | **Composition Type** | One-time copy (static) | Live link (dynamic) |
 | **Updates** | Changes to subserver NOT reflected | Changes to subserver immediately reflected |
+| **Performance** | Fast - no runtime delegation | Slower - affected by slowest mounted server |
 | **Prefix** | Optional - omit for original names | Optional - omit for original names |
-| **Best For** | Bundling finalized components | Modular runtime composition |
+| **Best For** | Bundling finalized components, performance-critical setups | Modular runtime composition |
 
 ### Proxy Servers
 
@@ -204,6 +205,9 @@ The same prefixing rules apply as with `import_server` for naming tools, resourc
     The `prefix` parameter is optional. If omitted, components are mounted without modification.
 </Tip>
 
+#### Performance Considerations
+
+Due to the "live link", operations like `list_tools()` on the parent server will be impacted by the speed of the slowest mounted server. In particular, HTTP-based mounted servers can introduce significant latency (300-400ms vs 1-2ms for local tools), and this slowdown affects the whole server, not just interactions with the HTTP-proxied tools. If performance is important, importing tools via [`import_server()`](#importing-static-composition) may be a more appropriate solution as it copies components once at startup rather than delegating requests at runtime.
 
 #### Mounting Without Prefixes
 
