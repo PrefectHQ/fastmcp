@@ -1,6 +1,7 @@
 """FastMCP run command implementation with enhanced type hints."""
 
 import json
+import os
 import re
 import subprocess
 import sys
@@ -8,16 +9,14 @@ from pathlib import Path
 from typing import Any, Literal
 
 from mcp.server.fastmcp import FastMCP as FastMCP1x
-from pydantic import ValidationError
 
 from fastmcp.server.server import FastMCP
-from fastmcp.utilities.fastmcp_config import (
-    Environment,
-    FastMCPConfig,
-)
-from fastmcp.utilities.fastmcp_config.v1.sources.filesystem import FileSystemSource
 from fastmcp.utilities.logging import get_logger
-from fastmcp.utilities.types import get_cached_typeadapter
+from fastmcp.utilities.mcp_server_config import (
+    MCPServerConfig,
+)
+from fastmcp.utilities.mcp_server_config.v1.environments.uv import UVEnvironment
+from fastmcp.utilities.mcp_server_config.v1.sources.filesystem import FileSystemSource
 
 logger = get_logger("cli.run")
 
@@ -48,6 +47,10 @@ def run_with_uv(
 ) -> None:
     """Run a MCP server using uv run subprocess.
 
+    This function is called when we need to set up a Python environment with specific
+    dependencies before running the server. The config parsing and merging should already
+    be done by the caller.
+
     Args:
         server_spec: Python file, object specification (file:obj), config file, or URL
         python_version: Python version to use (e.g. "3.10")
@@ -60,71 +63,11 @@ def run_with_uv(
         path: Path to bind to when using http transport
         log_level: Log level
         show_banner: Whether to show the server banner
+        editable: Editable package paths
     """
-    # Check if server_spec is a .json file
-    if server_spec.endswith(".json"):
-        config_path = Path(server_spec).resolve()  # Get absolute path
-        if config_path.exists():
-            # Try to load as JSON and discriminate between FastMCPConfig and MCPConfig
-            try:
-                with open(config_path) as f:
-                    data = json.load(f)
 
-                # Check if it's an MCPConfig first (has canonical mcpServers key)
-                if "mcpServers" in data:
-                    # It's an MCPConfig, we don't process it here - just pass through
-                    pass
-                else:
-                    # Try to parse as FastMCPConfig
-                    try:
-                        adapter = get_cached_typeadapter(FastMCPConfig)
-                        config: FastMCPConfig = adapter.validate_python(data)
-
-                        # Apply deployment settings
-                        if config.deployment:
-                            config.deployment.apply_runtime_settings(config_path)
-
-                        # Merge environment config with CLI args (CLI takes precedence)
-                        if config.environment:
-                            # Use CLI values if provided, otherwise fall back to config
-                            python_version = python_version or config.environment.python
-                            project = project or (
-                                Path(config.environment.project)
-                                if config.environment.project
-                                else None
-                            )
-                            with_requirements = with_requirements or (
-                                Path(config.environment.requirements)
-                                if config.environment.requirements
-                                else None
-                            )
-                            # Note: config editable is a list but CLI currently only supports single path
-                            # Just pass through for now - Environment will handle the list
-                            if not editable and config.environment.editable:
-                                editable = config.environment.editable
-
-                            # Merge packages from both sources
-                            # Only merge if with_packages doesn't already contain them
-                            # (they may have been merged already in CLI)
-                            if config.environment.dependencies and not with_packages:
-                                with_packages = list(config.environment.dependencies)
-
-                        # Merge deployment config with CLI args (CLI takes precedence)
-                        if config.deployment:
-                            transport = transport or config.deployment.transport
-                            host = host or config.deployment.host
-                            port = port or config.deployment.port
-                            path = path or config.deployment.path
-                            log_level = log_level or config.deployment.log_level
-                    except ValidationError:
-                        # Not a valid FastMCPConfig, just pass through
-                        pass
-            except (json.JSONDecodeError, FileNotFoundError):
-                # Not a valid JSON file, just pass through
-                pass
-
-    # Build uv command using Environment.build_uv_args()
-    env_config = Environment(
+    # Build uv command using Environment.build_uv_run_command()
+    env_config = UVEnvironment(
         python=python_version,
         dependencies=with_packages if with_packages else None,
         requirements=str(with_requirements.resolve()) if with_requirements else None,
@@ -133,9 +76,9 @@ def run_with_uv(
         if isinstance(editable, list)
         else ([editable] if editable else None),
     )
-    # Build the uv command
-    # Build the inner fastmcp command with --skip-env to prevent infinite recursion
-    inner_cmd = ["fastmcp", "run", "--skip-env", server_spec]
+
+    # Build the inner fastmcp command (environment variable prevents infinite recursion)
+    inner_cmd = ["fastmcp", "run", server_spec]
 
     # Add transport options to the inner command
     if transport:
@@ -154,13 +97,15 @@ def run_with_uv(
         inner_cmd.append("--no-banner")
 
     # Build the full uv command
-    uv_args = env_config.build_uv_args(inner_cmd)
-    cmd = ["uv"] + uv_args
+    cmd = env_config.build_command(inner_cmd)
+
+    # Set marker to prevent infinite loops when subprocess calls FastMCP again
+    env = os.environ | {"FASTMCP_UV_SPAWNED": "1"}
 
     # Run the command
     logger.debug(f"Running command: {' '.join(cmd)}")
     try:
-        process = subprocess.run(cmd, check=True)
+        process = subprocess.run(cmd, check=True, env=env)
         sys.exit(process.returncode)
     except subprocess.CalledProcessError as e:
         logger.error(f"Failed to run server: {e}")
@@ -198,20 +143,19 @@ def create_mcp_config_server(mcp_config_path: Path) -> FastMCP[None]:
     return server
 
 
-def load_fastmcp_config(config_path: Path) -> FastMCPConfig:
+def load_mcp_server_config(config_path: Path) -> MCPServerConfig:
     """Load a FastMCP configuration from a fastmcp.json file.
 
     Args:
         config_path: Path to fastmcp.json file
 
     Returns:
-        FastMCPConfig object
+        MCPServerConfig object
     """
-    config = FastMCPConfig.from_file(config_path)
+    config = MCPServerConfig.from_file(config_path)
 
     # Apply runtime settings from deployment config
-    if config.deployment:
-        config.deployment.apply_runtime_settings(config_path)
+    config.deployment.apply_runtime_settings(config_path)
 
     return config
 
@@ -260,18 +204,17 @@ async def run_command(
             server = create_mcp_config_server(config_path)
         else:
             # It's a FastMCP config - load it properly
-            config = load_fastmcp_config(config_path)
+            config = load_mcp_server_config(config_path)
 
             # Merge deployment config with CLI arguments (CLI takes precedence)
-            if config.deployment:
-                transport = transport or config.deployment.transport
-                host = host or config.deployment.host
-                port = port or config.deployment.port
-                path = path or config.deployment.path
-                log_level = log_level or config.deployment.log_level
-                server_args = (
-                    server_args if server_args is not None else config.deployment.args
-                )
+            transport = transport or config.deployment.transport
+            host = host or config.deployment.host
+            port = port or config.deployment.port
+            path = path or config.deployment.path
+            log_level = log_level or config.deployment.log_level
+            server_args = (
+                server_args if server_args is not None else config.deployment.args
+            )
 
             # Prepare source only (environment is handled by uv run)
             await config.prepare_source() if not skip_source else None
@@ -289,9 +232,9 @@ async def run_command(
 
             logger.debug(f'Found server "{server.name}" from config {config_path}')
     else:
-        # Regular file case - create a FastMCPConfig with FileSystemSource
+        # Regular file case - create a MCPServerConfig with FileSystemSource
         source = FileSystemSource(path=server_spec)
-        config = FastMCPConfig(source=source)
+        config = MCPServerConfig(source=source)
 
         # Prepare source only (environment is handled by uv run)
         await config.prepare_source() if not skip_source else None

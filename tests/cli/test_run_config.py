@@ -6,13 +6,13 @@ from pathlib import Path
 
 import pytest
 
-from fastmcp.cli.run import load_fastmcp_config
-from fastmcp.utilities.fastmcp_config import (
+from fastmcp.cli.run import load_mcp_server_config
+from fastmcp.utilities.mcp_server_config import (
     Deployment,
-    Environment,
-    FastMCPConfig,
+    MCPServerConfig,
 )
-from fastmcp.utilities.fastmcp_config.v1.sources.filesystem import FileSystemSource
+from fastmcp.utilities.mcp_server_config.v1.environments.uv import UVEnvironment
+from fastmcp.utilities.mcp_server_config.v1.sources.filesystem import FileSystemSource
 
 
 @pytest.fixture
@@ -43,20 +43,20 @@ def test_tool(message: str) -> str:
     return config_file
 
 
-def test_load_fastmcp_config(sample_config, monkeypatch):
+def test_load_mcp_server_config(sample_config, monkeypatch):
     """Test loading configuration and returning config subsets."""
 
     # Capture environment changes
     original_env = dict(os.environ)
 
     try:
-        config = load_fastmcp_config(sample_config)
+        config = load_mcp_server_config(sample_config)
 
         # Check that we got the right types
-        assert isinstance(config, FastMCPConfig)
+        assert isinstance(config, MCPServerConfig)
         assert isinstance(config.source, FileSystemSource)
         assert isinstance(config.deployment, Deployment)
-        assert isinstance(config.environment, Environment)
+        assert isinstance(config.environment, UVEnvironment)
 
         # Check source - path is not resolved yet, only during load_server
         assert config.source.path == "server.py"
@@ -95,7 +95,7 @@ def test_load_config_with_entrypoint_source(tmp_path):
     server_file = src_dir / "server.py"
     server_file.write_text("# Server")
 
-    config = load_fastmcp_config(config_file)
+    config = load_mcp_server_config(config_file)
 
     # Check source - path is not resolved yet, only during load_server
     assert config.source.path == "src/server.py"
@@ -125,7 +125,7 @@ def test_load_config_with_cwd(tmp_path):
     original_cwd = os.getcwd()
 
     try:
-        config = load_fastmcp_config(config_file)  # noqa: F841
+        config = load_mcp_server_config(config_file)  # noqa: F841
 
         # Check that working directory was changed
         assert Path.cwd() == subdir.resolve()
@@ -160,7 +160,7 @@ def test_load_config_with_relative_cwd(tmp_path):
     original_cwd = os.getcwd()
 
     try:
-        config = load_fastmcp_config(config_file)  # noqa: F841
+        config = load_mcp_server_config(config_file)  # noqa: F841
 
         # Should change to parent directory of config file
         assert Path.cwd() == subdir1.resolve()
@@ -180,7 +180,7 @@ def test_load_minimal_config(tmp_path):
     server_file = tmp_path / "server.py"
     server_file.write_text("# Server")
 
-    config = load_fastmcp_config(config_file)
+    config = load_mcp_server_config(config_file)
 
     # Check we got source - path is not resolved yet, only during load_server
     assert isinstance(config.source, FileSystemSource)
@@ -201,7 +201,7 @@ def test_load_config_with_server_args(tmp_path):
     server_file = tmp_path / "server.py"
     server_file.write_text("# Server")
 
-    config = load_fastmcp_config(config_file)
+    config = load_mcp_server_config(config_file)
 
     assert config.deployment.args == ["--debug", "--config", "custom.json"]
 
@@ -221,7 +221,7 @@ def test_config_subset_independence(tmp_path):
     server_file = tmp_path / "server.py"
     server_file.write_text("# Server")
 
-    config = load_fastmcp_config(config_file)
+    config = load_mcp_server_config(config_file)
 
     # Each subset should be independently usable
     # Path is not resolved yet, only during load_server
@@ -259,15 +259,13 @@ def test_environment_config_path_resolution(tmp_path):
     server_file = tmp_path / "server.py"
     server_file.write_text("# Server")
 
-    config = load_fastmcp_config(config_file)
+    config = load_mcp_server_config(config_file)
 
-    # Check that UV args are built with resolved paths
-    uv_args = config.environment.build_uv_args(["fastmcp", "run", "server.py"])
+    # Check that UV command is built with resolved paths
+    uv_cmd = config.environment.build_command(["fastmcp", "run", "server.py"])
 
-    assert "--with-requirements" in uv_args
-    assert "--project" in uv_args
+    assert "--with-requirements" in uv_cmd
+    assert "--project" in uv_cmd
     # Path should be resolved relative to config file
-    req_idx = uv_args.index("--with-requirements") + 1
-    assert (
-        Path(uv_args[req_idx]).is_absolute() or uv_args[req_idx] == "requirements.txt"
-    )
+    req_idx = uv_cmd.index("--with-requirements") + 1
+    assert Path(uv_cmd[req_idx]).is_absolute() or uv_cmd[req_idx] == "requirements.txt"

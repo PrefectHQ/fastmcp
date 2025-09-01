@@ -10,8 +10,8 @@ import cyclopts
 from rich import print
 
 from fastmcp.mcp_config import StdioMCPServer, update_config_file
-from fastmcp.utilities.fastmcp_config import Environment
 from fastmcp.utilities.logging import get_logger
+from fastmcp.utilities.mcp_server_config.v1.environments.uv import UVEnvironment
 
 from .shared import process_common_args
 
@@ -115,28 +115,26 @@ def install_cursor_workspace(
         if not deduplicated_packages:
             deduplicated_packages = None
 
-    env_config = Environment(
+    env_config = UVEnvironment(
         python=python_version,
         dependencies=deduplicated_packages,
         requirements=str(with_requirements.resolve()) if with_requirements else None,
         project=str(project.resolve()) if project else None,
         editable=[str(p.resolve()) for p in with_editable] if with_editable else None,
     )
-    args = env_config.build_uv_args()
-
     # Build server spec from parsed components
     if server_object:
         server_spec = f"{file.resolve()}:{server_object}"
     else:
         server_spec = str(file.resolve())
 
-    # Add fastmcp run command
-    args.extend(["fastmcp", "run", server_spec])
+    # Build the full command
+    full_command = env_config.build_command(["fastmcp", "run", server_spec])
 
     # Create server configuration
     server_config = StdioMCPServer(
-        command="uv",
-        args=args,
+        command=full_command[0],
+        args=full_command[1:],
         env=env_vars or {},
     )
 
@@ -195,23 +193,21 @@ def install_cursor(
         if not deduplicated_packages:
             deduplicated_packages = None
 
-    env_config = Environment(
+    env_config = UVEnvironment(
         python=python_version,
         dependencies=deduplicated_packages,
         requirements=str(with_requirements.resolve()) if with_requirements else None,
         project=str(project.resolve()) if project else None,
         editable=[str(p.resolve()) for p in with_editable] if with_editable else None,
     )
-    args = env_config.build_uv_args()
-
     # Build server spec from parsed components
     if server_object:
         server_spec = f"{file.resolve()}:{server_object}"
     else:
         server_spec = str(file.resolve())
 
-    # Add fastmcp run command
-    args.extend(["fastmcp", "run", server_spec])
+    # Build the full command
+    full_command = env_config.build_command(["fastmcp", "run", server_spec])
 
     # If workspace is specified, install to workspace-specific config
     if workspace:
@@ -230,8 +226,8 @@ def install_cursor(
 
     # Create server configuration
     server_config = StdioMCPServer(
-        command="uv",
-        args=args,
+        command=full_command[0],
+        args=full_command[1:],
         env=env_vars or {},
     )
 

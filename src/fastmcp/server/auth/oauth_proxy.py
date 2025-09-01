@@ -254,45 +254,20 @@ class OAuthProxy(OAuthProvider):
             upstream_client_secret: Client secret for upstream server
             upstream_revocation_endpoint: Optional upstream revocation endpoint
             token_verifier: Token verifier for validating access tokens
-            base_url: Public URL of this FastMCP server
+            base_url: Public URL of the server that exposes this FastMCP server; redirect path is
+                relative to this URL
             redirect_path: Redirect path configured in upstream OAuth app (defaults to "/auth/callback")
             issuer_url: Issuer URL for OAuth metadata (defaults to base_url)
             service_documentation_url: Optional service documentation URL
-            resource_server_url: Resource server URL (defaults to base_url)
+            resource_server_url: Path of the FastMCP server. If None, FastMCP will
+                attempt to overwrite this with the correct path to the server
+                e.g. {base_url}/mcp
             allowed_client_redirect_uris: List of allowed redirect URI patterns for MCP clients.
                 Patterns support wildcards (e.g., "http://localhost:*", "https://*.example.com/*").
                 If None (default), only localhost redirect URIs are allowed.
                 If empty list, all redirect URIs are allowed (not recommended for production).
                 These are for MCP clients performing loopback redirects, NOT for the upstream OAuth app.
         """
-        # Convert string URLs to AnyHttpUrl for parent class
-        base_url_parsed = (
-            AnyHttpUrl(base_url) if isinstance(base_url, str) else base_url
-        )
-        issuer_url_parsed = (
-            (AnyHttpUrl(issuer_url) if isinstance(issuer_url, str) else issuer_url)
-            if issuer_url
-            else None
-        )
-        service_documentation_url_parsed = (
-            (
-                AnyHttpUrl(service_documentation_url)
-                if isinstance(service_documentation_url, str)
-                else service_documentation_url
-            )
-            if service_documentation_url
-            else None
-        )
-        resource_server_url_parsed = (
-            (
-                AnyHttpUrl(resource_server_url)
-                if isinstance(resource_server_url, str)
-                else resource_server_url
-            )
-            if resource_server_url
-            else None
-        )
-
         # Always enable DCR since we implement it locally for MCP clients
         client_registration_options = ClientRegistrationOptions(enabled=True)
 
@@ -302,13 +277,13 @@ class OAuthProxy(OAuthProvider):
         )
 
         super().__init__(
-            base_url=base_url_parsed,
-            issuer_url=issuer_url_parsed,
-            service_documentation_url=service_documentation_url_parsed,
+            base_url=base_url,
+            issuer_url=issuer_url,
+            service_documentation_url=service_documentation_url,
             client_registration_options=client_registration_options,
             revocation_options=revocation_options,
             required_scopes=token_verifier.required_scopes,
-            resource_server_url=resource_server_url_parsed,
+            resource_server_url=resource_server_url,
         )
 
         # Store upstream configuration
@@ -317,6 +292,7 @@ class OAuthProxy(OAuthProvider):
         self._upstream_client_id = upstream_client_id
         self._upstream_client_secret = SecretStr(upstream_client_secret)
         self._upstream_revocation_endpoint = upstream_revocation_endpoint
+        self._default_scope_str = " ".join(self.required_scopes or [])
 
         # Store redirect configuration
         self._redirect_path = (
@@ -376,6 +352,7 @@ class OAuthProxy(OAuthProvider):
                     AnyUrl("http://localhost")
                 ],  # Placeholder, validation uses allowed_patterns
                 grant_types=["authorization_code", "refresh_token"],
+                scope=self._default_scope_str,
                 token_endpoint_auth_method="none",
                 allowed_redirect_uri_patterns=self._allowed_client_redirect_uris,
             )
@@ -415,12 +392,22 @@ class OAuthProxy(OAuthProvider):
             redirect_uris=client_info.redirect_uris or [AnyUrl("http://localhost")],
             grant_types=client_info.grant_types
             or ["authorization_code", "refresh_token"],
+            scope=self._default_scope_str,
             token_endpoint_auth_method="none",
             allowed_redirect_uri_patterns=self._allowed_client_redirect_uris,
         )
 
         # Store the ProxyDCRClient using the upstream ID
         self._clients[upstream_id] = proxy_client
+
+        # Log redirect URIs to help users discover what patterns they might need
+        if client_info.redirect_uris:
+            for uri in client_info.redirect_uris:
+                logger.debug(
+                    "Client registered with redirect_uri: %s - if restricting redirect URIs, "
+                    "ensure this pattern is allowed in allowed_client_redirect_uris",
+                    uri,
+                )
 
         logger.debug(
             "Registered client %s with %d redirect URIs",

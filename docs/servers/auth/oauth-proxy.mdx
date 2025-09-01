@@ -159,18 +159,45 @@ The `OAuthProxy` class provides the complete proxy implementation:
 </ParamField>
 
 <ParamField body="resource_server_url" type="AnyHttpUrl | str | None">
-  Resource server URL (defaults to base_url)
+  Path of the FastMCP server (defaults to base_url). **Important**: This should point to your MCP endpoint path. For example, if your MCP server is accessible at `{base_url}/mcp`, specify `https://your-server.com/mcp` here for proper RFC 8707 compliance.
 </ParamField>
 
 <ParamField body="allowed_client_redirect_uris" type="list[str] | None">
   List of allowed redirect URI patterns for MCP clients. Patterns support wildcards (e.g., `"http://localhost:*"`, `"https://*.example.com/*"`). 
-  - `None` (default): Only localhost redirect URIs allowed (`http://localhost:*`, `http://127.0.0.1:*`)
-  - Empty list `[]`: All redirect URIs allowed (not recommended for production)
+  - `None` (default): All redirect URIs allowed (for MCP/DCR compatibility)
+  - Empty list `[]`: No redirect URIs allowed
   - Custom list: Only matching patterns allowed
   
   These patterns apply to MCP client loopback redirects, NOT the upstream OAuth app redirect URI.
 </ParamField>
 </Card>
+
+### Dynamic client scope
+
+When `OAuthProxy` creates a dynamic client (`ProxyDCRClient`) during registration or for temporary/unregistered access, it sets the client's `scope` string from your `TokenVerifier.required_scopes` (joined with spaces). If `required_scopes` is empty or `None`, the client's `scope` will be an empty string.
+
+```python
+from fastmcp.server.auth.providers.jwt import JWTVerifier
+from fastmcp.server.auth.oauth_proxy import OAuthProxy
+
+token_verifier = JWTVerifier(
+    jwks_uri="https://provider/.well-known/jwks.json",
+    issuer="https://provider",
+    audience="my-app",
+)
+token_verifier.required_scopes = ["read", "write"]
+
+auth = OAuthProxy(
+    upstream_authorization_endpoint="https://provider/authorize",
+    upstream_token_endpoint="https://provider/token",
+    upstream_client_id="cid",
+    upstream_client_secret="secret",
+    token_verifier=token_verifier,
+    base_url="https://your-server.com",
+)
+
+# Any dynamic client created by the proxy will have scope "read write"
+```
 
 ```python
 from fastmcp import FastMCP
@@ -201,7 +228,10 @@ auth = OAuthProxy(
     base_url="https://your-server.com",
     
     # Optional: customize callback path (defaults to "/auth/callback")
-    redirect_path="/auth/callback"
+    redirect_path="/auth/callback",
+    
+    # Optional: specify MCP endpoint path if different from base_url
+    # resource_server_url="https://your-server.com/mcp"
 )
 
 mcp = FastMCP(name="My Server", auth=auth)
@@ -230,29 +260,45 @@ The proxy automatically:
 
 ## Client Redirect URI Security
 
-<Warning>
-By default, OAuth Proxy only accepts localhost redirect URIs from MCP clients for security. You can customize this with the `allowed_client_redirect_uris` parameter:
+<Note>
+OAuth Proxy accepts all redirect URIs by default to maintain compatibility with MCP's Dynamic Client Registration (DCR) pattern, where clients register with unpredictable redirect URIs.
+
+If you know which clients will connect, you can restrict redirect URIs using the `allowed_client_redirect_uris` parameter:
 
 ```python
-# Default: localhost only (secure)
+# Default: allow all (for DCR compatibility)
 auth = OAuthProxy(...) 
+
+# Restrict to localhost only
+auth = OAuthProxy(
+    ...,
+    allowed_client_redirect_uris=[
+        "http://localhost:*",
+        "http://127.0.0.1:*"
+    ]
+)
+
+# Allow specific known clients (e.g., Claude.ai)
+auth = OAuthProxy(
+    ...,
+    allowed_client_redirect_uris=[
+        "http://localhost:*",
+        "https://claude.ai/api/mcp/auth_callback"
+    ]
+)
 
 # Custom patterns with wildcards
 auth = OAuthProxy(
     ...,
     allowed_client_redirect_uris=[
         "http://localhost:*",
-        "https://app.example.com/auth/*"
+        "https://*.example.com/auth/*"
     ]
 )
-
-# Allow all (NOT recommended for production)
-auth = OAuthProxy(
-    ...,
-    allowed_client_redirect_uris=[]
-)
 ```
-</Warning>
+
+**Tip:** Check your server logs for debug messages that say "Client registered with redirect_uri" messages to see what redirect URIs your clients are using.
+</Note>
 
 ## Client Compatibility
 

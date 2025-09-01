@@ -4,7 +4,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 
-class BaseSource(BaseModel, ABC):
+class Source(BaseModel, ABC):
     """Abstract base class for all source types."""
 
     type: str = Field(description="Source type identifier")

@@ -7,12 +7,12 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from fastmcp.utilities.fastmcp_config import (
+from fastmcp.utilities.mcp_server_config import (
     Deployment,
-    Environment,
-    FastMCPConfig,
+    MCPServerConfig,
 )
-from fastmcp.utilities.fastmcp_config.v1.sources.filesystem import FileSystemSource
+from fastmcp.utilities.mcp_server_config.v1.environments.uv import UVEnvironment
+from fastmcp.utilities.mcp_server_config.v1.sources.filesystem import FileSystemSource
 
 
 class TestFileSystemSource:
@@ -20,7 +20,7 @@ class TestFileSystemSource:
 
     def test_dict_source_minimal(self):
         """Test that dict source is converted to FileSystemSource."""
-        config = FastMCPConfig(source={"path": "server.py"})
+        config = MCPServerConfig(source={"path": "server.py"})
         # Dict is converted to FileSystemSource
         assert isinstance(config.source, FileSystemSource)
         assert config.source.path == "server.py"
@@ -29,7 +29,7 @@ class TestFileSystemSource:
 
     def test_dict_source_with_entrypoint(self):
         """Test dict source with entrypoint field."""
-        config = FastMCPConfig(source={"path": "server.py", "entrypoint": "app"})
+        config = MCPServerConfig(source={"path": "server.py", "entrypoint": "app"})
         # Dict with entrypoint is converted to FileSystemSource
         assert isinstance(config.source, FileSystemSource)
         assert config.source.path == "server.py"
@@ -38,7 +38,7 @@ class TestFileSystemSource:
 
     def test_filesystem_source_entrypoint(self):
         """Test FileSystemSource entrypoint format."""
-        config = FastMCPConfig(
+        config = MCPServerConfig(
             source=FileSystemSource(path="src/server.py", entrypoint="mcp")
         )
         assert isinstance(config.source, FileSystemSource)
@@ -52,7 +52,7 @@ class TestEnvironment:
 
     def test_environment_config_fields(self):
         """Test all Environment fields."""
-        config = FastMCPConfig(
+        config = MCPServerConfig(
             source={"path": "server.py"},
             environment={
                 "python": "3.12",
@@ -73,28 +73,28 @@ class TestEnvironment:
     def test_needs_uv(self):
         """Test needs_uv() method."""
         # No environment config - doesn't need UV
-        config = FastMCPConfig(source={"path": "server.py"})
+        config = MCPServerConfig(source={"path": "server.py"})
         assert not config.environment.needs_uv()
 
         # Empty environment - doesn't need UV
-        config = FastMCPConfig(source={"path": "server.py"}, environment={})
+        config = MCPServerConfig(source={"path": "server.py"}, environment={})
         assert not config.environment.needs_uv()
 
         # With dependencies - needs UV
-        config = FastMCPConfig(
+        config = MCPServerConfig(
             source={"path": "server.py"}, environment={"dependencies": ["requests"]}
         )
         assert config.environment.needs_uv()
 
         # With Python version - needs UV
-        config = FastMCPConfig(
+        config = MCPServerConfig(
             source={"path": "server.py"}, environment={"python": "3.12"}
         )
         assert config.environment.needs_uv()
 
-    def test_build_uv_args(self):
-        """Test build_uv_args() method."""
-        config = FastMCPConfig(
+    def test_build_uv_run_command(self):
+        """Test build_uv_run_command() method."""
+        config = MCPServerConfig(
             source={"path": "server.py"},
             environment={
                 "python": "3.12",
@@ -104,27 +104,28 @@ class TestEnvironment:
             },
         )
 
-        args = config.environment.build_uv_args(["fastmcp", "run", "server.py"])
+        cmd = config.environment.build_command(["fastmcp", "run", "server.py"])
 
-        assert args[0] == "run"
+        assert cmd[0] == "uv"
+        assert cmd[1] == "run"
         # Python version not added when project is specified (project defines its own Python)
-        assert "--python" not in args
-        assert "3.12" not in args
-        assert "--project" in args
-        assert "." in args
-        assert "--with" in args
-        assert "requests" in args
-        assert "numpy" in args
-        assert "--with-requirements" in args
-        assert "requirements.txt" in args
+        assert "--python" not in cmd
+        assert "3.12" not in cmd
+        assert "--project" in cmd
+        assert "." in cmd
+        assert "--with" in cmd
+        assert "requests" in cmd
+        assert "numpy" in cmd
+        assert "--with-requirements" in cmd
+        assert "requirements.txt" in cmd
         # Command args should be at the end
-        assert "fastmcp" in args[-3:]
-        assert "run" in args[-2:]
-        assert "server.py" in args[-1:]
+        assert "fastmcp" in cmd[-3:]
+        assert "run" in cmd[-2:]
+        assert "server.py" in cmd[-1:]
 
     def test_run_with_uv(self):
         """Test run_with_uv() subprocess execution."""
-        config = FastMCPConfig(
+        config = MCPServerConfig(
             source={"path": "server.py"}, environment={"dependencies": ["requests"]}
         )
 
@@ -143,7 +144,7 @@ class TestDeployment:
 
     def test_deployment_config_fields(self):
         """Test all Deployment fields."""
-        config = FastMCPConfig(
+        config = MCPServerConfig(
             source={"path": "server.py"},
             deployment={
                 "transport": "http",
@@ -175,7 +176,7 @@ class TestDeployment:
         work_dir = tmp_path / "work"
         work_dir.mkdir()
 
-        config = FastMCPConfig(
+        config = MCPServerConfig(
             source={"path": "server.py"},
             deployment={
                 "env": {"TEST_VAR": "test_value"},
@@ -211,7 +212,7 @@ class TestDeployment:
         os.environ["BASE_URL"] = "example.com"
         os.environ["ENV_NAME"] = "production"
 
-        config = FastMCPConfig(
+        config = MCPServerConfig(
             source={"path": "server.py"},
             deployment={
                 "env": {
@@ -252,17 +253,17 @@ class TestDeployment:
                     os.environ[key] = value
 
 
-class TestFastMCPConfig:
-    """Test FastMCPConfig root configuration."""
+class TestMCPServerConfig:
+    """Test MCPServerConfig root configuration."""
 
     def test_minimal_config(self):
         """Test creating a config with only required fields."""
-        config = FastMCPConfig(source={"path": "server.py"})
+        config = MCPServerConfig(source={"path": "server.py"})
         assert isinstance(config.source, FileSystemSource)
         assert config.source.path == "server.py"
         assert config.source.entrypoint is None
         # Environment and deployment are now always present but empty
-        assert isinstance(config.environment, Environment)
+        assert isinstance(config.environment, UVEnvironment)
         assert isinstance(config.deployment, Deployment)
         # Check they have no values set
         assert not config.environment.needs_uv()
@@ -273,7 +274,7 @@ class TestFastMCPConfig:
 
     def test_nested_structure(self):
         """Test the nested configuration structure."""
-        config = FastMCPConfig(
+        config = MCPServerConfig(
             source={"path": "server.py"},
             environment={
                 "python": "3.12",
@@ -288,7 +289,7 @@ class TestFastMCPConfig:
         assert isinstance(config.source, FileSystemSource)
         assert config.source.path == "server.py"
         assert config.source.entrypoint is None
-        assert isinstance(config.environment, Environment)
+        assert isinstance(config.environment, UVEnvironment)
         assert isinstance(config.deployment, Deployment)
 
     def test_from_file(self, tmp_path):
@@ -303,7 +304,7 @@ class TestFastMCPConfig:
         config_file = tmp_path / "fastmcp.json"
         config_file.write_text(json.dumps(config_data))
 
-        config = FastMCPConfig.from_file(config_file)
+        config = MCPServerConfig.from_file(config_file)
 
         # When loaded from JSON with entrypoint format, it becomes EntrypointConfig
         assert isinstance(config.source, FileSystemSource)
@@ -324,7 +325,7 @@ class TestFastMCPConfig:
         config_file = tmp_path / "fastmcp.json"
         config_file.write_text(json.dumps(config_data))
 
-        config = FastMCPConfig.from_file(config_file)
+        config = MCPServerConfig.from_file(config_file)
         # String entrypoint with : should be converted to EntrypointConfig
         assert isinstance(config.source, FileSystemSource)
         assert config.source.path == "server.py"
@@ -341,7 +342,7 @@ class TestFastMCPConfig:
         config_file = tmp_path / "fastmcp.json"
         config_file.write_text(json.dumps(config_data))
 
-        config = FastMCPConfig.from_file(config_file)
+        config = MCPServerConfig.from_file(config_file)
 
         # Should be parsed into EntrypointConfig
         assert isinstance(config.source, FileSystemSource)
@@ -364,7 +365,7 @@ class TestFastMCPConfig:
         original_cwd = os.getcwd()
         try:
             os.chdir(tmp_path)
-            found = FastMCPConfig.find_config()
+            found = MCPServerConfig.find_config()
             assert found == config_file
         finally:
             os.chdir(original_cwd)
@@ -378,7 +379,7 @@ class TestFastMCPConfig:
         subdir.mkdir()
 
         # Should NOT find config in parent directory
-        found = FastMCPConfig.find_config(subdir)
+        found = MCPServerConfig.find_config(subdir)
         assert found is None
 
     def test_find_config_in_specified_dir(self, tmp_path):
@@ -387,12 +388,12 @@ class TestFastMCPConfig:
         config_file.write_text(json.dumps({"source": {"path": "server.py"}}))
 
         # Should find config when looking in the directory that contains it
-        found = FastMCPConfig.find_config(tmp_path)
+        found = MCPServerConfig.find_config(tmp_path)
         assert found == config_file
 
     def test_find_config_not_found(self, tmp_path):
         """Test when config is not found."""
-        found = FastMCPConfig.find_config(tmp_path)
+        found = MCPServerConfig.find_config(tmp_path)
         assert found is None
 
     def test_invalid_transport(self, tmp_path):
@@ -406,20 +407,20 @@ class TestFastMCPConfig:
         config_file.write_text(json.dumps(config_data))
 
         with pytest.raises(ValidationError):
-            FastMCPConfig.from_file(config_file)
+            MCPServerConfig.from_file(config_file)
 
     def test_optional_sections(self):
         """Test that all config sections are optional except source."""
         # Only source is required
-        config = FastMCPConfig(source={"path": "server.py"})
+        config = MCPServerConfig(source={"path": "server.py"})
         assert isinstance(config.source, FileSystemSource)
         assert config.source.path == "server.py"
         # Environment and deployment are now always present but may be empty
-        assert isinstance(config.environment, Environment)
+        assert isinstance(config.environment, UVEnvironment)
         assert isinstance(config.deployment, Deployment)
 
         # Only environment with values
-        config = FastMCPConfig(
+        config = MCPServerConfig(
             source={"path": "server.py"}, environment={"python": "3.12"}
         )
         assert config.environment.python == "3.12"
@@ -430,12 +431,14 @@ class TestFastMCPConfig:
         )
 
         # Only deployment with values
-        config = FastMCPConfig(
+        config = MCPServerConfig(
             source={"path": "server.py"}, deployment={"transport": "http"}
         )
-        assert isinstance(config.environment, Environment)
+        assert isinstance(config.environment, UVEnvironment)
+        # Check all fields except 'type' which has a default value
         assert all(
             getattr(config.environment, field, None) is None
-            for field in Environment.model_fields
+            for field in UVEnvironment.model_fields
+            if field != "type"
         )
         assert config.deployment.transport == "http"

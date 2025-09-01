@@ -133,11 +133,15 @@ async def test_deployed_server():
 The FastMCP Client handles authentication transparently, making it easy to test secured servers:
 
 ```python
+from fastmcp.client.transports import StreamableHttpTransport
+
 async def test_authenticated_server():
     # Bearer token authentication
     async with Client(
-        "https://api.example.com/mcp",
-        headers={"Authorization": "Bearer test-token"}
+        StreamableHttpTransport(
+            "https://api.example.com/mcp",
+            headers={"Authorization": "Bearer test-token"}
+        )
     ) as client:
         await client.ping()
         tools = await client.list_tools()

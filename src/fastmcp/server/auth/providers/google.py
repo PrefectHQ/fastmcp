@@ -53,6 +53,8 @@ class GoogleProviderSettings(BaseSettings):
     redirect_path: str | None = None
     required_scopes: list[str] | None = None
     timeout_seconds: int | None = None
+    resource_server_url: AnyHttpUrl | str | None = None
+    allowed_client_redirect_uris: list[str] | None = None
 
     @field_validator("required_scopes", mode="before")
     @classmethod
@@ -215,8 +217,10 @@ class GoogleProvider(OAuthProxy):
         client_secret: str | NotSetT = NotSet,
         base_url: AnyHttpUrl | str | NotSetT = NotSet,
         redirect_path: str | NotSetT = NotSet,
-        required_scopes: list[str] | None | NotSetT = NotSet,
+        required_scopes: list[str] | NotSetT = NotSet,
         timeout_seconds: int | NotSetT = NotSet,
+        resource_server_url: AnyHttpUrl | str | NotSetT = NotSet,
+        allowed_client_redirect_uris: list[str] | NotSetT = NotSet,
     ):
         """Initialize Google OAuth provider.
 
@@ -230,6 +234,8 @@ class GoogleProvider(OAuthProxy):
                 - "https://www.googleapis.com/auth/userinfo.email" for email access
                 - "https://www.googleapis.com/auth/userinfo.profile" for profile info
             timeout_seconds: HTTP request timeout for Google API calls
+            allowed_client_redirect_uris: List of allowed redirect URI patterns for MCP clients.
+                If None (default), all URIs are allowed. If empty list, no URIs are allowed.
         """
         settings = GoogleProviderSettings.model_validate(
             {
@@ -241,6 +247,8 @@ class GoogleProvider(OAuthProxy):
                     "redirect_path": redirect_path,
                     "required_scopes": required_scopes,
                     "timeout_seconds": timeout_seconds,
+                    "resource_server_url": resource_server_url,
+                    "allowed_client_redirect_uris": allowed_client_redirect_uris,
                 }.items()
                 if v is not NotSet
             }
@@ -262,6 +270,8 @@ class GoogleProvider(OAuthProxy):
         timeout_seconds_final = settings.timeout_seconds or 10
         # Google requires at least one scope - openid is the minimal OIDC scope
         required_scopes_final = settings.required_scopes or ["openid"]
+        resource_server_url_final = settings.resource_server_url or base_url_final
+        allowed_client_redirect_uris_final = settings.allowed_client_redirect_uris
 
         # Create Google token verifier
         token_verifier = GoogleTokenVerifier(
@@ -284,6 +294,8 @@ class GoogleProvider(OAuthProxy):
             base_url=base_url_final,
             redirect_path=redirect_path_final,
             issuer_url=base_url_final,  # We act as the issuer for client registration
+            allowed_client_redirect_uris=allowed_client_redirect_uris_final,
+            resource_server_url=resource_server_url_final,
         )
 
         logger.info(

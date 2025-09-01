@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from fastmcp.client import Client
-from fastmcp.utilities.fastmcp_config import FastMCPConfig
+from fastmcp.utilities.mcp_server_config import MCPServerConfig
 
 
 @pytest.fixture
@@ -89,7 +89,7 @@ class TestConfigWithClient:
         """Test that a server loaded from config works with a client."""
         # Load the config
         config_file = server_with_config / "fastmcp.json"
-        config = FastMCPConfig.from_file(config_file)
+        config = MCPServerConfig.from_file(config_file)
 
         # Import the server using the source
         import importlib.util
@@ -132,7 +132,7 @@ class TestEnvironmentExecution:
 
     def test_needs_uv_with_dependencies(self):
         """Test that environment with dependencies needs UV."""
-        config = FastMCPConfig(
+        config = MCPServerConfig(
             source={"path": "server.py"},
             environment={"dependencies": ["requests", "numpy"]},  # type: ignore[arg-type]
         )
@@ -142,7 +142,7 @@ class TestEnvironmentExecution:
 
     def test_needs_uv_with_python_version(self):
         """Test that environment with Python version needs UV."""
-        config = FastMCPConfig(
+        config = MCPServerConfig(
             source={"path": "server.py"},
             environment={"python": "3.12"},  # type: ignore[arg-type]
         )
@@ -152,7 +152,7 @@ class TestEnvironmentExecution:
 
     def test_no_uv_needed_without_environment(self):
         """Test that no UV is needed without environment config."""
-        config = FastMCPConfig(source={"path": "server.py"})
+        config = MCPServerConfig(source={"path": "server.py"})
 
         # Environment is now always present but may be empty
         assert config.environment is not None
@@ -160,7 +160,7 @@ class TestEnvironmentExecution:
 
     def test_no_uv_needed_with_empty_environment(self):
         """Test that no UV is needed with empty environment config."""
-        config = FastMCPConfig(
+        config = MCPServerConfig(
             source={"path": "server.py"},
             environment={},  # type: ignore[arg-type]
         )
@@ -184,7 +184,7 @@ class TestPathResolution:
         server_file = src_dir / "server.py"
         server_file.write_text("# Server")
 
-        config = FastMCPConfig(source={"path": "../src/server.py"})
+        config = MCPServerConfig(source={"path": "../src/server.py"})
 
         # The source path is resolved during load_server
         # For now, just check that the source is created correctly
@@ -198,7 +198,7 @@ class TestPathResolution:
         work_dir = tmp_path / "work"
         work_dir.mkdir()
 
-        config = FastMCPConfig(
+        config = MCPServerConfig(
             source={"path": "server.py"},
             deployment={"cwd": "work"},  # type: ignore[arg-type]
         )
@@ -222,19 +222,19 @@ class TestPathResolution:
         reqs_file = tmp_path / "requirements.txt"
         reqs_file.write_text("fastmcp>=2.0")
 
-        config = FastMCPConfig(
+        config = MCPServerConfig(
             source={"path": "server.py"},
             environment={"requirements": "requirements.txt"},  # type: ignore[arg-type]
         )
 
-        # Build UV args
+        # Build UV command
         assert config.environment is not None
-        uv_args = config.environment.build_uv_args(["fastmcp", "run"])
+        uv_cmd = config.environment.build_command(["fastmcp", "run"])
 
         # Should include requirements file
-        assert "--with-requirements" in uv_args
-        req_idx = uv_args.index("--with-requirements") + 1
-        assert uv_args[req_idx] == "requirements.txt"
+        assert "--with-requirements" in uv_cmd
+        req_idx = uv_cmd.index("--with-requirements") + 1
+        assert uv_cmd[req_idx] == "requirements.txt"
 
 
 class TestConfigValidation:
@@ -243,7 +243,7 @@ class TestConfigValidation:
     def test_invalid_transport_rejected(self):
         """Test that invalid transport values are rejected."""
         with pytest.raises(ValueError):
-            FastMCPConfig(
+            MCPServerConfig(
                 source={"path": "server.py"},
                 deployment={"transport": "invalid_transport"},  # type: ignore[arg-type]
             )
@@ -251,7 +251,7 @@ class TestConfigValidation:
     def test_streamable_http_transport_rejected(self):
         """Test that streamable-http transport is rejected in fastmcp.json config."""
         with pytest.raises(ValueError):
-            FastMCPConfig(
+            MCPServerConfig(
                 source={"path": "server.py"},
                 deployment={"transport": "streamable-http"},  # type: ignore[arg-type]
             )
@@ -259,7 +259,7 @@ class TestConfigValidation:
     def test_invalid_log_level_rejected(self):
         """Test that invalid log level values are rejected."""
         with pytest.raises(ValueError):
-            FastMCPConfig(
+            MCPServerConfig(
                 source={"path": "server.py"},
                 deployment={"log_level": "INVALID"},  # type: ignore[arg-type]
             )
@@ -267,12 +267,12 @@ class TestConfigValidation:
     def test_missing_source_rejected(self):
         """Test that config without source is rejected."""
         with pytest.raises(ValueError):
-            FastMCPConfig()  # type: ignore[call-arg]
+            MCPServerConfig()  # type: ignore[call-arg]
 
     def test_valid_transport_values(self):
         """Test that all valid transport values are accepted."""
         for transport in ["stdio", "http", "sse"]:
-            config = FastMCPConfig(
+            config = MCPServerConfig(
                 source={"path": "server.py"},
                 deployment={"transport": transport},  # type: ignore[arg-type]
             )
@@ -282,7 +282,7 @@ class TestConfigValidation:
     def test_valid_log_levels(self):
         """Test that all valid log levels are accepted."""
         for level in ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]:
-            config = FastMCPConfig(
+            config = MCPServerConfig(
                 source={"path": "server.py"},
                 deployment={"log_level": level},  # type: ignore[arg-type]
             )

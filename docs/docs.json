@@ -380,33 +380,41 @@
                   "python-sdk/fastmcp-utilities-cli",
                   "python-sdk/fastmcp-utilities-components",
                   "python-sdk/fastmcp-utilities-exceptions",
-                  {
-                    "group": "fastmcp_config",
-                    "pages": [
-                      "python-sdk/fastmcp-utilities-fastmcp_config-__init__",
-                      {
-                        "group": "v1",
-                        "pages": [
-                          "python-sdk/fastmcp-utilities-fastmcp_config-v1-__init__",
-                          "python-sdk/fastmcp-utilities-fastmcp_config-v1-fastmcp_config",
-                          {
-                            "group": "sources",
-                            "pages": [
-                              "python-sdk/fastmcp-utilities-fastmcp_config-v1-sources-__init__",
-                              "python-sdk/fastmcp-utilities-fastmcp_config-v1-sources-base",
-                              "python-sdk/fastmcp-utilities-fastmcp_config-v1-sources-filesystem"
-                            ]
-                          }
-                        ]
-                      }
-                    ]
-                  },
                   "python-sdk/fastmcp-utilities-http",
                   "python-sdk/fastmcp-utilities-inspect",
                   "python-sdk/fastmcp-utilities-json_schema",
                   "python-sdk/fastmcp-utilities-json_schema_type",
                   "python-sdk/fastmcp-utilities-logging",
                   "python-sdk/fastmcp-utilities-mcp_config",
+                  {
+                    "group": "mcp_server_config",
+                    "pages": [
+                      "python-sdk/fastmcp-utilities-mcp_server_config-__init__",
+                      {
+                        "group": "v1",
+                        "pages": [
+                          "python-sdk/fastmcp-utilities-mcp_server_config-v1-__init__",
+                          {
+                            "group": "environments",
+                            "pages": [
+                              "python-sdk/fastmcp-utilities-mcp_server_config-v1-environments-__init__",
+                              "python-sdk/fastmcp-utilities-mcp_server_config-v1-environments-base",
+                              "python-sdk/fastmcp-utilities-mcp_server_config-v1-environments-uv"
+                            ]
+                          },
+                          "python-sdk/fastmcp-utilities-mcp_server_config-v1-mcp_server_config",
+                          {
+                            "group": "sources",
+                            "pages": [
+                              "python-sdk/fastmcp-utilities-mcp_server_config-v1-sources-__init__",
+                              "python-sdk/fastmcp-utilities-mcp_server_config-v1-sources-base",
+                              "python-sdk/fastmcp-utilities-mcp_server_config-v1-sources-filesystem"
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  },
                   "python-sdk/fastmcp-utilities-openapi",
                   "python-sdk/fastmcp-utilities-tests",
                   "python-sdk/fastmcp-utilities-types"

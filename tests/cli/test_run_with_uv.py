@@ -25,16 +25,17 @@ class TestRunWithUv:
         # Check the command that was called
         mock_run.assert_called_once()
         cmd = mock_run.call_args[0][0]
+        env = mock_run.call_args.kwargs.get("env", {})
 
+        # With no environment config, the command should be returned unchanged
         expected = [
-            "uv",
-            "run",
             "fastmcp",
             "run",
-            "--skip-env",
             "server.py",
         ]
         assert cmd == expected
+        # Check that the environment marker is set
+        assert env.get("FASTMCP_UV_SPAWNED") == "1"
 
     @patch("subprocess.run")
     def test_run_with_uv_python_version(self, mock_run):
@@ -54,7 +55,6 @@ class TestRunWithUv:
             "3.11",
             "fastmcp",
             "run",
-            "--skip-env",
             "server.py",
         ]
         assert cmd == expected
@@ -80,7 +80,6 @@ class TestRunWithUv:
         assert cmd[4:] == [
             "fastmcp",
             "run",
-            "--skip-env",
             "server.py",
         ]
 
@@ -104,7 +103,6 @@ class TestRunWithUv:
             "numpy",  # original order preserved
             "fastmcp",
             "run",
-            "--skip-env",
             "server.py",
         ]
         assert cmd == expected
@@ -128,7 +126,6 @@ class TestRunWithUv:
             str(req_path.resolve()),  # auto-resolved to absolute path
             "fastmcp",
             "run",
-            "--skip-env",
             "server.py",
         ]
         assert cmd == expected
@@ -152,12 +149,10 @@ class TestRunWithUv:
         assert exc_info.value.code == 0
 
         cmd = mock_run.call_args[0][0]
+        # With no environment config, no uv run prefix
         expected = [
-            "uv",
-            "run",
             "fastmcp",
             "run",
-            "--skip-env",
             "server.py",
             "--transport",
             "http",
@@ -220,7 +215,6 @@ class TestRunWithUv:
         assert cmd[next_idx:] == [
             "fastmcp",
             "run",
-            "--skip-env",
             "server.py",
             "--transport",
             "http",

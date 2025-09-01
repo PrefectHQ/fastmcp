@@ -44,14 +44,20 @@ This conceptual model helps you understand the purpose of each configuration sec
   "$schema": "https://gofastmcp.com/public/schemas/fastmcp.json/v1.json",
   "source": {
     // WHERE: Location of your server code
+    "type": "filesystem",  // Optional, defaults to "filesystem"
     "path": "server.py",
     "entrypoint": "mcp"
   },
   "environment": {
-    // WHAT: Python environment and dependencies
+    // WHAT: Environment setup and dependencies
+    "type": "uv",  // Optional, defaults to "uv"
+    "python": ">=3.10",
+    "dependencies": ["pandas", "numpy"]
   },
   "deployment": {
     // HOW: Runtime configuration
+    "transport": "stdio",
+    "log_level": "INFO"
   }
 }
 ```
@@ -128,15 +134,21 @@ Future releases will support additional source types:
 
 ### Environment Configuration
 
-The environment configuration determines **WHAT** environment setup your server requires. It controls the build-time setup of your Python environment using `uv`'s powerful dependency management. This section ensures your server runs with the exact Python version and dependencies it requires, creating isolated, reproducible environments across different systems.
+The environment configuration determines **WHAT** environment setup your server requires. It controls the build-time setup of your Python environment, ensuring your server runs with the exact Python version and dependencies it requires. This section creates isolated, reproducible environments across different systems.
 
-These settings leverage standard `uv` arguments for environment creation. When any environment field is specified, FastMCP automatically creates an isolated environment before running your server. This build-time configuration happens once when the server starts, not during runtime execution.
+FastMCP uses an extensible environment system with a base `Environment` class that can be implemented by different environment providers. Currently, FastMCP supports the `UVEnvironment` for Python environment management using `uv`'s powerful dependency resolver.
 
-<Card icon="code" title="Environment Fields">
+<Card icon="code" title="Environment">
 <ParamField body="environment" type="object">
-  Optional Python environment configuration. When any field is specified, FastMCP automatically creates an isolated environment using `uv`.
+  Optional environment configuration. When specified, FastMCP uses the appropriate environment implementation to set up your server's runtime.
   
-  <Expandable title="Environment Fields">
+  <ParamField body="type" type="string" default="uv">
+    The environment type identifier that determines which implementation to use. Currently supports `"uv"` for Python environments managed by uv. If omitted, defaults to `"uv"`.
+  </ParamField>
+  
+  <Expandable title="UVEnvironment">
+    When `type` is `"uv"` (or omitted), the environment uses uv to manage Python dependencies:
+    
     <ParamField body="python" type="string">
       Python version constraint. Examples:
       - Exact version: `"3.12"`
@@ -175,16 +187,35 @@ These settings leverage standard `uv` arguments for environment creation. When a
       "editable": [".", "../shared-lib", "/path/to/another-package"]
       ```
     </ParamField>
+    
+    **Example:**
+    ```json
+    "environment": {
+      "type": "uv",
+      "python": ">=3.10",
+      "dependencies": ["pandas", "numpy"],
+      "editable": ["."]
+    }
+    ```
+    
+    Note: When any UVEnvironment field is specified, FastMCP automatically creates an isolated environment using `uv` before running your server.
   </Expandable>
 </ParamField>
 </Card>
 
 When environment configuration is provided, FastMCP:
-1. Creates an isolated Python environment using `uv`
-2. Installs the specified dependencies
-3. Runs your server in this clean environment
+1. Detects the environment type (defaults to `"uv"` if not specified)
+2. Creates an isolated environment using the appropriate provider
+3. Installs the specified dependencies
+4. Runs your server in this clean environment
 
 This build-time setup ensures your server always has the dependencies it needs, without polluting your system Python or conflicting with other projects.
+
+<Note>
+**Future Environment Types**
+
+Similar to source types, future releases may support additional environment types for different runtime requirements, such as Docker containers or language-specific environments beyond Python.
+</Note>
 
 ### Deployment Configuration
 
@@ -437,6 +468,7 @@ A configuration optimized for local development:
   },
   // WHAT dependencies does it need?
   "environment": {
+    "type": "uv",
     "python": "3.12",
     "dependencies": ["fastmcp[dev]"],
     "editable": "."

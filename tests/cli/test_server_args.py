@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from fastmcp.utilities.fastmcp_config import FastMCPConfig
-from fastmcp.utilities.fastmcp_config.v1.sources.filesystem import FileSystemSource
+from fastmcp.utilities.mcp_server_config import MCPServerConfig
+from fastmcp.utilities.mcp_server_config.v1.sources.filesystem import FileSystemSource
 
 
 class TestServerArguments:
@@ -39,7 +39,7 @@ def get_config() -> dict:
 
         # Test with arguments
         source = FileSystemSource(path=str(server_file))
-        config = FastMCPConfig(source=source)
+        config = MCPServerConfig(source=source)
 
         from fastmcp.cli.cli import with_argv
 
@@ -69,7 +69,7 @@ mcp = FastMCP(args.name)
 """)
 
         source = FileSystemSource(path=str(server_file))
-        config = FastMCPConfig(source=source)
+        config = MCPServerConfig(source=source)
 
         from fastmcp.cli.cli import with_argv
 
@@ -96,7 +96,7 @@ mcp = FastMCP(name)
 """)
 
         source = FileSystemSource(path=str(server_file))
-        config = FastMCPConfig(source=source)
+        config = MCPServerConfig(source=source)
 
         from fastmcp.cli.cli import with_argv
 
@@ -123,7 +123,7 @@ mcp = FastMCP(name)
             pytest.skip("config_server.py example not found")
 
         source = FileSystemSource(path=str(config_server))
-        config = FastMCPConfig(source=source)
+        config = MCPServerConfig(source=source)
 
         from fastmcp.cli.cli import with_argv
 

@@ -9,8 +9,8 @@ from typing import Annotated
 import cyclopts
 from rich import print
 
-from fastmcp.utilities.fastmcp_config import Environment
 from fastmcp.utilities.logging import get_logger
+from fastmcp.utilities.mcp_server_config.v1.environments.uv import UVEnvironment
 
 from .shared import process_common_args
 
@@ -115,15 +115,14 @@ def install_claude_code(
         if not deduplicated_packages:
             deduplicated_packages = None
 
-    # Build uv run command using Environment.build_uv_args()
-    env_config = Environment(
+    # Build uv run command using Environment.build_uv_run_command()
+    env_config = UVEnvironment(
         python=python_version,
         dependencies=deduplicated_packages,
         requirements=str(with_requirements) if with_requirements else None,
         project=str(project) if project else None,
         editable=[str(p) for p in with_editable] if with_editable else None,
     )
-    args = env_config.build_uv_args()
 
     # Build server spec from parsed components
     if server_object:
@@ -131,8 +130,8 @@ def install_claude_code(
     else:
         server_spec = str(file.resolve())
 
-    # Add fastmcp run command
-    args.extend(["fastmcp", "run", server_spec])
+    # Build the full command
+    full_command = env_config.build_command(["fastmcp", "run", server_spec])
 
     # Build claude mcp add command
     cmd_parts = [claude_cmd, "mcp", "add"]
@@ -144,7 +143,7 @@ def install_claude_code(
 
     # Add server name and command
     cmd_parts.extend([name, "--"])
-    cmd_parts.extend(["uv"] + args)
+    cmd_parts.extend(full_command)
 
     try:
         # Run the claude mcp add command
