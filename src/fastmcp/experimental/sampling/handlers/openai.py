@@ -10,15 +10,22 @@ from mcp.types import (
     SamplingMessage,
     TextContent,
 )
-from openai import NOT_GIVEN, OpenAI
-from openai.types.chat import (
-    ChatCompletion,
-    ChatCompletionAssistantMessageParam,
-    ChatCompletionMessageParam,
-    ChatCompletionSystemMessageParam,
-    ChatCompletionUserMessageParam,
-)
-from openai.types.shared.chat_model import ChatModel
+
+try:
+    from openai import NOT_GIVEN, OpenAI
+    from openai.types.chat import (
+        ChatCompletion,
+        ChatCompletionAssistantMessageParam,
+        ChatCompletionMessageParam,
+        ChatCompletionSystemMessageParam,
+        ChatCompletionUserMessageParam,
+    )
+    from openai.types.shared.chat_model import ChatModel
+except ImportError:
+    raise ImportError(
+        "The `openai` package is not installed. Please install `fastmcp[openai]` or add `openai` to your dependencies manually."
+    )
+
 from typing_extensions import override
 
 from fastmcp.experimental.sampling.handlers.base import BaseLLMSamplingHandler

@@ -15,8 +15,8 @@ dependencies = [
     "pydantic[email]>=2.11.7",
     "pyperclip>=1.9.0",
     "openapi-core>=0.19.5",
-    "openai>=1.95.1",
 ]
+
 requires-python = ">=3.10"
 readme = "README.md"
 license = "Apache-2.0"
@@ -40,10 +40,15 @@ classifiers = [
     "Typing :: Typed",
 ]
 
+[project.optional-dependencies]
+websockets = ["websockets>=15.0.1"]
+openai = ["openai>=1.102.0"]
+
 [dependency-groups]
 dev = [
-    "copychat>=0.5.2",
     "dirty-equals>=0.9.0",
+    "fastmcp[openai]",
+    # add optional dependencies for fastmcp dev
     "fastapi>=0.115.12",
     "inline-snapshot[dirty-equals]>=0.27.2",
     "ipython>=8.12.3",
@@ -52,7 +57,6 @@ dev = [
     "psutil",
     "pyinstrument>=5.0.2",
     "pyperclip>=1.9.0",
-    "ty>=0.0.1a19",
     "pytest>=8.3.3",
     "pytest-asyncio>=0.23.5",
     "pytest-cov>=6.1.1",
@@ -63,6 +67,7 @@ dev = [
     "pytest-timeout>=2.4.0",
     "pytest-xdist>=3.6.1",
     "ruff",
+    "ty>=0.0.1a19",
 ]
 
 [project.scripts]
@@ -72,9 +77,6 @@ fastmcp = "fastmcp.cli:app"
 Homepage = "https://gofastmcp.com"
 Repository = "https://github.com/jlowin/fastmcp"
 Documentation = "https://gofastmcp.com"
-
-[project.optional-dependencies]
-websockets = ["websockets>=15.0.1"]
 
 [build-system]
 requires = ["hatchling", "uv-dynamic-versioning>=0.7.0"]
@@ -125,9 +127,9 @@ python-version = "3.10"
 
 [tool.ty.rules]
 # Rules with too many errors to fix right now (40+ each)
-no-matching-overload = "ignore"  # 126 errors  
-unknown-argument = "ignore"      # 61 errors
-unresolved-attribute = "ignore"  # 60 errors
+no-matching-overload = "ignore" # 126 errors  
+unknown-argument = "ignore"     # 61 errors
+unresolved-attribute = "ignore" # 60 errors
 
 # Rules with moderate errors that need more investigation
 call-non-callable = "ignore" # 7 errors

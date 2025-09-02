@@ -1,3 +1,7 @@
+# /// script
+# dependencies = ["openai", "fastmcp"]
+# ///
+
 import asyncio
 import os
 
