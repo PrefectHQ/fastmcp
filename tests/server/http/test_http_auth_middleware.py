@@ -21,7 +21,7 @@ class TestStreamableHTTPAppResourceMetadataURL:
             public_key=rsa_key_pair.public_key,
             issuer="https://issuer",
             audience="https://audience",
-            resource_server_url="https://resource.example.com",
+            base_url="https://resource.example.com",
         )
         return provider
 
@@ -49,7 +49,7 @@ class TestStreamableHTTPAppResourceMetadataURL:
             public_key=rsa_key_pair.public_key,
             issuer="https://issuer",
             audience="https://audience",
-            resource_server_url="https://resource.example.com/",
+            base_url="https://resource.example.com/",
         )
         server = FastMCP(name="TestServer")
         app = create_streamable_http_app(

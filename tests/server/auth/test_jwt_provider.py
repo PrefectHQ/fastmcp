@@ -137,6 +137,10 @@ def mcp_server_url(rsa_key_pair: RSAKeyPair) -> Generator[str]:
     with run_server_in_process(
         run_mcp_server,
         public_key=rsa_key_pair.public_key,
+        auth_kwargs=dict(
+            issuer="https://test.example.com",
+            audience="https://api.example.com",
+        ),
         run_kwargs=dict(transport="http"),
     ) as url:
         yield f"{url}/mcp"

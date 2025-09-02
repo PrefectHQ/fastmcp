@@ -35,7 +35,6 @@ class AzureProviderSettings(BaseSettings):
     redirect_path: str | None = None
     required_scopes: list[str] | None = None
     timeout_seconds: int | None = None
-    resource_server_url: str | None = None
     allowed_client_redirect_uris: list[str] | None = None
 
     @field_validator("required_scopes", mode="before")
@@ -160,7 +159,6 @@ class AzureProvider(OAuthProxy):
         redirect_path: str | NotSetT = NotSet,
         required_scopes: list[str] | None | NotSetT = NotSet,
         timeout_seconds: int | NotSetT = NotSet,
-        resource_server_url: str | NotSetT = NotSet,
         allowed_client_redirect_uris: list[str] | NotSetT = NotSet,
     ):
         """Initialize Azure OAuth provider.
@@ -173,8 +171,6 @@ class AzureProvider(OAuthProxy):
             redirect_path: Redirect path configured in Azure (defaults to "/auth/callback")
             required_scopes: Required scopes (defaults to ["User.Read", "email", "openid", "profile"])
             timeout_seconds: HTTP request timeout for Azure API calls
-            resource_server_url: Path of the FastMCP server (defaults to base_url). If your MCP endpoint is at
-                a different path like {base_url}/mcp, specify it here for RFC 8707 compliance.
             allowed_client_redirect_uris: List of allowed redirect URI patterns for MCP clients.
                 If None (default), all URIs are allowed. If empty list, no URIs are allowed.
         """
@@ -189,7 +185,6 @@ class AzureProvider(OAuthProxy):
                     "redirect_path": redirect_path,
                     "required_scopes": required_scopes,
                     "timeout_seconds": timeout_seconds,
-                    "resource_server_url": resource_server_url,
                     "allowed_client_redirect_uris": allowed_client_redirect_uris,
                 }.items()
                 if v is not NotSet
@@ -215,7 +210,7 @@ class AzureProvider(OAuthProxy):
 
         # Apply defaults
         tenant_id_final = settings.tenant_id
-        base_url_final = settings.base_url or "http://localhost:8000"
+
         redirect_path_final = settings.redirect_path or "/auth/callback"
         timeout_seconds_final = settings.timeout_seconds or 10
         # Default scopes for Azure - User.Read gives us access to user info via Graph API
@@ -225,7 +220,6 @@ class AzureProvider(OAuthProxy):
             "openid",
             "profile",
         ]
-        resource_server_url_final = settings.resource_server_url or base_url_final
         allowed_client_redirect_uris_final = settings.allowed_client_redirect_uris
 
         # Extract secret string from SecretStr
@@ -254,11 +248,10 @@ class AzureProvider(OAuthProxy):
             upstream_client_id=settings.client_id,
             upstream_client_secret=client_secret_str,
             token_verifier=token_verifier,
-            base_url=base_url_final,
+            base_url=settings.base_url,
             redirect_path=redirect_path_final,
-            issuer_url=base_url_final,
+            issuer_url=settings.base_url,
             allowed_client_redirect_uris=allowed_client_redirect_uris_final,
-            resource_server_url=resource_server_url_final,
         )
 
         logger.info(

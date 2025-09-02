@@ -1,7 +1,13 @@
 from __future__ import annotations
 
 from typing import Any
+from urllib.parse import urljoin
 
+from mcp.server.auth.middleware.auth_context import AuthContextMiddleware
+from mcp.server.auth.middleware.bearer_auth import (
+    BearerAuthBackend,
+    RequireAuthMiddleware,
+)
 from mcp.server.auth.provider import (
     AccessToken as _SDKAccessToken,
 )
@@ -22,6 +28,8 @@ from mcp.server.auth.settings import (
     RevocationOptions,
 )
 from pydantic import AnyHttpUrl
+from starlette.middleware import Middleware
+from starlette.middleware.authentication import AuthenticationMiddleware
 from starlette.routing import Route
 
 
@@ -40,18 +48,23 @@ class AuthProvider(TokenVerifierProtocol):
     custom authentication routes.
     """
 
-    def __init__(self, resource_server_url: AnyHttpUrl | str | None = None):
+    def __init__(
+        self,
+        base_url: AnyHttpUrl | str | None = None,
+        required_scopes: list[str] | None = None,
+    ):
         """
         Initialize the auth provider.
 
         Args:
-            resource_server_url: The URL of this resource server. This is used
-            for RFC 8707 resource indicators, including creating the WWW-Authenticate
-            header.
+            base_url: The base URL of this server (e.g., http://localhost:8000).
+                This is used for constructing .well-known endpoints and OAuth metadata.
+            required_scopes: List of OAuth scopes required for all requests.
         """
-        if isinstance(resource_server_url, str):
-            resource_server_url = AnyHttpUrl(resource_server_url)
-        self.resource_server_url = resource_server_url
+        if isinstance(base_url, str):
+            base_url = AnyHttpUrl(base_url)
+        self.base_url = base_url
+        self.required_scopes = required_scopes or []
 
     async def verify_token(self, token: str) -> AccessToken | None:
         """Verify a bearer token and return access info if valid.
@@ -66,7 +79,11 @@ class AuthProvider(TokenVerifierProtocol):
         """
         raise NotImplementedError("Subclasses must implement verify_token")
 
-    def get_routes(self) -> list[Route]:
+    def get_routes(
+        self,
+        mcp_path: str | None = None,
+        mcp_endpoint: Any | None = None,
+    ) -> list[Route]:
         """Get the routes for this authentication provider.
 
         Each provider is responsible for creating whatever routes it needs:
@@ -75,22 +92,63 @@ class AuthProvider(TokenVerifierProtocol):
         - OAuthProvider: full OAuth authorization server routes
         - Custom providers: whatever routes they need
 
-        Returns:
-            List of routes for this provider
-        """
-        return []
+        Args:
+            mcp_path: The path where the MCP endpoint is mounted (e.g., "/mcp")
+            mcp_endpoint: The MCP endpoint handler to protect with auth
 
-    def get_resource_metadata_url(self) -> AnyHttpUrl | None:
-        """Get the resource metadata URL for RFC 9728 compliance."""
-        if self.resource_server_url is None:
+        Returns:
+            List of routes for this provider, including protected MCP endpoints if provided
+        """
+
+        routes = []
+
+        # Add protected MCP endpoint if provided
+        if mcp_path and mcp_endpoint:
+            resource_metadata_url = self._get_resource_url(
+                "/.well-known/oauth-protected-resource"
+            )
+
+            routes.append(
+                Route(
+                    mcp_path,
+                    endpoint=RequireAuthMiddleware(
+                        mcp_endpoint, self.required_scopes, resource_metadata_url
+                    ),
+                )
+            )
+
+        return routes
+
+    def get_middleware(self) -> list:
+        """Get HTTP application-level middleware for this auth provider.
+
+        Returns:
+            List of Starlette Middleware instances to apply to the HTTP app
+        """
+        return [
+            Middleware(
+                AuthenticationMiddleware,
+                backend=BearerAuthBackend(self),
+            ),
+            Middleware(AuthContextMiddleware),
+        ]
+
+    def _get_resource_url(self, path: str | None = None) -> AnyHttpUrl | None:
+        """Get the actual resource URL being protected.
+
+        Args:
+            path: The path where the resource endpoint is mounted (e.g., "/mcp")
+
+        Returns:
+            The full URL of the protected resource
+        """
+        if self.base_url is None:
             return None
 
-        # Add .well-known path for RFC 9728 compliance
-        resource_metadata_url = AnyHttpUrl(
-            str(self.resource_server_url).rstrip("/")
-            + "/.well-known/oauth-protected-resource"
-        )
-        return resource_metadata_url
+        if path:
+            return AnyHttpUrl(urljoin(str(self.base_url), path))
+
+        return self.base_url
 
 
 class TokenVerifier(AuthProvider):
@@ -102,20 +160,17 @@ class TokenVerifier(AuthProvider):
 
     def __init__(
         self,
-        resource_server_url: AnyHttpUrl | str | None = None,
+        base_url: AnyHttpUrl | str | None = None,
         required_scopes: list[str] | None = None,
     ):
         """
         Initialize the token verifier.
 
         Args:
-            resource_server_url: The URL of this resource server. This is used
-            for RFC 8707 resource indicators, including creating the WWW-Authenticate
-            header.
+            base_url: The base URL of this server
             required_scopes: Scopes that are required for all requests
         """
-        super().__init__(resource_server_url=resource_server_url)
-        self.required_scopes = required_scopes or []
+        super().__init__(base_url=base_url, required_scopes=required_scopes)
 
     async def verify_token(self, token: str) -> AccessToken | None:
         """Verify a bearer token and return access info if valid."""
@@ -135,13 +190,13 @@ class RemoteAuthProvider(AuthProvider):
     the authorization servers that issue valid tokens.
     """
 
-    resource_server_url: AnyHttpUrl
+    base_url: AnyHttpUrl
 
     def __init__(
         self,
         token_verifier: TokenVerifier,
         authorization_servers: list[AnyHttpUrl],
-        resource_server_url: AnyHttpUrl | str,
+        base_url: AnyHttpUrl | str,
         resource_name: str | None = None,
         resource_documentation: AnyHttpUrl | None = None,
     ):
@@ -150,11 +205,14 @@ class RemoteAuthProvider(AuthProvider):
         Args:
             token_verifier: TokenVerifier instance for token validation
             authorization_servers: List of authorization servers that issue valid tokens
-            resource_server_url: URL of this resource server. This is used
-            for RFC 8707 resource indicators, including creating the WWW-Authenticate
-            header.
+            base_url: The base URL of this server
+            resource_name: Optional name for the protected resource
+            resource_documentation: Optional documentation URL for the protected resource
         """
-        super().__init__(resource_server_url=resource_server_url)
+        super().__init__(
+            base_url=base_url,
+            required_scopes=token_verifier.required_scopes,
+        )
         self.token_verifier = token_verifier
         self.authorization_servers = authorization_servers
         self.resource_name = resource_name
@@ -164,21 +222,34 @@ class RemoteAuthProvider(AuthProvider):
         """Verify token using the configured token verifier."""
         return await self.token_verifier.verify_token(token)
 
-    def get_routes(self) -> list[Route]:
+    def get_routes(
+        self,
+        mcp_path: str | None = None,
+        mcp_endpoint: Any | None = None,
+    ) -> list[Route]:
         """Get OAuth routes for this provider.
 
-        By default, returns only the standardized OAuth 2.0 Protected Resource routes.
-        Subclasses can override this method to add additional routes by calling
-        super().get_routes() and extending the returned list.
+        Creates protected resource metadata routes and optionally wraps MCP endpoints with auth.
         """
+        # Start with base routes (protected MCP endpoint)
+        routes = super().get_routes(mcp_path, mcp_endpoint)
 
-        return create_protected_resource_routes(
-            resource_url=self.resource_server_url,
-            authorization_servers=self.authorization_servers,
-            scopes_supported=self.token_verifier.required_scopes,
-            resource_name=self.resource_name,
-            resource_documentation=self.resource_documentation,
-        )
+        # Get the resource URL based on the MCP path
+        resource_url = self._get_resource_url(mcp_path)
+
+        if resource_url:
+            # Add protected resource metadata routes
+            routes.extend(
+                create_protected_resource_routes(
+                    resource_url=resource_url,
+                    authorization_servers=self.authorization_servers,
+                    scopes_supported=self.token_verifier.required_scopes,
+                    resource_name=self.resource_name,
+                    resource_documentation=self.resource_documentation,
+                )
+            )
+
+        return routes
 
 
 class OAuthProvider(
@@ -200,7 +271,6 @@ class OAuthProvider(
         client_registration_options: ClientRegistrationOptions | None = None,
         revocation_options: RevocationOptions | None = None,
         required_scopes: list[str] | None = None,
-        resource_server_url: AnyHttpUrl | str | None = None,
     ):
         """
         Initialize the OAuth provider.
@@ -212,14 +282,13 @@ class OAuthProvider(
             client_registration_options: The client registration options.
             revocation_options: The revocation options.
             required_scopes: Scopes that are required for all requests.
-            resource_server_url: The URL of this resource server (for RFC 8707 resource indicators, defaults to base_url)
         """
-
-        super().__init__()
 
         # Convert URLs to proper types
         if isinstance(base_url, str):
             base_url = AnyHttpUrl(base_url)
+
+        super().__init__(base_url=base_url, required_scopes=required_scopes)
         self.base_url = base_url
 
         if issuer_url is None:
@@ -228,15 +297,6 @@ class OAuthProvider(
             self.issuer_url = AnyHttpUrl(issuer_url)
         else:
             self.issuer_url = issuer_url
-
-        # Handle our own resource_server_url and required_scopes
-        if resource_server_url is None:
-            self.resource_server_url = base_url
-        elif isinstance(resource_server_url, str):
-            self.resource_server_url = AnyHttpUrl(resource_server_url)
-        else:
-            self.resource_server_url = resource_server_url
-        self.required_scopes = required_scopes or []
 
         # Initialize OAuth Authorization Server Provider
         OAuthAuthorizationServerProvider.__init__(self)
@@ -263,12 +323,17 @@ class OAuthProvider(
         """
         return await self.load_access_token(token)
 
-    def get_routes(self) -> list[Route]:
+    def get_routes(
+        self,
+        mcp_path: str | None = None,
+        mcp_endpoint: Any | None = None,
+    ) -> list[Route]:
         """Get OAuth authorization server routes and optional protected resource routes.
 
         This method creates the full set of OAuth routes including:
         - Standard OAuth authorization server routes (/.well-known/oauth-authorization-server, /authorize, /token, etc.)
-        - Optional protected resource routes if resource_server_url is configured
+        - Optional protected resource routes
+        - Protected MCP endpoints if provided
 
         Returns:
             List of OAuth routes
@@ -283,13 +348,19 @@ class OAuthProvider(
             revocation_options=self.revocation_options,
         )
 
+        # Get the resource URL based on the MCP path
+        resource_url = self._get_resource_url(mcp_path)
+
         # Add protected resource routes if this server is also acting as a resource server
-        if self.resource_server_url:
+        if resource_url:
             protected_routes = create_protected_resource_routes(
-                resource_url=self.resource_server_url,
+                resource_url=resource_url,
                 authorization_servers=[self.issuer_url],
                 scopes_supported=self.required_scopes,
             )
             oauth_routes.extend(protected_routes)
+
+        # Add protected MCP endpoint from base class
+        oauth_routes.extend(super().get_routes(mcp_path, mcp_endpoint))
 
         return oauth_routes

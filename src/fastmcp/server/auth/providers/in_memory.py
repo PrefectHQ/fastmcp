@@ -41,7 +41,6 @@ class InMemoryOAuthProvider(OAuthProvider):
         client_registration_options: ClientRegistrationOptions | None = None,
         revocation_options: RevocationOptions | None = None,
         required_scopes: list[str] | None = None,
-        resource_server_url: AnyHttpUrl | str | None = None,
     ):
         super().__init__(
             base_url=base_url or "http://fastmcp.example.com",
@@ -49,7 +48,6 @@ class InMemoryOAuthProvider(OAuthProvider):
             client_registration_options=client_registration_options,
             revocation_options=revocation_options,
             required_scopes=required_scopes,
-            resource_server_url=resource_server_url,
         )
         self.clients: dict[str, OAuthClientInformationFull] = {}
         self.auth_codes: dict[str, AuthorizationCode] = {}

@@ -76,7 +76,7 @@ class TestGoogleProvider:
         )
 
         # Check defaults
-        assert str(provider.base_url) == "http://localhost:8000/"
+        assert provider.base_url is None
         assert provider._redirect_path == "/auth/callback"
         # Google provider has ["openid"] as default but we can't easily verify without accessing internals
 

@@ -23,7 +23,6 @@ auth = AzureProvider(
     tenant_id=os.getenv("AZURE_TENANT_ID")
     or "",  # Required for single-tenant apps - get from Azure Portal
     base_url="http://localhost:8000",
-    resource_server_url="http://localhost:8000/mcp",
     # redirect_path="/auth/callback",  # Default path - change if using a different callback URL
 )
 

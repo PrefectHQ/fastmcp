@@ -241,7 +241,6 @@ class OAuthProxy(OAuthProvider):
         redirect_path: str = "/auth/callback",
         issuer_url: AnyHttpUrl | str | None = None,
         service_documentation_url: AnyHttpUrl | str | None = None,
-        resource_server_url: AnyHttpUrl | str | None = None,
         # Client redirect URI validation
         allowed_client_redirect_uris: list[str] | None = None,
     ):
@@ -259,7 +258,6 @@ class OAuthProxy(OAuthProvider):
             redirect_path: Redirect path configured in upstream OAuth app (defaults to "/auth/callback")
             issuer_url: Issuer URL for OAuth metadata (defaults to base_url)
             service_documentation_url: Optional service documentation URL
-            resource_server_url: Path of the FastMCP server.
             allowed_client_redirect_uris: List of allowed redirect URI patterns for MCP clients.
                 Patterns support wildcards (e.g., "http://localhost:*", "https://*.example.com/*").
                 If None (default), only localhost redirect URIs are allowed.
@@ -281,7 +279,6 @@ class OAuthProxy(OAuthProvider):
             client_registration_options=client_registration_options,
             revocation_options=revocation_options,
             required_scopes=token_verifier.required_scopes,
-            resource_server_url=resource_server_url,
         )
 
         # Store upstream configuration
@@ -875,14 +872,22 @@ class OAuthProxy(OAuthProvider):
         except Exception as e:
             logger.warning("Failed to store tokens from upstream response: %s", e)
 
-    def get_routes(self) -> list[Route]:
+    def get_routes(
+        self,
+        mcp_path: str | None = None,
+        mcp_endpoint: Any | None = None,
+    ) -> list[Route]:
         """Get OAuth routes with custom proxy token handler.
 
         This method creates standard OAuth routes and replaces the token endpoint
         with our proxy handler that forwards requests to the upstream OAuth server.
+
+        Args:
+            mcp_path: The path where the MCP endpoint is mounted (e.g., "/mcp")
+            mcp_endpoint: The MCP endpoint handler to protect with auth
         """
         # Get standard OAuth routes from parent class
-        routes = super().get_routes()
+        routes = super().get_routes(mcp_path, mcp_endpoint)
         custom_routes = []
         token_route_found = False
 

@@ -3,21 +3,15 @@ from __future__ import annotations
 from collections.abc import AsyncGenerator, Callable, Generator
 from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
-from mcp.server.auth.middleware.auth_context import AuthContextMiddleware
-from mcp.server.auth.middleware.bearer_auth import (
-    BearerAuthBackend,
-    RequireAuthMiddleware,
-)
-from mcp.server.auth.provider import TokenVerifier as TokenVerifierProtocol
+from mcp.server.auth.middleware.bearer_auth import RequireAuthMiddleware
 from mcp.server.lowlevel.server import LifespanResultT
 from mcp.server.sse import SseServerTransport
 from mcp.server.streamable_http import EventStore
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
-from starlette.middleware.authentication import AuthenticationMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
 from starlette.routing import BaseRoute, Mount, Route
@@ -170,40 +164,26 @@ def create_sse_app(
 
     # Set up auth if enabled
     if auth:
-        # Create auth middleware
-        auth_middleware = [
-            Middleware(
-                AuthenticationMiddleware,
-                backend=BearerAuthBackend(auth),
-            ),
-            Middleware(AuthContextMiddleware),
-        ]
+        # Get auth middleware from the provider
+        auth_middleware = auth.get_middleware()
 
-        # Get auth routes and scopes
-        auth_routes = auth.get_routes()
-        required_scopes = getattr(auth, "required_scopes", None) or []
-
-        # Get resource metadata URL for WWW-Authenticate header
-        resource_metadata_url = auth.get_resource_metadata_url()
+        # Get auth routes including protected MCP endpoint
+        auth_routes = auth.get_routes(
+            mcp_path=sse_path,
+            mcp_endpoint=handle_sse,
+        )
 
         server_routes.extend(auth_routes)
         server_middleware.extend(auth_middleware)
 
-        # Auth is enabled, wrap endpoints with RequireAuthMiddleware
-        server_routes.append(
-            Route(
-                sse_path,
-                endpoint=RequireAuthMiddleware(
-                    handle_sse, required_scopes, resource_metadata_url
-                ),
-                methods=["GET"],
-            )
-        )
+        # Manually wrap the SSE message endpoint with RequireAuthMiddleware
         server_routes.append(
             Mount(
                 message_path,
                 app=RequireAuthMiddleware(
-                    sse.handle_post_message, required_scopes, resource_metadata_url
+                    sse.handle_post_message,
+                    auth.required_scopes,
+                    auth._get_resource_url("/.well-known/oauth-protected-resource"),
                 ),
             )
         )
@@ -291,34 +271,17 @@ def create_streamable_http_app(
 
     # Add StreamableHTTP routes with or without auth
     if auth:
-        # Create auth middleware
-        auth_middleware = [
-            Middleware(
-                AuthenticationMiddleware,
-                backend=BearerAuthBackend(cast(TokenVerifierProtocol, auth)),
-            ),
-            Middleware(AuthContextMiddleware),
-        ]
+        # Get auth middleware from the provider
+        auth_middleware = auth.get_middleware()
 
-        # Get auth routes and scopes
-        auth_routes = auth.get_routes()
-        required_scopes = getattr(auth, "required_scopes", None) or []
-
-        # Get resource metadata URL for WWW-Authenticate header
-        resource_metadata_url = auth.get_resource_metadata_url()
+        # Get auth routes including protected MCP endpoint
+        auth_routes = auth.get_routes(
+            mcp_path=streamable_http_path,
+            mcp_endpoint=streamable_http_app,
+        )
 
         server_routes.extend(auth_routes)
         server_middleware.extend(auth_middleware)
-
-        # Auth is enabled, wrap endpoint with RequireAuthMiddleware
-        server_routes.append(
-            Route(
-                streamable_http_path,
-                endpoint=RequireAuthMiddleware(
-                    streamable_http_app, required_scopes, resource_metadata_url
-                ),
-            )
-        )
     else:
         # No auth required
         server_routes.append(

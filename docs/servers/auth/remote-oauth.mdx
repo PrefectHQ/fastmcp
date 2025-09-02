@@ -111,7 +111,7 @@ token_verifier = JWTVerifier(
 auth = RemoteAuthProvider(
     token_verifier=token_verifier,
     authorization_servers=[AnyHttpUrl("https://auth.yourcompany.com")],
-    resource_server_url="https://api.yourcompany.com/mcp",  # Point to your MCP endpoint
+    base_url="https://api.yourcompany.com",  # Your server base URL
     # Optional: customize allowed client redirect URIs (defaults to localhost only)
     allowed_client_redirect_uris=["http://localhost:*", "http://127.0.0.1:*"]
 )
@@ -121,7 +121,7 @@ mcp = FastMCP(name="Company API", auth=auth)
 
 This configuration creates a server that accepts tokens issued by `auth.yourcompany.com` and provides the OAuth discovery metadata that MCP clients need. The `JWTVerifier` handles token validation using your identity provider's public keys, while the `RemoteAuthProvider` generates the required OAuth endpoints.
 
-The `authorization_servers` list tells MCP clients which identity providers you trust. The `resource_server_url` identifies your server in OAuth metadata, enabling proper token audience validation. **Important**: The `resource_server_url` should point to your actual MCP endpoint - for example, if your MCP server is accessible at `https://api.yourcompany.com/mcp`, use that full path rather than just the base URL.
+The `authorization_servers` list tells MCP clients which identity providers you trust. The `base_url` identifies your server in OAuth metadata, enabling proper token audience validation. **Important**: The `base_url` should point to your server base URL - for example, if your MCP server is accessible at `https://api.yourcompany.com/mcp`, use `https://api.yourcompany.com` as the base URL.
 
 ### Custom Endpoints
 
@@ -143,7 +143,7 @@ class CompanyAuthProvider(RemoteAuthProvider):
         super().__init__(
             token_verifier=token_verifier,
             authorization_servers=[AnyHttpUrl("https://auth.yourcompany.com")],
-            resource_server_url="https://api.yourcompany.com/mcp"  # Your MCP endpoint path
+            base_url="https://api.yourcompany.com"  # Your server base URL
         )
     
     def get_routes(self) -> list[Route]:

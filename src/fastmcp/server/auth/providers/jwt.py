@@ -153,7 +153,7 @@ class JWTVerifierSettings(BaseSettings):
     algorithm: str | None = None
     audience: str | list[str] | None = None
     required_scopes: list[str] | None = None
-    resource_server_url: AnyHttpUrl | str | None = None
+    base_url: AnyHttpUrl | str | None = None
 
     @field_validator("required_scopes", mode="before")
     @classmethod
@@ -189,7 +189,7 @@ class JWTVerifier(TokenVerifier):
         audience: str | list[str] | None | NotSetT = NotSet,
         algorithm: str | None | NotSetT = NotSet,
         required_scopes: list[str] | None | NotSetT = NotSet,
-        resource_server_url: AnyHttpUrl | str | None | NotSetT = NotSet,
+        base_url: AnyHttpUrl | str | None | NotSetT = NotSet,
     ):
         """
         Initialize the JWT token verifier.
@@ -204,7 +204,7 @@ class JWTVerifier(TokenVerifier):
                       - Asymmetric: RS256/384/512, ES256/384/512, PS256/384/512 (default: RS256)
                       - Symmetric: HS256, HS384, HS512
             required_scopes: Required scopes for all tokens
-            resource_server_url: Resource server URL for TokenVerifier protocol
+            base_url: Base URL for TokenVerifier protocol
         """
         settings = JWTVerifierSettings.model_validate(
             {
@@ -216,7 +216,7 @@ class JWTVerifier(TokenVerifier):
                     "audience": audience,
                     "algorithm": algorithm,
                     "required_scopes": required_scopes,
-                    "resource_server_url": resource_server_url,
+                    "base_url": base_url,
                 }.items()
                 if v is not NotSet
             }
@@ -247,7 +247,7 @@ class JWTVerifier(TokenVerifier):
 
         # Initialize parent TokenVerifier
         super().__init__(
-            resource_server_url=settings.resource_server_url,
+            base_url=settings.base_url,
             required_scopes=settings.required_scopes,
         )
 

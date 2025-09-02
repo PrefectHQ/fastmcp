@@ -98,7 +98,7 @@ class TestAzureProvider:
         )
 
         # Check defaults
-        assert str(provider.base_url) == "http://localhost:8000/"
+        assert provider.base_url is None
         assert provider._redirect_path == "/auth/callback"
         # Azure provider defaults are set but we can't easily verify them without accessing internals
 

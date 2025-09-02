@@ -21,7 +21,6 @@ auth = WorkOSProvider(
     client_secret=os.getenv("WORKOS_CLIENT_SECRET") or "",
     authkit_domain=os.getenv("WORKOS_AUTHKIT_DOMAIN") or "https://your-app.authkit.app",
     base_url="http://localhost:8000",
-    resource_server_url="http://localhost:8000/mcp",
     # redirect_path="/auth/callback",  # Default path - change if using a different callback URL
 )
 
