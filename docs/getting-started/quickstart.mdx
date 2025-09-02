@@ -3,11 +3,11 @@ title: Quickstart
 icon: rocket-launch
 ---
 
-Welcome! This guide will help you quickly set up FastMCP and run your first MCP server.
+Welcome! This guide will help you quickly set up FastMCP, run your first MCP server, and deploy a server to FastMCP Cloud.
 
 If you haven't already installed FastMCP, follow the [installation instructions](/getting-started/installation).
 
-## Creating a FastMCP Server
+## Create a FastMCP Server
 
 A FastMCP server is a collection of tools, resources, and other MCP components. To create a server, start by instantiating the `FastMCP` class. 
 
@@ -23,7 +23,7 @@ mcp = FastMCP("My MCP Server")
 That's it! You've created a FastMCP server, albeit a very boring one. Let's add a tool to make it more interesting.
 
 
-## Adding a Tool
+## Add a Tool
 
 To add a tool that returns a simple greeting, write a function and decorate it with `@mcp.tool` to register it with the server:
 
@@ -38,7 +38,7 @@ def greet(name: str) -> str:
 ```
 
 
-## Testing the Server
+## Test the Server
 
 
 To test the server, create a FastMCP client and point it at the server object.
@@ -67,7 +67,7 @@ There are a few things to note here:
 - Clients are asynchronous, so we need to use `asyncio.run` to run the client.
 - We must enter a client context (`async with client:`) before using the client. You can make multiple client calls within the same context.
 
-## Running the server
+## Run the Server
 
 In order to run the server with Python, we need to add a `run` statement to the `__main__` block of the server file.
 
@@ -127,3 +127,35 @@ Note that FastMCP *does not* require the `__main__` block in the server file, an
 <Tip>
 We pointed our client at the server file, which is recognized as a Python MCP server and executed with `python my_server.py` by default. This executes the `__main__` block of the server file. There are other ways to run the server, which are described in the [server configuration](/servers/server#running-the-server) guide.
 </Tip>
+
+## Deploy to FastMCP Cloud
+
+FastMCP Cloud allows you to take a local MCP server into production, in minutes. 
+
+### Prerequisites
+
+You'll need the following to deploy a server to FastMCP Cloud:
+
+- A FastMCP Cloud Account
+- A GitHub Account
+
+<Note>FastMCP Cloud is in beta, and you may need to join the [Join the waitlist](https://www.fastmcp.cloud/), if you haven't already.</Note>
+
+### Deploy
+
+Log into [FastMCP Cloud](https://www.fastmcp.cloud/login) with your GitHub account, and name your workspace. 
+
+Click "Clone our quickstart." This will create a private repository with a name like, `fastmcp-quickstart-20250804-6o1j` in your GitHub account.
+
+Then click "Clone & Deploy Server," and that's it! Once the deployment finishes building, it will be ready to access with a client.
+
+### Connect
+
+FastMCP Cloud has one-click setup for Claude and Cursor. Navigate to the Connect page and and choose between Claude Code, Claude Desktop, or Cursor.
+
+## Next Steps
+
+- Send log messages back to MCP clients with [logging](/servers/logging).
+- Open a pull request on the quickstart repository to create a preview deployment in FastMCP Cloud.
+- Create a [multi-server client](/clients/client#multi-server-example).
+- Mount an MCP server [into your FastAPI app](integrations/fastapi).
