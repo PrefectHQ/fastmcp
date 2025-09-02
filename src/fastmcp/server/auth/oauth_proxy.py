@@ -455,13 +455,6 @@ class OAuthProxy(OAuthProvider):
         if scopes_to_use:
             query_params["scope"] = " ".join(scopes_to_use)
 
-        # Add PKCE parameters if present (forward to upstream)
-        if params.code_challenge:
-            query_params["code_challenge"] = params.code_challenge
-            query_params["code_challenge_method"] = getattr(
-                params, "code_challenge_method", "S256"
-            )
-
         # Build the upstream authorization URL
         separator = "&" if "?" in self._upstream_authorization_endpoint else "?"
         upstream_url = f"{self._upstream_authorization_endpoint}{separator}{urlencode(query_params)}"
