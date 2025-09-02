@@ -119,10 +119,7 @@
                   {
                     "group": "Essentials",
                     "icon": "cube",
-                    "pages": [
-                      "clients/client",
-                      "clients/transports"
-                    ]
+                    "pages": ["clients/client", "clients/transports"]
                   },
                   {
                     "group": "Core Operations",
@@ -148,10 +145,7 @@
                   {
                     "group": "Authentication",
                     "icon": "user-shield",
-                    "pages": [
-                      "clients/auth/oauth",
-                      "clients/auth/bearer"
-                    ]
+                    "pages": ["clients/auth/oauth", "clients/auth/bearer"]
                   }
                 ]
               },
@@ -230,17 +224,7 @@
           },
           {
             "anchor": "What's New",
-            "pages": [
-              "updates",
-              "changelog"
-            ]
-          },
-          {
-            "anchor": "Community",
-            "icon": "users",
-            "pages": [
-              "community/showcase"
-            ]
+            "pages": ["updates", "changelog"]
           }
         ],
         "tab": "Documentation"
