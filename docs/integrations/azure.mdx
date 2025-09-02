@@ -172,19 +172,23 @@ The client caches tokens locally, so you won't need to re-authenticate for subse
 
 ## Environment Variables
 
-For production deployments, use environment variables instead of hardcoding credentials.
+<VersionBadge version="2.12.1" />
 
-<Info>
-To use the registered Azure provider, you must set `FASTMCP_SERVER_AUTH=AZURE`. Learn more about [registered providers](/servers/auth/authentication#registered-providers).
-</Info>
+For production deployments, use environment variables instead of hardcoding credentials.
 
 ### Provider Selection
 
-<ParamField path="FASTMCP_SERVER_AUTH" default="Not set" required>
-Set to `AZURE` to use the registered AzureProvider with default configuration.
+Setting this environment variable allows the Azure provider to be used automatically without explicitly instantiating it in code.
+
+<Card>
+<ParamField path="FASTMCP_SERVER_AUTH" default="Not set">
+Set to `fastmcp.server.auth.providers.azure.AzureProvider` to use Azure authentication.
 </ParamField>
+</Card>
 
 ### Azure-Specific Configuration
+
+These environment variables provide default values for the Azure provider, whether it's instantiated manually or configured via `FASTMCP_SERVER_AUTH`.
 
 <Card>
 <ParamField path="FASTMCP_SERVER_AUTH_AZURE_CLIENT_ID" required>
@@ -222,8 +226,8 @@ HTTP request timeout for Microsoft Graph API calls
 
 Example `.env` file:
 ```bash
-# Use the registered Azure provider
-FASTMCP_SERVER_AUTH=AZURE
+# Use the Azure provider
+FASTMCP_SERVER_AUTH=fastmcp.server.auth.providers.azure.AzureProvider
 
 # Azure OAuth credentials
 FASTMCP_SERVER_AUTH_AZURE_CLIENT_ID=835f09b6-0f0f-40cc-85cb-f32c5829a149

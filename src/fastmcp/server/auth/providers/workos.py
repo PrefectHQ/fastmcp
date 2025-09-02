@@ -19,7 +19,6 @@ from starlette.routing import Route
 from fastmcp.server.auth import AccessToken, RemoteAuthProvider, TokenVerifier
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from fastmcp.server.auth.providers.jwt import JWTVerifier
-from fastmcp.server.auth.registry import register_provider
 from fastmcp.utilities.auth import parse_scopes
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import NotSet, NotSetT
@@ -124,7 +123,6 @@ class WorkOSTokenVerifier(TokenVerifier):
             return None
 
 
-@register_provider("WORKOS")
 class WorkOSProvider(OAuthProxy):
     """Complete WorkOS OAuth provider for FastMCP.
 
@@ -281,7 +279,6 @@ class AuthKitProviderSettings(BaseSettings):
         return parse_scopes(v)
 
 
-@register_provider("AUTHKIT")
 class AuthKitProvider(RemoteAuthProvider):
     """AuthKit metadata provider for DCR (Dynamic Client Registration).
 

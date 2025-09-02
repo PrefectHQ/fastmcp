@@ -52,7 +52,6 @@ from fastmcp.prompts.prompt import FunctionPrompt
 from fastmcp.resources import Resource, ResourceManager
 from fastmcp.resources.template import ResourceTemplate
 from fastmcp.server.auth import AuthProvider
-from fastmcp.server.auth.registry import get_registered_provider
 from fastmcp.server.http import (
     StarletteWithLifespan,
     create_sse_app,
@@ -209,8 +208,8 @@ class FastMCP(Generic[LifespanResultT]):
         # if auth is `NotSet`, try to create a provider from the environment
         if auth is NotSet:
             if fastmcp.settings.server_auth is not None:
-                provider_cls = get_registered_provider(fastmcp.settings.server_auth)
-                auth = provider_cls()
+                # ImportString returns the class itself
+                auth = fastmcp.settings.server_auth()
             else:
                 auth = None
         self.auth = cast(AuthProvider | None, auth)

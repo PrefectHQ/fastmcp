@@ -338,8 +338,7 @@
                           "python-sdk/fastmcp-server-auth-providers-workos"
                         ]
                       },
-                      "python-sdk/fastmcp-server-auth-redirect_validation",
-                      "python-sdk/fastmcp-server-auth-registry"
+                      "python-sdk/fastmcp-server-auth-redirect_validation"
                     ]
                   },
                   "python-sdk/fastmcp-server-context",

@@ -211,13 +211,15 @@ This pattern enables comprehensive testing of JWT validation logic without depen
 
 ## Environment Configuration
 
+<VersionBadge version="2.12.1" />
+
 FastMCP supports both programmatic and environment-based configuration for token verification, enabling flexible deployment across different environments.
 
 Environment-based configuration separates authentication settings from application code, following twelve-factor app principles and simplifying deployment pipelines.
 
 ```bash
 # Enable JWT verification
-export FASTMCP_SERVER_AUTH=JWT
+export FASTMCP_SERVER_AUTH=fastmcp.server.auth.providers.jwt.JWTVerifier
 
 # For asymmetric verification with JWKS endpoint:
 export FASTMCP_SERVER_AUTH_JWT_JWKS_URI="https://auth.company.com/.well-known/jwks.json"

@@ -191,46 +191,54 @@ Authentication providers are instantiated directly in your code with their requi
 
 ### Environment Configuration
 
+<VersionBadge version="2.12.1" />
+
 Environment-based configuration separates authentication settings from application code, enabling the same codebase to work across different deployment environments without modification.
 
 FastMCP automatically detects authentication configuration from environment variables when no explicit `auth` parameter is provided. The configuration system supports all authentication providers and their various options.
 
-#### Registered Providers
+#### Provider Configuration
 
-FastMCP includes pre-configured providers for popular OAuth services that can be activated with a single environment variable:
+Authentication providers are configured by specifying the full module path to the provider class:
 
 <ParamField path="FASTMCP_SERVER_AUTH" type="string">
-The authentication provider to use. Supported values:
-- `GITHUB` - GitHub OAuth (requires additional GitHub-specific env vars)
-- `GOOGLE` - Google OAuth (requires additional Google-specific env vars)
-- `JWT` - JWT token verification
-- `WORKOS` - WorkOS AuthKit
-- Custom provider class names
+The full module path to the authentication provider class. Examples:
+- `fastmcp.server.auth.providers.github.GitHubProvider` - GitHub OAuth
+- `fastmcp.server.auth.providers.google.GoogleProvider` - Google OAuth
+- `fastmcp.server.auth.providers.jwt.JWTVerifier` - JWT token verification
+- `fastmcp.server.auth.providers.workos.WorkOSProvider` - WorkOS OAuth
+- `fastmcp.server.auth.providers.workos.AuthKitProvider` - WorkOS AuthKit
+- `mycompany.auth.CustomProvider` - Your custom provider class
 </ParamField>
 
-When using registered providers like GitHub or Google, you'll need to set provider-specific environment variables:
+When using providers like GitHub or Google, you'll need to set provider-specific environment variables:
 
 ```bash
 # GitHub OAuth
-export FASTMCP_SERVER_AUTH=GITHUB
+export FASTMCP_SERVER_AUTH=fastmcp.server.auth.providers.github.GitHubProvider
 export FASTMCP_SERVER_AUTH_GITHUB_CLIENT_ID="Ov23li..."
 export FASTMCP_SERVER_AUTH_GITHUB_CLIENT_SECRET="github_pat_..."
 
 # Google OAuth
-export FASTMCP_SERVER_AUTH=GOOGLE
+export FASTMCP_SERVER_AUTH=fastmcp.server.auth.providers.google.GoogleProvider
 export FASTMCP_SERVER_AUTH_GOOGLE_CLIENT_ID="123456.apps.googleusercontent.com"
 export FASTMCP_SERVER_AUTH_GOOGLE_CLIENT_SECRET="GOCSPX-..."
 ```
 
-#### Custom Provider Configuration
+#### Provider-Specific Configuration
 
-For providers that aren't pre-registered, specify the provider class and its configuration:
+Each provider has its own configuration options set through environment variables:
 
 ```bash
-export FASTMCP_SERVER_AUTH=JWT
+# JWT Token Verification
+export FASTMCP_SERVER_AUTH=fastmcp.server.auth.providers.jwt.JWTVerifier
 export FASTMCP_SERVER_AUTH_JWT_JWKS_URI="https://auth.example.com/jwks"
 export FASTMCP_SERVER_AUTH_JWT_ISSUER="https://auth.example.com"
 export FASTMCP_SERVER_AUTH_JWT_AUDIENCE="mcp-server"
+
+# Custom Provider
+export FASTMCP_SERVER_AUTH=mycompany.auth.CustomProvider
+# Plus any environment variables your custom provider expects
 ```
 
 With these environment variables set, creating an authenticated FastMCP server requires no additional configuration:

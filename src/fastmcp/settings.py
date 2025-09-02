@@ -5,7 +5,7 @@ import warnings
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, ImportString, field_validator
 from pydantic.fields import FieldInfo
 from pydantic_settings import (
     BaseSettings,
@@ -258,14 +258,17 @@ class Settings(BaseSettings):
 
     # Auth settings
     server_auth: Annotated[
-        str | None,
+        ImportString | None,
         Field(
             description=inspect.cleandoc(
                 """
-                Configure the authentication provider for the server. Auth
-                providers are registered with a specific key, and providing that
-                key here will cause the server to automatically configure the
-                provider from the environment.
+                Configure the authentication provider for the server by specifying
+                the full module path to an AuthProvider class (e.g., 
+                'fastmcp.server.auth.providers.google.GoogleProvider').
+
+                The specified class will be imported and instantiated automatically.
+                Any class that inherits from AuthProvider can be used, including
+                custom implementations.
 
                 If None, no automatic configuration will take place.
 
@@ -274,6 +277,11 @@ class Settings(BaseSettings):
 
                 Note that most auth providers require additional configuration
                 that must be provided via env vars.
+
+                Examples:
+                  - fastmcp.server.auth.providers.google.GoogleProvider
+                  - fastmcp.server.auth.providers.jwt.JWTVerifier
+                  - mycompany.auth.CustomAuthProvider
                 """
             ),
         ),

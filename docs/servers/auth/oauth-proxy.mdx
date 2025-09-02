@@ -347,29 +347,25 @@ For providers without built-in support, implement a [`TokenVerifier`](/servers/a
 
 ## Environment Configuration
 
-OAuth Proxy supports environment-based configuration for production deployments:
+<VersionBadge version="2.12.1" />
+
+OAuth Proxy-based providers support environment-based configuration for production deployments. Use the specific provider implementations rather than the base OAuth Proxy class:
 
 ```bash
-# Provider selection
-export FASTMCP_SERVER_AUTH=OAUTH_PROXY
+# Use a specific provider implementation
+export FASTMCP_SERVER_AUTH=fastmcp.server.auth.providers.github.GitHubProvider
+# or
+export FASTMCP_SERVER_AUTH=fastmcp.server.auth.providers.google.GoogleProvider
+# or your custom OAuth Proxy implementation
+export FASTMCP_SERVER_AUTH=mycompany.auth.CustomOAuthProvider
 
-# OAuth endpoints
-export FASTMCP_SERVER_AUTH_OAUTH_PROXY_UPSTREAM_AUTHORIZATION_ENDPOINT="https://github.com/login/oauth/authorize"
-export FASTMCP_SERVER_AUTH_OAUTH_PROXY_UPSTREAM_TOKEN_ENDPOINT="https://github.com/login/oauth/access_token"
-
-# Credentials (use secrets management in production)
-export FASTMCP_SERVER_AUTH_OAUTH_PROXY_UPSTREAM_CLIENT_ID="Ov23li..."
-export FASTMCP_SERVER_AUTH_OAUTH_PROXY_UPSTREAM_CLIENT_SECRET="abc123..."
-
-# Token validation
-export FASTMCP_SERVER_AUTH_OAUTH_PROXY_TOKEN_VERIFIER="JWT"
-export FASTMCP_SERVER_AUTH_OAUTH_PROXY_JWKS_URI="https://provider.com/.well-known/jwks.json"
-export FASTMCP_SERVER_AUTH_OAUTH_PROXY_ISSUER="https://provider.com"
-export FASTMCP_SERVER_AUTH_OAUTH_PROXY_AUDIENCE="your-app-id"
-
-# Server URL
-export FASTMCP_SERVER_AUTH_OAUTH_PROXY_BASE_URL="https://your-server.com"
+# Provider-specific configuration (example for GitHub)
+export FASTMCP_SERVER_AUTH_GITHUB_CLIENT_ID="Ov23li..."
+export FASTMCP_SERVER_AUTH_GITHUB_CLIENT_SECRET="abc123..."
+export FASTMCP_SERVER_AUTH_GITHUB_BASE_URL="https://your-server.com"
 ```
+
+For custom OAuth Proxy implementations, configure the environment variables based on your provider's settings class.
 
 With environment variables configured, your code becomes:
 

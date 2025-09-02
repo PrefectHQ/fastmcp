@@ -16,7 +16,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing_extensions import TypedDict
 
 from fastmcp.server.auth import AccessToken, TokenVerifier
-from fastmcp.server.auth.registry import register_provider
 from fastmcp.utilities.auth import parse_scopes
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import NotSet, NotSetT
@@ -162,7 +161,6 @@ class JWTVerifierSettings(BaseSettings):
         return parse_scopes(v)
 
 
-@register_provider("JWT")
 class JWTVerifier(TokenVerifier):
     """
     JWT token verifier supporting both asymmetric (RSA/ECDSA) and symmetric (HMAC) algorithms.

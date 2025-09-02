@@ -80,24 +80,54 @@ if __name__ == "__main__":
 
 ## Environment Variables
 
-You can use environment variables to configure an AuthKit provider without instantiating the provider in your code.
+<VersionBadge version="2.12.1" />
 
-To do so, set the following environment variables:
+For production deployments, use environment variables instead of hardcoding credentials.
 
+### Provider Selection
+
+Setting this environment variable allows the AuthKit provider to be used automatically without explicitly instantiating it in code.
+
+<Card>
+<ParamField path="FASTMCP_SERVER_AUTH" default="Not set">
+Set to `fastmcp.server.auth.providers.workos.AuthKitProvider` to use AuthKit authentication.
+</ParamField>
+</Card>
+
+### AuthKit-Specific Configuration
+
+These environment variables provide default values for the AuthKit provider, whether it's instantiated manually or configured via `FASTMCP_SERVER_AUTH`.
+
+<Card>
+<ParamField path="FASTMCP_SERVER_AUTH_AUTHKITPROVIDER_AUTHKIT_DOMAIN" required>
+Your AuthKit domain (e.g., `https://your-project-12345.authkit.app`)
+</ParamField>
+
+<ParamField path="FASTMCP_SERVER_AUTH_AUTHKITPROVIDER_BASE_URL" required>
+Public URL of your FastMCP server (e.g., `https://your-server.com` or `http://localhost:8000` for development)
+</ParamField>
+
+<ParamField path="FASTMCP_SERVER_AUTH_AUTHKITPROVIDER_REQUIRED_SCOPES" default="[]">
+Comma-, space-, or JSON-separated list of required OAuth scopes (e.g., `openid profile email` or `["openid", "profile", "email"]`)
+</ParamField>
+</Card>
+
+Example `.env` file:
 ```bash
-# instruct FastMCP to use the AuthKit provider
-FASTMCP_SERVER_AUTH=AUTHKIT
+# Use the AuthKit provider
+FASTMCP_SERVER_AUTH=fastmcp.server.auth.providers.workos.AuthKitProvider
 
-# configure the AuthKit provider
-FASTMCP_SERVER_AUTH_AUTHKITPROVIDER_AUTHKIT_DOMAIN="https://your-project-12345.authkit.app"
-FASTMCP_SERVER_AUTH_AUTHKITPROVIDER_BASE_URL="http://localhost:8000"
+# AuthKit configuration
+FASTMCP_SERVER_AUTH_AUTHKITPROVIDER_AUTHKIT_DOMAIN=https://your-project-12345.authkit.app
+FASTMCP_SERVER_AUTH_AUTHKITPROVIDER_BASE_URL=https://your-server.com
+FASTMCP_SERVER_AUTH_AUTHKITPROVIDER_REQUIRED_SCOPES=openid,profile,email
 ```
 
-For clarity, you do **not** need to instantiate an auth provider when using environment variables:
+With environment variables set, your server code simplifies to:
 
 ```python server.py
 from fastmcp import FastMCP
 
-# FastMCP automatically creates the AuthKitProvider from environment variables
-mcp = FastMCP(name="WorkOS Secured App")
+# Authentication is automatically configured from environment
+mcp = FastMCP(name="AuthKit Secured App")
 ```
