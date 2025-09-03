@@ -9,7 +9,8 @@
               "enum": [
                 "stdio",
                 "http",
-                "sse"
+                "sse",
+                "streamable-http"
               ],
               "type": "string"
             },
