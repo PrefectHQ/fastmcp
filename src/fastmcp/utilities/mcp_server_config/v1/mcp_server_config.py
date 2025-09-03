@@ -184,7 +184,7 @@ class MCPServerConfig(BaseModel):
         """Validate and convert source to proper format.
 
         Supports:
-        - Dict format: {"path": "server.py", "entrypoint": "app"}
+        - Dict format: `{"path": "server.py", "entrypoint": "app"}`
         - FileSystemSource instance (passed through)
 
         No string parsing happens here - that's only at CLI boundaries.

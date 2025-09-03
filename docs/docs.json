@@ -50,184 +50,186 @@
   "navigation": {
     "tabs": [
       {
-        "anchors": [
+        "groups": [
           {
-            "anchor": "Documentation",
-            "groups": [
-              {
-                "group": "Get Started",
-                "pages": [
-                  "getting-started/welcome",
-                  "getting-started/installation",
-                  "getting-started/quickstart"
-                ]
-              },
-              {
-                "group": "Servers",
-                "pages": [
-                  "servers/server",
-                  {
-                    "group": "Core Components",
-                    "icon": "toolbox",
-                    "pages": [
-                      "servers/tools",
-                      "servers/resources",
-                      "servers/prompts"
-                    ]
-                  },
-                  {
-                    "group": "Advanced Features",
-                    "icon": "stars",
-                    "pages": [
-                      "servers/context",
-                      "servers/proxy",
-                      "servers/composition",
-                      "servers/elicitation",
-                      "servers/logging",
-                      "servers/progress",
-                      "servers/sampling",
-                      "servers/middleware"
-                    ]
-                  },
-                  {
-                    "group": "Authentication",
-                    "icon": "shield-check",
-                    "pages": [
-                      "servers/auth/authentication",
-                      "servers/auth/token-verification",
-                      "servers/auth/remote-oauth",
-                      "servers/auth/oauth-proxy",
-                      "servers/auth/full-oauth-server"
-                    ]
-                  },
-                  {
-                    "group": "Deployment",
-                    "icon": "rocket",
-                    "pages": [
-                      "deployment/running-server",
-                      "deployment/server-configuration",
-                      "deployment/testing",
-                      "deployment/self-hosted",
-                      "deployment/fastmcp-cloud"
-                    ]
-                  }
-                ]
-              },
-              {
-                "group": "Clients",
-                "pages": [
-                  {
-                    "group": "Essentials",
-                    "icon": "cube",
-                    "pages": ["clients/client", "clients/transports"]
-                  },
-                  {
-                    "group": "Core Operations",
-                    "icon": "handshake",
-                    "pages": [
-                      "clients/tools",
-                      "clients/resources",
-                      "clients/prompts"
-                    ]
-                  },
-                  {
-                    "group": "Advanced Features",
-                    "icon": "stars",
-                    "pages": [
-                      "clients/elicitation",
-                      "clients/logging",
-                      "clients/progress",
-                      "clients/sampling",
-                      "clients/messages",
-                      "clients/roots"
-                    ]
-                  },
-                  {
-                    "group": "Authentication",
-                    "icon": "user-shield",
-                    "pages": ["clients/auth/oauth", "clients/auth/bearer"]
-                  }
-                ]
-              },
-              {
-                "group": "Integrations",
-                "pages": [
-                  {
-                    "group": "Authentication",
-                    "icon": "key",
-                    "pages": [
-                      "integrations/authkit",
-                      "integrations/azure",
-                      "integrations/github",
-                      "integrations/google",
-                      "integrations/workos-oauth"
-                    ]
-                  },
-                  {
-                    "group": "Authorization",
-                    "icon": "shield-check",
-                    "pages": [
-                      "integrations/eunomia-authorization",
-                      "integrations/permit"
-                    ]
-                  },
-                  {
-                    "group": "AI Assistants",
-                    "icon": "robot",
-                    "pages": [
-                      "integrations/chatgpt",
-                      "integrations/claude-code",
-                      "integrations/claude-desktop",
-                      "integrations/cursor",
-                      "integrations/mcp-json-configuration"
-                    ]
-                  },
-                  {
-                    "group": "AI SDKs",
-                    "icon": "code",
-                    "pages": [
-                      "integrations/anthropic",
-                      "integrations/gemini",
-                      "integrations/openai"
-                    ]
-                  },
-                  {
-                    "group": "Web Frameworks",
-                    "icon": "globe",
-                    "pages": [
-                      "integrations/asgi",
-                      "integrations/fastapi",
-                      "integrations/openapi"
-                    ]
-                  }
-                ]
-              },
-              {
-                "group": "Patterns",
-                "pages": [
-                  "patterns/tool-transformation",
-                  "patterns/decorating-methods",
-                  "patterns/cli",
-                  "patterns/contrib"
-                ]
-              },
-              {
-                "group": "Tutorials",
-                "pages": [
-                  "tutorials/mcp",
-                  "tutorials/create-mcp-server",
-                  "tutorials/rest-api"
-                ]
-              }
-            ],
-            "icon": "book"
+            "group": "Get Started",
+            "pages": [
+              "getting-started/welcome",
+              "getting-started/installation",
+              "getting-started/quickstart"
+            ]
           },
           {
-            "anchor": "What's New",
-            "pages": ["updates", "changelog"]
+            "group": "Servers",
+            "pages": [
+              "servers/server",
+              {
+                "group": "Core Components",
+                "icon": "toolbox",
+                "pages": [
+                  "servers/tools",
+                  "servers/resources",
+                  "servers/prompts"
+                ]
+              },
+              {
+                "group": "Advanced Features",
+                "icon": "stars",
+                "pages": [
+                  "servers/context",
+                  "servers/proxy",
+                  "servers/composition",
+                  "servers/elicitation",
+                  "servers/logging",
+                  "servers/progress",
+                  "servers/sampling",
+                  "servers/middleware"
+                ]
+              },
+              {
+                "group": "Authentication",
+                "icon": "shield-check",
+                "pages": [
+                  "servers/auth/authentication",
+                  "servers/auth/token-verification",
+                  "servers/auth/remote-oauth",
+                  "servers/auth/oauth-proxy",
+                  "servers/auth/full-oauth-server"
+                ]
+              },
+              {
+                "group": "Deployment",
+                "icon": "rocket",
+                "pages": [
+                  "deployment/running-server",
+                  "deployment/server-configuration",
+                  "deployment/self-hosted",
+                  "deployment/fastmcp-cloud"
+                ]
+              }
+            ]
+          },
+          {
+            "group": "Clients",
+            "pages": [
+              {
+                "group": "Essentials",
+                "icon": "cube",
+                "pages": [
+                  "clients/client",
+                  "clients/transports"
+                ]
+              },
+              {
+                "group": "Core Operations",
+                "icon": "handshake",
+                "pages": [
+                  "clients/tools",
+                  "clients/resources",
+                  "clients/prompts"
+                ]
+              },
+              {
+                "group": "Advanced Features",
+                "icon": "stars",
+                "pages": [
+                  "clients/elicitation",
+                  "clients/logging",
+                  "clients/progress",
+                  "clients/sampling",
+                  "clients/messages",
+                  "clients/roots"
+                ]
+              },
+              {
+                "group": "Authentication",
+                "icon": "user-shield",
+                "pages": [
+                  "clients/auth/oauth",
+                  "clients/auth/bearer"
+                ]
+              }
+            ]
+          },
+          {
+            "group": "Integrations",
+            "pages": [
+              {
+                "group": "Authentication",
+                "icon": "key",
+                "pages": [
+                  "integrations/authkit",
+                  "integrations/azure",
+                  "integrations/github",
+                  "integrations/google",
+                  "integrations/workos-oauth"
+                ]
+              },
+              {
+                "group": "Authorization",
+                "icon": "shield-check",
+                "pages": [
+                  "integrations/eunomia-authorization",
+                  "integrations/permit"
+                ]
+              },
+              {
+                "group": "AI Assistants",
+                "icon": "robot",
+                "pages": [
+                  "integrations/chatgpt",
+                  "integrations/claude-code",
+                  "integrations/claude-desktop",
+                  "integrations/cursor",
+                  "integrations/mcp-json-configuration"
+                ]
+              },
+              {
+                "group": "AI SDKs",
+                "icon": "code",
+                "pages": [
+                  "integrations/anthropic",
+                  "integrations/gemini",
+                  "integrations/openai"
+                ]
+              },
+              {
+                "group": "Web Frameworks",
+                "icon": "globe",
+                "pages": [
+                  "integrations/asgi",
+                  "integrations/fastapi",
+                  "integrations/openapi"
+                ]
+              }
+            ]
+          },
+          {
+            "group": "Patterns",
+            "pages": [
+              "patterns/tool-transformation",
+              "patterns/decorating-methods",
+              "patterns/cli",
+              "patterns/contrib"
+            ]
+          },
+          {
+            "group": "Development",
+            "pages": [
+              "development/contributing",
+              "development/tests",
+              "development/releases"
+            ]
           }
         ],
         "tab": "Documentation"
+      },
+      {
+        "pages": [
+          "updates",
+          "changelog"
+        ],
+        "tab": "What's New"
       },
       {
         "anchors": [
