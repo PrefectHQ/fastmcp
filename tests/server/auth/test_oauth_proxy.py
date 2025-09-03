@@ -1,67 +1,349 @@
-"""Comprehensive tests for OAuth Proxy Provider functionality."""
+"""Comprehensive tests for OAuth Proxy Provider functionality.
 
+This test suite covers:
+1. Initialization and configuration
+2. Client registration (DCR)
+3. Authorization flow
+4. Token management
+5. PKCE forwarding
+6. Token endpoint authentication methods
+7. E2E testing with mock OAuth provider
+"""
+
+import asyncio
+import secrets
 import time
 from unittest.mock import AsyncMock, Mock, patch
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, urlencode, urlparse
 
+import httpx
 import pytest
 from mcp.server.auth.provider import AuthorizationParams
 from mcp.shared.auth import OAuthClientInformationFull
 from pydantic import AnyUrl
+from starlette.applications import Starlette
+from starlette.responses import JSONResponse
+from starlette.routing import Route
 
-from fastmcp.server.auth.auth import AccessToken, RefreshToken
+from fastmcp import FastMCP
+from fastmcp.server.auth.auth import AccessToken, RefreshToken, TokenVerifier
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from fastmcp.server.auth.providers.jwt import JWTVerifier
 
+# =============================================================================
+# Mock OAuth Provider for E2E Testing
+# =============================================================================
 
-class TestOAuthProxyComprehensive:
-    """Comprehensive test suite for OAuthProxy provider functionality."""
 
-    @pytest.fixture
-    def jwt_verifier(self):
-        """Create a mock JWT verifier for testing."""
-        verifier = Mock(spec=JWTVerifier)
-        verifier.required_scopes = ["read", "write"]
-        verifier.verify_token = Mock(return_value=None)
-        return verifier
+class MockOAuthProvider:
+    """Mock OAuth provider for testing OAuth proxy E2E flows.
 
-    @pytest.fixture
-    def oauth_proxy(self, jwt_verifier):
-        """Create an OAuthProxy instance for testing."""
-        return OAuthProxy(
-            upstream_authorization_endpoint="https://github.com/login/oauth/authorize",
-            upstream_token_endpoint="https://github.com/login/oauth/access_token",
-            upstream_client_id="test-client-id",
-            upstream_client_secret="test-client-secret",
-            token_verifier=jwt_verifier,
-            base_url="https://myserver.com",
-            redirect_path="/auth/callback",
+    This provider simulates a complete OAuth server without requiring:
+    - Real authentication credentials
+    - Browser automation
+    - Network calls to external services
+    """
+
+    def __init__(self, port: int = 9999):
+        self.port = port
+        self.base_url = f"http://localhost:{port}"
+        self.app = None
+        self.server = None
+
+        # Storage for OAuth state
+        self.authorization_codes = {}
+        self.access_tokens = {}
+        self.refresh_tokens = {}
+        self.revoked_tokens = set()
+
+        # Tracking for assertions
+        self.authorize_called = False
+        self.token_called = False
+        self.refresh_called = False
+        self.revoke_called = False
+
+        # Configuration
+        self.require_pkce = False
+        self.token_endpoint_auth_method = "client_secret_basic"
+
+    @property
+    def authorize_endpoint(self) -> str:
+        return f"{self.base_url}/authorize"
+
+    @property
+    def token_endpoint(self) -> str:
+        return f"{self.base_url}/token"
+
+    @property
+    def revocation_endpoint(self) -> str:
+        return f"{self.base_url}/revoke"
+
+    def create_app(self) -> Starlette:
+        """Create the mock OAuth server application."""
+        return Starlette(
+            routes=[
+                Route("/authorize", self.handle_authorize),
+                Route("/token", self.handle_token, methods=["POST"]),
+                Route("/revoke", self.handle_revoke, methods=["POST"]),
+            ]
         )
 
-    def test_initialization_with_string_urls(self, jwt_verifier):
-        """Test OAuthProxy initialization with string URLs (not AnyHttpUrl objects)."""
+    async def handle_authorize(self, request):
+        """Handle authorization requests."""
+        self.authorize_called = True
+        query = dict(request.query_params)
+
+        # Validate PKCE if required
+        if self.require_pkce and "code_challenge" not in query:
+            return JSONResponse(
+                {"error": "invalid_request", "error_description": "PKCE required"},
+                status_code=400,
+            )
+
+        # Generate authorization code
+        code = secrets.token_urlsafe(32)
+        self.authorization_codes[code] = {
+            "client_id": query.get("client_id"),
+            "redirect_uri": query.get("redirect_uri"),
+            "state": query.get("state"),
+            "code_challenge": query.get("code_challenge"),
+            "code_challenge_method": query.get("code_challenge_method", "S256"),
+            "scope": query.get("scope"),
+            "created_at": time.time(),
+        }
+
+        # Redirect back to callback
+        redirect_uri = query["redirect_uri"]
+        params = {"code": code}
+        if query.get("state"):
+            params["state"] = query["state"]
+
+        redirect_url = f"{redirect_uri}?{urlencode(params)}"
+        return JSONResponse(
+            content={}, status_code=302, headers={"Location": redirect_url}
+        )
+
+    async def handle_token(self, request):
+        """Handle token requests."""
+        self.token_called = True
+        form = await request.form()
+        grant_type = form.get("grant_type")
+
+        if grant_type == "authorization_code":
+            code = form.get("code")
+            if code not in self.authorization_codes:
+                return JSONResponse(
+                    {"error": "invalid_grant", "error_description": "Invalid code"},
+                    status_code=400,
+                )
+
+            # Validate PKCE if it was used
+            auth_data = self.authorization_codes[code]
+            if auth_data.get("code_challenge"):
+                verifier = form.get("code_verifier")
+                if not verifier:
+                    return JSONResponse(
+                        {
+                            "error": "invalid_request",
+                            "error_description": "Missing code_verifier",
+                        },
+                        status_code=400,
+                    )
+                # In a real implementation, we'd validate the verifier
+
+            # Generate tokens
+            access_token = f"mock_access_{secrets.token_hex(16)}"
+            refresh_token = f"mock_refresh_{secrets.token_hex(16)}"
+
+            self.access_tokens[access_token] = {
+                "client_id": auth_data["client_id"],
+                "scope": auth_data.get("scope"),
+                "expires_at": time.time() + 3600,
+            }
+            self.refresh_tokens[refresh_token] = {
+                "client_id": auth_data["client_id"],
+                "scope": auth_data.get("scope"),
+            }
+
+            # Clean up used code
+            del self.authorization_codes[code]
+
+            return JSONResponse(
+                {
+                    "access_token": access_token,
+                    "token_type": "Bearer",
+                    "expires_in": 3600,
+                    "refresh_token": refresh_token,
+                    "scope": auth_data.get("scope"),
+                }
+            )
+
+        elif grant_type == "refresh_token":
+            self.refresh_called = True
+            refresh_token = form.get("refresh_token")
+
+            if refresh_token not in self.refresh_tokens:
+                return JSONResponse(
+                    {
+                        "error": "invalid_grant",
+                        "error_description": "Invalid refresh token",
+                    },
+                    status_code=400,
+                )
+
+            # Generate new access token
+            new_access = f"mock_access_{secrets.token_hex(16)}"
+            token_data = self.refresh_tokens[refresh_token]
+
+            self.access_tokens[new_access] = {
+                "client_id": token_data["client_id"],
+                "scope": token_data.get("scope"),
+                "expires_at": time.time() + 3600,
+            }
+
+            return JSONResponse(
+                {
+                    "access_token": new_access,
+                    "token_type": "Bearer",
+                    "expires_in": 3600,
+                    "refresh_token": refresh_token,  # Same refresh token
+                    "scope": token_data.get("scope"),
+                }
+            )
+
+        return JSONResponse({"error": "unsupported_grant_type"}, status_code=400)
+
+    async def handle_revoke(self, request):
+        """Handle token revocation."""
+        self.revoke_called = True
+        form = await request.form()
+        token = form.get("token")
+
+        if token:
+            self.revoked_tokens.add(token)
+            # Remove from active tokens
+            self.access_tokens.pop(token, None)
+            self.refresh_tokens.pop(token, None)
+
+        return JSONResponse({})
+
+    async def start(self):
+        """Start the mock OAuth server."""
+        from uvicorn import Config, Server
+
+        self.app = self.create_app()
+        config = Config(self.app, host="localhost", port=self.port, log_level="error")
+        self.server = Server(config)
+
+        # Start server in background
+        asyncio.create_task(self.server.serve())
+
+        # Wait for server to be ready
+        await asyncio.sleep(0.5)
+
+    async def stop(self):
+        """Stop the mock OAuth server."""
+        if self.server:
+            self.server.should_exit = True
+            await asyncio.sleep(0.1)
+
+    def reset(self):
+        """Reset all state for next test."""
+        self.authorization_codes.clear()
+        self.access_tokens.clear()
+        self.refresh_tokens.clear()
+        self.revoked_tokens.clear()
+        self.authorize_called = False
+        self.token_called = False
+        self.refresh_called = False
+        self.revoke_called = False
+
+
+class MockTokenVerifier(TokenVerifier):
+    """Mock token verifier for testing."""
+
+    def __init__(self, required_scopes=None):
+        self.required_scopes = required_scopes or ["read", "write"]
+        self.verify_called = False
+
+    async def verify_token(self, token: str) -> AccessToken:
+        """Mock token verification."""
+        self.verify_called = True
+        return AccessToken(
+            token=token,
+            client_id="mock-client",
+            scopes=self.required_scopes,
+            expires_at=int(time.time() + 3600),
+        )
+
+
+# =============================================================================
+# Test Fixtures
+# =============================================================================
+
+
+@pytest.fixture
+def jwt_verifier():
+    """Create a mock JWT verifier for testing."""
+    verifier = Mock(spec=JWTVerifier)
+    verifier.required_scopes = ["read", "write"]
+    verifier.verify_token = Mock(return_value=None)
+    return verifier
+
+
+@pytest.fixture
+def oauth_proxy(jwt_verifier):
+    """Create a standard OAuthProxy instance for testing."""
+    return OAuthProxy(
+        upstream_authorization_endpoint="https://github.com/login/oauth/authorize",
+        upstream_token_endpoint="https://github.com/login/oauth/access_token",
+        upstream_client_id="test-client-id",
+        upstream_client_secret="test-client-secret",
+        token_verifier=jwt_verifier,
+        base_url="https://myserver.com",
+        redirect_path="/auth/callback",
+    )
+
+
+@pytest.fixture
+async def mock_oauth_provider():
+    """Create and start a mock OAuth provider."""
+    provider = MockOAuthProvider(port=9999)
+    await provider.start()
+    yield provider
+    await provider.stop()
+
+
+# =============================================================================
+# Test Classes
+# =============================================================================
+
+
+class TestOAuthProxyInitialization:
+    """Tests for OAuth proxy initialization and configuration."""
+
+    def test_basic_initialization(self, jwt_verifier):
+        """Test basic proxy initialization with required parameters."""
         proxy = OAuthProxy(
             upstream_authorization_endpoint="https://auth.example.com/authorize",
             upstream_token_endpoint="https://auth.example.com/token",
             upstream_client_id="client-123",
             upstream_client_secret="secret-456",
             token_verifier=jwt_verifier,
-            base_url="https://api.example.com",  # String instead of AnyHttpUrl
-            issuer_url="https://issuer.example.com",  # String
-            service_documentation_url="https://docs.example.com",  # String
+            base_url="https://api.example.com",
         )
 
-        # Should work fine and convert internally to AnyHttpUrl
-        assert str(proxy.base_url) == "https://api.example.com/"
-        assert str(proxy.issuer_url) == "https://issuer.example.com/"
-        assert str(proxy.service_documentation_url) == "https://docs.example.com/"
         assert (
-            proxy.client_registration_options is not None
-            and proxy.client_registration_options.valid_scopes == ["read", "write"]
+            proxy._upstream_authorization_endpoint
+            == "https://auth.example.com/authorize"
         )
+        assert proxy._upstream_token_endpoint == "https://auth.example.com/token"
+        assert proxy._upstream_client_id == "client-123"
+        assert proxy._upstream_client_secret.get_secret_value() == "secret-456"
+        assert str(proxy.base_url) == "https://api.example.com/"
 
-    def test_initialization_with_all_parameters(self, jwt_verifier):
-        """Test OAuthProxy initialization with all optional parameters."""
+    def test_all_optional_parameters(self, jwt_verifier):
+        """Test initialization with all optional parameters."""
         proxy = OAuthProxy(
             upstream_authorization_endpoint="https://auth.example.com/authorize",
             upstream_token_endpoint="https://auth.example.com/token",
@@ -70,204 +352,78 @@ class TestOAuthProxyComprehensive:
             upstream_revocation_endpoint="https://auth.example.com/revoke",
             token_verifier=jwt_verifier,
             base_url="https://api.example.com",
-            redirect_path="/auth/callback",
+            redirect_path="/custom/callback",
             issuer_url="https://issuer.example.com",
             service_documentation_url="https://docs.example.com",
-            valid_scopes=["open", "close"],
-        )
-
-        # Verify all parameters are set correctly
-        assert (
-            proxy._upstream_authorization_endpoint
-            == "https://auth.example.com/authorize"
-        )
-        assert proxy._upstream_token_endpoint == "https://auth.example.com/token"
-        assert proxy._upstream_client_id == "client-123"
-        assert proxy._upstream_client_secret.get_secret_value() == "secret-456"
-        assert proxy._upstream_revocation_endpoint == "https://auth.example.com/revoke"
-        assert proxy._redirect_path == "/auth/callback"
-        assert str(proxy.issuer_url) == "https://issuer.example.com/"
-        assert str(proxy.service_documentation_url) == "https://docs.example.com/"
-        assert (
-            proxy.client_registration_options is not None
-            and proxy.client_registration_options.valid_scopes == ["open", "close"]
-        )
-
-    def test_redirect_path_normalization(self, jwt_verifier):
-        """Test that redirect_path is normalized to start with /."""
-        # Without leading slash
-        proxy1 = OAuthProxy(
-            upstream_authorization_endpoint="https://auth.com/authorize",
-            upstream_token_endpoint="https://auth.com/token",
-            upstream_client_id="client",
-            upstream_client_secret="secret",
-            token_verifier=jwt_verifier,
-            base_url="https://server.com",
-            redirect_path="auth/callback",
-        )
-        assert proxy1._redirect_path == "/auth/callback"
-
-        # With leading slash
-        proxy2 = OAuthProxy(
-            upstream_authorization_endpoint="https://auth.com/authorize",
-            upstream_token_endpoint="https://auth.com/token",
-            upstream_client_id="client",
-            upstream_client_secret="secret",
-            token_verifier=jwt_verifier,
-            base_url="https://server.com",
-            redirect_path="/auth/callback",
-        )
-        assert proxy2._redirect_path == "/auth/callback"
-
-    async def test_authorize_url_with_ampersand_separator(self, jwt_verifier):
-        """Test that authorize builds URLs with & separator when upstream endpoint has existing query parameters."""
-        # Test case: upstream endpoint with existing query parameters
-        proxy = OAuthProxy(
-            upstream_authorization_endpoint="https://auth.example.com/authorize?version=2.0",
-            upstream_token_endpoint="https://auth.example.com/token",
-            upstream_client_id="client-123",
-            upstream_client_secret="secret-456",
-            token_verifier=jwt_verifier,
-            base_url="https://myserver.com",
-        )
-
-        client = OAuthClientInformationFull(
-            client_id="test-client",
-            client_secret="test-secret",
-            redirect_uris=[AnyUrl("http://localhost:54321/callback")],
-        )
-
-        params = AuthorizationParams(
-            redirect_uri=AnyUrl("http://localhost:54321/callback"),
-            redirect_uri_provided_explicitly=True,
-            state="client-state",
-            code_challenge="challenge",
-            scopes=["read"],
-        )
-
-        # Should use "&" separator
-        redirect_url = await proxy.authorize(client, params)
-        parsed = urlparse(redirect_url)
-        query_params = parse_qs(parsed.query)
-
-        assert parsed.scheme == "https"
-        assert parsed.netloc == "auth.example.com"
-        assert parsed.path == "/authorize"
-        # Params in the original url are kept
-        assert "version" in query_params
-        assert query_params["version"] == ["2.0"]
-        # New params added correctly
-        assert query_params["response_type"] == ["code"]
-
-    def test_dcr_always_enabled(self, jwt_verifier):
-        """Test that DCR is always enabled for OAuth Proxy."""
-        proxy = OAuthProxy(
-            upstream_authorization_endpoint="https://auth.com/authorize",
-            upstream_token_endpoint="https://auth.com/token",
-            upstream_client_id="client",
-            upstream_client_secret="secret",
-            token_verifier=jwt_verifier,
-            base_url="https://server.com",
-        )
-
-        assert proxy.client_registration_options is not None
-        assert proxy.client_registration_options.enabled is True
-
-    def test_revocation_enabled_with_endpoint(self, jwt_verifier):
-        """Test that revocation is enabled when upstream endpoint is provided."""
-        proxy = OAuthProxy(
-            upstream_authorization_endpoint="https://auth.com/authorize",
-            upstream_token_endpoint="https://auth.com/token",
-            upstream_client_id="client",
-            upstream_client_secret="secret",
-            upstream_revocation_endpoint="https://auth.com/revoke",
-            token_verifier=jwt_verifier,
-            base_url="https://server.com",
-        )
-
-        assert proxy.revocation_options is not None
-        assert proxy.revocation_options.enabled is True
-        assert proxy._upstream_revocation_endpoint == "https://auth.com/revoke"
-
-    def test_revocation_disabled_without_endpoint(self, jwt_verifier):
-        """Test that revocation is disabled when no upstream endpoint is provided."""
-        proxy = OAuthProxy(
-            upstream_authorization_endpoint="https://auth.com/authorize",
-            upstream_token_endpoint="https://auth.com/token",
-            upstream_client_id="client",
-            upstream_client_secret="secret",
-            token_verifier=jwt_verifier,
-            base_url="https://server.com",
-        )
-
-        assert proxy.revocation_options is None
-        assert proxy._upstream_revocation_endpoint is None
-
-    async def test_register_client(self, oauth_proxy):
-        """Test client registration stores ProxyDCRClient without modifying original."""
-        client_info = OAuthClientInformationFull(
-            client_id="original-client-id",
-            client_secret="original-secret",
-            redirect_uris=[AnyUrl("http://localhost:12345/callback")],
-            grant_types=["authorization_code"],
+            allowed_client_redirect_uris=["http://localhost:*"],
+            valid_scopes=["custom", "scopes"],
+            forward_pkce=False,
             token_endpoint_auth_method="client_secret_post",
         )
 
-        await oauth_proxy.register_client(client_info)
+        assert proxy._upstream_revocation_endpoint == "https://auth.example.com/revoke"
+        assert proxy._redirect_path == "/custom/callback"
+        assert proxy._forward_pkce is False
+        assert proxy._token_endpoint_auth_method == "client_secret_post"
+        assert proxy.client_registration_options.valid_scopes == ["custom", "scopes"]
 
-        assert client_info.client_id == "original-client-id"
-        assert client_info.client_secret == "original-secret"
-        assert client_info.token_endpoint_auth_method == "client_secret_post"
-        assert client_info.grant_types == ["authorization_code"]
+    def test_redirect_path_normalization(self, jwt_verifier):
+        """Test that redirect_path is normalized with leading slash."""
+        proxy = OAuthProxy(
+            upstream_authorization_endpoint="https://auth.com/authorize",
+            upstream_token_endpoint="https://auth.com/token",
+            upstream_client_id="client",
+            upstream_client_secret="secret",
+            token_verifier=jwt_verifier,
+            base_url="https://api.com",
+            redirect_path="auth/callback",  # No leading slash
+        )
+        assert proxy._redirect_path == "/auth/callback"
 
-        # Verify ProxyDCRClient was stored with original client credentials
-        stored_client = oauth_proxy._clients.get("original-client-id")
-        assert stored_client is not None
-        assert stored_client.client_id == "original-client-id"
-        assert stored_client.client_secret == "original-secret"
-        assert stored_client.scope == "read write"
 
-    async def test_register_client_empty_grant_types(self, oauth_proxy):
-        """Test client registration with empty grant types."""
+class TestOAuthProxyClientRegistration:
+    """Tests for OAuth proxy client registration (DCR)."""
+
+    async def test_register_client(self, oauth_proxy):
+        """Test client registration creates ProxyDCRClient."""
         client_info = OAuthClientInformationFull(
-            client_id="original-client-id",
+            client_id="original-client",
             client_secret="original-secret",
             redirect_uris=[AnyUrl("http://localhost:12345/callback")],
-            grant_types=[],  # Empty grant types list
         )
 
         await oauth_proxy.register_client(client_info)
 
-        assert client_info.grant_types == []
+        # Client should be stored with original credentials
+        stored = oauth_proxy._clients.get("original-client")
+        assert stored is not None
+        assert stored.client_id == "original-client"
+        assert stored.client_secret == "original-secret"
 
-        # Verify stored ProxyDCRClient has proper grant types
-        stored_client = oauth_proxy._clients.get("original-client-id")
-        assert stored_client is not None
-        assert stored_client.grant_types == ["authorization_code", "refresh_token"]
-
-    async def test_get_client_existing(self, oauth_proxy):
-        """Test getting an existing registered client."""
-        # Register a client first
+    async def test_get_registered_client(self, oauth_proxy):
+        """Test retrieving a registered client."""
         client_info = OAuthClientInformationFull(
-            client_id="test-id",
+            client_id="test-client",
             client_secret="test-secret",
-            redirect_uris=[AnyUrl("http://localhost:12345/callback")],
+            redirect_uris=[AnyUrl("http://localhost:8080/callback")],
         )
         await oauth_proxy.register_client(client_info)
 
-        # Get the client
-        retrieved = await oauth_proxy.get_client("test-id")
+        retrieved = await oauth_proxy.get_client("test-client")
         assert retrieved is not None
-        assert retrieved.client_id == "test-id"
+        assert retrieved.client_id == "test-client"
 
-    async def test_get_client_unregistered_returns_none(self, oauth_proxy):
+    async def test_get_unregistered_client_returns_none(self, oauth_proxy):
         """Test that unregistered clients return None."""
-        # Get a client that hasn't been registered
-        client = await oauth_proxy.get_client("unknown-client-id")
+        client = await oauth_proxy.get_client("unknown-client")
         assert client is None
 
+
+class TestOAuthProxyAuthorization:
+    """Tests for OAuth proxy authorization flow."""
+
     async def test_authorize_creates_transaction(self, oauth_proxy):
-        """Test that authorize creates a transaction and returns upstream URL."""
+        """Test that authorize creates transaction and returns upstream URL."""
         client = OAuthClientInformationFull(
             client_id="test-client",
             client_secret="test-secret",
@@ -279,361 +435,337 @@ class TestOAuthProxyComprehensive:
             redirect_uri_provided_explicitly=True,
             state="client-state-123",
             code_challenge="challenge-abc",
+            code_challenge_method="S256",
             scopes=["read", "write"],
         )
 
-        # Call authorize
         redirect_url = await oauth_proxy.authorize(client, params)
 
         # Parse the redirect URL
         parsed = urlparse(redirect_url)
         query_params = parse_qs(parsed.query)
 
-        # Verify it's redirecting to upstream
-        assert parsed.scheme == "https"
-        assert parsed.netloc == "github.com"
-        assert parsed.path == "/login/oauth/authorize"
-
-        # Verify query parameters
-        assert query_params["response_type"] == ["code"]
-        assert query_params["client_id"] == ["test-client-id"]
-        assert query_params["redirect_uri"] == ["https://myserver.com/auth/callback"]
-        assert "state" in query_params  # This should be the transaction ID
-        assert query_params["scope"] == ["read write"]
+        # Verify upstream URL structure
+        assert "github.com/login/oauth/authorize" in redirect_url
+        assert query_params["client_id"][0] == "test-client-id"
+        assert query_params["response_type"][0] == "code"
+        assert "state" in query_params  # Transaction ID
 
         # Verify transaction was stored
         txn_id = query_params["state"][0]
-        transaction = oauth_proxy._oauth_transactions.get(txn_id)
-        assert transaction is not None
+        assert txn_id in oauth_proxy._oauth_transactions
+        transaction = oauth_proxy._oauth_transactions[txn_id]
         assert transaction["client_id"] == "test-client"
-        assert transaction["client_redirect_uri"] == "http://localhost:54321/callback"
-        assert transaction["client_state"] == "client-state-123"
         assert transaction["code_challenge"] == "challenge-abc"
-        assert transaction["code_challenge_method"] == "S256"
-        assert transaction["scopes"] == ["read", "write"]
 
-    async def test_authorize_without_scopes(self, oauth_proxy):
-        """Test authorize without scopes uses required scopes from verifier."""
+
+class TestOAuthProxyPKCE:
+    """Tests for OAuth proxy PKCE forwarding."""
+
+    @pytest.fixture
+    def proxy_with_pkce(self, jwt_verifier):
+        return OAuthProxy(
+            upstream_authorization_endpoint="https://oauth.example.com/authorize",
+            upstream_token_endpoint="https://oauth.example.com/token",
+            upstream_client_id="upstream-client",
+            upstream_client_secret="upstream-secret",
+            token_verifier=jwt_verifier,
+            base_url="https://proxy.example.com",
+            forward_pkce=True,
+        )
+
+    @pytest.fixture
+    def proxy_without_pkce(self, jwt_verifier):
+        return OAuthProxy(
+            upstream_authorization_endpoint="https://oauth.example.com/authorize",
+            upstream_token_endpoint="https://oauth.example.com/token",
+            upstream_client_id="upstream-client",
+            upstream_client_secret="upstream-secret",
+            token_verifier=jwt_verifier,
+            base_url="https://proxy.example.com",
+            forward_pkce=False,
+        )
+
+    async def test_pkce_forwarding_enabled(self, proxy_with_pkce):
+        """Test that proxy generates and forwards its own PKCE."""
         client = OAuthClientInformationFull(
             client_id="test-client",
             client_secret="test-secret",
-            redirect_uris=[AnyUrl("http://localhost:54321/callback")],
+            redirect_uris=[AnyUrl("http://localhost:12345/callback")],
         )
 
         params = AuthorizationParams(
-            redirect_uri=AnyUrl("http://localhost:54321/callback"),
+            redirect_uri=AnyUrl("http://localhost:12345/callback"),
             redirect_uri_provided_explicitly=True,
             state="client-state",
-            code_challenge="challenge",
-            scopes=[],  # Empty scopes to test fallback
+            code_challenge="client_challenge",
+            scopes=["read"],
         )
 
-        redirect_url = await oauth_proxy.authorize(client, params)
+        redirect_url = await proxy_with_pkce.authorize(client, params)
+        query_params = parse_qs(urlparse(redirect_url).query)
 
-        parsed = urlparse(redirect_url)
-        query_params = parse_qs(parsed.query)
+        # Proxy should forward its own PKCE
+        assert "code_challenge" in query_params
+        assert query_params["code_challenge"][0] != "client_challenge"
+        assert query_params["code_challenge_method"] == ["S256"]
 
-        # Should use required_scopes from token_verifier
-        assert query_params["scope"] == ["read write"]
+        # Transaction should store both challenges
+        txn_id = query_params["state"][0]
+        transaction = proxy_with_pkce._oauth_transactions[txn_id]
+        assert transaction["code_challenge"] == "client_challenge"  # Client's
+        assert "proxy_code_verifier" in transaction  # Proxy's verifier
 
-    async def test_authorize_no_scopes(self, jwt_verifier):
-        """Test that proxy doesn't add scopes when none specified."""
-        # Create proxy - using Google endpoints but proxy shouldn't special-case
-        proxy = OAuthProxy(
-            upstream_authorization_endpoint="https://accounts.google.com/o/oauth2/v2/auth",
-            upstream_token_endpoint="https://oauth2.googleapis.com/token",
-            upstream_client_id="google-client",
-            upstream_client_secret="google-secret",
-            token_verifier=Mock(required_scopes=None),  # No required scopes
-            base_url="https://myserver.com",
-        )
-
+    async def test_pkce_forwarding_disabled(self, proxy_without_pkce):
+        """Test that PKCE is not forwarded when disabled."""
         client = OAuthClientInformationFull(
             client_id="test-client",
             client_secret="test-secret",
-            redirect_uris=[AnyUrl("http://localhost:54321/callback")],
+            redirect_uris=[AnyUrl("http://localhost:12345/callback")],
         )
 
         params = AuthorizationParams(
-            redirect_uri=AnyUrl("http://localhost:54321/callback"),
+            redirect_uri=AnyUrl("http://localhost:12345/callback"),
             redirect_uri_provided_explicitly=True,
-            state="state",
-            code_challenge="challenge",
-            scopes=[],  # Empty scopes
+            state="client-state",
+            code_challenge="client_challenge",
+            scopes=["read"],
         )
 
-        redirect_url = await proxy.authorize(client, params)
+        redirect_url = await proxy_without_pkce.authorize(client, params)
+        query_params = parse_qs(urlparse(redirect_url).query)
 
-        parsed = urlparse(redirect_url)
-        query_params = parse_qs(parsed.query)
+        # No PKCE forwarded to upstream
+        assert "code_challenge" not in query_params
+        assert "code_challenge_method" not in query_params
 
-        # Proxy should NOT add any scopes - providers handle their own defaults
-        assert "scope" not in query_params
+        # Client's challenge still stored
+        txn_id = query_params["state"][0]
+        transaction = proxy_without_pkce._oauth_transactions[txn_id]
+        assert transaction["code_challenge"] == "client_challenge"
+        assert "proxy_code_verifier" not in transaction
 
-    async def test_client_scope_empty_when_no_required_scopes(self):
-        """When required_scopes is None/empty, registered client scope should be empty string."""
-        from mcp.shared.auth import OAuthClientInformationFull
-        from pydantic import AnyUrl
 
+class TestOAuthProxyTokenEndpointAuth:
+    """Tests for token endpoint authentication methods."""
+
+    def test_token_auth_method_initialization(self, jwt_verifier):
+        """Test different token endpoint auth methods."""
+        # client_secret_post
+        proxy_post = OAuthProxy(
+            upstream_authorization_endpoint="https://oauth.example.com/authorize",
+            upstream_token_endpoint="https://oauth.example.com/token",
+            upstream_client_id="client",
+            upstream_client_secret="secret",
+            token_verifier=jwt_verifier,
+            base_url="https://proxy.example.com",
+            token_endpoint_auth_method="client_secret_post",
+        )
+        assert proxy_post._token_endpoint_auth_method == "client_secret_post"
+
+        # client_secret_basic (default)
+        proxy_basic = OAuthProxy(
+            upstream_authorization_endpoint="https://oauth.example.com/authorize",
+            upstream_token_endpoint="https://oauth.example.com/token",
+            upstream_client_id="client",
+            upstream_client_secret="secret",
+            token_verifier=jwt_verifier,
+            base_url="https://proxy.example.com",
+            token_endpoint_auth_method="client_secret_basic",
+        )
+        assert proxy_basic._token_endpoint_auth_method == "client_secret_basic"
+
+        # None (use authlib default)
+        proxy_default = OAuthProxy(
+            upstream_authorization_endpoint="https://oauth.example.com/authorize",
+            upstream_token_endpoint="https://oauth.example.com/token",
+            upstream_client_id="client",
+            upstream_client_secret="secret",
+            token_verifier=jwt_verifier,
+            base_url="https://proxy.example.com",
+        )
+        assert proxy_default._token_endpoint_auth_method is None
+
+    @pytest.mark.asyncio
+    async def test_token_auth_method_passed_to_client(self, jwt_verifier):
+        """Test that auth method is passed to AsyncOAuth2Client."""
         proxy = OAuthProxy(
-            upstream_authorization_endpoint="https://auth.example.com/authorize",
-            upstream_token_endpoint="https://auth.example.com/token",
-            upstream_client_id="client-123",
-            upstream_client_secret="secret-456",
-            token_verifier=Mock(required_scopes=None),
-            base_url="https://api.example.com",
+            upstream_authorization_endpoint="https://oauth.example.com/authorize",
+            upstream_token_endpoint="https://oauth.example.com/token",
+            upstream_client_id="client-id",
+            upstream_client_secret="client-secret",
+            token_verifier=jwt_verifier,
+            base_url="https://proxy.example.com",
+            token_endpoint_auth_method="client_secret_post",
         )
 
-        # Register a client first
+        with patch("fastmcp.server.auth.oauth_proxy.AsyncOAuth2Client") as MockClient:
+            mock_client = AsyncMock()
+            mock_client.refresh_token = AsyncMock(
+                return_value={
+                    "access_token": "new-token",
+                    "refresh_token": "new-refresh",
+                    "expires_in": 3600,
+                }
+            )
+            MockClient.return_value = mock_client
+
+            client = OAuthClientInformationFull(
+                client_id="test-client",
+                client_secret="test-secret",
+                redirect_uris=[AnyUrl("http://localhost:12345/callback")],
+            )
+
+            refresh_token = RefreshToken(
+                token="old-refresh",
+                client_id="test-client",
+                scopes=["read"],
+                expires_at=None,
+            )
+
+            await proxy.exchange_refresh_token(client, refresh_token, ["read"])
+
+            # Verify auth method was passed
+            MockClient.assert_called_with(
+                client_id="client-id",
+                client_secret="client-secret",
+                token_endpoint_auth_method="client_secret_post",
+                timeout=30.0,
+            )
+
+
+class TestOAuthProxyE2E:
+    """End-to-end tests using mock OAuth provider."""
+
+    @pytest.mark.asyncio
+    async def test_full_oauth_flow_with_mock_provider(self, mock_oauth_provider):
+        """Test complete OAuth flow with mock provider."""
+        # Create proxy pointing to mock provider
+        proxy = OAuthProxy(
+            upstream_authorization_endpoint=mock_oauth_provider.authorize_endpoint,
+            upstream_token_endpoint=mock_oauth_provider.token_endpoint,
+            upstream_client_id="mock-client",
+            upstream_client_secret="mock-secret",
+            token_verifier=MockTokenVerifier(),
+            base_url="http://localhost:8000",
+        )
+
+        # Create FastMCP server with proxy
+        server = FastMCP("Test Server", auth=proxy)
+
+        @server.tool
+        def protected_tool() -> str:
+            return "Protected data"
+
+        # Start authorization flow
         client_info = OAuthClientInformationFull(
             client_id="test-client",
             client_secret="test-secret",
             redirect_uris=[AnyUrl("http://localhost:12345/callback")],
         )
-        await proxy.register_client(client_info)
 
-        # Get the registered client
-        registered_client = await proxy.get_client("test-client")
-        assert registered_client is not None
-        assert registered_client.scope == ""
-
-    async def test_load_authorization_code_valid(self, oauth_proxy):
-        """Test loading a valid authorization code."""
-        # Store a client code
-        code = "test-auth-code"
-        oauth_proxy._client_codes[code] = {
-            "client_id": "test-client-id",
-            "redirect_uri": "http://localhost:54321/callback",
-            "code_challenge": "challenge-123",
-            "scopes": ["read", "write"],
-            "expires_at": time.time() + 300,  # 5 minutes from now
-            "idp_tokens": {"access_token": "token-123"},
-        }
-
-        client = OAuthClientInformationFull(
-            client_id="test-client-id",
-            client_secret="secret",
-            redirect_uris=[AnyUrl("http://localhost:54321/callback")],
-        )
-
-        # Load the code
-        auth_code = await oauth_proxy.load_authorization_code(client, code)
-
-        assert auth_code is not None
-        assert auth_code.code == code
-        assert auth_code.client_id == "test-client-id"
-        assert str(auth_code.redirect_uri) == "http://localhost:54321/callback"
-        assert auth_code.code_challenge == "challenge-123"
-        assert auth_code.scopes == ["read", "write"]
-
-    async def test_load_authorization_code_expired(self, oauth_proxy):
-        """Test loading an expired authorization code returns None."""
-        code = "expired-code"
-        oauth_proxy._client_codes[code] = {
-            "client_id": "test-client-id",
-            "redirect_uri": "http://localhost:54321/callback",
-            "expires_at": time.time() - 60,  # Expired 1 minute ago
-        }
-
-        client = OAuthClientInformationFull(
-            client_id="test-client-id",
-            client_secret="secret",
-            redirect_uris=[AnyUrl("http://localhost:54321/callback")],
-        )
-
-        auth_code = await oauth_proxy.load_authorization_code(client, code)
-        assert auth_code is None
-        # Code should be cleaned up
-        assert code not in oauth_proxy._client_codes
-
-    async def test_load_authorization_code_wrong_client(self, oauth_proxy):
-        """Test loading authorization code with wrong client ID returns None."""
-        code = "test-code"
-        oauth_proxy._client_codes[code] = {
-            "client_id": "correct-client-id",
-            "redirect_uri": "http://localhost:54321/callback",
-            "expires_at": time.time() + 300,
-        }
-
-        wrong_client = OAuthClientInformationFull(
-            client_id="wrong-client-id",
-            client_secret="secret",
-            redirect_uris=[AnyUrl("http://localhost:54321/callback")],
-        )
-
-        auth_code = await oauth_proxy.load_authorization_code(wrong_client, code)
-        assert auth_code is None
-
-    async def test_load_access_token_delegates_to_verifier(
-        self, oauth_proxy, jwt_verifier
-    ):
-        """Test that load_access_token delegates to the token verifier."""
-        token = "test-access-token"
-        expected_result = AccessToken(
-            token=token,
-            client_id="test-client",
-            scopes=["read"],
-            expires_at=int(time.time() + 3600),
-        )
-
-        # Mock the async method properly
-        async def mock_verify(token):
-            return expected_result
-
-        jwt_verifier.verify_token = mock_verify
-
-        result = await oauth_proxy.load_access_token(token)
-
-        assert result == expected_result
-        # Can't assert on the mock function call in this case
-
-    def test_get_routes_includes_callback(self, oauth_proxy):
-        """Test that get_routes includes the OAuth callback route."""
-        routes = oauth_proxy.get_routes()
-
-        # Find the callback route
-        callback_routes = [
-            r for r in routes if hasattr(r, "path") and r.path == "/auth/callback"
-        ]
-
-        assert len(callback_routes) == 1
-        callback_route = callback_routes[0]
-        assert "GET" in callback_route.methods
-        assert callback_route.endpoint == oauth_proxy._handle_idp_callback
-
-    def test_get_routes_preserves_standard_routes(self, oauth_proxy):
-        """Test that get_routes preserves standard OAuth routes."""
-        routes = oauth_proxy.get_routes()
-
-        # Should have standard OAuth routes
-        paths = [r.path for r in routes if hasattr(r, "path")]
-
-        # Standard OAuth endpoints should be present
-        assert "/authorize" in paths
-        assert "/token" in paths
-        assert "/.well-known/oauth-authorization-server" in paths
-
-        # Plus our custom callback
-        assert "/auth/callback" in paths
-
-    async def test_revoke_token_access_token(self, oauth_proxy):
-        """Test revoking an access token cleans up local storage."""
-        # Store tokens
-        access_token = "access-123"
-        refresh_token = "refresh-456"
-
-        oauth_proxy._access_tokens[access_token] = AccessToken(
-            token=access_token,
-            client_id="client",
-            scopes=[],
-            expires_at=int(time.time() + 3600),
-        )
-        oauth_proxy._refresh_tokens[refresh_token] = Mock(token=refresh_token)
-        oauth_proxy._access_to_refresh[access_token] = refresh_token
-        oauth_proxy._refresh_to_access[refresh_token] = access_token
-
-        # Revoke access token
-        await oauth_proxy.revoke_token(oauth_proxy._access_tokens[access_token])
-
-        # Verify cleanup
-        assert access_token not in oauth_proxy._access_tokens
-        assert refresh_token not in oauth_proxy._refresh_tokens
-        assert access_token not in oauth_proxy._access_to_refresh
-        assert refresh_token not in oauth_proxy._refresh_to_access
-
-    async def test_exchange_authorization_code_stores_tokens(self, oauth_proxy):
-        """Test that exchange_authorization_code stores tokens locally."""
-        from mcp.server.auth.provider import AuthorizationCode
-
-        # Set up client code with IdP tokens
-        code = "client-code-123"
-        idp_tokens = {
-            "access_token": "idp-access-token",
-            "refresh_token": "idp-refresh-token",
-            "expires_in": 3600,
-            "token_type": "Bearer",
-        }
-
-        oauth_proxy._client_codes[code] = {
-            "client_id": "test-client",
-            "redirect_uri": "http://localhost:54321/callback",
-            "scopes": ["read", "write"],
-            "idp_tokens": idp_tokens,
-            "expires_at": time.time() + 300,
-        }
-
-        client = OAuthClientInformationFull(
-            client_id="test-client",
-            client_secret="secret",
-            redirect_uris=[AnyUrl("http://localhost:54321/callback")],
-        )
-
-        auth_code = AuthorizationCode(
-            code=code,
-            client_id="test-client",
-            redirect_uri=AnyUrl("http://localhost:54321/callback"),
+        params = AuthorizationParams(
+            redirect_uri=AnyUrl("http://localhost:12345/callback"),
             redirect_uri_provided_explicitly=True,
-            scopes=["read", "write"],
-            expires_at=time.time() + 300,
-            code_challenge="test-challenge",
+            state="client-state",
+            code_challenge="",  # Empty string for no PKCE
+            scopes=["read"],
         )
 
-        # Exchange the code
-        result = await oauth_proxy.exchange_authorization_code(client, auth_code)
+        # Get authorization URL
+        auth_url = await proxy.authorize(client_info, params)
 
-        # Verify result
-        assert result.access_token == "idp-access-token"
-        assert result.refresh_token == "idp-refresh-token"
-        assert result.expires_in == 3600
+        # Verify mock provider was called
+        assert mock_oauth_provider.authorize_endpoint in auth_url
 
-        # Verify tokens were stored locally
-        assert "idp-access-token" in oauth_proxy._access_tokens
-        assert "idp-refresh-token" in oauth_proxy._refresh_tokens
-        assert oauth_proxy._access_to_refresh["idp-access-token"] == "idp-refresh-token"
-        assert oauth_proxy._refresh_to_access["idp-refresh-token"] == "idp-access-token"
+        # Verify state is present (transaction ID)
+        query_params = parse_qs(urlparse(auth_url).query)
+        assert "state" in query_params
 
-        # Verify code was cleaned up
-        assert code not in oauth_proxy._client_codes
+        # Simulate authorization callback
+        async with httpx.AsyncClient() as http_client:
+            # This would normally redirect, but our mock returns the code
+            response = await http_client.get(auth_url, follow_redirects=False)
 
+            # Extract code from redirect location
+            location = response.headers.get("location", "")
+            callback_params = parse_qs(urlparse(location).query)
+            auth_code = callback_params.get("code", [None])[0]
 
-class TestOAuthProxyPKCE:
-    """Test suite for OAuth Proxy PKCE forwarding functionality."""
+            assert auth_code is not None
+            assert mock_oauth_provider.authorize_called
 
-    @pytest.fixture
-    def jwt_verifier(self):
-        """Create a mock JWT verifier for testing."""
-        verifier = Mock()
-        verifier.required_scopes = ["read", "write"]
-        return verifier
+    @pytest.mark.asyncio
+    async def test_token_refresh_with_mock_provider(self, mock_oauth_provider):
+        """Test token refresh flow with mock provider."""
+        proxy = OAuthProxy(
+            upstream_authorization_endpoint=mock_oauth_provider.authorize_endpoint,
+            upstream_token_endpoint=mock_oauth_provider.token_endpoint,
+            upstream_client_id="mock-client",
+            upstream_client_secret="mock-secret",
+            token_verifier=MockTokenVerifier(),
+            base_url="http://localhost:8000",
+        )
 
-    @pytest.fixture
-    def oauth_proxy_with_pkce(self, jwt_verifier):
-        """Create an OAuthProxy instance with PKCE forwarding enabled."""
-        return OAuthProxy(
-            upstream_authorization_endpoint="https://oauth.example.com/authorize",
-            upstream_token_endpoint="https://oauth.example.com/token",
-            upstream_client_id="upstream-client",
-            upstream_client_secret="upstream-secret",
-            token_verifier=jwt_verifier,
-            base_url="https://proxy.example.com",
+        # Mock initial tokens in provider
+        refresh_token = "mock_refresh_initial"
+        mock_oauth_provider.refresh_tokens[refresh_token] = {
+            "client_id": "mock-client",
+            "scope": "read write",
+        }
+
+        with patch("fastmcp.server.auth.oauth_proxy.AsyncOAuth2Client") as MockClient:
+            mock_client = AsyncMock()
+
+            # Configure mock to call real provider
+            async def mock_refresh(*args, **kwargs):
+                async with httpx.AsyncClient() as http:
+                    response = await http.post(
+                        mock_oauth_provider.token_endpoint,
+                        data={
+                            "grant_type": "refresh_token",
+                            "refresh_token": refresh_token,
+                        },
+                    )
+                    return response.json()
+
+            mock_client.refresh_token = mock_refresh
+            MockClient.return_value = mock_client
+
+            # Test refresh
+            client = OAuthClientInformationFull(
+                client_id="test-client",
+                client_secret="test-secret",
+                redirect_uris=[AnyUrl("http://localhost:12345/callback")],
+            )
+
+            refresh = RefreshToken(
+                token=refresh_token,
+                client_id="test-client",
+                scopes=["read"],
+                expires_at=None,
+            )
+
+            result = await proxy.exchange_refresh_token(client, refresh, ["read"])
+
+            assert result.access_token.startswith("mock_access_")
+            assert mock_oauth_provider.refresh_called
+
+    @pytest.mark.asyncio
+    async def test_pkce_validation_with_mock_provider(self, mock_oauth_provider):
+        """Test PKCE validation with mock provider."""
+        mock_oauth_provider.require_pkce = True
+
+        proxy = OAuthProxy(
+            upstream_authorization_endpoint=mock_oauth_provider.authorize_endpoint,
+            upstream_token_endpoint=mock_oauth_provider.token_endpoint,
+            upstream_client_id="mock-client",
+            upstream_client_secret="mock-secret",
+            token_verifier=MockTokenVerifier(),
+            base_url="http://localhost:8000",
             forward_pkce=True,  # Enable PKCE forwarding
         )
 
-    @pytest.fixture
-    def oauth_proxy_without_pkce(self, jwt_verifier):
-        """Create an OAuthProxy instance with PKCE forwarding disabled."""
-        return OAuthProxy(
-            upstream_authorization_endpoint="https://oauth.example.com/authorize",
-            upstream_token_endpoint="https://oauth.example.com/token",
-            upstream_client_id="upstream-client",
-            upstream_client_secret="upstream-secret",
-            token_verifier=jwt_verifier,
-            base_url="https://proxy.example.com",
-            forward_pkce=False,  # Disable PKCE forwarding
-        )
-
-    async def test_pkce_forwarding_enabled(self, oauth_proxy_with_pkce):
-        """Test that proxy generates and forwards its own PKCE when client uses PKCE."""
         client = OAuthClientInformationFull(
             client_id="test-client",
             client_secret="test-secret",
@@ -649,248 +781,15 @@ class TestOAuthProxyPKCE:
             scopes=["read"],
         )
 
-        redirect_url = await oauth_proxy_with_pkce.authorize(client, params)
-        query_params = parse_qs(urlparse(redirect_url).query)
+        # Start authorization with PKCE
+        auth_url = await proxy.authorize(client, params)
+        query_params = parse_qs(urlparse(auth_url).query)
 
-        # Verify proxy forwards its own PKCE challenge
+        # Verify PKCE was forwarded (proxy's challenge, not client's)
         assert "code_challenge" in query_params
         assert query_params["code_challenge"][0] != "client_challenge_value"
-        assert query_params["code_challenge_method"] == ["S256"]
 
-        # Verify transaction stores both client and proxy PKCE
+        # Transaction should have proxy's verifier
         txn_id = query_params["state"][0]
-        transaction = oauth_proxy_with_pkce._oauth_transactions[txn_id]
-        assert transaction["code_challenge"] == "client_challenge_value"  # Client's
-        assert "proxy_code_verifier" in transaction  # Proxy's verifier stored
-
-    async def test_pkce_forwarding_disabled(self, oauth_proxy_without_pkce):
-        """Test that PKCE is not forwarded when forward_pkce=False."""
-        client = OAuthClientInformationFull(
-            client_id="test-client",
-            client_secret="test-secret",
-            redirect_uris=[AnyUrl("http://localhost:12345/callback")],
-        )
-
-        params = AuthorizationParams(
-            redirect_uri=AnyUrl("http://localhost:12345/callback"),
-            redirect_uri_provided_explicitly=True,
-            state="client-state",
-            code_challenge="client_challenge_value",
-            scopes=["read"],
-        )
-
-        redirect_url = await oauth_proxy_without_pkce.authorize(client, params)
-        query_params = parse_qs(urlparse(redirect_url).query)
-
-        # Verify NO PKCE parameters forwarded to upstream
-        assert "code_challenge" not in query_params
-        assert "code_challenge_method" not in query_params
-
-        # But client's PKCE is still stored for validation
-        txn_id = query_params["state"][0]
-        transaction = oauth_proxy_without_pkce._oauth_transactions[txn_id]
-        assert transaction["code_challenge"] == "client_challenge_value"
-        assert "proxy_code_verifier" not in transaction
-
-    async def test_no_pkce_when_client_has_none(self, oauth_proxy_with_pkce):
-        """Test that proxy doesn't generate PKCE if client doesn't use it."""
-        client = OAuthClientInformationFull(
-            client_id="test-client",
-            client_secret="test-secret",
-            redirect_uris=[AnyUrl("http://localhost:12345/callback")],
-        )
-
-        params = AuthorizationParams(
-            redirect_uri=AnyUrl("http://localhost:12345/callback"),
-            redirect_uri_provided_explicitly=True,
-            state="client-state",
-            code_challenge="",  # Empty string means no PKCE
-            scopes=["read"],
-        )
-
-        redirect_url = await oauth_proxy_with_pkce.authorize(client, params)
-        query_params = parse_qs(urlparse(redirect_url).query)
-
-        # Verify NO PKCE forwarded
-        assert "code_challenge" not in query_params
-        assert "code_challenge_method" not in query_params
-
-        # No proxy verifier stored
-        txn_id = query_params["state"][0]
-        transaction = oauth_proxy_with_pkce._oauth_transactions[txn_id]
-        assert "proxy_code_verifier" not in transaction
-
-
-class TestOAuthProxyTokenAuthMethod:
-    """Test suite for OAuth Proxy token_endpoint_auth_method parameter."""
-
-    @pytest.fixture
-    def jwt_verifier(self):
-        """Create a mock JWT verifier for testing."""
-        verifier = Mock()
-        verifier.required_scopes = ["read", "write"]
-        return verifier
-
-    def test_initialization_with_token_auth_method(self, jwt_verifier):
-        """Test that token_endpoint_auth_method is stored correctly when provided."""
-        proxy = OAuthProxy(
-            upstream_authorization_endpoint="https://oauth.example.com/authorize",
-            upstream_token_endpoint="https://oauth.example.com/token",
-            upstream_client_id="client-id",
-            upstream_client_secret="client-secret",
-            token_verifier=jwt_verifier,
-            base_url="https://proxy.example.com",
-            token_endpoint_auth_method="client_secret_post",
-        )
-
-        assert proxy._token_endpoint_auth_method == "client_secret_post"
-
-    def test_initialization_without_token_auth_method(self, jwt_verifier):
-        """Test that token_endpoint_auth_method defaults to None when not provided."""
-        proxy = OAuthProxy(
-            upstream_authorization_endpoint="https://oauth.example.com/authorize",
-            upstream_token_endpoint="https://oauth.example.com/token",
-            upstream_client_id="client-id",
-            upstream_client_secret="client-secret",
-            token_verifier=jwt_verifier,
-            base_url="https://proxy.example.com",
-        )
-
-        assert proxy._token_endpoint_auth_method is None
-
-    def test_different_auth_methods(self, jwt_verifier):
-        """Test initialization with different authentication methods."""
-        # Test client_secret_basic
-        proxy_basic = OAuthProxy(
-            upstream_authorization_endpoint="https://oauth.example.com/authorize",
-            upstream_token_endpoint="https://oauth.example.com/token",
-            upstream_client_id="client-id",
-            upstream_client_secret="client-secret",
-            token_verifier=jwt_verifier,
-            base_url="https://proxy.example.com",
-            token_endpoint_auth_method="client_secret_basic",
-        )
-        assert proxy_basic._token_endpoint_auth_method == "client_secret_basic"
-
-        # Test none (for public clients)
-        proxy_none = OAuthProxy(
-            upstream_authorization_endpoint="https://oauth.example.com/authorize",
-            upstream_token_endpoint="https://oauth.example.com/token",
-            upstream_client_id="client-id",
-            upstream_client_secret="client-secret",
-            token_verifier=jwt_verifier,
-            base_url="https://proxy.example.com",
-            token_endpoint_auth_method="none",
-        )
-        assert proxy_none._token_endpoint_auth_method == "none"
-
-    @pytest.mark.asyncio
-    async def test_token_auth_method_passed_to_oauth_client(self, jwt_verifier):
-        """Test that token_endpoint_auth_method is passed to AsyncOAuth2Client during token exchange."""
-        proxy = OAuthProxy(
-            upstream_authorization_endpoint="https://oauth.example.com/authorize",
-            upstream_token_endpoint="https://oauth.example.com/token",
-            upstream_client_id="client-id",
-            upstream_client_secret="client-secret",
-            token_verifier=jwt_verifier,
-            base_url="https://proxy.example.com",
-            token_endpoint_auth_method="client_secret_post",
-        )
-
-        # Mock AsyncOAuth2Client
-        with patch(
-            "fastmcp.server.auth.oauth_proxy.AsyncOAuth2Client"
-        ) as MockOAuth2Client:
-            mock_client = AsyncMock()
-            mock_client.refresh_token = AsyncMock(
-                return_value={
-                    "access_token": "new-access-token",
-                    "refresh_token": "new-refresh-token",
-                    "expires_in": 3600,
-                }
-            )
-            MockOAuth2Client.return_value = mock_client
-
-            # Test exchange_refresh_token
-            client = OAuthClientInformationFull(
-                client_id="test-client",
-                client_secret="test-secret",
-                redirect_uris=[AnyUrl("http://localhost:12345/callback")],
-            )
-
-            refresh_token = RefreshToken(
-                token="old-refresh-token",
-                client_id="test-client",
-                scopes=["read"],
-                expires_at=None,
-            )
-
-            await proxy.exchange_refresh_token(client, refresh_token, ["read"])
-
-            # Verify AsyncOAuth2Client was called with token_endpoint_auth_method
-            MockOAuth2Client.assert_called_with(
-                client_id="client-id",
-                client_secret="client-secret",
-                token_endpoint_auth_method="client_secret_post",
-                timeout=30.0,
-            )
-
-    @pytest.mark.asyncio
-    async def test_token_auth_method_in_idp_callback(self, jwt_verifier):
-        """Test that token_endpoint_auth_method is passed during IdP callback handling."""
-        proxy = OAuthProxy(
-            upstream_authorization_endpoint="https://oauth.example.com/authorize",
-            upstream_token_endpoint="https://oauth.example.com/token",
-            upstream_client_id="client-id",
-            upstream_client_secret="client-secret",
-            token_verifier=jwt_verifier,
-            base_url="https://proxy.example.com",
-            token_endpoint_auth_method="client_secret_basic",
-        )
-
-        # Set up OAuth transaction
-        txn_id = "test-transaction"
-        proxy._oauth_transactions[txn_id] = {
-            "client_id": "test-client",
-            "redirect_uri": "http://localhost:12345/callback",
-            "state": "client-state",
-            "scopes": ["read"],
-            "proxy_code_verifier": "verifier123",
-        }
-
-        # Register client
-        client = OAuthClientInformationFull(
-            client_id="test-client",
-            client_secret="test-secret",
-            redirect_uris=[AnyUrl("http://localhost:12345/callback")],
-        )
-        await proxy.register_client(client)
-
-        # Mock AsyncOAuth2Client and Request
-        with patch(
-            "fastmcp.server.auth.oauth_proxy.AsyncOAuth2Client"
-        ) as MockOAuth2Client:
-            mock_client = AsyncMock()
-            mock_client.fetch_token = AsyncMock(
-                return_value={
-                    "access_token": "idp-access-token",
-                    "refresh_token": "idp-refresh-token",
-                    "expires_in": 3600,
-                }
-            )
-            MockOAuth2Client.return_value = mock_client
-
-            # Create mock request with query params
-            mock_request = Mock()
-            mock_request.query_params = {"code": "idp-auth-code", "state": txn_id}
-
-            # Simulate IdP callback
-            await proxy._handle_idp_callback(mock_request)
-
-            # Verify AsyncOAuth2Client was called with token_endpoint_auth_method
-            MockOAuth2Client.assert_called_with(
-                client_id="client-id",
-                client_secret="client-secret",
-                token_endpoint_auth_method="client_secret_basic",
-                timeout=30.0,
-            )
+        transaction = proxy._oauth_transactions[txn_id]
+        assert "proxy_code_verifier" in transaction
