@@ -125,6 +125,16 @@ mcp = FastMCP(name="My Server", auth=auth)
   - `False`: Disable only if upstream provider doesn't support PKCE
 </ParamField>
 
+<ParamField body="token_endpoint_auth_method" type="str | None">
+  Token endpoint authentication method for the upstream OAuth server. Controls how the proxy authenticates when exchanging authorization codes and refresh tokens with the upstream provider.
+  - `"client_secret_basic"`: Send credentials in Authorization header (most common)
+  - `"client_secret_post"`: Send credentials in request body (required by some providers)
+  - `"none"`: No authentication (for public clients)
+  - `None` (default): Uses authlib's default (typically `"client_secret_basic"`)
+  
+  Set this if your provider requires a specific authentication method and the default doesn't work.
+</ParamField>
+
 <ParamField body="allowed_client_redirect_uris" type="list[str] | None">
   List of allowed redirect URI patterns for MCP clients. Patterns support wildcards (e.g., `"http://localhost:*"`, `"https://*.example.com/*"`).
   - `None` (default): All redirect URIs allowed (for MCP/DCR compatibility)

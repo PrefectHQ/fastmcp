@@ -248,6 +248,8 @@ class OAuthProxy(OAuthProvider):
         valid_scopes: list[str] | None = None,
         # PKCE configuration
         forward_pkce: bool = True,
+        # Token endpoint authentication
+        token_endpoint_auth_method: str | None = None,
     ):
         """Initialize the OAuth proxy provider.
 
@@ -273,6 +275,9 @@ class OAuthProxy(OAuthProvider):
             forward_pkce: Whether to forward PKCE to upstream server (default True).
                 Enable for providers that support/require PKCE (Google, Azure, etc.).
                 Disable only if upstream provider doesn't support PKCE.
+            token_endpoint_auth_method: Token endpoint authentication method for upstream server.
+                Common values: "client_secret_basic", "client_secret_post", "none".
+                If None, authlib will use its default (typically "client_secret_basic").
         """
         # Always enable DCR since we implement it locally for MCP clients
         client_registration_options = ClientRegistrationOptions(
@@ -310,6 +315,9 @@ class OAuthProxy(OAuthProvider):
 
         # PKCE configuration
         self._forward_pkce = forward_pkce
+
+        # Token endpoint authentication
+        self._token_endpoint_auth_method = token_endpoint_auth_method
 
         # Local state for DCR and token bookkeeping
         self._clients: dict[str, OAuthClientInformationFull] = {}
@@ -622,6 +630,7 @@ class OAuthProxy(OAuthProvider):
         oauth_client = AsyncOAuth2Client(
             client_id=self._upstream_client_id,
             client_secret=self._upstream_client_secret.get_secret_value(),
+            token_endpoint_auth_method=self._token_endpoint_auth_method,
             timeout=HTTP_TIMEOUT_SECONDS,
         )
 
@@ -849,6 +858,7 @@ class OAuthProxy(OAuthProvider):
             oauth_client = AsyncOAuth2Client(
                 client_id=self._upstream_client_id,
                 client_secret=self._upstream_client_secret.get_secret_value(),
+                token_endpoint_auth_method=self._token_endpoint_auth_method,
                 timeout=HTTP_TIMEOUT_SECONDS,
             )
 
