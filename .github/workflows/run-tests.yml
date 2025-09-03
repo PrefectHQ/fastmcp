@@ -73,7 +73,8 @@ jobs:
         run: uv sync --frozen
 
       - name: Run integration tests
-        run: uv run pytest -v tests -m "integration"
+        # use longer per-test timeout than the default 3s
+        run: uv run pytest -v tests -m "integration" --timeout=15
         env:
           FASTMCP_GITHUB_TOKEN: ${{ secrets.FASTMCP_GITHUB_TOKEN }}
           FASTMCP_TEST_AUTH_GITHUB_CLIENT_ID: ${{ secrets.FASTMCP_TEST_AUTH_GITHUB_CLIENT_ID }}
