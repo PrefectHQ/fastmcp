@@ -4,55 +4,169 @@ icon: "list-check"
 rss: true
 ---
 
+<Update label="v2.12.1" description="2025-09-06">
+
+**[v2.12.1: OAuth to Joy](https://github.com/jlowin/fastmcp/releases/tag/v2.12.1)**
+
+FastMCP 2.12.1 strengthens the OAuth proxy implementation based on extensive community testing and feedback. This release improves client storage reliability, adds PKCE forwarding for enhanced security, introduces configurable token endpoint authentication methods, and expands scope handling—all addressing real-world integration challenges discovered since 2.12.0. The enhanced test suite with mock providers ensures these improvements are robust and maintainable.
+
+## Breaking Changes
+- **OAuth Proxy**: Users of built-in IDP integrations should note that `resource_server_url` has been renamed to `base_url` for clarity and consistency
+
+## What's Changed
+### Enhancements 🔧
+* Make openai dependency optional by [@jlowin](https://github.com/jlowin) in [#1701](https://github.com/jlowin/fastmcp/pull/1701)
+* Remove orphaned OAuth proxy code by [@jlowin](https://github.com/jlowin) in [#1722](https://github.com/jlowin/fastmcp/pull/1722)
+* Expose valid scopes from OAuthProxy metadata by [@dmikusa](https://github.com/dmikusa) in [#1717](https://github.com/jlowin/fastmcp/pull/1717)
+* OAuth proxy PKCE forwarding by [@jlowin](https://github.com/jlowin) in [#1733](https://github.com/jlowin/fastmcp/pull/1733)
+* Add token_endpoint_auth_method parameter to OAuthProxy by [@jlowin](https://github.com/jlowin) in [#1736](https://github.com/jlowin/fastmcp/pull/1736)
+* Clean up and enhance OAuth proxy tests with mock provider by [@jlowin](https://github.com/jlowin) in [#1738](https://github.com/jlowin/fastmcp/pull/1738)
+### Fixes 🐞
+* refactor: replace auth provider registry with ImportString by [@jlowin](https://github.com/jlowin) in [#1710](https://github.com/jlowin/fastmcp/pull/1710)
+* Fix OAuth resource URL handling and WWW-Authenticate header by [@jlowin](https://github.com/jlowin) in [#1706](https://github.com/jlowin/fastmcp/pull/1706)
+* Fix OAuth proxy client storage and add retry logic by [@jlowin](https://github.com/jlowin) in [#1732](https://github.com/jlowin/fastmcp/pull/1732)
+### Docs 📚
+* Fix documentation: use StreamableHttpTransport for headers in testing by [@jlowin](https://github.com/jlowin) in [#1702](https://github.com/jlowin/fastmcp/pull/1702)
+* docs: add performance warnings for mounted servers and proxies by [@strawgate](https://github.com/strawgate) in [#1669](https://github.com/jlowin/fastmcp/pull/1669)
+* Update documentation around scopes for google by [@jlowin](https://github.com/jlowin) in [#1703](https://github.com/jlowin/fastmcp/pull/1703)
+* Add deployment information to quickstart by [@seanpwlms](https://github.com/seanpwlms) in [#1433](https://github.com/jlowin/fastmcp/pull/1433)
+* Update quickstart by [@jlowin](https://github.com/jlowin) in [#1728](https://github.com/jlowin/fastmcp/pull/1728)
+* Add development docs for FastMCP by [@jlowin](https://github.com/jlowin) in [#1719](https://github.com/jlowin/fastmcp/pull/1719)
+### Other Changes 🦾
+* Set generics without bounds to default=Any by [@strawgate](https://github.com/strawgate) in [#1648](https://github.com/jlowin/fastmcp/pull/1648)
+
+## New Contributors
+* [@dmikusa](https://github.com/dmikusa) made their first contribution in [#1717](https://github.com/jlowin/fastmcp/pull/1717)
+* [@seanpwlms](https://github.com/seanpwlms) made their first contribution in [#1433](https://github.com/jlowin/fastmcp/pull/1433)
+
+**Full Changelog**: [v2.12.0...v2.12.1](https://github.com/jlowin/fastmcp/compare/v2.12.0...v2.12.1)
+
+</Update>
+
 <Update label="v2.12.0" description="2025-08-31">
 
 **[v2.12.0: Auth to the Races](https://github.com/jlowin/fastmcp/releases/tag/v2.12.0)**
 
-This release introduces major authentication and configuration enhancements that make FastMCP more accessible and powerful for developers working with various identity providers and deployment scenarios.
+FastMCP 2.12 represents one of our most significant releases to date, both in scope and community involvement. After extensive testing and iteration with the community, we're shipping major improvements to authentication, configuration, and MCP feature adoption.
 
-## OAuth Proxy: Broader Provider Support
+🔐 **OAuth Proxy for Broader Provider Support** addresses a fundamental challenge: while MCP requires Dynamic Client Registration (DCR), many popular OAuth providers don't support it. The new OAuth proxy bridges this gap, enabling FastMCP servers to authenticate with providers like GitHub, Google, WorkOS, and Azure through minimal configuration. These native integrations ship today, with more providers planned based on community needs.
 
-The OAuth Proxy bridges the gap for authentication providers that don't support Dynamic Client Registration (DCR), a requirement for standard MCP OAuth flows. This feature enables seamless integration with major platforms that previously required complex workarounds.
+📋 **Declarative JSON Configuration** introduces a standardized, portable way to describe and deploy MCP servers. The `fastmcp.json` configuration file becomes the single source of truth for dependencies, transport settings, entrypoints, and server metadata. This foundation sets the stage for future capabilities like transformations and remote sources, moving toward a world where MCP servers are as portable and shareable as container images.
 
-**Native integrations now available:**
-- GitHub
-- Google  
-- WorkOS
-- Azure
+🧠 **Sampling API Fallback** tackles the chicken-and-egg problem limiting adoption of advanced MCP features. Sampling—where servers request LLM completions from clients—is powerful but underutilized due to limited client support. FastMCP now lets server authors define fallback handlers that generate sampling completions server-side when clients don't support the feature, encouraging adoption while maintaining compatibility.
 
-With the OAuth Proxy, you can authenticate users through these providers with minimal configuration, expanding the ecosystem of supported identity platforms and making FastMCP servers more accessible to enterprise environments.
+This release took longer than usual to ship, and for good reason: the community's aggressive testing and feedback on the authentication system helped us reach a level of stability we're confident in. There's certainly more work ahead, but these foundations position FastMCP to handle increasingly complex use cases while remaining approachable for developers.
 
-## Declarative JSON Configuration
+Thank you to our new contributors and everyone who tested preview builds. Your feedback directly shaped these features.
 
-The new `fastmcp.json` configuration system establishes a single source of truth for server settings, replacing scattered configuration across multiple files and environment variables.
+## What's Changed
+### New Features 🎉
+* Add OAuth proxy that allows authentication with social IDPs without DCR support by [@jlowin](https://github.com/jlowin) in [#1434](https://github.com/jlowin/fastmcp/pull/1434)
+* feat: introduce declarative JSON configuration system by [@jlowin](https://github.com/jlowin) in [#1517](https://github.com/jlowin/fastmcp/pull/1517)
+* ✨ Fallback to a Completions API when Sampling is not available by [@strawgate](https://github.com/strawgate) in [#1145](https://github.com/jlowin/fastmcp/pull/1145)
+* Implement typed source system for FastMCP declarative configuration by [@jlowin](https://github.com/jlowin) in [#1607](https://github.com/jlowin/fastmcp/pull/1607)
+### Enhancements 🔧
+* Support importing custom_route endpoints when mounting servers by [@jlowin](https://github.com/jlowin) in [#1470](https://github.com/jlowin/fastmcp/pull/1470)
+* Remove unnecessary asserts by [@jlowin](https://github.com/jlowin) in [#1484](https://github.com/jlowin/fastmcp/pull/1484)
+* Add Claude issue triage by [@jlowin](https://github.com/jlowin) in [#1510](https://github.com/jlowin/fastmcp/pull/1510)
+* Inline dedupe prompt by [@jlowin](https://github.com/jlowin) in [#1512](https://github.com/jlowin/fastmcp/pull/1512)
+* Improve stdio and mcp_config clean-up by [@strawgate](https://github.com/strawgate) in [#1444](https://github.com/jlowin/fastmcp/pull/1444)
+* involve kwargs to pass parameters on creating RichHandler for logging customization. by [@itaru2622](https://github.com/itaru2622) in [#1504](https://github.com/jlowin/fastmcp/pull/1504)
+* Move SDK docs generation to post-merge workflow by [@jlowin](https://github.com/jlowin) in [#1513](https://github.com/jlowin/fastmcp/pull/1513)
+* Improve label triage guidance by [@jlowin](https://github.com/jlowin) in [#1516](https://github.com/jlowin/fastmcp/pull/1516)
+* Add code review guidelines for agents by [@jlowin](https://github.com/jlowin) in [#1520](https://github.com/jlowin/fastmcp/pull/1520)
+* Remove trailing slash in unit tests by [@jlowin](https://github.com/jlowin) in [#1535](https://github.com/jlowin/fastmcp/pull/1535)
+* Update OAuth callback UI branding by [@jlowin](https://github.com/jlowin) in [#1536](https://github.com/jlowin/fastmcp/pull/1536)
+* Fix Marvin workflow to support development tools by [@jlowin](https://github.com/jlowin) in [#1537](https://github.com/jlowin/fastmcp/pull/1537)
+* Add mounted_components_raise_on_load_error setting for debugging by [@jlowin](https://github.com/jlowin) in [#1534](https://github.com/jlowin/fastmcp/pull/1534)
+* feat: Add --workspace flag to fastmcp install cursor by [@jlowin](https://github.com/jlowin) in [#1522](https://github.com/jlowin/fastmcp/pull/1522)
+* switch from `pyright` to `ty` by [@zzstoatzz](https://github.com/zzstoatzz) in [#1545](https://github.com/jlowin/fastmcp/pull/1545)
+* feat: trigger Marvin workflow on PR body content by [@jlowin](https://github.com/jlowin) in [#1549](https://github.com/jlowin/fastmcp/pull/1549)
+* Add WorkOS and Azure OAuth providers by [@jlowin](https://github.com/jlowin) in [#1550](https://github.com/jlowin/fastmcp/pull/1550)
+* Adjust timeout for slow MCP Server shutdown test by [@strawgate](https://github.com/strawgate) in [#1561](https://github.com/jlowin/fastmcp/pull/1561)
+* Update banner by [@jlowin](https://github.com/jlowin) in [#1567](https://github.com/jlowin/fastmcp/pull/1567)
+* Added import of AuthProxy to auth __init__ by [@KaliszS](https://github.com/KaliszS) in [#1568](https://github.com/jlowin/fastmcp/pull/1568)
+* Add configurable redirect URI validation for OAuth providers by [@jlowin](https://github.com/jlowin) in [#1582](https://github.com/jlowin/fastmcp/pull/1582)
+* Remove invalid-argument-type ignore and fix type errors by [@jlowin](https://github.com/jlowin) in [#1588](https://github.com/jlowin/fastmcp/pull/1588)
+* Remove generate-schema from public CLI by [@jlowin](https://github.com/jlowin) in [#1591](https://github.com/jlowin/fastmcp/pull/1591)
+* Skip flaky windows test / mulit-client garbage collection by [@jlowin](https://github.com/jlowin) in [#1592](https://github.com/jlowin/fastmcp/pull/1592)
+* Add setting to disable logging configuration by [@isra17](https://github.com/isra17) in [#1575](https://github.com/jlowin/fastmcp/pull/1575)
+* Improve debug logging for nested Servers / Clients by [@strawgate](https://github.com/strawgate) in [#1604](https://github.com/jlowin/fastmcp/pull/1604)
+* Add GitHub pull request template by [@strawgate](https://github.com/strawgate) in [#1581](https://github.com/jlowin/fastmcp/pull/1581)
+* chore: Automate docs and schema updates via PRs by [@jlowin](https://github.com/jlowin) in [#1611](https://github.com/jlowin/fastmcp/pull/1611)
+* Experiment with haiku for limited workflows by [@jlowin](https://github.com/jlowin) in [#1613](https://github.com/jlowin/fastmcp/pull/1613)
+* feat: Improve GitHub workflow automation for schema and SDK docs by [@jlowin](https://github.com/jlowin) in [#1615](https://github.com/jlowin/fastmcp/pull/1615)
+* Consolidate server loading logic into FileSystemSource by [@jlowin](https://github.com/jlowin) in [#1614](https://github.com/jlowin/fastmcp/pull/1614)
+* Prevent Haiku Marvin from commenting when there are no duplicates by [@jlowin](https://github.com/jlowin) in [#1622](https://github.com/jlowin/fastmcp/pull/1622)
+* chore: Add clarifying note to automated PR bodies by [@jlowin](https://github.com/jlowin) in [#1623](https://github.com/jlowin/fastmcp/pull/1623)
+* feat: introduce inline snapshots by [@strawgate](https://github.com/strawgate) in [#1605](https://github.com/jlowin/fastmcp/pull/1605)
+* Improve fastmcp.json environment configuration and project-based deployments by [@jlowin](https://github.com/jlowin) in [#1631](https://github.com/jlowin/fastmcp/pull/1631)
+* fix: allow passing query params in OAuthProxy upstream authorization url by [@danb27](https://github.com/danb27) in [#1630](https://github.com/jlowin/fastmcp/pull/1630)
+* Support multiple --with-editable flags in CLI commands by [@jlowin](https://github.com/jlowin) in [#1634](https://github.com/jlowin/fastmcp/pull/1634)
+* feat: support comma separated oauth scopes by [@jlowin](https://github.com/jlowin) in [#1642](https://github.com/jlowin/fastmcp/pull/1642)
+* Add allowed_client_redirect_uris to OAuth provider subclasses by [@jlowin](https://github.com/jlowin) in [#1662](https://github.com/jlowin/fastmcp/pull/1662)
+* Consolidate CLI config parsing and prevent infinite loops by [@jlowin](https://github.com/jlowin) in [#1660](https://github.com/jlowin/fastmcp/pull/1660)
+* Internal refactor: mcp server config by [@jlowin](https://github.com/jlowin) in [#1672](https://github.com/jlowin/fastmcp/pull/1672)
+* Refactor Environment to support multiple runtime types by [@jlowin](https://github.com/jlowin) in [#1673](https://github.com/jlowin/fastmcp/pull/1673)
+* Add type field to Environment base class by [@jlowin](https://github.com/jlowin) in [#1676](https://github.com/jlowin/fastmcp/pull/1676)
+### Fixes 🐞
+* Fix breaking change: restore output_schema=False compatibility by [@jlowin](https://github.com/jlowin) in [#1482](https://github.com/jlowin/fastmcp/pull/1482)
+* Fix #1506: Update tool filtering documentation from _meta to meta by [@maybenotconnor](https://github.com/maybenotconnor) in [#1511](https://github.com/jlowin/fastmcp/pull/1511)
+* Fix pytest warnings by [@jlowin](https://github.com/jlowin) in [#1559](https://github.com/jlowin/fastmcp/pull/1559)
+* nest schemas under assets by [@jlowin](https://github.com/jlowin) in [#1593](https://github.com/jlowin/fastmcp/pull/1593)
+* Skip flaky windows test by [@jlowin](https://github.com/jlowin) in [#1596](https://github.com/jlowin/fastmcp/pull/1596)
+* ACTUALLY move schemas to fastmcp.json by [@jlowin](https://github.com/jlowin) in [#1597](https://github.com/jlowin/fastmcp/pull/1597)
+* Fix and centralize CLI path resolution by [@jlowin](https://github.com/jlowin) in [#1590](https://github.com/jlowin/fastmcp/pull/1590)
+* Remove client info modifications by [@jlowin](https://github.com/jlowin) in [#1620](https://github.com/jlowin/fastmcp/pull/1620)
+* Fix $defs being discarded in input schema of transformed tool by [@pldesch-chift](https://github.com/pldesch-chift) in [#1578](https://github.com/jlowin/fastmcp/pull/1578)
+* Fix enum elicitation to use inline schemas for MCP compatibility by [@jlowin](https://github.com/jlowin) in [#1632](https://github.com/jlowin/fastmcp/pull/1632)
+* Reuse session for `StdioTransport` in `Client.new` by [@strawgate](https://github.com/strawgate) in [#1635](https://github.com/jlowin/fastmcp/pull/1635)
+* Feat: Configurable LoggingMiddleware payload serialization by [@vl-kp](https://github.com/vl-kp) in [#1636](https://github.com/jlowin/fastmcp/pull/1636)
+* Fix OAuth redirect URI validation for DCR compatibility by [@jlowin](https://github.com/jlowin) in [#1661](https://github.com/jlowin/fastmcp/pull/1661)
+* Add default scope handling in OAuth proxy by [@romanusyk](https://github.com/romanusyk) in [#1667](https://github.com/jlowin/fastmcp/pull/1667)
+* Fix OAuth token expiry handling by [@jlowin](https://github.com/jlowin) in [#1671](https://github.com/jlowin/fastmcp/pull/1671)
+* Add resource_server_url parameter to OAuth proxy providers by [@jlowin](https://github.com/jlowin) in [#1682](https://github.com/jlowin/fastmcp/pull/1682)
+### Breaking Changes 🛫
+* Enhance inspect command with structured output and format options by [@jlowin](https://github.com/jlowin) in [#1481](https://github.com/jlowin/fastmcp/pull/1481)
+### Docs 📚
+* Update changelog by [@jlowin](https://github.com/jlowin) in [#1453](https://github.com/jlowin/fastmcp/pull/1453)
+* Update banner by [@jlowin](https://github.com/jlowin) in [#1472](https://github.com/jlowin/fastmcp/pull/1472)
+* Update logo files by [@jlowin](https://github.com/jlowin) in [#1473](https://github.com/jlowin/fastmcp/pull/1473)
+* Update deployment docs by [@jlowin](https://github.com/jlowin) in [#1486](https://github.com/jlowin/fastmcp/pull/1486)
+* Update FastMCP Cloud screenshot by [@jlowin](https://github.com/jlowin) in [#1487](https://github.com/jlowin/fastmcp/pull/1487)
+* Update authentication note in docs by [@jlowin](https://github.com/jlowin) in [#1488](https://github.com/jlowin/fastmcp/pull/1488)
+* chore: Update installation.mdx version snippet by [@thomas-te](https://github.com/thomas-te) in [#1496](https://github.com/jlowin/fastmcp/pull/1496)
+* Update fastmcp cloud server requirements by [@jlowin](https://github.com/jlowin) in [#1497](https://github.com/jlowin/fastmcp/pull/1497)
+* Fix oauth pyright type checking by [@strawgate](https://github.com/strawgate) in [#1498](https://github.com/jlowin/fastmcp/pull/1498)
+* docs: Fix type annotation in return value documentation by [@MaikelVeen](https://github.com/MaikelVeen) in [#1499](https://github.com/jlowin/fastmcp/pull/1499)
+* Fix PromptMessage usage in docs example by [@jlowin](https://github.com/jlowin) in [#1515](https://github.com/jlowin/fastmcp/pull/1515)
+* Create CODE_OF_CONDUCT.md by [@jlowin](https://github.com/jlowin) in [#1523](https://github.com/jlowin/fastmcp/pull/1523)
+* Fixed wrong import path in new docs page by [@KaliszS](https://github.com/KaliszS) in [#1538](https://github.com/jlowin/fastmcp/pull/1538)
+* Document symmetric key JWT verification support by [@jlowin](https://github.com/jlowin) in [#1586](https://github.com/jlowin/fastmcp/pull/1586)
+* Update fastmcp.json schema path by [@jlowin](https://github.com/jlowin) in [#1595](https://github.com/jlowin/fastmcp/pull/1595)
+### Dependencies 📦
+* Bump actions/create-github-app-token from 1 to 2 by [@dependabot](https://github.com/dependabot)[bot] in [#1436](https://github.com/jlowin/fastmcp/pull/1436)
+* Bump astral-sh/setup-uv from 4 to 6 by [@dependabot](https://github.com/dependabot)[bot] in [#1532](https://github.com/jlowin/fastmcp/pull/1532)
+* Bump actions/checkout from 4 to 5 by [@dependabot](https://github.com/dependabot)[bot] in [#1533](https://github.com/jlowin/fastmcp/pull/1533)
+### Other Changes 🦾
+* Add dedupe workflow by [@jlowin](https://github.com/jlowin) in [#1454](https://github.com/jlowin/fastmcp/pull/1454)
+* Update AGENTS.md by [@jlowin](https://github.com/jlowin) in [#1471](https://github.com/jlowin/fastmcp/pull/1471)
+* Give Marvin the power of the Internet by [@strawgate](https://github.com/strawgate) in [#1475](https://github.com/jlowin/fastmcp/pull/1475)
+* Update `just` error message for static checks by [@jlowin](https://github.com/jlowin) in [#1483](https://github.com/jlowin/fastmcp/pull/1483)
+* Remove labeler by [@jlowin](https://github.com/jlowin) in [#1509](https://github.com/jlowin/fastmcp/pull/1509)
+* update aproto server to handle rich links by [@zzstoatzz](https://github.com/zzstoatzz) in [#1556](https://github.com/jlowin/fastmcp/pull/1556)
+* fix: enable triage bot for fork PRs using pull_request_target by [@jlowin](https://github.com/jlowin) in [#1557](https://github.com/jlowin/fastmcp/pull/1557)
 
-**Configure everything in one place:**
-- Dependencies and requirements
-- Transport settings
-- Server entrypoints
-- Metadata and descriptions
-- Environment variables
-
-This standardization not only simplifies deployment but also enables portable server descriptions that can be shared and reused across projects. The typed source system provides validation and autocompletion, reducing configuration errors.
-
-## Sampling API Fallback
-
-Not all MCP clients support advanced features like the Sampling API for LLM completions. The new fallback mechanism solves this adoption challenge by allowing servers to generate sampling completions server-side when clients lack support.
-
-This approach:
-- Maintains compatibility with all clients
-- Encourages feature adoption without breaking existing integrations
-- Provides a smooth upgrade path as client capabilities evolve
-
-## Breaking Changes
-- The `inspect` command now provides structured output with format options for better integration with tooling
-
-## Additional Enhancements
-- Improved CLI configuration parsing with better error messages
-- Support for multiple `--with-editable` flags for development workflows
-- Comma-separated OAuth scope support for fine-grained permissions
-- Configurable logging middleware for better debugging
-- Support for importing custom route endpoints
+## New Contributors
+* [@thomas-te](https://github.com/thomas-te) made their first contribution in [#1496](https://github.com/jlowin/fastmcp/pull/1496)
+* [@maybenotconnor](https://github.com/maybenotconnor) made their first contribution in [#1511](https://github.com/jlowin/fastmcp/pull/1511)
+* [@MaikelVeen](https://github.com/MaikelVeen) made their first contribution in [#1499](https://github.com/jlowin/fastmcp/pull/1499)
+* [@KaliszS](https://github.com/KaliszS) made their first contribution in [#1538](https://github.com/jlowin/fastmcp/pull/1538)
+* [@isra17](https://github.com/isra17) made their first contribution in [#1575](https://github.com/jlowin/fastmcp/pull/1575)
+* [@marvin-context-protocol](https://github.com/marvin-context-protocol)[bot] made their first contribution in [#1616](https://github.com/jlowin/fastmcp/pull/1616)
+* [@pldesch-chift](https://github.com/pldesch-chift) made their first contribution in [#1578](https://github.com/jlowin/fastmcp/pull/1578)
+* [@vl-kp](https://github.com/vl-kp) made their first contribution in [#1636](https://github.com/jlowin/fastmcp/pull/1636)
+* [@romanusyk](https://github.com/romanusyk) made their first contribution in [#1667](https://github.com/jlowin/fastmcp/pull/1667)
 
 **Full Changelog**: [v2.11.3...v2.12.0](https://github.com/jlowin/fastmcp/compare/v2.11.3...v2.12.0)
 
