@@ -172,7 +172,6 @@ class OAuthProxy(OAuthProvider):
     1. Client Registration (DCR):
        - Accept any client registration request
        - Store ProxyDCRClient that accepts dynamic redirect URIs
-       - Return shared upstream credentials to all clients
 
     2. Authorization:
        - Store transaction mapping client details to proxy flow
@@ -323,67 +322,28 @@ class OAuthProxy(OAuthProvider):
     # -------------------------------------------------------------------------
 
     async def get_client(self, client_id: str) -> OAuthClientInformationFull | None:
-        """Get client information by ID.
+        """Get client information by ID. This is generally the random ID
+        provided to the DCR client during registration, not the upstream client ID.
 
-        For unregistered clients, returns a ProxyDCRClient that accepts
-        any localhost redirect URI for DCR clients.
-
-        Even registered clients use ProxyDCRClient to ensure they can
-        authenticate with different dynamic ports on reconnection. This
-        handles the case where a client with cached tokens reconnects
-        on a different port.
+        For unregistered clients, returns None (which will raise an error in the SDK).
         """
         client = self._clients.get(client_id)
-
-        if client is None:
-            # For unregistered DCR clients, create a permissive client
-            # that will accept any localhost redirect URI
-            # We need at least one URI for Pydantic validation, but our custom
-            # validate_redirect_uri will accept any localhost URI
-            client = ProxyDCRClient(
-                client_id=client_id,
-                client_secret=None,
-                redirect_uris=[
-                    AnyUrl("http://localhost")
-                ],  # Placeholder, validation uses allowed_patterns
-                grant_types=["authorization_code", "refresh_token"],
-                scope=self._default_scope_str,
-                token_endpoint_auth_method="none",
-                allowed_redirect_uri_patterns=self._allowed_client_redirect_uris,
-            )
-            logger.debug("Created ProxyDCRClient for unregistered client %s", client_id)
 
         return client
 
     async def register_client(self, client_info: OAuthClientInformationFull) -> None:
-        """Register a client locally using fixed upstream credentials.
+        """Register a client locally
 
-        This implementation always uses the upstream client_id and client_secret
-        regardless of what the client requests. It modifies the client_info object
-        in place since the MCP framework ignores return values.
-
-        This ensures all clients use the same credentials that are registered
-        with the upstream server.
-
-        Implementation Detail:
-        We store a ProxyDCRClient (not the original client_info) to ensure
-        the client can reconnect with different dynamic redirect URIs. This is
-        essential for cached token scenarios where the client port changes.
-
-        The flow:
-        1. Client provides its desired redirect URIs (dynamic localhost ports)
-        2. We create a ProxyDCRClient that will accept ANY localhost URI
-        3. We store this flexible client for future authentications
-        4. When client reconnects with a different port, ProxyDCRClient accepts it
+        When a client registers, we create a ProxyDCRClient that is more
+        forgiving about validating redirect URIs, since the DCR client's
+        redirect URI will likely be localhost or unknown to the proxied IDP. The
+        proxied IDP only knows about this server's fixed redirect URI.
         """
-        # Always use the upstream credentials
-        upstream_id = self._upstream_client_id
-        upstream_secret = self._upstream_client_secret.get_secret_value()
 
         # Create a ProxyDCRClient with configured redirect URI validation
         proxy_client = ProxyDCRClient(
-            client_id=upstream_id,
-            client_secret=upstream_secret,
+            client_id=client_info.client_id,
+            client_secret=client_info.client_secret,
             redirect_uris=client_info.redirect_uris or [AnyUrl("http://localhost")],
             grant_types=client_info.grant_types
             or ["authorization_code", "refresh_token"],
@@ -392,8 +352,8 @@ class OAuthProxy(OAuthProvider):
             allowed_redirect_uri_patterns=self._allowed_client_redirect_uris,
         )
 
-        # Store the ProxyDCRClient using the upstream ID
-        self._clients[upstream_id] = proxy_client
+        # Store the ProxyDCRClient
+        self._clients[client_info.client_id] = proxy_client
 
         # Log redirect URIs to help users discover what patterns they might need
         if client_info.redirect_uris:
@@ -406,7 +366,7 @@ class OAuthProxy(OAuthProvider):
 
         logger.debug(
             "Registered client %s with %d redirect URIs",
-            upstream_id,
+            client_info.client_id,
             len(proxy_client.redirect_uris),
         )
 

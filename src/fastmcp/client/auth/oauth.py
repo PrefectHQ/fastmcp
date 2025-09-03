@@ -4,6 +4,7 @@ import asyncio
 import json
 import webbrowser
 from asyncio import Future
+from collections.abc import AsyncGenerator
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Literal
@@ -32,6 +33,12 @@ from fastmcp.utilities.logging import get_logger
 __all__ = ["OAuth"]
 
 logger = get_logger(__name__)
+
+
+class ClientNotFoundError(Exception):
+    """Raised when OAuth client credentials are not found on the server."""
+
+    pass
 
 
 class StoredToken(BaseModel):
@@ -173,7 +180,7 @@ class FileTokenStorage(TokenStorage):
         for file_type in file_types:
             path = self._get_file_path(file_type)
             path.unlink(missing_ok=True)
-        logger.info(f"Cleared OAuth cache for {self.get_base_url(self.server_url)}")
+        logger.debug(f"Cleared OAuth cache for {self.get_base_url(self.server_url)}")
 
     @classmethod
     def clear_all(cls, cache_dir: Path | None = None) -> None:
@@ -300,7 +307,23 @@ class OAuth(OAuthClientProvider):
             self.context.update_token_expiry(self.context.current_tokens)
 
     async def redirect_handler(self, authorization_url: str) -> None:
-        """Open browser for authorization."""
+        """Open browser for authorization, with pre-flight check for invalid client."""
+        # Pre-flight check to detect invalid client_id before opening browser
+        async with httpx.AsyncClient() as client:
+            response = await client.get(authorization_url, follow_redirects=False)
+
+            # Check for client not found error (400 typically means bad client_id)
+            if response.status_code == 400:
+                raise ClientNotFoundError(
+                    "OAuth client not found - cached credentials may be stale"
+                )
+
+            # For any non-redirect response, something is wrong
+            if response.status_code not in (302, 303, 307, 308):
+                raise RuntimeError(
+                    f"Unexpected authorization response: {response.status_code}"
+                )
+
         logger.info(f"OAuth authorization URL: {authorization_url}")
         webbrowser.open(authorization_url)
 
@@ -336,3 +359,56 @@ class OAuth(OAuthClientProvider):
                 tg.cancel_scope.cancel()
 
         raise RuntimeError("OAuth callback handler could not be started")
+
+    async def async_auth_flow(
+        self, request: httpx.Request
+    ) -> AsyncGenerator[httpx.Request, httpx.Response]:
+        """HTTPX auth flow with automatic retry on stale cached credentials.
+
+        If the OAuth flow fails due to invalid/stale client credentials,
+        clears the cache and retries once with fresh registration.
+        """
+        try:
+            # First attempt with potentially cached credentials
+            gen = super().async_auth_flow(request)
+            response = None
+            while True:
+                try:
+                    yielded_request = await gen.asend(response)
+                    response = yield yielded_request
+                except StopAsyncIteration:
+                    break
+
+        except ClientNotFoundError:
+            logger.debug(
+                "OAuth client not found on server, clearing cache and retrying..."
+            )
+
+            # Clear cached state and retry once
+            self._initialized = False
+
+            # Try to clear storage if it supports it
+            if hasattr(self.context.storage, "clear"):
+                try:
+                    self.context.storage.clear()
+                except Exception as e:
+                    logger.warning(f"Failed to clear OAuth storage cache: {e}")
+                    # Can't retry without clearing cache, re-raise original error
+                    raise ClientNotFoundError(
+                        "OAuth client not found and cache could not be cleared"
+                    ) from e
+            else:
+                logger.warning(
+                    "Storage does not support clear() - cannot retry with fresh credentials"
+                )
+                # Can't retry without clearing cache, re-raise original error
+                raise
+
+            gen = super().async_auth_flow(request)
+            response = None
+            while True:
+                try:
+                    yielded_request = await gen.asend(response)
+                    response = yield yielded_request
+                except StopAsyncIteration:
+                    break

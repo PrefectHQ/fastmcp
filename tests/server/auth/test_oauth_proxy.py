@@ -211,11 +211,11 @@ class TestOAuthProxyComprehensive:
         assert client_info.token_endpoint_auth_method == "client_secret_post"
         assert client_info.grant_types == ["authorization_code"]
 
-        # Verify ProxyDCRClient was stored with upstream credentials
-        stored_client = oauth_proxy._clients.get("test-client-id")
+        # Verify ProxyDCRClient was stored with original client credentials
+        stored_client = oauth_proxy._clients.get("original-client-id")
         assert stored_client is not None
-        assert stored_client.client_id == "test-client-id"
-        assert stored_client.client_secret == "test-client-secret"
+        assert stored_client.client_id == "original-client-id"
+        assert stored_client.client_secret == "original-secret"
         assert stored_client.scope == "read write"
 
     async def test_register_client_empty_grant_types(self, oauth_proxy):
@@ -232,7 +232,7 @@ class TestOAuthProxyComprehensive:
         assert client_info.grant_types == []
 
         # Verify stored ProxyDCRClient has proper grant types
-        stored_client = oauth_proxy._clients.get("test-client-id")
+        stored_client = oauth_proxy._clients.get("original-client-id")
         assert stored_client is not None
         assert stored_client.grant_types == ["authorization_code", "refresh_token"]
 
@@ -247,31 +247,15 @@ class TestOAuthProxyComprehensive:
         await oauth_proxy.register_client(client_info)
 
         # Get the client
-        retrieved = await oauth_proxy.get_client("test-client-id")
+        retrieved = await oauth_proxy.get_client("test-id")
         assert retrieved is not None
-        assert retrieved.client_id == "test-client-id"
+        assert retrieved.client_id == "test-id"
 
-    async def test_get_client_temporary(self, oauth_proxy):
-        """Test getting a temporary client for unregistered client ID."""
+    async def test_get_client_unregistered_returns_none(self, oauth_proxy):
+        """Test that unregistered clients return None."""
         # Get a client that hasn't been registered
-        temp_client = await oauth_proxy.get_client("unknown-client-id")
-
-        assert temp_client is not None
-        assert temp_client.client_id == "unknown-client-id"
-        assert temp_client.client_secret is None
-        assert temp_client.token_endpoint_auth_method == "none"
-        assert len(temp_client.redirect_uris) >= 1
-        # ProxyDCRClient uses a placeholder URL but accepts any localhost URI
-        assert str(temp_client.redirect_uris[0]) == "http://localhost/"
-        assert temp_client.scope == "read write"
-
-        # Test that it accepts any localhost redirect URI
-        from pydantic import AnyUrl
-
-        test_uri = temp_client.validate_redirect_uri(
-            AnyUrl("http://localhost:55454/callback")
-        )
-        assert str(test_uri) == "http://localhost:55454/callback"
+        client = await oauth_proxy.get_client("unknown-client-id")
+        assert client is None
 
     async def test_authorize_creates_transaction(self, oauth_proxy):
         """Test that authorize creates a transaction and returns upstream URL."""
@@ -378,7 +362,10 @@ class TestOAuthProxyComprehensive:
         assert "scope" not in query_params
 
     async def test_client_scope_empty_when_no_required_scopes(self):
-        """When required_scopes is None/empty, client scope should be empty string."""
+        """When required_scopes is None/empty, registered client scope should be empty string."""
+        from mcp.shared.auth import OAuthClientInformationFull
+        from pydantic import AnyUrl
+
         proxy = OAuthProxy(
             upstream_authorization_endpoint="https://auth.example.com/authorize",
             upstream_token_endpoint="https://auth.example.com/token",
@@ -388,8 +375,18 @@ class TestOAuthProxyComprehensive:
             base_url="https://api.example.com",
         )
 
-        temp_client = await proxy.get_client("any-client")
-        assert temp_client.scope == ""
+        # Register a client first
+        client_info = OAuthClientInformationFull(
+            client_id="test-client",
+            client_secret="test-secret",
+            redirect_uris=[AnyUrl("http://localhost:12345/callback")],
+        )
+        await proxy.register_client(client_info)
+
+        # Get the registered client
+        registered_client = await proxy.get_client("test-client")
+        assert registered_client is not None
+        assert registered_client.scope == ""
 
     async def test_load_authorization_code_valid(self, oauth_proxy):
         """Test loading a valid authorization code."""

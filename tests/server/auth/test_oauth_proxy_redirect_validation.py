@@ -172,13 +172,15 @@ class TestOAuthProxyRedirectValidation:
         await proxy.register_client(client_info)
 
         # Get the registered client
-        registered = await proxy.get_client("test-client")  # Uses upstream ID
+        registered = await proxy.get_client(
+            "new-client"
+        )  # Use the client ID we registered
         assert isinstance(registered, ProxyDCRClient)
         assert registered._allowed_redirect_uri_patterns == custom_patterns
 
     @pytest.mark.asyncio
-    async def test_proxy_unregistered_client_uses_patterns(self):
-        """Test that unregistered clients also use configured patterns."""
+    async def test_proxy_unregistered_client_returns_none(self):
+        """Test that unregistered clients return None."""
         custom_patterns = ["http://localhost:*", "http://127.0.0.1:*"]
 
         proxy = OAuthProxy(
@@ -193,5 +195,4 @@ class TestOAuthProxyRedirectValidation:
 
         # Get an unregistered client
         client = await proxy.get_client("unknown-client")
-        assert isinstance(client, ProxyDCRClient)
-        assert client._allowed_redirect_uri_patterns == custom_patterns
+        assert client is None
