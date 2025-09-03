@@ -248,13 +248,13 @@ class TestConfigValidation:
                 deployment={"transport": "invalid_transport"},  # type: ignore[arg-type]
             )
 
-    def test_streamable_http_transport_rejected(self):
-        """Test that streamable-http transport is rejected in fastmcp.json config."""
-        with pytest.raises(ValueError):
-            MCPServerConfig(
-                source={"path": "server.py"},
-                deployment={"transport": "streamable-http"},  # type: ignore[arg-type]
-            )
+    def test_streamable_http_transport_accepted(self):
+        """Test that streamable-http transport is accepted as a valid value."""
+        config = MCPServerConfig(
+            source={"path": "server.py"},
+            deployment={"transport": "streamable-http"},  # type: ignore[arg-type]
+        )
+        assert config.deployment.transport == "streamable-http"
 
     def test_invalid_log_level_rejected(self):
         """Test that invalid log level values are rejected."""

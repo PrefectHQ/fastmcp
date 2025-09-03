@@ -159,7 +159,7 @@
                   "integrations/azure",
                   "integrations/github",
                   "integrations/google",
-                  "integrations/workos-oauth"
+                  "integrations/workos"
                 ]
               },
               {

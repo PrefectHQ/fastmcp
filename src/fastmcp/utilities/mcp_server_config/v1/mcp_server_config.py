@@ -36,7 +36,7 @@ EnvironmentType: TypeAlias = UVEnvironment
 class Deployment(BaseModel):
     """Configuration for server deployment and runtime settings."""
 
-    transport: Literal["stdio", "http", "sse"] | None = Field(
+    transport: Literal["stdio", "http", "sse", "streamable-http"] | None = Field(
         default=None,
         description="Transport protocol to use",
     )

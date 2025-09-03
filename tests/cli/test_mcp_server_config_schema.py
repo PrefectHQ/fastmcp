@@ -1,6 +1,11 @@
 """Test that the generated JSON schema has the correct structure."""
 
-from fastmcp.utilities.mcp_server_config.v1.mcp_server_config import generate_schema
+import pytest
+
+from fastmcp.utilities.mcp_server_config.v1.mcp_server_config import (
+    Deployment,
+    generate_schema,
+)
 
 
 def test_schema_has_correct_id():
@@ -97,6 +102,7 @@ def test_schema_transport_enum():
                             assert "stdio" in valid_transports
                             assert "http" in valid_transports
                             assert "sse" in valid_transports
+                            assert "streamable-http" in valid_transports
                             break
     elif "properties" in deploy_schema:
         transport_schema = deploy_schema["properties"].get("transport", {})
@@ -107,6 +113,7 @@ def test_schema_transport_enum():
                     assert "stdio" in valid_transports
                     assert "http" in valid_transports
                     assert "sse" in valid_transports
+                    assert "streamable-http" in valid_transports
                     break
 
 
@@ -147,3 +154,19 @@ def test_schema_log_level_enum():
                     assert "ERROR" in valid_levels
                     assert "CRITICAL" in valid_levels
                     break
+
+
+@pytest.mark.parametrize(
+    "transport",
+    [
+        "streamable-http",
+        "http",
+        "stdio",
+        "sse",
+        None,
+    ],
+)
+def test_transport_values_accepted(transport):
+    """Test that all valid transport values are accepted."""
+    deployment = Deployment(transport=transport)
+    assert deployment.transport == transport
