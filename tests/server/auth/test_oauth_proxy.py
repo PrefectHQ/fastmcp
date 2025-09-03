@@ -55,6 +55,10 @@ class TestOAuthProxyComprehensive:
         assert str(proxy.base_url) == "https://api.example.com/"
         assert str(proxy.issuer_url) == "https://issuer.example.com/"
         assert str(proxy.service_documentation_url) == "https://docs.example.com/"
+        assert (
+            proxy.client_registration_options is not None
+            and proxy.client_registration_options.valid_scopes == ["read", "write"]
+        )
 
     def test_initialization_with_all_parameters(self, jwt_verifier):
         """Test OAuthProxy initialization with all optional parameters."""
@@ -69,6 +73,7 @@ class TestOAuthProxyComprehensive:
             redirect_path="/auth/callback",
             issuer_url="https://issuer.example.com",
             service_documentation_url="https://docs.example.com",
+            valid_scopes=["open", "close"],
         )
 
         # Verify all parameters are set correctly
@@ -83,6 +88,10 @@ class TestOAuthProxyComprehensive:
         assert proxy._redirect_path == "/auth/callback"
         assert str(proxy.issuer_url) == "https://issuer.example.com/"
         assert str(proxy.service_documentation_url) == "https://docs.example.com/"
+        assert (
+            proxy.client_registration_options is not None
+            and proxy.client_registration_options.valid_scopes == ["open", "close"]
+        )
 
     def test_redirect_path_normalization(self, jwt_verifier):
         """Test that redirect_path is normalized to start with /."""

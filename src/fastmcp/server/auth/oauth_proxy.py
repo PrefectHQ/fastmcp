@@ -242,6 +242,7 @@ class OAuthProxy(OAuthProvider):
         service_documentation_url: AnyHttpUrl | str | None = None,
         # Client redirect URI validation
         allowed_client_redirect_uris: list[str] | None = None,
+        valid_scopes: list[str] | None = None,
     ):
         """Initialize the OAuth proxy provider.
 
@@ -262,9 +263,14 @@ class OAuthProxy(OAuthProvider):
                 If None (default), only localhost redirect URIs are allowed.
                 If empty list, all redirect URIs are allowed (not recommended for production).
                 These are for MCP clients performing loopback redirects, NOT for the upstream OAuth app.
+            valid_scopes: List of all the possible valid scopes for a client.
+                These are advertised to clients through the `/.well-known` endpoints. Defaults to `reuqired_scopes` if not provided.
         """
         # Always enable DCR since we implement it locally for MCP clients
-        client_registration_options = ClientRegistrationOptions(enabled=True)
+        client_registration_options = ClientRegistrationOptions(
+            enabled=True,
+            valid_scopes=valid_scopes or token_verifier.required_scopes,
+        )
 
         # Enable revocation only if upstream endpoint provided
         revocation_options = (
