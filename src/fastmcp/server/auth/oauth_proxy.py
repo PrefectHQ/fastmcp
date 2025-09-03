@@ -18,12 +18,15 @@ production use with enterprise identity providers.
 
 from __future__ import annotations
 
+import hashlib
 import secrets
 import time
+from base64 import urlsafe_b64encode
 from typing import TYPE_CHECKING, Any, Final
 from urllib.parse import urlencode
 
 import httpx
+from authlib.common.security import generate_token
 from authlib.integrations.httpx_client import AsyncOAuth2Client
 from mcp.server.auth.provider import (
     AccessToken,
@@ -243,6 +246,8 @@ class OAuthProxy(OAuthProvider):
         # Client redirect URI validation
         allowed_client_redirect_uris: list[str] | None = None,
         valid_scopes: list[str] | None = None,
+        # PKCE configuration
+        forward_pkce: bool = True,
     ):
         """Initialize the OAuth proxy provider.
 
@@ -264,7 +269,10 @@ class OAuthProxy(OAuthProvider):
                 If empty list, all redirect URIs are allowed (not recommended for production).
                 These are for MCP clients performing loopback redirects, NOT for the upstream OAuth app.
             valid_scopes: List of all the possible valid scopes for a client.
-                These are advertised to clients through the `/.well-known` endpoints. Defaults to `reuqired_scopes` if not provided.
+                These are advertised to clients through the `/.well-known` endpoints. Defaults to `required_scopes` if not provided.
+            forward_pkce: Whether to forward PKCE to upstream server (default True).
+                Enable for providers that support/require PKCE (Google, Azure, etc.).
+                Disable only if upstream provider doesn't support PKCE.
         """
         # Always enable DCR since we implement it locally for MCP clients
         client_registration_options = ClientRegistrationOptions(
@@ -300,6 +308,9 @@ class OAuthProxy(OAuthProvider):
         )
         self._allowed_client_redirect_uris = allowed_client_redirect_uris
 
+        # PKCE configuration
+        self._forward_pkce = forward_pkce
+
         # Local state for DCR and token bookkeeping
         self._clients: dict[str, OAuthClientInformationFull] = {}
         self._access_tokens: dict[str, AccessToken] = {}
@@ -322,6 +333,25 @@ class OAuthProxy(OAuthProvider):
             "Initialized OAuth proxy provider with upstream server %s",
             self._upstream_authorization_endpoint,
         )
+
+    # -------------------------------------------------------------------------
+    # PKCE Helper Methods
+    # -------------------------------------------------------------------------
+
+    def _generate_pkce_pair(self) -> tuple[str, str]:
+        """Generate PKCE code verifier and challenge pair.
+
+        Returns:
+            Tuple of (code_verifier, code_challenge) using S256 method
+        """
+        # Generate code verifier: 43-128 characters from unreserved set
+        code_verifier = generate_token(48)
+
+        # Generate code challenge using S256 (SHA256 + base64url)
+        challenge_bytes = hashlib.sha256(code_verifier.encode()).digest()
+        code_challenge = urlsafe_b64encode(challenge_bytes).decode().rstrip("=")
+
+        return code_verifier, code_challenge
 
     # -------------------------------------------------------------------------
     # Client Registration (Local Implementation)
@@ -389,14 +419,25 @@ class OAuthProxy(OAuthProvider):
 
         This implements the DCR-compliant proxy pattern:
         1. Store transaction with client details and PKCE challenge
-        2. Use transaction ID as state for IdP
-        3. Redirect to IdP with our fixed callback URL
+        2. Generate proxy's own PKCE parameters if forwarding is enabled
+        3. Use transaction ID as state for IdP
+        4. Redirect to IdP with our fixed callback URL and proxy's PKCE
         """
         # Generate transaction ID for this authorization request
         txn_id = secrets.token_urlsafe(32)
 
+        # Generate proxy's own PKCE parameters if forwarding is enabled
+        proxy_code_verifier = None
+        proxy_code_challenge = None
+        if self._forward_pkce and params.code_challenge:
+            proxy_code_verifier, proxy_code_challenge = self._generate_pkce_pair()
+            logger.debug(
+                "Generated proxy PKCE for transaction %s (forwarding client PKCE to upstream)",
+                txn_id,
+            )
+
         # Store transaction data for IdP callback processing
-        self._oauth_transactions[txn_id] = {
+        transaction_data = {
             "client_id": client.client_id,
             "client_redirect_uri": str(params.redirect_uri),
             "client_state": params.state,
@@ -405,6 +446,12 @@ class OAuthProxy(OAuthProvider):
             "scopes": params.scopes or [],
             "created_at": time.time(),
         }
+
+        # Store proxy's PKCE verifier if we're forwarding
+        if proxy_code_verifier:
+            transaction_data["proxy_code_verifier"] = proxy_code_verifier
+
+        self._oauth_transactions[txn_id] = transaction_data
 
         # Build query parameters for upstream IdP authorization request
         # Use our fixed IdP callback and transaction ID as state
@@ -421,14 +468,24 @@ class OAuthProxy(OAuthProvider):
         if scopes_to_use:
             query_params["scope"] = " ".join(scopes_to_use)
 
+        # Forward proxy's PKCE challenge to upstream if enabled
+        if proxy_code_challenge:
+            query_params["code_challenge"] = proxy_code_challenge
+            query_params["code_challenge_method"] = "S256"
+            logger.debug(
+                "Forwarding proxy PKCE challenge to upstream for transaction %s",
+                txn_id,
+            )
+
         # Build the upstream authorization URL
         separator = "&" if "?" in self._upstream_authorization_endpoint else "?"
         upstream_url = f"{self._upstream_authorization_endpoint}{separator}{urlencode(query_params)}"
 
         logger.debug(
-            "Starting OAuth transaction %s for client %s, redirecting to IdP",
+            "Starting OAuth transaction %s for client %s, redirecting to IdP (PKCE forwarding: %s)",
             txn_id,
             client.client_id,
+            "enabled" if proxy_code_challenge else "disabled",
         )
         return upstream_url
 
@@ -803,14 +860,28 @@ class OAuthProxy(OAuthProvider):
                     f"Exchanging IdP code for tokens with redirect_uri: {idp_redirect_uri}"
                 )
 
-                idp_tokens: dict[str, Any] = await oauth_client.fetch_token(  # type: ignore[misc]
-                    url=self._upstream_token_endpoint,
-                    code=idp_code,
-                    redirect_uri=idp_redirect_uri,
-                )
+                # Include proxy's code_verifier if we forwarded PKCE
+                proxy_code_verifier = transaction.get("proxy_code_verifier")
+                if proxy_code_verifier:
+                    logger.debug(
+                        "Including proxy code_verifier in token exchange for transaction %s",
+                        txn_id,
+                    )
+                    idp_tokens: dict[str, Any] = await oauth_client.fetch_token(  # type: ignore[misc]
+                        url=self._upstream_token_endpoint,
+                        code=idp_code,
+                        redirect_uri=idp_redirect_uri,
+                        code_verifier=proxy_code_verifier,
+                    )
+                else:
+                    idp_tokens: dict[str, Any] = await oauth_client.fetch_token(  # type: ignore[misc]
+                        url=self._upstream_token_endpoint,
+                        code=idp_code,
+                        redirect_uri=idp_redirect_uri,
+                    )
 
                 logger.debug(
-                    f"Successfully exchanged IdP code for tokens (transaction: {txn_id})"
+                    f"Successfully exchanged IdP code for tokens (transaction: {txn_id}, PKCE: {bool(proxy_code_verifier)})"
                 )
 
             except Exception as e:

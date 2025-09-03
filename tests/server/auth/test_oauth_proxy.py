@@ -594,3 +594,128 @@ class TestOAuthProxyComprehensive:
 
         # Verify code was cleaned up
         assert code not in oauth_proxy._client_codes
+
+
+class TestOAuthProxyPKCE:
+    """Test suite for OAuth Proxy PKCE forwarding functionality."""
+
+    @pytest.fixture
+    def jwt_verifier(self):
+        """Create a mock JWT verifier for testing."""
+        verifier = Mock()
+        verifier.required_scopes = ["read", "write"]
+        return verifier
+
+    @pytest.fixture
+    def oauth_proxy_with_pkce(self, jwt_verifier):
+        """Create an OAuthProxy instance with PKCE forwarding enabled."""
+        return OAuthProxy(
+            upstream_authorization_endpoint="https://oauth.example.com/authorize",
+            upstream_token_endpoint="https://oauth.example.com/token",
+            upstream_client_id="upstream-client",
+            upstream_client_secret="upstream-secret",
+            token_verifier=jwt_verifier,
+            base_url="https://proxy.example.com",
+            forward_pkce=True,  # Enable PKCE forwarding
+        )
+
+    @pytest.fixture
+    def oauth_proxy_without_pkce(self, jwt_verifier):
+        """Create an OAuthProxy instance with PKCE forwarding disabled."""
+        return OAuthProxy(
+            upstream_authorization_endpoint="https://oauth.example.com/authorize",
+            upstream_token_endpoint="https://oauth.example.com/token",
+            upstream_client_id="upstream-client",
+            upstream_client_secret="upstream-secret",
+            token_verifier=jwt_verifier,
+            base_url="https://proxy.example.com",
+            forward_pkce=False,  # Disable PKCE forwarding
+        )
+
+    async def test_pkce_forwarding_enabled(self, oauth_proxy_with_pkce):
+        """Test that proxy generates and forwards its own PKCE when client uses PKCE."""
+        client = OAuthClientInformationFull(
+            client_id="test-client",
+            client_secret="test-secret",
+            redirect_uris=[AnyUrl("http://localhost:12345/callback")],
+        )
+
+        params = AuthorizationParams(
+            redirect_uri=AnyUrl("http://localhost:12345/callback"),
+            redirect_uri_provided_explicitly=True,
+            state="client-state",
+            code_challenge="client_challenge_value",
+            code_challenge_method="S256",
+            scopes=["read"],
+        )
+
+        redirect_url = await oauth_proxy_with_pkce.authorize(client, params)
+        query_params = parse_qs(urlparse(redirect_url).query)
+
+        # Verify proxy forwards its own PKCE challenge
+        assert "code_challenge" in query_params
+        assert query_params["code_challenge"][0] != "client_challenge_value"
+        assert query_params["code_challenge_method"] == ["S256"]
+
+        # Verify transaction stores both client and proxy PKCE
+        txn_id = query_params["state"][0]
+        transaction = oauth_proxy_with_pkce._oauth_transactions[txn_id]
+        assert transaction["code_challenge"] == "client_challenge_value"  # Client's
+        assert "proxy_code_verifier" in transaction  # Proxy's verifier stored
+
+    async def test_pkce_forwarding_disabled(self, oauth_proxy_without_pkce):
+        """Test that PKCE is not forwarded when forward_pkce=False."""
+        client = OAuthClientInformationFull(
+            client_id="test-client",
+            client_secret="test-secret",
+            redirect_uris=[AnyUrl("http://localhost:12345/callback")],
+        )
+
+        params = AuthorizationParams(
+            redirect_uri=AnyUrl("http://localhost:12345/callback"),
+            redirect_uri_provided_explicitly=True,
+            state="client-state",
+            code_challenge="client_challenge_value",
+            scopes=["read"],
+        )
+
+        redirect_url = await oauth_proxy_without_pkce.authorize(client, params)
+        query_params = parse_qs(urlparse(redirect_url).query)
+
+        # Verify NO PKCE parameters forwarded to upstream
+        assert "code_challenge" not in query_params
+        assert "code_challenge_method" not in query_params
+
+        # But client's PKCE is still stored for validation
+        txn_id = query_params["state"][0]
+        transaction = oauth_proxy_without_pkce._oauth_transactions[txn_id]
+        assert transaction["code_challenge"] == "client_challenge_value"
+        assert "proxy_code_verifier" not in transaction
+
+    async def test_no_pkce_when_client_has_none(self, oauth_proxy_with_pkce):
+        """Test that proxy doesn't generate PKCE if client doesn't use it."""
+        client = OAuthClientInformationFull(
+            client_id="test-client",
+            client_secret="test-secret",
+            redirect_uris=[AnyUrl("http://localhost:12345/callback")],
+        )
+
+        params = AuthorizationParams(
+            redirect_uri=AnyUrl("http://localhost:12345/callback"),
+            redirect_uri_provided_explicitly=True,
+            state="client-state",
+            code_challenge="",  # Empty string means no PKCE
+            scopes=["read"],
+        )
+
+        redirect_url = await oauth_proxy_with_pkce.authorize(client, params)
+        query_params = parse_qs(urlparse(redirect_url).query)
+
+        # Verify NO PKCE forwarded
+        assert "code_challenge" not in query_params
+        assert "code_challenge_method" not in query_params
+
+        # No proxy verifier stored
+        txn_id = query_params["state"][0]
+        transaction = oauth_proxy_with_pkce._oauth_transactions[txn_id]
+        assert "proxy_code_verifier" not in transaction
