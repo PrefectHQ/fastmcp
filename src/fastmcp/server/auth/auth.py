@@ -353,10 +353,16 @@ class OAuthProvider(
 
         # Add protected resource routes if this server is also acting as a resource server
         if resource_url:
+            supported_scopes = (
+                self.client_registration_options.valid_scopes
+                if self.client_registration_options
+                and self.client_registration_options.valid_scopes
+                else self.required_scopes
+            )
             protected_routes = create_protected_resource_routes(
                 resource_url=resource_url,
                 authorization_servers=[self.issuer_url],
-                scopes_supported=self.required_scopes,
+                scopes_supported=supported_scopes,
             )
             oauth_routes.extend(protected_routes)
 
