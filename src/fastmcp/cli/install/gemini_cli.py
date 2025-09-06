@@ -104,18 +104,10 @@ def install_gemini_cli(
         )
         return False
 
-    # Deduplicate packages and exclude 'fastmcp' since Environment adds it automatically
-    deduplicated_packages = None
-    if with_packages:
-        deduplicated = list(dict.fromkeys(with_packages))
-        deduplicated_packages = [pkg for pkg in deduplicated if pkg != "fastmcp"]
-        if not deduplicated_packages:
-            deduplicated_packages = None
-
     # Build uv run command using Environment.build_uv_run_command()
     env_config = UVEnvironment(
         python=python_version,
-        dependencies=deduplicated_packages,
+        dependencies=(with_packages or []) + ["fastmcp"],
         requirements=str(with_requirements) if with_requirements else None,
         project=str(project) if project else None,
         editable=[str(p) for p in with_editable] if with_editable else None,

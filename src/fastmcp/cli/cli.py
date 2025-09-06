@@ -20,6 +20,7 @@ import fastmcp
 from fastmcp.cli import run as run_module
 from fastmcp.cli.install import install_app
 from fastmcp.server.server import FastMCP
+from fastmcp.utilities.cli import is_already_in_uv_subprocess, load_and_merge_config
 from fastmcp.utilities.inspect import (
     InspectFormat,
     format_info,
@@ -193,7 +194,6 @@ async def dev(
     Args:
         server_spec: Python file to run, optionally with :object suffix, or None to auto-detect fastmcp.json
     """
-    from fastmcp.utilities.cli import load_and_merge_config
 
     try:
         # Load config and apply CLI overrides
@@ -415,7 +415,6 @@ async def run(
     Args:
         server_spec: Python file, object specification (file:obj), config file, URL, or None to auto-detect
     """
-    from fastmcp.utilities.cli import is_already_in_uv_subprocess, load_and_merge_config
 
     # Check if we were spawned by uv (or user explicitly set --skip-env)
     if skip_env or is_already_in_uv_subprocess():
@@ -472,12 +471,16 @@ async def run(
                 server_spec=server_spec,
                 python_version=config.environment.python,
                 with_packages=config.environment.dependencies,
-                with_requirements=Path(config.environment.requirements)
-                if config.environment.requirements
-                else None,
-                project=Path(config.environment.project)
-                if config.environment.project
-                else None,
+                with_requirements=(
+                    Path(config.environment.requirements)
+                    if config.environment.requirements
+                    else None
+                ),
+                project=(
+                    Path(config.environment.project)
+                    if config.environment.project
+                    else None
+                ),
                 transport=final_transport,
                 host=final_host,
                 port=final_port,
@@ -598,7 +601,6 @@ async def inspect(
     Args:
         server_spec: Python file to inspect, optionally with :object suffix, or fastmcp.json
     """
-    from fastmcp.utilities.cli import is_already_in_uv_subprocess, load_and_merge_config
 
     # Check if we were spawned by uv (or user explicitly set --skip-env)
     if skip_env or is_already_in_uv_subprocess():

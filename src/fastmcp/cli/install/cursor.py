@@ -107,17 +107,9 @@ def install_cursor_workspace(
 
     config_file = cursor_dir / "mcp.json"
 
-    # Deduplicate packages and exclude 'fastmcp' since Environment adds it automatically
-    deduplicated_packages = None
-    if with_packages:
-        deduplicated = list(dict.fromkeys(with_packages))
-        deduplicated_packages = [pkg for pkg in deduplicated if pkg != "fastmcp"]
-        if not deduplicated_packages:
-            deduplicated_packages = None
-
     env_config = UVEnvironment(
         python=python_version,
-        dependencies=deduplicated_packages,
+        dependencies=(with_packages or []) + ["fastmcp"],
         requirements=str(with_requirements.resolve()) if with_requirements else None,
         project=str(project.resolve()) if project else None,
         editable=[str(p.resolve()) for p in with_editable] if with_editable else None,
@@ -185,17 +177,9 @@ def install_cursor(
         True if installation was successful, False otherwise
     """
 
-    # Deduplicate packages and exclude 'fastmcp' since Environment adds it automatically
-    deduplicated_packages = None
-    if with_packages:
-        deduplicated = list(dict.fromkeys(with_packages))
-        deduplicated_packages = [pkg for pkg in deduplicated if pkg != "fastmcp"]
-        if not deduplicated_packages:
-            deduplicated_packages = None
-
     env_config = UVEnvironment(
         python=python_version,
-        dependencies=deduplicated_packages,
+        dependencies=(with_packages or []) + ["fastmcp"],
         requirements=str(with_requirements.resolve()) if with_requirements else None,
         project=str(project.resolve()) if project else None,
         editable=[str(p.resolve()) for p in with_editable] if with_editable else None,

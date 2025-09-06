@@ -230,7 +230,7 @@ def test_config_subset_independence(tmp_path):
 
     assert config.environment.python == "3.12"
     assert config.environment.dependencies == ["pandas"]
-    assert config.environment.needs_uv()  # Has dependencies
+    assert config.environment._must_run_with_uv()  # Has dependencies
 
     assert config.deployment.transport == "http"
     assert config.deployment.host == "0.0.0.0"

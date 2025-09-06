@@ -111,9 +111,9 @@ class TestEnvironmentBuildUVRunCommand:
             "--python",
             "3.10",
             "--with",
-            "pandas",
-            "--with",
             "numpy",
+            "--with",
+            "pandas",
             "--with-requirements",
             requirements_path,
             "--with-editable",
@@ -159,34 +159,34 @@ class TestEnvironmentNeedsUV:
     def test_needs_uv_with_python(self):
         """Test that needs_uv returns True with Python version."""
         env = UVEnvironment(python="3.10")
-        assert env.needs_uv() is True
+        assert env._must_run_with_uv() is True
 
     def test_needs_uv_with_dependencies(self):
         """Test that needs_uv returns True with dependencies."""
         env = UVEnvironment(dependencies=["pandas"])
-        assert env.needs_uv() is True
+        assert env._must_run_with_uv() is True
 
     def test_needs_uv_with_requirements(self):
         """Test that needs_uv returns True with requirements."""
         env = UVEnvironment(requirements="/path/to/requirements.txt")
-        assert env.needs_uv() is True
+        assert env._must_run_with_uv() is True
 
     def test_needs_uv_with_project(self):
         """Test that needs_uv returns True with project."""
         env = UVEnvironment(project="/path/to/project")
-        assert env.needs_uv() is True
+        assert env._must_run_with_uv() is True
 
     def test_needs_uv_with_editable(self):
         """Test that needs_uv returns True with editable."""
         env = UVEnvironment(editable=["/pkg"])
-        assert env.needs_uv() is True
+        assert env._must_run_with_uv() is True
 
     def test_needs_uv_empty(self):
         """Test that needs_uv returns False with empty config."""
         env = UVEnvironment()
-        assert env.needs_uv() is False
+        assert env._must_run_with_uv() is False
 
     def test_needs_uv_with_empty_lists(self):
         """Test that needs_uv returns False with empty lists."""
         env = UVEnvironment(dependencies=None, editable=None)
-        assert env.needs_uv() is False
+        assert env._must_run_with_uv() is False

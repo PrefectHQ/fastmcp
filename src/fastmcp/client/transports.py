@@ -609,7 +609,7 @@ class UvStdioTransport(StdioTransport):
         uv_args: list[str] = []
 
         # Check if we need any environment setup
-        if env_config.needs_uv():
+        if env_config._must_run_with_uv():
             # Use the config to build args, but we need to handle the command differently
             # since transport has specific needs
             uv_args = ["run"]

@@ -98,9 +98,9 @@ class TestRunWithUv:
             "uv",
             "run",
             "--with",
-            "pandas",  # original order preserved
+            "numpy",
             "--with",
-            "numpy",  # original order preserved
+            "pandas",
             "fastmcp",
             "run",
             "server.py",

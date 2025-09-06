@@ -48,17 +48,9 @@ def install_mcp_json(
         True if generation was successful, False otherwise
     """
     try:
-        # Deduplicate packages and exclude 'fastmcp' since Environment adds it automatically
-        deduplicated_packages = None
-        if with_packages:
-            deduplicated = list(dict.fromkeys(with_packages))
-            deduplicated_packages = [pkg for pkg in deduplicated if pkg != "fastmcp"]
-            if not deduplicated_packages:
-                deduplicated_packages = None
-
         env_config = UVEnvironment(
             python=python_version,
-            dependencies=deduplicated_packages,
+            dependencies=(with_packages or []) + ["fastmcp"],
             requirements=str(with_requirements) if with_requirements else None,
             project=str(project) if project else None,
             editable=[str(p) for p in with_editable] if with_editable else None,

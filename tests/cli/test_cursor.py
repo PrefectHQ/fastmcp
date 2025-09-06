@@ -299,10 +299,9 @@ class TestInstallCursor:
 
             # Count occurrences of each package
             args_str = " ".join(config_data["args"])
-            assert args_str.count("numpy") == 1
-            assert args_str.count("pandas") == 1
-            # fastmcp appears once in the command only (no longer automatically added as --with)
-            assert args_str.count("fastmcp") == 1
+            assert args_str.count("--with numpy") == 1
+            assert args_str.count("--with pandas") == 1
+            assert args_str.count("--with fastmcp") == 1
 
 
 class TestCursorCommand:

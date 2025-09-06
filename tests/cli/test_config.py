@@ -74,23 +74,23 @@ class TestEnvironment:
         """Test needs_uv() method."""
         # No environment config - doesn't need UV
         config = MCPServerConfig(source={"path": "server.py"})
-        assert not config.environment.needs_uv()
+        assert not config.environment._must_run_with_uv()
 
         # Empty environment - doesn't need UV
         config = MCPServerConfig(source={"path": "server.py"}, environment={})
-        assert not config.environment.needs_uv()
+        assert not config.environment._must_run_with_uv()
 
         # With dependencies - needs UV
         config = MCPServerConfig(
             source={"path": "server.py"}, environment={"dependencies": ["requests"]}
         )
-        assert config.environment.needs_uv()
+        assert config.environment._must_run_with_uv()
 
         # With Python version - needs UV
         config = MCPServerConfig(
             source={"path": "server.py"}, environment={"python": "3.12"}
         )
-        assert config.environment.needs_uv()
+        assert config.environment._must_run_with_uv()
 
     def test_build_uv_run_command(self):
         """Test build_uv_run_command() method."""
@@ -122,21 +122,6 @@ class TestEnvironment:
         assert "fastmcp" in cmd[-3:]
         assert "run" in cmd[-2:]
         assert "server.py" in cmd[-1:]
-
-    def test_run_with_uv(self):
-        """Test run_with_uv() subprocess execution."""
-        config = MCPServerConfig(
-            source={"path": "server.py"}, environment={"dependencies": ["requests"]}
-        )
-
-        # run_with_uv calls sys.exit, so we expect SystemExit
-        with pytest.raises(SystemExit) as exc_info:
-            # This will fail because we're running exit(1)
-            # but it tests that the subprocess is called correctly
-            config.environment.run_with_uv(["python", "-c", "exit(1)"])
-
-        # Check that it exited with code 1
-        assert exc_info.value.code == 1
 
 
 class TestDeployment:
@@ -266,7 +251,7 @@ class TestMCPServerConfig:
         assert isinstance(config.environment, UVEnvironment)
         assert isinstance(config.deployment, Deployment)
         # Check they have no values set
-        assert not config.environment.needs_uv()
+        assert not config.environment._must_run_with_uv()
         assert all(
             getattr(config.deployment, field, None) is None
             for field in Deployment.model_fields

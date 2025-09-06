@@ -66,7 +66,6 @@ def run_with_uv(
         editable: Editable package paths
     """
 
-    # Build uv command using Environment.build_uv_run_command()
     env_config = UVEnvironment(
         python=python_version,
         dependencies=with_packages if with_packages else None,

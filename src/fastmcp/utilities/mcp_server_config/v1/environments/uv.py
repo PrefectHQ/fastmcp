@@ -1,7 +1,5 @@
-import os
 import shutil
 import subprocess
-import sys
 from pathlib import Path
 from typing import Literal
 
@@ -59,7 +57,7 @@ class UVEnvironment(Environment):
             If no environment configuration is set, returns the command unchanged.
         """
         # If no environment setup is needed, return command as-is
-        if not self._needs_setup():
+        if not self._must_run_with_uv():
             return command
 
         args = ["uv", "run"]
@@ -75,7 +73,7 @@ class UVEnvironment(Environment):
         # Always add dependencies, requirements, and editable packages
         # These work with --project to add additional packages on top of the project env
         if self.dependencies:
-            for dep in self.dependencies:
+            for dep in sorted(set(self.dependencies)):
                 args.extend(["--with", dep])
 
         # Add requirements file
@@ -92,31 +90,7 @@ class UVEnvironment(Environment):
 
         return args
 
-    def run_with_uv(self, command: list[str]) -> None:
-        """Execute a command using uv run with this environment configuration.
-
-        Args:
-            command: Command and arguments to execute (e.g., ["fastmcp", "run", "server.py"])
-        """
-        import subprocess
-
-        # Build the full uv command
-        cmd = self.build_command(command)
-
-        # Set marker to prevent infinite loops when subprocess calls FastMCP again
-        env = os.environ | {"FASTMCP_UV_SPAWNED": "1"}
-
-        logger.debug(f"Running command: {' '.join(cmd)}")
-
-        try:
-            # Run without capturing output so it flows through naturally
-            process = subprocess.run(cmd, check=True, env=env)
-            sys.exit(process.returncode)
-        except subprocess.CalledProcessError as e:
-            logger.error(f"Command failed: {e}")
-            sys.exit(e.returncode)
-
-    def _needs_setup(self) -> bool:
+    def _must_run_with_uv(self) -> bool:
         """Check if this environment config requires uv to set up.
 
         Returns:
@@ -131,15 +105,6 @@ class UVEnvironment(Environment):
                 self.editable is not None,
             ]
         )
-
-    # Backward compatibility aliases
-    def needs_uv(self) -> bool:
-        """Deprecated: Use _needs_setup() internally or check if build_command modifies the command."""
-        return self._needs_setup()
-
-    def build_uv_run_command(self, command: list[str]) -> list[str]:
-        """Deprecated: Use build_command() instead."""
-        return self.build_command(command)
 
     async def prepare(self, output_dir: Path | None = None) -> None:
         """Prepare the Python environment using uv.
@@ -157,7 +122,7 @@ class UVEnvironment(Environment):
             )
 
         # Only prepare environment if there are actual settings to apply
-        if not self._needs_setup():
+        if not self._must_run_with_uv():
             logger.debug("No environment settings configured, skipping preparation")
             return
 
