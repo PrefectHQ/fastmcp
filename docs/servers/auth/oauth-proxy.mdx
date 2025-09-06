@@ -147,7 +147,71 @@ mcp = FastMCP(name="My Server", auth=auth)
 <ParamField body="valid_scopes" type="list[str] | None">
   List of all possible valid scopes for the OAuth provider. These are advertised to clients through the `/.well-known` endpoints. Defaults to `required_scopes` from your TokenVerifier if not specified.
 </ParamField>
+
+<ParamField body="extra_authorize_params" type="dict[str, str] | None">
+  Additional parameters to forward to the upstream authorization endpoint. Useful for provider-specific parameters that aren't part of the standard OAuth2 flow.
+  
+  For example, Auth0 requires an `audience` parameter to issue JWT tokens:
+  ```python
+  extra_authorize_params={"audience": "https://api.example.com"}
+  ```
+  
+  These parameters are added to every authorization request sent to the upstream provider.
+</ParamField>
+
+<ParamField body="extra_token_params" type="dict[str, str] | None">
+  Additional parameters to forward to the upstream token endpoint during code exchange and token refresh. Useful for provider-specific requirements during token operations.
+  
+  For example, some providers require additional context during token exchange:
+  ```python
+  extra_token_params={"audience": "https://api.example.com"}
+  ```
+  
+  These parameters are included in all token requests to the upstream provider.
+</ParamField>
 </Card>
+
+### Provider-Specific Parameters
+
+Some OAuth providers require additional parameters beyond the standard OAuth2 flow. Use `extra_authorize_params` and `extra_token_params` to handle these requirements:
+
+#### Auth0 Example
+
+Auth0 requires an `audience` parameter to issue JWT tokens instead of opaque tokens:
+
+```python
+auth = OAuthProxy(
+    upstream_authorization_endpoint="https://your-domain.auth0.com/authorize",
+    upstream_token_endpoint="https://your-domain.auth0.com/oauth/token",
+    upstream_client_id="your-auth0-client-id",
+    upstream_client_secret="your-auth0-client-secret",
+    
+    # Auth0 requires audience for JWT tokens
+    extra_authorize_params={
+        "audience": "https://your-api-identifier.com"
+    },
+    extra_token_params={
+        "audience": "https://your-api-identifier.com"  
+    },
+    
+    token_verifier=JWTVerifier(
+        jwks_uri="https://your-domain.auth0.com/.well-known/jwks.json",
+        issuer="https://your-domain.auth0.com/",
+        audience="https://your-api-identifier.com"
+    ),
+    
+    base_url="https://your-server.com"
+)
+```
+
+#### RFC 8707 Resource Indicators
+
+MCP clients can specify target resources using the standard `resource` parameter (RFC 8707). This is automatically forwarded when present:
+
+```python
+# Client code (automatic - no server configuration needed)
+# The resource parameter is passed through from AuthorizationParams
+```
 
 ### Using Built-in Providers
 

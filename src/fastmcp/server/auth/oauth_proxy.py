@@ -250,6 +250,10 @@ class OAuthProxy(OAuthProvider):
         forward_pkce: bool = True,
         # Token endpoint authentication
         token_endpoint_auth_method: str | None = None,
+        # Extra parameters to forward to authorization endpoint
+        extra_authorize_params: dict[str, str] | None = None,
+        # Extra parameters to forward to token endpoint
+        extra_token_params: dict[str, str] | None = None,
     ):
         """Initialize the OAuth proxy provider.
 
@@ -278,6 +282,11 @@ class OAuthProxy(OAuthProvider):
             token_endpoint_auth_method: Token endpoint authentication method for upstream server.
                 Common values: "client_secret_basic", "client_secret_post", "none".
                 If None, authlib will use its default (typically "client_secret_basic").
+            extra_authorize_params: Additional parameters to forward to the upstream authorization endpoint.
+                Useful for provider-specific parameters like Auth0's "audience".
+                Example: {"audience": "https://api.example.com"}
+            extra_token_params: Additional parameters to forward to the upstream token endpoint.
+                Useful for provider-specific parameters during token exchange.
         """
         # Always enable DCR since we implement it locally for MCP clients
         client_registration_options = ClientRegistrationOptions(
@@ -318,6 +327,10 @@ class OAuthProxy(OAuthProvider):
 
         # Token endpoint authentication
         self._token_endpoint_auth_method = token_endpoint_auth_method
+
+        # Extra parameters for authorization and token endpoints
+        self._extra_authorize_params = extra_authorize_params or {}
+        self._extra_token_params = extra_token_params or {}
 
         # Local state for DCR and token bookkeeping
         self._clients: dict[str, OAuthClientInformationFull] = {}
@@ -483,6 +496,24 @@ class OAuthProxy(OAuthProvider):
             logger.debug(
                 "Forwarding proxy PKCE challenge to upstream for transaction %s",
                 txn_id,
+            )
+
+        # Forward resource parameter if provided (RFC 8707)
+        if params.resource:
+            query_params["resource"] = params.resource
+            logger.debug(
+                "Forwarding resource indicator '%s' to upstream for transaction %s",
+                params.resource,
+                txn_id,
+            )
+
+        # Add any extra authorization parameters configured for this proxy
+        if self._extra_authorize_params:
+            query_params.update(self._extra_authorize_params)
+            logger.debug(
+                "Adding extra authorization parameters for transaction %s: %s",
+                txn_id,
+                list(self._extra_authorize_params.keys()),
             )
 
         # Build the upstream authorization URL
@@ -870,25 +901,34 @@ class OAuthProxy(OAuthProvider):
                     f"Exchanging IdP code for tokens with redirect_uri: {idp_redirect_uri}"
                 )
 
+                # Build token exchange parameters
+                token_params = {
+                    "url": self._upstream_token_endpoint,
+                    "code": idp_code,
+                    "redirect_uri": idp_redirect_uri,
+                }
+
                 # Include proxy's code_verifier if we forwarded PKCE
                 proxy_code_verifier = transaction.get("proxy_code_verifier")
                 if proxy_code_verifier:
+                    token_params["code_verifier"] = proxy_code_verifier
                     logger.debug(
                         "Including proxy code_verifier in token exchange for transaction %s",
                         txn_id,
                     )
-                    idp_tokens: dict[str, Any] = await oauth_client.fetch_token(  # type: ignore[misc]
-                        url=self._upstream_token_endpoint,
-                        code=idp_code,
-                        redirect_uri=idp_redirect_uri,
-                        code_verifier=proxy_code_verifier,
+
+                # Add any extra token parameters configured for this proxy
+                if self._extra_token_params:
+                    token_params.update(self._extra_token_params)
+                    logger.debug(
+                        "Adding extra token parameters for transaction %s: %s",
+                        txn_id,
+                        list(self._extra_token_params.keys()),
                     )
-                else:
-                    idp_tokens: dict[str, Any] = await oauth_client.fetch_token(  # type: ignore[misc]
-                        url=self._upstream_token_endpoint,
-                        code=idp_code,
-                        redirect_uri=idp_redirect_uri,
-                    )
+
+                idp_tokens: dict[str, Any] = await oauth_client.fetch_token(
+                    **token_params
+                )  # type: ignore[misc]
 
                 logger.debug(
                     f"Successfully exchanged IdP code for tokens (transaction: {txn_id}, PKCE: {bool(proxy_code_verifier)})"

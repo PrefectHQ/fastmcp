@@ -793,3 +793,171 @@ class TestOAuthProxyE2E:
         txn_id = query_params["state"][0]
         transaction = proxy._oauth_transactions[txn_id]
         assert "proxy_code_verifier" in transaction
+
+
+class TestParameterForwarding:
+    """Tests for forwarding custom parameters to upstream OAuth provider."""
+
+    @pytest.fixture
+    def proxy_with_extra_params(self, jwt_verifier):
+        """Create OAuthProxy with extra parameters configured."""
+        return OAuthProxy(
+            upstream_authorization_endpoint="https://oauth.example.com/authorize",
+            upstream_token_endpoint="https://oauth.example.com/token",
+            upstream_client_id="upstream-client",
+            upstream_client_secret="upstream-secret",
+            token_verifier=jwt_verifier,
+            base_url="https://proxy.example.com",
+            extra_authorize_params={"audience": "https://api.example.com"},
+            extra_token_params={"audience": "https://api.example.com"},
+        )
+
+    @pytest.fixture
+    def proxy_without_extra_params(self, jwt_verifier):
+        """Create OAuthProxy without extra parameters."""
+        return OAuthProxy(
+            upstream_authorization_endpoint="https://oauth.example.com/authorize",
+            upstream_token_endpoint="https://oauth.example.com/token",
+            upstream_client_id="upstream-client",
+            upstream_client_secret="upstream-secret",
+            token_verifier=jwt_verifier,
+            base_url="https://proxy.example.com",
+        )
+
+    async def test_resource_parameter_forwarding(self, proxy_without_extra_params):
+        """Test that RFC 8707 resource parameter is forwarded from client request."""
+        client = OAuthClientInformationFull(
+            client_id="test-client",
+            client_secret="test-secret",
+            redirect_uris=[AnyUrl("http://localhost:12345/callback")],
+        )
+
+        params = AuthorizationParams(
+            redirect_uri=AnyUrl("http://localhost:12345/callback"),
+            redirect_uri_provided_explicitly=True,
+            state="client-state",
+            code_challenge="client_challenge",
+            scopes=["read"],
+            resource="https://api.example.com/v1",  # RFC 8707 resource indicator
+        )
+
+        redirect_url = await proxy_without_extra_params.authorize(client, params)
+        query_params = parse_qs(urlparse(redirect_url).query)
+
+        # Resource parameter should be forwarded to upstream
+        assert "resource" in query_params
+        assert query_params["resource"][0] == "https://api.example.com/v1"
+
+    async def test_extra_authorize_params(self, proxy_with_extra_params):
+        """Test that extra authorization parameters are included."""
+        client = OAuthClientInformationFull(
+            client_id="test-client",
+            client_secret="test-secret",
+            redirect_uris=[AnyUrl("http://localhost:12345/callback")],
+        )
+
+        params = AuthorizationParams(
+            redirect_uri=AnyUrl("http://localhost:12345/callback"),
+            redirect_uri_provided_explicitly=True,
+            state="client-state",
+            code_challenge="client_challenge",
+            scopes=["read"],
+        )
+
+        redirect_url = await proxy_with_extra_params.authorize(client, params)
+        query_params = parse_qs(urlparse(redirect_url).query)
+
+        # Extra audience parameter should be included
+        assert "audience" in query_params
+        assert query_params["audience"][0] == "https://api.example.com"
+
+    async def test_resource_and_extra_params_together(self, proxy_with_extra_params):
+        """Test that both resource and extra params can be used together."""
+        client = OAuthClientInformationFull(
+            client_id="test-client",
+            client_secret="test-secret",
+            redirect_uris=[AnyUrl("http://localhost:12345/callback")],
+        )
+
+        params = AuthorizationParams(
+            redirect_uri=AnyUrl("http://localhost:12345/callback"),
+            redirect_uri_provided_explicitly=True,
+            state="client-state",
+            code_challenge="client_challenge",
+            scopes=["read"],
+            resource="https://resource.example.com",  # Client-specified resource
+        )
+
+        redirect_url = await proxy_with_extra_params.authorize(client, params)
+        query_params = parse_qs(urlparse(redirect_url).query)
+
+        # Both resource and audience should be present
+        assert "resource" in query_params
+        assert query_params["resource"][0] == "https://resource.example.com"
+        assert "audience" in query_params
+        assert query_params["audience"][0] == "https://api.example.com"
+
+    async def test_no_extra_params_when_not_configured(
+        self, proxy_without_extra_params
+    ):
+        """Test that no extra params are added when not configured."""
+        client = OAuthClientInformationFull(
+            client_id="test-client",
+            client_secret="test-secret",
+            redirect_uris=[AnyUrl("http://localhost:12345/callback")],
+        )
+
+        params = AuthorizationParams(
+            redirect_uri=AnyUrl("http://localhost:12345/callback"),
+            redirect_uri_provided_explicitly=True,
+            state="client-state",
+            code_challenge="client_challenge",
+            scopes=["read"],
+            # No resource parameter
+        )
+
+        redirect_url = await proxy_without_extra_params.authorize(client, params)
+        query_params = parse_qs(urlparse(redirect_url).query)
+
+        # No audience parameter should be present (not configured)
+        assert "audience" not in query_params
+        # No resource parameter should be present (not provided by client)
+        assert "resource" not in query_params
+
+    async def test_multiple_extra_params(self, jwt_verifier):
+        """Test multiple extra parameters can be configured and forwarded."""
+        proxy = OAuthProxy(
+            upstream_authorization_endpoint="https://oauth.example.com/authorize",
+            upstream_token_endpoint="https://oauth.example.com/token",
+            upstream_client_id="upstream-client",
+            upstream_client_secret="upstream-secret",
+            token_verifier=jwt_verifier,
+            base_url="https://proxy.example.com",
+            extra_authorize_params={
+                "audience": "https://api.example.com",
+                "prompt": "consent",
+                "max_age": "3600",
+            },
+        )
+
+        client = OAuthClientInformationFull(
+            client_id="test-client",
+            client_secret="test-secret",
+            redirect_uris=[AnyUrl("http://localhost:12345/callback")],
+        )
+
+        params = AuthorizationParams(
+            redirect_uri=AnyUrl("http://localhost:12345/callback"),
+            redirect_uri_provided_explicitly=True,
+            state="client-state",
+            code_challenge="client_challenge",
+            scopes=["read"],
+        )
+
+        redirect_url = await proxy.authorize(client, params)
+        query_params = parse_qs(urlparse(redirect_url).query)
+
+        # All extra parameters should be included
+        assert query_params["audience"][0] == "https://api.example.com"
+        assert query_params["prompt"][0] == "consent"
+        assert query_params["max_age"][0] == "3600"
