@@ -24,6 +24,7 @@ class TestInstallApp:
             install_app.parse_args(["claude-code", "--help"])
             install_app.parse_args(["claude-desktop", "--help"])
             install_app.parse_args(["cursor", "--help"])
+            install_app.parse_args(["gemini-cli", "--help"])
             install_app.parse_args(["mcp-json", "--help"])
         except SystemExit:
             # Help commands exit with 0, that's expected
@@ -184,6 +185,63 @@ class TestMcpJsonInstall:
         assert bound.arguments["copy"] is True
 
 
+class TestGeminiCliInstall:
+    """Test gemini-cli install command."""
+
+    def test_gemini_cli_basic(self):
+        """Test basic gemini-cli install command parsing."""
+        # Parse command with correct parameter names
+        command, bound, _ = install_app.parse_args(
+            ["gemini-cli", "server.py", "--name", "test-server"]
+        )
+
+        # Verify parsing was successful
+        assert command is not None
+        assert bound.arguments["server_spec"] == "server.py"
+        assert bound.arguments["server_name"] == "test-server"
+
+    def test_gemini_cli_with_options(self):
+        """Test gemini-cli install with various options."""
+        command, bound, _ = install_app.parse_args(
+            [
+                "gemini-cli",
+                "server.py",
+                "--name",
+                "test-server",
+                "--with",
+                "package1",
+                "--with",
+                "package2",
+                "--env",
+                "VAR1=value1",
+            ]
+        )
+
+        assert bound.arguments["with_packages"] == ["package1", "package2"]
+        assert bound.arguments["env_vars"] == ["VAR1=value1"]
+
+    def test_gemini_cli_with_new_options(self):
+        """Test gemini-cli install with new uv options."""
+        from pathlib import Path
+
+        command, bound, _ = install_app.parse_args(
+            [
+                "gemini-cli",
+                "server.py",
+                "--python",
+                "3.11",
+                "--project",
+                "/workspace",
+                "--with-requirements",
+                "requirements.txt",
+            ]
+        )
+
+        assert bound.arguments["python"] == "3.11"
+        assert bound.arguments["project"] == Path("/workspace")
+        assert bound.arguments["with_requirements"] == Path("requirements.txt")
+
+
 class TestInstallCommandParsing:
     """Test command parsing and error handling."""
 
@@ -194,6 +252,7 @@ class TestInstallCommandParsing:
             ["claude-code", "server.py"],
             ["claude-desktop", "server.py"],
             ["cursor", "server.py"],
+            ["gemini-cli", "server.py"],
         ]
 
         for cmd_args in commands_to_test:
@@ -214,6 +273,7 @@ class TestInstallCommandParsing:
             ["claude-code", "server.py", "--python", "3.11"],
             ["claude-desktop", "server.py", "--python", "3.11"],
             ["cursor", "server.py", "--python", "3.11"],
+            ["gemini-cli", "server.py", "--python", "3.11"],
             ["mcp-json", "server.py", "--python", "3.11"],
         ]
 
@@ -228,6 +288,7 @@ class TestInstallCommandParsing:
             ["claude-code", "server.py", "--with-requirements", "requirements.txt"],
             ["claude-desktop", "server.py", "--with-requirements", "requirements.txt"],
             ["cursor", "server.py", "--with-requirements", "requirements.txt"],
+            ["gemini-cli", "server.py", "--with-requirements", "requirements.txt"],
             ["mcp-json", "server.py", "--with-requirements", "requirements.txt"],
         ]
 
@@ -242,6 +303,7 @@ class TestInstallCommandParsing:
             ["claude-code", "server.py", "--project", "/path/to/project"],
             ["claude-desktop", "server.py", "--project", "/path/to/project"],
             ["cursor", "server.py", "--project", "/path/to/project"],
+            ["gemini-cli", "server.py", "--project", "/path/to/project"],
             ["mcp-json", "server.py", "--project", "/path/to/project"],
         ]
 
