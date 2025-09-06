@@ -24,8 +24,9 @@ async def test_complex_inputs():
         result = await client.call_tool_mcp(
             "name_shrimp", {"tank": tank, "extra_names": ["charlie"]}
         )
+        # Adjacent non-MCP list items are combined into single content
         assert len(result.content) == 1
-        assert result.content[0].text == '["bob","alice","charlie"]'  # type: ignore[attr-defined]
+        assert result.content[0].text == "bobalicecharlie"  # type: ignore[attr-defined]
 
 
 async def test_desktop(monkeypatch):

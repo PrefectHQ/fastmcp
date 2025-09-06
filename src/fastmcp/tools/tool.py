@@ -502,26 +502,59 @@ def _convert_to_content(
         # if the result is a list, then it could either be a list of MCP types,
         # or a "regular" list that the tool is returning, or a mix of both.
         #
-        # so we extract all the MCP types / images and convert them as individual content elements,
-        # and aggregate the rest as a single content element
+        # Group adjacent non-MCP types together while preserving order
 
-        mcp_types = []
-        other_content = []
+        content_items = []
+        non_mcp_batch = []
+
+        def flush_non_mcp_batch():
+            """Convert accumulated non-MCP items to a single TextContent block."""
+            if non_mcp_batch:
+                if len(non_mcp_batch) == 1:
+                    # Single item - convert directly to avoid combining when not needed
+                    content_items.extend(
+                        _convert_to_content(
+                            non_mcp_batch[0],
+                            serializer=serializer,
+                            _process_as_single_item=True,
+                        )
+                    )
+                else:
+                    # Multiple items - combine into a single text block
+                    combined_text = ""
+                    for item in non_mcp_batch:
+                        if isinstance(item, str):
+                            combined_text += item
+                        else:
+                            if serializer is None:
+                                combined_text += default_serializer(item)
+                            else:
+                                try:
+                                    combined_text += serializer(item)
+                                except Exception as e:
+                                    logger.warning(
+                                        "Error serializing tool result: %s",
+                                        e,
+                                        exc_info=True,
+                                    )
+                                    combined_text += default_serializer(item)
+                    content_items.append(TextContent(type="text", text=combined_text))
+                non_mcp_batch.clear()
 
         for item in result:
             if isinstance(item, ContentBlock | Image | Audio | File):
-                mcp_types.append(_convert_to_content(item)[0])
+                # Flush any accumulated non-MCP items first
+                flush_non_mcp_batch()
+                # Add the MCP item
+                content_items.extend(_convert_to_content(item))
             else:
-                other_content.append(item)
+                # Accumulate non-MCP items
+                non_mcp_batch.append(item)
 
-        if other_content:
-            other_content = _convert_to_content(
-                other_content,
-                serializer=serializer,
-                _process_as_single_item=True,
-            )
+        # Flush any remaining non-MCP items
+        flush_non_mcp_batch()
 
-        return other_content + mcp_types
+        return content_items
 
     if not isinstance(result, str):
         if serializer is None:

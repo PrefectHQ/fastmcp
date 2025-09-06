@@ -1056,12 +1056,12 @@ class TestConvertResultToContent:
         assert result[0].text == '{"a":1,"b":2}'
 
     def test_list_of_basic_types(self):
-        """Test that a list of basic types is converted to a single TextContent."""
+        """Test that a list of basic types is converted to a single combined TextContent item."""
         result = _convert_to_content([1, "two", {"c": 3}])
         assert isinstance(result, list)
-        assert len(result) == 1
+        assert len(result) == 1  # Adjacent non-MCP types are combined
         assert isinstance(result[0], TextContent)
-        assert result[0].text == '[1,"two",{"c":3}]'
+        assert result[0].text == '1two{"c":3}'  # All adjacent basic types combined
 
     def test_list_of_mcp_types(self):
         """Test that a list of MCP types is returned as a list of those types."""
@@ -1091,11 +1091,60 @@ class TestConvertResultToContent:
         assert text_content_count == 2
         assert image_content_count == 1
 
-        text_item = next(item for item in result if isinstance(item, TextContent))
-        assert text_item.text == '[{"a":1}]'
+        # Verify order is preserved: text, image, text
+        assert isinstance(result[0], TextContent)
+        assert result[0].text == "hello"
+        assert isinstance(result[1], ImageContent)
+        assert result[1].data == "ZmFrZWltYWdlZGF0YQ=="
+        assert isinstance(result[2], TextContent)
+        assert result[2].text == '{"a":1}'
 
-        image_item = next(item for item in result if isinstance(item, ImageContent))
-        assert image_item.data == "ZmFrZWltYWdlZGF0YQ=="
+    def test_mixed_text_and_images_preserve_order(self):
+        """Test that mixed text and images preserve their original order (GitHub issue #1656)."""
+        img_obj1 = Image(data=b"imagedata1")
+        img_obj2 = Image(data=b"imagedata2")
+
+        # Test the exact pattern from the issue: [text1, img1, text2, img2]
+        result = _convert_to_content(["text1", img_obj1, "text2", img_obj2])
+
+        assert isinstance(result, list)
+        assert len(result) == 4
+
+        # Verify exact order is preserved
+        assert isinstance(result[0], TextContent)
+        assert result[0].text == "text1"
+
+        assert isinstance(result[1], ImageContent)
+        assert result[1].data == "aW1hZ2VkYXRhMQ=="  # base64 of "imagedata1"
+
+        assert isinstance(result[2], TextContent)
+        assert result[2].text == "text2"
+
+        assert isinstance(result[3], ImageContent)
+        assert result[3].data == "aW1hZ2VkYXRhMg=="  # base64 of "imagedata2"
+
+    def test_adjacent_non_mcp_types_combined(self):
+        """Test strawgate's example: image, 'x', 'y', image should be 2 image blocks and 1 content block."""
+        img_obj1 = Image(data=b"imagedata1")
+        img_obj2 = Image(data=b"imagedata2")
+
+        # Test the exact pattern from strawgate's request: [image, 'x', 'y', image]
+        result = _convert_to_content([img_obj1, "x", "y", img_obj2])
+
+        assert isinstance(result, list)
+        assert len(result) == 3  # 2 image blocks + 1 combined text block
+
+        # First image
+        assert isinstance(result[0], ImageContent)
+        assert result[0].data == "aW1hZ2VkYXRhMQ=="  # base64 of "imagedata1"
+
+        # Combined text content for adjacent 'x' and 'y'
+        assert isinstance(result[1], TextContent)
+        assert result[1].text == "xy"  # Adjacent strings combined
+
+        # Second image
+        assert isinstance(result[2], ImageContent)
+        assert result[2].data == "aW1hZ2VkYXRhMg=="  # base64 of "imagedata2"
 
     def test_list_of_mixed_types_list(self):
         """Test that a list of mixed types, including a list as one of the elements, is converted correctly."""
@@ -1105,19 +1154,23 @@ class TestConvertResultToContent:
         result = _convert_to_content([content1, image_obj, basic_data])
 
         assert isinstance(result, list)
-        assert len(result) == 3
+        assert (
+            len(result) == 3
+        )  # Adjacent non-MCP types are combined: hello (TextContent) + image + basic_data (single TextContent)
 
         text_content_count = sum(isinstance(item, TextContent) for item in result)
         image_content_count = sum(isinstance(item, ImageContent) for item in result)
 
-        assert text_content_count == 2
+        assert text_content_count == 2  # hello + serialized basic_data
         assert image_content_count == 1
 
-        text_item = next(item for item in result if isinstance(item, TextContent))
-        assert text_item.text == '[[{"a":1},{"b":2}]]'
-
-        image_item = next(item for item in result if isinstance(item, ImageContent))
-        assert image_item.data == "ZmFrZWltYWdlZGF0YQ=="
+        # Verify order: hello, image, serialized basic_data
+        assert isinstance(result[0], TextContent)
+        assert result[0].text == "hello"
+        assert isinstance(result[1], ImageContent)
+        assert result[1].data == "ZmFrZWltYWdlZGF0YQ=="
+        assert isinstance(result[2], TextContent)
+        assert result[2].text == '[{"a":1},{"b":2}]'  # basic_data serialized as JSON
 
     def test_list_of_mixed_types_with_audio(self):
         """Test that a list of mixed types including Audio is converted correctly."""
@@ -1135,11 +1188,13 @@ class TestConvertResultToContent:
         assert text_content_count == 2
         assert audio_content_count == 1
 
-        text_item = next(item for item in result if isinstance(item, TextContent))
-        assert text_item.text == '[{"a":1}]'
-
-        audio_item = next(item for item in result if isinstance(item, AudioContent))
-        assert audio_item.data == "ZmFrZWF1ZGlvZGF0YQ=="
+        # Verify order is preserved: text, audio, text
+        assert isinstance(result[0], TextContent)
+        assert result[0].text == "hello"
+        assert isinstance(result[1], AudioContent)
+        assert result[1].data == "ZmFrZWF1ZGlvZGF0YQ=="
+        assert isinstance(result[2], TextContent)
+        assert result[2].text == '{"a":1}'
 
     def test_list_of_mixed_types_with_file(self):
         """Test that a list of mixed types including File is converted correctly."""
@@ -1160,14 +1215,15 @@ class TestConvertResultToContent:
         assert text_content_count == 2
         assert embedded_content_count == 1
 
-        text_item = next(item for item in result if isinstance(item, TextContent))
-        assert text_item.text == '[{"a":1}]'
+        # Verify order is preserved: text, file, text
+        assert isinstance(result[0], TextContent)
+        assert result[0].text == "hello"
+        assert isinstance(result[1], EmbeddedResource)
+        assert result[1].type == "resource"
+        assert isinstance(result[2], TextContent)
+        assert result[2].text == '{"a":1}'
 
-        embedded_item = next(
-            item
-            for item in result
-            if isinstance(item, EmbeddedResource) and item.type == "resource"
-        )
+        embedded_item = result[1]
         resource = embedded_item.resource
         assert resource.mimeType == "application/octet-stream"
         # Check for blob attribute and its value
@@ -1239,28 +1295,28 @@ class TestConvertResultToContent:
         ]
 
     def test_single_element_list_preserves_structure(self):
-        """Test that single-element lists preserve their list structure."""
+        """Test that single-element lists are converted to individual TextContent items."""
 
-        # Test with a single integer
+        # Test with a single integer - now returns the integer as individual content
         result = _convert_to_content([1])
         assert isinstance(result, list)
         assert len(result) == 1
         assert isinstance(result[0], TextContent)
-        assert result[0].text == "[1]"  # Should be "[1]", not "1"
+        assert result[0].text == "1"  # Individual item, not wrapped in list
 
-        # Test with a single string
+        # Test with a single string - now returns the string as individual content
         result = _convert_to_content(["hello"])
         assert isinstance(result, list)
         assert len(result) == 1
         assert isinstance(result[0], TextContent)
-        assert result[0].text == '["hello"]'  # Should be ["hello"], not "hello"
+        assert result[0].text == "hello"  # Individual string, not wrapped in list
 
-        # Test with a single dict
+        # Test with a single dict - now returns the dict as individual content
         result = _convert_to_content([{"a": 1}])
         assert isinstance(result, list)
         assert len(result) == 1
         assert isinstance(result[0], TextContent)
-        assert result[0].text == '[{"a":1}]'  # Should be wrapped in a list
+        assert result[0].text == '{"a":1}'  # Individual dict, not wrapped in list
 
 
 class TestAutomaticStructuredContent:
@@ -1385,9 +1441,10 @@ class TestAutomaticStructuredContent:
 
         result = await tool.run({})
 
-        # Should only have content, no structured content
+        # Adjacent non-MCP types should be combined into single content block, no structured content
         assert len(result.content) == 1
-        assert isinstance(result.content[0], TextContent)
+        assert all(isinstance(item, TextContent) for item in result.content)
+        assert result.content[0].text == "12345"  # All numbers combined
         assert result.structured_content is None
 
     async def test_int_return_with_schema_creates_structured_content(self):
