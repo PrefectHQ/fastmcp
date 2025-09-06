@@ -10,6 +10,7 @@ from typing import (
     Any,
     Generic,
     Literal,
+    TypeAlias,
     get_type_hints,
 )
 
@@ -55,6 +56,9 @@ class _UnserializableType:
     pass
 
 
+ToolResultSerializerType: TypeAlias = Callable[[Any], str]
+
+
 def default_serializer(data: Any) -> str:
     return pydantic_core.to_json(data, fallback=str).decode()
 
@@ -70,12 +74,12 @@ class ToolResult:
         elif content is None:
             content = structured_content
 
-        self.content = _convert_to_content(content)
+        self.content: list[ContentBlock] = _convert_to_content(result=content)
 
         if structured_content is not None:
             try:
                 structured_content = pydantic_core.to_jsonable_python(
-                    structured_content
+                    value=structured_content
                 )
             except pydantic_core.PydanticSerializationError as e:
                 logger.error(
@@ -112,7 +116,7 @@ class Tool(FastMCPComponent):
         Field(description="Additional annotations about the tool"),
     ] = None
     serializer: Annotated[
-        Callable[[Any], str] | None,
+        ToolResultSerializerType | None,
         Field(description="Optional custom serializer for tool results"),
     ] = None
 
@@ -166,7 +170,7 @@ class Tool(FastMCPComponent):
         annotations: ToolAnnotations | None = None,
         exclude_args: list[str] | None = None,
         output_schema: dict[str, Any] | None | NotSetT | Literal[False] = NotSet,
-        serializer: Callable[[Any], str] | None = None,
+        serializer: ToolResultSerializerType | None = None,
         meta: dict[str, Any] | None = None,
         enabled: bool | None = None,
     ) -> FunctionTool:
@@ -208,7 +212,7 @@ class Tool(FastMCPComponent):
         tags: set[str] | None = None,
         annotations: ToolAnnotations | None | NotSetT = NotSet,
         output_schema: dict[str, Any] | None | NotSetT | Literal[False] = NotSet,
-        serializer: Callable[[Any], str] | None = None,
+        serializer: ToolResultSerializerType | None = None,
         meta: dict[str, Any] | None | NotSetT = NotSet,
         transform_args: dict[str, ArgTransform] | None = None,
         enabled: bool | None = None,
@@ -246,7 +250,7 @@ class FunctionTool(Tool):
         annotations: ToolAnnotations | None = None,
         exclude_args: list[str] | None = None,
         output_schema: dict[str, Any] | None | NotSetT | Literal[False] = NotSet,
-        serializer: Callable[[Any], str] | None = None,
+        serializer: ToolResultSerializerType | None = None,
         meta: dict[str, Any] | None = None,
         enabled: bool | None = None,
     ) -> FunctionTool:
@@ -315,27 +319,33 @@ class FunctionTool(Tool):
 
         unstructured_result = _convert_to_content(result, serializer=self.serializer)
 
-        structured_output = None
-        # First handle structured content based on output schema, if any
-        if self.output_schema is not None:
-            if self.output_schema.get("x-fastmcp-wrap-result"):
-                # Schema says wrap - always wrap in result key
-                structured_output = {"result": result}
-            else:
-                structured_output = result
-        # If no output schema, try to serialize the result. If it is a dict, use
-        # it as structured content. If it is not a dict, ignore it.
-        if structured_output is None:
+        if self.output_schema is None:
+            # Do not produce a structured output for MCP Content Types
+            if isinstance(result, ContentBlock | Audio | Image | File) or (
+                isinstance(result, list | tuple)
+                and any(isinstance(item, ContentBlock) for item in result)
+            ):
+                return ToolResult(content=unstructured_result)
+
+            # Otherwise, try to serialize the result as a dict
             try:
-                structured_output = pydantic_core.to_jsonable_python(result)
-                if not isinstance(structured_output, dict):
-                    structured_output = None
-            except Exception:
+                structured_content = pydantic_core.to_jsonable_python(result)
+                if isinstance(structured_content, dict):
+                    return ToolResult(
+                        content=unstructured_result,
+                        structured_content=structured_content,
+                    )
+
+            except pydantic_core.PydanticSerializationError:
                 pass
+
+            return ToolResult(content=unstructured_result)
+
+        wrap_result = self.output_schema.get("x-fastmcp-wrap-result")
 
         return ToolResult(
             content=unstructured_result,
-            structured_content=structured_output,
+            structured_content={"result": result} if wrap_result else result,
         )
 
 
@@ -476,98 +486,69 @@ class ParsedFunction:
         )
 
 
+def _serialize_with_fallback(
+    result: Any, serializer: ToolResultSerializerType | None = None
+) -> str:
+    if serializer is not None:
+        try:
+            return serializer(result)
+        except Exception as e:
+            logger.warning(
+                "Error serializing tool result: %s",
+                e,
+                exc_info=True,
+            )
+
+    return default_serializer(result)
+
+
+def _convert_to_single_content_block(
+    item: Any,
+    serializer: ToolResultSerializerType | None = None,
+) -> ContentBlock:
+    if isinstance(item, ContentBlock):
+        return item
+
+    if isinstance(item, Image):
+        return item.to_image_content()
+
+    if isinstance(item, Audio):
+        return item.to_audio_content()
+
+    if isinstance(item, File):
+        return item.to_resource_content()
+
+    if isinstance(item, str):
+        return TextContent(type="text", text=item)
+
+    return TextContent(type="text", text=_serialize_with_fallback(item, serializer))
+
+
 def _convert_to_content(
     result: Any,
-    serializer: Callable[[Any], str] | None = None,
-    _process_as_single_item: bool = False,
+    serializer: ToolResultSerializerType | None = None,
 ) -> list[ContentBlock]:
     """Convert a result to a sequence of content objects."""
 
     if result is None:
         return []
 
-    if isinstance(result, ContentBlock):
-        return [result]
+    if not isinstance(result, (list | tuple)):
+        return [_convert_to_single_content_block(result, serializer)]
 
-    if isinstance(result, Image):
-        return [result.to_image_content()]
+    # If all items are ContentBlocks, return them as is
+    if all(isinstance(item, ContentBlock) for item in result):
+        return result
 
-    elif isinstance(result, Audio):
-        return [result.to_audio_content()]
+    # If any item is a ContentBlock, convert non-ContentBlock items to TextContent
+    # without aggregating them
+    if any(isinstance(item, ContentBlock) for item in result):
+        return [
+            _convert_to_single_content_block(item, serializer)
+            if not isinstance(item, ContentBlock)
+            else item
+            for item in result
+        ]
 
-    elif isinstance(result, File):
-        return [result.to_resource_content()]
-
-    if isinstance(result, list | tuple) and not _process_as_single_item:
-        # if the result is a list, then it could either be a list of MCP types,
-        # or a "regular" list that the tool is returning, or a mix of both.
-        #
-        # Group adjacent non-MCP types together while preserving order
-
-        content_items = []
-        non_mcp_batch = []
-
-        def flush_non_mcp_batch():
-            """Convert accumulated non-MCP items to a single TextContent block."""
-            if non_mcp_batch:
-                if len(non_mcp_batch) == 1:
-                    # Single item - convert directly to avoid combining when not needed
-                    content_items.extend(
-                        _convert_to_content(
-                            non_mcp_batch[0],
-                            serializer=serializer,
-                            _process_as_single_item=True,
-                        )
-                    )
-                else:
-                    # Multiple items - combine into a single text block
-                    combined_text = ""
-                    for item in non_mcp_batch:
-                        if isinstance(item, str):
-                            combined_text += item
-                        else:
-                            if serializer is None:
-                                combined_text += default_serializer(item)
-                            else:
-                                try:
-                                    combined_text += serializer(item)
-                                except Exception as e:
-                                    logger.warning(
-                                        "Error serializing tool result: %s",
-                                        e,
-                                        exc_info=True,
-                                    )
-                                    combined_text += default_serializer(item)
-                    content_items.append(TextContent(type="text", text=combined_text))
-                non_mcp_batch.clear()
-
-        for item in result:
-            if isinstance(item, ContentBlock | Image | Audio | File):
-                # Flush any accumulated non-MCP items first
-                flush_non_mcp_batch()
-                # Add the MCP item
-                content_items.extend(_convert_to_content(item))
-            else:
-                # Accumulate non-MCP items
-                non_mcp_batch.append(item)
-
-        # Flush any remaining non-MCP items
-        flush_non_mcp_batch()
-
-        return content_items
-
-    if not isinstance(result, str):
-        if serializer is None:
-            result = default_serializer(result)
-        else:
-            try:
-                result = serializer(result)
-            except Exception as e:
-                logger.warning(
-                    "Error serializing tool result: %s",
-                    e,
-                    exc_info=True,
-                )
-                result = default_serializer(result)
-
-    return [TextContent(type="text", text=result)]
+    # If none of the items are ContentBlocks, aggregate all items into a single TextContent
+    return [TextContent(type="text", text=_serialize_with_fallback(result, serializer))]

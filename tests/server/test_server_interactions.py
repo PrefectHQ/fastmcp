@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Annotated, Any, Literal
 
 import pytest
+from inline_snapshot import snapshot
 from mcp import McpError
 from mcp.types import (
     AudioContent,
@@ -21,6 +22,7 @@ from pydantic import AnyUrl, BaseModel, Field, TypeAdapter
 from typing_extensions import TypedDict
 
 from fastmcp import Client, Context, FastMCP
+from fastmcp.client.client import CallToolResult
 from fastmcp.client.transports import FastMCPTransport
 from fastmcp.exceptions import ToolError
 from fastmcp.prompts.prompt import Prompt, PromptMessage
@@ -187,7 +189,7 @@ class TestTools:
             result = await client.call_tool("list_tool", {})
             # Adjacent non-MCP list items are combined into single content block
             assert len(result.content) == 1
-            assert result.content[0].text == "x2"  # type: ignore[attr-defined]
+            assert result.content[0].text == '["x",2]'  # type: ignore[attr-defined]
             assert result.data == ["x", 2]
 
     async def test_file_text_tool(self, tool_server: FastMCP):
@@ -1157,20 +1159,37 @@ class TestToolOutputSchema:
             result = await client.call_tool("mixed_output", {})
 
             # Should have multiple content blocks
-            assert len(result.content) >= 2
-
-            # Should have structured output with wrapped result
-            expected_data = [
-                "text message",
-                {"structured": "data"},
-                {
-                    "type": "text",
-                    "text": "direct MCP content",
-                    "annotations": None,
-                    "_meta": None,
-                },
-            ]
-            assert result.structured_content == {"result": expected_data}
+            assert result == snapshot(
+                CallToolResult(
+                    content=[
+                        TextContent(type="text", text="text message"),
+                        TextContent(type="text", text='{"structured":"data"}'),
+                        TextContent(type="text", text="direct MCP content"),
+                    ],
+                    structured_content={
+                        "result": [
+                            "text message",
+                            {"structured": "data"},
+                            {
+                                "type": "text",
+                                "text": "direct MCP content",
+                                "annotations": None,
+                                "_meta": None,
+                            },
+                        ]
+                    },
+                    data=[
+                        "text message",
+                        {"structured": "data"},
+                        {
+                            "type": "text",
+                            "text": "direct MCP content",
+                            "annotations": None,
+                            "_meta": None,
+                        },
+                    ],
+                )
+            )
 
     async def test_output_schema_serialization_edge_cases(self):
         """Test edge cases in output schema serialization."""

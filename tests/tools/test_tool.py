@@ -1,4 +1,3 @@
-import json
 from dataclasses import dataclass
 from typing import Annotated, Any
 
@@ -7,8 +6,10 @@ from dirty_equals import HasName
 from inline_snapshot import snapshot
 from mcp.types import (
     AudioContent,
+    BlobResourceContents,
     EmbeddedResource,
     ImageContent,
+    ResourceLink,
     TextContent,
     TextResourceContents,
 )
@@ -941,294 +942,215 @@ class TestToolFromFunctionOutputSchema:
                 Tool.from_function(func, output_schema=schema)
 
 
+class SampleModel(BaseModel):
+    x: int
+    y: str
+
+
 class TestConvertResultToContent:
     """Tests for the _convert_to_content helper function."""
 
-    def test_none_result(self):
-        """Test that None results in an empty list."""
-        result = _convert_to_content(None)
-        assert isinstance(result, list)
-        assert len(result) == 0
-
-    def test_text_content_result(self):
-        """Test that TextContent is returned as a list containing itself."""
-        content = TextContent(type="text", text="hello")
-        result = _convert_to_content(content)
-        assert isinstance(result, list)
-        assert len(result) == 1
-        assert result[0] is content
-
-    def test_image_content_result(self):
-        """Test that ImageContent is returned as a list containing itself."""
-        content = ImageContent(type="image", data="fakeimagedata", mimeType="image/png")
-        result = _convert_to_content(content)
-        assert isinstance(result, list)
-        assert len(result) == 1
-        assert result[0] is content
-
-    def test_embedded_resource_result(self):
-        """Test that EmbeddedResource is returned as a list containing itself."""
-        content = EmbeddedResource(
-            type="resource",
-            resource=TextResourceContents(
-                uri=AnyUrl("resource://test"),
-                mimeType="text/plain",
-                text="resource content",
+    @pytest.mark.parametrize(
+        argnames=("result", "expected"),
+        argvalues=[
+            (True, "true"),
+            ("hello", "hello"),
+            (123, "123"),
+            (123.45, "123.45"),
+            ({"key": "value"}, '{"key":"value"}'),
+            (
+                SampleModel(x=1, y="hello"),
+                '{"x":1,"y":"hello"}',
             ),
+        ],
+        ids=[
+            "boolean",
+            "string",
+            "integer",
+            "float",
+            "object",
+            "basemodel",
+        ],
+    )
+    def test_convert_singular(self, result, expected):
+        """Test that a single item is converted to a TextContent."""
+        converted = _convert_to_content(result)
+        assert converted == [TextContent(type="text", text=expected)]
+
+    @pytest.mark.parametrize(
+        argnames=("result", "expected_text"),
+        argvalues=[
+            ([None], "[null]"),
+            ([None, None], "[null,null]"),
+            ([True], "[true]"),
+            ([True, False], "[true,false]"),
+            (["hello"], '["hello"]'),
+            (["hello", "world"], '["hello","world"]'),
+            ([123], "[123]"),
+            ([123, 456], "[123,456]"),
+            ([123.45], "[123.45]"),
+            ([123.45, 456.78], "[123.45,456.78]"),
+            ([{"key": "value"}], '[{"key":"value"}]'),
+            (
+                [{"key": "value"}, {"key2": "value2"}],
+                '[{"key":"value"},{"key2":"value2"}]',
+            ),
+            ([SampleModel(x=1, y="hello")], '[{"x":1,"y":"hello"}]'),
+            (
+                [SampleModel(x=1, y="hello"), SampleModel(x=2, y="world")],
+                '[{"x":1,"y":"hello"},{"x":2,"y":"world"}]',
+            ),
+            ([1, "two", None, {"c": 3}, False], '[1,"two",null,{"c":3},false]'),
+        ],
+        ids=[
+            "none",
+            "none_many",
+            "boolean",
+            "boolean_many",
+            "string",
+            "string_many",
+            "integer",
+            "integer_many",
+            "float",
+            "float_many",
+            "object",
+            "object_many",
+            "basemodel",
+            "basemodel_many",
+            "mixed",
+        ],
+    )
+    def test_convert_list(self, result, expected_text):
+        """Test that a list is converted to a TextContent."""
+        converted = _convert_to_content(result)
+        assert converted == [TextContent(type="text", text=expected_text)]
+
+    @pytest.mark.parametrize(
+        argnames="content_block",
+        argvalues=[
+            (TextContent(type="text", text="hello")),
+            (ImageContent(type="image", data="fakeimagedata", mimeType="image/png")),
+            (AudioContent(type="audio", data="fakeaudiodata", mimeType="audio/mpeg")),
+            (
+                ResourceLink(
+                    type="resource_link",
+                    name="test resource",
+                    uri=AnyUrl("resource://test"),
+                )
+            ),
+            (
+                EmbeddedResource(
+                    type="resource",
+                    resource=TextResourceContents(
+                        uri=AnyUrl("resource://test"),
+                        mimeType="text/plain",
+                        text="resource content",
+                    ),
+                )
+            ),
+        ],
+        ids=["text", "image", "audio", "resource link", "embedded resource"],
+    )
+    def test_convert_content_block(self, content_block):
+        converted = _convert_to_content(content_block)
+        assert converted == [content_block]
+
+        converted = _convert_to_content([content_block, content_block])
+        assert converted == [content_block, content_block]
+
+    @pytest.mark.parametrize(
+        argnames=("result", "expected"),
+        argvalues=[
+            (
+                Image(data=b"fakeimagedata"),
+                [
+                    ImageContent(
+                        type="image", data="ZmFrZWltYWdlZGF0YQ==", mimeType="image/png"
+                    )
+                ],
+            ),
+            (
+                Audio(data=b"fakeaudiodata"),
+                [
+                    AudioContent(
+                        type="audio", data="ZmFrZWF1ZGlvZGF0YQ==", mimeType="audio/wav"
+                    )
+                ],
+            ),
+            (
+                File(data=b"filedata", format="octet-stream"),
+                [
+                    EmbeddedResource(
+                        type="resource",
+                        resource=BlobResourceContents(
+                            uri=AnyUrl("file:///resource.octet-stream"),
+                            blob="ZmlsZWRhdGE=",
+                            mimeType="application/octet-stream",
+                        ),
+                    )
+                ],
+            ),
+        ],
+        ids=["image", "audio", "file"],
+    )
+    def test_convert_helpers(self, result, expected):
+        converted = _convert_to_content(result)
+        assert converted == expected
+
+    def test_convert_mixed_content(self):
+        result = [
+            "hello",
+            123,
+            123.45,
+            {"key": "value"},
+            SampleModel(x=1, y="hello"),
+            Image(data=b"fakeimagedata"),
+            Audio(data=b"fakeaudiodata"),
+            ResourceLink(
+                type="resource_link",
+                name="test resource",
+                uri=AnyUrl("resource://test"),
+            ),
+            EmbeddedResource(
+                type="resource",
+                resource=TextResourceContents(
+                    uri=AnyUrl("resource://test"),
+                    mimeType="text/plain",
+                    text="resource content",
+                ),
+            ),
+        ]
+
+        converted = _convert_to_content(result)
+
+        assert converted == snapshot(
+            [
+                TextContent(type="text", text="hello"),
+                TextContent(type="text", text="123"),
+                TextContent(type="text", text="123.45"),
+                TextContent(type="text", text='{"key":"value"}'),
+                TextContent(type="text", text='{"x":1,"y":"hello"}'),
+                ImageContent(
+                    type="image", data="ZmFrZWltYWdlZGF0YQ==", mimeType="image/png"
+                ),
+                AudioContent(
+                    type="audio", data="ZmFrZWF1ZGlvZGF0YQ==", mimeType="audio/wav"
+                ),
+                ResourceLink(
+                    name="test resource",
+                    uri=AnyUrl("resource://test"),
+                    type="resource_link",
+                ),
+                EmbeddedResource(
+                    type="resource",
+                    resource=TextResourceContents(
+                        uri=AnyUrl("resource://test"),
+                        mimeType="text/plain",
+                        text="resource content",
+                    ),
+                ),
+            ]
         )
-        result = _convert_to_content(content)
-        assert isinstance(result, list)
-        assert len(result) == 1
-        assert result[0] is content
-
-    def test_image_object_result(self):
-        """Test that an Image object is converted to ImageContent."""
-        image_obj = Image(data=b"fakeimagedata")
-
-        result = _convert_to_content(image_obj)
-
-        assert isinstance(result, list)
-        assert len(result) == 1
-        assert isinstance(result[0], ImageContent)
-        assert result[0].data == "ZmFrZWltYWdlZGF0YQ=="
-
-    def test_audio_object_result(self):
-        """Test that an Audio object is converted to AudioContent."""
-        audio_obj = Audio(data=b"fakeaudiodata")
-
-        result = _convert_to_content(audio_obj)
-
-        assert isinstance(result, list)
-        assert len(result) == 1
-        assert isinstance(result[0], AudioContent)
-        assert result[0].data == "ZmFrZWF1ZGlvZGF0YQ=="
-
-    def test_file_object_result(self):
-        """Test that a File object is converted to EmbeddedResource with BlobResourceContents."""
-        file_obj = File(data=b"filedata", format="octet-stream")
-
-        result = _convert_to_content(file_obj)
-
-        assert isinstance(result, list)
-        assert len(result) == 1
-        assert isinstance(result[0], EmbeddedResource)
-        assert result[0].type == "resource"
-        assert hasattr(result[0], "resource")
-        resource = result[0].resource
-        assert resource.mimeType == "application/octet-stream"
-        # Check for blob attribute and its value
-        assert hasattr(resource, "blob")
-        assert getattr(resource, "blob") == "ZmlsZWRhdGE="  # base64 encoded "filedata"
-        # Convert URI to string for startswith check
-        assert str(resource.uri).startswith("file:///resource.octet-stream")
-
-    def test_file_object_text_result(self):
-        """Test that a File object with text data is converted to EmbeddedResource with TextResourceContents."""
-        file_obj = File(data=b"sometext", format="plain")
-        result = _convert_to_content(file_obj)
-        assert isinstance(result, list)
-        assert len(result) == 1
-        assert isinstance(result[0], EmbeddedResource)
-        assert result[0].type == "resource"
-        resource = result[0].resource
-        assert isinstance(resource, TextResourceContents)
-        assert resource.mimeType == "text/plain"
-        assert resource.text == "sometext"
-
-    def test_basic_type_result(self):
-        """Test that a basic type is converted to TextContent."""
-        result = _convert_to_content(123)
-        assert isinstance(result, list)
-        assert len(result) == 1
-        assert isinstance(result[0], TextContent)
-        assert result[0].text == "123"
-
-        result = _convert_to_content("hello")
-        assert isinstance(result, list)
-        assert len(result) == 1
-        assert isinstance(result[0], TextContent)
-        assert result[0].text == "hello"
-
-        result = _convert_to_content({"a": 1, "b": 2})
-        assert isinstance(result, list)
-        assert len(result) == 1
-        assert isinstance(result[0], TextContent)
-        assert result[0].text == '{"a":1,"b":2}'
-
-    def test_list_of_basic_types(self):
-        """Test that a list of basic types is converted to a single combined TextContent item."""
-        result = _convert_to_content([1, "two", {"c": 3}])
-        assert isinstance(result, list)
-        assert len(result) == 1  # Adjacent non-MCP types are combined
-        assert isinstance(result[0], TextContent)
-        assert result[0].text == '1two{"c":3}'  # All adjacent basic types combined
-
-    def test_list_of_mcp_types(self):
-        """Test that a list of MCP types is returned as a list of those types."""
-        content1 = TextContent(type="text", text="hello")
-        content2 = ImageContent(
-            type="image", data="fakeimagedata2", mimeType="image/png"
-        )
-        result = _convert_to_content([content1, content2])
-        assert isinstance(result, list)
-        assert len(result) == 2
-        assert result[0] is content1
-        assert result[1] is content2
-
-    def test_list_of_mixed_types(self):
-        """Test that a list of mixed types is converted correctly."""
-        content1 = TextContent(type="text", text="hello")
-        image_obj = Image(data=b"fakeimagedata")
-        basic_data = {"a": 1}
-        result = _convert_to_content([content1, image_obj, basic_data])
-
-        assert isinstance(result, list)
-        assert len(result) == 3
-
-        text_content_count = sum(isinstance(item, TextContent) for item in result)
-        image_content_count = sum(isinstance(item, ImageContent) for item in result)
-
-        assert text_content_count == 2
-        assert image_content_count == 1
-
-        # Verify order is preserved: text, image, text
-        assert isinstance(result[0], TextContent)
-        assert result[0].text == "hello"
-        assert isinstance(result[1], ImageContent)
-        assert result[1].data == "ZmFrZWltYWdlZGF0YQ=="
-        assert isinstance(result[2], TextContent)
-        assert result[2].text == '{"a":1}'
-
-    def test_mixed_text_and_images_preserve_order(self):
-        """Test that mixed text and images preserve their original order (GitHub issue #1656)."""
-        img_obj1 = Image(data=b"imagedata1")
-        img_obj2 = Image(data=b"imagedata2")
-
-        # Test the exact pattern from the issue: [text1, img1, text2, img2]
-        result = _convert_to_content(["text1", img_obj1, "text2", img_obj2])
-
-        assert isinstance(result, list)
-        assert len(result) == 4
-
-        # Verify exact order is preserved
-        assert isinstance(result[0], TextContent)
-        assert result[0].text == "text1"
-
-        assert isinstance(result[1], ImageContent)
-        assert result[1].data == "aW1hZ2VkYXRhMQ=="  # base64 of "imagedata1"
-
-        assert isinstance(result[2], TextContent)
-        assert result[2].text == "text2"
-
-        assert isinstance(result[3], ImageContent)
-        assert result[3].data == "aW1hZ2VkYXRhMg=="  # base64 of "imagedata2"
-
-    def test_adjacent_non_mcp_types_combined(self):
-        """Test strawgate's example: image, 'x', 'y', image should be 2 image blocks and 1 content block."""
-        img_obj1 = Image(data=b"imagedata1")
-        img_obj2 = Image(data=b"imagedata2")
-
-        # Test the exact pattern from strawgate's request: [image, 'x', 'y', image]
-        result = _convert_to_content([img_obj1, "x", "y", img_obj2])
-
-        assert isinstance(result, list)
-        assert len(result) == 3  # 2 image blocks + 1 combined text block
-
-        # First image
-        assert isinstance(result[0], ImageContent)
-        assert result[0].data == "aW1hZ2VkYXRhMQ=="  # base64 of "imagedata1"
-
-        # Combined text content for adjacent 'x' and 'y'
-        assert isinstance(result[1], TextContent)
-        assert result[1].text == "xy"  # Adjacent strings combined
-
-        # Second image
-        assert isinstance(result[2], ImageContent)
-        assert result[2].data == "aW1hZ2VkYXRhMg=="  # base64 of "imagedata2"
-
-    def test_list_of_mixed_types_list(self):
-        """Test that a list of mixed types, including a list as one of the elements, is converted correctly."""
-        content1 = TextContent(type="text", text="hello")
-        image_obj = Image(data=b"fakeimagedata")
-        basic_data = [{"a": 1}, {"b": 2}]
-        result = _convert_to_content([content1, image_obj, basic_data])
-
-        assert isinstance(result, list)
-        assert (
-            len(result) == 3
-        )  # Adjacent non-MCP types are combined: hello (TextContent) + image + basic_data (single TextContent)
-
-        text_content_count = sum(isinstance(item, TextContent) for item in result)
-        image_content_count = sum(isinstance(item, ImageContent) for item in result)
-
-        assert text_content_count == 2  # hello + serialized basic_data
-        assert image_content_count == 1
-
-        # Verify order: hello, image, serialized basic_data
-        assert isinstance(result[0], TextContent)
-        assert result[0].text == "hello"
-        assert isinstance(result[1], ImageContent)
-        assert result[1].data == "ZmFrZWltYWdlZGF0YQ=="
-        assert isinstance(result[2], TextContent)
-        assert result[2].text == '[{"a":1},{"b":2}]'  # basic_data serialized as JSON
-
-    def test_list_of_mixed_types_with_audio(self):
-        """Test that a list of mixed types including Audio is converted correctly."""
-        content1 = TextContent(type="text", text="hello")
-        audio_obj = Audio(data=b"fakeaudiodata")
-        basic_data = {"a": 1}
-        result = _convert_to_content([content1, audio_obj, basic_data])
-
-        assert isinstance(result, list)
-        assert len(result) == 3
-
-        text_content_count = sum(isinstance(item, TextContent) for item in result)
-        audio_content_count = sum(isinstance(item, AudioContent) for item in result)
-
-        assert text_content_count == 2
-        assert audio_content_count == 1
-
-        # Verify order is preserved: text, audio, text
-        assert isinstance(result[0], TextContent)
-        assert result[0].text == "hello"
-        assert isinstance(result[1], AudioContent)
-        assert result[1].data == "ZmFrZWF1ZGlvZGF0YQ=="
-        assert isinstance(result[2], TextContent)
-        assert result[2].text == '{"a":1}'
-
-    def test_list_of_mixed_types_with_file(self):
-        """Test that a list of mixed types including File is converted correctly."""
-        content1 = TextContent(type="text", text="hello")
-        file_obj = File(data=b"filedata", format="octet-stream")
-        basic_data = {"a": 1}
-        result = _convert_to_content([content1, file_obj, basic_data])
-
-        assert isinstance(result, list)
-        assert len(result) == 3
-
-        text_content_count = sum(isinstance(item, TextContent) for item in result)
-        embedded_content_count = sum(
-            isinstance(item, EmbeddedResource) and item.type == "resource"
-            for item in result
-        )
-
-        assert text_content_count == 2
-        assert embedded_content_count == 1
-
-        # Verify order is preserved: text, file, text
-        assert isinstance(result[0], TextContent)
-        assert result[0].text == "hello"
-        assert isinstance(result[1], EmbeddedResource)
-        assert result[1].type == "resource"
-        assert isinstance(result[2], TextContent)
-        assert result[2].text == '{"a":1}'
-
-        embedded_item = result[1]
-        resource = embedded_item.resource
-        assert resource.mimeType == "application/octet-stream"
-        # Check for blob attribute and its value
-        assert hasattr(resource, "blob")
-        assert getattr(resource, "blob") == "ZmlsZWRhdGE="
 
     def test_empty_list(self):
         """Test that an empty list results in an empty list."""
@@ -1244,17 +1166,17 @@ class TestConvertResultToContent:
         assert isinstance(result[0], TextContent)
         assert result[0].text == "{}"
 
-    def test_with_custom_serializer(self):
+    def test_custom_serializer(self):
         """Test that a custom serializer is used for non-MCP types."""
 
         def custom_serializer(data):
             return f"Serialized: {data}"
 
         result = _convert_to_content({"a": 1}, serializer=custom_serializer)
-        assert isinstance(result, list)
-        assert len(result) == 1
-        assert isinstance(result[0], TextContent)
-        assert result[0].text == "Serialized: {'a': 1}"
+
+        assert result == snapshot(
+            [TextContent(type="text", text="Serialized: {'a': 1}")]
+        )
 
     def test_custom_serializer_error_fallback(self, caplog):
         """Test that if a custom serializer fails, it falls back to the default."""
@@ -1268,55 +1190,9 @@ class TestConvertResultToContent:
             )
 
         assert isinstance(result, list)
-        assert len(result) == 1
-        assert isinstance(result[0], TextContent)
-        # Should fall back to default serializer (pydantic_core.to_json)
-        assert json.loads(result[0].text) == {"a": 1}
+        assert result == snapshot([TextContent(type="text", text='{"a":1}')])
+
         assert "Error serializing tool result" in caplog.text
-
-    def test_process_as_single_item_flag(self):
-        """Test that _process_as_single_item forces list to be treated as one item."""
-
-        result = _convert_to_content([1, "two", {"c": 3}], _process_as_single_item=True)
-        assert isinstance(result, list)
-        assert len(result) == 1
-        assert isinstance(result[0], TextContent)
-        assert result[0].text == '[1,"two",{"c":3}]'
-
-        content1 = TextContent(type="text", text="hello")
-        result = _convert_to_content([1, content1], _process_as_single_item=True)
-        assert isinstance(result, list)
-        assert len(result) == 1
-        assert isinstance(result[0], TextContent)
-
-        assert json.loads(result[0].text) == [
-            1,
-            {"type": "text", "text": "hello", "annotations": None, "_meta": None},
-        ]
-
-    def test_single_element_list_preserves_structure(self):
-        """Test that single-element lists are converted to individual TextContent items."""
-
-        # Test with a single integer - now returns the integer as individual content
-        result = _convert_to_content([1])
-        assert isinstance(result, list)
-        assert len(result) == 1
-        assert isinstance(result[0], TextContent)
-        assert result[0].text == "1"  # Individual item, not wrapped in list
-
-        # Test with a single string - now returns the string as individual content
-        result = _convert_to_content(["hello"])
-        assert isinstance(result, list)
-        assert len(result) == 1
-        assert isinstance(result[0], TextContent)
-        assert result[0].text == "hello"  # Individual string, not wrapped in list
-
-        # Test with a single dict - now returns the dict as individual content
-        result = _convert_to_content([{"a": 1}])
-        assert isinstance(result, list)
-        assert len(result) == 1
-        assert isinstance(result[0], TextContent)
-        assert result[0].text == '{"a":1}'  # Individual dict, not wrapped in list
 
 
 class TestAutomaticStructuredContent:
@@ -1441,10 +1317,30 @@ class TestAutomaticStructuredContent:
 
         result = await tool.run({})
 
-        # Adjacent non-MCP types should be combined into single content block, no structured content
-        assert len(result.content) == 1
-        assert all(isinstance(item, TextContent) for item in result.content)
-        assert result.content[0].text == "12345"  # All numbers combined
+        assert result.structured_content is None
+        assert result.content == snapshot(
+            [TextContent(type="text", text="[1,2,3,4,5]")]
+        )
+
+    async def test_audio_return_creates_no_structured_content(self):
+        """Test that audio returns don't create structured content."""
+
+        def get_audio() -> AudioContent:
+            """No return annotation."""
+            return Audio(data=b"fakeaudiodata").to_audio_content()
+
+        # No output schema
+        tool = Tool.from_function(get_audio)
+
+        result = await tool.run({})
+
+        assert result.content == snapshot(
+            [
+                AudioContent(
+                    type="audio", data="ZmFrZWF1ZGlvZGF0YQ==", mimeType="audio/wav"
+                )
+            ]
+        )
         assert result.structured_content is None
 
     async def test_int_return_with_schema_creates_structured_content(self):
