@@ -27,8 +27,8 @@ class TestResourceTemplate:
         assert template.uri_template == "test://{key}/{value}"
         assert template.name == "test"
         assert template.mime_type == "text/plain"  # default
-        test_input = {"key": "test", "value": 42}
-        assert template.fn(**test_input) == my_func(**test_input)
+
+        assert template.fn(key="test", value=42) == my_func(key="test", value=42)
 
     def test_template_matches(self):
         """Test matching URIs against a template."""

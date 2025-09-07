@@ -129,11 +129,9 @@ python-version = "3.10"
 # Rules with too many errors to fix right now (40+ each)
 no-matching-overload = "ignore" # 126 errors  
 unknown-argument = "ignore"     # 61 errors
-unresolved-attribute = "ignore" # 60 errors
 
 # Rules with moderate errors that need more investigation
 call-non-callable = "ignore" # 7 errors
-missing-argument = "ignore"  # 23 errors
 
 [tool.ruff.lint]
 extend-select = ["I", "UP"]

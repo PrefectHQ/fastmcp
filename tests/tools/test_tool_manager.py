@@ -15,6 +15,7 @@ from fastmcp.tools.tool import Tool
 from fastmcp.tools.tool_transform import ArgTransformConfig, ToolTransformConfig
 from fastmcp.utilities.tests import caplog_for_fastmcp, temporary_settings
 from fastmcp.utilities.types import Image
+from tests.conftest import get_fn_name
 
 
 class TestAddTools:
@@ -236,7 +237,7 @@ class TestAddTools:
         tool = await manager.get_tool("test_tool")
         assert tool is not None
         assert isinstance(tool, FunctionTool)
-        assert tool.fn.__name__ == "replacement_fn"
+        assert get_fn_name(tool.fn) == "replacement_fn"
 
     async def test_ignore_duplicate_tools(self):
         """Test ignoring duplicate tools."""
@@ -257,10 +258,10 @@ class TestAddTools:
         tool = await manager.get_tool("test_tool")
         assert tool is not None
         assert isinstance(tool, FunctionTool)
-        assert tool.fn.__name__ == "original_fn"
+        assert get_fn_name(tool.fn) == "original_fn"
         # Result should be the original tool
         assert isinstance(result, FunctionTool)
-        assert result.fn.__name__ == "replacement_fn"
+        assert get_fn_name(result.fn) == "replacement_fn"
 
 
 class TestListTools:
@@ -824,7 +825,7 @@ class TestCustomToolNames:
         assert await manager.get_tool("custom_name") is not None
         assert tool.name == "custom_name"
         assert isinstance(tool, FunctionTool)
-        assert tool.fn.__name__ == "original_fn"
+        assert get_fn_name(tool.fn) == "original_fn"
         # The tool should not be accessible via its original function name
         with pytest.raises(NotFoundError, match="Tool 'original_fn' not found"):
             await manager.get_tool("original_fn")
@@ -901,7 +902,7 @@ class TestCustomToolNames:
 
         # But the function is different
         assert isinstance(stored_tool, FunctionTool)
-        assert stored_tool.fn.__name__ == "replacement_fn"
+        assert get_fn_name(stored_tool.fn) == "replacement_fn"
 
 
 class TestToolErrorHandling:

@@ -193,6 +193,7 @@ class TestErrorHandlingMiddleware:
             with pytest.raises(McpError) as exc_info:
                 await middleware.on_message(mock_context, mock_call_next)
 
+        assert isinstance(exc_info.value, McpError)
         assert exc_info.value.error.code == -32602
         assert "Invalid params: test error" in exc_info.value.error.message
         assert "Error in test_method: ValueError: test error" in caplog.text

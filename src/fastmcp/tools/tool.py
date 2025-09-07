@@ -138,23 +138,25 @@ class Tool(FastMCPComponent):
         include_fastmcp_meta: bool | None = None,
         **overrides: Any,
     ) -> MCPTool:
+        """Convert the FastMCP tool to an MCP tool."""
+        title = None
+
         if self.title:
             title = self.title
         elif self.annotations and self.annotations.title:
             title = self.annotations.title
-        else:
-            title = None
 
-        kwargs = {
-            "name": self.name,
-            "description": self.description,
-            "inputSchema": self.parameters,
-            "outputSchema": self.output_schema,
-            "annotations": self.annotations,
-            "title": title,
-            "_meta": self.get_meta(include_fastmcp_meta=include_fastmcp_meta),
-        }
-        return MCPTool(**kwargs | overrides)
+        return MCPTool(
+            name=overrides.get("name", self.name),
+            title=overrides.get("title", title),
+            description=overrides.get("description", self.description),
+            inputSchema=overrides.get("inputSchema", self.parameters),
+            outputSchema=overrides.get("outputSchema", self.output_schema),
+            annotations=overrides.get("annotations", self.annotations),
+            _meta=overrides.get(
+                "_meta", self.get_meta(include_fastmcp_meta=include_fastmcp_meta)
+            ),
+        )
 
     @staticmethod
     def from_function(

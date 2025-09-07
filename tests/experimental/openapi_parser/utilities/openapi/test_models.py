@@ -1,6 +1,7 @@
 """Unit tests for OpenAPI models."""
 
 import pytest
+from inline_snapshot import snapshot
 
 from fastmcp.experimental.utilities.openapi.models import (
     HTTPRoute,
@@ -447,7 +448,27 @@ class TestModelSerialization:
 
         # Serialize and reconstruct using by_alias
         data = original_param.model_dump(by_alias=True)
-        reconstructed_param = ParameterInfo(**data)
+
+        data == snapshot(
+            {
+                "name": "test",
+                "location": "query",
+                "required": False,
+                "schema": {"type": "string"},
+                "description": "Test parameter",
+                "explode": None,
+                "style": None,
+            }
+        )
+
+        reconstructed_param = ParameterInfo(
+            name=data["name"],
+            location=data["location"],
+            schema=data["schema"],
+            description=data["description"],
+            explode=data["explode"],
+            style=data["style"],
+        )
 
         assert reconstructed_param.name == original_param.name
         assert reconstructed_param.location == original_param.location

@@ -978,6 +978,7 @@ class TestFastMCPBearerAuth:
         with pytest.raises(httpx.HTTPStatusError) as exc_info:
             async with Client(mcp_server_url) as client:
                 tools = await client.list_tools()  # noqa: F841
+        assert isinstance(exc_info.value, httpx.HTTPStatusError)
         assert exc_info.value.response.status_code == 401
         assert "tools" not in locals()
 
@@ -990,6 +991,7 @@ class TestFastMCPBearerAuth:
         with pytest.raises(httpx.HTTPStatusError) as exc_info:
             async with Client(mcp_server_url, auth=BearerAuth("invalid")) as client:
                 tools = await client.list_tools()  # noqa: F841
+        assert isinstance(exc_info.value, httpx.HTTPStatusError)
         assert exc_info.value.response.status_code == 401
         assert "tools" not in locals()
 
@@ -1004,6 +1006,7 @@ class TestFastMCPBearerAuth:
         with pytest.raises(httpx.HTTPStatusError) as exc_info:
             async with Client(mcp_server_url, auth=BearerAuth(token)) as client:
                 tools = await client.list_tools()  # noqa: F841
+        assert isinstance(exc_info.value, httpx.HTTPStatusError)
         assert exc_info.value.response.status_code == 401
         assert "tools" not in locals()
 
@@ -1014,6 +1017,7 @@ class TestFastMCPBearerAuth:
         with pytest.raises(httpx.HTTPStatusError) as exc_info:
             async with Client(mcp_server_url, auth=BearerAuth(token)) as client:
                 tools = await client.list_tools()  # noqa: F841
+        assert isinstance(exc_info.value, httpx.HTTPStatusError)
         assert exc_info.value.response.status_code == 401
         assert "tools" not in locals()
 
@@ -1040,6 +1044,7 @@ class TestFastMCPBearerAuth:
             # JWTVerifier returns 401 when verify_token returns None (invalid token)
             # This is correct behavior - when TokenVerifier.verify_token returns None,
             # it indicates the token is invalid (not just insufficient permissions)
+            assert isinstance(exc_info.value, httpx.HTTPStatusError)
             assert exc_info.value.response.status_code == 401
             assert "tools" not in locals()
 

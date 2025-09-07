@@ -7,6 +7,7 @@ from typing import Any, Literal, TypeVar
 from unittest.mock import AsyncMock, MagicMock
 
 import mcp
+import mcp.types
 import pytest
 from inline_snapshot import snapshot
 from pydantic import AnyUrl
@@ -56,7 +57,7 @@ def mock_context():
 
 
 @pytest.fixture
-def mock_call_next():
+def mock_call_next() -> AsyncMock:
     """Create a mock call_next function."""
     return AsyncMock(return_value="test_result")
 
@@ -118,11 +119,11 @@ class TestLoggingMiddleware:
     async def test_on_message_success(
         self,
         mock_context: MiddlewareContext[Any],
-        mock_call_next: CallNext[Any, Any],
         caplog: pytest.LogCaptureFixture,
     ):
         """Test logging successful messages."""
         middleware = LoggingMiddleware()
+        mock_call_next = AsyncMock(return_value="test_result")
 
         with caplog.at_level(logging.INFO):
             result = await middleware.on_message(mock_context, mock_call_next)

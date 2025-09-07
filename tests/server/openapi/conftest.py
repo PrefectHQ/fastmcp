@@ -88,7 +88,7 @@ def fastapi_app(users_db: dict[int, User]) -> FastAPI:
     async def create_user(user: UserCreate) -> User:
         """Create a new user."""
         user_id = max(users_db.keys()) + 1
-        new_user = User(id=user_id, **user.model_dump())
+        new_user = User(id=user_id, name=user.name, active=user.active)
         users_db[user_id] = new_user
         return new_user
 

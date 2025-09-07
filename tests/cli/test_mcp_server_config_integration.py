@@ -103,9 +103,12 @@ class TestConfigWithClient:
         spec = importlib.util.spec_from_file_location("test_server", str(source_path))
         if spec is None or spec.loader is None:
             raise RuntimeError(f"Could not load module from {source_path}")
+
         module = importlib.util.module_from_spec(spec)
         sys.modules["test_server"] = module
         spec.loader.exec_module(module)
+
+        assert hasattr(module, "mcp")
 
         server = module.mcp
 

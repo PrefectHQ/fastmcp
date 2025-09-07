@@ -1,6 +1,7 @@
 from typing import Any
 
 import pytest
+from inline_snapshot import snapshot
 from mcp.types import TextContent
 
 from fastmcp import FastMCP
@@ -91,73 +92,116 @@ NO_RETURN_TOOL_NAME = "no_return_tool"
 
 async def test_call_tool_bulk_single_success(bulk_caller_live: BulkToolCaller):
     """Test single successful call via call_tool_bulk using echo_tool."""
-    tool_arguments = [{"arg1": "value1"}]
-    expected_result = echo_tool_result_factory(**tool_arguments[0])
 
-    results = await bulk_caller_live.call_tool_bulk(ECHO_TOOL_NAME, tool_arguments)
+    results = await bulk_caller_live.call_tool_bulk(
+        ECHO_TOOL_NAME, [{"arg1": "value1"}]
+    )
 
-    assert len(results) == 1
-    result = results[0]
-    assert result == expected_result
+    assert results == snapshot(
+        [
+            CallToolRequestResult(
+                content=[TextContent(type="text", text="value1")],
+                tool="echo_tool",
+                arguments={"arg1": "value1"},
+            )
+        ]
+    )
 
 
 async def test_call_tool_bulk_multiple_success(bulk_caller_live: BulkToolCaller):
     """Test multiple successful calls via call_tool_bulk using echo_tool."""
-    tool_arguments = [{"arg1": "value1"}, {"arg1": "value2"}]
-    expected_results = [echo_tool_result_factory(**args) for args in tool_arguments]
+    results = await bulk_caller_live.call_tool_bulk(
+        ECHO_TOOL_NAME, [{"arg1": "value1"}, {"arg1": "value2"}]
+    )
 
-    results = await bulk_caller_live.call_tool_bulk(ECHO_TOOL_NAME, tool_arguments)
-
-    assert len(results) == 2
-    assert results == expected_results
+    assert results == snapshot(
+        [
+            CallToolRequestResult(
+                content=[TextContent(type="text", text="value1")],
+                tool="echo_tool",
+                arguments={"arg1": "value1"},
+            ),
+            CallToolRequestResult(
+                content=[TextContent(type="text", text="value2")],
+                tool="echo_tool",
+                arguments={"arg1": "value2"},
+            ),
+        ]
+    )
 
 
 async def test_call_tool_bulk_error_stops(bulk_caller_live: BulkToolCaller):
     """Test call_tool_bulk stops on first error using error_tool."""
-    tool_arguments = [{"arg1": "error_value"}, {"arg1": "value2"}]
-    expected_result = error_tool_result_factory(**tool_arguments[0])
-
     results = await bulk_caller_live.call_tool_bulk(
-        ERROR_TOOL_NAME, tool_arguments, continue_on_error=False
+        ERROR_TOOL_NAME,
+        [{"arg1": "error_value"}, {"arg1": "value2"}],
+        continue_on_error=False,
     )
 
-    assert len(results) == 1
-    result = results[0]
-    assert result == expected_result
+    assert results == snapshot(
+        [
+            CallToolRequestResult(
+                content=[
+                    TextContent(
+                        type="text",
+                        text="Error calling tool 'error_tool': Error in tool with arg1: error_value",
+                    )
+                ],
+                isError=True,
+                tool="error_tool",
+                arguments={"arg1": "error_value"},
+            )
+        ]
+    )
 
 
 async def test_call_tool_bulk_error_continues(bulk_caller_live: BulkToolCaller):
     """Test call_tool_bulk continues on error using error_tool and echo_tool."""
-    tool_arguments = [{"arg1": "error_value"}, {"arg1": "success_value"}]
-    expected_error_result = error_tool_result_factory(**tool_arguments[0])
-    expected_success_result = echo_tool_result_factory(**tool_arguments[1])
 
     tool_calls = [
-        CallToolRequest(tool=ERROR_TOOL_NAME, arguments=tool_arguments[0]),
-        CallToolRequest(tool=ECHO_TOOL_NAME, arguments=tool_arguments[1]),
+        CallToolRequest(tool=ERROR_TOOL_NAME, arguments={"arg1": "error_value"}),
+        CallToolRequest(tool=ECHO_TOOL_NAME, arguments={"arg1": "success_value"}),
     ]
 
     results = await bulk_caller_live.call_tools_bulk(tool_calls, continue_on_error=True)
 
-    assert len(results) == 2
-
-    error_result = results[0]
-    assert error_result == expected_error_result
-
-    success_result = results[1]
-    assert success_result == expected_success_result
+    assert results == snapshot(
+        [
+            CallToolRequestResult(
+                content=[
+                    TextContent(
+                        type="text",
+                        text="Error calling tool 'error_tool': Error in tool with arg1: error_value",
+                    )
+                ],
+                isError=True,
+                tool="error_tool",
+                arguments={"arg1": "error_value"},
+            ),
+            CallToolRequestResult(
+                content=[TextContent(type="text", text="success_value")],
+                tool="echo_tool",
+                arguments={"arg1": "success_value"},
+            ),
+        ]
+    )
 
 
 async def test_call_tools_bulk_single_success(bulk_caller_live: BulkToolCaller):
     """Test single successful call via call_tools_bulk using echo_tool."""
     tool_calls = [CallToolRequest(tool=ECHO_TOOL_NAME, arguments={"arg1": "value1"})]
-    expected_result = echo_tool_result_factory(**tool_calls[0].arguments)
 
     results = await bulk_caller_live.call_tools_bulk(tool_calls)
 
-    assert len(results) == 1
-    result = results[0]
-    assert result == expected_result
+    assert results == snapshot(
+        [
+            CallToolRequestResult(
+                content=[TextContent(type="text", text="value1")],
+                tool="echo_tool",
+                arguments={"arg1": "value1"},
+            )
+        ]
+    )
 
 
 async def test_call_tools_bulk_multiple_success(bulk_caller_live: BulkToolCaller):
@@ -168,15 +212,21 @@ async def test_call_tools_bulk_multiple_success(bulk_caller_live: BulkToolCaller
             tool=NO_RETURN_TOOL_NAME, arguments={"arg1": "no_return_value"}
         ),
     ]
-    expected_results = [
-        echo_tool_result_factory(**tool_calls[0].arguments),
-        no_return_tool_result_factory(**tool_calls[1].arguments),
-    ]
 
     results = await bulk_caller_live.call_tools_bulk(tool_calls)
 
-    assert len(results) == 2
-    assert results == expected_results
+    assert results == snapshot(
+        [
+            CallToolRequestResult(
+                content=[TextContent(type="text", text="echo_value")],
+                tool="echo_tool",
+                arguments={"arg1": "echo_value"},
+            ),
+            CallToolRequestResult(
+                content=[], tool="no_return_tool", arguments={"arg1": "no_return_value"}
+            ),
+        ]
+    )
 
 
 async def test_call_tools_bulk_error_stops(bulk_caller_live: BulkToolCaller):
@@ -185,15 +235,26 @@ async def test_call_tools_bulk_error_stops(bulk_caller_live: BulkToolCaller):
         CallToolRequest(tool=ERROR_TOOL_NAME, arguments={"arg1": "error_value"}),
         CallToolRequest(tool=ECHO_TOOL_NAME, arguments={"arg1": "skipped_value"}),
     ]
-    expected_result = error_tool_result_factory(**tool_calls[0].arguments)
 
     results = await bulk_caller_live.call_tools_bulk(
         tool_calls, continue_on_error=False
     )
 
-    assert len(results) == 1
-    result = results[0]
-    assert result == expected_result
+    assert results == snapshot(
+        [
+            CallToolRequestResult(
+                content=[
+                    TextContent(
+                        type="text",
+                        text="Error calling tool 'error_tool': Error in tool with arg1: error_value",
+                    )
+                ],
+                isError=True,
+                tool="error_tool",
+                arguments={"arg1": "error_value"},
+            )
+        ]
+    )
 
 
 async def test_call_tools_bulk_error_continues(bulk_caller_live: BulkToolCaller):
@@ -202,15 +263,26 @@ async def test_call_tools_bulk_error_continues(bulk_caller_live: BulkToolCaller)
         CallToolRequest(tool=ERROR_TOOL_NAME, arguments={"arg1": "error_value"}),
         CallToolRequest(tool=ECHO_TOOL_NAME, arguments={"arg1": "success_value"}),
     ]
-    expected_error_result = error_tool_result_factory(**tool_calls[0].arguments)
-    expected_success_result = echo_tool_result_factory(**tool_calls[1].arguments)
 
     results = await bulk_caller_live.call_tools_bulk(tool_calls, continue_on_error=True)
 
-    assert len(results) == 2
-
-    error_result = results[0]
-    assert error_result == expected_error_result
-
-    success_result = results[1]
-    assert success_result == expected_success_result
+    assert results == snapshot(
+        [
+            CallToolRequestResult(
+                content=[
+                    TextContent(
+                        type="text",
+                        text="Error calling tool 'error_tool': Error in tool with arg1: error_value",
+                    )
+                ],
+                isError=True,
+                tool="error_tool",
+                arguments={"arg1": "error_value"},
+            ),
+            CallToolRequestResult(
+                content=[TextContent(type="text", text="success_value")],
+                tool="echo_tool",
+                arguments={"arg1": "success_value"},
+            ),
+        ]
+    )

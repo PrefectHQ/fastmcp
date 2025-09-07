@@ -24,6 +24,7 @@ from fastmcp.server.dependencies import get_context
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.types import (
     find_kwarg_by_type,
+    get_fn_name,
 )
 
 if TYPE_CHECKING:
@@ -122,16 +123,18 @@ class Resource(FastMCPComponent, abc.ABC):
         **overrides: Any,
     ) -> MCPResource:
         """Convert the resource to an MCPResource."""
-        kwargs = {
-            "uri": self.uri,
-            "name": self.name,
-            "description": self.description,
-            "mimeType": self.mime_type,
-            "title": self.title,
-            "annotations": self.annotations,
-            "_meta": self.get_meta(include_fastmcp_meta=include_fastmcp_meta),
-        }
-        return MCPResource(**kwargs | overrides)
+
+        return MCPResource(
+            name=overrides.get("name", self.name),
+            uri=overrides.get("uri", self.uri),
+            description=overrides.get("description", self.description),
+            mimeType=overrides.get("mimeType", self.mime_type),
+            title=overrides.get("title", self.title),
+            annotations=overrides.get("annotations", self.annotations),
+            _meta=overrides.get(
+                "_meta", self.get_meta(include_fastmcp_meta=include_fastmcp_meta)
+            ),
+        )
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(uri={self.uri!r}, name={self.name!r}, description={self.description!r}, tags={self.tags})"
@@ -182,7 +185,7 @@ class FunctionResource(Resource):
         return cls(
             fn=fn,
             uri=uri,
-            name=name or fn.__name__,
+            name=name or get_fn_name(fn),
             title=title,
             description=description or inspect.getdoc(fn),
             mime_type=mime_type or "text/plain",

@@ -8,6 +8,7 @@ from mcp.types import ToolAnnotations
 from fastmcp.prompts.prompt import Prompt
 from fastmcp.resources.resource import Resource
 from fastmcp.tools.tool import Tool
+from fastmcp.utilities.types import get_fn_name
 
 if TYPE_CHECKING:
     from fastmcp.server import FastMCP
@@ -34,7 +35,7 @@ def mcp_tool(
 
     def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         call_args = {
-            "name": name or func.__name__,
+            "name": name or get_fn_name(func),
             "description": description,
             "tags": tags,
             "annotations": annotations,
@@ -63,7 +64,7 @@ def mcp_resource(
     def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         call_args = {
             "uri": uri,
-            "name": name or func.__name__,
+            "name": name or get_fn_name(func),
             "description": description,
             "mime_type": mime_type,
             "tags": tags,
@@ -88,7 +89,7 @@ def mcp_prompt(
 
     def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         call_args = {
-            "name": name or func.__name__,
+            "name": name or get_fn_name(func),
             "description": description,
             "tags": tags,
             "enabled": enabled,
@@ -146,7 +147,21 @@ class MCPMixin:
                 registration_info["name"] = (
                     f"{prefix}{separator}{registration_info['name']}"
                 )
-            tool = Tool.from_function(fn=method, **registration_info)
+
+            tool = Tool.from_function(
+                fn=method,
+                name=registration_info.get("name"),
+                title=registration_info.get("title"),
+                description=registration_info.get("description"),
+                tags=registration_info.get("tags"),
+                annotations=registration_info.get("annotations"),
+                exclude_args=registration_info.get("exclude_args"),
+                serializer=registration_info.get("serializer"),
+                output_schema=registration_info.get("output_schema"),
+                meta=registration_info.get("meta"),
+                enabled=registration_info.get("enabled"),
+            )
+
             mcp_server.add_tool(tool)
 
     def register_resources(
@@ -175,7 +190,19 @@ class MCPMixin:
                 registration_info["uri"] = (
                     f"{prefix}{separator}{registration_info['uri']}"
                 )
-            resource = Resource.from_function(fn=method, **registration_info)
+
+            resource = Resource.from_function(
+                fn=method,
+                uri=registration_info["uri"],
+                name=registration_info.get("name"),
+                description=registration_info.get("description"),
+                mime_type=registration_info.get("mime_type"),
+                tags=registration_info.get("tags"),
+                enabled=registration_info.get("enabled"),
+                annotations=registration_info.get("annotations"),
+                meta=registration_info.get("meta"),
+            )
+
             mcp_server.add_resource(resource)
 
     def register_prompts(
@@ -200,7 +227,15 @@ class MCPMixin:
                 registration_info["name"] = (
                     f"{prefix}{separator}{registration_info['name']}"
                 )
-            prompt = Prompt.from_function(fn=method, **registration_info)
+            prompt = Prompt.from_function(
+                fn=method,
+                name=registration_info.get("name"),
+                title=registration_info.get("title"),
+                description=registration_info.get("description"),
+                tags=registration_info.get("tags"),
+                enabled=registration_info.get("enabled"),
+                meta=registration_info.get("meta"),
+            )
             mcp_server.add_prompt(prompt)
 
     def register_all(

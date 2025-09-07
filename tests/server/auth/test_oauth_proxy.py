@@ -365,6 +365,7 @@ class TestOAuthProxyInitialization:
         assert proxy._redirect_path == "/custom/callback"
         assert proxy._forward_pkce is False
         assert proxy._token_endpoint_auth_method == "client_secret_post"
+        assert proxy.client_registration_options is not None
         assert proxy.client_registration_options.valid_scopes == ["custom", "scopes"]
 
     def test_redirect_path_normalization(self, jwt_verifier):
