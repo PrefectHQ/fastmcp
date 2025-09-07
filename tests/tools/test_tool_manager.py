@@ -5,7 +5,8 @@ from typing import Annotated, Any
 
 import pydantic_core
 import pytest
-from mcp.types import ImageContent
+from inline_snapshot import snapshot
+from mcp.types import ImageContent, TextContent
 from pydantic import BaseModel
 
 from fastmcp import Context, FastMCP
@@ -572,8 +573,10 @@ class TestCallTools:
 
         # Adjacent non-MCP list items are combined into single content block
         assert len(result.content) == 1
-        assert result.content[0].text == "rexgertrude"  # type: ignore[attr-defined]
-        assert result.structured_content == {"result": ["rex", "gertrude"]}
+        assert result.content == snapshot(
+            [TextContent(type="text", text='["rex","gertrude"]')]
+        )
+        assert result.structured_content == snapshot({"result": ["rex", "gertrude"]})
 
     async def test_call_tool_with_custom_serializer(self):
         """Test that a custom serializer provided to FastMCP is used by tools."""
@@ -616,16 +619,22 @@ class TestCallTools:
         result = await manager.call_tool("get_data", {})
         # Adjacent non-MCP list items get combined with custom serializer applied to each
         assert len(result.content) == 1
-        assert (
-            result.content[0].text  # type: ignore[attr-defined]
-            == '{"key": "value", "number": 123}{"key": "value2", "number": 456}'  # Adjacent items combined after individual serialization
-        )
-        assert result.structured_content == {
-            "result": [
-                {"key": "value", "number": 123},
-                {"key": "value2", "number": 456},
+        assert result.content == snapshot(
+            [
+                TextContent(
+                    type="text",
+                    text='CUSTOM:[{"key": "value", "number": 123}, {"key": "value2", "number": 456}]',
+                )
             ]
-        }
+        )
+        assert result.structured_content == snapshot(
+            {
+                "result": [
+                    {"key": "value", "number": 123},
+                    {"key": "value2", "number": 456},
+                ]
+            }
+        )
 
     async def test_custom_serializer_fallback_on_error(self):
         """Test that a broken custom serializer gracefully falls back."""
