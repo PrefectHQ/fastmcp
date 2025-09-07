@@ -257,6 +257,7 @@ class TestProjectPrepareCommand:
             with patch("fastmcp.cli.cli.logger.error") as mock_error:
                 await prepare(config_path=None, output_dir=None)
 
+        assert isinstance(exc_info.value, SystemExit)
         assert exc_info.value.code == 1
         mock_error.assert_called()
         error_msg = mock_error.call_args[0][0]
@@ -275,6 +276,7 @@ class TestProjectPrepareCommand:
             with patch("fastmcp.cli.cli.logger.error") as mock_error:
                 await prepare(config_path="missing.json", output_dir=None)
 
+        assert isinstance(exc_info.value, SystemExit)
         assert exc_info.value.code == 1
         mock_error.assert_called()
         error_msg = mock_error.call_args[0][0]
@@ -297,6 +299,7 @@ class TestProjectPrepareCommand:
             with patch("fastmcp.cli.cli.console.print") as mock_print:
                 await prepare(config_path="config.json", output_dir="./test-env")
 
+        assert isinstance(exc_info.value, SystemExit)
         assert exc_info.value.code == 1
         # Should print error message
         error_call = mock_print.call_args_list[-1][0][0]

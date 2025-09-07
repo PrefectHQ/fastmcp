@@ -100,14 +100,16 @@ class Prompt(FastMCPComponent, ABC):
             )
             for arg in self.arguments or []
         ]
-        kwargs = {
-            "name": self.name,
-            "description": self.description,
-            "arguments": arguments,
-            "title": self.title,
-            "_meta": self.get_meta(include_fastmcp_meta=include_fastmcp_meta),
-        }
-        return MCPPrompt(**kwargs | overrides)
+
+        return MCPPrompt(
+            name=overrides.get("name", self.name),
+            description=overrides.get("description", self.description),
+            arguments=arguments,
+            title=overrides.get("title", self.title),
+            _meta=overrides.get(
+                "_meta", self.get_meta(include_fastmcp_meta=include_fastmcp_meta)
+            ),
+        )
 
     @staticmethod
     def from_function(

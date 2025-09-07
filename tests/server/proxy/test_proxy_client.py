@@ -51,8 +51,9 @@ def fastmcp_server():
             message="What is your name?",
             response_type=Person,
         )
+
         if result.action == "accept":
-            return f"Hello, {result.data.name}!"
+            return f"Hello, {result.data.name}!"  # type: ignore[attr-defined]
         else:
             return "No name provided."
 
@@ -362,7 +363,7 @@ class TestProxyClient:
             )
 
             if result.action == "accept":
-                return f"Content: {result.data.content}, Acknowledge: {result.data.acknowledge}"
+                return f"Content: {result.data.content}, Acknowledge: {result.data.acknowledge}"  # type: ignore[attr-defined]
             else:
                 return f"Elicitation {result.action}"
 

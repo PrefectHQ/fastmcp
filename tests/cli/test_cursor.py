@@ -353,4 +353,5 @@ class TestCursorCommand:
         with pytest.raises(SystemExit) as exc_info:
             await cursor_command("server.py")
 
+        assert isinstance(exc_info.value, SystemExit)
         assert exc_info.value.code == 1

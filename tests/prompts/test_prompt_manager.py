@@ -8,6 +8,7 @@ from fastmcp.prompts import Prompt
 from fastmcp.prompts.prompt import FunctionPrompt, PromptMessage, TextContent
 from fastmcp.prompts.prompt_manager import PromptManager
 from fastmcp.utilities.tests import caplog_for_fastmcp
+from tests.conftest import get_fn_name
 
 
 class TestPromptManager:
@@ -104,7 +105,7 @@ class TestPromptManager:
         prompt = await manager.get_prompt("test_prompt")
         assert prompt is not None
         assert isinstance(prompt, FunctionPrompt)
-        assert prompt.fn.__name__ == "replacement_fn"
+        assert get_fn_name(prompt.fn) == "replacement_fn"
 
     async def test_ignore_duplicate_prompts(self):
         """Test ignoring duplicate prompts."""
@@ -126,10 +127,10 @@ class TestPromptManager:
         prompt = await manager.get_prompt("test_prompt")
         assert prompt is not None
         assert isinstance(prompt, FunctionPrompt)
-        assert prompt.fn.__name__ == "original_fn"
+        assert get_fn_name(prompt.fn) == "original_fn"
         # Result should be the original prompt
         assert isinstance(result, FunctionPrompt)
-        assert result.fn.__name__ == "original_fn"
+        assert get_fn_name(result.fn) == "original_fn"
 
     async def test_get_prompts(self):
         """Test retrieving all prompts."""

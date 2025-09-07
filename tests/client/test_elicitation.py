@@ -36,7 +36,7 @@ def fastmcp_server():
             response_type=Person,
         )
         if result.action == "accept":
-            return f"Hello, {result.data.name}!"
+            return f"Hello, {result.data.name}!"  # type: ignore[attr-defined]
         else:
             return "No name provided."
 
@@ -128,7 +128,7 @@ async def test_elicitation_cancel_action():
         if result.action == "cancel":
             return "Request was canceled"
         elif result.action == "accept":
-            return f"Age: {result.data}"
+            return f"Age: {result.data}"  # type: ignore[attr-defined]
         else:
             return "No response provided"
 
@@ -322,6 +322,9 @@ async def test_elicitation_handler_error():
     async def failing_elicit(context: Context) -> str:
         try:
             result = await context.elicit(message="This will fail", response_type=str)
+
+            assert isinstance(result, AcceptedElicitation)
+
             assert result.action == "accept"
             return f"Got: {result.data}"
         except Exception as e:
@@ -345,11 +348,17 @@ async def test_elicitation_multiple_calls():
         name_result = await context.elicit(
             message="What's your name?", response_type=str
         )
+
+        assert isinstance(name_result, AcceptedElicitation)
+
         if name_result.action != "accept":
             return "Form abandoned"
 
         # Second question
         age_result = await context.elicit(message="What's your age?", response_type=int)
+
+        assert isinstance(age_result, AcceptedElicitation)
+
         if age_result.action != "accept":
             return f"Hello {name_result.data}, form incomplete"
 
@@ -403,6 +412,9 @@ async def test_structured_response_type(
         result = await context.elicit(
             message="Please provide your information", response_type=structured_type
         )
+
+        assert isinstance(result, AcceptedElicitation)
+
         if result.action == "accept":
             if isinstance(result.data, dict):
                 return f"User: {result.data['name']}, age: {result.data['age']}"

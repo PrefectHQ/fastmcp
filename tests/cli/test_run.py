@@ -81,6 +81,7 @@ class TestFileSystemSource:
         source = FileSystemSource(path="nonexistent.py")
         with pytest.raises(SystemExit) as exc_info:
             await source.load_server()
+        assert isinstance(exc_info.value, SystemExit)
         assert exc_info.value.code == 1
 
     async def test_load_server_directory(self, tmp_path):
@@ -88,6 +89,7 @@ class TestFileSystemSource:
         source = FileSystemSource(path=str(tmp_path))
         with pytest.raises(SystemExit) as exc_info:
             await source.load_server()
+        assert isinstance(exc_info.value, SystemExit)
         assert exc_info.value.code == 1
 
 
@@ -252,6 +254,7 @@ other_name = fastmcp.FastMCP("OtherServer")
         source = FileSystemSource(path=str(test_file))
         with pytest.raises(SystemExit) as exc_info:
             await source.load_server()
+        assert isinstance(exc_info.value, SystemExit)
         assert exc_info.value.code == 1
 
     async def test_import_server_nonexistent_object_fails(self, tmp_path):
@@ -266,6 +269,8 @@ mcp = fastmcp.FastMCP("TestServer")
         source = FileSystemSource(path=f"{test_file}:nonexistent")
         with pytest.raises(SystemExit) as exc_info:
             await source.load_server()
+
+        assert isinstance(exc_info.value, SystemExit)
         assert exc_info.value.code == 1
 
 

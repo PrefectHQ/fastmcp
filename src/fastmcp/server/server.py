@@ -812,6 +812,8 @@ class FastMCP(Generic[LifespanResultT]):
 
         Delegates to _get_prompt, which should be overridden by FastMCP subclasses.
         """
+        import fastmcp.server.context
+
         logger.debug(
             f"[{self.name}] Handler called: get_prompt %s with %s", name, arguments
         )

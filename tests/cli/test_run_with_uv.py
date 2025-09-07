@@ -20,6 +20,7 @@ class TestRunWithUv:
         with pytest.raises(SystemExit) as exc_info:
             run_with_uv("server.py")
 
+        assert isinstance(exc_info.value, SystemExit)
         assert exc_info.value.code == 0
 
         # Check the command that was called
@@ -45,6 +46,7 @@ class TestRunWithUv:
         with pytest.raises(SystemExit) as exc_info:
             run_with_uv("server.py", python_version="3.11")
 
+        assert isinstance(exc_info.value, SystemExit)
         assert exc_info.value.code == 0
 
         cmd = mock_run.call_args[0][0]
@@ -69,6 +71,7 @@ class TestRunWithUv:
         with pytest.raises(SystemExit) as exc_info:
             run_with_uv("server.py", project=project_path)
 
+        assert isinstance(exc_info.value, SystemExit)
         assert exc_info.value.code == 0
 
         cmd = mock_run.call_args[0][0]
@@ -91,6 +94,7 @@ class TestRunWithUv:
         with pytest.raises(SystemExit) as exc_info:
             run_with_uv("server.py", with_packages=["pandas", "numpy"])
 
+        assert isinstance(exc_info.value, SystemExit)
         assert exc_info.value.code == 0
 
         cmd = mock_run.call_args[0][0]
@@ -116,6 +120,7 @@ class TestRunWithUv:
         with pytest.raises(SystemExit) as exc_info:
             run_with_uv("server.py", with_requirements=req_path)
 
+        assert isinstance(exc_info.value, SystemExit)
         assert exc_info.value.code == 0
 
         cmd = mock_run.call_args[0][0]
@@ -146,6 +151,7 @@ class TestRunWithUv:
                 show_banner=False,
             )
 
+        assert isinstance(exc_info.value, SystemExit)
         assert exc_info.value.code == 0
 
         cmd = mock_run.call_args[0][0]
@@ -188,6 +194,7 @@ class TestRunWithUv:
                 show_banner=False,
             )
 
+        assert isinstance(exc_info.value, SystemExit)
         assert exc_info.value.code == 0
 
         cmd = mock_run.call_args[0][0]
@@ -231,6 +238,7 @@ class TestRunWithUv:
         with pytest.raises(SystemExit) as exc_info:
             run_with_uv("server.py")
 
+        assert isinstance(exc_info.value, SystemExit)
         assert exc_info.value.code == 1
 
     @patch("fastmcp.cli.run.logger")

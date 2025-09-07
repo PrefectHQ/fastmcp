@@ -69,7 +69,14 @@ class RequestDirector:
                 request_data["content"] = body
 
         # Step 5: Create httpx.Request
-        return httpx.Request(**{k: v for k, v in request_data.items() if v is not None})
+        return httpx.Request(
+            method=request_data["method"],
+            url=request_data["url"],
+            params=request_data.get("params"),
+            headers=request_data.get("headers"),
+            json=request_data.get("json"),
+            content=request_data.get("content"),
+        )
 
     def _unflatten_arguments(
         self, route: HTTPRoute, flat_args: dict[str, Any]

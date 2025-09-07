@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import Field, dataclass
 from datetime import datetime
 from enum import Enum
 from typing import Any, Literal, Union
@@ -11,6 +11,10 @@ from fastmcp.utilities.json_schema_type import (
     _merge_defaults,
     json_schema_to_type,
 )
+
+
+def get_dataclass_field(type: type, field_name: str) -> Field:
+    return type.__dataclass_fields__[field_name]  # ty: ignore[unresolved-attribute]
 
 
 class TestSimpleTypes:
@@ -990,8 +994,8 @@ class TestSchemaCaching:
         # Both main classes and their nested classes should be identical
         assert class1 is class2
         assert (
-            class1.__dataclass_fields__["nested"].type
-            is class2.__dataclass_fields__["nested"].type
+            get_dataclass_field(class1, "nested").type
+            is get_dataclass_field(class2, "nested").type
         )
 
 
@@ -1220,9 +1224,10 @@ class TestNameHandling:
         }
         Type = json_schema_to_type(schema)
         assert Type.__name__ == "Parent"
-        assert Type.__dataclass_fields__["child"].type.__origin__ is Union
-        assert Type.__dataclass_fields__["child"].type.__args__[0].__name__ == "Child"
-        assert Type.__dataclass_fields__["child"].type.__args__[1] is type(None)
+        child_field_type = get_dataclass_field(Type, "child").type
+        assert child_field_type.__origin__ is Union  # ty: ignore[possibly-unbound-attribute]
+        assert child_field_type.__args__[0].__name__ == "Child"  # ty: ignore[possibly-unbound-attribute]
+        assert child_field_type.__args__[1] is type(None)  # ty: ignore[possibly-unbound-attribute]
 
     def test_recursive_schema_naming(self):
         schema = {
@@ -1232,11 +1237,12 @@ class TestNameHandling:
         }
         Type = json_schema_to_type(schema)
         assert Type.__name__ == "Node"
-        assert Type.__dataclass_fields__["next"].type.__origin__ is Union
-        assert (
-            Type.__dataclass_fields__["next"].type.__args__[0].__forward_arg__ == "Node"
-        )
-        assert Type.__dataclass_fields__["next"].type.__args__[1] is type(None)
+
+        next_field_type = get_dataclass_field(Type, "next").type
+
+        assert next_field_type.__origin__ is Union  # ty: ignore[possibly-unbound-attribute]
+        assert next_field_type.__args__[0].__forward_arg__ == "Node"  # ty: ignore[possibly-unbound-attribute]
+        assert next_field_type.__args__[1] is type(None)  # ty: ignore[possibly-unbound-attribute]
 
     def test_name_caching_with_different_titles(self):
         """Ensure schemas with different titles create different cached classes"""

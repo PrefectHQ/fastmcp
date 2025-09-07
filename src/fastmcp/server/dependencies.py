@@ -5,6 +5,9 @@ from typing import TYPE_CHECKING
 from mcp.server.auth.middleware.auth_context import (
     get_access_token as _sdk_get_access_token,
 )
+from mcp.server.auth.provider import (
+    AccessToken as _SDKAccessToken,
+)
 from starlette.requests import Request
 
 from fastmcp.server.auth import AccessToken
@@ -107,17 +110,27 @@ def get_access_token() -> AccessToken | None:
         The access token if an authenticated user is available, None otherwise.
     """
     #
-    obj = _sdk_get_access_token()
-    if obj is None or isinstance(obj, AccessToken):
-        return obj
+    access_token: _SDKAccessToken | None = _sdk_get_access_token()
+
+    if access_token is None or isinstance(access_token, AccessToken):
+        return access_token
 
     # If the object is not a FastMCP AccessToken, convert it to one if the fields are compatible
     # This is a workaround for the case where the SDK returns a different type
     # If it fails, it will raise a TypeError
     try:
-        return AccessToken(**obj.model_dump())
+        access_token_as_dict = access_token.model_dump()
+        return AccessToken(
+            token=access_token_as_dict["token"],
+            client_id=access_token_as_dict["client_id"],
+            scopes=access_token_as_dict["scopes"],
+            # Optional fields
+            expires_at=access_token_as_dict.get("expires_at"),
+            resource_owner=access_token_as_dict.get("resource_owner"),
+            claims=access_token_as_dict.get("claims"),
+        )
     except Exception as e:
         raise TypeError(
-            f"Expected fastmcp.server.auth.auth.AccessToken, got {type(obj).__name__}. "
+            f"Expected fastmcp.server.auth.auth.AccessToken, got {type(access_token).__name__}. "
             "Ensure the SDK is using the correct AccessToken type."
         ) from e

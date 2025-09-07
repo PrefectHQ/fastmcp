@@ -1,3 +1,6 @@
+from collections.abc import Callable
+from typing import Any
+
 import pytest
 
 
@@ -15,3 +18,7 @@ def import_rich_rule():
     import rich.rule  # noqa: F401
 
     yield
+
+
+def get_fn_name(fn: Callable[..., Any]) -> str:
+    return fn.__name__  # ty: ignore[unresolved-attribute]

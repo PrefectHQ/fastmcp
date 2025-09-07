@@ -59,7 +59,12 @@ def create_elicitation_callback(
                     "Elicitation responses must be serializable as a JSON object (dict). Received: "
                     f"{result.content!r}"
                 )
-            return MCPElicitResult(**result.model_dump() | {"content": content})
+            return MCPElicitResult(
+                _meta=result.meta,
+                action=result.action,
+                content=content,
+            )
+
         except Exception as e:
             return mcp.types.ErrorData(
                 code=mcp.types.INTERNAL_ERROR,
