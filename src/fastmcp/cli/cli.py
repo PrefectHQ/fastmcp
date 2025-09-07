@@ -465,39 +465,53 @@ async def run(
     needs_uv = config.environment.build_command(test_cmd) != test_cmd and not skip_env
 
     if needs_uv:
-        # Use uv run subprocess - always use run_with_uv which handles output correctly
+        # Build the inner fastmcp command
+        inner_cmd = ["fastmcp", "run", server_spec]
+
+        # Add transport options to the inner command
+        if final_transport:
+            inner_cmd.extend(["--transport", final_transport])
+        # Only add HTTP-specific options for non-stdio transports
+        if final_transport != "stdio":
+            if final_host:
+                inner_cmd.extend(["--host", final_host])
+            if final_port:
+                inner_cmd.extend(["--port", str(final_port)])
+            if final_path:
+                inner_cmd.extend(["--path", final_path])
+        if final_log_level:
+            inner_cmd.extend(["--log-level", final_log_level])
+        if no_banner:
+            inner_cmd.append("--no-banner")
+        # Add skip-env flag to prevent infinite recursion
+        inner_cmd.append("--skip-env")
+
+        # Add server args if any
+        if final_server_args:
+            inner_cmd.append("--")
+            inner_cmd.extend(final_server_args)
+
+        # Build the full uv command using the config's environment
+        cmd = config.environment.build_command(inner_cmd)
+
+        # Set marker to prevent infinite loops when subprocess calls FastMCP again
+        env = os.environ | {"FASTMCP_UV_SPAWNED": "1"}
+
+        # Run the command
+        logger.debug(f"Running command: {' '.join(cmd)}")
         try:
-            run_module.run_with_uv(
-                server_spec=server_spec,
-                python_version=config.environment.python,
-                with_packages=config.environment.dependencies,
-                with_requirements=(
-                    Path(config.environment.requirements)
-                    if config.environment.requirements
-                    else None
-                ),
-                project=(
-                    Path(config.environment.project)
-                    if config.environment.project
-                    else None
-                ),
-                transport=final_transport,
-                host=final_host,
-                port=final_port,
-                path=final_path,
-                log_level=final_log_level,
-                show_banner=not no_banner,
-                editable=config.environment.editable,
-            )
-        except Exception as e:
+            process = subprocess.run(cmd, check=True, env=env)
+            sys.exit(process.returncode)
+        except subprocess.CalledProcessError as e:
             logger.error(
                 f"Failed to run: {e}",
                 extra={
                     "server_spec": server_spec,
                     "error": str(e),
+                    "returncode": e.returncode,
                 },
             )
-            sys.exit(1)
+            sys.exit(e.returncode)
     else:
         # Use direct import for backwards compatibility
         try:
@@ -643,6 +657,7 @@ async def inspect(
             "fastmcp",
             "inspect",
             server_spec,
+            "--skip-env",  # Prevent infinite recursion
         ]
 
         # Add format and output flags if specified

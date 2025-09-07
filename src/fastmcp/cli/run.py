@@ -1,9 +1,7 @@
 """FastMCP run command implementation with enhanced type hints."""
 
 import json
-import os
 import re
-import subprocess
 import sys
 from pathlib import Path
 from typing import Any, Literal
@@ -15,7 +13,6 @@ from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.mcp_server_config import (
     MCPServerConfig,
 )
-from fastmcp.utilities.mcp_server_config.v1.environments.uv import UVEnvironment
 from fastmcp.utilities.mcp_server_config.v1.sources.filesystem import FileSystemSource
 
 logger = get_logger("cli.run")
@@ -29,86 +26,6 @@ def is_url(path: str) -> bool:
     """Check if a string is a URL."""
     url_pattern = re.compile(r"^https?://")
     return bool(url_pattern.match(path))
-
-
-def run_with_uv(
-    server_spec: str,
-    python_version: str | None = None,
-    with_packages: list[str] | None = None,
-    with_requirements: Path | None = None,
-    project: Path | None = None,
-    transport: TransportType | None = None,
-    host: str | None = None,
-    port: int | None = None,
-    path: str | None = None,
-    log_level: LogLevelType | None = None,
-    show_banner: bool = True,
-    editable: str | list[str] | None = None,
-) -> None:
-    """Run a MCP server using uv run subprocess.
-
-    This function is called when we need to set up a Python environment with specific
-    dependencies before running the server. The config parsing and merging should already
-    be done by the caller.
-
-    Args:
-        server_spec: Python file, object specification (file:obj), config file, or URL
-        python_version: Python version to use (e.g. "3.10")
-        with_packages: Additional packages to install
-        with_requirements: Requirements file to use
-        project: Run the command within the given project directory
-        transport: Transport protocol to use
-        host: Host to bind to when using http transport
-        port: Port to bind to when using http transport
-        path: Path to bind to when using http transport
-        log_level: Log level
-        show_banner: Whether to show the server banner
-        editable: Editable package paths
-    """
-
-    env_config = UVEnvironment(
-        python=python_version,
-        dependencies=with_packages if with_packages else None,
-        requirements=str(with_requirements.resolve()) if with_requirements else None,
-        project=str(project.resolve()) if project else None,
-        editable=editable
-        if isinstance(editable, list)
-        else ([editable] if editable else None),
-    )
-
-    # Build the inner fastmcp command (environment variable prevents infinite recursion)
-    inner_cmd = ["fastmcp", "run", server_spec]
-
-    # Add transport options to the inner command
-    if transport:
-        inner_cmd.extend(["--transport", transport])
-    # Only add HTTP-specific options for non-stdio transports
-    if transport != "stdio":
-        if host:
-            inner_cmd.extend(["--host", host])
-        if port:
-            inner_cmd.extend(["--port", str(port)])
-        if path:
-            inner_cmd.extend(["--path", path])
-    if log_level:
-        inner_cmd.extend(["--log-level", log_level])
-    if not show_banner:
-        inner_cmd.append("--no-banner")
-
-    # Build the full uv command
-    cmd = env_config.build_command(inner_cmd)
-
-    # Set marker to prevent infinite loops when subprocess calls FastMCP again
-    env = os.environ | {"FASTMCP_UV_SPAWNED": "1"}
-
-    # Run the command
-    logger.debug(f"Running command: {' '.join(cmd)}")
-    try:
-        process = subprocess.run(cmd, check=True, env=env)
-        sys.exit(process.returncode)
-    except subprocess.CalledProcessError as e:
-        logger.error(f"Failed to run server: {e}")
-        sys.exit(e.returncode)
 
 
 def create_client_server(url: str) -> Any:
