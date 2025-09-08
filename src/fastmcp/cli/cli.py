@@ -445,6 +445,9 @@ async def run(
     final_path = path or config.deployment.path
     final_log_level = log_level or config.deployment.log_level
     final_server_args = server_args or config.deployment.args
+    # Use CLI override if provided, otherwise use settings
+    # no_banner CLI flag overrides the show_cli_banner setting
+    final_no_banner = no_banner if no_banner else not fastmcp.settings.show_cli_banner
 
     logger.debug(
         "Running server or client",
@@ -481,7 +484,7 @@ async def run(
                 inner_cmd.extend(["--path", final_path])
         if final_log_level:
             inner_cmd.extend(["--log-level", final_log_level])
-        if no_banner:
+        if final_no_banner:
             inner_cmd.append("--no-banner")
         # Add skip-env flag to prevent infinite recursion
         inner_cmd.append("--skip-env")
@@ -523,7 +526,7 @@ async def run(
                 path=final_path,
                 log_level=final_log_level,
                 server_args=list(final_server_args) if final_server_args else [],
-                show_banner=not no_banner,
+                show_banner=not final_no_banner,
                 skip_source=skip_source,
             )
         except Exception as e:
