@@ -217,7 +217,7 @@ For advanced use cases that require more complex logic, you can provide a `route
 In addition to more precise targeting of methods, patterns, and tags, this function can access any additional OpenAPI metadata about the route.
 
 <Tip>
-The `route_map_fn` **is** called on routes that matched `MCPType.EXCLUDE` in your custom maps, giving you an opportunity to override the exclusion.
+The `route_map_fn` is called on all routes, even those that matched `MCPType.EXCLUDE` in your custom maps. This gives you an opportunity to customize the mapping or even override an exclusion.
 </Tip>
 
 ```python
