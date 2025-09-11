@@ -174,7 +174,7 @@ class ComponentService:
             key: The key of the prompt to enable
 
         Returns:
-            The prompt that was enable
+            The prompt that was enabled
         """
         logger.debug("Enabling prompt: %s", key)
 

@@ -272,7 +272,7 @@ class Settings(BaseSettings):
 
                 If None, no automatic configuration will take place.
 
-                This setting is *always* overriden by any auth provider passed to the
+                This setting is *always* overridden by any auth provider passed to the
                 FastMCP constructor.
 
                 Note that most auth providers require additional configuration

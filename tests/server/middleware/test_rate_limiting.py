@@ -357,7 +357,7 @@ class TestRateLimitingMiddlewareIntegration:
         rate_limit_server.add_middleware(
             SlidingWindowRateLimitingMiddleware(
                 max_requests=5,  # Accounting for extra list_tools calls
-                window_minutes=1,  # 1 minute window
+                window_minutes=1,  # 1-minute window
             )
         )
 

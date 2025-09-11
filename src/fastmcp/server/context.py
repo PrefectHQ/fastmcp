@@ -449,7 +449,7 @@ class Context:
         AcceptedElicitation[dict[str, Any]] | DeclinedElicitation | CancelledElicitation
     ): ...
 
-    """When response_type is None, the accepted elicitaiton will contain an
+    """When response_type is None, the accepted elicitation will contain an
     empty dict"""
 
     @overload
@@ -459,7 +459,7 @@ class Context:
         response_type: type[T],
     ) -> AcceptedElicitation[T] | DeclinedElicitation | CancelledElicitation: ...
 
-    """When response_type is not None, the accepted elicitaiton will contain the
+    """When response_type is not None, the accepted elicitation will contain the
     response data"""
 
     @overload
@@ -469,7 +469,7 @@ class Context:
         response_type: list[str],
     ) -> AcceptedElicitation[str] | DeclinedElicitation | CancelledElicitation: ...
 
-    """When response_type is a list of strings, the accepted elicitaiton will
+    """When response_type is a list of strings, the accepted elicitation will
     contain the selected string response"""
 
     async def elicit(

@@ -256,7 +256,7 @@ composite_proxy = FastMCP.as_proxy(config, name="Composite Proxy")
 
 When you access tools, resources, or prompts from a proxy server, they are "mirrored" from the remote server. Mirrored components cannot be modified directly since they reflect the state of the remote server. For example, you can not simply "disable" a mirrored component.
 
-However, you can create a copy of a mirrored component and store it as a new locally-defined component. Local components always take precedence over mirored ones because the proxy server will check its own registry before it attempts to engage the remote server.
+However, you can create a copy of a mirrored component and store it as a new locally-defined component. Local components always take precedence over mirrored ones because the proxy server will check its own registry before it attempts to engage the remote server.
 
 Therefore, to enable or disable a proxy tool, resource, or prompt, you should first create a local copy and add it to your own server. Here's an example of how to do that for a tool:
 

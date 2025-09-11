@@ -454,7 +454,7 @@ class Client(Generic[ClientTransportT]):
             if self._session_state.nesting_counter > 0:
                 return
 
-            # stop the active seesion
+            # stop the active session
             if self._session_state.session_task is None:
                 return
             self._session_state.stop_event.set()

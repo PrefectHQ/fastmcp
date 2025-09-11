@@ -355,7 +355,7 @@ class OAuth(OAuthClientProvider):
                 raise TimeoutError(f"OAuth callback timed out after {TIMEOUT} seconds")
             finally:
                 server.should_exit = True
-                await asyncio.sleep(0.1)  # Allow server to shutdown gracefully
+                await asyncio.sleep(0.1)  # Allow server to shut down gracefully
                 tg.cancel_scope.cancel()
 
         raise RuntimeError("OAuth callback handler could not be started")

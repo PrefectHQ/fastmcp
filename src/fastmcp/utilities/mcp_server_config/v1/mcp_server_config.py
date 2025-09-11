@@ -26,7 +26,7 @@ logger = get_logger("cli.config")
 FASTMCP_JSON_SCHEMA = "https://gofastmcp.com/public/schemas/fastmcp.json/v1.json"
 
 
-# Type alias for source union (will expand with GitSource, etc in future)
+# Type alias for source union (will expand with GitSource, etc. in future)
 SourceType: TypeAlias = FileSystemSource
 
 # Type alias for environment union (will expand with other environments in future)

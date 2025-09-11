@@ -16,7 +16,7 @@ Prompts:
 * [enable/disable](https://gofastmcp.com/servers/prompts#disabling-prompts)
 
 Resources:
-* [enable/disabe](https://gofastmcp.com/servers/resources#disabling-resources)
+* [enable/disable](https://gofastmcp.com/servers/resources#disabling-resources)
   
 ## Usage
 

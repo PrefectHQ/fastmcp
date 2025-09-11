@@ -934,7 +934,7 @@ def apply_transformations_to_tools(
     tools: dict[str, Tool],
     transformations: dict[str, ToolTransformConfig],
 ) -> dict[str, Tool]:
-    """Apply a list of transformations to a list of tools. Tools that do not have any transforamtions
+    """Apply a list of transformations to a list of tools. Tools that do not have any transformations
     are left unchanged.
     """
 

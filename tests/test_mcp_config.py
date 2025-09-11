@@ -610,7 +610,7 @@ async def test_canonical_multi_client_with_transforms(tmp_path: Path):
             "test_1": {
                 "command": "python",
                 "args": [str(script_path)],
-                "tools": {  # <--- Will be ignored as its not valid for a canonical MCPConfig
+                "tools": {  # <--- Will be ignored as it's not valid for a canonical MCPConfig
                     "add": {
                         "name": "transformed_add",
                         "arguments": {
