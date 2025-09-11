@@ -1210,8 +1210,8 @@ class FastMCP(Generic[LifespanResultT]):
                 return f"Weather for {city}"
 
             @server.resource("resource://{city}/weather")
-            def get_weather_with_context(city: str, ctx: Context) -> str:
-                ctx.info(f"Fetching weather for {city}")
+            async def get_weather_with_context(city: str, ctx: Context) -> str:
+                await ctx.info(f"Fetching weather for {city}")
                 return f"Weather for {city}"
 
             @server.resource("resource://{city}/weather")
@@ -1386,8 +1386,8 @@ class FastMCP(Generic[LifespanResultT]):
                 ]
 
             @server.prompt()
-            def analyze_with_context(table_name: str, ctx: Context) -> list[Message]:
-                ctx.info(f"Analyzing table {table_name}")
+            async def analyze_with_context(table_name: str, ctx: Context) -> list[Message]:
+                await ctx.info(f"Analyzing table {table_name}")
                 schema = read_table_schema(table_name)
                 return [
                     {
@@ -1397,7 +1397,7 @@ class FastMCP(Generic[LifespanResultT]):
                 ]
 
             @server.prompt("custom_name")
-            def analyze_file(path: str) -> list[Message]:
+            async def analyze_file(path: str) -> list[Message]:
                 content = await read_file(path)
                 return [
                     {

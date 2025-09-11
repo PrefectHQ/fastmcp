@@ -85,18 +85,18 @@ class Context:
 
     ```python
     @server.tool
-    def my_tool(x: int, ctx: Context) -> str:
+    async def my_tool(x: int, ctx: Context) -> str:
         # Log messages to the client
-        ctx.info(f"Processing {x}")
-        ctx.debug("Debug info")
-        ctx.warning("Warning message")
-        ctx.error("Error message")
+        await ctx.info(f"Processing {x}")
+        await ctx.debug("Debug info")
+        await ctx.warning("Warning message")
+        await ctx.error("Error message")
 
         # Report progress
-        ctx.report_progress(50, 100, "Processing")
+        await ctx.report_progress(50, 100, "Processing")
 
         # Access resources
-        data = ctx.read_resource("resource://data")
+        data = await ctx.read_resource("resource://data")
 
         # Get request info
         request_id = ctx.request_id
