@@ -261,7 +261,7 @@ class Context:
         Example:
             ```python
             @server.tool
-            async def store_data(data: dict, ctx: Context) -> str:
+            def store_data(data: dict, ctx: Context) -> str:
                 session_id = ctx.session_id
                 redis_client.set(f"session:{session_id}:data", json.dumps(data))
                 return f"Data stored for session {session_id}"
