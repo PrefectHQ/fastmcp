@@ -97,6 +97,7 @@
                   "servers/auth/token-verification",
                   "servers/auth/remote-oauth",
                   "servers/auth/oauth-proxy",
+                  "servers/auth/oidc-proxy",
                   "servers/auth/full-oauth-server"
                 ]
               },
@@ -161,6 +162,7 @@
                 "group": "Authentication",
                 "icon": "key",
                 "pages": [
+                  "integrations/auth0",
                   "integrations/authkit",
                   "integrations/azure",
                   "integrations/github",

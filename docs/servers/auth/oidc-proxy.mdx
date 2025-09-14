@@ -1,0 +1,185 @@
+---
+title: OIDC Proxy
+sidebarTitle: OIDC Proxy
+description: Bridge OIDC providers to work seamlessly with MCP's authentication flow.
+icon: share
+tag: NEW
+---
+
+import { VersionBadge } from "/snippets/version-badge.mdx";
+
+<VersionBadge version="2.12.4" />
+
+OIDC Proxy enables FastMCP servers to authenticate with OIDC providers that **don't support Dynamic Client Registration (DCR)** out of the box. This includes OAuth providers like: Auth0, Google, Azure, etc. For providers that do support DCR (like WorkOS AuthKit), use [`RemoteAuthProvider`](/servers/auth/remote-oauth) instead.
+
+The OIDC Proxy is built upon [`OAuthProxy`](/servers/auth/oauth-proxy) so it has all the same functionality under the covers.
+
+## Implementation
+
+### Provider Setup Requirements
+
+Before using OIDC Proxy, you need to register your application with your OAuth provider:
+
+1. **Register your application** in the provider's developer console (Auth0 Applications, Google Cloud Console, Azure Portal, etc.)
+2. **Configure the redirect URI** as your FastMCP server URL plus your chosen callback path:
+   - Default: `https://your-server.com/auth/callback`
+   - Custom: `https://your-server.com/your/custom/path` (if you set `redirect_path`)
+   - Development: `http://localhost:8000/auth/callback`
+3. **Obtain your credentials**: Client ID and Client Secret
+
+<Warning>
+  The redirect URI you configure with your provider must exactly match your
+  FastMCP server's URL plus the callback path. If you customize `redirect_path`
+  in OAuth Proxy, update your provider's redirect URI accordingly.
+</Warning>
+
+### Basic Setup
+
+Here's how to implement OIDC Proxy with any provider:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.auth.oidc_proxy import OIDCProxy
+
+# Create the OIDC proxy
+auth = OIDCProxy(
+    # Provider's configuration URL
+    config_url="https://provider.com/.well-known/openid-configuration",
+
+    # Your registered app credentials
+    client_id="your-client-id",
+    client_secret="your-client-secret",
+
+    # Your FastMCP server's public URL
+    base_url="https://your-server.com",
+
+    # Optional: customize the callback path (default is "/auth/callback")
+    # redirect_path="/custom/callback",
+)
+
+mcp = FastMCP(name="My Server", auth=auth)
+```
+
+### Configuration Parameters
+
+<Card icon="code" title="OIDCProxy Parameters">
+<ParamField body="config_url" type="str" required>
+  URL of your OAuth provider's OIDC configuration
+</ParamField>
+
+<ParamField body="client_id" type="str" required>
+  Client ID from your registered OAuth application
+</ParamField>
+
+<ParamField body="client_secret" type="str" required>
+  Client secret from your registered OAuth application
+</ParamField>
+
+<ParamField body="base_url" type="AnyHttpUrl | str" required>
+  Public URL of your FastMCP server (e.g., `https://your-server.com`)
+</ParamField>
+
+<ParamField body="strict" type="str">
+  Strict flag for configuration validation
+</ParamField>
+
+<ParamField body="audience" type="str">
+  Audience from your registered OAuth application
+</ParamField>
+
+<ParamField body="timeout_seconds" type="str">
+  HTTP request timeout in seconds
+</ParamField>
+
+<ParamField body="algorithm" type="str">
+  The algorithm for the token verifier
+</ParamField>
+
+<ParamField body="required_scopes" type="str">
+  The required scopes for the token verifier
+</ParamField>
+
+<ParamField body="redirect_path" type="str" default="/auth/callback">
+  Path for OAuth callbacks. Must match the redirect URI configured in your OAuth application
+</ParamField>
+
+<ParamField body="allowed_client_redirect_uris" type="list[str] | None">
+  List of allowed redirect URI patterns for MCP clients. Patterns support wildcards (e.g., `"http://localhost:*"`, `"https://*.example.com/*"`).
+  - `None` (default): All redirect URIs allowed (for MCP/DCR compatibility)
+  - Empty list `[]`: No redirect URIs allowed
+  - Custom list: Only matching patterns allowed
+
+  These patterns apply to MCP client loopback redirects, NOT the upstream OAuth app redirect URI.
+</ParamField>
+
+<ParamField body="token_endpoint_auth_method" type="str | None">
+  Token endpoint authentication method for the upstream OAuth server. Controls how the proxy authenticates when exchanging authorization codes and refresh tokens with the upstream provider.
+  - `"client_secret_basic"`: Send credentials in Authorization header (most common)
+  - `"client_secret_post"`: Send credentials in request body (required by some providers)
+  - `"none"`: No authentication (for public clients)
+  - `None` (default): Uses authlib's default (typically `"client_secret_basic"`)
+
+  Set this if your provider requires a specific authentication method and the default doesn't work.
+</ParamField>
+</Card>
+
+### Using Built-in Providers
+
+FastMCP includes pre-configured OIDC providers for common services:
+
+```python
+from fastmcp.server.auth.providers.auth0 import Auth0Provider
+
+auth = Auth0Provider(
+    config_url="https://.../.well-known/openid-configuration",
+    client_id="your-auth0-client-id",
+    client_secret="your-auth0-client-secret",
+    audience="https://...",
+    base_url="https://localhost:8000"
+)
+
+mcp = FastMCP(name="My Server", auth=auth)
+```
+
+Available providers include `Auth0Provider` at present.
+
+### Scope Configuration
+
+OAuth scopes are configured with `required_scopes` to automatically request the permissions your application needs.
+
+Dynamic clients created by the proxy will automatically include these scopes in their authorization requests.
+
+## Environment Configuration
+
+<VersionBadge version="2.13.0" />
+
+For production deployments, configure OIDC Proxy through environment variables instead of hardcoding credentials:
+
+```bash
+# Specify the provider implementation
+export FASTMCP_SERVER_AUTH=fastmcp.server.auth.providers.auth0.Auth0Provider
+
+# Provider-specific credentials
+export FASTMCP_SERVER_AUTH_AUTH0_CONFIG_URL=https://.../.well-known/openid-configuration
+export FASTMCP_SERVER_AUTH_AUTH0_CLIENT_ID=tv2ObNgaZAWWhhycr7Bz1LU2mxlnsmsB
+export FASTMCP_SERVER_AUTH_AUTH0_CLIENT_SECRET=vPYqbjemq...
+export FASTMCP_SERVER_AUTH_AUTH0_AUDIENCE=https://...
+export FASTMCP_SERVER_AUTH_AUTH0_BASE_URL=https://localhost:8000
+```
+
+With environment configuration, your server code simplifies to:
+
+```python
+from fastmcp import FastMCP
+
+# Authentication automatically configured from environment
+mcp = FastMCP(name="My Server")
+
+@mcp.tool
+def protected_tool(data: str) -> str:
+    """This tool is now protected by OAuth."""
+    return f"Processed: {data}"
+
+if __name__ == "__main__":
+    mcp.run(transport="http", port=8000)
+```

@@ -1,0 +1,231 @@
+---
+title: Auth0 OAuth 🤝 FastMCP
+sidebarTitle: Auth0
+description: Secure your FastMCP server with Auth0 OAuth
+icon: shield-check
+tag: NEW
+---
+
+import { VersionBadge } from "/snippets/version-badge.mdx"
+
+<VersionBadge version="2.12.4" />
+
+This guide shows you how to secure your FastMCP server using **Auth0 OAuth**. While Auth0 does have support for Dynamic Client Registration, it is not enabled by default so this integration uses the [**OIDC Proxy**](/servers/auth/oidc-proxy) pattern to bridge Auth0's dynamic OIDC configuration with MCP's authentication requirements.
+
+## Configuration
+
+### Prerequisites
+
+Before you begin, you will need:
+1. An **[Auth0 Account](https://auth0.com/)** with access to create Applications
+2. Your FastMCP server's URL (can be localhost for development, e.g., `http://localhost:8000`)
+
+### Step 1: Create an Auth0 Application
+
+Create an Application in your Auth0 settings to get the credentials needed for authentication:
+
+<Steps>
+<Step title="Navigate to Applications">
+    Go to **Applications → Applications** in your Auth0 account.
+
+    Click **"+ Create Application"** to create a new application.
+</Step>
+
+<Step title="Create Your Application">
+    - **Name**: Choose a name users will recognize (e.g., "My FastMCP Server")
+    - **Choose an application type**: Choose "Single Page Web Applications"
+    - Click **Create** to create the application
+</Step>
+
+<Step title="Configure Your Application">
+    Select the "Settings" tab for your application, then find the "Application URIs" section.
+
+    - **Allowed Callback URLs**: Your server URL + `/auth/callback` (e.g., `http://localhost:8000/auth/callback`)
+    - Click **Save** to save your changes
+
+    <Warning>
+    The callback URL must match exactly. The default path is `/auth/callback`, but you can customize it using the `redirect_path` parameter.
+    </Warning>
+
+    <Tip>
+    If you want to use a custom callback path (e.g., `/auth/auth0/callback`), make sure to set the same path in both your Auth0 Application settings and the `redirect_path` parameter when configuring the Auth0Provider.
+    </Tip>
+</Step>
+
+<Step title="Save Your Credentials">
+    After creating the app, in the "Basic Information" section you'll see:
+
+    - **Client ID**: A public identifier like `tv2ObNgaZAWWhhycr7Bz1LU2mxlnsmsB`
+    - **Client Secret**: A private hidden value that should always be stored securely
+
+    <Tip>
+    Store these credentials securely. Never commit them to version control. Use environment variables or a secrets manager in production.
+    </Tip>
+</Step>
+
+<Step title="Select Your Audience">
+  Go to **Applications → APIs** in your Auth0 account.
+
+    - Find the API that you want to use for your application
+    - **API Audience**: A URL that uniquely identifies the API
+
+    <Tip>
+    Store this along with of the credentials above. Never commit this to version control. Use environment variables or a secrets manager in production.
+    </Tip>
+</Step>
+</Steps>
+
+### Step 2: FastMCP Configuration
+
+Create your FastMCP server using the `Auth0Provider`.
+
+```python server.py
+from fastmcp import FastMCP
+from fastmcp.server.auth.providers.auth0 import Auth0Provider
+
+# The Auth0Provider utilizes Auth0 OIDC configuration
+auth_provider = Auth0Provider(
+    config_url="https://.../.well-known/openid-configuration",  # Your Auth0 configuration URL
+    client_id="tv2ObNgaZAWWhhycr7Bz1LU2mxlnsmsB",               # Your Auth0 application Client ID
+    client_secret="vPYqbjemq...",                               # Your Auth0 application Client Secret
+    audience="https://...",                                     # Your Auth0 API audience
+    base_url="http://localhost:8000",                           # Must match your application configuration
+    # redirect_path="/auth/callback"                            # Default value, customize if needed
+)
+
+mcp = FastMCP(name="Auth0 Secured App", auth=auth_provider)
+
+# Add a protected tool to test authentication
+@mcp.tool
+async def get_token_info() -> dict:
+    """Returns information about the Auth0 token."""
+    from fastmcp.server.dependencies import get_access_token
+
+    token = get_access_token()
+
+    return {
+        "issuer": token.claims.get("iss"),
+        "audience": token.claims.get("aud"),
+        "scope": token.claims.get("scope")
+    }
+```
+
+## Testing
+
+### Running the Server
+
+Start your FastMCP server with HTTP transport to enable OAuth flows:
+
+```bash
+fastmcp run server.py --transport http --port 8000
+```
+
+Your server is now running and protected by Auth0 authentication.
+
+### Testing with a Client
+
+Create a test client that authenticates with your Auth0-protected server:
+
+```python test_client.py
+from fastmcp import Client
+import asyncio
+
+async def main():
+    # The client will automatically handle Auth0 OAuth flows
+    async with Client("http://localhost:8000/mcp/", auth="oauth") as client:
+        # First-time connection will open Auth0 login in your browser
+        print("✓ Authenticated with Auth0!")
+
+        # Test the protected tool
+        result = await client.call_tool("get_token_info")
+        print(f"Auth0 audience: {result['audience']}")
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+When you run the client for the first time:
+1. Your browser will open to Auth0's authorization page
+2. After you authorize the app, you'll be redirected back
+3. The client receives the token and can make authenticated requests
+
+<Info>
+The client caches tokens locally, so you won't need to re-authenticate for subsequent runs unless the token expires or you explicitly clear the cache.
+</Info>
+
+## Environment Variables
+
+For production deployments, use environment variables instead of hardcoding credentials.
+
+### Provider Selection
+
+Setting this environment variable allows the Auth0 provider to be used automatically without explicitly instantiating it in code.
+
+<Card>
+<ParamField path="FASTMCP_SERVER_AUTH" default="Not set">
+Set to `fastmcp.server.auth.providers.auth0.Auth0Provider` to use Auth0 authentication.
+</ParamField>
+</Card>
+
+### Auth0-Specific Configuration
+
+These environment variables provide default values for the Auth0 provider, whether it's instantiated manually or configured via `FASTMCP_SERVER_AUTH`.
+
+<Card>
+<ParamField path="FASTMCP_SERVER_AUTH_AUTH0_CONFIG_URL" required>
+Your Auth0 Application Configuration URL (e.g., `https://.../.well-known/openid-configuration`)
+</ParamField>
+
+<ParamField path="FASTMCP_SERVER_AUTH_AUTH0_CLIENT_ID" required>
+Your Auth0 Application Client ID (e.g., `tv2ObNgaZAWWhhycr7Bz1LU2mxlnsmsB`)
+</ParamField>
+
+<ParamField path="FASTMCP_SERVER_AUTH_AUTH0_CLIENT_SECRET" required>
+Your Auth0 Application Client Secret (e.g., `vPYqbjemq...`)
+</ParamField>
+
+<ParamField path="FASTMCP_SERVER_AUTH_AUTH0_AUDIENCE" required>
+Your Auth0 API Audience
+</ParamField>
+
+<ParamField path="FASTMCP_SERVER_AUTH_AUTH0_BASE_URL" required>
+Public URL of your FastMCP server for OAuth callbacks
+</ParamField>
+
+<ParamField path="FASTMCP_SERVER_AUTH_AUTH0_REDIRECT_PATH" default="/auth/callback">
+Redirect path configured in your Auth0 Application
+</ParamField>
+
+<ParamField path="FASTMCP_SERVER_AUTH_AUTH0_REQUIRED_SCOPES" default='["openid"]'>
+Comma-, space-, or JSON-separated list of required AUth0 scopes (e.g., `openid email` or `["openid","email"]`)
+</ParamField>
+</Card>
+
+Example `.env` file:
+```bash
+# Use the Auth0 provider
+FASTMCP_SERVER_AUTH=fastmcp.server.auth.providers.auth0.Auth0Provider
+
+# Auth0 configuration and credentials
+FASTMCP_SERVER_AUTH_AUTH0_CONFIG_URL=https://.../.well-known/openid-configuration
+FASTMCP_SERVER_AUTH_AUTH0_CLIENT_ID=tv2ObNgaZAWWhhycr7Bz1LU2mxlnsmsB
+FASTMCP_SERVER_AUTH_AUTH0_CLIENT_SECRET=vPYqbjemq...
+FASTMCP_SERVER_AUTH_AUTH0_AUDIENCE=https://...
+FASTMCP_SERVER_AUTH_AUTH0_BASE_URL=https://your-server.com
+FASTMCP_SERVER_AUTH_AUTH0_REQUIRED_SCOPES=openid,email
+```
+
+With environment variables set, your server code simplifies to:
+
+```python server.py
+from fastmcp import FastMCP
+
+# Authentication is automatically configured from environment
+mcp = FastMCP(name="Auth0 Secured App")
+
+@mcp.tool
+async def search_logs() -> list[str]:
+    """Search the service logs."""
+    # Your tool implementation here
+    pass
+```
