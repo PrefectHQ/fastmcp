@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import AsyncGenerator, Callable, Generator
 from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar
-from typing import TYPE_CHECKING, Union
+from typing import TYPE_CHECKING
 
 from mcp.server.auth.middleware.bearer_auth import RequireAuthMiddleware
 from mcp.server.lowlevel.server import LifespanResultT
