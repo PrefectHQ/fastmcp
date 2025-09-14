@@ -102,7 +102,7 @@ Once your server is running with HTTP transport, you can connect to it with a Fa
 import asyncio
 from fastmcp import Client
 
-client = Client("http://localhost:8000")
+client = Client("http://localhost:8000/mcp")
 
 async def call_tool(name: str):
     async with client:
