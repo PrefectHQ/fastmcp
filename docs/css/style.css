@@ -1,5 +1,5 @@
 img.nav-logo {
-  height: 34px;
+  max-width: 200px;
 }
 
 /* Code highlighting -- target only inline code elements, not code blocks */
