@@ -56,7 +56,7 @@ class TestContextDeprecations:
                     "Use get_http_request() from fastmcp.server.dependencies instead"
                     in str(warning.message)
                 )
-                assert "https://gofastmcp.com/patterns/http-requests" in str(
+                assert "https://gofastmcp.com/servers/context#http-requests" in str(
                     warning.message
                 )
 

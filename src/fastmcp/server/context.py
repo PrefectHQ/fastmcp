@@ -573,7 +573,7 @@ class Context:
             warnings.warn(
                 "Context.get_http_request() is deprecated and will be removed in a future version. "
                 "Use get_http_request() from fastmcp.server.dependencies instead. "
-                "See https://gofastmcp.com/patterns/http-requests for more details.",
+                "See https://gofastmcp.com/servers/context#http-requests for more details.",
                 DeprecationWarning,
                 stacklevel=2,
             )
