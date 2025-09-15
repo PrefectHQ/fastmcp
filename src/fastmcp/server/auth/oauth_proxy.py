@@ -240,7 +240,7 @@ class OAuthProxy(OAuthProvider):
         token_verifier: TokenVerifier,
         # FastMCP server configuration
         base_url: AnyHttpUrl | str,
-        redirect_path: str = "/auth/callback",
+        redirect_path: str | None = None,
         issuer_url: AnyHttpUrl | str | None = None,
         service_documentation_url: AnyHttpUrl | str | None = None,
         # Client redirect URI validation
@@ -317,9 +317,12 @@ class OAuthProxy(OAuthProvider):
         self._default_scope_str = " ".join(self.required_scopes or [])
 
         # Store redirect configuration
-        self._redirect_path = (
-            redirect_path if redirect_path.startswith("/") else f"/{redirect_path}"
-        )
+        if not redirect_path:
+            self._redirect_path = "/auth/callback"
+        else:
+            self._redirect_path = (
+                redirect_path if redirect_path.startswith("/") else f"/{redirect_path}"
+            )
         self._allowed_client_redirect_uris = allowed_client_redirect_uris
 
         # PKCE configuration

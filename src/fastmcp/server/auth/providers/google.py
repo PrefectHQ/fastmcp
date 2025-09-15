@@ -261,7 +261,6 @@ class GoogleProvider(OAuthProxy):
             )
 
         # Apply defaults
-        redirect_path_final = settings.redirect_path or "/auth/callback"
         timeout_seconds_final = settings.timeout_seconds or 10
         # Google requires at least one scope - openid is the minimal OIDC scope
         required_scopes_final = settings.required_scopes or ["openid"]
@@ -286,7 +285,7 @@ class GoogleProvider(OAuthProxy):
             upstream_client_secret=client_secret_str,
             token_verifier=token_verifier,
             base_url=settings.base_url,
-            redirect_path=redirect_path_final,
+            redirect_path=settings.redirect_path,
             issuer_url=settings.base_url,  # We act as the issuer for client registration
             allowed_client_redirect_uris=allowed_client_redirect_uris_final,
         )

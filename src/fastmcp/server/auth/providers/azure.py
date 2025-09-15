@@ -211,7 +211,6 @@ class AzureProvider(OAuthProxy):
         # Apply defaults
         tenant_id_final = settings.tenant_id
 
-        redirect_path_final = settings.redirect_path or "/auth/callback"
         timeout_seconds_final = settings.timeout_seconds or 10
         # Default scopes for Azure - User.Read gives us access to user info via Graph API
         scopes_final = settings.required_scopes or [
@@ -249,7 +248,7 @@ class AzureProvider(OAuthProxy):
             upstream_client_secret=client_secret_str,
             token_verifier=token_verifier,
             base_url=settings.base_url,
-            redirect_path=redirect_path_final,
+            redirect_path=settings.redirect_path,
             issuer_url=settings.base_url,
             allowed_client_redirect_uris=allowed_client_redirect_uris_final,
         )

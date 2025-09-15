@@ -220,7 +220,6 @@ class WorkOSProvider(OAuthProxy):
         if not authkit_domain_str.startswith(("http://", "https://")):
             authkit_domain_str = f"https://{authkit_domain_str}"
         authkit_domain_final = authkit_domain_str.rstrip("/")
-        redirect_path_final = settings.redirect_path or "/auth/callback"
         timeout_seconds_final = settings.timeout_seconds or 10
         scopes_final = settings.required_scopes or []
         allowed_client_redirect_uris_final = settings.allowed_client_redirect_uris
@@ -245,7 +244,7 @@ class WorkOSProvider(OAuthProxy):
             upstream_client_secret=client_secret_str,
             token_verifier=token_verifier,
             base_url=settings.base_url,
-            redirect_path=redirect_path_final,
+            redirect_path=settings.redirect_path,
             issuer_url=settings.base_url,
             allowed_client_redirect_uris=allowed_client_redirect_uris_final,
         )

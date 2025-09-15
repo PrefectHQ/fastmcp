@@ -272,4 +272,6 @@ class TestAuth0Provider:
             )
 
             # Check defaults
+            assert str(provider.base_url) == TEST_BASE_URL
+            assert provider._redirect_path == "/auth/callback"
             assert provider._token_validator.required_scopes == ["openid"]
