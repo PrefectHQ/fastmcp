@@ -3,7 +3,7 @@ from __future__ import annotations as _annotations
 import inspect
 import warnings
 from pathlib import Path
-from typing import Annotated, Any, Literal
+from typing import TYPE_CHECKING, Annotated, Any, Literal
 
 from pydantic import Field, ImportString, field_validator
 from pydantic.fields import FieldInfo
@@ -22,6 +22,9 @@ logger = get_logger(__name__)
 LOG_LEVEL = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 
 DuplicateBehavior = Literal["warn", "error", "replace", "ignore"]
+
+if TYPE_CHECKING:
+    from fastmcp.server.auth.auth import AuthProvider
 
 
 class ExtendedEnvSettingsSource(EnvSettingsSource):
@@ -258,7 +261,7 @@ class Settings(BaseSettings):
 
     # Auth settings
     server_auth: Annotated[
-        ImportString | None,
+        str | None,
         Field(
             description=inspect.cleandoc(
                 """
@@ -266,9 +269,9 @@ class Settings(BaseSettings):
                 the full module path to an AuthProvider class (e.g., 
                 'fastmcp.server.auth.providers.google.GoogleProvider').
 
-                The specified class will be imported and instantiated automatically.
-                Any class that inherits from AuthProvider can be used, including
-                custom implementations.
+                The specified class will be imported and instantiated automatically
+                during FastMCP server creation. Any class that inherits from AuthProvider
+                can be used, including custom implementations.
 
                 If None, no automatic configuration will take place.
 
@@ -356,6 +359,25 @@ class Settings(BaseSettings):
             ),
         ),
     ] = True
+
+    @property
+    def server_auth_class(self) -> AuthProvider | None:
+        from fastmcp.utilities.types import get_cached_typeadapter
+
+        if not self.server_auth:
+            return None
+
+        # https://github.com/jlowin/fastmcp/issues/1749
+        # Pydantic imports the module in an ImportString during model validation, but we don't want the server
+        # auth module imported during settings creation as it imports dependencies we aren't ready for yet.
+        # To fix this while limiting breaking changes, we delay the import by only creating the ImportString
+        # when the class is actually needed
+
+        type_adapter = get_cached_typeadapter(ImportString)
+
+        auth_class = type_adapter.validate_python(self.server_auth)
+
+        return auth_class
 
 
 def __getattr__(name: str):

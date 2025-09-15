@@ -1,4 +1,7 @@
 import logging
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from textwrap import dedent
 from typing import Annotated, Any
 
 import httpx
@@ -1578,3 +1581,51 @@ class TestOpenAPIExperimentalFeatureFlag:
             if "Using legacy OpenAPI parser" in record.message
         ]
         assert len(legacy_log_messages) == 0
+
+
+class TestSettingsFromEnvironment:
+    async def test_settings_from_environment_issue_1749(self):
+        """Test that when auth is enabled, the server starts."""
+        from fastmcp.client.transports import PythonStdioTransport
+        from fastmcp.server.auth.providers.azure import AzureProvider
+        from fastmcp.settings import Settings
+
+        script = dedent("""
+        import os
+
+        os.environ["FASTMCP_SERVER_AUTH"] = "fastmcp.server.auth.providers.azure.AzureProvider"
+
+        os.environ["FASTMCP_SERVER_AUTH_AZURE_TENANT_ID"] = "A_Valid_Value"
+        os.environ["FASTMCP_SERVER_AUTH_AZURE_CLIENT_ID"] = "A_Valid_Value"
+        os.environ["FASTMCP_SERVER_AUTH_AZURE_CLIENT_SECRET"] = "A_Valid_Value"
+        os.environ["FASTMCP_SERVER_AUTH_AZURE_REDIRECT_PATH"] = "/auth/callback"
+        os.environ["FASTMCP_SERVER_AUTH_AZURE_BASE_URL"] = "http://localhost:8000"
+        os.environ["FASTMCP_SERVER_AUTH_AZURE_REQUIRED_SCOPES"] = "User.Read,email,profile"
+
+        import fastmcp
+        
+        mcp = fastmcp.FastMCP("TestServer")
+
+        mcp.run()
+        """)
+
+        with TemporaryDirectory() as temp_dir:
+            server_file = Path(temp_dir) / "server.py"
+            server_file.write_text(script)
+
+            transport: PythonStdioTransport = PythonStdioTransport(
+                script_path=server_file
+            )
+
+            async with Client[PythonStdioTransport](transport=transport) as client:
+                tools = await client.list_tools()
+
+                assert tools == []
+
+        settings = Settings(
+            server_auth="fastmcp.server.auth.providers.azure.AzureProvider"
+        )
+
+        auth_class = settings.server_auth_class
+
+        assert auth_class is AzureProvider
