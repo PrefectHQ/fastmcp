@@ -14,7 +14,7 @@ NOTE:
 If you do not follow these steps, your Pull Request will be closed without review.
 -->
 
-- [ ] My change is related to issue #(issue number)
+- [ ] My change closes #(issue number)
 - [ ] I have followed the repository's development workflow
 - [ ] I have tested my changes manually and by adding relevant tests
 - [ ] I have performed all required documentation updates
