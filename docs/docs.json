@@ -186,6 +186,7 @@
                   "integrations/claude-code",
                   "integrations/claude-desktop",
                   "integrations/cursor",
+                  "integrations/gemini-cli",
                   "integrations/mcp-json-configuration"
                 ]
               },
