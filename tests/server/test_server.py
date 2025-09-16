@@ -35,6 +35,12 @@ class TestCreateServer:
         assert mcp.name.startswith("FastMCP-")
         assert mcp.instructions == "Server instructions"
 
+    async def test_change_instruction(self):
+        mcp = FastMCP(instructions="Server instructions")
+        assert mcp.instructions == "Server instructions"
+        mcp.instructions = "New instructions"
+        assert mcp.instructions == "New instructions"
+
     async def test_non_ascii_description(self):
         """Test that FastMCP handles non-ASCII characters in descriptions correctly"""
         mcp = FastMCP()

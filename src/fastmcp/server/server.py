@@ -329,6 +329,10 @@ class FastMCP(Generic[LifespanResultT]):
     def instructions(self) -> str | None:
         return self._mcp_server.instructions
 
+    @instructions.setter
+    def instructions(self, value: str | None) -> None:
+        self._mcp_server.instructions = value
+
     @property
     def version(self) -> str | None:
         return self._mcp_server.version
