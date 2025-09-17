@@ -1,5 +1,6 @@
 """Tests for response caching middleware."""
 
+import tempfile
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
@@ -14,6 +15,7 @@ from fastmcp.client import Client
 from fastmcp.server.middleware.caching import (
     CacheEntry,
     CacheStats,
+    DiskCache,
     InMemoryCache,
     ResponseCachingMiddleware,
 )
@@ -296,13 +298,30 @@ class TestResponseCachingMiddlewareIntegration:
     """Integration tests with real FastMCP server."""
 
     @pytest.fixture
-    def caching_server(self, tracking_calculator: TrackingCalculator):
+    async def disk_cache(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            yield DiskCache(path=temp_dir)
+
+    @pytest.fixture
+    async def in_memory_cache(self):
+        return InMemoryCache()
+
+    @pytest.fixture(params=["memory", "disk"])
+    async def caching_server(
+        self,
+        tracking_calculator: TrackingCalculator,
+        request,
+        disk_cache,
+        in_memory_cache,
+    ):
         """Create a FastMCP server for caching tests."""
         mcp = FastMCP("CachingTestServer")
 
-        mcp.add_middleware(
-            middleware=ResponseCachingMiddleware(cache_backend=InMemoryCache())
-        )
+        cache = disk_cache if request.param == "disk" else in_memory_cache
+
+        response_caching_middleware = ResponseCachingMiddleware(cache_backend=cache)
+
+        mcp.add_middleware(middleware=response_caching_middleware)
 
         tracking_calculator.add_tools(mcp)
 

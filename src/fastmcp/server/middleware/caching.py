@@ -3,12 +3,16 @@ import json
 from datetime import datetime, timedelta, timezone
 from typing import Any, ClassVar, Protocol
 
+from diskcache import Cache as DiskCacheClient
 from mcp.types import CallToolRequestParams, ContentBlock
 from pydantic import BaseModel, ConfigDict
-from typing_extensions import Self
+from typing_extensions import Self, overload, runtime_checkable
 
 from fastmcp.server.middleware.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.tools.tool import ToolResult
+
+ONE_HOUR_IN_SECONDS = 3600
+ONE_GB_IN_BYTES = 1024 * 1024 * 1024
 
 
 class CacheEntry(BaseModel):
@@ -48,18 +52,49 @@ class CacheEntry(BaseModel):
         )
 
 
+@runtime_checkable
 class CacheProtocol(Protocol):
     """A protocol for a cache client."""
 
-    async def get(self, key: str) -> ToolResult | None: ...
+    async def get(self, key: str) -> ToolResult | None:
+        """Get a value from the cache."""
 
-    async def set(self, key: str, value: ToolResult, ttl: int) -> None: ...
+    async def set(self, key: str, value: ToolResult, ttl: int) -> None:
+        """Set a value in the cache."""
 
-    async def delete(self, key: str) -> None: ...
+    async def delete(self, key: str) -> None:
+        """Delete a value from the cache."""
 
-    async def setup(self) -> None: ...
 
-    async def clear(self) -> None: ...
+class DiskCache(CacheProtocol):
+    """A caching client that uses the DiskCache library to cache to disk."""
+
+    @overload
+    def __init__(self, disk_cache: DiskCacheClient):
+        """Initialize the disk cache with a diskcache client."""
+
+    @overload
+    def __init__(self, path: str, size_limit: int = ONE_GB_IN_BYTES):
+        """Initialize a 1GB disk cache at the provided path."""
+
+    def __init__(
+        self,
+        disk_cache: DiskCacheClient | None = None,
+        path: str | None = None,
+        size_limit: int = ONE_GB_IN_BYTES,
+    ):
+        self._cache = disk_cache or DiskCacheClient(
+            directory=path, size_limit=size_limit
+        )
+
+    async def get(self, key: str) -> ToolResult | None:
+        return self._cache.get(key)
+
+    async def set(self, key: str, value: ToolResult, ttl: int) -> None:
+        self._cache.set(key, value, expire=ttl)
+
+    async def delete(self, key: str) -> None:
+        self._cache.delete(key)
 
 
 class InMemoryCache(CacheProtocol):
@@ -121,14 +156,24 @@ class ResponseCachingMiddleware(Middleware):
 
     def __init__(
         self,
-        cache_backend: CacheProtocol,
+        cache_backend: CacheProtocol | None = None,
         included_tools: list[str] | None = None,
         excluded_tools: list[str] | None = None,
-        default_ttl: int = 3600,
+        default_ttl: int = ONE_HOUR_IN_SECONDS,
     ):
+        """Initialize the response caching middleware.
+
+        Args:
+            cache_backend: The cache backend to use. If None, an in-memory cache is used.
+            included_tools: The tools to cache responses from. If None, all tools are cached.
+            excluded_tools: The tools to not cache responses from. If None, no tools are excluded.
+            default_ttl: The default TTL for cached responses. Defaults to one hour.
+        """
         self._default_ttl = default_ttl
-        self._backend = cache_backend
+        self._backend = cache_backend or InMemoryCache()
+
         self._stats = CacheStats(hits=0, misses=0)
+
         self._included_tools = included_tools
         self._excluded_tools = excluded_tools
 
