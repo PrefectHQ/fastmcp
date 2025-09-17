@@ -1,17 +1,14 @@
 import hashlib
 import json
 from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING, Any, ClassVar, Protocol
+from typing import Any, ClassVar, Protocol
 
+from mcp.types import CallToolRequestParams, ContentBlock
 from pydantic import BaseModel, ConfigDict
 from typing_extensions import Self
 
 from fastmcp.server.middleware.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.tools.tool import ToolResult
-
-if TYPE_CHECKING:
-    import mcp.types as mt
-    from mcp.types import ContentBlock
 
 
 class CacheEntry(BaseModel):
@@ -137,8 +134,8 @@ class ResponseCachingMiddleware(Middleware):
 
     async def on_call_tool(
         self,
-        context: MiddlewareContext[mt.CallToolRequestParams],
-        call_next: CallNext[mt.CallToolRequestParams, Any],
+        context: MiddlewareContext[CallToolRequestParams],
+        call_next: CallNext[CallToolRequestParams, Any],
     ) -> Any:
         if not self._should_cache_tool(context.message.name):
             return await call_next(context)
@@ -164,14 +161,14 @@ class ResponseCachingMiddleware(Middleware):
             return False
         return True
 
-    def _make_cache_key(self, msg: mt.CallToolRequestParams) -> str:
+    def _make_cache_key(self, msg: CallToolRequestParams) -> str:
         raw = f"{self._get_tool_key(msg)}:{self._get_tool_arguments_str(msg)}"
         return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
-    def _get_tool_key(self, msg: mt.CallToolRequestParams) -> str:
+    def _get_tool_key(self, msg: CallToolRequestParams) -> str:
         return msg.name
 
-    def _get_tool_arguments_str(self, msg: mt.CallToolRequestParams) -> str:
+    def _get_tool_arguments_str(self, msg: CallToolRequestParams) -> str:
         if msg.arguments is None:
             return "null"
 
