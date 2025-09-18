@@ -314,6 +314,18 @@ class SharedMethodSettings(TypedDict):
     ttl: NotRequired[int]
 
 
+class ListToolsSettings(SharedMethodSettings):
+    pass
+
+
+class ListResourcesSettings(SharedMethodSettings):
+    pass
+
+
+class ListPromptsSettings(SharedMethodSettings):
+    pass
+
+
 class CallToolSettings(SharedMethodSettings):
     """Extra configuration options for Tool-related caching."""
 
@@ -321,17 +333,25 @@ class CallToolSettings(SharedMethodSettings):
     excluded_tools: NotRequired[list[str]]
 
 
+class ReadResourceSettings(SharedMethodSettings):
+    pass
+
+
+class GetPromptSettings(SharedMethodSettings):
+    pass
+
+
 class MethodSettings(TypedDict):
     """Config for the response caching middleware methods."""
 
-    list_tools: NotRequired[SharedMethodSettings]
+    list_tools: NotRequired[ListToolsSettings]
     call_tool: NotRequired[CallToolSettings]
 
-    list_resources: NotRequired[SharedMethodSettings]
-    read_resource: NotRequired[SharedMethodSettings]
+    list_resources: NotRequired[ListResourcesSettings]
+    read_resource: NotRequired[ReadResourceSettings]
 
-    list_prompts: NotRequired[SharedMethodSettings]
-    get_prompt: NotRequired[SharedMethodSettings]
+    list_prompts: NotRequired[ListPromptsSettings]
+    get_prompt: NotRequired[GetPromptSettings]
 
 
 MethodSettingsType = TypeVar("MethodSettingsType", bound=SharedMethodSettings)

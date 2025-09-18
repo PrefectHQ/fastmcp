@@ -442,6 +442,47 @@ mcp.add_middleware(DetailedTimingMiddleware())
 
 The built-in versions include custom logger support, proper formatting, and **DetailedTimingMiddleware** provides operation-specific hooks like `on_call_tool` and `on_read_resource` for granular timing.
 
+### Caching Middleware
+
+Caching middleware is essential for improving performance and reducing server load. FastMCP provides caching middleware at `fastmcp.server.middleware.caching`.
+
+Here's how to use the full version:
+
+```python
+from fastmcp.server.middleware.caching import ResponseCachingMiddleware
+
+mcp.add_middleware(ResponseCachingMiddleware())
+```
+
+Out of the box, it caches call/list tool, resources, and prompts. Sending a notification of a tool/resource/prompt change will invalidate the cache for the affected method.
+
+Alternatively, it can be configured to only cache specific methods, for example, only caching list tools and only caching calls to `tool1`:
+
+```python
+from fastmcp.server.middleware.caching import ResponseCachingMiddleware
+
+mcp.add_middleware(ResponseCachingMiddleware(
+    method_settings=MethodSettings(
+        call_tool=CallToolSettings(
+            included_tools=["tool1"],
+        ),
+        list_tools=ListToolsSettings(
+            ttl=30,
+        )
+    )
+))
+```
+
+It can also be configured to cache to disk:
+
+```python
+from fastmcp.server.middleware.caching import ResponseCachingMiddleware, DiskCache
+
+mcp.add_middleware(ResponseCachingMiddleware(
+    cache_backend=DiskCache(path="cache"),
+))
+```
+
 ### Logging Middleware
 
 Request and response logging is crucial for debugging, monitoring, and understanding usage patterns in your MCP server. FastMCP provides comprehensive logging middleware at `fastmcp.server.middleware.logging`. 

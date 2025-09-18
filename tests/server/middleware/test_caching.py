@@ -493,7 +493,7 @@ class TestResponseCachingMiddleware:
         cache = InMemoryCache()
         middleware = ResponseCachingMiddleware(cache, max_item_size=100)
 
-        result = await middleware._store_in_cache_and_return(
+        await middleware._store_in_cache_and_return(
             context=MiddlewareContext(
                 method="tools/call",
                 message=mcp.types.CallToolRequestParams(name="test_tool"),
