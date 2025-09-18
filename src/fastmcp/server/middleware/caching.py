@@ -1,53 +1,106 @@
 import hashlib
 import json
+from collections import defaultdict
 from datetime import datetime, timedelta, timezone
-from typing import Any, ClassVar, Protocol
+from typing import Any, ClassVar, Generic, Protocol, TypedDict, TypeVar, cast
 
-from diskcache import Cache as DiskCacheClient
-from mcp.types import CallToolRequestParams, ContentBlock
-from pydantic import BaseModel, ConfigDict
-from typing_extensions import Self, overload, runtime_checkable
+import mcp.types
+from mcp.server.lowlevel.helper_types import ReadResourceContents
+from pydantic import BaseModel, ConfigDict, Field
+from typing_extensions import NotRequired, Self, overload, runtime_checkable
 
+from fastmcp.prompts.prompt import Prompt
+from fastmcp.resources.resource import Resource
 from fastmcp.server.middleware.middleware import CallNext, Middleware, MiddlewareContext
-from fastmcp.tools.tool import ToolResult
+from fastmcp.tools.tool import Tool, ToolResult
+from fastmcp.utilities.logging import get_logger
 
+try:
+    from cachetools import TLRUCache as MemoryCacheClient
+    from diskcache import Cache as DiskCacheClient
+except ImportError:
+    raise ImportError(
+        "fastmcp[caching] is required to use the caching middleware. Please install it with `pip install fastmcp[caching] or `uv add fastmcp[caching]`"
+    )
+
+logger = get_logger(__name__)
+
+# Constants
 ONE_HOUR_IN_SECONDS = 3600
+FIVE_MINUTES_IN_SECONDS = 300
+
 ONE_GB_IN_BYTES = 1024 * 1024 * 1024
+ONE_MB_IN_BYTES = 1024 * 1024
+
+GLOBAL_KEY = "__global__"
 
 
-class CacheEntry(BaseModel):
+CachableTypes = (
+    ToolResult
+    | list[Tool]
+    | list[Resource]
+    | list[Prompt]
+    | list[ReadResourceContents]
+    | mcp.types.GetPromptResult
+)
+
+CachableTypeVar = TypeVar("CachableTypeVar", bound=CachableTypes)
+
+
+def make_collection_key(collection: str, key: str) -> str:
+    return f"{collection}:{key}"
+
+
+class CachedPrompt(Prompt):
+    """A cached prompt."""
+
+    def render(
+        self, arguments: dict[str, Any] | None = None
+    ) -> list[mcp.types.PromptMessage]:
+        raise NotImplementedError(
+            "Render called on CachedPrompt, this should never happen"
+        )
+
+
+class CachedResource(Resource):
+    """A cached resource."""
+
+    def read(self) -> str | bytes:
+        raise NotImplementedError(
+            "Read called on CachedResource, this should never happen"
+        )
+
+
+class CacheEntry(BaseModel, Generic[CachableTypeVar]):
     """A cache entry."""
 
-    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+    model_config: ClassVar[ConfigDict] = ConfigDict(
+        frozen=True, arbitrary_types_allowed=True
+    )
 
     key: str
-
-    content: list[ContentBlock] | Any | None
-    structured_content: str | None
+    collection: str
+    value: CachableTypeVar
 
     created_at: datetime
+
+    ttl: int
+
     expires_at: datetime
 
     def is_expired(self) -> bool:
         return datetime.now(tz=timezone.utc) > self.expires_at
 
-    def to_tool_result(self) -> ToolResult:
-        return ToolResult(
-            content=self.content,
-            structured_content=json.loads(self.structured_content)
-            if self.structured_content is not None
-            else None,
-        )
-
     @classmethod
-    def from_tool_result(cls, key: str, value: ToolResult, ttl: int) -> Self:
+    def from_value(
+        cls, collection: str, key: str, value: CachableTypeVar, ttl: int
+    ) -> Self:
         return cls(
+            collection=collection,
             key=key,
-            content=value.content,
-            structured_content=json.dumps(value.structured_content)
-            if value.structured_content is not None
-            else None,
+            value=value,
             created_at=datetime.now(tz=timezone.utc),
+            ttl=ttl,
             expires_at=datetime.now(tz=timezone.utc) + timedelta(seconds=ttl),
         )
 
@@ -56,79 +109,155 @@ class CacheEntry(BaseModel):
 class CacheProtocol(Protocol):
     """A protocol for a cache client."""
 
-    async def get(self, key: str) -> ToolResult | None:
+    async def get_entry(
+        self,
+        collection: str,
+        key: str,
+    ) -> CacheEntry[CachableTypes] | None:
+        """Get a cache entry from the cache."""
+
+    async def get_value(
+        self,
+        collection: str,
+        key: str,
+    ) -> CachableTypes | None:
         """Get a value from the cache."""
 
-    async def set(self, key: str, value: ToolResult, ttl: int) -> None:
+        if not (cache_entry := await self.get_entry(collection=collection, key=key)):
+            return None
+
+        return cache_entry.value
+
+    async def set_entry(
+        self,
+        cache_entry: CacheEntry[CachableTypes],
+    ) -> None:
         """Set a value in the cache."""
 
-    async def delete(self, key: str) -> None:
+    async def set_value(
+        self,
+        collection: str,
+        key: str,
+        value: CachableTypes,
+        ttl: int,
+    ) -> None:
+        """Set a value in the cache."""
+
+        await self.set_entry(
+            cache_entry=CacheEntry.from_value(
+                collection=collection, key=key, value=value, ttl=ttl
+            )
+        )
+
+    async def delete(
+        self,
+        collection: str,
+        key: str,
+    ) -> None:
         """Delete a value from the cache."""
+
+    def make_collection_key(self, collection: str, key: str) -> str:
+        return f"{collection}:{key}"
 
 
 class DiskCache(CacheProtocol):
     """A caching client that uses the DiskCache library to cache to disk."""
 
     @overload
-    def __init__(self, disk_cache: DiskCacheClient):
+    def __init__(self, *, disk_cache: DiskCacheClient):
         """Initialize the disk cache with a diskcache client."""
 
     @overload
-    def __init__(self, path: str, size_limit: int = ONE_GB_IN_BYTES):
+    def __init__(self, path: str, *, size_limit: int = ONE_GB_IN_BYTES):
         """Initialize a 1GB disk cache at the provided path."""
 
     def __init__(
         self,
-        disk_cache: DiskCacheClient | None = None,
         path: str | None = None,
+        *,
+        disk_cache: DiskCacheClient | None = None,
         size_limit: int = ONE_GB_IN_BYTES,
     ):
         self._cache = disk_cache or DiskCacheClient(
             directory=path, size_limit=size_limit
         )
 
-    async def get(self, key: str) -> ToolResult | None:
-        return self._cache.get(key)
+    async def get_entry(
+        self, collection: str, key: str
+    ) -> CacheEntry[CachableTypes] | None:
+        collection_key = self.make_collection_key(collection=collection, key=key)
 
-    async def set(self, key: str, value: ToolResult, ttl: int) -> None:
-        self._cache.set(key, value, expire=ttl)
+        cache_entry = self._cache.get(key=collection_key)
 
-    async def delete(self, key: str) -> None:
-        self._cache.delete(key)
+        if cache_entry is None:
+            return None
+
+        return cache_entry  # pyright: ignore[reportReturnType]
+
+    async def set_entry(
+        self,
+        cache_entry: CacheEntry[CachableTypes],
+    ) -> None:
+        collection_key = self.make_collection_key(
+            collection=cache_entry.collection, key=cache_entry.key
+        )
+
+        self._cache.set(key=collection_key, value=cache_entry, expire=cache_entry.ttl)
+
+    async def delete(self, collection: str, key: str) -> None:
+        collection_key = self.make_collection_key(collection=collection, key=key)
+
+        self._cache.delete(key=collection_key)
+
+
+DEFAULT_MEMORY_CACHE_MAX_ENTRIES = 1000
+
+
+def _memory_cache_ttu(_key: Any, value: CacheEntry[CachableTypes], now: float) -> float:
+    return now + value.ttl
+
+
+def _memory_cache_getsizeof(value: CacheEntry[CachableTypes]) -> int:
+    return 1
 
 
 class InMemoryCache(CacheProtocol):
     """A simple in-memory cache."""
 
-    def __init__(self, max_size: int = 1000):
-        self._cache: dict[str, CacheEntry] = {}
-        self._max_size = max_size
+    def __init__(self, max_entries: int = DEFAULT_MEMORY_CACHE_MAX_ENTRIES):
+        """Initialize the in-memory cache.
 
-    async def get(self, key: str) -> ToolResult | None:
-        cached_entry = self._cache.get(key)
-
-        if cached_entry is None:
-            return None
-
-        if cached_entry.is_expired():
-            self._cache.pop(key, None)
-            return None
-
-        return ToolResult(
-            content=cached_entry.content,
-            structured_content=json.loads(cached_entry.structured_content)
-            if cached_entry.structured_content is not None
-            else None,
+        Args:
+            max_entries: The maximum number of entries to store in the cache. Defaults to 1000.
+        """
+        self.max_entries = max_entries
+        self._cache = MemoryCacheClient(
+            maxsize=max_entries,
+            ttu=_memory_cache_ttu,
+            getsizeof=_memory_cache_getsizeof,
         )
 
-    async def set(self, key: str, value: Any, ttl: int) -> None:
-        if len(self._cache) >= self._max_size:
-            self._cache.pop(next(iter(self._cache)))
+    async def get_entry(
+        self, collection: str, key: str
+    ) -> CacheEntry[CachableTypes] | None:
+        collection_key = self.make_collection_key(collection=collection, key=key)
 
-        self._cache[key] = CacheEntry.from_tool_result(key=key, value=value, ttl=ttl)
+        return self._cache.get(collection_key)
 
-    async def delete(self, key: str) -> None:
-        self._cache.pop(key, None)
+    async def set_entry(
+        self,
+        cache_entry: CacheEntry[CachableTypes],
+    ) -> None:
+        collection_key = self.make_collection_key(
+            collection=cache_entry.collection, key=cache_entry.key
+        )
+
+        self._cache[collection_key] = cache_entry
+
+    async def delete(self, collection: str, key: str) -> None:
+        collection_key = self.make_collection_key(collection=collection, key=key)
+
+        self._cache.pop(collection_key, None)
 
     async def setup(self) -> None:
         return None
@@ -137,11 +266,97 @@ class InMemoryCache(CacheProtocol):
         self._cache.clear()
 
 
+class CacheMethodStats(BaseModel):
+    """Stats for a cache method."""
+
+    hits: int = Field(default=0)
+    misses: int = Field(default=0)
+    too_big: int = Field(default=0)
+
+
 class CacheStats(BaseModel):
     """Stats for the cache."""
 
-    hits: int
-    misses: int
+    collections: dict[str, CacheMethodStats] = Field(
+        default_factory=lambda: defaultdict[str, CacheMethodStats](CacheMethodStats)
+    )
+
+    def get_misses(self, collection: str) -> int:
+        return self.collections[collection].misses
+
+    def get_hits(self, collection: str) -> int:
+        return self.collections[collection].hits
+
+    def get_too_big(self, collection: str) -> int:
+        return self.collections[collection].too_big
+
+    def mark_miss(self, collection: str) -> None:
+        self.collections[collection].misses += 1
+
+    def mark_hit(self, collection: str) -> None:
+        self.collections[collection].hits += 1
+
+    def mark_too_big(self, collection: str) -> None:
+        self.collections[collection].too_big += 1
+
+
+class SharedMethodSettings(TypedDict):
+    """Shared config for a cache method."""
+
+    ttl: NotRequired[int]
+
+
+class CallToolSettings(SharedMethodSettings):
+    """Extra configuration options for Tool-related caching."""
+
+    included_tools: NotRequired[list[str]]
+    excluded_tools: NotRequired[list[str]]
+
+
+class MethodSettings(TypedDict):
+    """Config for the response caching middleware methods."""
+
+    list_tools: NotRequired[SharedMethodSettings]
+    call_tool: NotRequired[CallToolSettings]
+
+    list_resources: NotRequired[SharedMethodSettings]
+    read_resource: NotRequired[SharedMethodSettings]
+
+    list_prompts: NotRequired[SharedMethodSettings]
+    get_prompt: NotRequired[SharedMethodSettings]
+
+
+MethodSettingsType = TypeVar("MethodSettingsType", bound=SharedMethodSettings)
+
+MCP_METHOD_TO_METHOD_SETTINGS_KEY = {
+    "tools/list": "list_tools",
+    "tools/call": "call_tool",
+    "resources/list": "list_resources",
+    "resources/read": "read_resource",
+    "prompts/list": "list_prompts",
+    "prompts/get": "get_prompt",
+}
+
+DEFAULT_METHOD_SETTINGS: MethodSettings = MethodSettings(
+    list_tools=SharedMethodSettings(
+        ttl=FIVE_MINUTES_IN_SECONDS,
+    ),
+    call_tool=CallToolSettings(
+        ttl=ONE_HOUR_IN_SECONDS,
+    ),
+    list_resources=SharedMethodSettings(
+        ttl=FIVE_MINUTES_IN_SECONDS,
+    ),
+    list_prompts=SharedMethodSettings(
+        ttl=FIVE_MINUTES_IN_SECONDS,
+    ),
+    read_resource=SharedMethodSettings(
+        ttl=ONE_HOUR_IN_SECONDS,
+    ),
+    get_prompt=SharedMethodSettings(
+        ttl=ONE_HOUR_IN_SECONDS,
+    ),
+)
 
 
 class ResponseCachingMiddleware(Middleware):
@@ -152,68 +367,339 @@ class ResponseCachingMiddleware(Middleware):
     - Cache key derived from tool name and arguments.
     """
 
-    _stats: CacheStats
-
     def __init__(
         self,
         cache_backend: CacheProtocol | None = None,
-        included_tools: list[str] | None = None,
-        excluded_tools: list[str] | None = None,
+        method_settings: MethodSettings | None = None,
         default_ttl: int = ONE_HOUR_IN_SECONDS,
+        max_item_size: int | None = None,
     ):
         """Initialize the response caching middleware.
 
         Args:
             cache_backend: The cache backend to use. If None, an in-memory cache is used.
-            included_tools: The tools to cache responses from. If None, all tools are cached.
-            excluded_tools: The tools to not cache responses from. If None, no tools are excluded.
+            method_settings: The settings for the middleware. If None, the default settings are used.
             default_ttl: The default TTL for cached responses. Defaults to one hour.
+            max_item_size: The maximum size of an item to cache. Defaults to no size limit.
         """
-        self._default_ttl = default_ttl
-        self._backend = cache_backend or InMemoryCache()
+        self._default_ttl: int = default_ttl
+        self._backend: CacheProtocol = cache_backend or InMemoryCache()
+        self._max_item_size: int | None = max_item_size
 
-        self._stats = CacheStats(hits=0, misses=0)
+        self._stats = CacheStats()
 
-        self._included_tools = included_tools
-        self._excluded_tools = excluded_tools
+        self.method_settings: MethodSettings = (
+            method_settings or DEFAULT_METHOD_SETTINGS
+        )
+
+    async def on_list_tools(
+        self,
+        context: MiddlewareContext[mcp.types.ListToolsRequest],
+        call_next: CallNext[mcp.types.ListToolsRequest, list[Tool]],
+    ) -> list[Tool]:
+        if self._should_bypass_caching(context=context):
+            return await call_next(context=context)
+
+        if cached_value := await self._get_cache(
+            context=context,
+            call_next=call_next,
+            key=None,
+        ):
+            return cached_value
+
+        result: list[Tool] = await call_next(context)
+
+        # Convert tool subclasses to Tool objects
+        result = [
+            Tool(
+                name=tool.name,
+                title=tool.title,
+                description=tool.description,
+                parameters=tool.parameters,
+                output_schema=tool.output_schema,
+                annotations=tool.annotations,
+                meta=tool.meta,
+                tags=tool.tags,
+            )
+            for tool in result
+        ]
+
+        return await self._store_in_cache_and_return(
+            context=context,
+            key=None,
+            value=result,
+        )
+
+    async def on_list_resources(
+        self,
+        context: MiddlewareContext[mcp.types.ListResourcesRequest],
+        call_next: CallNext[mcp.types.ListResourcesRequest, list[Resource]],
+    ) -> list[Resource]:
+        if self._should_bypass_caching(context=context):
+            return await call_next(context)
+
+        if cached_value := await self._get_cache(
+            context=context,
+            call_next=call_next,
+            key=None,
+        ):
+            return cached_value
+
+        result: list[Resource] = await call_next(context)
+
+        result = [
+            CachedResource(
+                **resource.model_dump(exclude={"fn"}),
+            )
+            for resource in result
+        ]
+
+        return await self._store_in_cache_and_return(
+            context=context,
+            key=None,
+            value=result,
+        )
+
+    async def on_list_prompts(
+        self,
+        context: MiddlewareContext[mcp.types.ListPromptsRequest],
+        call_next: CallNext[mcp.types.ListPromptsRequest, list[Prompt]],
+    ) -> list[Prompt]:
+        if self._should_bypass_caching(context=context):
+            return await call_next(context)
+
+        if cached_value := await self._get_cache(
+            context=context,
+            call_next=call_next,
+            key=None,
+        ):
+            return cached_value
+
+        result: list[Prompt] = await call_next(context)
+
+        result = [
+            CachedPrompt(
+                name=prompt.name,
+                title=prompt.title,
+                description=prompt.description,
+                arguments=prompt.arguments,
+                meta=prompt.meta,
+            )
+            for prompt in result
+        ]
+
+        return await self._store_in_cache_and_return(
+            context=context,
+            key=None,
+            value=result,
+        )
 
     async def on_call_tool(
         self,
-        context: MiddlewareContext[CallToolRequestParams],
-        call_next: CallNext[CallToolRequestParams, Any],
+        context: MiddlewareContext[mcp.types.CallToolRequestParams],
+        call_next: CallNext[mcp.types.CallToolRequestParams, ToolResult],
     ) -> Any:
-        if not self._should_cache_tool(context.message.name):
+        if self._should_bypass_caching(context=context):
+            return await call_next(context=context)
+
+        if not self._matches_tool_cache_settings(context=context):
+            return await call_next(context=context)
+
+        return await self._cached_call_next(
+            context=context,
+            call_next=call_next,
+            key=self._make_cache_key(msg=context.message),
+        )
+
+    async def on_read_resource(
+        self,
+        context: MiddlewareContext[mcp.types.ReadResourceRequestParams],
+        call_next: CallNext[
+            mcp.types.ReadResourceRequestParams, list[ReadResourceContents]
+        ],
+    ) -> list[ReadResourceContents]:
+        if self._should_bypass_caching(context=context):
+            return await call_next(context=context)
+
+        return await self._cached_call_next(
+            context=context,
+            call_next=call_next,
+        )
+
+    async def on_get_prompt(
+        self,
+        context: MiddlewareContext[mcp.types.GetPromptRequestParams],
+        call_next: CallNext[
+            mcp.types.GetPromptRequestParams, mcp.types.GetPromptResult
+        ],
+    ) -> mcp.types.GetPromptResult:
+        if self._should_bypass_caching(context=context):
             return await call_next(context)
 
-        key = self._make_cache_key(context.message)
+        return await self._cached_call_next(
+            context=context,
+            call_next=call_next,
+            key=None,
+        )
 
-        if cached_entry := await self._backend.get(key):
-            self._stats.hits += 1
-            return cached_entry
+    async def on_notification(
+        self,
+        context: MiddlewareContext[mcp.types.Notification],
+        call_next: CallNext[mcp.types.Notification, Any],
+    ) -> Any:
+        if isinstance(context.message, mcp.types.ToolListChangedNotification):
+            await self._backend.delete(collection="tools/list", key=GLOBAL_KEY)
 
-        # Cache miss: call downstream
-        self._stats.misses += 1
-        result = await call_next(context)
+        return await call_next(context)
 
-        await self._backend.set(key, result, self._default_ttl)
+    async def _cached_call_next(
+        self,
+        context: MiddlewareContext[Any],
+        call_next: CallNext[Any, CachableTypeVar],
+        key: str | None = None,
+    ) -> CachableTypeVar:
+        if key is None:
+            key = GLOBAL_KEY
 
-        return result
+        if cached_value := await self._get_cache(
+            context=context,
+            call_next=call_next,
+            key=key,
+        ):
+            return cached_value
 
-    def _should_cache_tool(self, tool_name: str) -> bool:
-        if self._excluded_tools is not None and tool_name in self._excluded_tools:
-            return False
-        if self._included_tools is not None and tool_name not in self._included_tools:
-            return False
+        result: CachableTypeVar = await call_next(context)
+
+        return await self._store_in_cache_and_return(
+            context=context,
+            key=key,
+            value=result,
+        )
+
+    async def _get_cache(
+        self,
+        context: MiddlewareContext[Any],
+        call_next: CallNext[Any, CachableTypeVar],
+        key: str | None = None,
+    ) -> CachableTypeVar | None:
+        if key is None:
+            key = GLOBAL_KEY
+
+        if not (collection := context.method):
+            logger.warning("No method found on context, skipping cache")
+            return None
+
+        if cached_value := await self._backend.get_value(
+            collection=collection, key=key
+        ):
+            self._stats.mark_hit(collection=collection)
+            return cast(CachableTypeVar, cached_value)
+
+        self._stats.mark_miss(collection=collection)
+
+        return None
+
+    async def _store_in_cache_and_return(
+        self,
+        context: MiddlewareContext[Any],
+        key: str | None,
+        value: CachableTypeVar,
+    ) -> CachableTypeVar:
+        if key is None:
+            key = GLOBAL_KEY
+
+        if not (collection := context.method):
+            logger.warning("No method found on context, skipping cache")
+            return value
+
+        if self._max_item_size is not None:
+            size = 0
+
+            for item in dump_if_base_model(value):
+                size += len(item.encode("utf-8"))
+
+            if size > self._max_item_size:
+                self._stats.mark_too_big(collection=collection)
+                return value
+
+        ttl: int = self._get_cache_ttl(context=context)
+
+        await self._backend.set_value(
+            collection=collection,
+            key=key,
+            value=value,
+            ttl=ttl,
+        )
+
+        return value
+
+    def _matches_tool_cache_settings(
+        self, context: MiddlewareContext[mcp.types.CallToolRequestParams]
+    ) -> bool:
+        tool_name = context.message.name
+
+        tool_call_cache_settings: CallToolSettings | None = self._get_cache_settings(
+            context=context,
+            settings_type=CallToolSettings,
+        )
+
+        if not tool_call_cache_settings:
+            return True
+
+        if included_tools := tool_call_cache_settings.get("included_tools"):
+            if tool_name not in included_tools:
+                return False
+
+        if excluded_tools := tool_call_cache_settings.get("excluded_tools"):
+            if tool_name in excluded_tools:
+                return False
+
         return True
 
-    def _make_cache_key(self, msg: CallToolRequestParams) -> str:
+    def _get_cache_settings(
+        self,
+        context: MiddlewareContext[Any],
+        settings_type: type[MethodSettingsType] = SharedMethodSettings,
+    ) -> MethodSettingsType | None:
+        if not context.method:
+            return None
+
+        method_settings_key = MCP_METHOD_TO_METHOD_SETTINGS_KEY.get(
+            context.method, None
+        )
+
+        if (
+            method_settings_key is None
+            or method_settings_key not in self.method_settings
+        ):
+            return None
+
+        return cast(MethodSettingsType, self.method_settings[method_settings_key])
+
+    def _get_cache_ttl(self, context: MiddlewareContext[Any]) -> int:
+        settings: SharedMethodSettings | None = self._get_cache_settings(
+            context=context
+        )
+
+        if not settings or "ttl" not in settings:
+            return self._default_ttl
+
+        return settings["ttl"]
+
+    def _should_bypass_caching(self, context: MiddlewareContext[Any]) -> bool:
+        if not self._get_cache_settings(context=context):
+            return True
+
+        return False
+
+    def _make_cache_key(self, msg: mcp.types.CallToolRequestParams) -> str:
         raw = f"{self._get_tool_key(msg)}:{self._get_tool_arguments_str(msg)}"
         return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
-    def _get_tool_key(self, msg: CallToolRequestParams) -> str:
+    def _get_tool_key(self, msg: mcp.types.CallToolRequestParams) -> str:
         return msg.name
 
-    def _get_tool_arguments_str(self, msg: CallToolRequestParams) -> str:
+    def _get_tool_arguments_str(self, msg: mcp.types.CallToolRequestParams) -> str:
         if msg.arguments is None:
             return "null"
 
@@ -222,3 +708,17 @@ class ResponseCachingMiddleware(Middleware):
 
         except TypeError:
             return repr(msg.arguments)
+
+
+def dump_if_base_model(value: Any) -> list[str]:
+    if isinstance(value, BaseModel):
+        return [value.model_dump_json()]
+
+    if isinstance(value, list):
+        return [
+            item
+            for sublist in [dump_if_base_model(val) for val in value]
+            for item in sublist
+        ]
+
+    return [json.dumps(value, sort_keys=True, separators=(",", ":"))]
