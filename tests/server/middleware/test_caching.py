@@ -21,6 +21,7 @@ from fastmcp.client import Client
 from fastmcp.client.client import CallToolResult
 from fastmcp.client.transports import FastMCPTransport
 from fastmcp.prompts.prompt import FunctionPrompt
+from fastmcp.resources.resource import Resource
 from fastmcp.server.middleware.caching import (
     CachableTypes,
     CachedPrompt,
@@ -56,6 +57,10 @@ SAMPLE_GET_PROMPT_RESULT = mcp.types.GetPromptResult(
 SAMPLE_TOOL = Tool(name="test_tool", parameters={"param1": "value1", "param2": 42})
 SAMPLE_TOOL_RESULT = ToolResult(
     content=[TextContent(type="text", text="test_text")],
+    structured_content={"result": "test_result"},
+)
+SAMPLE_TOOL_RESULT_LARGE = ToolResult(
+    content=[TextContent(type="text", text="test_text" * 100)],
     structured_content={"result": "test_result"},
 )
 
@@ -99,7 +104,7 @@ def dump_mcp_types(
     | ToolResult
     | Sequence[BaseModel]
     | Sequence[ToolResult]
-    | list[ReadResourceContents],
+    | Sequence[ReadResourceContents],
 ) -> list[dict[str, Any]]:
     if isinstance(model, Sequence):
         return [dump_mcp_type(model=m) for m in model]
@@ -171,18 +176,26 @@ class TrackingCalculator:
         )
 
     def add_resources(self, fastmcp: FastMCP, prefix: str = ""):
-        fastmcp.add_resource_fn(
-            fn=self.get_add_calls, uri="resource://add_calls", name=f"{prefix}add_calls"
+        fastmcp.add_resource(
+            resource=Resource.from_function(
+                fn=self.get_add_calls,
+                uri="resource://add_calls",
+                name=f"{prefix}add_calls",
+            )
         )
-        fastmcp.add_resource_fn(
-            fn=self.get_multiply_calls,
-            uri="resource://multiply_calls",
-            name=f"{prefix}multiply_calls",
+        fastmcp.add_resource(
+            resource=Resource.from_function(
+                fn=self.get_multiply_calls,
+                uri="resource://multiply_calls",
+                name=f"{prefix}multiply_calls",
+            )
         )
-        fastmcp.add_resource_fn(
-            fn=self.get_crazy_calls,
-            uri="resource://crazy_calls",
-            name=f"{prefix}crazy_calls",
+        fastmcp.add_resource(
+            resource=Resource.from_function(
+                fn=self.get_crazy_calls,
+                uri="resource://crazy_calls",
+                name=f"{prefix}crazy_calls",
+            )
         )
 
 
@@ -357,7 +370,9 @@ class TestCacheImplementations:
             value=value,
             ttl=3600,
         )
-        result = await cache.get_value(collection="test_collection", key="test_key")
+        result: CachableTypes | None = await cache.get_value(
+            collection="test_collection", key="test_key"
+        )
 
         assert result is not None
 
@@ -373,7 +388,9 @@ class TestCacheImplementations:
             value=SAMPLE_TOOL_RESULT,
             ttl=3600,
         )
-        result = await cache.get_value(collection="test_collection", key="test_key")
+        result: CachableTypes | None = await cache.get_value(
+            collection="test_collection", key="test_key"
+        )
 
         assert result is not None
         assert dump_mcp_types(model=result) == dump_mcp_types(model=SAMPLE_TOOL_RESULT)
@@ -471,20 +488,63 @@ class TestResponseCachingMiddleware:
             is result
         )
 
+    async def test_large_value(self):
+        """Test that we can set and get a large value."""
+        cache = InMemoryCache()
+        middleware = ResponseCachingMiddleware(cache, max_item_size=100)
+
+        result = await middleware._store_in_cache_and_return(
+            context=MiddlewareContext(
+                method="tools/call",
+                message=mcp.types.CallToolRequestParams(name="test_tool"),
+            ),
+            key="test_key",
+            value=SAMPLE_TOOL_RESULT_LARGE,
+        )
+
+        assert middleware._stats.get_too_big("tools/call") == 1
+
     def test_cache_key_generation(self):
         """Test cache key generation."""
-        cache = InMemoryCache()
-        middleware = ResponseCachingMiddleware(cache)
+        from fastmcp.server.middleware.caching import (
+            _make_call_tool_cache_key,
+            _make_get_prompt_cache_key,
+            _make_read_resource_cache_key,
+        )
 
         msg = mcp.types.CallToolRequestParams(
             name="test_tool", arguments={"param1": "value1", "param2": 42}
         )
 
-        key = middleware._make_cache_key(msg)
+        key = _make_call_tool_cache_key(msg)
 
         # Should be a SHA256 hash
         assert len(key) == 64
-        assert all(c in "0123456789abcdef" for c in key)
+        assert key == snapshot(
+            "7fa3d5c7967a202457eeca0731709fd87ec98546ddaee829ee86ca54b1858c59"
+        )
+
+        msg = mcp.types.ReadResourceRequestParams(
+            uri=AnyUrl("https://test_uri"),
+        )
+
+        key = _make_read_resource_cache_key(msg)
+
+        assert len(key) == 64
+        assert key == snapshot(
+            "e34cc47c03ed1ad54f02501d95ecc463b65646568961c97ca4b730cb274e9d42"
+        )
+
+        msg = mcp.types.GetPromptRequestParams(
+            name="test_prompt", arguments={"param1": "value1"}
+        )
+
+        key = _make_get_prompt_cache_key(msg)
+
+        assert len(key) == 64
+        assert key == snapshot(
+            "6306ff84fd3ff247a4bd91271e9d727d7f051bba53fb2e3bf80958988c4baf57"
+        )
 
     async def test_cache_miss_and_hit(
         self,

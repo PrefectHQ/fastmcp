@@ -1,6 +1,7 @@
 import hashlib
 import json
 from collections import defaultdict
+from collections.abc import Sequence
 from datetime import datetime, timedelta, timezone
 from typing import Any, ClassVar, Generic, Protocol, TypedDict, TypeVar, cast
 
@@ -37,10 +38,10 @@ GLOBAL_KEY = "__global__"
 
 CachableTypes = (
     ToolResult
-    | list[Tool]
-    | list[Resource]
-    | list[Prompt]
-    | list[ReadResourceContents]
+    | Sequence[Tool]
+    | Sequence[Resource]
+    | Sequence[Prompt]
+    | Sequence[ReadResourceContents]
     | mcp.types.GetPromptResult
 )
 
@@ -69,6 +70,13 @@ class CachedResource(Resource):
         raise NotImplementedError(
             "Read called on CachedResource, this should never happen"
         )
+
+
+class CachedTool(Tool):
+    """A cached tool."""
+
+    def run(self, arguments: dict[str, Any]) -> ToolResult:
+        raise NotImplementedError("Run called on CachedTool, this should never happen")
 
 
 class CacheEntry(BaseModel, Generic[CachableTypeVar]):
@@ -328,6 +336,12 @@ class MethodSettings(TypedDict):
 
 MethodSettingsType = TypeVar("MethodSettingsType", bound=SharedMethodSettings)
 
+NOTIFICATION_TO_COLLECTION = {
+    mcp.types.ToolListChangedNotification: "tools/list",
+    mcp.types.ResourceListChangedNotification: "resources/list",
+    mcp.types.PromptListChangedNotification: "prompts/list",
+}
+
 MCP_METHOD_TO_METHOD_SETTINGS_KEY = {
     "tools/list": "list_tools",
     "tools/call": "call_tool",
@@ -401,9 +415,7 @@ class ResponseCachingMiddleware(Middleware):
             return await call_next(context=context)
 
         if cached_value := await self._get_cache(
-            context=context,
-            call_next=call_next,
-            key=None,
+            context=context, call_next=call_next, key=None
         ):
             return cached_value
 
@@ -411,7 +423,7 @@ class ResponseCachingMiddleware(Middleware):
 
         # Convert tool subclasses to Tool objects
         result = [
-            Tool(
+            CachedTool(
                 name=tool.name,
                 title=tool.title,
                 description=tool.description,
@@ -508,7 +520,7 @@ class ResponseCachingMiddleware(Middleware):
         return await self._cached_call_next(
             context=context,
             call_next=call_next,
-            key=self._make_cache_key(msg=context.message),
+            key=_make_call_tool_cache_key(msg=context.message),
         )
 
     async def on_read_resource(
@@ -524,6 +536,7 @@ class ResponseCachingMiddleware(Middleware):
         return await self._cached_call_next(
             context=context,
             call_next=call_next,
+            key=_make_read_resource_cache_key(msg=context.message),
         )
 
     async def on_get_prompt(
@@ -539,7 +552,7 @@ class ResponseCachingMiddleware(Middleware):
         return await self._cached_call_next(
             context=context,
             call_next=call_next,
-            key=None,
+            key=_make_get_prompt_cache_key(msg=context.message),
         )
 
     async def on_notification(
@@ -547,8 +560,8 @@ class ResponseCachingMiddleware(Middleware):
         context: MiddlewareContext[mcp.types.Notification],
         call_next: CallNext[mcp.types.Notification, Any],
     ) -> Any:
-        if isinstance(context.message, mcp.types.ToolListChangedNotification):
-            await self._backend.delete(collection="tools/list", key=GLOBAL_KEY)
+        if collection := NOTIFICATION_TO_COLLECTION.get(context.message):
+            await self._backend.delete(collection=collection, key=GLOBAL_KEY)
 
         return await call_next(context)
 
@@ -613,12 +626,7 @@ class ResponseCachingMiddleware(Middleware):
             return value
 
         if self._max_item_size is not None:
-            size = 0
-
-            for item in dump_if_base_model(value):
-                size += len(item.encode("utf-8"))
-
-            if size > self._max_item_size:
+            if get_size_of_value(value=value) > self._max_item_size:
                 self._stats.mark_too_big(collection=collection)
                 return value
 
@@ -692,33 +700,63 @@ class ResponseCachingMiddleware(Middleware):
 
         return False
 
-    def _make_cache_key(self, msg: mcp.types.CallToolRequestParams) -> str:
-        raw = f"{self._get_tool_key(msg)}:{self._get_tool_arguments_str(msg)}"
-        return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
-    def _get_tool_key(self, msg: mcp.types.CallToolRequestParams) -> str:
-        return msg.name
-
-    def _get_tool_arguments_str(self, msg: mcp.types.CallToolRequestParams) -> str:
-        if msg.arguments is None:
-            return "null"
-
-        try:
-            return json.dumps(msg.arguments, sort_keys=True, separators=(",", ":"))
-
-        except TypeError:
-            return repr(msg.arguments)
+def _make_call_tool_cache_key(msg: mcp.types.CallToolRequestParams) -> str:
+    raw = f"{msg.name}:{_get_arguments_str(msg.arguments)}"
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
-def dump_if_base_model(value: Any) -> list[str]:
-    if isinstance(value, BaseModel):
-        return [value.model_dump_json()]
+def _make_read_resource_cache_key(msg: mcp.types.ReadResourceRequestParams) -> str:
+    raw = f"{msg.uri}"
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
-    if isinstance(value, list):
-        return [
-            item
-            for sublist in [dump_if_base_model(val) for val in value]
-            for item in sublist
-        ]
 
-    return [json.dumps(value, sort_keys=True, separators=(",", ":"))]
+def _make_get_prompt_cache_key(msg: mcp.types.GetPromptRequestParams) -> str:
+    raw = f"{msg.name}:{_get_arguments_str(msg.arguments)}"
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _get_arguments_str(arguments: dict[str, Any] | None) -> str:
+    if arguments is None:
+        return "null"
+
+    try:
+        return json.dumps(arguments, sort_keys=True, separators=(",", ":"))
+
+    except TypeError:
+        return repr(arguments)
+
+
+def get_size_of_content_blocks(
+    value: mcp.types.ContentBlock | Sequence[mcp.types.ContentBlock],
+) -> int:
+    if isinstance(value, mcp.types.ContentBlock):
+        value = [value]
+
+    return sum([len(item.model_dump_json()) for item in value])
+
+
+def get_size_of_tool_result(value: ToolResult) -> int:
+    content_size = get_size_of_content_blocks(value.content)
+    structured_content_size = len(
+        json.dumps(
+            value.structured_content, sort_keys=True, separators=(",", ":")
+        ).encode("utf-8")
+    )
+
+    return content_size + structured_content_size
+
+
+def get_size_of_one_value(value: BaseModel | ToolResult | ReadResourceContents) -> int:
+    if isinstance(value, ToolResult):
+        return get_size_of_tool_result(value)
+    if isinstance(value, ReadResourceContents):
+        return len(value.content)
+    return len(value.model_dump_json())
+
+
+def get_size_of_value(value: CachableTypes) -> int:
+    if isinstance(value, BaseModel | ToolResult | ReadResourceContents):
+        return get_size_of_one_value(value)
+
+    return sum(get_size_of_one_value(item) for item in value)
