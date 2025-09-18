@@ -44,12 +44,14 @@ classifiers = [
 websockets = ["websockets>=15.0.1"]
 openai = ["openai>=1.102.0"]
 caching = ["diskcache>=5.6.3", "cachetools>=6.2.0"]
+contrib-middleware-elasticsearch_cache = ["fastmcp[caching]", "elasticsearch>=8.15.0", "aiohttp>=3.11.10"]
 
 [dependency-groups]
 dev = [
     "dirty-equals>=0.9.0",
     "fastmcp[openai]",
     "fastmcp[caching]",
+    "fastmcp[contrib-middleware-elasticsearch_cache]",
     # add optional dependencies for fastmcp dev
     "fastapi>=0.115.12",
     "inline-snapshot[dirty-equals]>=0.27.2",

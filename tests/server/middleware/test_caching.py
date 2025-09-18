@@ -2,7 +2,6 @@
 
 import tempfile
 from collections.abc import Sequence
-from datetime import datetime, timedelta, timezone
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -10,43 +9,60 @@ import mcp.types
 import pytest
 from inline_snapshot import snapshot
 from mcp.server.lowlevel.helper_types import ReadResourceContents
-from mcp.types import (
-    TextContent,
-    TextResourceContents,
-)
+from mcp.types import GetPromptResult, PromptMessage, TextContent, TextResourceContents
 from pydantic import AnyUrl, BaseModel
 
 from fastmcp import FastMCP
-from fastmcp.client import Client
-from fastmcp.client.client import CallToolResult
+from fastmcp.client.client import CallToolResult, Client
 from fastmcp.client.transports import FastMCPTransport
-from fastmcp.prompts.prompt import FunctionPrompt
+from fastmcp.prompts.prompt import FunctionPrompt, Prompt
 from fastmcp.resources.resource import Resource
 from fastmcp.server.middleware.caching import (
-    CachableTypes,
-    CachedPrompt,
-    CachedResource,
-    CacheEntry,
+    BaseCacheEntry,
+    CachablePrompt,
+    CachableResource,
     CacheMethodStats,
     CacheProtocol,
     CacheStats,
     CallToolSettings,
     DiskCache,
+    GetPromptCacheEntry,
     InMemoryCache,
+    ListPromptsCacheEntry,
+    ListResourcesCacheEntry,
+    ListToolsCacheEntry,
     MethodSettings,
+    ReadResourceCacheEntry,
     ResponseCachingMiddleware,
+    ToolResultCacheEntry,
 )
 from fastmcp.server.middleware.middleware import CallNext, MiddlewareContext
 from fastmcp.tools.tool import Tool, ToolResult
 
 TEST_URI = AnyUrl("https://test_uri")
 
-SAMPLE_RESOURCE = CachedResource(name="resource", uri=TEST_URI, mime_type="text/plain")
-SAMPLE_PROMPT = CachedPrompt(name="prompt")
 SAMPLE_READ_RESOURCE_CONTENTS = ReadResourceContents(
     content="test_text",
     mime_type="text/plain",
 )
+
+
+def sample_resource_fn() -> list[ReadResourceContents]:
+    return [SAMPLE_READ_RESOURCE_CONTENTS]
+
+
+SAMPLE_PROMPT_CONTENTS = TextContent(type="text", text="test_text")
+
+
+def sample_prompt_fn() -> PromptMessage:
+    return PromptMessage(role="user", content=SAMPLE_PROMPT_CONTENTS)
+
+
+SAMPLE_RESOURCE = Resource.from_function(
+    fn=sample_resource_fn, uri=TEST_URI, name="test_resource"
+)
+
+SAMPLE_PROMPT = Prompt.from_function(fn=sample_prompt_fn, name="test_prompt")
 SAMPLE_GET_PROMPT_RESULT = mcp.types.GetPromptResult(
     messages=[
         mcp.types.PromptMessage(
@@ -240,20 +256,12 @@ class TestCacheEntry:
 
     def test_init_and_expiration(self):
         """Test cache entry initialization and expiration logic."""
-        now = datetime.now(tz=timezone.utc)
-        future = now + timedelta(seconds=3600)
-        past = now - timedelta(seconds=3600)
-
-        # Test valid entry
-        entry: CacheEntry[ToolResult] = CacheEntry(
-            collection="test_collection",
+        entry: ToolResultCacheEntry[ToolResult] = ToolResultCacheEntry(
             key="test_key",
             value=ToolResult(
                 content=[{"type": "text", "text": "success"}],
                 structured_content={"result": "success"},
             ),
-            created_at=now,
-            expires_at=future,
             ttl=3600,
         )
 
@@ -261,41 +269,114 @@ class TestCacheEntry:
         assert not entry.is_expired()
 
         # Test expired entry
-        expired_entry: CacheEntry[ToolResult] = CacheEntry(
-            collection="test_collection",
-            key="expired_key",
+        expired_entry: ToolResultCacheEntry[ToolResult] = ToolResultCacheEntry(
+            key="test_key",
             value=ToolResult(
                 content=[{"type": "text", "text": "success"}],
                 structured_content={"result": "success"},
             ),
-            created_at=past,
-            expires_at=past,
-            ttl=3600,
+            ttl=-1,
         )
 
         assert expired_entry.is_expired()
 
-    def test_serialization(self):
-        """Test cache entry serialization to/from tool result."""
-        tool_result = ToolResult(
-            content=[{"type": "text", "text": "success"}],
-            structured_content={"result": "success"},
-        )
-
-        # Test round-trip conversion
-        entry: CacheEntry[ToolResult] = CacheEntry.from_value(
-            collection="test_collection",
+    def test_tool_result_cache_entry_validation(self):
+        """Test ToolResultCacheEntry class functionality."""
+        entry: ToolResultCacheEntry[ToolResult] = ToolResultCacheEntry(
             key="test_key",
-            value=tool_result,
+            value=SAMPLE_TOOL_RESULT,
             ttl=3600,
         )
 
-        retrieved_tool_result: ToolResult = entry.value
+        dumped_entry = entry.model_dump()
+        new_entry = ToolResultCacheEntry.model_validate(dumped_entry)
 
-        assert retrieved_tool_result.content == tool_result.content
+        assert dump_mcp_types(model=new_entry.value.content) == snapshot(
+            [{"type": "text", "text": "test_text", "annotations": None, "meta": None}]
+        )
+        assert new_entry.value.structured_content == snapshot({"result": "test_result"})
 
-        assert (
-            retrieved_tool_result.structured_content == tool_result.structured_content
+    def test_read_resource_cache_entry_validation(self):
+        """Test ReadResourceCacheEntry class functionality."""
+        entry: ReadResourceCacheEntry[list[ReadResourceContents]] = (
+            ReadResourceCacheEntry(
+                key="test_key",
+                value=[SAMPLE_READ_RESOURCE_CONTENTS],
+                ttl=3600,
+            )
+        )
+
+        dumped_entry = entry.model_dump()
+        new_entry = ReadResourceCacheEntry.model_validate(dumped_entry)
+
+        assert new_entry.value == snapshot(
+            [ReadResourceContents(content="test_text", mime_type="text/plain")]
+        )
+
+    def test_get_prompt_cache_entry_validation(self):
+        """Test GetPromptCacheEntry class functionality."""
+        entry: GetPromptCacheEntry = GetPromptCacheEntry(
+            key="test_key",
+            value=SAMPLE_GET_PROMPT_RESULT,
+            ttl=3600,
+        )
+
+        dumped_entry = entry.model_dump()
+        new_entry = GetPromptCacheEntry.model_validate(dumped_entry)
+
+        assert new_entry.value == snapshot(
+            GetPromptResult(
+                messages=[
+                    PromptMessage(
+                        role="user", content=TextContent(type="text", text="test_text")
+                    )
+                ]
+            )
+        )
+
+    def test_list_tools_cache_entry_validation(self):
+        """Test ListToolsCacheEntry class functionality."""
+        entry: ListToolsCacheEntry = ListToolsCacheEntry(
+            key="test_key",
+            value=[SAMPLE_TOOL],
+            ttl=3600,
+        )
+
+        dumped_entry = entry.model_dump()
+        new_entry = ListToolsCacheEntry.model_validate(dumped_entry)
+
+        assert new_entry.value == snapshot(
+            [Tool(name="test_tool", parameters={"param1": "value1", "param2": 42})]
+        )
+
+    def test_list_resources_cache_entry_validation(self):
+        """Test ListResourcesCacheEntry class functionality."""
+        entry: ListResourcesCacheEntry = ListResourcesCacheEntry(
+            key="test_key",
+            value=[SAMPLE_RESOURCE],
+            ttl=3600,
+        )
+
+        dumped_entry = entry.model_dump()
+        new_entry = ListResourcesCacheEntry.model_validate(dumped_entry)
+
+        assert new_entry.value == snapshot(
+            [CachableResource(name="test_resource", uri=AnyUrl("https://test_uri/"))]
+        )
+
+    def test_list_prompts_cache_entry_validation(self):
+        """Test ListPromptsCacheEntry class functionality."""
+        entry: ListPromptsCacheEntry = ListPromptsCacheEntry(
+            key="test_key",
+            value=[SAMPLE_PROMPT],
+            ttl=3600,
+        )
+
+        dumped_entry = entry.model_dump()
+        new_entry = ListPromptsCacheEntry.model_validate(dumped_entry)
+
+        assert new_entry.value == snapshot(
+            [CachablePrompt(name="test_prompt", arguments=[])]
         )
 
 
@@ -307,22 +388,28 @@ class TestMemoryCache:
         cache = InMemoryCache(max_entries=2)
 
         # Fill cache to capacity
-        await cache.set_value(
-            collection="test_collection", key="key1", value=sample_tool_result, ttl=3600
+        await cache.set_entry(
+            cache_entry=ToolResultCacheEntry(
+                key="key1", value=sample_tool_result, ttl=3600
+            )
         )
-        await cache.set_value(
-            collection="test_collection", key="key2", value=sample_tool_result, ttl=3600
+        await cache.set_entry(
+            cache_entry=ToolResultCacheEntry(
+                key="key2", value=sample_tool_result, ttl=3600
+            )
         )
 
         # Add one more - should evict the first
-        await cache.set_value(
-            collection="test_collection", key="key3", value=sample_tool_result, ttl=3600
+        await cache.set_entry(
+            cache_entry=ToolResultCacheEntry(
+                key="key3", value=sample_tool_result, ttl=3600
+            )
         )
 
         assert len(cache._cache) == 2
-        assert "test_collection:key1" not in cache._cache
-        assert "test_collection:key2" in cache._cache
-        assert "test_collection:key3" in cache._cache
+        assert "tools/call:key1" not in cache._cache
+        assert "tools/call:key2" in cache._cache
+        assert "tools/call:key3" in cache._cache
 
 
 class TestCacheImplementations:
@@ -338,88 +425,189 @@ class TestCacheImplementations:
 
     async def test_get_none_if_not_set(self, cache: CacheProtocol):
         """Test that we get None if a value is not set."""
-        assert (
-            await cache.get_value(collection="test_collection", key="test_key") is None
-        )
+        assert await cache.get_entry(collection="tools/call", key="test_key") is None
 
-    @pytest.mark.parametrize(
-        "value",
-        [
-            [SAMPLE_TOOL],
-            SAMPLE_TOOL_RESULT,
-            [SAMPLE_RESOURCE],
-            [SAMPLE_READ_RESOURCE_CONTENTS],
-            [SAMPLE_PROMPT],
-            SAMPLE_GET_PROMPT_RESULT,
-        ],
-        ids=[
-            "tool_list",
-            "tool_result",
-            "resource",
-            "read_resource_contents",
-            "prompt",
-            "get_prompt_result",
-        ],
-    )
-    async def test_set_and_get(self, cache: CacheProtocol, value: CachableTypes):
-        """Test that we can set and then get back a value from the cache."""
-
-        await cache.set_value(
-            collection="test_collection",
-            key="test_key",
-            value=value,
-            ttl=3600,
+    async def test_list_tools(self, cache: CacheProtocol):
+        """Test that we can list tools from the cache."""
+        await cache.set_entry(
+            cache_entry=ListToolsCacheEntry(
+                key="test_key", value=[SAMPLE_TOOL], ttl=3600
+            )
         )
-        result: CachableTypes | None = await cache.get_value(
-            collection="test_collection", key="test_key"
-        )
+        result = await cache.get_entry(collection="tools/list", key="test_key")
 
         assert result is not None
+        assert dump_mcp_types(model=result.value) == snapshot(
+            [
+                {
+                    "name": "test_tool",
+                    "title": None,
+                    "description": None,
+                    "tags": set(),
+                    "meta": None,
+                    "enabled": True,
+                    "parameters": {"param1": "value1", "param2": 42},
+                    "output_schema": None,
+                    "annotations": None,
+                    "serializer": None,
+                }
+            ]
+        )
 
-        assert isinstance(result, type(value))
+    async def test_tool_result(self, cache: CacheProtocol):
+        """Test that we can get a tool result from the cache."""
+        await cache.set_entry(
+            cache_entry=ToolResultCacheEntry(
+                key="test_key", value=SAMPLE_TOOL_RESULT, ttl=3600
+            )
+        )
+        result = await cache.get_entry(collection="tools/call", key="test_key")
 
-        assert dump_mcp_types(model=result) == dump_mcp_types(model=value)
+        assert result is not None
+        assert dump_mcp_types(model=result.value) == snapshot(
+            {
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "test_text",
+                        "annotations": None,
+                        "meta": None,
+                    }
+                ],
+                "structured_content": {"result": "test_result"},
+            }
+        )
+
+    async def test_list_resources(self, cache: CacheProtocol):
+        """Test that we can list resources from the cache."""
+        await cache.set_entry(
+            cache_entry=ListResourcesCacheEntry(
+                key="test_key", value=[SAMPLE_RESOURCE], ttl=3600
+            )
+        )
+        result = await cache.get_entry(collection="resources/list", key="test_key")
+
+        assert result is not None
+        assert dump_mcp_types(model=result.value) == snapshot(
+            [
+                {
+                    "name": "test_resource",
+                    "title": None,
+                    "description": None,
+                    "tags": set(),
+                    "meta": None,
+                    "enabled": True,
+                    "uri": AnyUrl("https://test_uri/"),
+                    "mime_type": "text/plain",
+                    "annotations": None,
+                }
+            ]
+        )
+
+    async def test_read_resource(self, cache: CacheProtocol):
+        """Test that we can read a resource from the cache."""
+        await cache.set_entry(
+            cache_entry=ReadResourceCacheEntry(
+                key="test_key", value=[SAMPLE_READ_RESOURCE_CONTENTS], ttl=3600
+            )
+        )
+        result = await cache.get_entry(collection="resources/read", key="test_key")
+
+        assert result is not None
+        assert dump_mcp_types(model=result.value) == snapshot(
+            [{"content": "test_text", "mime_type": "text/plain"}]
+        )
+
+    async def test_list_prompts(self, cache: CacheProtocol):
+        """Test that we can list prompts from the cache."""
+        await cache.set_entry(
+            cache_entry=ListPromptsCacheEntry(
+                key="test_key", value=[SAMPLE_PROMPT], ttl=3600
+            )
+        )
+        result = await cache.get_entry(collection="prompts/list", key="test_key")
+
+        assert result is not None
+        assert dump_mcp_types(model=result.value) == snapshot(
+            [
+                {
+                    "name": "test_prompt",
+                    "title": None,
+                    "description": None,
+                    "tags": set(),
+                    "meta": None,
+                    "enabled": True,
+                    "arguments": [],
+                }
+            ]
+        )
+
+    async def test_get_prompt(self, cache: CacheProtocol):
+        """Test that we can get a prompt from the cache."""
+        entry = GetPromptCacheEntry(
+            key="test_key", value=SAMPLE_GET_PROMPT_RESULT, ttl=3600
+        )
+        await cache.set_entry(cache_entry=entry)
+        result = await cache.get_entry(collection=entry.collection, key="test_key")
+
+        assert result is not None
+        assert dump_mcp_types(model=result.value) == snapshot(
+            {
+                "meta": None,
+                "description": None,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": {
+                            "type": "text",
+                            "text": "test_text",
+                            "annotations": None,
+                            "meta": None,
+                        },
+                    }
+                ],
+            }
+        )
 
     async def test_set_get_delete_get_value(self, cache: CacheProtocol):
         """Test that we can set, get, delete, and get a value from the cache."""
-        await cache.set_value(
-            collection="test_collection",
-            key="test_key",
-            value=SAMPLE_TOOL_RESULT,
-            ttl=3600,
+        await cache.set_entry(
+            cache_entry=ToolResultCacheEntry(
+                key="test_key",
+                value=SAMPLE_TOOL_RESULT,
+                ttl=3600,
+            )
         )
-        result: CachableTypes | None = await cache.get_value(
-            collection="test_collection", key="test_key"
+        result: BaseCacheEntry | None = await cache.get_entry(
+            collection="tools/call", key="test_key"
         )
 
         assert result is not None
-        assert dump_mcp_types(model=result) == dump_mcp_types(model=SAMPLE_TOOL_RESULT)
-
-        await cache.delete(collection="test_collection", key="test_key")
-
-        assert (
-            await cache.get_value(collection="test_collection", key="test_key") is None
+        assert dump_mcp_types(model=result.value) == dump_mcp_types(
+            model=SAMPLE_TOOL_RESULT
         )
+
+        await cache.delete(collection="tools/call", key="test_key")
+
+        assert await cache.get_entry(collection="tools/call", key="test_key") is None
 
     async def test_expiration_and_cleanup(self, cache: CacheProtocol):
         """Test cache expiration and cleanup."""
         # Create an expired entry
-        await cache.set_value(
-            collection="test_collection",
-            key="expired_key",
-            value=SAMPLE_TOOL_RESULT,
-            ttl=-1,
+        await cache.set_entry(
+            cache_entry=ToolResultCacheEntry(
+                key="expired_key",
+                value=SAMPLE_TOOL_RESULT,
+                ttl=-1,
+            )
         )
 
         # Should return None and remove expired entry
-        result = await cache.get_value(collection="test_collection", key="expired_key")
+        result = await cache.get_entry(collection="tools/call", key="expired_key")
 
         assert result is None
 
-        assert (
-            await cache.get_value(collection="test_collection", key="expired_key")
-            is None
-        )
+        assert await cache.get_entry(collection="tools/call", key="expired_key") is None
 
 
 class TestResponseCachingMiddleware:
@@ -589,7 +777,7 @@ class TestResponseCachingMiddleware:
 class TestResponseCachingMiddlewareIntegration:
     """Integration tests with real FastMCP server."""
 
-    @pytest.fixture(params=["memory", "disk"])
+    @pytest.fixture(params=["memory", "disk", "elasticsearch"])
     async def caching_server(
         self,
         tracking_calculator: TrackingCalculator,
@@ -605,13 +793,13 @@ class TestResponseCachingMiddlewareIntegration:
                 else InMemoryCache()
             )
 
-        mcp.add_middleware(middleware=response_caching_middleware)
+            mcp.add_middleware(middleware=response_caching_middleware)
 
-        tracking_calculator.add_tools(fastmcp=mcp)
-        tracking_calculator.add_resources(fastmcp=mcp)
-        tracking_calculator.add_prompts(fastmcp=mcp)
+            tracking_calculator.add_tools(fastmcp=mcp)
+            tracking_calculator.add_resources(fastmcp=mcp)
+            tracking_calculator.add_prompts(fastmcp=mcp)
 
-        return mcp
+            yield mcp
 
     @pytest.fixture
     def non_caching_server(self, tracking_calculator: TrackingCalculator):

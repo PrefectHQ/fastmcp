@@ -459,7 +459,7 @@ Out of the box, it caches call/list tool, resources, and prompts. Sending a noti
 Alternatively, it can be configured to only cache specific methods, for example, only caching list tools and only caching calls to `tool1`:
 
 ```python
-from fastmcp.server.middleware.caching import ResponseCachingMiddleware
+from fastmcp.server.middleware.caching import ResponseCachingMiddleware, MethodSettings, CallToolSettings, ListToolsSettings
 
 mcp.add_middleware(ResponseCachingMiddleware(
     method_settings=MethodSettings(
@@ -482,6 +482,8 @@ mcp.add_middleware(ResponseCachingMiddleware(
     cache_backend=DiskCache(path="cache"),
 ))
 ```
+
+See the Contrib modules for caching middleware implementations that support additional features like distributed caching.
 
 ### Logging Middleware
 

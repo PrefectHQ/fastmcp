@@ -2,14 +2,18 @@
 
 import hashlib
 import json
+from abc import ABC
 from collections import defaultdict
 from collections.abc import Sequence
 from datetime import datetime, timedelta, timezone
-from typing import Any, ClassVar, Generic, Protocol, TypedDict, TypeVar, cast
+from typing import Any, ClassVar, Literal, Protocol, TypedDict, TypeVar, cast
 
 import mcp.types
 from mcp.server.lowlevel.helper_types import ReadResourceContents
-from pydantic import BaseModel, ConfigDict, Field
+from mcp.types import GetPromptResult, PromptMessage
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator
+from pydantic.fields import computed_field
+from pydantic.type_adapter import TypeAdapter
 from typing_extensions import NotRequired, Self, overload, runtime_checkable
 
 from fastmcp.prompts.prompt import Prompt
@@ -17,6 +21,7 @@ from fastmcp.resources.resource import Resource
 from fastmcp.server.middleware.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.tools.tool import Tool, ToolResult
 from fastmcp.utilities.logging import get_logger
+from fastmcp.utilities.types import get_cached_typeadapter
 
 try:
     from cachetools import TLRUCache as MemoryCacheClient
@@ -37,17 +42,16 @@ ONE_MB_IN_BYTES = 1024 * 1024
 
 GLOBAL_KEY = "__global__"
 
-
-CachableTypes = (
+CachableValueTypes = (
     ToolResult
-    | Sequence[Tool]
-    | Sequence[Resource]
-    | Sequence[Prompt]
-    | Sequence[ReadResourceContents]
-    | mcp.types.GetPromptResult
+    | list[Tool]
+    | list[Resource]
+    | list[Prompt]
+    | list[ReadResourceContents]
+    | GetPromptResult
 )
 
-CachableTypeVar = TypeVar("CachableTypeVar", bound=CachableTypes)
+CachableValueTypesVar = TypeVar("CachableValueTypesVar", bound=CachableValueTypes)
 
 
 def make_collection_key(collection: str, key: str) -> str:
@@ -55,65 +59,202 @@ def make_collection_key(collection: str, key: str) -> str:
     return f"{collection}:{key}"
 
 
-class CachedPrompt(Prompt):
-    """A no-op prompt that can be cached/pickled and provided during list calls."""
-
-    def render(
-        self, arguments: dict[str, Any] | None = None
-    ) -> list[mcp.types.PromptMessage]:
-        raise NotImplementedError(
-            "Render called on CachedPrompt, this should never happen"
-        )
-
-
-class CachedResource(Resource):
-    """A no-op resource that can be cached/pickled and provided during list calls."""
-
-    def read(self) -> str | bytes:
-        raise NotImplementedError(
-            "Read called on CachedResource, this should never happen"
-        )
-
-
-class CachedTool(Tool):
-    """A no-op tool that can be cached/pickled and provided during list calls."""
-
-    def run(self, arguments: dict[str, Any]) -> ToolResult:
-        raise NotImplementedError("Run called on CachedTool, this should never happen")
-
-
-class CacheEntry(BaseModel, Generic[CachableTypeVar]):
-    """A cache entry helper that can be stored in a cache backend."""
-
+class BaseCacheEntry(BaseModel, ABC):
     model_config: ClassVar[ConfigDict] = ConfigDict(
         frozen=True, arbitrary_types_allowed=True
     )
 
-    key: str
-    collection: str
-    value: CachableTypeVar
+    created_at: datetime = Field(default_factory=lambda: datetime.now(tz=timezone.utc))
+    value: CachableValueTypes
 
-    created_at: datetime
+    collection: str
+    key: str
 
     ttl: int
-
-    expires_at: datetime
 
     def is_expired(self) -> bool:
         return datetime.now(tz=timezone.utc) > self.expires_at
 
+    @computed_field
+    @property
+    def expires_at(self) -> datetime:
+        return self.created_at + timedelta(seconds=self.ttl)
+
+
+class ToolResultCacheEntry(BaseCacheEntry):
+    collection: Literal["tools/call"] = Field(default="tools/call")
+    value: ToolResult
+
+    @field_validator("value", mode="before")
     @classmethod
-    def from_value(
-        cls, collection: str, key: str, value: CachableTypeVar, ttl: int
-    ) -> Self:
-        return cls(
-            collection=collection,
-            key=key,
-            value=value,
-            created_at=datetime.now(tz=timezone.utc),
-            ttl=ttl,
-            expires_at=datetime.now(tz=timezone.utc) + timedelta(seconds=ttl),
+    def validate_value(cls, value: dict[str, Any] | ToolResult) -> ToolResult:
+        if isinstance(value, ToolResult):
+            return value
+
+        content_block_type_adapter: TypeAdapter[list[mcp.types.ContentBlock]] = (
+            get_cached_typeadapter(list[mcp.types.ContentBlock])
         )
+
+        content = content_block_type_adapter.validate_python(value.get("content"))
+
+        structured_content = value.get("structured_content")
+
+        return ToolResult(
+            content=content,
+            structured_content=structured_content,
+        )
+
+    @field_serializer("value", when_used="always")
+    def serialize_value(self, value: ToolResult) -> dict[str, Any]:
+        return {
+            "content": [item.model_dump() for item in value.content],
+            "structured_content": value.structured_content,
+        }
+
+
+class ListToolsCacheEntry(BaseCacheEntry):
+    collection: Literal["tools/list"] = Field(default="tools/list")
+    value: list[Tool]
+
+
+class CachablePrompt(Prompt):
+    async def render(
+        self,
+        arguments: dict[str, Any] | None = None,
+    ) -> list[PromptMessage]:
+        """Render the prompt with arguments."""
+        raise NotImplementedError(
+            "Prompt.render() is not implemented on cached prompts"
+        )
+
+    @classmethod
+    def from_prompt(cls, prompt: Prompt) -> Self:
+        return cls(
+            name=prompt.name,
+            title=prompt.title,
+            description=prompt.description,
+            arguments=prompt.arguments,
+            meta=prompt.meta,
+            tags=prompt.tags,
+            enabled=prompt.enabled,
+        )
+
+
+class ListPromptsCacheEntry(BaseCacheEntry):
+    collection: Literal["prompts/list"] = Field(default="prompts/list")
+    value: Sequence[Prompt]
+
+    @field_validator("value", mode="before")
+    @classmethod
+    def validate_value(
+        cls, value: Sequence[dict[str, Any]] | Sequence[Prompt]
+    ) -> Sequence[CachablePrompt]:
+        results = []
+
+        for item in value:
+            if isinstance(item, Prompt):
+                results.append(CachablePrompt.from_prompt(prompt=item))
+            else:
+                results.append(CachablePrompt.model_validate(item))
+
+        return results
+
+
+class GetPromptCacheEntry(BaseCacheEntry):
+    collection: Literal["prompts/get"] = Field(default="prompts/get")
+    value: mcp.types.GetPromptResult
+
+
+class CachableResource(Resource):
+    async def read(self) -> str | bytes:
+        """Read the resource content."""
+        raise NotImplementedError(
+            "Resource.read() is not implemented on cached resources"
+        )
+
+    @classmethod
+    def from_resource(cls, resource: Resource) -> Self:
+        return cls(
+            name=resource.name,
+            description=resource.description,
+            uri=resource.uri,
+            mime_type=resource.mime_type,
+            annotations=resource.annotations,
+            meta=resource.meta,
+            tags=resource.tags,
+            enabled=resource.enabled,
+        )
+
+
+class ListResourcesCacheEntry(BaseCacheEntry):
+    collection: Literal["resources/list"] = Field(default="resources/list")
+    value: Sequence[Resource]
+
+    @field_validator("value", mode="before")
+    @classmethod
+    def validate_value(
+        cls, value: Sequence[dict[str, Any]] | Sequence[Resource]
+    ) -> Sequence[Resource]:
+        results = []
+        for item in value:
+            if isinstance(item, Resource):
+                results.append(CachableResource.from_resource(resource=item))
+            else:
+                results.append(CachableResource.model_validate(item))
+
+        return results
+
+
+class ReadResourceCacheEntry(BaseCacheEntry):
+    collection: Literal["resources/read"] = Field(default="resources/read")
+    value: Sequence[ReadResourceContents]
+
+    @field_validator("value", mode="before")
+    @classmethod
+    def validate_value(
+        cls, value: Sequence[dict[str, Any]] | Sequence[ReadResourceContents]
+    ) -> Sequence[ReadResourceContents]:
+        resource_contents: list[ReadResourceContents] = []
+        for item in value:
+            if isinstance(item, ReadResourceContents):
+                resource_contents.append(item)
+                continue
+
+            if not isinstance(item, dict):
+                continue
+
+            if not (content := item.get("content")):
+                continue
+
+            mime_type = item.get("mime_type")
+
+            resource_contents.append(
+                ReadResourceContents(content=content, mime_type=mime_type)
+            )
+
+        return resource_contents
+
+    @field_serializer("value")
+    def serialize_value(
+        self, value: Sequence[ReadResourceContents]
+    ) -> list[dict[str, Any]]:
+        return [
+            {
+                "content": item.content,
+                "mime_type": item.mime_type,
+            }
+            for item in value
+        ]
+
+
+CacheEntryTypes = (
+    GetPromptCacheEntry
+    | ListPromptsCacheEntry
+    | ReadResourceCacheEntry
+    | ListResourcesCacheEntry
+    | ToolResultCacheEntry
+    | ListToolsCacheEntry
+)
 
 
 @runtime_checkable
@@ -124,41 +265,14 @@ class CacheProtocol(Protocol):
         self,
         collection: str,
         key: str,
-    ) -> CacheEntry[CachableTypes] | None:
+    ) -> BaseCacheEntry | None:
         """Get a cache entry from the cache."""
-
-    async def get_value(
-        self,
-        collection: str,
-        key: str,
-    ) -> CachableTypes | None:
-        """Get a value from the cache using the collection and key."""
-
-        if not (cache_entry := await self.get_entry(collection=collection, key=key)):
-            return None
-
-        return cache_entry.value
 
     async def set_entry(
         self,
-        cache_entry: CacheEntry[CachableTypes],
+        cache_entry: BaseCacheEntry,
     ) -> None:
         """Set a value in the cache using the collection and key."""
-
-    async def set_value(
-        self,
-        collection: str,
-        key: str,
-        value: CachableTypes,
-        ttl: int,
-    ) -> None:
-        """Set a value in the cache using the collection and key."""
-
-        await self.set_entry(
-            cache_entry=CacheEntry.from_value(
-                collection=collection, key=key, value=value, ttl=ttl
-            )
-        )
 
     async def delete(
         self,
@@ -193,10 +307,8 @@ class DiskCache(CacheProtocol):
             directory=path, size_limit=size_limit
         )
 
-    async def get_entry(
-        self, collection: str, key: str
-    ) -> CacheEntry[CachableTypes] | None:
-        collection_key = self.make_collection_key(collection=collection, key=key)
+    async def get_entry(self, collection: str, key: str) -> BaseCacheEntry | None:
+        collection_key: str = self.make_collection_key(collection=collection, key=key)
 
         cache_entry = self._cache.get(key=collection_key)
 
@@ -207,9 +319,9 @@ class DiskCache(CacheProtocol):
 
     async def set_entry(
         self,
-        cache_entry: CacheEntry[CachableTypes],
+        cache_entry: BaseCacheEntry,
     ) -> None:
-        collection_key = self.make_collection_key(
+        collection_key: str = self.make_collection_key(
             collection=cache_entry.collection, key=cache_entry.key
         )
 
@@ -224,12 +336,12 @@ class DiskCache(CacheProtocol):
 DEFAULT_MEMORY_CACHE_MAX_ENTRIES = 1000
 
 
-def _memory_cache_ttu(_key: Any, value: CacheEntry[CachableTypes], now: float) -> float:
+def _memory_cache_ttu(_key: Any, value: BaseCacheEntry, now: float) -> float:
     """TTU function for the memory cache. Determines the TTL of the cache entry."""
     return now + value.ttl
 
 
-def _memory_cache_getsizeof(value: CacheEntry[CachableTypes]) -> int:
+def _memory_cache_getsizeof(value: BaseCacheEntry) -> int:
     """Getsizeof function for the memory cache. Currently measures how many entries are in the cache."""
     return 1
 
@@ -250,18 +362,16 @@ class InMemoryCache(CacheProtocol):
             getsizeof=_memory_cache_getsizeof,
         )
 
-    async def get_entry(
-        self, collection: str, key: str
-    ) -> CacheEntry[CachableTypes] | None:
+    async def get_entry(self, collection: str, key: str) -> BaseCacheEntry | None:
         collection_key = self.make_collection_key(collection=collection, key=key)
 
         return self._cache.get(collection_key)
 
     async def set_entry(
         self,
-        cache_entry: CacheEntry[CachableTypes],
+        cache_entry: BaseCacheEntry,
     ) -> None:
-        collection_key = self.make_collection_key(
+        collection_key: str = self.make_collection_key(
             collection=cache_entry.collection, key=cache_entry.key
         )
 
@@ -373,6 +483,16 @@ class MethodSettings(TypedDict):
 
 MethodSettingsType = TypeVar("MethodSettingsType", bound=SharedMethodSettings)
 
+MCP_METHOD_TO_CACHE_ENTRY_TYPE: dict[str, type[BaseCacheEntry]] = {
+    "tools/list": ListToolsCacheEntry,
+    "tools/call": ToolResultCacheEntry,
+    "resources/list": ListResourcesCacheEntry,
+    "resources/read": ReadResourceCacheEntry,
+    "prompts/list": ListPromptsCacheEntry,
+    "prompts/get": GetPromptCacheEntry,
+}
+
+
 MCP_METHOD_TO_METHOD_SETTINGS_KEY = {
     "tools/list": "list_tools",
     "tools/call": "call_tool",
@@ -450,33 +570,7 @@ class ResponseCachingMiddleware(Middleware):
         if self._should_bypass_caching(context=context):
             return await call_next(context=context)
 
-        if cached_value := await self._get_cache(
-            context=context, call_next=call_next, key=None
-        ):
-            return cached_value
-
-        result: list[Tool] = await call_next(context)
-
-        # Convert tool subclasses to Tool objects
-        result = [
-            CachedTool(
-                name=tool.name,
-                title=tool.title,
-                description=tool.description,
-                parameters=tool.parameters,
-                output_schema=tool.output_schema,
-                annotations=tool.annotations,
-                meta=tool.meta,
-                tags=tool.tags,
-            )
-            for tool in result
-        ]
-
-        return await self._store_in_cache_and_return(
-            context=context,
-            key=None,
-            value=result,
-        )
+        return await self._cached_call_next(context=context, call_next=call_next)
 
     async def on_list_resources(
         self,
@@ -488,27 +582,7 @@ class ResponseCachingMiddleware(Middleware):
         if self._should_bypass_caching(context=context):
             return await call_next(context)
 
-        if cached_value := await self._get_cache(
-            context=context,
-            call_next=call_next,
-            key=None,
-        ):
-            return cached_value
-
-        result: list[Resource] = await call_next(context)
-
-        result = [
-            CachedResource(
-                **resource.model_dump(exclude={"fn"}),
-            )
-            for resource in result
-        ]
-
-        return await self._store_in_cache_and_return(
-            context=context,
-            key=None,
-            value=result,
-        )
+        return await self._cached_call_next(context=context, call_next=call_next)
 
     async def on_list_prompts(
         self,
@@ -520,31 +594,7 @@ class ResponseCachingMiddleware(Middleware):
         if self._should_bypass_caching(context=context):
             return await call_next(context)
 
-        if cached_value := await self._get_cache(
-            context=context,
-            call_next=call_next,
-            key=None,
-        ):
-            return cached_value
-
-        result: list[Prompt] = await call_next(context)
-
-        result = [
-            CachedPrompt(
-                name=prompt.name,
-                title=prompt.title,
-                description=prompt.description,
-                arguments=prompt.arguments,
-                meta=prompt.meta,
-            )
-            for prompt in result
-        ]
-
-        return await self._store_in_cache_and_return(
-            context=context,
-            key=None,
-            value=result,
-        )
+        return await self._cached_call_next(context=context, call_next=call_next)
 
     async def on_call_tool(
         self,
@@ -625,9 +675,9 @@ class ResponseCachingMiddleware(Middleware):
     async def _cached_call_next(
         self,
         context: MiddlewareContext[Any],
-        call_next: CallNext[Any, CachableTypeVar],
+        call_next: CallNext[Any, CachableValueTypesVar],
         key: str | None = None,
-    ) -> CachableTypeVar:
+    ) -> CachableValueTypesVar:
         """Perform the cached lookup, if the result is not in the cache, call the next middleware and return
         the result."""
 
@@ -641,7 +691,7 @@ class ResponseCachingMiddleware(Middleware):
         ):
             return cached_value
 
-        result: CachableTypeVar = await call_next(context)
+        result: CachableValueTypesVar = await call_next(context)
 
         return await self._store_in_cache_and_return(
             context=context,
@@ -652,9 +702,9 @@ class ResponseCachingMiddleware(Middleware):
     async def _get_cache(
         self,
         context: MiddlewareContext[Any],
-        call_next: CallNext[Any, CachableTypeVar],
+        call_next: CallNext[Any, CachableValueTypesVar],
         key: str | None = None,
-    ) -> CachableTypeVar | None:
+    ) -> CachableValueTypesVar | None:
         """Get a value from the cache and update the cache stats."""
 
         if key is None:
@@ -664,11 +714,11 @@ class ResponseCachingMiddleware(Middleware):
             logger.warning("No method found on context, skipping cache")
             return None
 
-        if cached_value := await self._backend.get_value(
+        if cached_entry := await self._backend.get_entry(
             collection=collection, key=key
         ):
             self._stats.mark_hit(collection=collection)
-            return cast(CachableTypeVar, cached_value)
+            return cast(CachableValueTypesVar, cached_entry.value)
 
         self._stats.mark_miss(collection=collection)
 
@@ -678,8 +728,8 @@ class ResponseCachingMiddleware(Middleware):
         self,
         context: MiddlewareContext[Any],
         key: str | None,
-        value: CachableTypeVar,
-    ) -> CachableTypeVar:
+        value: CachableValueTypesVar,
+    ) -> CachableValueTypesVar:
         """Store a value in the cache (if it's not too big) with the appropriate TTL."""
 
         if key is None:
@@ -696,11 +746,15 @@ class ResponseCachingMiddleware(Middleware):
 
         ttl: int = self._get_cache_ttl(context=context)
 
-        await self._backend.set_value(
+        cache_entry: BaseCacheEntry = MCP_METHOD_TO_CACHE_ENTRY_TYPE[collection](
             collection=collection,
             key=key,
             value=value,
             ttl=ttl,
+        )
+
+        await self._backend.set_entry(
+            cache_entry=cache_entry,
         )
 
         return value
@@ -841,7 +895,7 @@ def get_size_of_one_value(value: BaseModel | ToolResult | ReadResourceContents) 
     return len(value.model_dump_json())
 
 
-def get_size_of_value(value: CachableTypes) -> int:
+def get_size_of_value(value: CachableValueTypes) -> int:
     """Get the size of a cache entry."""
     if isinstance(value, BaseModel | ToolResult | ReadResourceContents):
         return get_size_of_one_value(value)
