@@ -350,7 +350,7 @@ def _combine_schemas_and_map_params(
             if route.request_body.required:
                 required.append("body")
             parameter_map["body"] = {"location": "body", "openapi_name": "body"}
-        else:
+        elif body_props:
             # Normal case: body has properties
             for prop_name, prop_schema in body_props.items():
                 properties[prop_name] = prop_schema
@@ -363,6 +363,22 @@ def _combine_schemas_and_map_params(
 
             if route.request_body.required:
                 required.extend(body_schema.get("required", []))
+        else:
+            # Handle direct array/primitive schemas (like list[str] parameters from FastAPI)
+            # Use the schema title as parameter name, fall back to generic name
+            param_name = body_schema.get("title", "body").lower()
+
+            # Clean the parameter name to be valid
+            import re
+
+            param_name = re.sub(r"[^a-zA-Z0-9_]", "_", param_name)
+            if not param_name or param_name[0].isdigit():
+                param_name = "body_data"
+
+            properties[param_name] = body_schema
+            if route.request_body.required:
+                required.append(param_name)
+            parameter_map[param_name] = {"location": "body", "openapi_name": param_name}
 
     result = {
         "type": "object",
