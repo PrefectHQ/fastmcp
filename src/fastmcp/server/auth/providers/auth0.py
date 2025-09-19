@@ -155,12 +155,10 @@ class Auth0Provider(OIDCProxy):
             "client_secret": settings.client_secret.get_secret_value(),
             "audience": settings.audience,
             "base_url": settings.base_url,
+            "redirect_path": settings.redirect_path,
             "required_scopes": auth0_required_scopes,
             "allowed_client_redirect_uris": settings.allowed_client_redirect_uris,
         }
-
-        if settings.redirect_path:
-            init_kwargs["redirect_path"] = settings.redirect_path
 
         super().__init__(**init_kwargs)
 
