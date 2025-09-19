@@ -97,7 +97,7 @@ This example configures token validation against a JWT issuer. The `JWTVerifier`
 
 ### RemoteAuthProvider
 
-`RemoteAuthProvider` enables authentication with identity providers that **support Dynamic Client Registration (DCR)**, such as WorkOS AuthKit. With DCR, MCP clients can automatically register themselves with the identity provider and obtain credentials without any manual configuration.
+`RemoteAuthProvider` enables authentication with identity providers that **support Dynamic Client Registration (DCR)**, such as Descope and WorkOS AuthKit. With DCR, MCP clients can automatically register themselves with the identity provider and obtain credentials without any manual configuration.
 
 This class combines token validation with OAuth discovery metadata. It extends `TokenVerifier` functionality by adding OAuth 2.0 protected resource endpoints that advertise your authentication requirements. MCP clients examine these endpoints to understand which identity providers you trust and how to obtain valid tokens.
 
@@ -258,7 +258,7 @@ The authentication approach you choose depends on your existing infrastructure, 
 
 **For OAuth providers without DCR support (GitHub, Google, Azure, most enterprise systems), use OAuth Proxy.** These providers require manual app registration through their developer consoles. OAuth Proxy bridges the gap by presenting a DCR-compliant interface to MCP clients while using your fixed credentials with the provider. The proxy's callback forwarding pattern enables dynamic client ports to work with providers that require fixed redirect URIs.
 
-**For identity providers with DCR support (WorkOS AuthKit, modern auth platforms), use RemoteAuthProvider.** These providers allow clients to dynamically register and obtain credentials without manual configuration. This enables the fully automated authentication flow that MCP is designed for, providing the best user experience and simplest implementation.
+**For identity providers with DCR support (Descope, WorkOS AuthKit, modern auth platforms), use RemoteAuthProvider.** These providers allow clients to dynamically register and obtain credentials without manual configuration. This enables the fully automated authentication flow that MCP is designed for, providing the best user experience and simplest implementation.
 
 **Token validation works well when you already have authentication infrastructure that issues structured tokens.** If your organization already uses JWT-based systems, API gateways, or enterprise SSO that can generate tokens, this approach integrates seamlessly while keeping your MCP server focused on its core functionality. The simplicity comes from leveraging existing investment in authentication infrastructure.
 

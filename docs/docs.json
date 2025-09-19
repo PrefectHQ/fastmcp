@@ -159,6 +159,7 @@
                   "integrations/auth0",
                   "integrations/authkit",
                   "integrations/azure",
+                  "integrations/descope",
                   "integrations/github",
                   "integrations/google",
                   "integrations/workos"

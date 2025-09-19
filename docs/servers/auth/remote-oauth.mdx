@@ -1,7 +1,7 @@
 ---
 title: Remote OAuth
 sidebarTitle: Remote OAuth
-description: Integrate your FastMCP server with external identity providers like WorkOS, Auth0, and corporate SSO systems.
+description: Integrate your FastMCP server with external identity providers like Descope, WorkOS, Auth0, and corporate SSO systems.
 icon: camera-cctv
 tag: NEW
 ---
@@ -14,7 +14,7 @@ Remote OAuth integration allows your FastMCP server to leverage external identit
 
 <Tip>
 **When to use RemoteAuthProvider vs OAuth Proxy:**
-- **RemoteAuthProvider**: For providers WITH Dynamic Client Registration (WorkOS AuthKit, modern OIDC providers)
+- **RemoteAuthProvider**: For providers WITH Dynamic Client Registration (Descope, WorkOS AuthKit, modern OIDC providers)
 - **OAuth Proxy**: For providers WITHOUT Dynamic Client Registration (GitHub, Google, Azure, Discord, etc.)
 
 RemoteAuthProvider requires DCR support for fully automated client registration and authentication.
@@ -29,7 +29,7 @@ RemoteAuthProvider works with identity providers that support **Dynamic Client R
 | **Client Registration** | Automatic via API | Manual in provider console |
 | **Credentials** | Dynamic per client | Fixed app credentials |
 | **Configuration** | Zero client config | Pre-shared credentials |
-| **Examples** | WorkOS AuthKit, modern OIDC | GitHub, Google, Azure |
+| **Examples** | Descope, WorkOS AuthKit, modern OIDC | GitHub, Google, Azure |
 | **FastMCP Class** | `RemoteAuthProvider` | [`OAuthProxy`](/servers/auth/oauth-proxy) |
 
 If your provider doesn't support DCR (most traditional OAuth providers), you'll need to use [`OAuth Proxy`](/servers/auth/oauth-proxy) instead, which bridges the gap between MCP's DCR expectations and fixed OAuth credentials.
