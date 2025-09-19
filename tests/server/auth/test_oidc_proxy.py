@@ -1,5 +1,6 @@
 """Comprehensive tests for OIDC Proxy Provider functionality."""
 
+import json
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -9,6 +10,7 @@ from pydantic import AnyHttpUrl
 from fastmcp.server.auth.oidc_proxy import OIDCConfiguration, OIDCProxy
 from fastmcp.server.auth.providers.jwt import JWTVerifier
 
+TEST_ISSUER = "https://example.com"
 TEST_AUTHORIZATION_ENDPOINT = "https://example.com/authorize"
 TEST_TOKEN_ENDPOINT = "https://example.com/oauth/token"
 
@@ -27,7 +29,7 @@ TEST_BASE_URL = "https://example.com:8000/"
 def valid_oidc_configuration_dict():
     """Create a valid OIDC configuration dict for testing."""
     return {
-        "issuer": "https://example.com/",
+        "issuer": TEST_ISSUER,
         "authorization_endpoint": TEST_AUTHORIZATION_ENDPOINT,
         "token_endpoint": TEST_TOKEN_ENDPOINT,
         "jwks_uri": "https://example.com/.well-known/jwks.json",
@@ -41,11 +43,199 @@ def valid_oidc_configuration_dict():
 def invalid_oidc_configuration_dict():
     """Create an invalid OIDC configuration dict for testing."""
     return {
-        "issuer": "https://example.com/",
+        "issuer": TEST_ISSUER,
         "authorization_endpoint": TEST_AUTHORIZATION_ENDPOINT,
         "token_endpoint": TEST_TOKEN_ENDPOINT,
         "jwks_uri": "https://example.com/.well-known/jwks.json",
     }
+
+
+@pytest.fixture
+def valid_google_oidc_configuration_dict():
+    """Create a valid Google OIDC configuration dict for testing.
+
+    See: https://accounts.google.com/.well-known/openid-configuration
+    """
+    google_config_str = """
+    {
+      "issuer": "https://accounts.google.com",
+      "authorization_endpoint": "https://accounts.google.com/o/oauth2/v2/auth",
+      "device_authorization_endpoint": "https://oauth2.googleapis.com/device/code",
+      "token_endpoint": "https://oauth2.googleapis.com/token",
+      "userinfo_endpoint": "https://openidconnect.googleapis.com/v1/userinfo",
+      "revocation_endpoint": "https://oauth2.googleapis.com/revoke",
+      "jwks_uri": "https://www.googleapis.com/oauth2/v3/certs",
+      "response_types_supported": [
+        "code",
+        "token",
+        "id_token",
+        "code token",
+        "code id_token",
+        "token id_token",
+        "code token id_token",
+        "none"
+      ],
+      "response_modes_supported": [
+        "query",
+        "fragment",
+        "form_post"
+      ],
+      "subject_types_supported": [
+        "public"
+      ],
+      "id_token_signing_alg_values_supported": [
+        "RS256"
+      ],
+      "scopes_supported": [
+        "openid",
+        "email",
+        "profile"
+      ],
+      "token_endpoint_auth_methods_supported": [
+        "client_secret_post",
+        "client_secret_basic"
+      ],
+      "claims_supported": [
+        "aud",
+        "email",
+        "email_verified",
+        "exp",
+        "family_name",
+        "given_name",
+        "iat",
+        "iss",
+        "name",
+        "picture",
+        "sub"
+      ],
+      "code_challenge_methods_supported": [
+        "plain",
+        "S256"
+      ],
+      "grant_types_supported": [
+        "authorization_code",
+        "refresh_token",
+        "urn:ietf:params:oauth:grant-type:device_code",
+        "urn:ietf:params:oauth:grant-type:jwt-bearer"
+      ]
+    }
+    """
+
+    return json.loads(google_config_str)
+
+
+@pytest.fixture
+def valid_auth0_oidc_configuration_dict():
+    """Create a valid Auth0 OIDC configuration dict for testing.
+
+    See: https://<tenant>.us.auth0.com/.well-known/openid-configuration
+    """
+    auth0_config_str = """
+    {
+      "issuer": "https://example.us.auth0.com/",
+      "authorization_endpoint": "https://example.us.auth0.com/authorize",
+      "token_endpoint": "https://example.us.auth0.com/oauth/token",
+      "device_authorization_endpoint": "https://example.us.auth0.com/oauth/device/code",
+      "userinfo_endpoint": "https://example.us.auth0.com/userinfo",
+      "mfa_challenge_endpoint": "https://example.us.auth0.com/mfa/challenge",
+      "jwks_uri": "https://example.us.auth0.com/.well-known/jwks.json",
+      "registration_endpoint": "https://example.us.auth0.com/oidc/register",
+      "revocation_endpoint": "https://example.us.auth0.com/oauth/revoke",
+      "scopes_supported": [
+        "openid",
+        "profile",
+        "offline_access",
+        "name",
+        "given_name",
+        "family_name",
+        "nickname",
+        "email",
+        "email_verified",
+        "picture",
+        "created_at",
+        "identities",
+        "phone",
+        "address"
+      ],
+      "response_types_supported": [
+        "code",
+        "token",
+        "id_token",
+        "code token",
+        "code id_token",
+        "token id_token",
+        "code token id_token"
+      ],
+      "code_challenge_methods_supported": [
+        "S256",
+        "plain"
+      ],
+      "response_modes_supported": [
+        "query",
+        "fragment",
+        "form_post"
+      ],
+      "subject_types_supported": [
+        "public"
+      ],
+      "token_endpoint_auth_methods_supported": [
+        "client_secret_basic",
+        "client_secret_post",
+        "private_key_jwt",
+        "tls_client_auth",
+        "self_signed_tls_client_auth"
+      ],
+      "token_endpoint_auth_signing_alg_values_supported": [
+        "RS256",
+        "RS384",
+        "PS256"
+      ],
+      "claims_supported": [
+        "aud",
+        "auth_time",
+        "created_at",
+        "email",
+        "email_verified",
+        "exp",
+        "family_name",
+        "given_name",
+        "iat",
+        "identities",
+        "iss",
+        "name",
+        "nickname",
+        "phone_number",
+        "picture",
+        "sub"
+      ],
+      "request_uri_parameter_supported": false,
+      "request_parameter_supported": true,
+      "id_token_signing_alg_values_supported": [
+        "HS256",
+        "RS256",
+        "PS256"
+      ],
+      "tls_client_certificate_bound_access_tokens": true,
+      "request_object_signing_alg_values_supported": [
+        "RS256",
+        "RS384",
+        "PS256"
+      ],
+      "backchannel_logout_supported": true,
+      "backchannel_logout_session_supported": true,
+      "end_session_endpoint": "https://example.us.auth0.com/oidc/logout",
+      "backchannel_authentication_endpoint": "https://example.us.auth0.com/bc-authorize",
+      "backchannel_token_delivery_modes_supported": [
+        "poll"
+      ],
+      "global_token_revocation_endpoint": "https://example.us.auth0.com/oauth/global-token-revocation/connection/{connectionName}",
+      "global_token_revocation_endpoint_auth_methods_supported": [
+        "global-token-revocation+jwt"
+      ]
+    }
+    """
+
+    return json.loads(auth0_config_str)
 
 
 # =============================================================================
@@ -53,15 +243,18 @@ def invalid_oidc_configuration_dict():
 # =============================================================================
 
 
-def validate_config(config):
-    """Validate an OIDC configuration."""
-    assert str(config.issuer) == "https://example.com/"
-    assert str(config.authorization_endpoint) == TEST_AUTHORIZATION_ENDPOINT
-    assert str(config.token_endpoint) == TEST_TOKEN_ENDPOINT
-    assert str(config.jwks_uri) == "https://example.com/.well-known/jwks.json"
-    assert config.response_types_supported == ["code"]
-    assert config.subject_types_supported == ["public"]
-    assert config.id_token_signing_alg_values_supported == ["RS256"]
+def validate_config(config, source_dict):
+    """Validate an OIDC configuration against the source dict."""
+    for source_key, source_value in source_dict.items():
+        config_value = getattr(config, source_key, None)
+        if not hasattr(config, source_key):
+            continue
+
+        config_value = getattr(config, source_key, None)
+        if isinstance(config_value, AnyHttpUrl):
+            config_value = str(config_value)
+
+        assert config_value == source_value
 
 
 class TestOIDCConfiguration:
@@ -70,13 +263,29 @@ class TestOIDCConfiguration:
     def test_default_configuration(self, valid_oidc_configuration_dict):
         """Test default configuration with valid dict."""
         config = OIDCConfiguration.model_validate(valid_oidc_configuration_dict)
-        validate_config(config)
+        validate_config(config, valid_oidc_configuration_dict)
+
+    def test_default_configuration_with_issuer_trailing_slash(
+        self, valid_oidc_configuration_dict
+    ):
+        """Test default configuration with valid dict and issuer trailing slash."""
+        valid_oidc_configuration_dict["issuer"] += "/"
+        config = OIDCConfiguration.model_validate(valid_oidc_configuration_dict)
+        validate_config(config, valid_oidc_configuration_dict)
 
     def test_explicit_strict_configuration(self, valid_oidc_configuration_dict):
         """Test default configuration with explicit True strict setting and valid dict."""
         valid_oidc_configuration_dict["strict"] = True
         config = OIDCConfiguration.model_validate(valid_oidc_configuration_dict)
-        validate_config(config)
+        validate_config(config, valid_oidc_configuration_dict)
+
+    def test_explicit_strict_configuration_with_issuer_trailing_slash(
+        self, valid_oidc_configuration_dict
+    ):
+        """Test default configuration with explicit True strict setting, valid dict and issuer trailing slash."""
+        valid_oidc_configuration_dict["issuer"] += "/"
+        config = OIDCConfiguration.model_validate(valid_oidc_configuration_dict)
+        validate_config(config, valid_oidc_configuration_dict)
 
     def test_default_configuration_raises_error(self, invalid_oidc_configuration_dict):
         """Test default configuration with invalid dict."""
@@ -91,6 +300,21 @@ class TestOIDCConfiguration:
         with pytest.raises(ValueError, match="Missing required configuration metadata"):
             OIDCConfiguration.model_validate(invalid_oidc_configuration_dict)
 
+    def test_bad_url_raises_error(self, valid_oidc_configuration_dict):
+        """Test default configuration with bad URL setting."""
+        valid_oidc_configuration_dict["issuer"] = "not-a-URL"
+        with pytest.raises(ValueError, match="Invalid URL for configuration metadata"):
+            OIDCConfiguration.model_validate(valid_oidc_configuration_dict)
+
+    def test_explict_strict_with_bad_url_raises_error(
+        self, valid_oidc_configuration_dict
+    ):
+        """Test default configuration with explicit True strict setting and bad URL setting."""
+        valid_oidc_configuration_dict["strict"] = True
+        valid_oidc_configuration_dict["issuer"] = "not-a-URL"
+        with pytest.raises(ValueError, match="Invalid URL for configuration metadata"):
+            OIDCConfiguration.model_validate(valid_oidc_configuration_dict)
+
     def test_not_strict_configuration(self):
         """Test default configuration with explicit False strict setting."""
         config = OIDCConfiguration.model_validate({"strict": False})
@@ -102,6 +326,35 @@ class TestOIDCConfiguration:
         assert config.response_types_supported is None
         assert config.subject_types_supported is None
         assert config.id_token_signing_alg_values_supported is None
+
+    def test_not_strict_configuration_with_invalid_config(
+        self, invalid_oidc_configuration_dict
+    ):
+        """Test default configuration with explicit False strict setting."""
+        invalid_oidc_configuration_dict["strict"] = False
+        config = OIDCConfiguration.model_validate(invalid_oidc_configuration_dict)
+
+        validate_config(config, invalid_oidc_configuration_dict)
+
+    def test_not_strict_configuration_with_bad_url(self, valid_oidc_configuration_dict):
+        """Test default configuration with explicit False strict setting."""
+        valid_oidc_configuration_dict["strict"] = False
+        valid_oidc_configuration_dict["issuer"] = "not-a-url"
+        config = OIDCConfiguration.model_validate(valid_oidc_configuration_dict)
+
+        validate_config(config, valid_oidc_configuration_dict)
+
+    def test_google_configuration(self, valid_google_oidc_configuration_dict):
+        """Test Google configuration."""
+        config = OIDCConfiguration.model_validate(valid_google_oidc_configuration_dict)
+
+        validate_config(config, valid_google_oidc_configuration_dict)
+
+    def test_auth0_configuration(self, valid_auth0_oidc_configuration_dict):
+        """Test Auth0 configuration."""
+        config = OIDCConfiguration.model_validate(valid_auth0_oidc_configuration_dict)
+
+        validate_config(config, valid_auth0_oidc_configuration_dict)
 
 
 def validate_get_oidc_configuration(oidc_configuration, strict, timeout_seconds):
@@ -117,7 +370,7 @@ def validate_get_oidc_configuration(oidc_configuration, strict, timeout_seconds)
             timeout_seconds=timeout_seconds,
         )
 
-        validate_config(config)
+        validate_config(config, oidc_configuration)
 
         mock_get.assert_called_once()
 
