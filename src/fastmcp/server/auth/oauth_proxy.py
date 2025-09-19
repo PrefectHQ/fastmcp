@@ -407,7 +407,7 @@ class OAuthProxy(OAuthProvider):
             redirect_uris=client_info.redirect_uris or [AnyUrl("http://localhost")],
             grant_types=client_info.grant_types
             or ["authorization_code", "refresh_token"],
-            scope=self._default_scope_str,
+            scope=client_info.scope or self._default_scope_str,
             token_endpoint_auth_method="none",
             allowed_redirect_uri_patterns=self._allowed_client_redirect_uris,
         )
