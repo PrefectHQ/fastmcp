@@ -403,7 +403,8 @@ class MCPServerConfig(BaseModel):
                 run_args["port"] = self.deployment.port
             if self.deployment.path:
                 run_args["path"] = self.deployment.path
-            # Note: log_level not currently supported by run_async
+            if self.deployment.log_level:
+                run_args["log_level"] = self.deployment.log_level
 
         # Override with any provided kwargs
         run_args.update(kwargs)

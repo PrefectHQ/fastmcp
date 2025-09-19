@@ -206,6 +206,47 @@ def test_load_config_with_server_args(tmp_path):
     assert config.deployment.args == ["--debug", "--config", "custom.json"]
 
 
+def test_load_config_with_log_level(tmp_path):
+    """Test configuration with log_level setting."""
+    config_data = {
+        "source": {"path": "server.py"},
+        "deployment": {"log_level": "DEBUG"},
+    }
+
+    config_file = tmp_path / "fastmcp.json"
+    config_file.write_text(json.dumps(config_data))
+
+    # Create server file
+    server_file = tmp_path / "server.py"
+    server_file.write_text("# Server")
+
+    config = load_mcp_server_config(config_file)
+
+    assert config.deployment.log_level == "DEBUG"
+
+
+def test_load_config_with_various_log_levels(tmp_path):
+    """Test that all valid log levels are accepted."""
+    valid_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+
+    for level in valid_levels:
+        config_data = {
+            "source": {"path": "server.py"},
+            "deployment": {"log_level": level},
+        }
+
+        config_file = tmp_path / f"fastmcp_{level}.json"
+        config_file.write_text(json.dumps(config_data))
+
+        # Create server file
+        server_file = tmp_path / "server.py"
+        server_file.write_text("# Server")
+
+        config = load_mcp_server_config(config_file)
+
+        assert config.deployment.log_level == level
+
+
 def test_config_subset_independence(tmp_path):
     """Test that config subsets can be used independently."""
     config_data = {
