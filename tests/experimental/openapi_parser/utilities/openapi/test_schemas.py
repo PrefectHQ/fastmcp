@@ -286,6 +286,107 @@ class TestSchemaProcessing:
         ]
         assert array_item_prop["$ref"] == "#/$defs/RefProp"
 
+    def test_replace_ref_with_defs_in_additional_properties(self):
+        """Test replacing $ref deeply in 'additionalProperties'."""
+
+        add_props_schema = {
+            "description": "An invoice with a fixed header and a flexible set of line items.",
+            "type": "object",
+            "properties": {
+                "invoice_number": {
+                    "type": "string",
+                    "description": "The unique identifier for the invoice.",
+                },
+                "customer_name": {
+                    "type": "string",
+                    "description": "The name of the customer.",
+                },
+                "total_amount": {
+                    "type": "number",
+                    "description": "The total amount of the invoice.",
+                },
+            },
+            "required": ["invoice_number", "customer_name", "total_amount"],
+            "additionalProperties": {"$ref": "#/components/schemas/Link"},
+        }
+
+        # Use our recursive replacement approach
+        result = _replace_ref_with_defs(add_props_schema)
+
+        # Check additional properties
+        add_props = result["additionalProperties"]
+        assert add_props["$ref"] == "#/$defs/Link"
+
+    def test_replace_ref_with_defs_with_bool_additional_properties(self):
+        """Test replacing a bool 'additionalProperties'."""
+
+        add_props_schema = {
+            "description": "An invoice with a fixed header and a flexible set of line items.",
+            "type": "object",
+            "properties": {
+                "invoice_number": {
+                    "type": "string",
+                    "description": "The unique identifier for the invoice.",
+                },
+                "customer_name": {
+                    "type": "string",
+                    "description": "The name of the customer.",
+                },
+                "total_amount": {
+                    "type": "number",
+                    "description": "The total amount of the invoice.",
+                },
+            },
+            "required": ["invoice_number", "customer_name", "total_amount"],
+            "additionalProperties": False,
+        }
+
+        # Use our recursive replacement approach
+        result = _replace_ref_with_defs(add_props_schema)
+
+        # Check additional properties
+        add_props = result["additionalProperties"]
+        assert add_props is False
+
+    def test_replace_ref_with_defs_with_inner_schema_additional_properties(self):
+        """Test replacing a inner schema 'additionalProperties'."""
+
+        add_props_schema = {
+            "description": "An invoice with a fixed header and a flexible set of line items.",
+            "type": "object",
+            "properties": {
+                "invoice_number": {
+                    "type": "string",
+                    "description": "The unique identifier for the invoice.",
+                },
+                "customer_name": {
+                    "type": "string",
+                    "description": "The name of the customer.",
+                },
+                "total_amount": {
+                    "type": "number",
+                    "description": "The total amount of the invoice.",
+                },
+            },
+            "required": ["invoice_number", "customer_name", "total_amount"],
+            "additionalProperties": {
+                "type": "integer",
+                "format": "int32",
+                "description": "The total amount of the invoice.",
+            },
+        }
+
+        # Use our recursive replacement approach
+        result = _replace_ref_with_defs(add_props_schema)
+
+        # Check additional properties
+        add_props = result["additionalProperties"]
+        assert add_props == {
+            "type": "integer",
+            "format": "int32",
+            "description": "The total amount of the invoice.",
+        }
+
     def test_parameter_collision_suffixing_logic(self):
         """Test the specific logic for parameter collision suffixing."""
         # Create a route that would definitely cause collisions
