@@ -70,7 +70,7 @@ When modifying MCP functionality, changes typically need to be applied across al
 
 ### Inline Snapshots
 
-FastMCP uses `inline-snapshot` for testing complex data structures. On first run with empty `snapshot()`, pytest will auto-populate the expected value. To update snapshots after intentional changes, run `pytest --inline-snapshot=fix`. This is particularly useful for testing JSON schemas and API responses.
+FastMCP uses `inline-snapshot` for testing complex data structures. On first run with empty `snapshot()`, pytest will auto-populate the expected value when running `pytest --inline-snapshot=create`. To update snapshots after intentional changes, run `pytest --inline-snapshot=fix`. This is particularly useful for testing JSON schemas and API responses.
 
 ### Always Use In-Memory Transport
 
