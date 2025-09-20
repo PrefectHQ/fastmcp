@@ -318,8 +318,8 @@ class OAuth(OAuthClientProvider):
                     "OAuth client not found - cached credentials may be stale"
                 )
 
-            # For any non-redirect response, something is wrong
-            if response.status_code not in (302, 303, 307, 308):
+            # OAuth typically returns redirects, but some providers return 200 with HTML login pages
+            if response.status_code not in (200, 302, 303, 307, 308):
                 raise RuntimeError(
                     f"Unexpected authorization response: {response.status_code}"
                 )
