@@ -1,10 +1,11 @@
 <div align="center">
 
 <!-- omit in toc -->
+
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/brand/wordmark-white-padded.png">
-  <source media="(prefers-color-scheme: light)" srcset="docs/assets/brand/wordmark-padded.png">
-  <img alt="FastMCP Logo" src="docs/assets/brand/wordmark.png">
+  <source width="550" media="(prefers-color-scheme: dark)" srcset="docs/assets/brand/wordmark-watercolor-waves.png">
+  <source width="550" media="(prefers-color-scheme: light)" srcset="docs/assets/brand/wordmark-watercolor-waves.png">
+  <img width="550" alt="FastMCP Logo" src="docs/assets/brand/wordmark-watercolor-waves.png">
 </picture>
 
 # FastMCP v2 🚀

@@ -15,7 +15,7 @@
     "options": ["copy", "view"]
   },
   "banner": {
-    "content": "Host your server free on [FastMCP Cloud!](https://fastmcp.cloud)"
+    "content": "Host your server on [FastMCP Cloud](https://fastmcp.cloud) for free!"
   },
   "colors": {
     "dark": "#f72585",
