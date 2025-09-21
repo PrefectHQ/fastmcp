@@ -31,16 +31,11 @@ DEFAULT_MAPPING = {
         "value": {
             "type": "keyword",
             "index": False,
+            "doc_values": False,
+            "ignore_above": 256,
         },
     },
 }
-
-
-class SetEncoder(json.JSONEncoder):
-    def default(self, obj):
-        if isinstance(obj, set):
-            return list(obj)
-        return json.JSONEncoder.default(self, obj)
 
 
 class ElasticsearchCache(CacheProtocol):
@@ -111,7 +106,7 @@ class ElasticsearchCache(CacheProtocol):
             collection=cache_entry.collection, key=cache_entry.key
         )
 
-        document = json.loads(cache_entry.model_dump_json())
+        document = json.loads(cache_entry.model_dump_json(serialize_as_any=True))
 
         document["value"] = json.dumps(document["value"])
 
