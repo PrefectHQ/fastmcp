@@ -303,9 +303,11 @@ def _combine_schemas_and_map_params(
 
             # Convert refs if needed
             if convert_refs:
-                param_schema = _replace_ref_with_defs(param.schema_)
+                param_schema = _replace_ref_with_defs(param.schema_, param.description)
             else:
-                param_schema = param.schema_
+                param_schema = param.schema_.copy()
+                if param.description and not param_schema.get("description"):
+                    param_schema["description"] = param.description
             original_desc = param_schema.get("description", "")
             location_desc = f"({param.location.capitalize()} parameter)"
             if original_desc:
@@ -330,9 +332,11 @@ def _combine_schemas_and_map_params(
 
             # Convert refs if needed
             if convert_refs:
-                param_schema = _replace_ref_with_defs(param.schema_)
+                param_schema = _replace_ref_with_defs(param.schema_, param.description)
             else:
-                param_schema = param.schema_
+                param_schema = param.schema_.copy()
+                if param.description and not param_schema.get("description"):
+                    param_schema["description"] = param.description
 
             # Don't make optional parameters nullable - they can simply be omitted
             # The OpenAPI specification doesn't require optional parameters to accept null values
