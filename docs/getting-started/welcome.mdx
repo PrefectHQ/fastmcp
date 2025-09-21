@@ -4,9 +4,23 @@ sidebarTitle: "Welcome!"
 description: The fast, Pythonic way to build MCP servers and clients.
 icon: hand-wave
 ---
+<img 
+  src="/assets/brand/f-watercolor-background.png" 
+  alt="'F' logo on a watercolor background"
+  height="300"
+  noZoom
+  className="rounded-lg block dark:hidden"
+  />
+<img 
+  src="/assets/brand/f-watercolor-background-dark.png" 
+  alt="'F' logo on a watercolor background"
+  height="300"
+  noZoom
+  className="rounded-lg hidden dark:block"
+  />
 
 
-The [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) is a new, standardized way to provide context and tools to your LLMs, and FastMCP makes building MCP servers and clients simple and intuitive. Create tools, expose resources, define prompts, and more with clean, Pythonic code:
+**FastMCP is the standard framework for building MCP applications.** The [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) provides a standardized way to connect LLMs to tools and data, and FastMCP makes it production-ready with clean, Pythonic code:
 
 ```python {1}
 from fastmcp import FastMCP
@@ -23,15 +37,13 @@ if __name__ == "__main__":
 ```
 
 
-## Beyond the Protocol
+## Beyond Basic MCP
 
-FastMCP is the standard framework for working with the Model Context Protocol. FastMCP 1.0 was incorporated into the [official MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk) in 2024. 
+FastMCP pioneered Python MCP development, with FastMCP 1.0 being incorporated into the [official MCP SDK](https://github.com/modelcontextprotocol/python-sdk) in 2024.
 
-This is FastMCP 2.0, the **actively maintained version** that provides a complete toolkit for working with the MCP ecosystem.
+**This is FastMCP 2.0** — the actively maintained version that extends far beyond basic protocol implementation. While the SDK provides core functionality, FastMCP 2.0 delivers everything needed for production: advanced MCP patterns (server composition, proxying, OpenAPI/FastAPI generation, tool transformation), enterprise auth (Google, GitHub, Azure, Auth0, WorkOS, and more), deployment tools, testing frameworks, and comprehensive client libraries.
 
-FastMCP 2.0 has a comprehensive set of features that go far beyond the core MCP specification, all in service of providing **the simplest path to production**. These include deployment, auth, clients, server proxying and composition, generating servers from REST APIs, dynamic tool rewriting, built-in testing tools, integrations, and more.
-
-Ready to upgrade or get started? Follow the [installation instructions](/getting-started/installation), which include steps for upgrading from the official MCP SDK.
+Ready to build? Start with our [installation guide](/getting-started/installation) or jump straight to the [quickstart](/getting-started/quickstart).
 
 
 ## What is MCP?
@@ -47,11 +59,7 @@ FastMCP provides a high-level, Pythonic interface for building, managing, and in
 
 ## Why FastMCP?
 
-The MCP protocol is powerful but implementing it involves a lot of boilerplate - server setup, protocol handlers, content types, error management. FastMCP handles all the complex protocol details and server management, so you can focus on building great tools. It's designed to be high-level and Pythonic; in most cases, decorating a function is all you need.
-
-FastMCP 2.0 has evolved into a comprehensive platform that goes far beyond basic protocol implementation. While 1.0 provided server-building capabilities (and is now part of the official MCP SDK), 2.0 offers a complete ecosystem including client libraries, authentication systems, deployment tools, integrations with major AI platforms, testing frameworks, and production-ready infrastructure patterns.
-
-FastMCP aims to be:
+FastMCP handles all the complex protocol details so you can focus on building. In most cases, decorating a Python function is all you need — FastMCP handles the rest.
 
 🚀 **Fast**: High-level interface means less code and faster development
 
@@ -59,7 +67,9 @@ FastMCP aims to be:
 
 🐍 **Pythonic**: Feels natural to Python developers
 
-🔍 **Complete**: A comprehensive platform for all MCP use cases, from dev to prod
+🔍 **Complete**: Everything for production — enterprise auth (Google, GitHub, Azure, Auth0, WorkOS), deployment tools, testing frameworks, client libraries, and more
+
+FastMCP provides the shortest path from idea to production. Deploy locally, to the cloud with [FastMCP Cloud](https://fastmcp.cloud) (free for personal servers), or to your own infrastructure.
 
 FastMCP is made with 💙 by [Prefect](https://www.prefect.io/).
 
@@ -67,12 +77,35 @@ FastMCP is made with 💙 by [Prefect](https://www.prefect.io/).
 
 ## LLM-Friendly Docs
 
-This documentation is also available in [llms.txt format](https://llmstxt.org/), which is a simple markdown standard that LLMs can consume easily. 
+The FastMCP documentation is available in multiple LLM-friendly formats:
 
-There are two ways to access the LLM-friendly documentation:
-- [llms.txt](https://gofastmcp.com/llms.txt) is essentially a sitemap, listing all the pages in the documentation.
-- [llms-full.txt](https://gofastmcp.com/llms-full.txt) contains the entire documentation. Note this may exceed the context window of your LLM.
+### MCP Server
 
-In addition, any page can be accessed as markdown by appending `.md` to the URL. For example, this page would become `https://gofastmcp.com/getting-started/welcome.md`, which you can view [here](/getting-started/welcome.md).
+The FastMCP docs are accessible via MCP! The server URL is `https://gofastmcp.com/mcp`. 
 
-Finally, you can copy the contents of any page as markdown by pressing "Cmd+C" (or "Ctrl+C" on Windows) on your keyboard.
+In fact, you can use FastMCP to search the FastMCP docs:
+
+```python
+import asyncio
+from fastmcp import Client
+
+async def main():
+    async with Client("https://gofastmcp.com/mcp") as client:
+        result = await client.call_tool(
+            name="SearchFastMcp", 
+            arguments={"query": "deploy a FastMCP server"}
+        )
+    print(result)
+
+asyncio.run(main())
+```
+
+### Plain Text Formats
+
+The docs are also available in [llms.txt format](https://llmstxt.org/):
+- [llms.txt](https://gofastmcp.com/llms.txt) - A sitemap listing all documentation pages
+- [llms-full.txt](https://gofastmcp.com/llms-full.txt) - The entire documentation in one file (may exceed context windows)
+
+Any page can be accessed as markdown by appending `.md` to the URL. For example, this page becomes `https://gofastmcp.com/getting-started/welcome.md`.
+
+You can also copy any page as markdown by pressing "Cmd+C" (or "Ctrl+C" on Windows) on your keyboard.

@@ -11,8 +11,11 @@
     },
     "decoration": "windows"
   },
+  "contextual": {
+    "options": ["copy", "view"]
+  },
   "banner": {
-    "content": "Remote MCP that just works:  [FastMCP Cloud is here!](https://fastmcp.link/IhmBxWn) "
+    "content": "Host your server free on [FastMCP Cloud!](https://fastmcp.cloud)"
   },
   "colors": {
     "dark": "#f72585",
@@ -45,6 +48,13 @@
   },
   "name": "FastMCP",
   "navbar": {
+    "links": [
+      {
+        "href": "https://fastmcp.cloud",
+        "label": "FastMCP Cloud",
+        "icon": "cloud"
+      }
+    ],
     "primary": {
       "href": "https://github.com/jlowin/fastmcp",
       "type": "github"
