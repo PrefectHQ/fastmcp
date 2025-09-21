@@ -79,28 +79,33 @@ mcp = FastMCP(name="My Server", auth=auth)
   Public URL of your FastMCP server (e.g., `https://your-server.com`)
 </ParamField>
 
-<ParamField body="strict" type="str">
-  Strict flag for configuration validation
+<ParamField body="strict" type="bool | None">
+  Strict flag for configuration validation. When True, requires all OIDC
+  mandatory fields.
 </ParamField>
 
-<ParamField body="audience" type="str">
-  Audience from your registered OAuth application
+<ParamField body="audience" type="str | None">
+  Audience parameter for OIDC providers that require it (e.g., Auth0). This is
+  typically your API identifier.
 </ParamField>
 
-<ParamField body="timeout_seconds" type="str">
-  HTTP request timeout in seconds
+<ParamField body="timeout_seconds" type="int | None" default="10">
+  HTTP request timeout in seconds for fetching OIDC configuration
 </ParamField>
 
-<ParamField body="algorithm" type="str">
-  The algorithm for the token verifier
+<ParamField body="algorithm" type="str | None">
+  JWT algorithm to use for token verification (e.g., "RS256"). If not specified,
+  uses the provider's default.
 </ParamField>
 
-<ParamField body="required_scopes" type="str">
-  The required scopes for the token verifier
+<ParamField body="required_scopes" type="list[str] | None">
+  List of OAuth scopes to request from the provider. These are automatically
+  included in authorization requests.
 </ParamField>
 
 <ParamField body="redirect_path" type="str" default="/auth/callback">
-  Path for OAuth callbacks. Must match the redirect URI configured in your OAuth application
+  Path for OAuth callbacks. Must match the redirect URI configured in your OAuth
+  application
 </ParamField>
 
 <ParamField body="allowed_client_redirect_uris" type="list[str] | None">
@@ -109,7 +114,8 @@ mcp = FastMCP(name="My Server", auth=auth)
   - Empty list `[]`: No redirect URIs allowed
   - Custom list: Only matching patterns allowed
 
-  These patterns apply to MCP client loopback redirects, NOT the upstream OAuth app redirect URI.
+These patterns apply to MCP client loopback redirects, NOT the upstream OAuth app redirect URI.
+
 </ParamField>
 
 <ParamField body="token_endpoint_auth_method" type="str | None">
@@ -119,7 +125,20 @@ mcp = FastMCP(name="My Server", auth=auth)
   - `"none"`: No authentication (for public clients)
   - `None` (default): Uses authlib's default (typically `"client_secret_basic"`)
 
-  Set this if your provider requires a specific authentication method and the default doesn't work.
+Set this if your provider requires a specific authentication method and the default doesn't work.
+
+</ParamField>
+
+<ParamField body="client_storage" type="KVStorage | None">
+  Storage backend for persisting OAuth client registrations. By default, clients are automatically persisted to disk in `~/.config/fastmcp/oidc-proxy-clients/`, allowing them to survive server restarts as long as the filesystem remains accessible. This means MCP clients only need to register once and can reconnect seamlessly after your server restarts.
+
+```python
+from fastmcp.utilities.storage import InMemoryStorage
+
+# Use in-memory storage for testing (clients lost on restart)
+auth = OIDCProxy(..., client_storage=InMemoryStorage())
+```
+
 </ParamField>
 </Card>
 

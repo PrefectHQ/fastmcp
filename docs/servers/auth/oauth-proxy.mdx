@@ -16,6 +16,14 @@ MCP clients expect to register automatically and obtain credentials on the fly, 
 
 This approach enables any MCP client (whether using random localhost ports or fixed URLs like Claude.ai) to authenticate with any traditional OAuth provider, all while maintaining full OAuth 2.1 and PKCE security.
 
+<Note>
+  For providers that support OIDC discovery (Auth0, Google with OIDC
+  configuration, Azure AD), consider using [`OIDC
+  Proxy`](/servers/auth/oidc-proxy) for automatic configuration. OIDC Proxy
+  extends OAuth Proxy to automatically discover endpoints from the provider's
+  `/.well-known/openid-configuration` URL, simplifying setup.
+</Note>
+
 ## Implementation
 
 ### Provider Setup Requirements
@@ -24,7 +32,7 @@ Before using OAuth Proxy, you need to register your application with your OAuth 
 
 1. **Register your application** in the provider's developer console (GitHub Settings, Google Cloud Console, Azure Portal, etc.)
 2. **Configure the redirect URI** as your FastMCP server URL plus your chosen callback path:
-   - Default: `https://your-server.com/auth/callback` 
+   - Default: `https://your-server.com/auth/callback`
    - Custom: `https://your-server.com/your/custom/path` (if you set `redirect_path`)
    - Development: `http://localhost:8000/auth/callback`
 3. **Obtain your credentials**: Client ID and Client Secret
@@ -68,7 +76,7 @@ auth = OAuthProxy(
 
     # Your FastMCP server's public URL
     base_url="https://your-server.com",
-    
+
     # Optional: customize the callback path (default is "/auth/callback")
     # redirect_path="/custom/callback",
 )
@@ -84,7 +92,8 @@ mcp = FastMCP(name="My Server", auth=auth)
 </ParamField>
 
 <ParamField body="upstream_token_endpoint" type="str" required>
-  URL of your OAuth provider's token endpoint (e.g., `https://github.com/login/oauth/access_token`)
+  URL of your OAuth provider's token endpoint (e.g.,
+  `https://github.com/login/oauth/access_token`)
 </ParamField>
 
 <ParamField body="upstream_client_id" type="str" required>
@@ -96,7 +105,8 @@ mcp = FastMCP(name="My Server", auth=auth)
 </ParamField>
 
 <ParamField body="token_verifier" type="TokenVerifier" required>
-  A [`TokenVerifier`](/servers/auth/token-verification) instance to validate the provider's tokens
+  A [`TokenVerifier`](/servers/auth/token-verification) instance to validate the
+  provider's tokens
 </ParamField>
 
 <ParamField body="base_url" type="AnyHttpUrl | str" required>
@@ -104,7 +114,8 @@ mcp = FastMCP(name="My Server", auth=auth)
 </ParamField>
 
 <ParamField body="redirect_path" type="str" default="/auth/callback">
-  Path for OAuth callbacks. Must match the redirect URI configured in your OAuth application
+  Path for OAuth callbacks. Must match the redirect URI configured in your OAuth
+  application
 </ParamField>
 
 <ParamField body="upstream_revocation_endpoint" type="str | None">
@@ -120,32 +131,39 @@ mcp = FastMCP(name="My Server", auth=auth)
 </ParamField>
 
 <ParamField body="forward_pkce" type="bool" default="True">
-  Whether to forward PKCE (Proof Key for Code Exchange) to the upstream OAuth provider. When enabled and the client uses PKCE, the proxy generates its own PKCE parameters to send upstream while separately validating the client's PKCE. This ensures end-to-end PKCE security at both layers (client-to-proxy and proxy-to-upstream).
-  - `True` (default): Forward PKCE for providers that support it (Google, Azure, GitHub, etc.)
-  - `False`: Disable only if upstream provider doesn't support PKCE
+  Whether to forward PKCE (Proof Key for Code Exchange) to the upstream OAuth
+  provider. When enabled and the client uses PKCE, the proxy generates its own
+  PKCE parameters to send upstream while separately validating the client's
+  PKCE. This ensures end-to-end PKCE security at both layers (client-to-proxy
+  and proxy-to-upstream). - `True` (default): Forward PKCE for providers that
+  support it (Google, Azure, GitHub, etc.) - `False`: Disable only if upstream
+  provider doesn't support PKCE
 </ParamField>
 
 <ParamField body="token_endpoint_auth_method" type="str | None">
-  Token endpoint authentication method for the upstream OAuth server. Controls how the proxy authenticates when exchanging authorization codes and refresh tokens with the upstream provider.
-  - `"client_secret_basic"`: Send credentials in Authorization header (most common)
-  - `"client_secret_post"`: Send credentials in request body (required by some providers)
-  - `"none"`: No authentication (for public clients)
-  - `None` (default): Uses authlib's default (typically `"client_secret_basic"`)
-  
-  Set this if your provider requires a specific authentication method and the default doesn't work.
+  Token endpoint authentication method for the upstream OAuth server. Controls
+  how the proxy authenticates when exchanging authorization codes and refresh
+  tokens with the upstream provider. - `"client_secret_basic"`: Send credentials
+  in Authorization header (most common) - `"client_secret_post"`: Send
+  credentials in request body (required by some providers) - `"none"`: No
+  authentication (for public clients) - `None` (default): Uses authlib's default
+  (typically `"client_secret_basic"`) Set this if your provider requires a
+  specific authentication method and the default doesn't work.
 </ParamField>
 
 <ParamField body="allowed_client_redirect_uris" type="list[str] | None">
-  List of allowed redirect URI patterns for MCP clients. Patterns support wildcards (e.g., `"http://localhost:*"`, `"https://*.example.com/*"`).
-  - `None` (default): All redirect URIs allowed (for MCP/DCR compatibility)
-  - Empty list `[]`: No redirect URIs allowed
-  - Custom list: Only matching patterns allowed
-  
-  These patterns apply to MCP client loopback redirects, NOT the upstream OAuth app redirect URI.
+  List of allowed redirect URI patterns for MCP clients. Patterns support
+  wildcards (e.g., `"http://localhost:*"`, `"https://*.example.com/*"`). -
+  `None` (default): All redirect URIs allowed (for MCP/DCR compatibility) -
+  Empty list `[]`: No redirect URIs allowed - Custom list: Only matching
+  patterns allowed These patterns apply to MCP client loopback redirects, NOT
+  the upstream OAuth app redirect URI.
 </ParamField>
 
 <ParamField body="valid_scopes" type="list[str] | None">
-  List of all possible valid scopes for the OAuth provider. These are advertised to clients through the `/.well-known` endpoints. Defaults to `required_scopes` from your TokenVerifier if not specified.
+  List of all possible valid scopes for the OAuth provider. These are advertised
+  to clients through the `/.well-known` endpoints. Defaults to `required_scopes`
+  from your TokenVerifier if not specified.
 </ParamField>
 
 <ParamField body="extra_authorize_params" type="dict[str, str] | None">
@@ -162,23 +180,26 @@ mcp = FastMCP(name="My Server", auth=auth)
 <ParamField body="extra_token_params" type="dict[str, str] | None">
   Additional parameters to forward to the upstream token endpoint during code exchange and token refresh. Useful for provider-specific requirements during token operations.
 
-  For example, some providers require additional context during token exchange:
-  ```python
-  extra_token_params={"audience": "https://api.example.com"}
-  ```
+For example, some providers require additional context during token exchange:
 
-  These parameters are included in all token requests to the upstream provider.
+```python
+extra_token_params={"audience": "https://api.example.com"}
+```
+
+These parameters are included in all token requests to the upstream provider.
+
 </ParamField>
 
 <ParamField body="client_storage" type="KVStorage | None">
   Storage backend for persisting OAuth client registrations. By default, clients are automatically persisted to disk in `~/.config/fastmcp/oauth-proxy-clients/`, allowing them to survive server restarts as long as the filesystem remains accessible. This means MCP clients only need to register once and can reconnect seamlessly after your server restarts.
 
-  ```python
-  from fastmcp.utilities.storage import InMemoryStorage
+```python
+from fastmcp.utilities.storage import InMemoryStorage
 
-  # Use in-memory storage for testing (clients lost on restart)
-  auth = OAuthProxy(..., client_storage=InMemoryStorage())
-  ```
+# Use in-memory storage for testing (clients lost on restart)
+auth = OAuthProxy(..., client_storage=InMemoryStorage())
+```
+
 </ParamField>
 </Card>
 
@@ -196,21 +217,21 @@ auth = OAuthProxy(
     upstream_token_endpoint="https://your-domain.auth0.com/oauth/token",
     upstream_client_id="your-auth0-client-id",
     upstream_client_secret="your-auth0-client-secret",
-    
+
     # Auth0 requires audience for JWT tokens
     extra_authorize_params={
         "audience": "https://your-api-identifier.com"
     },
     extra_token_params={
-        "audience": "https://your-api-identifier.com"  
+        "audience": "https://your-api-identifier.com"
     },
-    
+
     token_verifier=JWTVerifier(
         jwks_uri="https://your-domain.auth0.com/.well-known/jwks.json",
         issuer="https://your-domain.auth0.com/",
         audience="https://your-api-identifier.com"
     ),
-    
+
     base_url="https://your-server.com"
 )
 ```
