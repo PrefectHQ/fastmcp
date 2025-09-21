@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import webbrowser
 from asyncio import Future
 from collections.abc import AsyncGenerator
@@ -29,6 +28,7 @@ from fastmcp.client.oauth_callback import (
 )
 from fastmcp.utilities.http import find_available_port
 from fastmcp.utilities.logging import get_logger
+from fastmcp.utilities.storage import JSONFileStorage
 
 __all__ = ["OAuth"]
 
@@ -62,13 +62,14 @@ class FileTokenStorage(TokenStorage):
     Implements the mcp.client.auth.TokenStorage protocol.
 
     Each instance is tied to a specific server URL for proper token isolation.
+    Uses JSONFileStorage internally for consistent file handling.
     """
 
     def __init__(self, server_url: str, cache_dir: Path | None = None):
         """Initialize storage for a specific server URL."""
         self.server_url = server_url
-        self.cache_dir = cache_dir or default_cache_dir()
-        self.cache_dir.mkdir(exist_ok=True, parents=True)
+        # Use JSONFileStorage for actual file operations
+        self._storage = JSONFileStorage(cache_dir or default_cache_dir())
 
     @staticmethod
     def get_base_url(url: str) -> str:
@@ -76,28 +77,33 @@ class FileTokenStorage(TokenStorage):
         parsed = urlparse(url)
         return f"{parsed.scheme}://{parsed.netloc}"
 
-    def get_cache_key(self) -> str:
-        """Generate a safe filesystem key from the server's base URL."""
+    def _get_storage_key(self, file_type: Literal["client_info", "tokens"]) -> str:
+        """Get the storage key for the specified data type.
+
+        JSONFileStorage will handle making the key filesystem-safe.
+        """
         base_url = self.get_base_url(self.server_url)
-        return (
-            base_url.replace("://", "_")
-            .replace(".", "_")
-            .replace("/", "_")
-            .replace(":", "_")
-        )
+        return f"{base_url}_{file_type}"
 
     def _get_file_path(self, file_type: Literal["client_info", "tokens"]) -> Path:
-        """Get the file path for the specified cache file type."""
-        key = self.get_cache_key()
-        return self.cache_dir / f"{key}_{file_type}.json"
+        """Get the file path for the specified cache file type.
+
+        This method is kept for backward compatibility with tests that access _get_file_path.
+        """
+        key = self._get_storage_key(file_type)
+        return self._storage._get_file_path(key)
 
     async def get_tokens(self) -> OAuthToken | None:
         """Load tokens from file storage."""
-        path = self._get_file_path("tokens")
+        key = self._get_storage_key("tokens")
+        data = await self._storage.get(key)
+
+        if data is None:
+            return None
 
         try:
-            # Parse JSON and validate as StoredToken
-            stored = stored_token_adapter.validate_json(path.read_text())
+            # Parse and validate as StoredToken
+            stored = stored_token_adapter.validate_python(data)
 
             # Check if token is expired
             if stored.expires_at is not None:
@@ -117,15 +123,15 @@ class FileTokenStorage(TokenStorage):
 
             return stored.token_payload
 
-        except (FileNotFoundError, ValidationError) as e:
+        except ValidationError as e:
             logger.debug(
-                f"Could not load tokens for {self.get_base_url(self.server_url)}: {e}"
+                f"Could not validate tokens for {self.get_base_url(self.server_url)}: {e}"
             )
             return None
 
     async def set_tokens(self, tokens: OAuthToken) -> None:
         """Save tokens to file storage."""
-        path = self._get_file_path("tokens")
+        key = self._get_storage_key("tokens")
 
         # Calculate absolute expiry time if expires_in is present
         expires_at = None
@@ -134,19 +140,22 @@ class FileTokenStorage(TokenStorage):
                 seconds=tokens.expires_in
             )
 
-        # Create StoredToken and save using Pydantic serialization
+        # Create StoredToken and save using storage
+        # Note: JSONFileStorage will wrap this in {"data": ..., "timestamp": ...}
         stored = StoredToken(token_payload=tokens, expires_at=expires_at)
-
-        path.write_text(stored.model_dump_json(indent=2))
+        await self._storage.set(key, stored.model_dump(mode="json"))
         logger.debug(f"Saved tokens for {self.get_base_url(self.server_url)}")
 
     async def get_client_info(self) -> OAuthClientInformationFull | None:
         """Load client information from file storage."""
-        path = self._get_file_path("client_info")
+        key = self._get_storage_key("client_info")
+        data = await self._storage.get(key)
+
+        if data is None:
+            return None
+
         try:
-            client_info = OAuthClientInformationFull.model_validate_json(
-                path.read_text()
-            )
+            client_info = OAuthClientInformationFull.model_validate(data)
             # Check if we have corresponding valid tokens
             # If no tokens exist, the OAuth flow was incomplete and we should
             # force a fresh client registration
@@ -157,27 +166,31 @@ class FileTokenStorage(TokenStorage):
                     "OAuth flow may have been incomplete. Clearing client info to force fresh registration."
                 )
                 # Clear the incomplete client info
-                client_info_path = self._get_file_path("client_info")
-                client_info_path.unlink(missing_ok=True)
+                await self._storage.delete(key)
                 return None
 
             return client_info
-        except (FileNotFoundError, json.JSONDecodeError, ValidationError) as e:
+        except ValidationError as e:
             logger.debug(
-                f"Could not load client info for {self.get_base_url(self.server_url)}: {e}"
+                f"Could not validate client info for {self.get_base_url(self.server_url)}: {e}"
             )
             return None
 
     async def set_client_info(self, client_info: OAuthClientInformationFull) -> None:
         """Save client information to file storage."""
-        path = self._get_file_path("client_info")
-        path.write_text(client_info.model_dump_json(indent=2))
+        key = self._get_storage_key("client_info")
+        await self._storage.set(key, client_info.model_dump(mode="json"))
         logger.debug(f"Saved client info for {self.get_base_url(self.server_url)}")
 
     def clear(self) -> None:
-        """Clear all cached data for this server."""
+        """Clear all cached data for this server.
+
+        Note: This is a synchronous method for backward compatibility.
+        Uses direct file operations instead of async storage methods.
+        """
         file_types: list[Literal["client_info", "tokens"]] = ["client_info", "tokens"]
         for file_type in file_types:
+            # Use the file path directly for synchronous deletion
             path = self._get_file_path(file_type)
             path.unlink(missing_ok=True)
         logger.debug(f"Cleared OAuth cache for {self.get_base_url(self.server_url)}")

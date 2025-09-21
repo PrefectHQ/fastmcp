@@ -27,8 +27,13 @@ async def test_token_storage_with_expiry(tmp_path: Path):
     await storage.set_tokens(token)
 
     # Check that the file contains the dataclass format
+    # JSONFileStorage wraps data in {"data": ..., "timestamp": ...}
     token_file = storage._get_file_path("tokens")
-    data = json.loads(token_file.read_text())
+    wrapper = json.loads(token_file.read_text())
+
+    assert "data" in wrapper
+    assert "timestamp" in wrapper
+    data = wrapper["data"]
 
     assert "token_payload" in data
     assert "expires_at" in data
@@ -91,8 +96,10 @@ async def test_token_without_expiry(tmp_path: Path):
     await storage.set_tokens(token)
 
     # Check that expires_at is None in the file
+    # JSONFileStorage wraps data in {"data": ..., "timestamp": ...}
     token_file = storage._get_file_path("tokens")
-    data = json.loads(token_file.read_text())
+    wrapper = json.loads(token_file.read_text())
+    data = wrapper["data"]
     assert data["expires_at"] is None
 
     # Load the token back - should work since no expiry
@@ -133,14 +140,18 @@ async def test_token_expiry_recalculated_on_load(tmp_path: Path):
         seconds=1800
     )  # 30 minutes from now
 
+    # JSONFileStorage expects wrapped format
     stored_token = {
-        "token_payload": {
-            "access_token": "test_token",
-            "token_type": "Bearer",
-            "expires_in": 3600,  # Original value (will be recalculated)
-            "refresh_token": "refresh_token",
+        "data": {
+            "token_payload": {
+                "access_token": "test_token",
+                "token_type": "Bearer",
+                "expires_in": 3600,  # Original value (will be recalculated)
+                "refresh_token": "refresh_token",
+            },
+            "expires_at": future_expiry.isoformat(),
         },
-        "expires_at": future_expiry.isoformat(),
+        "timestamp": datetime.now(timezone.utc).timestamp(),
     }
     token_file.write_text(json.dumps(stored_token, indent=2, default=str))
 

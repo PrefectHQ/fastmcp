@@ -27,6 +27,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from fastmcp.server.auth.oidc_proxy import OIDCProxy
 from fastmcp.utilities.auth import parse_scopes
 from fastmcp.utilities.logging import get_logger
+from fastmcp.utilities.storage import KVStorage
 from fastmcp.utilities.types import NotSet, NotSetT
 
 logger = get_logger(__name__)
@@ -91,6 +92,7 @@ class Auth0Provider(OIDCProxy):
         required_scopes: list[str] | NotSetT = NotSet,
         redirect_path: str | NotSetT = NotSet,
         allowed_client_redirect_uris: list[str] | NotSetT = NotSet,
+        client_storage: KVStorage | None = None,
     ) -> None:
         """Initialize Auth0 OAuth provider.
 
@@ -104,6 +106,8 @@ class Auth0Provider(OIDCProxy):
             redirect_path: Redirect path configured in Auth0 application
             allowed_client_redirect_uris: List of allowed redirect URI patterns for MCP clients.
                 If None (default), all URIs are allowed. If empty list, no URIs are allowed.
+            client_storage: Storage implementation for OAuth client registrations.
+                Defaults to file-based storage if not specified.
         """
         settings = Auth0ProviderSettings.model_validate(
             {
@@ -158,6 +162,7 @@ class Auth0Provider(OIDCProxy):
             "redirect_path": settings.redirect_path,
             "required_scopes": auth0_required_scopes,
             "allowed_client_redirect_uris": settings.allowed_client_redirect_uris,
+            "client_storage": client_storage,
         }
 
         super().__init__(**init_kwargs)

@@ -45,9 +45,11 @@ from starlette.requests import Request
 from starlette.responses import RedirectResponse
 from starlette.routing import Route
 
+import fastmcp
 from fastmcp.server.auth.auth import OAuthProvider, TokenVerifier
 from fastmcp.server.auth.redirect_validation import validate_redirect_uri
 from fastmcp.utilities.logging import get_logger
+from fastmcp.utilities.storage import JSONFileStorage, KVStorage
 
 if TYPE_CHECKING:
     pass
@@ -254,6 +256,8 @@ class OAuthProxy(OAuthProvider):
         extra_authorize_params: dict[str, str] | None = None,
         # Extra parameters to forward to token endpoint
         extra_token_params: dict[str, str] | None = None,
+        # Client storage
+        client_storage: KVStorage | None = None,
     ):
         """Initialize the OAuth proxy provider.
 
@@ -287,6 +291,9 @@ class OAuthProxy(OAuthProvider):
                 Example: {"audience": "https://api.example.com"}
             extra_token_params: Additional parameters to forward to the upstream token endpoint.
                 Useful for provider-specific parameters during token exchange.
+            client_storage: Storage implementation for OAuth client registrations.
+                Defaults to file-based storage in ~/.fastmcp/oauth-proxy-clients/ if not specified.
+                Pass any KVStorage implementation for custom storage backends.
         """
         # Always enable DCR since we implement it locally for MCP clients
         client_registration_options = ClientRegistrationOptions(
@@ -335,8 +342,13 @@ class OAuthProxy(OAuthProvider):
         self._extra_authorize_params = extra_authorize_params or {}
         self._extra_token_params = extra_token_params or {}
 
-        # Local state for DCR and token bookkeeping
-        self._clients: dict[str, OAuthClientInformationFull] = {}
+        # Initialize client storage (default to file-based if not provided)
+        if client_storage is None:
+            cache_dir = fastmcp.settings.home / "oauth-proxy-clients"
+            client_storage = JSONFileStorage(cache_dir)
+        self._client_storage = client_storage
+
+        # Local state for token bookkeeping only (no client caching)
         self._access_tokens: dict[str, AccessToken] = {}
         self._refresh_tokens: dict[str, RefreshToken] = {}
 
@@ -387,9 +399,20 @@ class OAuthProxy(OAuthProvider):
 
         For unregistered clients, returns None (which will raise an error in the SDK).
         """
-        client = self._clients.get(client_id)
+        # Load from storage
+        data = await self._client_storage.get(client_id)
+        if not data:
+            return None
 
-        return client
+        if client_data := data.get("client", None):
+            return ProxyDCRClient(
+                allowed_redirect_uri_patterns=data.get(
+                    "allowed_redirect_uri_patterns", self._allowed_client_redirect_uris
+                ),
+                **client_data,
+            )
+
+        return None
 
     async def register_client(self, client_info: OAuthClientInformationFull) -> None:
         """Register a client locally
@@ -412,8 +435,12 @@ class OAuthProxy(OAuthProvider):
             allowed_redirect_uri_patterns=self._allowed_client_redirect_uris,
         )
 
-        # Store the ProxyDCRClient
-        self._clients[client_info.client_id] = proxy_client
+        # Store as structured dict with all needed metadata
+        storage_data = {
+            "client": proxy_client.model_dump(mode="json"),
+            "allowed_redirect_uri_patterns": self._allowed_client_redirect_uris,
+        }
+        await self._client_storage.set(client_info.client_id, storage_data)
 
         # Log redirect URIs to help users discover what patterns they might need
         if client_info.redirect_uris:

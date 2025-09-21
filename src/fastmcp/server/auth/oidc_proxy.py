@@ -19,6 +19,7 @@ from fastmcp.server.auth import TokenVerifier
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from fastmcp.server.auth.providers.jwt import JWTVerifier
 from fastmcp.utilities.logging import get_logger
+from fastmcp.utilities.storage import KVStorage
 
 logger = get_logger(__name__)
 
@@ -212,6 +213,7 @@ class OIDCProxy(OAuthProxy):
         redirect_path: str | None = None,
         # Client configuration
         allowed_client_redirect_uris: list[str] | None = None,
+        client_storage: KVStorage | None = None,
         # Token validation configuration
         token_endpoint_auth_method: str | None = None,
     ) -> None:
@@ -234,6 +236,8 @@ class OIDCProxy(OAuthProxy):
                 If None (default), only localhost redirect URIs are allowed.
                 If empty list, all redirect URIs are allowed (not recommended for production).
                 These are for MCP clients performing loopback redirects, NOT for the upstream OAuth app.
+            client_storage: Storage implementation for OAuth client registrations.
+                Defaults to file-based storage if not specified.
             token_endpoint_auth_method: Token endpoint authentication method for upstream server.
                 Common values: "client_secret_basic", "client_secret_post", "none".
                 If None, authlib will use its default (typically "client_secret_basic").
@@ -288,6 +292,7 @@ class OIDCProxy(OAuthProxy):
             "base_url": base_url,
             "service_documentation_url": self.oidc_config.service_documentation,
             "allowed_client_redirect_uris": allowed_client_redirect_uris,
+            "client_storage": client_storage,
             "token_endpoint_auth_method": token_endpoint_auth_method,
         }
 

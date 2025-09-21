@@ -32,6 +32,7 @@ from fastmcp.server.auth.auth import AccessToken
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from fastmcp.utilities.auth import parse_scopes
 from fastmcp.utilities.logging import get_logger
+from fastmcp.utilities.storage import KVStorage
 from fastmcp.utilities.types import NotSet, NotSetT
 
 logger = get_logger(__name__)
@@ -217,6 +218,7 @@ class GoogleProvider(OAuthProxy):
         required_scopes: list[str] | NotSetT = NotSet,
         timeout_seconds: int | NotSetT = NotSet,
         allowed_client_redirect_uris: list[str] | NotSetT = NotSet,
+        client_storage: KVStorage | None = None,
     ):
         """Initialize Google OAuth provider.
 
@@ -232,6 +234,8 @@ class GoogleProvider(OAuthProxy):
             timeout_seconds: HTTP request timeout for Google API calls
             allowed_client_redirect_uris: List of allowed redirect URI patterns for MCP clients.
                 If None (default), all URIs are allowed. If empty list, no URIs are allowed.
+            client_storage: Storage implementation for OAuth client registrations.
+                Defaults to file-based storage if not specified.
         """
 
         settings = GoogleProviderSettings.model_validate(
@@ -288,6 +292,7 @@ class GoogleProvider(OAuthProxy):
             redirect_path=settings.redirect_path,
             issuer_url=settings.base_url,  # We act as the issuer for client registration
             allowed_client_redirect_uris=allowed_client_redirect_uris_final,
+            client_storage=client_storage,
         )
 
         logger.info(

@@ -14,6 +14,7 @@ from fastmcp.server.auth import AccessToken, TokenVerifier
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from fastmcp.utilities.auth import parse_scopes
 from fastmcp.utilities.logging import get_logger
+from fastmcp.utilities.storage import KVStorage
 from fastmcp.utilities.types import NotSet, NotSetT
 
 logger = get_logger(__name__)
@@ -160,6 +161,7 @@ class AzureProvider(OAuthProxy):
         required_scopes: list[str] | None | NotSetT = NotSet,
         timeout_seconds: int | NotSetT = NotSet,
         allowed_client_redirect_uris: list[str] | NotSetT = NotSet,
+        client_storage: KVStorage | None = None,
     ):
         """Initialize Azure OAuth provider.
 
@@ -173,6 +175,8 @@ class AzureProvider(OAuthProxy):
             timeout_seconds: HTTP request timeout for Azure API calls
             allowed_client_redirect_uris: List of allowed redirect URI patterns for MCP clients.
                 If None (default), all URIs are allowed. If empty list, no URIs are allowed.
+            client_storage: Storage implementation for OAuth client registrations.
+                Defaults to file-based storage if not specified.
         """
         settings = AzureProviderSettings.model_validate(
             {
@@ -251,6 +255,7 @@ class AzureProvider(OAuthProxy):
             redirect_path=settings.redirect_path,
             issuer_url=settings.base_url,
             allowed_client_redirect_uris=allowed_client_redirect_uris_final,
+            client_storage=client_storage,
         )
 
         logger.info(

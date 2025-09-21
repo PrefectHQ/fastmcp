@@ -395,8 +395,8 @@ class TestOAuthProxyClientRegistration:
 
         await oauth_proxy.register_client(client_info)
 
-        # Client should be stored with original credentials
-        stored = oauth_proxy._clients.get("original-client")
+        # Client should be retrievable with original credentials
+        stored = await oauth_proxy.get_client("original-client")
         assert stored is not None
         assert stored.client_id == "original-client"
         assert stored.client_secret == "original-secret"

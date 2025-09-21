@@ -161,13 +161,24 @@ mcp = FastMCP(name="My Server", auth=auth)
 
 <ParamField body="extra_token_params" type="dict[str, str] | None">
   Additional parameters to forward to the upstream token endpoint during code exchange and token refresh. Useful for provider-specific requirements during token operations.
-  
+
   For example, some providers require additional context during token exchange:
   ```python
   extra_token_params={"audience": "https://api.example.com"}
   ```
-  
+
   These parameters are included in all token requests to the upstream provider.
+</ParamField>
+
+<ParamField body="client_storage" type="KVStorage | None">
+  Storage backend for persisting OAuth client registrations. By default, clients are automatically persisted to disk in `~/.config/fastmcp/oauth-proxy-clients/`, allowing them to survive server restarts as long as the filesystem remains accessible. This means MCP clients only need to register once and can reconnect seamlessly after your server restarts.
+
+  ```python
+  from fastmcp.utilities.storage import InMemoryStorage
+
+  # Use in-memory storage for testing (clients lost on restart)
+  auth = OAuthProxy(..., client_storage=InMemoryStorage())
+  ```
 </ParamField>
 </Card>
 
