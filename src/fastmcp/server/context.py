@@ -5,7 +5,7 @@ import copy
 import inspect
 import warnings
 import weakref
-from collections.abc import Generator, Mapping
+from collections.abc import Generator, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar, Token
 from dataclasses import dataclass
@@ -17,9 +17,10 @@ from mcp.server.lowlevel.helper_types import ReadResourceContents
 from mcp.server.lowlevel.server import request_ctx
 from mcp.shared.context import RequestContext
 from mcp.types import (
+    AudioContent,
     ClientCapabilities,
-    ContentBlock,
     CreateMessageResult,
+    ImageContent,
     IncludeContext,
     ModelHint,
     ModelPreferences,
@@ -359,13 +360,13 @@ class Context:
 
     async def sample(
         self,
-        messages: str | list[str | SamplingMessage],
+        messages: str | Sequence[str | SamplingMessage],
         system_prompt: str | None = None,
         include_context: IncludeContext | None = None,
         temperature: float | None = None,
         max_tokens: int | None = None,
         model_preferences: ModelPreferences | str | list[str] | None = None,
-    ) -> ContentBlock:
+    ) -> TextContent | ImageContent | AudioContent:
         """
         Send a sampling request to the client and await the response.
 
@@ -383,7 +384,7 @@ class Context:
                     content=TextContent(text=messages, type="text"), role="user"
                 )
             ]
-        elif isinstance(messages, list):
+        elif isinstance(messages, Sequence):
             sampling_messages = [
                 SamplingMessage(content=TextContent(text=m, type="text"), role="user")
                 if isinstance(m, str)
