@@ -109,8 +109,25 @@ def _single_pass_optimize(
                         root_refs.add(referenced_def)
 
             # Apply cleanups
+            # Only remove "title" if it's a schema metadata field
+            # Schema objects have keywords like "type", "properties", "$ref", etc.
+            # If we see these, then "title" is metadata, not a property name
             if prune_titles and "title" in node:
-                node.pop("title")
+                # Check if this looks like a schema node
+                if any(
+                    k in node
+                    for k in [
+                        "type",
+                        "properties",
+                        "$ref",
+                        "items",
+                        "allOf",
+                        "oneOf",
+                        "anyOf",
+                        "required",
+                    ]
+                ):
+                    node.pop("title")
 
             if (
                 prune_additional_properties

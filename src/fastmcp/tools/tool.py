@@ -413,7 +413,9 @@ class ParsedFunction:
 
         input_type_adapter = get_cached_typeadapter(fn)
         input_schema = input_type_adapter.json_schema()
-        input_schema = compress_schema(input_schema, prune_params=prune_params)
+        input_schema = compress_schema(
+            input_schema, prune_params=prune_params, prune_titles=True
+        )
 
         output_schema = None
         # Get the return annotation from the signature
@@ -473,7 +475,7 @@ class ParsedFunction:
                 else:
                     output_schema = base_schema
 
-                output_schema = compress_schema(output_schema)
+                output_schema = compress_schema(output_schema, prune_titles=True)
 
             except PydanticSchemaGenerationError as e:
                 if "_UnserializableType" not in str(e):

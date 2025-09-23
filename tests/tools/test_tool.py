@@ -40,16 +40,15 @@ class TestToolFromFunction:
                 "enabled": True,
                 "parameters": {
                     "properties": {
-                        "a": {"title": "A", "type": "integer"},
-                        "b": {"title": "B", "type": "integer"},
+                        "a": {"type": "integer"},
+                        "b": {"type": "integer"},
                     },
                     "required": ["a", "b"],
                     "type": "object",
                 },
                 "output_schema": {
-                    "properties": {"result": {"title": "Result", "type": "integer"}},
+                    "properties": {"result": {"type": "integer"}},
                     "required": ["result"],
-                    "title": "_WrappedResult",
                     "type": "object",
                     "x-fastmcp-wrap-result": True,
                 },
@@ -90,14 +89,13 @@ class TestToolFromFunction:
                 "tags": set(),
                 "enabled": True,
                 "parameters": {
-                    "properties": {"url": {"title": "Url", "type": "string"}},
+                    "properties": {"url": {"type": "string"}},
                     "required": ["url"],
                     "type": "object",
                 },
                 "output_schema": {
-                    "properties": {"result": {"title": "Result", "type": "string"}},
+                    "properties": {"result": {"type": "string"}},
                     "required": ["result"],
-                    "title": "_WrappedResult",
                     "type": "object",
                     "x-fastmcp-wrap-result": True,
                 },
@@ -123,16 +121,15 @@ class TestToolFromFunction:
                 "enabled": True,
                 "parameters": {
                     "properties": {
-                        "x": {"title": "X", "type": "integer"},
-                        "y": {"title": "Y", "type": "integer"},
+                        "x": {"type": "integer"},
+                        "y": {"type": "integer"},
                     },
                     "required": ["x", "y"],
                     "type": "object",
                 },
                 "output_schema": {
-                    "properties": {"result": {"title": "Result", "type": "integer"}},
+                    "properties": {"result": {"type": "integer"}},
                     "required": ["result"],
-                    "title": "_WrappedResult",
                     "type": "object",
                     "x-fastmcp-wrap-result": True,
                 },
@@ -157,16 +154,15 @@ class TestToolFromFunction:
                 "enabled": True,
                 "parameters": {
                     "properties": {
-                        "x": {"title": "X", "type": "integer"},
-                        "y": {"title": "Y", "type": "integer"},
+                        "x": {"type": "integer"},
+                        "y": {"type": "integer"},
                     },
                     "required": ["x", "y"],
                     "type": "object",
                 },
                 "output_schema": {
-                    "properties": {"result": {"title": "Result", "type": "integer"}},
+                    "properties": {"result": {"type": "integer"}},
                     "required": ["result"],
-                    "title": "_WrappedResult",
                     "type": "object",
                     "x-fastmcp-wrap-result": True,
                 },
@@ -196,17 +192,16 @@ class TestToolFromFunction:
                     "$defs": {
                         "UserInput": {
                             "properties": {
-                                "name": {"title": "Name", "type": "string"},
-                                "age": {"title": "Age", "type": "integer"},
+                                "name": {"type": "string"},
+                                "age": {"type": "integer"},
                             },
                             "required": ["name", "age"],
-                            "title": "UserInput",
                             "type": "object",
                         }
                     },
                     "properties": {
-                        "user": {"$ref": "#/$defs/UserInput", "title": "User"},
-                        "flag": {"title": "Flag", "type": "boolean"},
+                        "user": {"$ref": "#/$defs/UserInput"},
+                        "flag": {"type": "boolean"},
                     },
                     "required": ["user", "flag"],
                     "type": "object",
@@ -300,8 +295,8 @@ class TestToolFromFunction:
                 "enabled": True,
                 "parameters": {
                     "properties": {
-                        "_a": {"title": "A", "type": "integer"},
-                        "_b": {"title": "B", "type": "integer"},
+                        "_a": {"type": "integer"},
+                        "_b": {"type": "integer"},
                     },
                     "required": ["_a", "_b"],
                     "type": "object",
@@ -348,16 +343,15 @@ class TestToolFromFunction:
                 "enabled": True,
                 "parameters": {
                     "properties": {
-                        "x": {"title": "X", "type": "integer"},
-                        "y": {"title": "Y", "type": "integer"},
+                        "x": {"type": "integer"},
+                        "y": {"type": "integer"},
                     },
                     "required": ["x", "y"],
                     "type": "object",
                 },
                 "output_schema": {
-                    "properties": {"result": {"title": "Result", "type": "integer"}},
+                    "properties": {"result": {"type": "integer"}},
                     "required": ["result"],
-                    "title": "_WrappedResult",
                     "type": "object",
                     "x-fastmcp-wrap-result": True,
                 },
@@ -467,9 +461,8 @@ class TestToolFromFunctionOutputSchema:
             # Non-object types get wrapped
             expected_schema = {
                 "type": "object",
-                "properties": {"result": {**base_schema, "title": "Result"}},
+                "properties": {"result": base_schema},
                 "required": ["result"],
-                "title": "_WrappedResult",
                 "x-fastmcp-wrap-result": True,
             }
             assert tool.output_schema == expected_schema
@@ -495,9 +488,8 @@ class TestToolFromFunctionOutputSchema:
         base_schema = TypeAdapter(annotation).json_schema()
         expected_schema = {
             "type": "object",
-            "properties": {"result": {**base_schema, "title": "Result"}},
+            "properties": {"result": base_schema},
             "required": ["result"],
-            "title": "_WrappedResult",
             "x-fastmcp-wrap-result": True,
         }
         assert tool.output_schema == expected_schema
@@ -545,7 +537,9 @@ class TestToolFromFunctionOutputSchema:
             return Person(name="John", age=30)
 
         tool = Tool.from_function(func)
-        expected_schema = compress_schema(TypeAdapter(Person).json_schema())
+        expected_schema = compress_schema(
+            TypeAdapter(Person).json_schema(), prune_titles=True
+        )
         assert tool.output_schema == expected_schema
 
     async def test_base_model_return_annotation(self):
@@ -561,11 +555,10 @@ class TestToolFromFunctionOutputSchema:
         assert tool.output_schema == snapshot(
             {
                 "properties": {
-                    "name": {"title": "Name", "type": "string"},
-                    "age": {"title": "Age", "type": "integer"},
+                    "name": {"type": "string"},
+                    "age": {"type": "integer"},
                 },
                 "required": ["name", "age"],
-                "title": "Person",
                 "type": "object",
             }
         )
@@ -582,11 +575,10 @@ class TestToolFromFunctionOutputSchema:
         assert tool.output_schema == snapshot(
             {
                 "properties": {
-                    "name": {"title": "Name", "type": "string"},
-                    "age": {"title": "Age", "type": "integer"},
+                    "name": {"type": "string"},
+                    "age": {"type": "integer"},
                 },
                 "required": ["name", "age"],
-                "title": "Person",
                 "type": "object",
             }
         )
@@ -766,9 +758,8 @@ class TestToolFromFunctionOutputSchema:
         tool = Tool.from_function(func)
         assert tool.output_schema == snapshot(
             {
-                "properties": {"result": {"title": "Result", "type": "integer"}},
+                "properties": {"result": {"type": "integer"}},
                 "required": ["result"],
-                "title": "_WrappedResult",
                 "type": "object",
                 "x-fastmcp-wrap-result": True,
             }
@@ -839,9 +830,8 @@ class TestToolFromFunctionOutputSchema:
         tool = Tool.from_function(func)
         assert tool.output_schema == snapshot(
             {
-                "properties": {"result": {"title": "Result", "type": "string"}},
+                "properties": {"result": {"type": "string"}},
                 "required": ["result"],
-                "title": "_WrappedResult",
                 "type": "object",
                 "x-fastmcp-wrap-result": True,
             }
@@ -1405,8 +1395,8 @@ class TestAutomaticStructuredContent:
         async with Client(mcp) as client:
             result = await client.call_tool("get_profile", {"user_id": "456"})
 
-            # Client should deserialize back to a dataclass (type name preserved with new compression)
-            assert result.data.__class__.__name__ == "UserProfile"
+            # Client should deserialize back to a dataclass (but type name is lost with title pruning)
+            assert result.data.__class__.__name__ == "Root"
             assert result.data.name == "Bob"
             assert result.data.age == 25
             assert result.data.verified is True
