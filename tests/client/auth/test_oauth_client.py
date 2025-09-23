@@ -39,7 +39,7 @@ def run_server(host: str, port: int, **kwargs) -> None:
     fastmcp_server(f"http://{host}:{port}").run(host=host, port=port, **kwargs)
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def streamable_http_server() -> Generator[str, None, None]:
     with run_server_in_process(run_server, transport="http") as url:
         yield f"{url}/mcp"

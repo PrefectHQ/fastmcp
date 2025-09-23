@@ -52,19 +52,19 @@ def run_proxy_server(host: str, port: int, shttp_url: str, **kwargs) -> None:
     app.run(host=host, port=port, **kwargs)
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def shttp_server() -> Generator[str, None, None]:
     with run_server_in_process(run_server, transport="http") as url:
         yield f"{url}/mcp"
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def sse_server() -> Generator[str, None, None]:
     with run_server_in_process(run_server, transport="sse") as url:
         yield f"{url}/sse"
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def proxy_server(shttp_server: str) -> Generator[str, None, None]:
     with run_server_in_process(
         run_proxy_server,

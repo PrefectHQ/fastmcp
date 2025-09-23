@@ -48,7 +48,7 @@ jobs:
         run: uv sync --frozen
 
       - name: Run tests (excluding integration and client_process)
-        run: uv run pytest --inline-snapshot=disable -v tests -m "not integration and not client_process"
+        run: uv run pytest --inline-snapshot=disable -v tests -m "not integration and not client_process" --numprocesses auto --maxprocesses 4 --dist worksteal
 
       - name: Run client process tests separately
         run: uv run pytest --inline-snapshot=disable -v tests -m "client_process" -x
@@ -74,7 +74,7 @@ jobs:
 
       - name: Run integration tests
         # use longer per-test timeout than the default 3s
-        run: uv run pytest -v tests -m "integration" --timeout=15
+        run: uv run pytest -v tests -m "integration" --timeout=15 --numprocesses auto --maxprocesses 2 --dist worksteal
         env:
           FASTMCP_GITHUB_TOKEN: ${{ secrets.FASTMCP_GITHUB_TOKEN }}
           FASTMCP_TEST_AUTH_GITHUB_CLIENT_ID: ${{ secrets.FASTMCP_TEST_AUTH_GITHUB_CLIENT_ID }}

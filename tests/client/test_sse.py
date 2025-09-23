@@ -67,7 +67,7 @@ def run_server(host: str, port: int, **kwargs) -> None:
     fastmcp_server().run(host=host, port=port, **kwargs)
 
 
-@pytest.fixture(autouse=True, scope="module")
+@pytest.fixture(autouse=True)
 def sse_server() -> Generator[str, None, None]:
     with run_server_in_process(run_server, transport="sse") as url:
         yield f"{url}/sse"
@@ -161,6 +161,6 @@ class TestTimeout:
         """
         async with Client(
             transport=SSETransport(sse_server),
-            timeout=0.01,
+            timeout=0.1,
         ) as client:
-            await client.call_tool("sleep", {"seconds": 0.1}, timeout=2)
+            await client.call_tool("sleep", {"seconds": 0.01}, timeout=2)

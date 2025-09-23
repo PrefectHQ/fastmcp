@@ -225,9 +225,9 @@ class TestTimeout:
         with pytest.raises(McpError, match="Timed out"):
             async with Client(
                 transport=StreamableHttpTransport(streamable_http_server),
-                timeout=0.1,
+                timeout=0.02,
             ) as client:
-                await client.call_tool("sleep", {"seconds": 0.2})
+                await client.call_tool("sleep", {"seconds": 0.05})
 
     async def test_timeout_tool_call(self, streamable_http_server: str):
         async with Client(
