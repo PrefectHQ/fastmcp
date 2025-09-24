@@ -7,6 +7,7 @@ using the OAuth Proxy pattern for non-DCR OAuth flows.
 from __future__ import annotations
 
 import httpx
+from kv_store_adapter.types import KVStoreProtocol
 from pydantic import SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -14,7 +15,6 @@ from fastmcp.server.auth import AccessToken, TokenVerifier
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from fastmcp.utilities.auth import parse_scopes
 from fastmcp.utilities.logging import get_logger
-from fastmcp.utilities.storage import KVStorage
 from fastmcp.utilities.types import NotSet, NotSetT
 
 logger = get_logger(__name__)
@@ -161,7 +161,7 @@ class AzureProvider(OAuthProxy):
         required_scopes: list[str] | None | NotSetT = NotSet,
         timeout_seconds: int | NotSetT = NotSet,
         allowed_client_redirect_uris: list[str] | NotSetT = NotSet,
-        client_storage: KVStorage | None = None,
+        client_storage: KVStoreProtocol | None = None,
     ):
         """Initialize Azure OAuth provider.
 

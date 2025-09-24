@@ -70,6 +70,15 @@ wheels = [
 ]
 
 [[package]]
+name = "cachetools"
+version = "6.2.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/9d/61/e4fad8155db4a04bfb4734c7c8ff0882f078f24294d42798b3568eb63bff/cachetools-6.2.0.tar.gz", hash = "sha256:38b328c0889450f05f5e120f56ab68c8abaf424e1275522b138ffc93253f7e32", size = 30988, upload-time = "2025-08-25T18:57:30.924Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/6c/56/3124f61d37a7a4e7cc96afc5492c78ba0cb551151e530b54669ddd1436ef/cachetools-6.2.0-py3-none-any.whl", hash = "sha256:1c76a8960c0041fcc21097e357f882197c79da0dbff766e7317890a65d7d8ba6", size = 11276, upload-time = "2025-08-25T18:57:29.684Z" },
+]
+
+[[package]]
 name = "certifi"
 version = "2025.8.3"
 source = { registry = "https://pypi.org/simple" }
@@ -401,6 +410,15 @@ wheels = [
 ]
 
 [[package]]
+name = "diskcache"
+version = "5.6.3"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/3f/21/1c1ffc1a039ddcc459db43cc108658f32c57d271d7289a2794e401d0fdb6/diskcache-5.6.3.tar.gz", hash = "sha256:2c3a3fa2743d8535d832ec61c2054a1641f41775aa7c556758a109941e33e4fc", size = 67916, upload-time = "2023-08-31T06:12:00.316Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/3f/27/4570e78fc0bf5ea0ca45eb1de3818a23787af9b390c0b0a0033a1b8236f9/diskcache-5.6.3-py3-none-any.whl", hash = "sha256:5e31b2d5fbad117cc363ebaf6b689474db18a1f6438bc82358b024abd4c2ca19", size = 45550, upload-time = "2023-08-31T06:11:58.822Z" },
+]
+
+[[package]]
 name = "distlib"
 version = "0.4.0"
 source = { registry = "https://pypi.org/simple" }
@@ -523,6 +541,7 @@ dependencies = [
     { name = "cyclopts" },
     { name = "exceptiongroup" },
     { name = "httpx" },
+    { name = "kv-store-adapter", extra = ["disk", "memory"] },
     { name = "mcp" },
     { name = "openapi-core" },
     { name = "openapi-pydantic" },
@@ -572,6 +591,7 @@ requires-dist = [
     { name = "cyclopts", specifier = ">=3.0.0" },
     { name = "exceptiongroup", specifier = ">=1.2.2" },
     { name = "httpx", specifier = ">=0.28.1" },
+    { name = "kv-store-adapter", extras = ["disk", "memory"], specifier = ">=0.1.1" },
     { name = "mcp", specifier = ">=1.12.4,<2.0.0" },
     { name = "openai", marker = "extra == 'openai'", specifier = ">=1.102.0" },
     { name = "openapi-core", specifier = ">=0.19.5" },
@@ -907,6 +927,23 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/bf/ce/46fbd9c8119cfc3581ee5643ea49464d168028cfb5caff5fc0596d0cf914/jsonschema_specifications-2025.4.1.tar.gz", hash = "sha256:630159c9f4dbea161a6a2205c3011cc4f18ff381b189fff48bb39b9bf26ae608", size = 15513, upload-time = "2025-04-23T12:34:07.418Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/01/0e/b27cdbaccf30b890c40ed1da9fd4a3593a5cf94dae54fb34f8a4b74fcd3f/jsonschema_specifications-2025.4.1-py3-none-any.whl", hash = "sha256:4653bffbd6584f7de83a67e0d620ef16900b390ddc7939d56684d6c81e33f1af", size = 18437, upload-time = "2025-04-23T12:34:05.422Z" },
+]
+
+[[package]]
+name = "kv-store-adapter"
+version = "0.1.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/b2/1f/23f3d90066d349d550efe8864b04a7f5fa31ffc5d1fc7cd98fb672308fe2/kv_store_adapter-0.1.1.tar.gz", hash = "sha256:79aea84186202eef9e9f0bd6c60197f14bd8e9f002ad21b24e3a150a0753ae72", size = 95475, upload-time = "2025-09-24T17:41:40.433Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/0c/3f/41548807f34f52627e50c7708e9321f263565c3aa0bbf6063103b114ab0d/kv_store_adapter-0.1.1-py3-none-any.whl", hash = "sha256:0e098afb6fc387fe779a7998633f431fc83f3f81d111d0fe321f9ef8ac1e72b3", size = 29788, upload-time = "2025-09-24T17:41:39.262Z" },
+]
+
+[package.optional-dependencies]
+disk = [
+    { name = "diskcache" },
+]
+memory = [
+    { name = "cachetools" },
 ]
 
 [[package]]

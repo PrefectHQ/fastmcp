@@ -2,9 +2,11 @@ from __future__ import annotations as _annotations
 
 import inspect
 import warnings
+from functools import cached_property
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any, Literal
 
+from kv_store_adapter.stores.disk import DiskStore
 from pydantic import Field, ImportString, field_validator
 from pydantic.fields import FieldInfo
 from pydantic_settings import (
@@ -146,6 +148,8 @@ class Settings(BaseSettings):
         return self
 
     home: Path = Path.home() / ".fastmcp"
+
+    data_path: Path = home / "data.db"
 
     test_mode: bool = False
 
@@ -378,6 +382,10 @@ class Settings(BaseSettings):
         auth_class = type_adapter.validate_python(self.server_auth)
 
         return auth_class
+
+    @cached_property
+    def data_store(self) -> DiskStore:
+        return DiskStore(path=str(self.data_path), size_limit=1024 * 1024 * 10) # 10MB
 
 
 def __getattr__(name: str):

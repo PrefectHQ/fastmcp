@@ -15,6 +15,7 @@ dependencies = [
     "pydantic[email]>=2.11.7",
     "pyperclip>=1.9.0",
     "openapi-core>=0.19.5",
+    "kv-store-adapter[disk,memory]>=0.1.1",
 ]
 
 requires-python = ">=3.10"
@@ -117,7 +118,7 @@ testpaths = ["tests"]
 python_files = ["test_*.py", "*_test.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-addopts = ["--inline-snapshot=disable"]
+addopts = ["--inline-snapshot=fix,create"]
 
 [tool.ty.src]
 include = ["src", "tests"]

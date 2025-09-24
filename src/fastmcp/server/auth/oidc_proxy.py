@@ -12,6 +12,7 @@ This implementation is based on:
 from collections.abc import Sequence
 
 import httpx
+from kv_store_adapter.types import KVStoreProtocol
 from pydantic import AnyHttpUrl, BaseModel, model_validator
 from typing_extensions import Self
 
@@ -19,7 +20,6 @@ from fastmcp.server.auth import TokenVerifier
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from fastmcp.server.auth.providers.jwt import JWTVerifier
 from fastmcp.utilities.logging import get_logger
-from fastmcp.utilities.storage import KVStorage
 
 logger = get_logger(__name__)
 
@@ -213,7 +213,7 @@ class OIDCProxy(OAuthProxy):
         redirect_path: str | None = None,
         # Client configuration
         allowed_client_redirect_uris: list[str] | None = None,
-        client_storage: KVStorage | None = None,
+        client_storage: KVStoreProtocol | None = None,
         # Token validation configuration
         token_endpoint_auth_method: str | None = None,
     ) -> None:
