@@ -5,15 +5,12 @@ import time
 import webbrowser
 from asyncio import Future
 from collections.abc import AsyncGenerator
-from datetime import datetime
-from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
 import anyio
 import httpx
 from kv_store_adapter.adapters.pydantic import PydanticAdapter
-from kv_store_adapter.stores.disk import DiskStore
 from kv_store_adapter.types import KVStoreProtocol
 from mcp.client.auth import OAuthClientProvider, TokenStorage
 from mcp.shared.auth import (
@@ -21,7 +18,7 @@ from mcp.shared.auth import (
     OAuthClientMetadata,
     OAuthToken,
 )
-from pydantic import AnyHttpUrl, BaseModel
+from pydantic import AnyHttpUrl
 from uvicorn.server import Server
 
 from fastmcp import settings

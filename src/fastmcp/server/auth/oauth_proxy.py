@@ -29,7 +29,6 @@ import httpx
 from authlib.common.security import generate_token
 from authlib.integrations.httpx_client import AsyncOAuth2Client
 from kv_store_adapter.adapters.pydantic import PydanticAdapter
-from kv_store_adapter.stores.disk import DiskStore
 from kv_store_adapter.types import KVStoreProtocol
 from mcp.server.auth.provider import (
     AccessToken,

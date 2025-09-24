@@ -6,7 +6,7 @@ from functools import cached_property
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any, Literal
 
-from kv_store_adapter.stores.disk import DiskStore
+from kv_store_adapter.types import KVStoreProtocol
 from pydantic import Field, ImportString, field_validator
 from pydantic.fields import FieldInfo
 from pydantic_settings import (
@@ -149,7 +149,7 @@ class Settings(BaseSettings):
 
     home: Path = Path.home() / ".fastmcp"
 
-    data_path: Path = home / "data.db"
+    data_path: Path | None = home / "data.db"
 
     test_mode: bool = False
 
@@ -384,8 +384,15 @@ class Settings(BaseSettings):
         return auth_class
 
     @cached_property
-    def data_store(self) -> DiskStore:
-        return DiskStore(path=str(self.data_path), size_limit=1024 * 1024 * 10) # 10MB
+    def data_store(self) -> KVStoreProtocol:
+        if not self.data_path:
+            from kv_store_adapter.stores.memory import MemoryStore
+
+            return MemoryStore()
+
+        from kv_store_adapter.stores.disk import DiskStore
+
+        return DiskStore(path=str(self.data_path), size_limit=1024 * 1024 * 10)  # 10MB
 
 
 def __getattr__(name: str):
