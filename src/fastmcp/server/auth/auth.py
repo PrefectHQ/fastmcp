@@ -146,8 +146,7 @@ class AuthProvider(TokenVerifierProtocol):
             return None
 
         if path:
-            return AnyHttpUrl(urljoin(str(self.base_url), path))
-
+            return AnyHttpUrl(f"{str(self.base_url).rstrip('/')}/{path.lstrip('/')}")
         return self.base_url
 
 
