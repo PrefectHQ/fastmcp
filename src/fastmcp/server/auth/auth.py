@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from typing import Any
-from urllib.parse import urljoin
 
 from mcp.server.auth.middleware.auth_context import AuthContextMiddleware
 from mcp.server.auth.middleware.bearer_auth import (
@@ -146,8 +145,9 @@ class AuthProvider(TokenVerifierProtocol):
             return None
 
         if path:
-            return AnyHttpUrl(urljoin(str(self.base_url), path))
-
+            prefix = str(self.base_url).rstrip("/")
+            suffix = path.lstrip("/")
+            return AnyHttpUrl(f"{prefix}/{suffix}")
         return self.base_url
 
 

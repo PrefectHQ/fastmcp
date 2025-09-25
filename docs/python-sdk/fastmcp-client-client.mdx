@@ -374,7 +374,7 @@ containing the prompt messages and any additional metadata.
 #### `complete_mcp` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L744" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-complete_mcp(self, ref: mcp.types.ResourceTemplateReference | mcp.types.PromptReference, argument: dict[str, str]) -> mcp.types.CompleteResult
+complete_mcp(self, ref: mcp.types.ResourceTemplateReference | mcp.types.PromptReference, argument: dict[str, str], context_arguments: dict[str, Any] | None = None) -> mcp.types.CompleteResult
 ```
 
 Send a completion request and return the complete MCP protocol result.
@@ -382,6 +382,7 @@ Send a completion request and return the complete MCP protocol result.
 **Args:**
 - `ref`: The reference to complete.
 - `argument`: Arguments to pass to the completion request.
+- `context_arguments`: Optional context arguments to include with the completion request. Defaults to None.
 
 **Returns:**
 - mcp.types.CompleteResult: The complete response object from the protocol,
@@ -391,10 +392,10 @@ containing the completion and any additional metadata.
 - `RuntimeError`: If called while the client is not connected.
 
 
-#### `complete` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L767" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `complete` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L772" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-complete(self, ref: mcp.types.ResourceTemplateReference | mcp.types.PromptReference, argument: dict[str, str]) -> mcp.types.Completion
+complete(self, ref: mcp.types.ResourceTemplateReference | mcp.types.PromptReference, argument: dict[str, str], context_arguments: dict[str, Any] | None = None) -> mcp.types.Completion
 ```
 
 Send a completion request to the server.
@@ -402,6 +403,7 @@ Send a completion request to the server.
 **Args:**
 - `ref`: The reference to complete.
 - `argument`: Arguments to pass to the completion request.
+- `context_arguments`: Optional context arguments to include with the completion request. Defaults to None.
 
 **Returns:**
 - mcp.types.Completion: The completion object.

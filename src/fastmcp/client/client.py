@@ -745,12 +745,15 @@ class Client(Generic[ClientTransportT]):
         self,
         ref: mcp.types.ResourceTemplateReference | mcp.types.PromptReference,
         argument: dict[str, str],
+        context_arguments: dict[str, Any] | None = None,
     ) -> mcp.types.CompleteResult:
         """Send a completion request and return the complete MCP protocol result.
 
         Args:
             ref (mcp.types.ResourceTemplateReference | mcp.types.PromptReference): The reference to complete.
             argument (dict[str, str]): Arguments to pass to the completion request.
+            context_arguments (dict[str, Any] | None, optional): Optional context arguments to
+                include with the completion request. Defaults to None.
 
         Returns:
             mcp.types.CompleteResult: The complete response object from the protocol,
@@ -761,19 +764,24 @@ class Client(Generic[ClientTransportT]):
         """
         logger.debug(f"[{self.name}] called complete: {ref}")
 
-        result = await self.session.complete(ref=ref, argument=argument)
+        result = await self.session.complete(
+            ref=ref, argument=argument, context_arguments=context_arguments
+        )
         return result
 
     async def complete(
         self,
         ref: mcp.types.ResourceTemplateReference | mcp.types.PromptReference,
         argument: dict[str, str],
+        context_arguments: dict[str, Any] | None = None,
     ) -> mcp.types.Completion:
         """Send a completion request to the server.
 
         Args:
             ref (mcp.types.ResourceTemplateReference | mcp.types.PromptReference): The reference to complete.
             argument (dict[str, str]): Arguments to pass to the completion request.
+            context_arguments (dict[str, Any] | None, optional): Optional context arguments to
+                include with the completion request. Defaults to None.
 
         Returns:
             mcp.types.Completion: The completion object.
@@ -781,7 +789,9 @@ class Client(Generic[ClientTransportT]):
         Raises:
             RuntimeError: If called while the client is not connected.
         """
-        result = await self.complete_mcp(ref=ref, argument=argument)
+        result = await self.complete_mcp(
+            ref=ref, argument=argument, context_arguments=context_arguments
+        )
         return result.completion
 
     # --- Tools ---

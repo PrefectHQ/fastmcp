@@ -127,7 +127,7 @@ This example uses WorkOS AuthKit as the external identity provider. The `AuthKit
 
 <VersionBadge version="2.12.0" />
 
-`OAuthProxy` enables authentication with OAuth providers that **don't support Dynamic Client Registration (DCR)**, such as GitHub, Google, Azure, and most traditional enterprise identity systems.
+`OAuthProxy` enables authentication with OAuth providers that **don't support Dynamic Client Registration (DCR)**, such as GitHub, Google, Azure, AWS, and most traditional enterprise identity systems.
 
 When identity providers require manual app registration and fixed credentials, `OAuthProxy` bridges the gap. It presents a DCR-compliant interface to MCP clients (accepting any registration request) while using your pre-registered credentials with the upstream provider. The proxy handles the complexity of callback forwarding, enabling dynamic client callbacks to work with providers that require fixed redirect URIs.
 
@@ -256,7 +256,7 @@ This approach simplifies deployment pipelines and follows twelve-factor app prin
 
 The authentication approach you choose depends on your existing infrastructure, security requirements, and operational constraints.
 
-**For OAuth providers without DCR support (GitHub, Google, Azure, most enterprise systems), use OAuth Proxy.** These providers require manual app registration through their developer consoles. OAuth Proxy bridges the gap by presenting a DCR-compliant interface to MCP clients while using your fixed credentials with the provider. The proxy's callback forwarding pattern enables dynamic client ports to work with providers that require fixed redirect URIs.
+**For OAuth providers without DCR support (GitHub, Google, Azure, AWS, most enterprise systems), use OAuth Proxy.** These providers require manual app registration through their developer consoles. OAuth Proxy bridges the gap by presenting a DCR-compliant interface to MCP clients while using your fixed credentials with the provider. The proxy's callback forwarding pattern enables dynamic client ports to work with providers that require fixed redirect URIs.
 
 **For identity providers with DCR support (Descope, WorkOS AuthKit, modern auth platforms), use RemoteAuthProvider.** These providers allow clients to dynamically register and obtain credentials without manual configuration. This enables the fully automated authentication flow that MCP is designed for, providing the best user experience and simplest implementation.
 
