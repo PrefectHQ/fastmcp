@@ -239,7 +239,6 @@ class TestRemoteAuthProviderIntegration:
             ("https://api.example.com", "https://api.example.com/mcp"),
             ("https://api.example.com/", "https://api.example.com/mcp"),
             ("https://api.example.com/v1/", "https://api.example.com/v1/mcp"),
-
         ],
     )
     async def test_base_url_configurations(self, base_url: str, expected_resource: str):
