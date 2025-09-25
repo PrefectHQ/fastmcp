@@ -281,7 +281,7 @@ class OAuthProxy(OAuthProvider):
             valid_scopes: List of all the possible valid scopes for a client.
                 These are advertised to clients through the `/.well-known` endpoints. Defaults to `required_scopes` if not provided.
             forward_pkce: Whether to forward PKCE to upstream server (default True).
-                Enable for providers that support/require PKCE (Google, Azure, etc.).
+                Enable for providers that support/require PKCE (Google, Azure, AWS, etc.).
                 Disable only if upstream provider doesn't support PKCE.
             token_endpoint_auth_method: Token endpoint authentication method for upstream server.
                 Common values: "client_secret_basic", "client_secret_post", "none".

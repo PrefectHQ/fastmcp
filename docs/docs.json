@@ -168,6 +168,7 @@
                 "pages": [
                   "integrations/auth0",
                   "integrations/authkit",
+                  "integrations/aws-cognito",
                   "integrations/azure",
                   "integrations/descope",
                   "integrations/github",
