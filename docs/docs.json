@@ -172,6 +172,7 @@
                   "integrations/azure",
                   "integrations/descope",
                   "integrations/github",
+                  "integrations/scalekit",
                   "integrations/google",
                   "integrations/workos"
                 ]
