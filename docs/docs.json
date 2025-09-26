@@ -11,9 +11,6 @@
     },
     "decoration": "windows"
   },
-  "contextual": {
-    "options": ["copy", "view"]
-  },
   "banner": {
     "content": "Host your server on [FastMCP Cloud](https://fastmcp.cloud) for free!"
   },
@@ -21,6 +18,12 @@
     "dark": "#f72585",
     "light": "#4cc9f0",
     "primary": "#2d00f7"
+  },
+  "contextual": {
+    "options": [
+      "copy",
+      "view"
+    ]
   },
   "description": "The fast, Pythonic way to build MCP servers and clients.",
   "favicon": {
@@ -51,8 +54,8 @@
     "links": [
       {
         "href": "https://fastmcp.cloud",
-        "label": "FastMCP Cloud",
-        "icon": "cloud"
+        "icon": "cloud",
+        "label": "FastMCP Cloud"
       }
     ],
     "primary": {
@@ -129,7 +132,10 @@
               {
                 "group": "Essentials",
                 "icon": "cube",
-                "pages": ["clients/client", "clients/transports"]
+                "pages": [
+                  "clients/client",
+                  "clients/transports"
+                ]
               },
               {
                 "group": "Core Operations",
@@ -155,7 +161,10 @@
               {
                 "group": "Authentication",
                 "icon": "user-shield",
-                "pages": ["clients/auth/oauth", "clients/auth/bearer"]
+                "pages": [
+                  "clients/auth/oauth",
+                  "clients/auth/bearer"
+                ]
               }
             ]
           },
@@ -238,7 +247,10 @@
         "tab": "Documentation"
       },
       {
-        "pages": ["updates", "changelog"],
+        "pages": [
+          "updates",
+          "changelog"
+        ],
         "tab": "What's New"
       },
       {
@@ -322,16 +334,21 @@
                       "python-sdk/fastmcp-server-auth-__init__",
                       "python-sdk/fastmcp-server-auth-auth",
                       "python-sdk/fastmcp-server-auth-oauth_proxy",
+                      "python-sdk/fastmcp-server-auth-oidc_proxy",
                       {
                         "group": "providers",
                         "pages": [
                           "python-sdk/fastmcp-server-auth-providers-__init__",
+                          "python-sdk/fastmcp-server-auth-providers-auth0",
+                          "python-sdk/fastmcp-server-auth-providers-aws",
                           "python-sdk/fastmcp-server-auth-providers-azure",
                           "python-sdk/fastmcp-server-auth-providers-bearer",
+                          "python-sdk/fastmcp-server-auth-providers-descope",
                           "python-sdk/fastmcp-server-auth-providers-github",
                           "python-sdk/fastmcp-server-auth-providers-google",
                           "python-sdk/fastmcp-server-auth-providers-in_memory",
                           "python-sdk/fastmcp-server-auth-providers-jwt",
+                          "python-sdk/fastmcp-server-auth-providers-scalekit",
                           "python-sdk/fastmcp-server-auth-providers-workos"
                         ]
                       },
@@ -412,6 +429,7 @@
                     ]
                   },
                   "python-sdk/fastmcp-utilities-openapi",
+                  "python-sdk/fastmcp-utilities-storage",
                   "python-sdk/fastmcp-utilities-tests",
                   "python-sdk/fastmcp-utilities-types"
                 ]
