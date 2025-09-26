@@ -4,6 +4,124 @@ icon: "list-check"
 rss: true
 ---
 
+<Update label="v2.12.4" description="2025-09-26">
+
+**[v2.12.4: OIDC What You Did There](https://github.com/jlowin/fastmcp/releases/tag/v2.12.4)**
+
+FastMCP 2.12.4 adds comprehensive OIDC support and expands authentication options with AWS Cognito and Descope providers. The release also includes improvements to logging middleware, URL handling for nested resources, persistent OAuth client registration storage, and various fixes to the experimental OpenAPI parser.
+
+## What's Changed
+### New Features 🎉
+* feat: Add support for OIDC configuration by [@ruhulio](https://github.com/ruhulio) in [#1817](https://github.com/jlowin/fastmcp/pull/1817)
+### Enhancements 🔧
+* feat: Move the Starlette context middleware to the front by [@akkuman](https://github.com/akkuman) in [#1812](https://github.com/jlowin/fastmcp/pull/1812)
+* Refactor Logging and Structured Logging Middleware by [@strawgate](https://github.com/strawgate) in [#1805](https://github.com/jlowin/fastmcp/pull/1805)
+* Update pull_request_template.md by [@jlowin](https://github.com/jlowin) in [#1824](https://github.com/jlowin/fastmcp/pull/1824)
+* chore: Set redirect_path default in function by [@ruhulio](https://github.com/ruhulio) in [#1833](https://github.com/jlowin/fastmcp/pull/1833)
+* feat: Set instructions in code by [@attiks](https://github.com/attiks) in [#1838](https://github.com/jlowin/fastmcp/pull/1838)
+* Automatically Create inline Snapshots by [@strawgate](https://github.com/strawgate) in [#1779](https://github.com/jlowin/fastmcp/pull/1779)
+* chore: Cleanup Auth0 redirect_path initialization by [@ruhulio](https://github.com/ruhulio) in [#1842](https://github.com/jlowin/fastmcp/pull/1842)
+* feat: Add support for Descope Authentication by [@anvibanga](https://github.com/anvibanga) in [#1853](https://github.com/jlowin/fastmcp/pull/1853)
+* Update descope version badges by [@jlowin](https://github.com/jlowin) in [#1870](https://github.com/jlowin/fastmcp/pull/1870)
+* Update welcome images by [@jlowin](https://github.com/jlowin) in [#1884](https://github.com/jlowin/fastmcp/pull/1884)
+* Fix rounded edges of image by [@jlowin](https://github.com/jlowin) in [#1886](https://github.com/jlowin/fastmcp/pull/1886)
+* optimize test suite by [@zzstoatzz](https://github.com/zzstoatzz) in [#1893](https://github.com/jlowin/fastmcp/pull/1893)
+* Enhancement: client completions support context_arguments by [@isijoe](https://github.com/isijoe) in [#1906](https://github.com/jlowin/fastmcp/pull/1906)
+* Update Descope icon by [@anvibanga](https://github.com/anvibanga) in [#1912](https://github.com/jlowin/fastmcp/pull/1912)
+* Add AWS Cognito OAuth Provider for Enterprise Authentication by [@stephaneberle9](https://github.com/stephaneberle9) in [#1873](https://github.com/jlowin/fastmcp/pull/1873)
+* Fix typos discovered by codespell by [@cclauss](https://github.com/cclauss) in [#1922](https://github.com/jlowin/fastmcp/pull/1922)
+* Use lowercase namespace for fastmcp logger by [@jlowin](https://github.com/jlowin) in [#1791](https://github.com/jlowin/fastmcp/pull/1791)
+### Fixes 🐞
+* Update quickstart.mdx by [@radi-dev](https://github.com/radi-dev) in [#1821](https://github.com/jlowin/fastmcp/pull/1821)
+* Remove extraneous union import by [@jlowin](https://github.com/jlowin) in [#1823](https://github.com/jlowin/fastmcp/pull/1823)
+* Delay import of Provider classes until FastMCP Server Creation by [@strawgate](https://github.com/strawgate) in [#1820](https://github.com/jlowin/fastmcp/pull/1820)
+* fix: correct documentation link in deprecation warning by [@strawgate](https://github.com/strawgate) in [#1828](https://github.com/jlowin/fastmcp/pull/1828)
+* fix: Increase default 3s timeout on Pytest by [@dacamposol](https://github.com/dacamposol) in [#1866](https://github.com/jlowin/fastmcp/pull/1866)
+* fix: Improve URL handling in OIDCConfiguration by [@ruhulio](https://github.com/ruhulio) in [#1850](https://github.com/jlowin/fastmcp/pull/1850)
+* fix: correct typing for on_read_resource middleware method by [@strawgate](https://github.com/strawgate) in [#1858](https://github.com/jlowin/fastmcp/pull/1858)
+* feat(experimental/openapi): replace $ref in additionalProperties; add tests by [@jlowin](https://github.com/jlowin) in [#1735](https://github.com/jlowin/fastmcp/pull/1735)
+* Honor client supplied scopes during registration by [@dmikusa](https://github.com/dmikusa) in [#1860](https://github.com/jlowin/fastmcp/pull/1860)
+* Fix: FastAPI list parameter parsing in experimental OpenAPI parser by [@jlowin](https://github.com/jlowin) in [#1834](https://github.com/jlowin/fastmcp/pull/1834)
+* Add log level support for stdio and HTTP transports by [@jlowin](https://github.com/jlowin) in [#1840](https://github.com/jlowin/fastmcp/pull/1840)
+* Fix OAuth pre-flight check to accept HTTP 200 responses by [@jlowin](https://github.com/jlowin) in [#1874](https://github.com/jlowin/fastmcp/pull/1874)
+* Fix: Preserve OpenAPI parameter descriptions in experimental parser by [@shlomo666](https://github.com/shlomo666) in [#1877](https://github.com/jlowin/fastmcp/pull/1877)
+* Add persistent storage for OAuth client registrations by [@jlowin](https://github.com/jlowin) in [#1879](https://github.com/jlowin/fastmcp/pull/1879)
+* docs: update release dates based on github releases by [@lodu](https://github.com/lodu) in [#1890](https://github.com/jlowin/fastmcp/pull/1890)
+* Small updates to Sampling types by [@strawgate](https://github.com/strawgate) in [#1882](https://github.com/jlowin/fastmcp/pull/1882)
+* remove lockfile smart_home example by [@zzstoatzz](https://github.com/zzstoatzz) in [#1892](https://github.com/jlowin/fastmcp/pull/1892)
+* Fix: Remove JSON schema title metadata while preserving parameters named 'title' by [@jlowin](https://github.com/jlowin) in [#1872](https://github.com/jlowin/fastmcp/pull/1872)
+* Fix: get_resource_url nested URL handling by [@raphael-linx](https://github.com/raphael-linx) in [#1914](https://github.com/jlowin/fastmcp/pull/1914)
+* Clean up code for creating the resource url by [@jlowin](https://github.com/jlowin) in [#1916](https://github.com/jlowin/fastmcp/pull/1916)
+* Fix route count logging in OpenAPI server by [@zzstoatzz](https://github.com/zzstoatzz) in [#1928](https://github.com/jlowin/fastmcp/pull/1928)
+### Docs 📚
+* docs: make Gemini CLI integration discoverable by [@jackwotherspoon](https://github.com/jackwotherspoon) in [#1827](https://github.com/jlowin/fastmcp/pull/1827)
+* docs: update NEW tags for AI assistant integrations by [@jackwotherspoon](https://github.com/jackwotherspoon) in [#1829](https://github.com/jlowin/fastmcp/pull/1829)
+* Update wordmark by [@jlowin](https://github.com/jlowin) in [#1832](https://github.com/jlowin/fastmcp/pull/1832)
+* docs: improve OAuth and OIDC Proxy documentation by [@jlowin](https://github.com/jlowin) in [#1880](https://github.com/jlowin/fastmcp/pull/1880)
+* Update readme + welcome docs by [@jlowin](https://github.com/jlowin) in [#1883](https://github.com/jlowin/fastmcp/pull/1883)
+* Update dark mode image in README by [@jlowin](https://github.com/jlowin) in [#1885](https://github.com/jlowin/fastmcp/pull/1885)
+
+## New Contributors
+* [@radi-dev](https://github.com/radi-dev) made their first contribution in [#1821](https://github.com/jlowin/fastmcp/pull/1821)
+* [@akkuman](https://github.com/akkuman) made their first contribution in [#1812](https://github.com/jlowin/fastmcp/pull/1812)
+* [@ruhulio](https://github.com/ruhulio) made their first contribution in [#1817](https://github.com/jlowin/fastmcp/pull/1817)
+* [@attiks](https://github.com/attiks) made their first contribution in [#1838](https://github.com/jlowin/fastmcp/pull/1838)
+* [@anvibanga](https://github.com/anvibanga) made their first contribution in [#1853](https://github.com/jlowin/fastmcp/pull/1853)
+* [@shlomo666](https://github.com/shlomo666) made their first contribution in [#1877](https://github.com/jlowin/fastmcp/pull/1877)
+* [@lodu](https://github.com/lodu) made their first contribution in [#1890](https://github.com/jlowin/fastmcp/pull/1890)
+* [@isijoe](https://github.com/isijoe) made their first contribution in [#1906](https://github.com/jlowin/fastmcp/pull/1906)
+* [@raphael-linx](https://github.com/raphael-linx) made their first contribution in [#1914](https://github.com/jlowin/fastmcp/pull/1914)
+* [@stephaneberle9](https://github.com/stephaneberle9) made their first contribution in [#1873](https://github.com/jlowin/fastmcp/pull/1873)
+* [@cclauss](https://github.com/cclauss) made their first contribution in [#1922](https://github.com/jlowin/fastmcp/pull/1922)
+
+**Full Changelog**: [v2.12.3...v2.12.4](https://github.com/jlowin/fastmcp/compare/v2.12.3...v2.12.4)
+
+</Update>
+
+<Update label="v2.12.3" description="2025-09-17">
+
+**[v2.12.3: Double Time](https://github.com/jlowin/fastmcp/releases/tag/v2.12.3)**
+
+FastMCP 2.12.3 focuses on performance and developer experience improvements based on community feedback. This release includes optimized auth provider imports that reduce server startup time, enhanced OIDC authentication flows with proper token management, and several reliability fixes for OAuth proxy configurations. The addition of automatic inline snapshot creation significantly improves the testing experience for contributors.
+
+## What's Changed
+### New Features 🎉
+* feat: Support setting MCP log level via transport configuration by [@jlowin](https://github.com/jlowin) in [#1756](https://github.com/jlowin/fastmcp/pull/1756)
+### Enhancements 🔧
+* Add client-side auth support for mcp install cursor command by [@jlowin](https://github.com/jlowin) in [#1747](https://github.com/jlowin/fastmcp/pull/1747)
+* Automatically Create inline Snapshots by [@strawgate](https://github.com/strawgate) in [#1779](https://github.com/jlowin/fastmcp/pull/1779)
+* Use lowercase namespace for fastmcp logger by [@jlowin](https://github.com/jlowin) in [#1791](https://github.com/jlowin/fastmcp/pull/1791)
+### Fixes 🐞
+* fix: correct merge mistake during auth0 refactor by [@strawgate](https://github.com/strawgate) in [#1742](https://github.com/jlowin/fastmcp/pull/1742)
+* Remove extraneous union import by [@jlowin](https://github.com/jlowin) in [#1823](https://github.com/jlowin/fastmcp/pull/1823)
+* Delay import of Provider classes until FastMCP Server Creation by [@strawgate](https://github.com/strawgate) in [#1820](https://github.com/jlowin/fastmcp/pull/1820)
+* fix: refactor OIDC configuration provider for proper token management by [@strawgate](https://github.com/strawgate) in [#1751](https://github.com/jlowin/fastmcp/pull/1751)
+* Fix smart_home example imports by [@strawgate](https://github.com/strawgate) in [#1753](https://github.com/jlowin/fastmcp/pull/1753)
+* fix: correct oauth proxy initialization of client by [@strawgate](https://github.com/strawgate) in [#1759](https://github.com/jlowin/fastmcp/pull/1759)
+* Fix: return empty string when prompts have no arguments by [@jlowin](https://github.com/jlowin) in [#1766](https://github.com/jlowin/fastmcp/pull/1766)
+* Fix async server callbacks by [@strawgate](https://github.com/strawgate) in [#1774](https://github.com/jlowin/fastmcp/pull/1774)
+* Fix error when retrieving Completion API errors by [@strawgate](https://github.com/strawgate) in [#1785](https://github.com/jlowin/fastmcp/pull/1785)
+* fix: correct documentation link in deprecation warning by [@strawgate](https://github.com/strawgate) in [#1828](https://github.com/jlowin/fastmcp/pull/1828)
+### Docs 📚
+* Add migration docs for 2.12 by [@jlowin](https://github.com/jlowin) in [#1745](https://github.com/jlowin/fastmcp/pull/1745)
+* Update docs for default sampling implementation to mention OpenAI API Key by [@strawgate](https://github.com/strawgate) in [#1763](https://github.com/jlowin/fastmcp/pull/1763)
+* Add tip about sampling prompts and user_context to sampling documentation by [@jlowin](https://github.com/jlowin) in [#1764](https://github.com/jlowin/fastmcp/pull/1764)
+* Update quickstart.mdx by [@radi-dev](https://github.com/radi-dev) in [#1821](https://github.com/jlowin/fastmcp/pull/1821)
+### Other Changes 🦾
+* Replace Marvin with Claude Code in CI by [@jlowin](https://github.com/jlowin) in [#1800](https://github.com/jlowin/fastmcp/pull/1800)
+* Refactor logging and structured logging middleware by [@strawgate](https://github.com/strawgate) in [#1805](https://github.com/jlowin/fastmcp/pull/1805)
+* feat: Move the Starlette context middleware to the front by [@akkuman](https://github.com/akkuman) in [#1812](https://github.com/jlowin/fastmcp/pull/1812)
+* feat: Add support for OIDC configuration by [@ruhulio](https://github.com/ruhulio) in [#1817](https://github.com/jlowin/fastmcp/pull/1817)
+
+## New Contributors
+* [@radi-dev](https://github.com/radi-dev) made their first contribution in [#1821](https://github.com/jlowin/fastmcp/pull/1821)
+* [@akkuman](https://github.com/akkuman) made their first contribution in [#1812](https://github.com/jlowin/fastmcp/pull/1812)
+* [@ruhulio](https://github.com/ruhulio) made their first contribution in [#1817](https://github.com/jlowin/fastmcp/pull/1817)
+
+**Full Changelog**: [v2.12.2...v2.12.3](https://github.com/jlowin/fastmcp/compare/v2.12.2...v2.12.3)
+
+</Update>
+
 <Update label="v2.12.2" description="2025-09-03">
 
 **[v2.12.2: Perchance to Stream](https://github.com/jlowin/fastmcp/releases/tag/v2.12.2)**
