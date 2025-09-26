@@ -19,7 +19,7 @@ def get_logger(name: str) -> logging.Logger:
     Returns:
         a configured logger instance
     """
-    return logging.getLogger(f"FastMCP.{name}")
+    return logging.getLogger(f"fastmcp.{name}")
 
 
 def configure_logging(
@@ -45,7 +45,7 @@ def configure_logging(
         enable_rich_tracebacks = fastmcp.settings.enable_rich_tracebacks
 
     if logger is None:
-        logger = logging.getLogger("FastMCP")
+        logger = logging.getLogger("fastmcp")
 
     # Only configure the FastMCP logger namespace
     handler = RichHandler(
