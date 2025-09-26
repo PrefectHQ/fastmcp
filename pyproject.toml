@@ -141,3 +141,6 @@ extend-select = ["I", "UP"]
 "__init__.py" = ["F401", "I001", "RUF013"]
 # allow imports not at the top of the file
 "src/fastmcp/__init__.py" = ["E402"]
+
+[tool.codespell]
+ignore-words-list = "asend,shttp,te"
