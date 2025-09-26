@@ -341,7 +341,7 @@ app.mount("/analytics", mcp_app)
 
 ## Offering an LLM-Friendly API
 
-A common pattern is to generate an MCP server from your FastAPI app and mount it back into the same application. This provides an LLM-optimized interface alongside your regular API:
+A common pattern is to generate an MCP server from your FastAPI app and serve both interfaces from the same application. This provides an LLM-optimized interface alongside your regular API:
 
 ```python
 # Assumes the FastAPI app from above is already defined
@@ -354,13 +354,19 @@ mcp = FastMCP.from_fastapi(app=app, name="E-commerce MCP")
 # 2. Create the MCP's ASGI app
 mcp_app = mcp.http_app(path='/mcp')
 
-# 3. Mount it back into your FastAPI app
-app = FastAPI(title="E-commerce API", lifespan=mcp_app.lifespan)
-app.mount("/llm", mcp_app)
+# 3. Create a new FastAPI app that combines both sets of routes
+combined_app = FastAPI(
+    title="E-commerce API with MCP",
+    routes=[
+        *mcp_app.routes,  # MCP routes
+        *app.routes,      # Original API routes
+    ],
+    lifespan=mcp_app.lifespan,
+)
 
 # Now you have:
 # - Regular API: http://localhost:8000/products
-# - LLM-friendly MCP: http://localhost:8000/llm/mcp/
+# - LLM-friendly MCP: http://localhost:8000/mcp/
 # Both served from the same FastAPI application!
 ```
 
