@@ -18,7 +18,6 @@ auth = AuthKitProvider(
     authkit_domain=os.getenv("FASTMCP_SERVER_AUTH_AUTHKITPROVIDER_AUTHKIT_DOMAIN")
     or "",
     base_url="http://localhost:8000",
-    # redirect_path="/auth/callback",  # Default path - change if using a different callback URL
 )
 
 mcp = FastMCP("AuthKit DCR Example Server", auth=auth)
