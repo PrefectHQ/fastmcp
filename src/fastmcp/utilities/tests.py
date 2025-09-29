@@ -66,6 +66,7 @@ def _run_server(mcp_server: FastMCP, transport: Literal["sse"], port: int) -> No
             host="127.0.0.1",
             port=port,
             log_level="error",
+            ws="websockets-sansio",
         )
     )
     uvicorn_server.run()

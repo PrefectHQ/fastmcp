@@ -243,7 +243,13 @@ class MockOAuthProvider:
                 self.port = s.getsockname()[1]
 
         self.base_url = f"http://localhost:{self.port}"
-        config = Config(self.app, host="localhost", port=self.port, log_level="error")
+        config = Config(
+            self.app,
+            host="localhost",
+            port=self.port,
+            log_level="error",
+            ws="websockets-sansio",
+        )
         self.server = Server(config)
 
         # Start server in background

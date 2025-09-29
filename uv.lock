@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.10"
 resolution-markers = [
     "python_full_version >= '3.11'",
@@ -530,14 +530,12 @@ dependencies = [
     { name = "pyperclip" },
     { name = "python-dotenv" },
     { name = "rich" },
+    { name = "websockets" },
 ]
 
 [package.optional-dependencies]
 openai = [
     { name = "openai" },
-]
-websockets = [
-    { name = "websockets" },
 ]
 
 [package.dev-dependencies]
@@ -580,9 +578,9 @@ requires-dist = [
     { name = "pyperclip", specifier = ">=1.9.0" },
     { name = "python-dotenv", specifier = ">=1.1.0" },
     { name = "rich", specifier = ">=13.9.4" },
-    { name = "websockets", marker = "extra == 'websockets'", specifier = ">=15.0.1" },
+    { name = "websockets", specifier = ">=15.0.1" },
 ]
-provides-extras = ["openai", "websockets"]
+provides-extras = ["openai"]
 
 [package.metadata.requires-dev]
 dev = [

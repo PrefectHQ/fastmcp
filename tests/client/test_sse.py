@@ -96,7 +96,9 @@ def run_nested_server(host: str, port: int) -> None:
     mount = Starlette(routes=[Mount("/nest-inner", app=app)])
     mount2 = Starlette(routes=[Mount("/nest-outer", app=mount)])
     server = uvicorn.Server(
-        config=uvicorn.Config(app=mount2, host=host, port=port, log_level="error")
+        config=uvicorn.Config(
+            app=mount2, host=host, port=port, log_level="error", ws="websockets-sansio"
+        )
     )
     server.run()
 
