@@ -42,7 +42,7 @@ from mcp.server.auth.settings import (
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 from pydantic import AnyHttpUrl, AnyUrl, SecretStr
 from starlette.requests import Request
-from starlette.responses import RedirectResponse
+from starlette.responses import JSONResponse, RedirectResponse
 from starlette.routing import Route
 
 import fastmcp
@@ -844,9 +844,7 @@ class OAuthProxy(OAuthProvider):
                 f"Route {i}: {route} - path: {getattr(route, 'path', 'N/A')}, methods: {getattr(route, 'methods', 'N/A')}"
             )
 
-            # Keep all standard OAuth routes unchanged - our DCR-compliant flow handles everything
-            custom_routes.append(route)
-
+            # Replace the token endpoint with our custom handler that returns proper OAuth 2.1 error codes
             if (
                 isinstance(route, Route)
                 and route.path == "/token"
@@ -854,6 +852,17 @@ class OAuthProxy(OAuthProvider):
                 and "POST" in route.methods
             ):
                 token_route_found = True
+                # Replace with our custom token handler
+                custom_routes.append(
+                    Route(
+                        path="/token",
+                        endpoint=self._handle_token_request,
+                        methods=["POST"],
+                    )
+                )
+            else:
+                # Keep all other standard OAuth routes unchanged
+                custom_routes.append(route)
 
         # Add OAuth callback endpoint for forwarding to client callbacks
         custom_routes.append(
@@ -868,6 +877,81 @@ class OAuthProxy(OAuthProvider):
             f"✅ OAuth routes configured: token_endpoint={token_route_found}, total routes={len(custom_routes)} (includes OAuth callback)"
         )
         return custom_routes
+
+    # -------------------------------------------------------------------------
+    # Custom Token Endpoint Handler
+    # -------------------------------------------------------------------------
+
+    async def _handle_token_request(self, request: Request) -> JSONResponse:
+        """Handle token requests with proper OAuth 2.1 error handling.
+
+        This custom handler wraps the standard MCP SDK token handler but provides
+        OAuth 2.1 compliant error responses for client authentication failures:
+        - Returns HTTP 401 status code for client authentication failures
+        - Uses 'invalid_client' error code instead of 'unauthorized_client'
+
+        Per OAuth 2.1 spec: "The authorization server MAY return an HTTP 401
+        (Unauthorized) status code to indicate which HTTP authentication schemes
+        are supported. If the client attempted to authenticate via the Authorization
+        request header field, the authorization server MUST respond with an HTTP 401
+        (Unauthorized) status code and include the WWW-Authenticate response header
+        field matching the authentication scheme used by the client."
+        """
+        from mcp.server.auth.handlers.token import TokenHandler
+        from mcp.server.auth.middleware.client_auth import ClientAuthenticator
+
+        # Create the standard token handler and client authenticator
+        token_handler = TokenHandler(
+            provider=self, client_authenticator=ClientAuthenticator(self)
+        )
+
+        # Handle the request normally
+        response = await token_handler.handle(request)
+
+        # Check if the response is an error response for client authentication failure
+        if (
+            hasattr(response, "body")
+            and hasattr(response, "status_code")
+            and response.status_code == 400
+        ):
+            try:
+                import json
+
+                # Parse the response body to check for client authentication errors
+                body_content = (
+                    response.body.decode("utf-8")
+                    if hasattr(response.body, "decode")
+                    else str(response.body)
+                )
+                error_data = json.loads(body_content)
+
+                # Check if this is an unauthorized_client error (which means invalid client_id)
+                if error_data.get(
+                    "error"
+                ) == "unauthorized_client" and "Invalid client_id" in str(
+                    error_data.get("error_description", "")
+                ):
+                    logger.debug(
+                        "Client authentication failed - client not found, returning OAuth 2.1 compliant error"
+                    )
+
+                    # Return the correct OAuth 2.1 response
+                    return JSONResponse(
+                        content={
+                            "error": "invalid_client",
+                            "error_description": error_data.get("error_description"),
+                        },
+                        status_code=401,
+                        headers={
+                            "Cache-Control": "no-store",
+                            "Pragma": "no-cache",
+                        },
+                    )
+            except (json.JSONDecodeError, AttributeError, KeyError):
+                # If we can't parse the response, return it as-is
+                pass
+
+        return response
 
     # -------------------------------------------------------------------------
     # IdP Callback Forwarding

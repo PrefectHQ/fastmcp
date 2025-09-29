@@ -973,3 +973,59 @@ class TestParameterForwarding:
         assert query_params["audience"][0] == "https://api.example.com"
         assert query_params["prompt"][0] == "consent"
         assert query_params["max_age"][0] == "3600"
+
+    @pytest.mark.asyncio
+    async def test_token_endpoint_invalid_client_error(self, jwt_verifier):
+        """Test that invalid client_id returns OAuth 2.1 compliant error response.
+
+        When a client ID is not found during token exchange, the proxy should:
+        1. Return HTTP 401 status code
+        2. Use 'invalid_client' error code instead of 'unauthorized_client'
+
+        This aligns with OAuth 2.1 spec and enables Claude's automatic client re-registration.
+        """
+        from starlette.applications import Starlette
+        from starlette.testclient import TestClient
+
+        proxy = OAuthProxy(
+            upstream_authorization_endpoint="https://oauth.example.com/authorize",
+            upstream_token_endpoint="https://oauth.example.com/token",
+            upstream_client_id="upstream-client",
+            upstream_client_secret="upstream-secret",
+            token_verifier=jwt_verifier,
+            base_url="https://proxy.example.com",
+        )
+
+        # Create a test app with OAuth routes
+        app = Starlette(routes=proxy.get_routes())
+
+        # Test the token endpoint with an invalid (non-existent) client_id
+        with TestClient(app) as client:
+            response = client.post(
+                "/token",
+                data={
+                    "grant_type": "authorization_code",
+                    "code": "test-auth-code",
+                    "client_id": "non-existent-client-id",
+                    "code_verifier": "test-code-verifier",
+                    "redirect_uri": "http://localhost:12345/callback",
+                },
+                headers={
+                    "Content-Type": "application/x-www-form-urlencoded",
+                },
+            )
+
+            # Verify OAuth 2.1 compliant error response
+            assert response.status_code == 401, (
+                f"Expected 401 but got {response.status_code}"
+            )
+
+            error_data = response.json()
+            assert error_data["error"] == "invalid_client", (
+                f"Expected 'invalid_client' but got '{error_data.get('error')}'"
+            )
+            assert "Invalid client_id" in error_data["error_description"]
+
+            # Verify proper cache headers are set
+            assert response.headers.get("Cache-Control") == "no-store"
+            assert response.headers.get("Pragma") == "no-cache"
