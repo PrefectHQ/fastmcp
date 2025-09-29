@@ -22,13 +22,12 @@ import hashlib
 import secrets
 import time
 from base64 import urlsafe_b64encode
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Final
 from urllib.parse import urlencode
 
 import httpx
 from authlib.common.security import generate_token
-from authlib.integrations.httpx_client import AsyncOAuth2Cli
+from authlib.integrations.httpx_client import AsyncOAuth2Client
 from key_value.aio.adapters.pydantic import PydanticAdapter
 from key_value.aio.protocols import AsyncKeyValue
 from mcp.server.auth.handlers.token import TokenErrorResponse, TokenSuccessResponse
@@ -48,7 +47,7 @@ from mcp.server.auth.settings import (
     RevocationOptions,
 )
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
-from pydantic import AnyHttpUrl, AnyUrl, BaseModel, Field, SecretStr
+from pydantic import AnyHttpUrl, AnyUrl, Field, SecretStr
 from starlette.requests import Request
 from starlette.responses import RedirectResponse
 from starlette.routing import Route
