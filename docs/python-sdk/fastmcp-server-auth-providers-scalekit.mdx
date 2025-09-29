@@ -1,0 +1,64 @@
+---
+title: scalekit
+sidebarTitle: scalekit
+---
+
+# `fastmcp.server.auth.providers.scalekit`
+
+
+Scalekit authentication provider for FastMCP.
+
+This module provides ScalekitProvider - a complete authentication solution that integrates
+with Scalekit's OAuth 2.1 and OpenID Connect services, supporting Resource Server
+authentication for seamless MCP client authentication.
+
+
+## Classes
+
+### `ScalekitProviderSettings` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/scalekit.py#L26" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+### `ScalekitProvider` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/scalekit.py#L39" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Scalekit resource server provider for OAuth 2.1 authentication.
+
+This provider implements Scalekit integration using resource server pattern.
+FastMCP acts as a protected resource server that validates access tokens issued
+by Scalekit's authorization server.
+
+IMPORTANT SETUP REQUIREMENTS:
+
+1. Create an MCP Server in Scalekit Dashboard:
+   - Go to your [Scalekit Dashboard](https://app.scalekit.com/)
+   - Navigate to MCP Servers section
+   - Register a new MCP Server with appropriate scopes
+   - Ensure the Resource Identifier matches exactly what you configure as MCP URL
+   - Note the Resource ID
+
+2. Environment Configuration:
+   - Set SCALEKIT_ENVIRONMENT_URL (e.g., https://your-env.scalekit.com)
+   - Set SCALEKIT_CLIENT_ID from your OAuth application
+   - Set SCALEKIT_RESOURCE_ID from your created resource
+   - Set MCP_URL to your FastMCP server's public URL
+
+For detailed setup instructions, see:
+https://docs.scalekit.com/mcp/overview/
+
+
+**Methods:**
+
+#### `get_routes` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/scalekit.py#L135" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_routes(self, mcp_path: str | None = None, mcp_endpoint: Any | None = None) -> list[Route]
+```
+
+Get OAuth routes including Scalekit authorization server metadata forwarding.
+
+This returns the standard protected resource routes plus an authorization server
+metadata endpoint that forwards Scalekit's OAuth metadata to clients.
+
+**Args:**
+- `mcp_path`: The path where the MCP endpoint is mounted (e.g., "/mcp")
+- `mcp_endpoint`: The MCP endpoint handler to protect with auth
+

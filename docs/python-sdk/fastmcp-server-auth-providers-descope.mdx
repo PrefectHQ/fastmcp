@@ -1,0 +1,62 @@
+---
+title: descope
+sidebarTitle: descope
+---
+
+# `fastmcp.server.auth.providers.descope`
+
+
+Descope authentication provider for FastMCP.
+
+This module provides DescopeProvider - a complete authentication solution that integrates
+with Descope's OAuth 2.1 and OpenID Connect services, supporting Dynamic Client Registration (DCR)
+for seamless MCP client authentication.
+
+
+## Classes
+
+### `DescopeProviderSettings` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/descope.py#L26" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+### `DescopeProvider` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/descope.py#L38" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Descope metadata provider for DCR (Dynamic Client Registration).
+
+This provider implements Descope integration using metadata forwarding.
+This is the recommended approach for Descope DCR
+as it allows Descope to handle the OAuth flow directly while FastMCP acts
+as a resource server.
+
+IMPORTANT SETUP REQUIREMENTS:
+
+1. Enable Dynamic Client Registration in Descope Console:
+   - Go to the [Inbound Apps page](https://app.descope.com/apps/inbound) of the Descope Console
+   - Click **DCR Settings**
+   - Enable **Dynamic Client Registration (DCR)**
+   - Define allowed scopes
+
+2. Note your Project ID:
+   - Save your Project ID from [Project Settings](https://app.descope.com/settings/project)
+   - Example: P2abc...123
+
+For detailed setup instructions, see:
+https://docs.descope.com/identity-federation/inbound-apps/creating-inbound-apps#method-2-dynamic-client-registration-dcr
+
+
+**Methods:**
+
+#### `get_routes` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/descope.py#L127" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_routes(self, mcp_path: str | None = None, mcp_endpoint: Any | None = None) -> list[Route]
+```
+
+Get OAuth routes including Descope authorization server metadata forwarding.
+
+This returns the standard protected resource routes plus an authorization server
+metadata endpoint that forwards Descope's OAuth metadata to clients.
+
+**Args:**
+- `mcp_path`: The path where the MCP endpoint is mounted (e.g., "/mcp")
+- `mcp_endpoint`: The MCP endpoint handler to protect with auth
+

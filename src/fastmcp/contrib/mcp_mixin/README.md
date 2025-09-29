@@ -91,12 +91,12 @@ class MyComponent(MCPMixin):
     # prompt
     @mcp_prompt(name="A prompt")
     def prompt_method(self, name):
-        return f"Whats up {name}?"
+        return f"What's up {name}?"
 
     # disabled prompt
     @mcp_prompt(name="A prompt", enabled=False)
     def prompt_method(self, name):
-        return f"Whats up {name}?"
+        return f"What's up {name}?"
 
 mcp_server = FastMCP()
 component = MyComponent()

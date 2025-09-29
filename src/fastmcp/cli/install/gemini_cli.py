@@ -104,7 +104,6 @@ def install_gemini_cli(
         )
         return False
 
-    # Build uv run command using Environment.build_uv_run_command()
     env_config = UVEnvironment(
         python=python_version,
         dependencies=(with_packages or []) + ["fastmcp"],

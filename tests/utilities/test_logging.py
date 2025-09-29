@@ -5,14 +5,14 @@ from fastmcp.utilities.logging import get_logger
 
 def test_logging_doesnt_affect_other_loggers(caplog):
     # set FastMCP loggers to CRITICAL and ensure other loggers still emit messages
-    original_level = logging.getLogger("FastMCP").getEffectiveLevel()
+    original_level = logging.getLogger("fastmcp").getEffectiveLevel()
 
     try:
-        logging.getLogger("FastMCP").setLevel(logging.CRITICAL)
+        logging.getLogger("fastmcp").setLevel(logging.CRITICAL)
 
         root_logger = logging.getLogger()
         app_logger = logging.getLogger("app")
-        fastmcp_logger = logging.getLogger("FastMCP")
+        fastmcp_logger = logging.getLogger("fastmcp")
         fastmcp_server_logger = get_logger("server")
 
         with caplog.at_level(logging.INFO):
@@ -27,4 +27,4 @@ def test_logging_doesnt_affect_other_loggers(caplog):
         assert "--FASTMCP SERVER--" not in caplog.text
 
     finally:
-        logging.getLogger("FastMCP").setLevel(original_level)
+        logging.getLogger("fastmcp").setLevel(original_level)
