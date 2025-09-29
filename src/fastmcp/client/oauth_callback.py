@@ -289,6 +289,7 @@ def create_oauth_callback_server(
             port=port,
             lifespan="off",
             log_level="warning",
+            ws="websockets-sansio",
         )
     )
 

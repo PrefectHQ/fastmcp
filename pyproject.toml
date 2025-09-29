@@ -16,6 +16,7 @@ dependencies = [
     "pyperclip>=1.9.0",
     "openapi-core>=0.19.5",
     "py-key-value-aio[disk,memory]>=0.2.0",
+    "websockets>=15.0.1",
 ]
 
 requires-python = ">=3.10"
@@ -42,7 +43,6 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-websockets = ["websockets>=15.0.1"]
 openai = ["openai>=1.102.0"]
 
 [dependency-groups]

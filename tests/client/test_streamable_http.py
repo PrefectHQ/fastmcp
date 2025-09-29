@@ -103,6 +103,7 @@ def run_nested_server(host: str, port: int) -> None:
             port=port,
             log_level="error",
             lifespan="on",
+            ws="websockets-sansio",
         )
     )
     server.run()

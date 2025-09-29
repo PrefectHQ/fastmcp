@@ -1566,6 +1566,7 @@ class FastMCP(Generic[LifespanResultT]):
         config_kwargs: dict[str, Any] = {
             "timeout_graceful_shutdown": 0,
             "lifespan": "on",
+            "ws": "websockets-sansio",
         }
         config_kwargs.update(_uvicorn_config_from_user)
 
