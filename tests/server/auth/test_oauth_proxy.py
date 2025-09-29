@@ -1029,3 +1029,70 @@ class TestParameterForwarding:
             # Verify proper cache headers are set
             assert response.headers.get("Cache-Control") == "no-store"
             assert response.headers.get("Pragma") == "no-cache"
+
+
+class TestTokenHandlerErrorTransformation:
+    """Tests for TokenHandler's OAuth 2.1 compliant error transformation."""
+
+    def test_transforms_client_auth_failure_to_invalid_client_401(self):
+        """Test that client authentication failures return invalid_client with 401."""
+        from mcp.server.auth.handlers.token import TokenErrorResponse
+
+        from fastmcp.server.auth.oauth_proxy import TokenHandler
+
+        handler = TokenHandler(provider=Mock(), client_authenticator=Mock())
+
+        # Simulate error from ClientAuthenticator.authenticate() failure
+        error_response = TokenErrorResponse(
+            error="unauthorized_client",
+            error_description="Invalid client_id 'test-client-id'",
+        )
+
+        response = handler.response(error_response)
+
+        # Should transform to OAuth 2.1 compliant response
+        assert response.status_code == 401
+        assert b'"error":"invalid_client"' in response.body
+        assert (
+            b'"error_description":"Invalid client_id \'test-client-id\'"'
+            in response.body
+        )
+
+    def test_does_not_transform_grant_type_unauthorized_to_invalid_client(self):
+        """Test that grant type authorization errors stay as unauthorized_client with 400."""
+        from mcp.server.auth.handlers.token import TokenErrorResponse
+
+        from fastmcp.server.auth.oauth_proxy import TokenHandler
+
+        handler = TokenHandler(provider=Mock(), client_authenticator=Mock())
+
+        # Simulate error from grant_type not in client_info.grant_types
+        error_response = TokenErrorResponse(
+            error="unauthorized_client",
+            error_description="Client not authorized for this grant type",
+        )
+
+        response = handler.response(error_response)
+
+        # Should NOT transform - keep as 400 unauthorized_client
+        assert response.status_code == 400
+        assert b'"error":"unauthorized_client"' in response.body
+
+    def test_does_not_transform_other_errors(self):
+        """Test that other error types pass through unchanged."""
+        from mcp.server.auth.handlers.token import TokenErrorResponse
+
+        from fastmcp.server.auth.oauth_proxy import TokenHandler
+
+        handler = TokenHandler(provider=Mock(), client_authenticator=Mock())
+
+        error_response = TokenErrorResponse(
+            error="invalid_grant",
+            error_description="Authorization code has expired",
+        )
+
+        response = handler.response(error_response)
+
+        # Should pass through unchanged
+        assert response.status_code == 400
+        assert b'"error":"invalid_grant"' in response.body
