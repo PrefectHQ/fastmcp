@@ -10,8 +10,8 @@ from urllib.parse import urlparse
 
 import anyio
 import httpx
-from kv_store_adapter.adapters.pydantic import PydanticAdapter
-from kv_store_adapter.types import KVStoreProtocol
+from key_value.aio.adapters.pydantic import PydanticAdapter
+from key_value.aio.protocols import AsyncKeyValue
 from mcp.client.auth import OAuthClientProvider, TokenStorage
 from mcp.shared.auth import (
     OAuthClientInformationFull,
@@ -71,18 +71,18 @@ async def check_if_auth_required(
 
 class TokenStorageAdapter(TokenStorage):
     _server_url: str
-    _kv_store_protocol: KVStoreProtocol
+    _key_value_store: AsyncKeyValue
     _storage_oauth_token: PydanticAdapter[OAuthToken]
     _storage_client_info: PydanticAdapter[OAuthClientInformationFull]
 
-    def __init__(self, kv_store_protocol: KVStoreProtocol, server_url: str):
+    def __init__(self, async_key_value: AsyncKeyValue, server_url: str):
         self._server_url = server_url
-        self._kv_store_protocol = kv_store_protocol
+        self._key_value_store = async_key_value
         self._storage_oauth_token = PydanticAdapter[OAuthToken](
-            store_protocol=kv_store_protocol, pydantic_model=OAuthToken
+            key_value=async_key_value, pydantic_model=OAuthToken
         )
         self._storage_client_info = PydanticAdapter[OAuthClientInformationFull](
-            store_protocol=kv_store_protocol, pydantic_model=OAuthClientInformationFull
+            key_value=async_key_value, pydantic_model=OAuthClientInformationFull
         )
 
     def _get_token_cache_key(self) -> str:
@@ -144,7 +144,7 @@ class OAuth(OAuthClientProvider):
         mcp_url: str,
         scopes: str | list[str] | None = None,
         client_name: str = "FastMCP Client",
-        token_storage: KVStoreProtocol | None = None,
+        token_storage: AsyncKeyValue | None = None,
         additional_client_metadata: dict[str, Any] | None = None,
         callback_port: int | None = None,
     ):
@@ -156,7 +156,7 @@ class OAuth(OAuthClientProvider):
             scopes: OAuth scopes to request. Can be a
             space-separated string or a list of strings.
             client_name: Name for this client during registration
-            token_storage: KVStoreProtocol for token storage, the default disk store is used if not provided
+            token_storage: AsyncKeyValue for token storage, the default disk store is used if not provided
             additional_client_metadata: Extra fields for OAuthClientMetadata
             callback_port: Fixed port for OAuth callback (default: random available port)
         """
@@ -186,10 +186,10 @@ class OAuth(OAuthClientProvider):
         )
 
         # Create server-specific token storage
-        token_storage = token_storage or settings.data_store
+        token_storage = token_storage or settings.key_value_store
 
         self.token_storage_adapter: TokenStorageAdapter = TokenStorageAdapter(
-            kv_store_protocol=token_storage, server_url=server_base_url
+            async_key_value=token_storage, server_url=server_base_url
         )
 
         # Store server_base_url for use in callback_handler

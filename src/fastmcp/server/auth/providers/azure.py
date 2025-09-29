@@ -7,7 +7,7 @@ using the OAuth Proxy pattern for non-DCR OAuth flows.
 from __future__ import annotations
 
 import httpx
-from kv_store_adapter.types import KVStoreProtocol
+from key_value.aio.protocols import AsyncKeyValue
 from pydantic import SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -161,7 +161,7 @@ class AzureProvider(OAuthProxy):
         required_scopes: list[str] | None | NotSetT = NotSet,
         timeout_seconds: int | NotSetT = NotSet,
         allowed_client_redirect_uris: list[str] | NotSetT = NotSet,
-        client_storage: KVStoreProtocol | None = None,
+        client_storage: AsyncKeyValue | None = None,
     ):
         """Initialize Azure OAuth provider.
 

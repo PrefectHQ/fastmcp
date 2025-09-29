@@ -1,12 +1,14 @@
 """Tests for OAuth proxy with persistent storage."""
 
+from collections.abc import AsyncGenerator
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock
 
 import pytest
+from diskcache.core import tempfile
 from inline_snapshot import snapshot
-from kv_store_adapter.stores.disk import DiskStore
-from kv_store_adapter.stores.memory import MemoryStore
+from key_value.aio.stores.disk import MultiDiskStore
+from key_value.aio.stores.memory import MemoryStore
 from mcp.shared.auth import OAuthClientInformationFull
 from pydantic import AnyUrl
 
@@ -25,9 +27,12 @@ class TestOAuthProxyStorage:
         return verifier
 
     @pytest.fixture
-    def temp_storage(self, tmp_path: Path) -> DiskStore:
+    async def temp_storage(
+        self, tmp_path: Path
+    ) -> AsyncGenerator[MultiDiskStore, None]:
         """Create file-based storage for testing."""
-        return DiskStore(path=str(tmp_path / "oauth-clients"))
+        with tempfile.TemporaryDirectory() as temp_dir:
+            yield MultiDiskStore(base_directory=Path(temp_dir))
 
     @pytest.fixture
     def memory_storage(self) -> MemoryStore:
@@ -50,7 +55,7 @@ class TestOAuthProxyStorage:
     async def test_default_storage_is_file_based(self, jwt_verifier):
         """Test that proxy defaults to file-based storage."""
         proxy = self.create_proxy(jwt_verifier, storage=None)
-        assert isinstance(proxy._client_storage, DiskStore)
+        assert isinstance(proxy._client_storage, MultiDiskStore)
 
     async def test_register_and_get_client(self, jwt_verifier, temp_storage):
         """Test registering and retrieving a client."""

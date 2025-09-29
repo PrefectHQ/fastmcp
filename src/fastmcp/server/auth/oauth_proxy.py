@@ -22,14 +22,15 @@ import hashlib
 import secrets
 import time
 from base64 import urlsafe_b64encode
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Final
 from urllib.parse import urlencode
 
 import httpx
 from authlib.common.security import generate_token
 from authlib.integrations.httpx_client import AsyncOAuth2Client
-from kv_store_adapter.adapters.pydantic import PydanticAdapter
-from kv_store_adapter.types import KVStoreProtocol
+from key_value.aio.adapters.pydantic import PydanticAdapter
+from key_value.aio.protocols import AsyncKeyValue
 from mcp.server.auth.provider import (
     AccessToken,
     AuthorizationCode,
@@ -42,7 +43,7 @@ from mcp.server.auth.settings import (
     RevocationOptions,
 )
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
-from pydantic import AnyHttpUrl, AnyUrl, Field, SecretStr
+from pydantic import AnyHttpUrl, AnyUrl, BaseModel, Field, SecretStr
 from starlette.requests import Request
 from starlette.responses import RedirectResponse
 from starlette.routing import Route
@@ -113,6 +114,12 @@ DEFAULT_AUTH_CODE_EXPIRY_SECONDS: Final[int] = 5 * 60  # 5 minutes
 
 # HTTP client timeout
 HTTP_TIMEOUT_SECONDS: Final[int] = 30
+
+
+@dataclass
+class RelatedTokens(BaseModel):
+    access_token: str
+    refresh_token: str
 
 
 class OAuthProxy(OAuthProvider):
@@ -194,7 +201,6 @@ class OAuthProxy(OAuthProvider):
     State Management
     ---------------
     The proxy maintains minimal but crucial state:
-    - _clients: DCR registrations (all use ProxyDCRClient for flexibility)
     - _oauth_transactions: Active authorization flows with client context
     - _client_codes: Authorization codes with PKCE challenges and upstream tokens
     - _access_tokens, _refresh_tokens: Token storage for revocation
@@ -250,7 +256,7 @@ class OAuthProxy(OAuthProvider):
         # Extra parameters to forward to token endpoint
         extra_token_params: dict[str, str] | None = None,
         # Client storage
-        client_storage: KVStoreProtocol | None = None,
+        client_storage: AsyncKeyValue | None = None,
     ):
         """Initialize the OAuth proxy provider.
 
@@ -333,12 +339,13 @@ class OAuthProxy(OAuthProvider):
         self._extra_authorize_params = extra_authorize_params or {}
         self._extra_token_params = extra_token_params or {}
 
-        self._client_storage: KVStoreProtocol = client_storage or settings.data_store
-        self._client_storage_collection = "oauth-proxy-clients"
+        self._client_storage: AsyncKeyValue = client_storage or settings.key_value_store
 
-        self._client_storage_adapter: PydanticAdapter[ProxyDCRClient] = PydanticAdapter[
-            ProxyDCRClient
-        ](store_protocol=self._client_storage, pydantic_model=ProxyDCRClient)
+        self._client_store = PydanticAdapter[ProxyDCRClient](
+            key_value=self._client_storage,
+            pydantic_model=ProxyDCRClient,
+            default_collection="oauth-proxy-clients",
+        )
 
         # Local state for token bookkeeping only (no client caching)
         self._access_tokens: dict[str, AccessToken] = {}
@@ -392,11 +399,7 @@ class OAuthProxy(OAuthProvider):
         For unregistered clients, returns None (which will raise an error in the SDK).
         """
         # Load from storage
-        if not (
-            client := await self._client_storage_adapter.get(
-                collection=self._client_storage_collection, key=client_id
-            )
-        ):
+        if not (client := await self._client_store.get(key=client_id)):
             return None
 
         if client.allowed_redirect_uri_patterns is None:
@@ -425,8 +428,7 @@ class OAuthProxy(OAuthProvider):
             allowed_redirect_uri_patterns=self._allowed_client_redirect_uris,
         )
 
-        await self._client_storage_adapter.put(
-            collection=self._client_storage_collection,
+        await self._client_store.put(
             key=client_info.client_id,
             value=proxy_client,
         )

@@ -21,7 +21,7 @@ Example:
     ```
 """
 
-from kv_store_adapter.types import KVStoreProtocol
+from key_value.aio.protocols import AsyncKeyValue
 from pydantic import AnyHttpUrl, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -92,7 +92,7 @@ class Auth0Provider(OIDCProxy):
         required_scopes: list[str] | NotSetT = NotSet,
         redirect_path: str | NotSetT = NotSet,
         allowed_client_redirect_uris: list[str] | NotSetT = NotSet,
-        client_storage: KVStoreProtocol | None = None,
+        client_storage: AsyncKeyValue | None = None,
     ) -> None:
         """Initialize Auth0 OAuth provider.
 

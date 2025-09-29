@@ -12,7 +12,7 @@ This implementation is based on:
 from collections.abc import Sequence
 
 import httpx
-from kv_store_adapter.types import KVStoreProtocol
+from key_value.aio.protocols import AsyncKeyValue
 from pydantic import AnyHttpUrl, BaseModel, model_validator
 from typing_extensions import Self
 
@@ -213,7 +213,7 @@ class OIDCProxy(OAuthProxy):
         redirect_path: str | None = None,
         # Client configuration
         allowed_client_redirect_uris: list[str] | None = None,
-        client_storage: KVStoreProtocol | None = None,
+        client_storage: AsyncKeyValue | None = None,
         # Token validation configuration
         token_endpoint_auth_method: str | None = None,
     ) -> None:

@@ -24,7 +24,7 @@ from __future__ import annotations
 import time
 
 import httpx
-from kv_store_adapter.types import KVStoreProtocol
+from key_value.aio.protocols import AsyncKeyValue
 from pydantic import AnyHttpUrl, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -218,7 +218,7 @@ class GoogleProvider(OAuthProxy):
         required_scopes: list[str] | NotSetT = NotSet,
         timeout_seconds: int | NotSetT = NotSet,
         allowed_client_redirect_uris: list[str] | NotSetT = NotSet,
-        client_storage: KVStoreProtocol | None = None,
+        client_storage: AsyncKeyValue | None = None,
     ):
         """Initialize Google OAuth provider.
 

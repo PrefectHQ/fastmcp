@@ -6,7 +6,7 @@ from functools import cached_property
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any, Literal
 
-from kv_store_adapter.types import KVStoreProtocol
+from key_value.aio.protocols import AsyncKeyValue
 from pydantic import Field, ImportString, field_validator
 from pydantic.fields import FieldInfo
 from pydantic_settings import (
@@ -60,6 +60,27 @@ class ExtendedEnvSettingsSource(EnvSettingsSource):
 
 class ExtendedSettingsConfigDict(SettingsConfigDict, total=False):
     env_prefixes: list[str] | None
+
+
+class DiskStorageSettings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_prefix="FASTMCP_STORAGE_",
+        extra="ignore",
+    )
+
+    directory: Annotated[
+        str | None,
+        Field(
+            description="A custom path to store data in. If set to `None` (default), a folder called `data` will be created in the `home` directory."
+        ),
+    ] = None
+
+    max_collection_size: Annotated[
+        int,
+        Field(
+            description="The maximum size for each collection in the storage directory, in bytes."
+        ),
+    ] = 1024 * 1024 * 10  # 10MB
 
 
 class ExperimentalSettings(BaseSettings):
@@ -151,7 +172,12 @@ class Settings(BaseSettings):
 
     home: Path = Path.home() / ".fastmcp"
 
-    data_path: Path | None = home / "data.db"
+    storage: Annotated[
+        DiskStorageSettings | None,
+        Field(
+            description="The default storage settings for the server. Defaults to disk storage, if set to None, data will be stored in memory by default."
+        ),
+    ] = DiskStorageSettings()
 
     test_mode: bool = False
 
@@ -386,15 +412,20 @@ class Settings(BaseSettings):
         return auth_class
 
     @cached_property
-    def data_store(self) -> KVStoreProtocol:
-        if not self.data_path:
-            from kv_store_adapter.stores.memory import MemoryStore
+    def key_value_store(self) -> AsyncKeyValue:
+        """A default data store that can be leveraged as a fallback for components that require storage."""
+        if not self.storage:
+            from key_value.aio.stores.memory import MemoryStore
 
             return MemoryStore()
 
-        from kv_store_adapter.stores.disk import DiskStore
+        from key_value.aio.stores.disk.multi_store import MultiDiskStore
 
-        return DiskStore(path=str(self.data_path), size_limit=TEN_MB_IN_BYTES)
+        base_directory: Path = self.storage.directory or (self.home / "data")
+
+        return MultiDiskStore(
+            base_directory=base_directory, max_size=self.storage.max_collection_size
+        )
 
 
 def __getattr__(name: str):
