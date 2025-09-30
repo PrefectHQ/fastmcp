@@ -80,7 +80,7 @@ class DiskStorageSettings(BaseSettings):
         Field(
             description="The maximum size for each collection in the storage directory, in bytes."
         ),
-    ] = 1024 * 1024 * 10  # 10MB
+    ] = TEN_MB_IN_BYTES  # 10MB
 
 
 class ExperimentalSettings(BaseSettings):
