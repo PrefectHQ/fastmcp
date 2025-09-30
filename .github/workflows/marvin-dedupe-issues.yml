@@ -51,6 +51,7 @@ jobs:
           - Use `gh` to interact with GitHub, rather than web fetch
           - Do not use other tools, beyond `gh` and Task (eg. don't use other MCP servers, file edit, etc.)
           - Make a todo list first
+          - Never include this issue as a duplicate of itself
 
           For your comment, follow this format precisely (example with 3 suspected duplicates):
 
@@ -70,11 +71,13 @@ jobs:
           EOF
 
       - name: Run Marvin dedupe command
-        uses: anthropics/claude-code-base-action@beta
+        uses: anthropics/claude-code-action@v1
         with:
-          model: claude-3-5-haiku-latest
           prompt_file: /tmp/claude-prompts/dedupe-prompt.txt
-          allowed_tools: "Bash(gh issue view:*),Bash(gh search:*),Bash(gh issue list:*),Bash(gh api:*),Bash(gh issue comment:*),Task"
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY_FOR_CI }}
-          claude_env: |
-            GH_TOKEN: ${{ steps.marvin-token.outputs.token }}
+          claude_args: |
+            --allowedTools Bash(gh issue view:*),Bash(gh search:*),Bash(gh issue list:*),Bash(gh api:*),Bash(gh issue comment:*),Task
+          settings: |
+            {
+              "GH_TOKEN": "${{ steps.marvin-token.outputs.token }}"
+            }

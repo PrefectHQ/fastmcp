@@ -59,13 +59,13 @@ jobs:
 
       # Marvin Assistant
       - name: Run Marvin
-        uses: anthropics/claude-code-action@beta
+        uses: anthropics/claude-code-action@v1
         with:
           github_token: ${{ steps.marvin-token.outputs.token }}
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          mode: tag
           trigger_phrase: "/marvin"
           allowed_bots: "*"
-          allowed_tools: "WebSearch,WebFetch,Bash(uv:*),Bash(pre-commit:*),Bash(pytest:*),Bash(ruff:*),Bash(ty:*),Bash(git:*),Bash(gh:*),mcp__github__add_issue_comment,mcp__github__create_issue,mcp__github__get_issue,mcp__github__list_issues,mcp__github__search_issues,mcp__github__update_issue,mcp__github__update_issue_comment,mcp__github__create_pull_request,mcp__github__get_pull_request,mcp__github__get_pull_request_comments,mcp__github__get_pull_request_files,mcp__github__get_pull_request_reviews,mcp__github__get_pull_request_status,mcp__github__list_pull_requests,mcp__github__update_pull_request,mcp__github__update_pull_request_branch,mcp__github__update_pull_request_comment,mcp__github__merge_pull_request"
+          claude_args: |
+            --allowedTools WebSearch,WebFetch,Bash(uv:*),Bash(pre-commit:*),Bash(pytest:*),Bash(ruff:*),Bash(ty:*),Bash(git:*),Bash(gh:*),mcp__github__add_issue_comment,mcp__github__create_issue,mcp__github__get_issue,mcp__github__list_issues,mcp__github__search_issues,mcp__github__update_issue,mcp__github__update_issue_comment,mcp__github__create_pull_request,mcp__github__get_pull_request,mcp__github__get_pull_request_comments,mcp__github__get_pull_request_files,mcp__github__get_pull_request_reviews,mcp__github__get_pull_request_status,mcp__github__list_pull_requests,mcp__github__update_pull_request,mcp__github__update_pull_request_branch,mcp__github__update_pull_request_comment,mcp__github__merge_pull_request
           additional_permissions: |
             actions: read
