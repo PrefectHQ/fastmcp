@@ -544,10 +544,15 @@ def _convert_to_content(
     if all(isinstance(item, ContentBlock) for item in result):
         return result
 
-    # Convert items that are not ContentBlocks
-    return [
-        _convert_to_single_content_block(item, serializer)
-        if not isinstance(item, ContentBlock)
-        else item
-        for item in result
-    ]
+    # If any item is a ContentBlock, convert non-ContentBlock items to TextContent
+    # without aggregating them
+    if any(isinstance(item, (Image, Audio, File)) for item in result):
+        return [
+            _convert_to_single_content_block(item, serializer)
+            if isinstance(item, (Image, Audio, File))
+            else item
+            for item in result
+        ]
+
+    # If none of the items are ContentBlocks, aggregate all items into a single TextContent
+    return [TextContent(type="text", text=_serialize_with_fallback(result, serializer))]
