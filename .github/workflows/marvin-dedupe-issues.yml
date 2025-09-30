@@ -17,6 +17,7 @@ jobs:
     permissions:
       contents: read
       issues: write
+      id-token: write
 
     steps:
       - name: Checkout repository
@@ -73,6 +74,7 @@ jobs:
       - name: Run Marvin dedupe command
         uses: anthropics/claude-code-action@v1
         with:
+          github_token: ${{ steps.marvin-token.outputs.token }}
           prompt_file: /tmp/claude-prompts/dedupe-prompt.txt
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY_FOR_CI }}
           claude_args: |
