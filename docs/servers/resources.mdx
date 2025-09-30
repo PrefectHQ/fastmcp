@@ -412,14 +412,14 @@ With these two templates defined, clients can request a variety of resources:
 - `repos://jlowin/fastmcp/info` → Returns info about the jlowin/fastmcp repository
 - `repos://prefecthq/prefect/info` → Returns info about the prefecthq/prefect repository
 
-### Wildcard Parameters
+### RFC 6570 URI Templates
+
+
+FastMCP implements [RFC 6570 URI Templates](https://datatracker.ietf.org/doc/html/rfc6570) for resource templates, providing a standardized way to define parameterized URIs. This includes support for simple expansion, wildcard path parameters, and form-style query parameters.
+
+#### Wildcard Parameters
 
 <VersionBadge version="2.2.4" />
-
-<Tip>
-Please note: FastMCP's support for wildcard parameters is an **extension** of the Model Context Protocol standard, which otherwise follows RFC 6570. Since all template processing happens in the FastMCP server, this should not cause any compatibility issues with other MCP implementations.
-</Tip>
-
 
 Resource templates support wildcard parameters that can match multiple path segments. While standard parameters (`{param}`) only match a single path segment and don't cross "/" boundaries, wildcard parameters (`{param*}`) can capture multiple segments including slashes. Wildcards capture all subsequent path segments *up until* the defined part of the URI template (whether literal or another parameter). This allows you to have multiple wildcard parameters in a single URI template.
 
@@ -448,7 +448,7 @@ def get_path_content(filepath: str) -> str:
 # Mixing standard and wildcard parameters
 @mcp.resource("repo://{owner}/{path*}/template.py")
 def get_template_file(owner: str, path: str) -> dict:
-    """Retrieves a file from a specific repository and path, but 
+    """Retrieves a file from a specific repository and path, but
     only if the resource ends with `template.py`"""
     # Can match repo://jlowin/fastmcp/src/resources/template.py
     return {
@@ -466,43 +466,88 @@ Wildcard parameters are useful when:
 
 Note that like regular parameters, each wildcard parameter must still be a named parameter in your function signature, and all required function parameters must appear in the URI template.
 
-### Default Values
+#### Query Parameters
 
-<VersionBadge version="2.2.0" />
+<VersionBadge version="2.13.0" />
 
-When creating resource templates, FastMCP enforces two rules for the relationship between URI template parameters and function parameters:
+FastMCP supports RFC 6570 form-style query parameters using the `{?param1,param2}` syntax. Query parameters provide a clean way to pass optional configuration to resources without cluttering the path.
 
-1. **Required Function Parameters:** All function parameters without default values (required parameters) must appear in the URI template.
-2. **URI Parameters:** All URI template parameters must exist as function parameters.
-
-However, function parameters with default values don't need to be included in the URI template. When a client requests a resource, FastMCP will:
-
-- Extract parameter values from the URI for parameters included in the template
-- Use default values for any function parameters not in the URI template
-
-This allows for flexible API designs. For example, a simple search template with optional parameters:
+Query parameters must be optional function parameters (have default values), while path parameters map to required function parameters. This enforces a clear separation: required data goes in the path, optional configuration in query params.
 
 ```python
 from fastmcp import FastMCP
 
 mcp = FastMCP(name="DataServer")
 
-@mcp.resource("search://{query}")
-def search_resources(query: str, max_results: int = 10, include_archived: bool = False) -> dict:
-    """Search for resources matching the query string."""
-    # Only 'query' is required in the URI, the other parameters use their defaults
-    results = perform_search(query, limit=max_results, archived=include_archived)
+# Basic query parameters
+@mcp.resource("data://{id}{?format}")
+def get_data(id: str, format: str = "json") -> str:
+    """Retrieve data in specified format."""
+    if format == "xml":
+        return f"<data id='{id}' />"
+    return f'{{"id": "{id}"}}'
+
+# Multiple query parameters with type coercion
+@mcp.resource("api://{endpoint}{?version,limit,offset}")
+def call_api(endpoint: str, version: int = 1, limit: int = 10, offset: int = 0) -> dict:
+    """Call API endpoint with pagination."""
     return {
-        "query": query,
-        "max_results": max_results,
-        "include_archived": include_archived,
-        "results": results
+        "endpoint": endpoint,
+        "version": version,
+        "limit": limit,
+        "offset": offset,
+        "results": fetch_results(endpoint, version, limit, offset)
     }
+
+# Query parameters with wildcards
+@mcp.resource("files://{path*}{?encoding,lines}")
+def read_file(path: str, encoding: str = "utf-8", lines: int = 100) -> str:
+    """Read file with optional encoding and line limit."""
+    return read_file_content(path, encoding, lines)
 ```
 
-With this template, clients can request `search://python` and the function will be called with `query="python", max_results=10, include_archived=False`. MCP Developers can still call the underlying `search_resources` function directly with more specific parameters.
+**Example requests:**
+- `data://123` → Uses default format `"json"`
+- `data://123?format=xml` → Uses format `"xml"`
+- `api://users?version=2&limit=50` → `version=2, limit=50, offset=0`
+- `files://src/main.py?encoding=ascii&lines=50` → Custom encoding and line limit
 
-You can also create multiple resource templates that provide different ways to access the same underlying data by manually applying decorators to a single function:
+FastMCP automatically coerces query parameter string values to the correct types based on your function's type hints (`int`, `float`, `bool`, `str`).
+
+**Query parameters vs. hidden defaults:**
+
+Query parameters expose optional configuration to clients. To hide optional parameters from clients entirely (always use defaults), simply omit them from the URI template:
+
+```python
+# Clients CAN override max_results via query string
+@mcp.resource("search://{query}{?max_results}")
+def search_configurable(query: str, max_results: int = 10) -> dict:
+    return {"query": query, "limit": max_results}
+
+# Clients CANNOT override max_results (not in URI template)
+@mcp.resource("search://{query}")
+def search_fixed(query: str, max_results: int = 10) -> dict:
+    return {"query": query, "limit": max_results}
+```
+
+### Template Parameter Rules
+
+<VersionBadge version="2.2.0" />
+
+FastMCP enforces these validation rules when creating resource templates:
+
+1. **Required function parameters** (no default values) must appear in the URI path template
+2. **Query parameters** (specified with `{?param}` syntax) must be optional function parameters with default values
+3. **All URI template parameters** (path and query) must exist as function parameters
+
+Optional function parameters (those with default values) can be:
+- Included as query parameters (`{?param}`) - clients can override via query string
+- Omitted from URI template - always uses default value, not exposed to clients
+- Used in alternative path templates - enables multiple ways to access the same resource
+
+**Multiple templates for one function:**
+
+Create multiple resource templates that expose the same function through different URI patterns by manually applying decorators:
 
 ```python
 from fastmcp import FastMCP
