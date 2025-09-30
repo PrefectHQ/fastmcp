@@ -7,8 +7,6 @@ for seamless MCP client authentication.
 
 from __future__ import annotations
 
-from typing import Any
-
 import httpx
 from pydantic import AnyHttpUrl
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -127,7 +125,6 @@ class DescopeProvider(RemoteAuthProvider):
     def get_routes(
         self,
         mcp_path: str | None = None,
-        mcp_endpoint: Any | None = None,
     ) -> list[Route]:
         """Get OAuth routes including Descope authorization server metadata forwarding.
 
@@ -136,10 +133,10 @@ class DescopeProvider(RemoteAuthProvider):
 
         Args:
             mcp_path: The path where the MCP endpoint is mounted (e.g., "/mcp")
-            mcp_endpoint: The MCP endpoint handler to protect with auth
+                This is used to advertise the resource URL in metadata.
         """
         # Get the standard protected resource routes from RemoteAuthProvider
-        routes = super().get_routes(mcp_path, mcp_endpoint)
+        routes = super().get_routes(mcp_path)
 
         async def oauth_authorization_server_metadata(request):
             """Forward Descope OAuth authorization server metadata with FastMCP customizations."""

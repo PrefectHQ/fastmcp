@@ -24,6 +24,7 @@ jobs:
       contents: read
       issues: write
       pull-requests: write
+      id-token: write
 
     steps:
       - name: Checkout base repository
@@ -39,10 +40,11 @@ jobs:
           app-id: ${{ secrets.MARVIN_APP_ID }}
           private-key: ${{ secrets.MARVIN_APP_PRIVATE_KEY }}
 
-      - name: Create triage prompt
+      - name: Set triage prompt
+        id: triage-prompt
         run: |
-          mkdir -p /tmp/claude-prompts
-          cat > /tmp/claude-prompts/triage-prompt.txt << 'EOF'
+          cat >> $GITHUB_OUTPUT << 'EOF'
+          PROMPT<<PROMPT_END
           You're an issue triage assistant for FastMCP, a Python framework for building Model Context Protocol servers and clients. Your task is to analyze issues/PRs and apply appropriate labels.
 
           IMPORTANT: Your ONLY action should be to apply labels using mcp__github__update_issue. DO NOT post any comments.
@@ -119,6 +121,7 @@ jobs:
           4. Apply selected labels:
              Use mcp__github__update_issue to apply your selected labels
              DO NOT post any comments
+          PROMPT_END
           EOF
 
       - name: Setup GitHub MCP Server
@@ -146,12 +149,17 @@ jobs:
           EOF
 
       - name: Run Marvin for Issue Triage
-        uses: anthropics/claude-code-base-action@beta
+        uses: anthropics/claude-code-action@v1
         with:
-          prompt_file: /tmp/claude-prompts/triage-prompt.txt
-          allowed_tools: "Bash(gh label list),mcp__github__get_issue,mcp__github__get_issue_comments,mcp__github__update_issue,mcp__github__get_pull_request_files"
-          timeout_minutes: "5"
+          github_token: ${{ steps.marvin-token.outputs.token }}
+          bot_name: "Marvin Context Protocol"
+          prompt: ${{ steps.triage-prompt.outputs.PROMPT }}
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY_FOR_CI }}
-          mcp_config: /tmp/mcp-config/mcp-servers.json
-          claude_env: |
-            GH_TOKEN: ${{ steps.marvin-token.outputs.token }}
+          claude_args: |
+            --model claude-sonnet-4-5-20250929
+            --allowedTools Bash(gh label list),mcp__github__get_issue,mcp__github__get_issue_comments,mcp__github__update_issue,mcp__github__get_pull_request_files
+            --mcp-config /tmp/mcp-config/mcp-servers.json
+          settings: |
+            {
+              "GH_TOKEN": "${{ steps.marvin-token.outputs.token }}"
+            }

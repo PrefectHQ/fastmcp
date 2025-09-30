@@ -7,8 +7,6 @@ authentication for seamless MCP client authentication.
 
 from __future__ import annotations
 
-from typing import Any
-
 import httpx
 from pydantic import AnyHttpUrl
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -135,7 +133,6 @@ class ScalekitProvider(RemoteAuthProvider):
     def get_routes(
         self,
         mcp_path: str | None = None,
-        mcp_endpoint: Any | None = None,
     ) -> list[Route]:
         """Get OAuth routes including Scalekit authorization server metadata forwarding.
 
@@ -144,10 +141,10 @@ class ScalekitProvider(RemoteAuthProvider):
 
         Args:
             mcp_path: The path where the MCP endpoint is mounted (e.g., "/mcp")
-            mcp_endpoint: The MCP endpoint handler to protect with auth
+                This is used to advertise the resource URL in metadata.
         """
         # Get the standard protected resource routes from RemoteAuthProvider
-        routes = super().get_routes(mcp_path, mcp_endpoint)
+        routes = super().get_routes(mcp_path)
 
         async def oauth_authorization_server_metadata(request):
             """Forward Scalekit OAuth authorization server metadata with FastMCP customizations."""

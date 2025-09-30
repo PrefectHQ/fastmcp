@@ -291,9 +291,9 @@ class MCPServerConfig(BaseModel):
             environment = UVEnvironment(
                 python=python,
                 dependencies=dependencies,
-                requirements=requirements,
-                project=project,
-                editable=[editable] if editable else None,
+                requirements=Path(requirements) if requirements else None,
+                project=Path(project) if project else None,
+                editable=[Path(editable)] if editable else None,
             )
 
         # Build deployment config if any deployment args provided

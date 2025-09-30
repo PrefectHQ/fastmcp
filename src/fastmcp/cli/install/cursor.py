@@ -110,9 +110,9 @@ def install_cursor_workspace(
     env_config = UVEnvironment(
         python=python_version,
         dependencies=(with_packages or []) + ["fastmcp"],
-        requirements=str(with_requirements.resolve()) if with_requirements else None,
-        project=str(project.resolve()) if project else None,
-        editable=[str(p.resolve()) for p in with_editable] if with_editable else None,
+        requirements=with_requirements,
+        project=project,
+        editable=with_editable,
     )
     # Build server spec from parsed components
     if server_object:
@@ -180,9 +180,9 @@ def install_cursor(
     env_config = UVEnvironment(
         python=python_version,
         dependencies=(with_packages or []) + ["fastmcp"],
-        requirements=str(with_requirements.resolve()) if with_requirements else None,
-        project=str(project.resolve()) if project else None,
-        editable=[str(p.resolve()) for p in with_editable] if with_editable else None,
+        requirements=with_requirements,
+        project=project,
+        editable=with_editable,
     )
     # Build server spec from parsed components
     if server_object:

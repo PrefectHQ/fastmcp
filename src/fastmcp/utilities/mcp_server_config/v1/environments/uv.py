@@ -28,19 +28,19 @@ class UVEnvironment(Environment):
         examples=[["fastmcp>=2.0,<3", "httpx", "pandas>=2.0"]],
     )
 
-    requirements: str | None = Field(
+    requirements: Path | None = Field(
         default=None,
         description="Path to requirements.txt file",
         examples=["requirements.txt", "../requirements/prod.txt"],
     )
 
-    project: str | None = Field(
+    project: Path | None = Field(
         default=None,
         description="Path to project directory containing pyproject.toml",
         examples=[".", "../my-project"],
     )
 
-    editable: list[str] | None = Field(
+    editable: list[Path] | None = Field(
         default=None,
         description="Directories to install in editable mode",
         examples=[[".", "../my-package"], ["/path/to/package"]],
@@ -64,7 +64,7 @@ class UVEnvironment(Environment):
 
         # Add project if specified
         if self.project:
-            args.extend(["--project", str(self.project)])
+            args.extend(["--project", str(self.project.resolve())])
 
         # Add Python version if specified (only if no project, as project has its own Python)
         if self.python and not self.project:
@@ -78,12 +78,12 @@ class UVEnvironment(Environment):
 
         # Add requirements file
         if self.requirements:
-            args.extend(["--with-requirements", str(self.requirements)])
+            args.extend(["--with-requirements", str(self.requirements.resolve())])
 
         # Add editable packages
         if self.editable:
             for editable_path in self.editable:
-                args.extend(["--with-editable", str(editable_path)])
+                args.extend(["--with-editable", str(editable_path.resolve())])
 
         # Add the command
         args.extend(command)
