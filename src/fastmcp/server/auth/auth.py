@@ -3,10 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from mcp.server.auth.middleware.auth_context import AuthContextMiddleware
-from mcp.server.auth.middleware.bearer_auth import (
-    BearerAuthBackend,
-    RequireAuthMiddleware,
-)
+from mcp.server.auth.middleware.bearer_auth import BearerAuthBackend
 from mcp.server.auth.provider import (
     AccessToken as _SDKAccessToken,
 )
@@ -81,7 +78,6 @@ class AuthProvider(TokenVerifierProtocol):
     def get_routes(
         self,
         mcp_path: str | None = None,
-        mcp_endpoint: Any | None = None,
     ) -> list[Route]:
         """Get the routes for this authentication provider.
 
@@ -93,30 +89,13 @@ class AuthProvider(TokenVerifierProtocol):
 
         Args:
             mcp_path: The path where the MCP endpoint is mounted (e.g., "/mcp")
-            mcp_endpoint: The MCP endpoint handler to protect with auth
+                This is used to advertise the resource URL in metadata, but the
+                provider does not create the actual MCP endpoint route.
 
         Returns:
-            List of routes for this provider, including protected MCP endpoints if provided
+            List of routes for this provider (excluding the MCP endpoint itself)
         """
-
-        routes = []
-
-        # Add protected MCP endpoint if provided
-        if mcp_path and mcp_endpoint:
-            resource_metadata_url = self._get_resource_url(
-                "/.well-known/oauth-protected-resource"
-            )
-
-            routes.append(
-                Route(
-                    mcp_path,
-                    endpoint=RequireAuthMiddleware(
-                        mcp_endpoint, self.required_scopes, resource_metadata_url
-                    ),
-                )
-            )
-
-        return routes
+        return []
 
     def get_middleware(self) -> list:
         """Get HTTP application-level middleware for this auth provider.
@@ -225,14 +204,13 @@ class RemoteAuthProvider(AuthProvider):
     def get_routes(
         self,
         mcp_path: str | None = None,
-        mcp_endpoint: Any | None = None,
     ) -> list[Route]:
         """Get OAuth routes for this provider.
 
-        Creates protected resource metadata routes and optionally wraps MCP endpoints with auth.
+        Creates protected resource metadata routes.
         """
-        # Start with base routes (protected MCP endpoint)
-        routes = super().get_routes(mcp_path, mcp_endpoint)
+        # Start with base routes
+        routes = super().get_routes(mcp_path)
 
         # Get the resource URL based on the MCP path
         resource_url = self._get_resource_url(mcp_path)
@@ -326,14 +304,12 @@ class OAuthProvider(
     def get_routes(
         self,
         mcp_path: str | None = None,
-        mcp_endpoint: Any | None = None,
     ) -> list[Route]:
         """Get OAuth authorization server routes and optional protected resource routes.
 
         This method creates the full set of OAuth routes including:
         - Standard OAuth authorization server routes (/.well-known/oauth-authorization-server, /authorize, /token, etc.)
         - Optional protected resource routes
-        - Protected MCP endpoints if provided
 
         Returns:
             List of OAuth routes
@@ -366,7 +342,7 @@ class OAuthProvider(
             )
             oauth_routes.extend(protected_routes)
 
-        # Add protected MCP endpoint from base class
-        oauth_routes.extend(super().get_routes(mcp_path, mcp_endpoint))
+        # Add base routes
+        oauth_routes.extend(super().get_routes(mcp_path))
 
         return oauth_routes

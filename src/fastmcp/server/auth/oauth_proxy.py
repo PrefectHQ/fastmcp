@@ -873,7 +873,6 @@ class OAuthProxy(OAuthProvider):
     def get_routes(
         self,
         mcp_path: str | None = None,
-        mcp_endpoint: Any | None = None,
     ) -> list[Route]:
         """Get OAuth routes with custom proxy token handler.
 
@@ -882,10 +881,10 @@ class OAuthProxy(OAuthProvider):
 
         Args:
             mcp_path: The path where the MCP endpoint is mounted (e.g., "/mcp")
-            mcp_endpoint: The MCP endpoint handler to protect with auth
+                This is used to advertise the resource URL in metadata.
         """
         # Get standard OAuth routes from parent class
-        routes = super().get_routes(mcp_path, mcp_endpoint)
+        routes = super().get_routes(mcp_path)
         custom_routes = []
         token_route_found = False
 

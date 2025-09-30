@@ -167,16 +167,25 @@ def create_sse_app(
         # Get auth middleware from the provider
         auth_middleware = auth.get_middleware()
 
-        # Get auth routes including protected MCP endpoint
-        auth_routes = auth.get_routes(
-            mcp_path=sse_path,
-            mcp_endpoint=handle_sse,
-        )
-
+        # Get auth provider's own routes (OAuth endpoints, metadata, etc)
+        auth_routes = auth.get_routes(mcp_path=sse_path)
         server_routes.extend(auth_routes)
         server_middleware.extend(auth_middleware)
 
-        # Manually wrap the SSE message endpoint with RequireAuthMiddleware
+        # Create protected SSE endpoint route with GET method only
+        server_routes.append(
+            Route(
+                sse_path,
+                endpoint=RequireAuthMiddleware(
+                    handle_sse,
+                    auth.required_scopes,
+                    auth._get_resource_url("/.well-known/oauth-protected-resource"),
+                ),
+                methods=["GET"],
+            )
+        )
+
+        # Wrap the SSE message endpoint with RequireAuthMiddleware
         server_routes.append(
             Mount(
                 message_path,
@@ -274,14 +283,22 @@ def create_streamable_http_app(
         # Get auth middleware from the provider
         auth_middleware = auth.get_middleware()
 
-        # Get auth routes including protected MCP endpoint
-        auth_routes = auth.get_routes(
-            mcp_path=streamable_http_path,
-            mcp_endpoint=streamable_http_app,
-        )
-
+        # Get auth provider's own routes (OAuth endpoints, metadata, etc)
+        auth_routes = auth.get_routes(mcp_path=streamable_http_path)
         server_routes.extend(auth_routes)
         server_middleware.extend(auth_middleware)
+
+        # Create protected HTTP endpoint route
+        server_routes.append(
+            Route(
+                streamable_http_path,
+                endpoint=RequireAuthMiddleware(
+                    streamable_http_app,
+                    auth.required_scopes,
+                    auth._get_resource_url("/.well-known/oauth-protected-resource"),
+                ),
+            )
+        )
     else:
         # No auth required
         server_routes.append(
