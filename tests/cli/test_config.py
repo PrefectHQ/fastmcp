@@ -66,9 +66,10 @@ class TestEnvironment:
         env = config.environment
         assert env.python == "3.12"
         assert env.dependencies == ["requests", "numpy>=2.0"]
-        assert env.requirements == "requirements.txt"
-        assert env.project == "."
-        assert env.editable == ["../my-package"]
+        # Paths are stored as Path objects
+        assert env.requirements == Path("requirements.txt")
+        assert env.project == Path(".")
+        assert env.editable == [Path("../my-package")]
 
     def test_needs_uv(self):
         """Test needs_uv() method."""
@@ -112,12 +113,16 @@ class TestEnvironment:
         assert "--python" not in cmd
         assert "3.12" not in cmd
         assert "--project" in cmd
-        assert "." in cmd
+        # Project path should be resolved to absolute path
+        project_idx = cmd.index("--project")
+        assert Path(cmd[project_idx + 1]).is_absolute()
         assert "--with" in cmd
         assert "requests" in cmd
         assert "numpy" in cmd
         assert "--with-requirements" in cmd
-        assert "requirements.txt" in cmd
+        # Requirements path should be resolved to absolute path
+        req_idx = cmd.index("--with-requirements")
+        assert Path(cmd[req_idx + 1]).is_absolute()
         # Command args should be at the end
         assert "fastmcp" in cmd[-3:]
         assert "run" in cmd[-2:]

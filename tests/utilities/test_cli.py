@@ -1,5 +1,7 @@
 """Tests for CLI utility functions."""
 
+from pathlib import Path
+
 from fastmcp.utilities.mcp_server_config.v1.environments.uv import UVEnvironment
 
 
@@ -16,14 +18,14 @@ class TestEnvironmentBuildUVRunCommand:
 
     def test_build_uv_run_command_with_editable(self):
         """Test building uv command with editable package."""
-        editable_path = "/path/to/package"
+        editable_path = Path("/path/to/package")
         env = UVEnvironment(editable=[editable_path])
         cmd = env.build_command(["fastmcp", "run", "server.py"])
         expected = [
             "uv",
             "run",
             "--with-editable",
-            editable_path,
+            str(editable_path.resolve()),
             "fastmcp",
             "run",
             "server.py",
@@ -64,14 +66,14 @@ class TestEnvironmentBuildUVRunCommand:
 
     def test_build_uv_run_command_with_requirements(self):
         """Test building uv command with requirements file."""
-        requirements_path = "/path/to/requirements.txt"
+        requirements_path = Path("/path/to/requirements.txt")
         env = UVEnvironment(requirements=requirements_path)
         cmd = env.build_command(["fastmcp", "run", "server.py"])
         expected = [
             "uv",
             "run",
             "--with-requirements",
-            requirements_path,
+            str(requirements_path.resolve()),
             "fastmcp",
             "run",
             "server.py",
@@ -80,14 +82,14 @@ class TestEnvironmentBuildUVRunCommand:
 
     def test_build_uv_run_command_with_project(self):
         """Test building uv command with project directory."""
-        project_path = "/path/to/project"
+        project_path = Path("/path/to/project")
         env = UVEnvironment(project=project_path)
         cmd = env.build_command(["fastmcp", "run", "server.py"])
         expected = [
             "uv",
             "run",
             "--project",
-            project_path,
+            str(project_path.resolve()),
             "fastmcp",
             "run",
             "server.py",
@@ -96,8 +98,8 @@ class TestEnvironmentBuildUVRunCommand:
 
     def test_build_uv_run_command_with_everything(self):
         """Test building uv command with all options."""
-        requirements_path = "/path/to/requirements.txt"
-        editable_path = "/local/pkg"
+        requirements_path = Path("/path/to/requirements.txt")
+        editable_path = Path("/local/pkg")
         env = UVEnvironment(
             python="3.10",
             dependencies=["pandas", "numpy"],
@@ -115,9 +117,9 @@ class TestEnvironmentBuildUVRunCommand:
             "--with",
             "pandas",
             "--with-requirements",
-            requirements_path,
+            str(requirements_path.resolve()),
             "--with-editable",
-            editable_path,
+            str(editable_path.resolve()),
             "fastmcp",
             "run",
             "server.py",
@@ -129,23 +131,24 @@ class TestEnvironmentBuildUVRunCommand:
 
     def test_build_uv_run_command_project_with_extras(self):
         """Test that project flag works with additional dependencies."""
-        project_path = "/path/to/project"
+        project_path = Path("/path/to/project")
+        editable_path = Path("/pkg")
         env = UVEnvironment(
             project=project_path,
             python="3.10",  # Should be ignored with project
             dependencies=["pandas"],  # Should be added on top of project
-            editable=["/pkg"],  # Should be added on top of project
+            editable=[editable_path],  # Should be added on top of project
         )
         cmd = env.build_command(["fastmcp", "run", "server.py"])
         expected = [
             "uv",
             "run",
             "--project",
-            project_path,
+            str(project_path.resolve()),
             "--with",
             "pandas",
             "--with-editable",
-            "/pkg",
+            str(editable_path.resolve()),
             "fastmcp",
             "run",
             "server.py",
@@ -168,17 +171,17 @@ class TestEnvironmentNeedsUV:
 
     def test_needs_uv_with_requirements(self):
         """Test that needs_uv returns True with requirements."""
-        env = UVEnvironment(requirements="/path/to/requirements.txt")
+        env = UVEnvironment(requirements=Path("/path/to/requirements.txt"))
         assert env._must_run_with_uv() is True
 
     def test_needs_uv_with_project(self):
         """Test that needs_uv returns True with project."""
-        env = UVEnvironment(project="/path/to/project")
+        env = UVEnvironment(project=Path("/path/to/project"))
         assert env._must_run_with_uv() is True
 
     def test_needs_uv_with_editable(self):
         """Test that needs_uv returns True with editable."""
-        env = UVEnvironment(editable=["/pkg"])
+        env = UVEnvironment(editable=[Path("/pkg")])
         assert env._must_run_with_uv() is True
 
     def test_needs_uv_empty(self):

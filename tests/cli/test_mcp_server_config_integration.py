@@ -234,10 +234,11 @@ class TestPathResolution:
         assert config.environment is not None
         uv_cmd = config.environment.build_command(["fastmcp", "run"])
 
-        # Should include requirements file
+        # Should include requirements file with absolute path
         assert "--with-requirements" in uv_cmd
         req_idx = uv_cmd.index("--with-requirements") + 1
-        assert uv_cmd[req_idx] == "requirements.txt"
+        assert Path(uv_cmd[req_idx]).is_absolute()
+        assert Path(uv_cmd[req_idx]).name == "requirements.txt"
 
 
 class TestConfigValidation:
