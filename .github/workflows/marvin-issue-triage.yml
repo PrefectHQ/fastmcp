@@ -115,7 +115,7 @@ jobs:
                   "github-research-mcp"
                 ],
                 "env": {
-                  "DISABLE_SUMMARIES": true,
+                  "DISABLE_SUMMARIES": "true",
                   "GITHUB_PERSONAL_ACCESS_TOKEN": "${{ steps.marvin-token.outputs.token }}"
                 }
               }
