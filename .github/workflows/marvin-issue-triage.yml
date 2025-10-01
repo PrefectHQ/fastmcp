@@ -16,6 +16,7 @@ concurrency:
 
 jobs:
   marvin-issue-triage:
+    if: github.actor == 'strawgate'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
