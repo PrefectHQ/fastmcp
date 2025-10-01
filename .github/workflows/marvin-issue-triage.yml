@@ -1,4 +1,4 @@
-name: The Martian Issue Triage
+name: Martian Issue Triage
 
 on:
   issues:
@@ -109,6 +109,7 @@ jobs:
                 "url": "https://github-code-search.fastmcp.app/mcp"
               },
               "github-research": {
+                "type": "stdio",
                 "command": "uvx",
                 "args": [
                   "github-research-mcp"
