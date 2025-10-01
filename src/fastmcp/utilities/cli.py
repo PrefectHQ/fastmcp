@@ -186,7 +186,7 @@ def log_server_banner(
         case "stdio":
             display_transport = "STDIO"
 
-    info_table.add_row("🖥️", "Server name:", server.name)
+    info_table.add_row("🖥", "Server name:", server.name)
     info_table.add_row("📦", "Transport:", display_transport)
 
     # Show connection info based on transport
@@ -200,7 +200,7 @@ def log_server_banner(
     # Add version information with explicit style overrides
     info_table.add_row("", "", "")
     info_table.add_row(
-        "🏎️",
+        "🏎",
         "FastMCP version:",
         Text(fastmcp.__version__, style="dim white", no_wrap=True),
     )
