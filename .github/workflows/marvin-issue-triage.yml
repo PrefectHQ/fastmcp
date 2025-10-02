@@ -32,6 +32,13 @@ jobs:
           repository: ${{ github.repository }}
           ref: ${{ github.event.repository.default_branch }}
 
+      # Install UV package manager
+      - name: Install UV
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
       - name: Generate Marvin App token
         id: marvin-token
         uses: actions/create-github-app-token@v2
