@@ -1,22 +1,18 @@
-name: The Martian Issue Triage
+name: Martian Issue Triage
 
 on:
   issues:
-    types: [opened]
-  workflow_dispatch:
-    inputs:
-      issue_number:
-        description: "Issue to triage"
-        required: true
-        type: string
+    types: [opened, labeled]
 
 concurrency:
-  group: triage-issue-${{ github.event.issue.number || inputs.issue_number }}
+  group: triage-martian-${{ github.event.issue.number }}
   cancel-in-progress: true
 
 jobs:
-  marvin-issue-triage:
-    if: github.actor == 'strawgate'
+  martian-issue-triage:
+    if: |
+      (github.event.action == 'opened' && github.actor == 'strawgate') ||
+      (github.event.action == 'labeled' && github.event.label.name == 'triage-martian')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -31,6 +27,13 @@ jobs:
         with:
           repository: ${{ github.repository }}
           ref: ${{ github.event.repository.default_branch }}
+
+      # Install UV package manager
+      - name: Install UV
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
 
       - name: Generate Marvin App token
         id: marvin-token
@@ -50,7 +53,7 @@ jobs:
 
           # Lay of the land
           1. Call the generate_agents_md tool to get a high-level summary of the project you're working in
-          2. Get the issue ${{ github.event.issue.number || inputs.issue_number }} in the GitHub repository: ${{ github.repository }}.
+          2. Get the issue ${{ github.event.issue.number }} in the GitHub repository: ${{ github.repository }}.
           3. Use the issue and pull request search tools to scour the repository for related issues and pull requests
           3. Call the code-search, get_files, etc. tools to search the repository to identify the related classes, methods, tests, etc that are relevant to the issue.
 
@@ -109,12 +112,13 @@ jobs:
                 "url": "https://github-code-search.fastmcp.app/mcp"
               },
               "github-research": {
+                "type": "stdio",
                 "command": "uvx",
                 "args": [
                   "github-research-mcp"
                 ],
                 "env": {
-                  "DISABLE_SUMMARIES": true,
+                  "DISABLE_SUMMARIES": "true",
                   "GITHUB_PERSONAL_ACCESS_TOKEN": "${{ steps.marvin-token.outputs.token }}"
                 }
               }
@@ -122,16 +126,17 @@ jobs:
           }
           EOF
 
-      - name: Run Marvin for Issue Triage
+      - name: Run Martian for Issue Triage
         uses: anthropics/claude-code-action@v1
         with:
           github_token: ${{ steps.marvin-token.outputs.token }}
           bot_name: "Marvin Context Protocol"
           prompt: ${{ steps.triage-prompt.outputs.PROMPT }}
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY_FOR_CI }}
+          track_progress: true
           claude_args: |
             --model claude-sonnet-4-5-20250929
-            --allowedTools WebSearch,WebFetch,mcp__repository-summary,mcp__code-search,mcp__github-research
+            --allowedTools mcp__repository-summary,mcp__code-search__search_code,mcp__github-research__get_repository,mcp__github-research__get_issue,mcp__github-research__get_pull_request,mcp__github-research__search_issues,mcp__github-research__search_pull_requests,mcp__github-research__get_files,
             --mcp-config /tmp/mcp-config/mcp-servers.json
           settings: |
             {
