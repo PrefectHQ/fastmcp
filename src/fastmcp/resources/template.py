@@ -6,7 +6,7 @@ import inspect
 import re
 from collections.abc import Callable
 from typing import Any
-from urllib.parse import unquote
+from urllib.parse import parse_qs, unquote
 
 from mcp.types import Annotations
 from mcp.types import ResourceTemplate as MCPResourceTemplate
@@ -26,8 +26,26 @@ from fastmcp.utilities.types import (
 )
 
 
+def extract_query_params(uri_template: str) -> set[str]:
+    """Extract query parameter names from RFC 6570 {?param1,param2} syntax."""
+    match = re.search(r"\{\?([^}]+)\}", uri_template)
+    if match:
+        return {p.strip() for p in match.group(1).split(",")}
+    return set()
+
+
 def build_regex(template: str) -> re.Pattern:
-    parts = re.split(r"(\{[^}]+\})", template)
+    """Build regex pattern for URI template, handling RFC 6570 syntax.
+
+    Supports:
+    - {var} - simple path parameter
+    - {var*} - wildcard path parameter (captures multiple segments)
+    - {?var1,var2} - query parameters (ignored in path matching)
+    """
+    # Remove query parameter syntax for path matching
+    template_without_query = re.sub(r"\{\?[^}]+\}", "", template)
+
+    parts = re.split(r"(\{[^}]+\})", template_without_query)
     pattern = ""
     for part in parts:
         if part.startswith("{") and part.endswith("}"):
@@ -43,11 +61,34 @@ def build_regex(template: str) -> re.Pattern:
 
 
 def match_uri_template(uri: str, uri_template: str) -> dict[str, str] | None:
+    """Match URI against template and extract both path and query parameters.
+
+    Supports RFC 6570 URI templates:
+    - Path params: {var}, {var*}
+    - Query params: {?var1,var2}
+    """
+    # Split URI into path and query parts
+    uri_path, _, query_string = uri.partition("?")
+
+    # Match path parameters
     regex = build_regex(uri_template)
-    match = regex.match(uri)
-    if match:
-        return {k: unquote(v) for k, v in match.groupdict().items()}
-    return None
+    match = regex.match(uri_path)
+    if not match:
+        return None
+
+    params = {k: unquote(v) for k, v in match.groupdict().items()}
+
+    # Extract query parameters if present in URI and template
+    if query_string:
+        query_param_names = extract_query_params(uri_template)
+        parsed_query = parse_qs(query_string)
+
+        for name in query_param_names:
+            if name in parsed_query:
+                # Take first value if multiple provided
+                params[name] = parsed_query[name][0]  # type: ignore[index]
+
+    return params
 
 
 class ResourceTemplate(FastMCPComponent):
@@ -206,6 +247,31 @@ class FunctionResourceTemplate(ResourceTemplate):
         if context_kwarg and context_kwarg not in kwargs:
             kwargs[context_kwarg] = get_context()
 
+        # Type coercion for query parameters (which arrive as strings)
+        # Get function signature for type hints
+        sig = inspect.signature(self.fn)
+        for param_name, param_value in list(kwargs.items()):
+            if param_name in sig.parameters and isinstance(param_value, str):
+                param = sig.parameters[param_name]
+                annotation = param.annotation
+
+                # Skip if no annotation or annotation is str
+                if annotation is inspect.Parameter.empty or annotation is str:
+                    continue
+
+                # Handle common type coercions
+                try:
+                    if annotation is int:
+                        kwargs[param_name] = int(param_value)
+                    elif annotation is float:
+                        kwargs[param_name] = float(param_value)
+                    elif annotation is bool:
+                        # Handle boolean strings
+                        kwargs[param_name] = param_value.lower() in ("true", "1", "yes")
+                except (ValueError, AttributeError):
+                    # Let validate_call handle the error
+                    pass
+
         result = self.fn(**kwargs)
         if inspect.isawaitable(result):
             result = await result
@@ -245,16 +311,19 @@ class FunctionResourceTemplate(ResourceTemplate):
 
         context_kwarg = find_kwarg_by_type(fn, kwarg_type=Context)
 
-        # Validate that URI params match function params
-        uri_params = set(re.findall(r"{(\w+)(?:\*)?}", uri_template))
-        if not uri_params:
+        # Extract path and query parameters from URI template
+        path_params = set(re.findall(r"{(\w+)(?:\*)?}", uri_template))
+        query_params = extract_query_params(uri_template)
+        all_uri_params = path_params | query_params
+
+        if not all_uri_params:
             raise ValueError("URI template must contain at least one parameter")
 
         func_params = set(sig.parameters.keys())
         if context_kwarg:
             func_params.discard(context_kwarg)
 
-        # get the parameters that are required
+        # Get required and optional function parameters
         required_params = {
             p
             for p in func_params
@@ -262,21 +331,37 @@ class FunctionResourceTemplate(ResourceTemplate):
             and sig.parameters[p].kind != inspect.Parameter.VAR_KEYWORD
             and p != context_kwarg
         }
+        optional_params = {
+            p
+            for p in func_params
+            if sig.parameters[p].default is not inspect.Parameter.empty
+            and sig.parameters[p].kind != inspect.Parameter.VAR_KEYWORD
+            and p != context_kwarg
+        }
 
-        # Check if required parameters are a subset of the URI parameters
-        if not required_params.issubset(uri_params):
+        # Validate RFC 6570 query parameters
+        # Query params must be optional (have defaults)
+        if query_params:
+            invalid_query_params = query_params - optional_params
+            if invalid_query_params:
+                raise ValueError(
+                    f"Query parameters {invalid_query_params} must be optional function parameters with default values"
+                )
+
+        # Check if required parameters are a subset of the path parameters
+        if not required_params.issubset(path_params):
             raise ValueError(
-                f"Required function arguments {required_params} must be a subset of the URI parameters {uri_params}"
+                f"Required function arguments {required_params} must be a subset of the URI path parameters {path_params}"
             )
 
-        # Check if the URI parameters are a subset of the function parameters (skip if **kwargs present)
+        # Check if all URI parameters are valid function parameters (skip if **kwargs present)
         if not any(
             param.kind == inspect.Parameter.VAR_KEYWORD
             for param in sig.parameters.values()
         ):
-            if not uri_params.issubset(func_params):
+            if not all_uri_params.issubset(func_params):
                 raise ValueError(
-                    f"URI parameters {uri_params} must be a subset of the function arguments: {func_params}"
+                    f"URI parameters {all_uri_params} must be a subset of the function arguments: {func_params}"
                 )
 
         description = description or inspect.getdoc(fn)

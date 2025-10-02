@@ -103,7 +103,7 @@ class TestResourceTemplate:
         # This should fail - 'unknown' is not a function parameter
         with pytest.raises(
             ValueError,
-            match="Required function arguments .* must be a subset of the URI parameters",
+            match="Required function arguments .* must be a subset of the URI path parameters",
         ):
             ResourceTemplate.from_function(
                 fn=my_func,
@@ -131,7 +131,7 @@ class TestResourceTemplate:
         # This should fail - required param is not in URI
         with pytest.raises(
             ValueError,
-            match="Required function arguments .* must be a subset of the URI parameters",
+            match="Required function arguments .* must be a subset of the URI path parameters",
         ):
             ResourceTemplate.from_function(
                 fn=func_with_required,
@@ -156,7 +156,7 @@ class TestResourceTemplate:
         # This fails - missing one required param
         with pytest.raises(
             ValueError,
-            match="Required function arguments .* must be a subset of the URI parameters",
+            match="Required function arguments .* must be a subset of the URI path parameters",
         ):
             ResourceTemplate.from_function(
                 fn=multi_required,
@@ -707,3 +707,250 @@ class TestContextHandling:
             assert isinstance(resource, FunctionResource)
             content = await resource.read()
             assert content == "42"
+
+
+class TestQueryParameterExtraction:
+    """Test basic query parameter extraction from URIs."""
+
+    async def test_single_query_param(self):
+        """Test resource template with single query parameter."""
+
+        def get_data(id: str, format: str = "json") -> str:
+            return f"Data {id} in {format}"
+
+        template = ResourceTemplate.from_function(
+            fn=get_data,
+            uri_template="data://{id}{?format}",
+            name="test",
+        )
+
+        # Match without query param (uses default)
+        params = template.matches("data://123")
+        assert params == {"id": "123"}
+
+        # Match with query param
+        params = template.matches("data://123?format=xml")
+        assert params == {"id": "123", "format": "xml"}
+
+    async def test_multiple_query_params(self):
+        """Test resource template with multiple query parameters."""
+
+        def get_items(category: str, page: int = 1, limit: int = 10) -> str:
+            return f"Category {category}, page {page}, limit {limit}"
+
+        template = ResourceTemplate.from_function(
+            fn=get_items,
+            uri_template="items://{category}{?page,limit}",
+            name="test",
+        )
+
+        # No query params
+        params = template.matches("items://books")
+        assert params == {"category": "books"}
+
+        # One query param
+        params = template.matches("items://books?page=2")
+        assert params == {"category": "books", "page": "2"}
+
+        # Both query params
+        params = template.matches("items://books?page=2&limit=20")
+        assert params == {"category": "books", "page": "2", "limit": "20"}
+
+
+class TestQueryParameterTypeCoercion:
+    """Test type coercion for query parameters."""
+
+    async def test_int_coercion(self):
+        """Test integer type coercion for query parameters."""
+
+        def get_page(resource: str, page: int = 1) -> dict:
+            return {"resource": resource, "page": page, "type": type(page).__name__}
+
+        template = ResourceTemplate.from_function(
+            fn=get_page,
+            uri_template="resource://{resource}{?page}",
+            name="test",
+        )
+
+        # Create resource with string query param
+        resource = await template.create_resource(
+            "resource://docs?page=5",
+            {"resource": "docs", "page": "5"},
+        )
+
+        content = await resource.read()
+        assert '"page":5' in content
+        assert '"type":"int"' in content
+
+    async def test_bool_coercion(self):
+        """Test boolean type coercion for query parameters."""
+
+        def get_config(name: str, enabled: bool = False) -> dict:
+            return {"name": name, "enabled": enabled, "type": type(enabled).__name__}
+
+        template = ResourceTemplate.from_function(
+            fn=get_config,
+            uri_template="config://{name}{?enabled}",
+            name="test",
+        )
+
+        # Test true value
+        resource = await template.create_resource(
+            "config://feature?enabled=true",
+            {"name": "feature", "enabled": "true"},
+        )
+        content = await resource.read()
+        assert '"enabled":true' in content
+
+        # Test false value
+        resource = await template.create_resource(
+            "config://feature?enabled=false",
+            {"name": "feature", "enabled": "false"},
+        )
+        content = await resource.read()
+        assert '"enabled":false' in content
+
+    async def test_float_coercion(self):
+        """Test float type coercion for query parameters."""
+
+        def get_metrics(service: str, threshold: float = 0.5) -> dict:
+            return {
+                "service": service,
+                "threshold": threshold,
+                "type": type(threshold).__name__,
+            }
+
+        template = ResourceTemplate.from_function(
+            fn=get_metrics,
+            uri_template="metrics://{service}{?threshold}",
+            name="test",
+        )
+
+        resource = await template.create_resource(
+            "metrics://api?threshold=0.95",
+            {"service": "api", "threshold": "0.95"},
+        )
+
+        content = await resource.read()
+        assert '"threshold":0.95' in content
+        assert '"type":"float"' in content
+
+
+class TestQueryParameterValidation:
+    """Test validation rules for query parameters."""
+
+    def test_query_params_must_be_optional(self):
+        """Test that query parameters must have default values."""
+
+        def invalid_func(id: str, format: str) -> str:
+            return f"Data {id} in {format}"
+
+        with pytest.raises(
+            ValueError,
+            match="Query parameters .* must be optional function parameters with default values",
+        ):
+            ResourceTemplate.from_function(
+                fn=invalid_func,
+                uri_template="data://{id}{?format}",
+                name="test",
+            )
+
+    def test_required_params_in_path(self):
+        """Test that required parameters must be in path."""
+
+        def valid_func(id: str, format: str = "json") -> str:
+            return f"Data {id} in {format}"
+
+        # This should work - required param in path, optional in query
+        template = ResourceTemplate.from_function(
+            fn=valid_func,
+            uri_template="data://{id}{?format}",
+            name="test",
+        )
+        assert template.uri_template == "data://{id}{?format}"
+
+
+class TestQueryParameterWithDefaults:
+    """Test that missing query parameters use default values."""
+
+    async def test_missing_query_param_uses_default(self):
+        """Test that missing query parameters fall back to defaults."""
+
+        def get_data(id: str, format: str = "json", verbose: bool = False) -> dict:
+            return {"id": id, "format": format, "verbose": verbose}
+
+        template = ResourceTemplate.from_function(
+            fn=get_data,
+            uri_template="data://{id}{?format,verbose}",
+            name="test",
+        )
+
+        # No query params - should use defaults
+        resource = await template.create_resource(
+            "data://123",
+            {"id": "123"},
+        )
+
+        content = await resource.read()
+        assert '"format":"json"' in content
+        assert '"verbose":false' in content
+
+    async def test_partial_query_params(self):
+        """Test providing only some query parameters."""
+
+        def get_data(
+            id: str, format: str = "json", limit: int = 10, offset: int = 0
+        ) -> dict:
+            return {"id": id, "format": format, "limit": limit, "offset": offset}
+
+        template = ResourceTemplate.from_function(
+            fn=get_data,
+            uri_template="data://{id}{?format,limit,offset}",
+            name="test",
+        )
+
+        # Provide only some query params
+        resource = await template.create_resource(
+            "data://123?limit=20",
+            {"id": "123", "limit": "20"},
+        )
+
+        content = await resource.read()
+        assert '"format":"json"' in content  # default
+        assert '"limit":20' in content  # provided
+        assert '"offset":0' in content  # default
+
+
+class TestQueryParameterWithWildcards:
+    """Test query parameters combined with wildcard path parameters."""
+
+    async def test_wildcard_with_query_params(self):
+        """Test combining wildcard path params with query params."""
+
+        def get_file(path: str, encoding: str = "utf-8", lines: int = 100) -> dict:
+            return {"path": path, "encoding": encoding, "lines": lines}
+
+        template = ResourceTemplate.from_function(
+            fn=get_file,
+            uri_template="files://{path*}{?encoding,lines}",
+            name="test",
+        )
+
+        # Match path with query params
+        params = template.matches("files://src/test/data.txt?encoding=ascii&lines=50")
+        assert params == {
+            "path": "src/test/data.txt",
+            "encoding": "ascii",
+            "lines": "50",
+        }
+
+        # Create resource
+        resource = await template.create_resource(
+            "files://src/test/data.txt?lines=50",
+            {"path": "src/test/data.txt", "lines": "50"},
+        )
+
+        content = await resource.read()
+        assert '"path":"src/test/data.txt"' in content
+        assert '"encoding":"utf-8"' in content  # default
+        assert '"lines":50' in content  # provided

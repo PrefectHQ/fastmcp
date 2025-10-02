@@ -1748,7 +1748,7 @@ class TestResourceTemplates:
 
         with pytest.raises(
             ValueError,
-            match="Required function arguments .* must be a subset of the URI parameters",
+            match="Required function arguments .* must be a subset of the URI path parameters",
         ):
 
             @mcp.resource("resource://{name}/data")
@@ -1775,7 +1775,7 @@ class TestResourceTemplates:
 
         with pytest.raises(
             ValueError,
-            match="Required function arguments .* must be a subset of the URI parameters",
+            match="Required function arguments .* must be a subset of the URI path parameters",
         ):
 
             @mcp.resource("resource://{org}/{repo}/data")
@@ -1868,6 +1868,29 @@ class TestResourceTemplates:
         async with Client(mcp) as client:
             result = await client.read_resource(AnyUrl("resource://test/data"))
             assert result[0].text == "Template resource: test/data"  # type: ignore[attr-defined]
+
+    async def test_template_with_query_params(self):
+        """Test RFC 6570 query parameters in resource templates."""
+        mcp = FastMCP()
+
+        @mcp.resource("data://{id}{?format,limit}")
+        def get_data(id: str, format: str = "json", limit: int = 10) -> str:
+            return f"id={id}, format={format}, limit={limit}"
+
+        async with Client(mcp) as client:
+            # No query params - uses defaults
+            result = await client.read_resource(AnyUrl("data://123"))
+            assert result[0].text == "id=123, format=json, limit=10"  # type: ignore[attr-defined]
+
+            # One query param
+            result = await client.read_resource(AnyUrl("data://123?format=xml"))
+            assert result[0].text == "id=123, format=xml, limit=10"  # type: ignore[attr-defined]
+
+            # Multiple query params
+            result = await client.read_resource(
+                AnyUrl("data://123?format=csv&limit=50")
+            )
+            assert result[0].text == "id=123, format=csv, limit=50"  # type: ignore[attr-defined]
 
     async def test_templates_match_in_order_of_definition(self):
         """
