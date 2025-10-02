@@ -137,9 +137,10 @@ jobs:
           bot_name: "Marvin Context Protocol"
           prompt: ${{ steps.triage-prompt.outputs.PROMPT }}
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY_FOR_CI }}
+          track_progress: true
           claude_args: |
             --model claude-sonnet-4-5-20250929
-            --allowedTools WebSearch,WebFetch,mcp__repository-summary,mcp__code-search,mcp__github-research
+            --allowedTools mcp__repository-summary,mcp__code-search__search_code,mcp__github-research__get_repository,mcp__github-research__get_issue,mcp__github-research__get_pull_request,mcp__github-research__search_issues,mcp__github-research__search_pull_requests,mcp__github-research__get_files,
             --mcp-config /tmp/mcp-config/mcp-servers.json
           settings: |
             {
