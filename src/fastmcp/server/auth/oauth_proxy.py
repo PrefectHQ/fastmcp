@@ -89,7 +89,10 @@ class ProxyDCRClient(OAuthClientInformationFull):
     """
 
     def __init__(
-        self, *args, allowed_redirect_uri_patterns: list[str] | None = None, **kwargs
+        self,
+        *args: Any,
+        allowed_redirect_uri_patterns: list[str] | None = None,
+        **kwargs: Any,
     ):
         """Initialize with allowed redirect URI patterns.
 
