@@ -66,7 +66,13 @@ jobs:
           trigger_phrase: "/marvin"
           allowed_bots: "*"
           claude_args: |
-            --model claude-sonnet-4-5-20250929
             --allowedTools WebSearch,WebFetch,Bash(uv:*),Bash(pre-commit:*),Bash(pytest:*),Bash(ruff:*),Bash(ty:*),Bash(git:*),Bash(gh:*),mcp__github__add_issue_comment,mcp__github__create_issue,mcp__github__get_issue,mcp__github__list_issues,mcp__github__search_issues,mcp__github__update_issue,mcp__github__update_issue_comment,mcp__github__create_pull_request,mcp__github__get_pull_request,mcp__github__get_pull_request_comments,mcp__github__get_pull_request_files,mcp__github__get_pull_request_reviews,mcp__github__get_pull_request_status,mcp__github__list_pull_requests,mcp__github__update_pull_request,mcp__github__update_pull_request_branch,mcp__github__update_pull_request_comment,mcp__github__merge_pull_request
           additional_permissions: |
             actions: read
+          settings: |
+            {
+              "model": "claude-sonnet-4-5-20250929",
+              "env": {
+                "GH_TOKEN": "${{ steps.marvin-token.outputs.token }}"
+              }
+            }

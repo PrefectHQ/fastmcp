@@ -81,9 +81,12 @@ jobs:
           prompt: ${{ steps.dedupe-prompt.outputs.PROMPT }}
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY_FOR_CI }}
           claude_args: |
-            --model claude-sonnet-4-5-20250929
             --allowedTools Bash(gh issue view:*),Bash(gh search:*),Bash(gh issue list:*),Bash(gh api:*),Bash(gh issue comment:*),Task
+            --mcp-config /tmp/mcp-config/mcp-servers.json
           settings: |
             {
-              "GH_TOKEN": "${{ steps.marvin-token.outputs.token }}"
+              "model": "claude-sonnet-4-5-20250929",
+              "env": {
+                "GH_TOKEN": "${{ steps.marvin-token.outputs.token }}"
+              }
             }
