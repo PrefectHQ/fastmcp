@@ -1087,6 +1087,9 @@ class TestConvertResultToContent:
         converted = _convert_to_content(result)
         assert converted == expected
 
+        converted = _convert_to_content([result, result])
+        assert converted == expected * 2
+
     def test_convert_mixed_content(self):
         result = [
             "hello",
