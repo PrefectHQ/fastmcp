@@ -155,38 +155,38 @@ class Client(Generic[ClientTransportT]):
     """
 
     @overload
-    def __init__(self: Client[T], transport: T, *args, **kwargs) -> None: ...
+    def __init__(self: Client[T], transport: T, *args: Any, **kwargs: Any) -> None: ...
 
     @overload
     def __init__(
         self: Client[SSETransport | StreamableHttpTransport],
         transport: AnyUrl,
-        *args,
-        **kwargs,
+        *args: Any,
+        **kwargs: Any,
     ) -> None: ...
 
     @overload
     def __init__(
         self: Client[FastMCPTransport],
         transport: FastMCP | FastMCP1Server,
-        *args,
-        **kwargs,
+        *args: Any,
+        **kwargs: Any,
     ) -> None: ...
 
     @overload
     def __init__(
         self: Client[PythonStdioTransport | NodeStdioTransport],
         transport: Path,
-        *args,
-        **kwargs,
+        *args: Any,
+        **kwargs: Any,
     ) -> None: ...
 
     @overload
     def __init__(
         self: Client[MCPConfigTransport],
         transport: MCPConfig | dict[str, Any],
-        *args,
-        **kwargs,
+        *args: Any,
+        **kwargs: Any,
     ) -> None: ...
 
     @overload
@@ -198,8 +198,8 @@ class Client(Generic[ClientTransportT]):
             | StreamableHttpTransport
         ],
         transport: str,
-        *args,
-        **kwargs,
+        *args: Any,
+        **kwargs: Any,
     ) -> None: ...
 
     def __init__(
