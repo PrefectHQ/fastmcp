@@ -22,18 +22,9 @@ jobs:
       id-token: write
 
     steps:
-      - name: Checkout base repository
-        uses: actions/checkout@v5
-        with:
-          repository: ${{ github.repository }}
-          ref: ${{ github.event.repository.default_branch }}
-
       # Install UV package manager
       - name: Install UV
         uses: astral-sh/setup-uv@v6
-        with:
-          enable-cache: true
-          cache-dependency-glob: "uv.lock"
 
       - name: Generate Marvin App token
         id: marvin-token
@@ -54,12 +45,13 @@ jobs:
           pull requests, and files in the repository and reporting your findings. 
           2. You will identify the issue type (bug/feature/question) up front and tailor the Recommendation (e.g., for questions: answer directly + links; for bugs: point to failing tests/lines).
           3. You will avoid speculation and only assert facts that are deeply rooted (traceable) to the codebase, language/framework conventions, related issues, related pull requests, etc.
+          4. The repository has not been cloned locally, there are no files on the local system for you to read, grep, edit, etc. You will use the available MCP Server tools to read files (get_files), search the codebase (search_code is ripgrep!), and identify related issues and pull requests (search_issues and search_pull_requests) just like you would if the repository was cloned locally.
 
           # Getting Started
           1. Call the generate_agents_md tool to get a high-level summary of the project you're working in
           2. Get the issue ${{ github.event.issue.number }} in the GitHub repository: ${{ github.repository }}.
-          3. Use the issue and pull request search tools to scour the repository for actually related issues and pull requests
-          4. Call the code-search, get_files, etc. tools to search the repository to identify the related classes, methods, docs, tests, etc that are relevant to the issue.
+          3. Use the search_issues and search_pull_requests tools to scour the repository for actually related issues and pull requests
+          4. Call the search_code, get_files, etc. tools to search the repository to identify the related classes, methods, docs, tests, etc that are relevant to the issue.
 
           # Providing a Great Response
           Your number one priority is to provide a great response to the issue. A great response is a response that is clear, concise, accurate, and actionable. You will avoid long paragraphs, flowery language, and overly verbose responses. Your readers have limited time and attention, so you will be concise and to the point.
@@ -136,7 +128,7 @@ jobs:
               },
               "code-search": {
                 "type": "http",
-                "url": "https://github-code-search.fastmcp.app/mcp"
+                "url": "https://public-code-search.fastmcp.app/mcp"
               },
               "github-research": {
                 "type": "stdio",
@@ -163,7 +155,7 @@ jobs:
           track_progress: true
           claude_args: |
             --model claude-sonnet-4-5-20250929
-            --allowedTools mcp__repository-summary,mcp__code-search__search_code,mcp__github-research__get_repository,mcp__github-research__get_issue,mcp__github-research__get_pull_request,mcp__github-research__search_issues,mcp__github-research__search_pull_requests,mcp__github-research__get_files,
+            --allowedTools mcp__repository-summary,mcp__code-search__search_code,mcp__github-research__get_repository,mcp__github-research__get_issue,mcp__github-research__get_pull_request,mcp__github-research__search_issues,mcp__github-research__search_pull_requests,mcp__github-research__get_files
             --mcp-config /tmp/mcp-config/mcp-servers.json
           settings: |
             {

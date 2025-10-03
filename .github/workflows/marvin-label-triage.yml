@@ -134,7 +134,6 @@ jobs:
           allowed_non_write_users: "*" # Required for issue triage workflow, if users without repo write access create issues
           claude_args: |
             --allowedTools Bash(gh label list),mcp__github__get_issue,mcp__github__get_issue_comments,mcp__github__update_issue,mcp__github__get_pull_request_files
-            --mcp-config /tmp/mcp-config/mcp-servers.json
           settings: |
             {
               "model": "claude-sonnet-4-5-20250929",
