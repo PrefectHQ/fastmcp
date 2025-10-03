@@ -1,5 +1,5 @@
 name: Marvin Issue Dedupe
-description: Automatically dedupe GitHub issues using Marvin
+# description: Automatically dedupe GitHub issues using Marvin
 on:
   issues:
     types: [opened]
