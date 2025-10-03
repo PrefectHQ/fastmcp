@@ -34,7 +34,7 @@ _current_tool: ContextVar[TransformedTool | None] = ContextVar(  # type: ignore[
 )
 
 
-async def forward(**kwargs) -> ToolResult:
+async def forward(**kwargs: Any) -> ToolResult:
     """Forward to parent tool with argument transformation applied.
 
     This function can only be called from within a transformed tool's custom
@@ -64,7 +64,7 @@ async def forward(**kwargs) -> ToolResult:
     return await tool.forwarding_fn(**kwargs)
 
 
-async def forward_raw(**kwargs) -> ToolResult:
+async def forward_raw(**kwargs: Any) -> ToolResult:
     """Forward directly to parent tool without transformation.
 
     This function bypasses all argument transformation and validation, calling the parent
@@ -681,7 +681,7 @@ class TransformedTool(Tool):
             schema = compress_schema(schema, prune_defs=True)
 
         # Create forwarding function that closes over everything it needs
-        async def _forward(**kwargs):
+        async def _forward(**kwargs: Any):
             # Validate arguments
             valid_args = set(new_props.keys())
             provided_args = set(kwargs.keys())
