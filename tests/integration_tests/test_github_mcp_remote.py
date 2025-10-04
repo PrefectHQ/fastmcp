@@ -33,9 +33,9 @@ def fixture_streamable_http_client() -> Client[StreamableHttpTransport]:
         )
     )
 
+
 @pytest.mark.flaky(retries=2, delay=1)
 class TestGithubMCPRemote:
-
     async def test_connect_disconnect(
         self,
         streamable_http_client: Client[StreamableHttpTransport],
@@ -45,7 +45,6 @@ class TestGithubMCPRemote:
             await streamable_http_client._disconnect()  # pylint: disable=W0212 (protected-access)
             assert streamable_http_client.is_connected() is False
 
-
     async def test_ping(self, streamable_http_client: Client[StreamableHttpTransport]):
         """Test pinging the server."""
         async with streamable_http_client:
@@ -53,8 +52,9 @@ class TestGithubMCPRemote:
             result = await streamable_http_client.ping()
             assert result is True
 
-
-    async def test_list_tools(self, streamable_http_client: Client[StreamableHttpTransport]):
+    async def test_list_tools(
+        self, streamable_http_client: Client[StreamableHttpTransport]
+    ):
         """Test listing the MCP tools"""
         async with streamable_http_client:
             assert streamable_http_client.is_connected()
@@ -68,8 +68,9 @@ class TestGithubMCPRemote:
                 assert isinstance(tool.inputSchema, dict)
                 assert len(tool.inputSchema) > 0
 
-
-    async def test_list_resources(self, streamable_http_client: Client[StreamableHttpTransport]):
+    async def test_list_resources(
+        self, streamable_http_client: Client[StreamableHttpTransport]
+    ):
         """Test listing the MCP resources"""
         async with streamable_http_client:
             assert streamable_http_client.is_connected()
@@ -77,8 +78,9 @@ class TestGithubMCPRemote:
             assert isinstance(resources, list)
             assert len(resources) == 0
 
-
-    async def test_list_prompts(self, streamable_http_client: Client[StreamableHttpTransport]):
+    async def test_list_prompts(
+        self, streamable_http_client: Client[StreamableHttpTransport]
+    ):
         """Test listing the MCP prompts"""
         async with streamable_http_client:
             assert streamable_http_client.is_connected()
@@ -86,14 +88,14 @@ class TestGithubMCPRemote:
             # there is at least one prompt (as of July 2025)
             assert len(prompts) >= 1
 
-
-    async def test_call_tool_ko(self, streamable_http_client: Client[StreamableHttpTransport]):
+    async def test_call_tool_ko(
+        self, streamable_http_client: Client[StreamableHttpTransport]
+    ):
         """Test calling a non-existing tool"""
         async with streamable_http_client:
             assert streamable_http_client.is_connected()
             with pytest.raises(McpError, match="tool not found"):
                 await streamable_http_client.call_tool("foo")
-
 
     async def test_call_tool_list_commits(
         self,
