@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 2
 requires-python = ">=3.10"
 resolution-markers = [
     "python_full_version >= '3.11'",
@@ -558,6 +558,7 @@ dev = [
     { name = "pytest-flakefinder" },
     { name = "pytest-httpx" },
     { name = "pytest-report" },
+    { name = "pytest-retry" },
     { name = "pytest-timeout" },
     { name = "pytest-xdist" },
     { name = "ruff" },
@@ -601,6 +602,7 @@ dev = [
     { name = "pytest-flakefinder" },
     { name = "pytest-httpx", specifier = ">=0.35.0" },
     { name = "pytest-report", specifier = ">=0.2.1" },
+    { name = "pytest-retry", specifier = ">=1.7.0" },
     { name = "pytest-timeout", specifier = ">=2.4.0" },
     { name = "pytest-xdist", specifier = ">=3.6.1" },
     { name = "ruff" },
@@ -1587,6 +1589,18 @@ dependencies = [
     { name = "pytest" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/3b/82/e141da085de0b6dac3f047ae009e136bcedbcfca4ada082a55359d6f735e/pytest-report-0.2.1.tar.gz", hash = "sha256:d382e8db4c52a815d39dae5f21ee5edc0da3ae8ec19a22e55e9be5c60714a39d", size = 3517, upload-time = "2016-05-11T02:08:04.665Z" }
+
+[[package]]
+name = "pytest-retry"
+version = "1.7.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pytest" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/c5/5b/607b017994cca28de3a1ad22a3eee8418e5d428dcd8ec25b26b18e995a73/pytest_retry-1.7.0.tar.gz", hash = "sha256:f8d52339f01e949df47c11ba9ee8d5b362f5824dff580d3870ec9ae0057df80f", size = 19977, upload-time = "2025-01-19T01:56:13.115Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/7c/ff/3266c8a73b9b93c4b14160a7e2b31d1e1088e28ed29f4c2d93ae34093bfd/pytest_retry-1.7.0-py3-none-any.whl", hash = "sha256:a2dac85b79a4e2375943f1429479c65beb6c69553e7dae6b8332be47a60954f4", size = 13775, upload-time = "2025-01-19T01:56:11.199Z" },
+]
 
 [[package]]
 name = "pytest-timeout"

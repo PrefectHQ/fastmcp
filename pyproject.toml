@@ -64,6 +64,7 @@ dev = [
     "pytest-flakefinder",
     "pytest-httpx>=0.35.0",
     "pytest-report>=0.2.1",
+    "pytest-retry>=1.7.0",
     "pytest-timeout>=2.4.0",
     "pytest-xdist>=3.6.1",
     "ruff",
