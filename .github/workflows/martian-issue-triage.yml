@@ -22,9 +22,18 @@ jobs:
       id-token: write
 
     steps:
+      - name: Checkout base repository
+        uses: actions/checkout@v5
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ github.event.repository.default_branch }}
+
       # Install UV package manager
       - name: Install UV
         uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
 
       - name: Generate Marvin App token
         id: marvin-token
@@ -45,7 +54,7 @@ jobs:
           pull requests, and files in the repository and reporting your findings. 
           2. You will identify the issue type (bug/feature/question) up front and tailor the Recommendation (e.g., for questions: answer directly + links; for bugs: point to failing tests/lines).
           3. You will avoid speculation and only assert facts that are deeply rooted (traceable) to the codebase, language/framework conventions, related issues, related pull requests, etc.
-          4. The repository has not been cloned locally, there are no files on the local system for you to read, grep, edit, etc. You will use the available MCP Server tools to read files (get_files), search the codebase (search_code is ripgrep!), and identify related issues and pull requests (search_issues and search_pull_requests) just like you would if the repository was cloned locally.
+          4. The main branch of the repository has been cloned locally, but changes will not be accepted and you are not allowed to make pull requests or other changes. You can search the local repository for relevant code. You will use the available MCP Server tools identify related issues and pull requests (search_issues and search_pull_requests) and you can use search_code to look at the code in relevant dependent packages. For example, you can use search_code to look at the underlying SDK `https://github.com/modelcontextprotocol/python-sdk` to see how it implements a certain class or function relevant to the issue at hand.
 
           # Getting Started
           1. Call the generate_agents_md tool to get a high-level summary of the project you're working in
