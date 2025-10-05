@@ -75,11 +75,11 @@ def _run_server(mcp_server: FastMCP, transport: Literal["sse"], port: int) -> No
 @contextmanager
 def run_server_in_process(
     server_fn: Callable[..., None],
-    *args,
+    *args: Any,
     provide_host_and_port: bool = True,
     host: str = "127.0.0.1",
     port: int | None = None,
-    **kwargs,
+    **kwargs: Any,
 ) -> Generator[str, None, None]:
     """
     Context manager that runs a FastMCP server in a separate process and

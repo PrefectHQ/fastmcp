@@ -163,7 +163,7 @@ async def test_integration_array_path_parameter(array_path_spec, mock_client):
     mcp = FastMCP.from_openapi(array_path_spec, client=mock_client)
 
     # Call the tool with a single value
-    await mcp._mcp_call_tool("test_operation", {"days": ["monday"]})
+    await mcp._call_tool_mcp("test_operation", {"days": ["monday"]})
 
     # Check the request was made correctly
     mock_client.request.assert_called_with(
@@ -177,7 +177,7 @@ async def test_integration_array_path_parameter(array_path_spec, mock_client):
     mock_client.request.reset_mock()
 
     # Call the tool with multiple values
-    await mcp._mcp_call_tool("test_operation", {"days": ["monday", "tuesday"]})
+    await mcp._call_tool_mcp("test_operation", {"days": ["monday", "tuesday"]})
 
     # Check the request was made correctly
     mock_client.request.assert_called_with(

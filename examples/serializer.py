@@ -21,7 +21,7 @@ def get_example_data() -> dict:
 
 
 async def example_usage():
-    result = await server._mcp_call_tool("get_example_data", {})
+    result = await server._call_tool_mcp("get_example_data", {})
     print("Tool Result:")
     print(result)
     print("This is an example of using a custom serializer with FastMCP.")
