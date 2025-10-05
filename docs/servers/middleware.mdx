@@ -93,6 +93,7 @@ This hierarchy allows you to target your middleware logic with the right level o
 - `on_message`: Called for all MCP messages (requests and notifications)
 - `on_request`: Called specifically for MCP requests (that expect responses)
 - `on_notification`: Called specifically for MCP notifications (fire-and-forget)
+- `on_initialize`: Called when a client connects and initializes the session (returns `None`)
 - `on_call_tool`: Called when tools are being executed
 - `on_read_resource`: Called when resources are being read
 - `on_get_prompt`: Called when prompts are being retrieved
@@ -100,6 +101,10 @@ This hierarchy allows you to target your middleware logic with the right level o
 - `on_list_resources`: Called when listing available resources
 - `on_list_resource_templates`: Called when listing resource templates
 - `on_list_prompts`: Called when listing available prompts
+
+<Note>
+The `on_initialize` hook receives the client's initialization request but **returns `None`** rather than a result. The initialization response is handled internally by the MCP protocol and cannot be modified by middleware. This hook is useful for client detection, logging connections, or initializing session state, but not for modifying the initialization handshake itself.
+</Note>
 
 ## Component Access in Middleware
 
