@@ -63,27 +63,31 @@ class ResourceManager:
 
     async def get_resources(self) -> dict[str, Resource]:
         """Get all registered resources, keyed by URI."""
-        return await self._load_resources(via_server=False)
+        return await self._load_resources(apply_filtering=False)
 
     async def get_resource_templates(self) -> dict[str, ResourceTemplate]:
         """Get all registered templates, keyed by URI template."""
-        return await self._load_resource_templates(via_server=False)
+        return await self._load_resource_templates(apply_filtering=False)
 
-    async def _load_resources(self, *, via_server: bool = False) -> dict[str, Resource]:
+    async def _load_resources(
+        self, *, apply_filtering: bool = False
+    ) -> dict[str, Resource]:
         """
-        The single, consolidated recursive method for fetching resources. The 'via_server'
+        The single, consolidated recursive method for fetching resources. The 'apply_filtering'
         parameter determines the communication path.
 
-        - via_server=False: Manager-to-manager path for complete, unfiltered inventory
-        - via_server=True: Server-to-server path for filtered MCP requests
+        - apply_filtering=False: Manager-to-manager path for complete, unfiltered inventory
+        - apply_filtering=True: Server-to-server path for filtered MCP requests
         """
         all_resources: dict[str, Resource] = {}
 
         for mounted in self._mounted_servers:
             try:
-                if via_server:
+                if apply_filtering:
                     # Use the server-to-server filtered path
-                    child_resources_list = await mounted.server._list_resources()
+                    child_resources_list = (
+                        await mounted.server._list_resources_middleware()
+                    )
                     child_resources = {
                         resource.key: resource for resource in child_resources_list
                     }
@@ -123,22 +127,24 @@ class ResourceManager:
         return all_resources
 
     async def _load_resource_templates(
-        self, *, via_server: bool = False
+        self, *, apply_filtering: bool = False
     ) -> dict[str, ResourceTemplate]:
         """
-        The single, consolidated recursive method for fetching templates. The 'via_server'
+        The single, consolidated recursive method for fetching templates. The 'apply_filtering'
         parameter determines the communication path.
 
-        - via_server=False: Manager-to-manager path for complete, unfiltered inventory
-        - via_server=True: Server-to-server path for filtered MCP requests
+        - apply_filtering=False: Manager-to-manager path for complete, unfiltered inventory
+        - apply_filtering=True: Server-to-server path for filtered MCP requests
         """
         all_templates: dict[str, ResourceTemplate] = {}
 
         for mounted in self._mounted_servers:
             try:
-                if via_server:
+                if apply_filtering:
                     # Use the server-to-server filtered path
-                    child_templates = await mounted.server._list_resource_templates()
+                    child_templates = (
+                        await mounted.server._list_resource_templates_middleware()
+                    )
                 else:
                     # Use the manager-to-manager unfiltered path
                     child_templates = (
@@ -179,14 +185,14 @@ class ResourceManager:
         """
         Lists all resources, applying protocol filtering.
         """
-        resources_dict = await self._load_resources(via_server=True)
+        resources_dict = await self._load_resources(apply_filtering=True)
         return list(resources_dict.values())
 
     async def list_resource_templates(self) -> list[ResourceTemplate]:
         """
         Lists all templates, applying protocol filtering.
         """
-        templates_dict = await self._load_resource_templates(via_server=True)
+        templates_dict = await self._load_resource_templates(apply_filtering=True)
         return list(templates_dict.values())
 
     def add_resource_or_template_from_fn(
@@ -492,7 +498,7 @@ class ResourceManager:
                         continue
 
                 try:
-                    result = await mounted.server._read_resource(key)
+                    result = await mounted.server._read_resource_middleware(key)
                     return result[0].content
                 except NotFoundError:
                     continue

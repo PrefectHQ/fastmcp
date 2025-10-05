@@ -19,7 +19,7 @@ class TestCustomRoutes:
 
         return server
 
-    def test_custom_routes_via_server_http_app(self, server_with_custom_route):
+    def test_custom_routes_apply_filtering_http_app(self, server_with_custom_route):
         """Test that custom routes are included when using server.http_app()."""
         # Get the app via server.http_app()
         app = server_with_custom_route.http_app()

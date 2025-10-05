@@ -46,21 +46,23 @@ class PromptManager:
         """Adds a mounted server as a source for prompts."""
         self._mounted_servers.append(server)
 
-    async def _load_prompts(self, *, via_server: bool = False) -> dict[str, Prompt]:
+    async def _load_prompts(
+        self, *, apply_filtering: bool = False
+    ) -> dict[str, Prompt]:
         """
-        The single, consolidated recursive method for fetching prompts. The 'via_server'
+        The single, consolidated recursive method for fetching prompts. The 'apply_filtering'
         parameter determines the communication path.
 
-        - via_server=False: Manager-to-manager path for complete, unfiltered inventory
-        - via_server=True: Server-to-server path for filtered MCP requests
+        - apply_filtering=False: Manager-to-manager path for complete, unfiltered inventory
+        - apply_filtering=True: Server-to-server path for filtered MCP requests
         """
         all_prompts: dict[str, Prompt] = {}
 
         for mounted in self._mounted_servers:
             try:
-                if via_server:
+                if apply_filtering:
                     # Use the server-to-server filtered path
-                    child_results = await mounted.server._list_prompts()
+                    child_results = await mounted.server._list_prompts_middleware()
                 else:
                     # Use the manager-to-manager unfiltered path
                     child_results = await mounted.server._prompt_manager.list_prompts()
@@ -104,13 +106,13 @@ class PromptManager:
         """
         Gets the complete, unfiltered inventory of all prompts.
         """
-        return await self._load_prompts(via_server=False)
+        return await self._load_prompts(apply_filtering=False)
 
     async def list_prompts(self) -> list[Prompt]:
         """
         Lists all prompts, applying protocol filtering.
         """
-        prompts_dict = await self._load_prompts(via_server=True)
+        prompts_dict = await self._load_prompts(apply_filtering=True)
         return list(prompts_dict.values())
 
     def add_prompt_from_fn(
@@ -196,7 +198,9 @@ class PromptManager:
                 else:
                     continue
             try:
-                return await mounted.server._get_prompt(prompt_key, arguments)
+                return await mounted.server._get_prompt_middleware(
+                    prompt_key, arguments
+                )
             except NotFoundError:
                 continue
 

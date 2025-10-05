@@ -205,7 +205,7 @@ class Context:
         """
         if self.fastmcp is None:
             raise ValueError("Context is not available outside of a request")
-        return await self.fastmcp._mcp_read_resource(uri)
+        return await self.fastmcp._read_resource_mcp(uri)
 
     async def log(
         self,
