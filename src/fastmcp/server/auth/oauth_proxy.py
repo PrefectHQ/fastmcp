@@ -30,6 +30,7 @@ from authlib.common.security import generate_token
 from authlib.integrations.httpx_client import AsyncOAuth2Client
 from key_value.aio.adapters.pydantic import PydanticAdapter
 from key_value.aio.protocols import AsyncKeyValue
+from key_value.aio.stores.memory import MemoryStore
 from mcp.server.auth.handlers.token import TokenErrorResponse, TokenSuccessResponse
 from mcp.server.auth.handlers.token import TokenHandler as _SDKTokenHandler
 from mcp.server.auth.json_response import PydanticJSONResponse
@@ -52,7 +53,6 @@ from starlette.requests import Request
 from starlette.responses import RedirectResponse
 from starlette.routing import Route
 
-from fastmcp import settings
 from fastmcp.server.auth.auth import OAuthProvider, TokenVerifier
 from fastmcp.server.auth.redirect_validation import validate_redirect_uri
 from fastmcp.utilities.logging import get_logger
@@ -386,7 +386,7 @@ class OAuthProxy(OAuthProvider):
         self._extra_authorize_params = extra_authorize_params or {}
         self._extra_token_params = extra_token_params or {}
 
-        self._client_storage: AsyncKeyValue = client_storage or settings.key_value_store
+        self._client_storage: AsyncKeyValue = client_storage or MemoryStore()
 
         self._client_store = PydanticAdapter[ProxyDCRClient](
             key_value=self._client_storage,

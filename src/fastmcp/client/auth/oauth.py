@@ -12,6 +12,7 @@ import anyio
 import httpx
 from key_value.aio.adapters.pydantic import PydanticAdapter
 from key_value.aio.protocols import AsyncKeyValue
+from key_value.aio.stores.memory import MemoryStore
 from mcp.client.auth import OAuthClientProvider, TokenStorage
 from mcp.shared.auth import (
     OAuthClientInformationFull,
@@ -21,7 +22,6 @@ from mcp.shared.auth import (
 from pydantic import AnyHttpUrl
 from uvicorn.server import Server
 
-from fastmcp import settings
 from fastmcp.client.oauth_callback import (
     create_oauth_callback_server,
 )
@@ -186,7 +186,7 @@ class OAuth(OAuthClientProvider):
         )
 
         # Create server-specific token storage
-        token_storage = token_storage or settings.key_value_store
+        token_storage = token_storage or MemoryStore()
 
         self.token_storage_adapter: TokenStorageAdapter = TokenStorageAdapter(
             async_key_value=token_storage, server_url=server_base_url

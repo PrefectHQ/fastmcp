@@ -28,11 +28,13 @@ class TestOAuthProxyStorage:
 
     @pytest.fixture
     async def temp_storage(
-        self, tmp_path: Path
+        self
     ) -> AsyncGenerator[MultiDiskStore, None]:
         """Create file-based storage for testing."""
         with tempfile.TemporaryDirectory() as temp_dir:
-            yield MultiDiskStore(base_directory=Path(temp_dir))
+            disk_store = MultiDiskStore(base_directory=Path(temp_dir))
+            yield disk_store
+            await disk_store.close()
 
     @pytest.fixture
     def memory_storage(self) -> MemoryStore:
@@ -55,7 +57,7 @@ class TestOAuthProxyStorage:
     async def test_default_storage_is_file_based(self, jwt_verifier):
         """Test that proxy defaults to file-based storage."""
         proxy = self.create_proxy(jwt_verifier, storage=None)
-        assert isinstance(proxy._client_storage, MultiDiskStore)
+        assert isinstance(proxy._client_storage, MemoryStore)
 
     async def test_register_and_get_client(self, jwt_verifier, temp_storage):
         """Test registering and retrieving a client."""
