@@ -195,6 +195,7 @@ class FastMCP(Generic[LifespanResultT]):
             self._has_lifespan = True
         # Generate random ID if no name provided
         self._mcp_server = LowLevelServer[LifespanResultT](
+            fastmcp=self,
             name=name or self.generate_name(),
             version=version,
             instructions=instructions,
