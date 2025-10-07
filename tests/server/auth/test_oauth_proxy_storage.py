@@ -27,9 +27,7 @@ class TestOAuthProxyStorage:
         return verifier
 
     @pytest.fixture
-    async def temp_storage(
-        self
-    ) -> AsyncGenerator[MultiDiskStore, None]:
+    async def temp_storage(self) -> AsyncGenerator[MultiDiskStore, None]:
         """Create file-based storage for testing."""
         with tempfile.TemporaryDirectory() as temp_dir:
             disk_store = MultiDiskStore(base_directory=Path(temp_dir))
