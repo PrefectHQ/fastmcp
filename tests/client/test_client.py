@@ -9,6 +9,7 @@ from mcp import McpError
 from mcp.client.auth import OAuthClientProvider
 from pydantic import AnyUrl
 
+import fastmcp
 from fastmcp.client import Client
 from fastmcp.client.auth.bearer import BearerAuth
 from fastmcp.client.transports import (
@@ -435,11 +436,8 @@ async def test_server_info_custom_version():
     async with client:
         result = client.initialize_result
         assert result.serverInfo.name == "DefaultVersionServer"
-        # Should fall back to MCP library version
-        assert result.serverInfo.version is not None
-        assert (
-            result.serverInfo.version != "1.2.3"
-        )  # Should be different from custom version
+        # Should fall back to FastMCP version
+        assert result.serverInfo.version == fastmcp.__version__
 
 
 async def test_client_nested_context_manager(fastmcp_server):
