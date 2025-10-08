@@ -41,6 +41,8 @@ FastMCP supports [MCP proxying](/servers/proxy), which allows you to mirror a lo
 
 You can also create proxies from configuration dictionaries that follow the MCPConfig schema, which is useful for quickly connecting to one or more remote servers. See the [Proxy Servers documentation](/servers/proxy#configuration-based-proxies) for details on configuration-based proxying. Note that MCPConfig follows an emerging standard and its format may evolve over time.
 
+Prefixing rules for tools, prompts, resources, and templates are identical across importing, mounting, and proxies.
+
 ## Importing (Static Composition)
 
 The `import_server()` method copies all components (tools, resources, templates, prompts) from one `FastMCP` instance (the *subserver*) into another (the *main server*). An optional `prefix` can be provided to avoid naming conflicts. If no prefix is provided, components are imported without modification. When multiple servers are imported with the same prefix (or no prefix), the most recently imported server's components take precedence.
