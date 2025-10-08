@@ -2,6 +2,7 @@
 
 import json
 import logging
+import time
 from collections.abc import Callable
 from logging import Logger
 from typing import Any
@@ -52,14 +53,14 @@ class BaseLoggingMiddleware(Middleware):
         else:
             return " ".join([f"{k}={v}" for k, v in message.items()])
 
-    def _get_timestamp_from_context(self, context: MiddlewareContext[Any]) -> str:
-        """Get a timestamp from the context."""
-        return context.timestamp.isoformat()
-
     def _create_before_message(
-        self, context: MiddlewareContext[Any], event: str
+        self, context: MiddlewareContext[Any]
     ) -> dict[str, str | int]:
-        message = self._create_base_message(context, event)
+        message = {
+            "event": context.type + "_start",
+            "method": context.method or "unknown",
+            "source": context.source,
+        }
 
         if (
             self.include_payloads
@@ -85,57 +86,61 @@ class BaseLoggingMiddleware(Middleware):
 
         return message
 
-    def _create_after_message(
-        self, context: MiddlewareContext[Any], event: str
-    ) -> dict[str, str | int]:
-        return self._create_base_message(context, event)
-
-    def _create_base_message(
+    def _create_error_message(
         self,
         context: MiddlewareContext[Any],
-        event: str,
-    ) -> dict[str, str | int]:
-        """Format a message for logging."""
-
-        parts: dict[str, str | int] = {
-            "event": event,
-            "timestamp": self._get_timestamp_from_context(context),
+        start_time: float,
+        error: Exception,
+    ) -> dict[str, str | int | float]:
+        duration_ms: float = _get_duration_ms(start_time)
+        message = {
+            "event": context.type + "_error",
             "method": context.method or "unknown",
-            "type": context.type,
             "source": context.source,
+            "duration_ms": duration_ms,
+            "error": str(object=error),
         }
+        return message
 
-        return parts
+    def _create_after_message(
+        self,
+        context: MiddlewareContext[Any],
+        start_time: float,
+    ) -> dict[str, str | int | float]:
+        duration_ms: float = _get_duration_ms(start_time)
+        message = {
+            "event": context.type + "_success",
+            "method": context.method or "unknown",
+            "source": context.source,
+            "duration_ms": duration_ms,
+        }
+        return message
+
+    def _log_message(
+        self, message: dict[str, str | int | float], log_level: int | None = None
+    ):
+        self.logger.log(log_level or self.log_level, self._format_message(message))
 
     async def on_message(
         self, context: MiddlewareContext[Any], call_next: CallNext[Any, Any]
     ) -> Any:
-        """Log all messages."""
+        """Log messages for configured methods."""
 
         if self.methods and context.method not in self.methods:
             return await call_next(context)
 
-        request_start_log_message = self._create_before_message(
-            context, "request_start"
-        )
+        self._log_message(self._create_before_message(context))
 
-        formatted_message = self._format_message(request_start_log_message)
-        self.logger.log(self.log_level, f"Processing message: {formatted_message}")
-
+        start_time = time.perf_counter()
         try:
             result = await call_next(context)
 
-            request_success_log_message = self._create_after_message(
-                context, "request_success"
-            )
-
-            formatted_message = self._format_message(request_success_log_message)
-            self.logger.log(self.log_level, f"Completed message: {formatted_message}")
+            self._log_message(self._create_after_message(context, start_time))
 
             return result
         except Exception as e:
-            self.logger.log(
-                logging.ERROR, f"Failed message: {context.method or 'unknown'} - {e}"
+            self._log_message(
+                self._create_error_message(context, start_time, e), logging.ERROR
             )
             raise
 
@@ -184,7 +189,7 @@ class LoggingMiddleware(BaseLoggingMiddleware):
             payload_serializer: Callable that converts objects to a JSON string for the
                 payload. If not provided, uses FastMCP's default tool serializer.
         """
-        self.logger: Logger = logger or logging.getLogger("fastmcp.requests")
+        self.logger: Logger = logger or logging.getLogger("fastmcp.middleware.logging")
         self.log_level = log_level
         self.include_payloads: bool = include_payloads
         self.include_payload_length: bool = include_payload_length
@@ -234,7 +239,9 @@ class StructuredLoggingMiddleware(BaseLoggingMiddleware):
             payload_serializer: Callable that converts objects to a JSON string for the
                 payload. If not provided, uses FastMCP's default tool serializer.
         """
-        self.logger: Logger = logger or logging.getLogger("fastmcp.structured")
+        self.logger: Logger = logger or logging.getLogger(
+            "fastmcp.middleware.structured_logging"
+        )
         self.log_level: int = log_level
         self.include_payloads: bool = include_payloads
         self.include_payload_length: bool = include_payload_length
@@ -243,3 +250,7 @@ class StructuredLoggingMiddleware(BaseLoggingMiddleware):
         self.payload_serializer: Callable[[Any], str] | None = payload_serializer
         self.max_payload_length: int | None = None
         self.structured_logging: bool = True
+
+
+def _get_duration_ms(start_time: float, /) -> float:
+    return round(number=(time.perf_counter() - start_time) * 1000, ndigits=2)

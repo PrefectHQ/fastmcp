@@ -548,7 +548,7 @@ Provide your own schema that differs from the parent. The tool must return data 
 
 **Remove Output Schema**
 ```python
-Tool.from_tool(parent_tool, output_schema=False)
+Tool.from_tool(parent_tool, output_schema=None)
 ```
 Removes the output schema declaration. Automatic structured content still works for object-like returns (dict, dataclass, Pydantic models) but primitive types won't be structured.
 

@@ -10,7 +10,7 @@ import { VersionBadge } from "/snippets/version-badge.mdx"
 
 <VersionBadge version="2.12.0" />
 
-This guide shows you how to secure your FastMCP server using **Azure OAuth** (Microsoft Entra ID). Since Azure doesn't support Dynamic Client Registration, this integration uses the [**OAuth Proxy**](/servers/auth/oauth-proxy) pattern to bridge Azure's traditional OAuth with MCP's authentication requirements.
+This guide shows you how to secure your FastMCP server using **Azure OAuth** (Microsoft Entra ID). Since Azure doesn't support Dynamic Client Registration, this integration uses the [**OAuth Proxy**](/servers/auth/oauth-proxy) pattern to bridge Azure's traditional OAuth with MCP's authentication requirements. FastMCP validates Azure JWTs against your application's client_id.
 
 ## Configuration
 
@@ -49,7 +49,38 @@ Create an App registration in Azure Portal to get the credentials needed for aut
     <Tip>
     If you want to use a custom callback path (e.g., `/auth/azure/callback`), make sure to set the same path in both your Azure App registration and the `redirect_path` parameter when configuring the AzureProvider.
     </Tip>
+
+    - **Expose an API**: Configure your Application ID URI and define scopes
+      - Go to **Expose an API** in the App registration sidebar.
+      - Click **Set** next to "Application ID URI" and choose one of:
+        - Keep the default `api://{client_id}`
+        - Set a custom value, following the supported formats (see [Identifier URI restrictions](https://learn.microsoft.com/en-us/entra/identity-platform/identifier-uri-restrictions))
+      - Click **Add a scope** and create a scope your app will require, for example:
+        - Scope name: `read` (or `write`, etc.)
+        - Admin consent display name/description: as appropriate for your org
+        - Who can consent: as needed (Admins only or Admins and users)
+
+    - **Configure Access Token Version**: Ensure your app uses access token v2
+      - Go to **Manifest** in the App registration sidebar.
+      - Find the `requestedAccessTokenVersion` property and set it to `2`:
+        ```json
+        "api": {
+            "requestedAccessTokenVersion": 2
+        }
+        ```
+      - Click **Save** at the top of the manifest editor.
+
+    <Warning>
+    Access token v2 is required for FastMCP's Azure integration to work correctly. If this is not set, you may encounter authentication errors.
+    </Warning>
+
+    <Note>
+    In FastMCP's `AzureProvider`, set `identifier_uri` to your Application ID URI (optional; defaults to `api://{client_id}`) and set `required_scopes` to the unprefixed scope names (e.g., `read`, `write`). During authorization, FastMCP automatically prefixes scopes with your `identifier_uri`.
+    </Note>
+
+
 </Step>
+
 
 <Step title="Create Client Secret">
     After registration, navigate to **Certificates & secrets** in your app's settings.
@@ -91,7 +122,11 @@ auth_provider = AzureProvider(
     client_secret="your-client-secret",                 # Your Azure App Client Secret
     tenant_id="08541b6e-646d-43de-a0eb-834e6713d6d5", # Your Azure Tenant ID (REQUIRED)
     base_url="http://localhost:8000",                   # Must match your App registration
-    required_scopes=["User.Read", "email", "openid", "profile"],  # Microsoft Graph permissions
+    required_scopes=["your-scope"],                 # Name of scope created when configuring your App
+    # identifier_uri defaults to api://{client_id}
+    # identifier_uri="api://your-api-id",
+    # Optional: request additional upstream scopes in the authorize request
+    # additional_authorize_scopes=["User.Read", "offline_access", "openid", "email"],
     # redirect_path="/auth/callback"                  # Default value, customize if needed
 )
 
@@ -215,12 +250,16 @@ Public URL of your FastMCP server for OAuth callbacks
 Redirect path configured in your Azure App registration
 </ParamField>
 
-<ParamField path="FASTMCP_SERVER_AUTH_AZURE_REQUIRED_SCOPES" default='["User.Read", "email", "openid", "profile"]'>
-Comma-, space-, or JSON-separated list of required Microsoft Graph scopes
+<ParamField path="FASTMCP_SERVER_AUTH_AZURE_REQUIRED_SCOPES" default="">
+Comma-, space-, or JSON-separated list of required scopes for your API. These are validated on tokens and used as defaults if the client does not request specific scopes.
 </ParamField>
 
-<ParamField path="FASTMCP_SERVER_AUTH_AZURE_TIMEOUT_SECONDS" default="10">
-HTTP request timeout for Microsoft Graph API calls
+<ParamField path="FASTMCP_SERVER_AUTH_AZURE_ADDITIONAL_AUTHORIZE_SCOPES" default="">
+Comma-, space-, or JSON-separated list of additional scopes to include in the authorization request without prefixing. Use this to request upstream scopes such as Microsoft Graph permissions. These are not used for token validation.
+</ParamField>
+
+<ParamField path="FASTMCP_SERVER_AUTH_AZURE_IDENTIFIER_URI" default="api://{client_id}">
+Application ID URI used to prefix scopes during authorization.
 </ParamField>
 </Card>
 
@@ -234,7 +273,11 @@ FASTMCP_SERVER_AUTH_AZURE_CLIENT_ID=835f09b6-0f0f-40cc-85cb-f32c5829a149
 FASTMCP_SERVER_AUTH_AZURE_CLIENT_SECRET=your-client-secret-here
 FASTMCP_SERVER_AUTH_AZURE_TENANT_ID=08541b6e-646d-43de-a0eb-834e6713d6d5
 FASTMCP_SERVER_AUTH_AZURE_BASE_URL=https://your-server.com
-FASTMCP_SERVER_AUTH_AZURE_REQUIRED_SCOPES=User.Read,email,profile
+FASTMCP_SERVER_AUTH_AZURE_REQUIRED_SCOPES=read,write
+# Optional custom API configuration
+# FASTMCP_SERVER_AUTH_AZURE_IDENTIFIER_URI=api://your-api-id
+# Request additional upstream scopes (optional)
+# FASTMCP_SERVER_AUTH_AZURE_ADDITIONAL_AUTHORIZE_SCOPES=User.Read,Mail.Read
 ```
 
 With environment variables set, your server code simplifies to:
