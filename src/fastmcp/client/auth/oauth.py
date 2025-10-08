@@ -156,7 +156,7 @@ class OAuth(OAuthClientProvider):
             scopes: OAuth scopes to request. Can be a
             space-separated string or a list of strings.
             client_name: Name for this client during registration
-            token_storage: AsyncKeyValue for token storage, the default disk store is used if not provided
+            token_storage: An AsyncKeyValue-compatible token store, tokens are stored in memory if not provided
             additional_client_metadata: Extra fields for OAuthClientMetadata
             callback_port: Fixed port for OAuth callback (default: random available port)
         """

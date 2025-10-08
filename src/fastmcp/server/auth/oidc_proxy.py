@@ -236,8 +236,7 @@ class OIDCProxy(OAuthProxy):
                 If None (default), only localhost redirect URIs are allowed.
                 If empty list, all redirect URIs are allowed (not recommended for production).
                 These are for MCP clients performing loopback redirects, NOT for the upstream OAuth app.
-            client_storage: Storage implementation for OAuth client registrations.
-                Defaults to file-based storage if not specified.
+            client_storage: An AsyncKeyValue-compatible store for client registrations, registrations are stored in memory if not provided
             token_endpoint_auth_method: Token endpoint authentication method for upstream server.
                 Common values: "client_secret_basic", "client_secret_post", "none".
                 If None, authlib will use its default (typically "client_secret_basic").

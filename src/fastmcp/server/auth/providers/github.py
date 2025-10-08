@@ -215,8 +215,7 @@ class GitHubProvider(OAuthProxy):
             timeout_seconds: HTTP request timeout for GitHub API calls
             allowed_client_redirect_uris: List of allowed redirect URI patterns for MCP clients.
                 If None (default), all URIs are allowed. If empty list, no URIs are allowed.
-            client_storage: Storage implementation for OAuth client registrations.
-                Defaults to file-based storage if not specified.
+            client_storage: An AsyncKeyValue-compatible store for client registrations, registrations are stored in memory if not provided
         """
 
         settings = GitHubProviderSettings.model_validate(

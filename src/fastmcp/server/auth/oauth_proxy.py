@@ -337,7 +337,7 @@ class OAuthProxy(OAuthProvider):
                 Example: {"audience": "https://api.example.com"}
             extra_token_params: Additional parameters to forward to the upstream token endpoint.
                 Useful for provider-specific parameters during token exchange.
-            client_storage: Storage implementation for OAuth client registrations.
+            client_storage: An AsyncKeyValue-compatible store for client registrations, registrations are stored in memory if not provided
         """
         # Always enable DCR since we implement it locally for MCP clients
         client_registration_options = ClientRegistrationOptions(

@@ -6,10 +6,9 @@ using the OAuth Proxy pattern for non-DCR OAuth flows.
 
 from __future__ import annotations
 
-import httpx
-from key_value.aio.protocols import AsyncKeyValue
 from typing import TYPE_CHECKING
 
+from key_value.aio.protocols import AsyncKeyValue
 from pydantic import SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -107,7 +106,6 @@ class AzureProvider(OAuthProxy):
         additional_authorize_scopes: list[str] | None | NotSetT = NotSet,
         allowed_client_redirect_uris: list[str] | NotSetT = NotSet,
         client_storage: AsyncKeyValue | None = None,
-    ):
     ) -> None:
         """Initialize Azure OAuth provider.
 
@@ -127,8 +125,7 @@ class AzureProvider(OAuthProxy):
                 permissions. These are not used for token validation.
             allowed_client_redirect_uris: List of allowed redirect URI patterns for MCP clients.
                 If None (default), all URIs are allowed. If empty list, no URIs are allowed.
-            client_storage: Storage implementation for OAuth client registrations.
-                Defaults to file-based storage if not specified.
+            client_storage: An AsyncKeyValue-compatible store for client registrations, registrations are stored in memory if not provided
         """
         settings = AzureProviderSettings.model_validate(
             {
