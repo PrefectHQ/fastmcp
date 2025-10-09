@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import abc
 import inspect
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Annotated, Any
@@ -31,7 +30,7 @@ if TYPE_CHECKING:
     pass
 
 
-class Resource(FastMCPComponent, abc.ABC):
+class Resource(FastMCPComponent):
     """Base class for all resources."""
 
     model_config = ConfigDict(validate_default=True)
@@ -111,10 +110,13 @@ class Resource(FastMCPComponent, abc.ABC):
             raise ValueError("Either name or uri must be provided")
         return self
 
-    @abc.abstractmethod
     async def read(self) -> str | bytes:
-        """Read the resource content."""
-        pass
+        """Read the resource content.
+
+        This method is not implemented in the base Resource class and must be
+        implemented by subclasses.
+        """
+        raise NotImplementedError("Subclasses must implement read()")
 
     def to_mcp_resource(
         self,

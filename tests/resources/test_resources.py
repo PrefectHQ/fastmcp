@@ -85,14 +85,15 @@ class TestResourceValidation:
         )
         assert resource.mime_type == "application/json"
 
-    async def test_resource_read_abstract(self):
-        """Test that Resource.read() is abstract."""
+    async def test_resource_read_not_implemented(self):
+        """Test that Resource.read() raises NotImplementedError."""
 
         class ConcreteResource(Resource):
             pass
 
-        with pytest.raises(TypeError, match="abstract method"):
-            ConcreteResource(uri=AnyUrl("test://test"), name="test")  # type: ignore
+        resource = ConcreteResource(uri=AnyUrl("test://test"), name="test")  # type: ignore
+        with pytest.raises(NotImplementedError, match="Subclasses must implement read"):
+            await resource.read()
 
     def test_resource_meta_parameter(self):
         """Test that meta parameter is properly handled."""
