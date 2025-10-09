@@ -23,6 +23,8 @@ LOG_LEVEL = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 
 DuplicateBehavior = Literal["warn", "error", "replace", "ignore"]
 
+TEN_MB_IN_BYTES = 1024 * 1024 * 10
+
 if TYPE_CHECKING:
     from fastmcp.server.auth.auth import AuthProvider
 

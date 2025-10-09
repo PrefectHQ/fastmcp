@@ -8,9 +8,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:  # pragma: no cover
-    from mcp.server.auth.provider import AuthorizationParams
-    from mcp.shared.auth import OAuthClientInformationFull
+from key_value.aio.protocols import AsyncKeyValue
 from pydantic import SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -18,8 +16,11 @@ from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from fastmcp.server.auth.providers.jwt import JWTVerifier
 from fastmcp.utilities.auth import parse_scopes
 from fastmcp.utilities.logging import get_logger
-from fastmcp.utilities.storage import KVStorage
 from fastmcp.utilities.types import NotSet, NotSetT
+
+if TYPE_CHECKING:
+    from mcp.server.auth.provider import AuthorizationParams
+    from mcp.shared.auth import OAuthClientInformationFull
 
 logger = get_logger(__name__)
 
@@ -104,7 +105,7 @@ class AzureProvider(OAuthProxy):
         required_scopes: list[str] | None | NotSetT = NotSet,
         additional_authorize_scopes: list[str] | None | NotSetT = NotSet,
         allowed_client_redirect_uris: list[str] | NotSetT = NotSet,
-        client_storage: KVStorage | None = None,
+        client_storage: AsyncKeyValue | None = None,
     ) -> None:
         """Initialize Azure OAuth provider.
 
@@ -124,8 +125,7 @@ class AzureProvider(OAuthProxy):
                 permissions. These are not used for token validation.
             allowed_client_redirect_uris: List of allowed redirect URI patterns for MCP clients.
                 If None (default), all URIs are allowed. If empty list, no URIs are allowed.
-            client_storage: Storage implementation for OAuth client registrations.
-                Defaults to file-based storage if not specified.
+            client_storage: An AsyncKeyValue-compatible store for client registrations, registrations are stored in memory if not provided
         """
         settings = AzureProviderSettings.model_validate(
             {

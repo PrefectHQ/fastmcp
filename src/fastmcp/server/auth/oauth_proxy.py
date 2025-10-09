@@ -28,6 +28,9 @@ from urllib.parse import urlencode
 import httpx
 from authlib.common.security import generate_token
 from authlib.integrations.httpx_client import AsyncOAuth2Client
+from key_value.aio.adapters.pydantic import PydanticAdapter
+from key_value.aio.protocols import AsyncKeyValue
+from key_value.aio.stores.memory import MemoryStore
 from mcp.server.auth.handlers.token import TokenErrorResponse, TokenSuccessResponse
 from mcp.server.auth.handlers.token import TokenHandler as _SDKTokenHandler
 from mcp.server.auth.json_response import PydanticJSONResponse
@@ -45,16 +48,14 @@ from mcp.server.auth.settings import (
     RevocationOptions,
 )
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
-from pydantic import AnyHttpUrl, AnyUrl, SecretStr
+from pydantic import AnyHttpUrl, AnyUrl, Field, SecretStr
 from starlette.requests import Request
 from starlette.responses import RedirectResponse
 from starlette.routing import Route
 
-import fastmcp
 from fastmcp.server.auth.auth import OAuthProvider, TokenVerifier
 from fastmcp.server.auth.redirect_validation import validate_redirect_uri
 from fastmcp.utilities.logging import get_logger
-from fastmcp.utilities.storage import JSONFileStorage, KVStorage
 
 if TYPE_CHECKING:
     pass
@@ -88,21 +89,7 @@ class ProxyDCRClient(OAuthClientInformationFull):
     arise from accepting arbitrary redirect URIs.
     """
 
-    def __init__(
-        self,
-        *args: Any,
-        allowed_redirect_uri_patterns: list[str] | None = None,
-        **kwargs: Any,
-    ):
-        """Initialize with allowed redirect URI patterns.
-
-        Args:
-            allowed_redirect_uri_patterns: List of allowed redirect URI patterns with wildcard support.
-                                          If None, defaults to localhost-only patterns.
-                                          If empty list, allows all redirect URIs.
-        """
-        super().__init__(*args, **kwargs)
-        self._allowed_redirect_uri_patterns = allowed_redirect_uri_patterns
+    allowed_redirect_uri_patterns: list[str] | None = Field(default=None)
 
     def validate_redirect_uri(self, redirect_uri: AnyUrl | None) -> AnyUrl:
         """Validate redirect URI against allowed patterns.
@@ -114,7 +101,10 @@ class ProxyDCRClient(OAuthClientInformationFull):
         """
         if redirect_uri is not None:
             # Validate against allowed patterns
-            if validate_redirect_uri(redirect_uri, self._allowed_redirect_uri_patterns):
+            if validate_redirect_uri(
+                redirect_uri=redirect_uri,
+                allowed_patterns=self.allowed_redirect_uri_patterns,
+            ):
                 return redirect_uri
             # Fall back to normal validation if not in allowed patterns
             return super().validate_redirect_uri(redirect_uri)
@@ -258,7 +248,6 @@ class OAuthProxy(OAuthProvider):
     State Management
     ---------------
     The proxy maintains minimal but crucial state:
-    - _clients: DCR registrations (all use ProxyDCRClient for flexibility)
     - _oauth_transactions: Active authorization flows with client context
     - _client_codes: Authorization codes with PKCE challenges and upstream tokens
     - _access_tokens, _refresh_tokens: Token storage for revocation
@@ -314,7 +303,7 @@ class OAuthProxy(OAuthProvider):
         # Extra parameters to forward to token endpoint
         extra_token_params: dict[str, str] | None = None,
         # Client storage
-        client_storage: KVStorage | None = None,
+        client_storage: AsyncKeyValue | None = None,
     ):
         """Initialize the OAuth proxy provider.
 
@@ -348,9 +337,7 @@ class OAuthProxy(OAuthProvider):
                 Example: {"audience": "https://api.example.com"}
             extra_token_params: Additional parameters to forward to the upstream token endpoint.
                 Useful for provider-specific parameters during token exchange.
-            client_storage: Storage implementation for OAuth client registrations.
-                Defaults to file-based storage in ~/.fastmcp/oauth-proxy-clients/ if not specified.
-                Pass any KVStorage implementation for custom storage backends.
+            client_storage: An AsyncKeyValue-compatible store for client registrations, registrations are stored in memory if not provided
         """
         # Always enable DCR since we implement it locally for MCP clients
         client_registration_options = ClientRegistrationOptions(
@@ -399,11 +386,14 @@ class OAuthProxy(OAuthProvider):
         self._extra_authorize_params = extra_authorize_params or {}
         self._extra_token_params = extra_token_params or {}
 
-        # Initialize client storage (default to file-based if not provided)
-        if client_storage is None:
-            cache_dir = fastmcp.settings.home / "oauth-proxy-clients"
-            client_storage = JSONFileStorage(cache_dir)
-        self._client_storage = client_storage
+        self._client_storage: AsyncKeyValue = client_storage or MemoryStore()
+
+        self._client_store = PydanticAdapter[ProxyDCRClient](
+            key_value=self._client_storage,
+            pydantic_model=ProxyDCRClient,
+            default_collection="mcp-oauth-proxy-clients",
+            raise_on_validation_error=True,
+        )
 
         # Local state for token bookkeeping only (no client caching)
         self._access_tokens: dict[str, AccessToken] = {}
@@ -457,19 +447,13 @@ class OAuthProxy(OAuthProvider):
         For unregistered clients, returns None (which will raise an error in the SDK).
         """
         # Load from storage
-        data = await self._client_storage.get(client_id)
-        if not data:
+        if not (client := await self._client_store.get(key=client_id)):
             return None
 
-        if client_data := data.get("client", None):
-            return ProxyDCRClient(
-                allowed_redirect_uri_patterns=data.get(
-                    "allowed_redirect_uri_patterns", self._allowed_client_redirect_uris
-                ),
-                **client_data,
-            )
+        if client.allowed_redirect_uri_patterns is None:
+            client.allowed_redirect_uri_patterns = self._allowed_client_redirect_uris
 
-        return None
+        return client
 
     async def register_client(self, client_info: OAuthClientInformationFull) -> None:
         """Register a client locally
@@ -481,7 +465,7 @@ class OAuthProxy(OAuthProvider):
         """
 
         # Create a ProxyDCRClient with configured redirect URI validation
-        proxy_client = ProxyDCRClient(
+        proxy_client: ProxyDCRClient = ProxyDCRClient(
             client_id=client_info.client_id,
             client_secret=client_info.client_secret,
             redirect_uris=client_info.redirect_uris or [AnyUrl("http://localhost")],
@@ -492,12 +476,10 @@ class OAuthProxy(OAuthProvider):
             allowed_redirect_uri_patterns=self._allowed_client_redirect_uris,
         )
 
-        # Store as structured dict with all needed metadata
-        storage_data = {
-            "client": proxy_client.model_dump(mode="json"),
-            "allowed_redirect_uri_patterns": self._allowed_client_redirect_uris,
-        }
-        await self._client_storage.set(client_info.client_id, storage_data)
+        await self._client_store.put(
+            key=client_info.client_id,
+            value=proxy_client,
+        )
 
         # Log redirect URIs to help users discover what patterns they might need
         if client_info.redirect_uris:

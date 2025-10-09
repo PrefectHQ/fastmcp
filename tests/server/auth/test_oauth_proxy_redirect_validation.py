@@ -176,7 +176,7 @@ class TestOAuthProxyRedirectValidation:
             "new-client"
         )  # Use the client ID we registered
         assert isinstance(registered, ProxyDCRClient)
-        assert registered._allowed_redirect_uri_patterns == custom_patterns
+        assert registered.allowed_redirect_uri_patterns == custom_patterns
 
     @pytest.mark.asyncio
     async def test_proxy_unregistered_client_returns_none(self):
