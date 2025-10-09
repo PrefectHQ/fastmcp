@@ -15,6 +15,7 @@ from starlette.routing import Route
 
 from fastmcp.server.auth import RemoteAuthProvider, TokenVerifier
 from fastmcp.server.auth.providers.jwt import JWTVerifier
+from fastmcp.settings import ENV_FILE
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import NotSet, NotSetT
 
@@ -24,7 +25,7 @@ logger = get_logger(__name__)
 class ScalekitProviderSettings(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="FASTMCP_SERVER_AUTH_SCALEKITPROVIDER_",
-        env_file=".env",
+        env_file=ENV_FILE,
         extra="ignore",
     )
 

@@ -26,6 +26,7 @@ from pydantic import AnyHttpUrl, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from fastmcp.server.auth.oidc_proxy import OIDCProxy
+from fastmcp.settings import ENV_FILE
 from fastmcp.utilities.auth import parse_scopes
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import NotSet, NotSetT
@@ -38,7 +39,7 @@ class Auth0ProviderSettings(BaseSettings):
 
     model_config = SettingsConfigDict(
         env_prefix="FASTMCP_SERVER_AUTH_AUTH0_",
-        env_file=".env",
+        env_file=ENV_FILE,
         extra="ignore",
     )
 
