@@ -175,7 +175,7 @@ class TestOAuthProxyStorage:
 
         # Check raw storage data
         raw_data = await temp_storage.get(
-            collection="oauth-proxy-clients", key="structured-client"
+            collection="mcp-oauth-proxy-clients", key="structured-client"
         )
         assert raw_data is not None
         assert raw_data == snapshot(

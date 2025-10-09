@@ -391,7 +391,8 @@ class OAuthProxy(OAuthProvider):
         self._client_store = PydanticAdapter[ProxyDCRClient](
             key_value=self._client_storage,
             pydantic_model=ProxyDCRClient,
-            default_collection="oauth-proxy-clients",
+            default_collection="mcp-oauth-proxy-clients",
+            raise_on_validation_error=True,
         )
 
         # Local state for token bookkeeping only (no client caching)

@@ -20,6 +20,7 @@ from mcp.shared.auth import (
     OAuthToken,
 )
 from pydantic import AnyHttpUrl
+from typing_extensions import override
 from uvicorn.server import Server
 
 from fastmcp.client.oauth_callback import (
@@ -79,10 +80,16 @@ class TokenStorageAdapter(TokenStorage):
         self._server_url = server_url
         self._key_value_store = async_key_value
         self._storage_oauth_token = PydanticAdapter[OAuthToken](
-            key_value=async_key_value, pydantic_model=OAuthToken
+            default_collection="mcp-oauth-token",
+            key_value=async_key_value,
+            pydantic_model=OAuthToken,
+            raise_on_validation_error=True,
         )
         self._storage_client_info = PydanticAdapter[OAuthClientInformationFull](
-            key_value=async_key_value, pydantic_model=OAuthClientInformationFull
+            default_collection="mcp-oauth-client-info",
+            key_value=async_key_value,
+            pydantic_model=OAuthClientInformationFull,
+            raise_on_validation_error=True,
         )
 
     def _get_token_cache_key(self) -> str:
@@ -92,31 +99,28 @@ class TokenStorageAdapter(TokenStorage):
         return f"{self._server_url}/client_info"
 
     async def clear(self) -> None:
-        await self._storage_oauth_token.delete(
-            collection="oauth-mcp-client-cache", key=self._get_token_cache_key()
-        )
-        await self._storage_client_info.delete(
-            collection="oauth-mcp-client-cache", key=self._get_client_info_cache_key()
-        )
+        await self._storage_oauth_token.delete(key=self._get_token_cache_key())
+        await self._storage_client_info.delete(key=self._get_client_info_cache_key())
 
+    @override
     async def get_tokens(self) -> OAuthToken | None:
-        return await self._storage_oauth_token.get(
-            collection="oauth-mcp-client-cache", key=self._get_token_cache_key()
-        )
+        return await self._storage_oauth_token.get(key=self._get_token_cache_key())
 
+    @override
     async def set_tokens(self, tokens: OAuthToken) -> None:
         await self._storage_oauth_token.put(
-            collection="oauth-mcp-client-cache",
             key=self._get_token_cache_key(),
             value=tokens,
             ttl=tokens.expires_in,
         )
 
+    @override
     async def get_client_info(self) -> OAuthClientInformationFull | None:
         return await self._storage_client_info.get(
-            collection="oauth-mcp-client-cache", key=self._get_client_info_cache_key()
+            key=self._get_client_info_cache_key()
         )
 
+    @override
     async def set_client_info(self, client_info: OAuthClientInformationFull) -> None:
         ttl: int | None = None
 
@@ -124,7 +128,6 @@ class TokenStorageAdapter(TokenStorage):
             ttl = client_info.client_secret_expires_at - int(time.time())
 
         await self._storage_client_info.put(
-            collection="oauth-mcp-client-cache",
             key=self._get_client_info_cache_key(),
             value=client_info,
             ttl=ttl,

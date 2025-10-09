@@ -594,7 +594,7 @@ requires-dist = [
     { name = "openai", marker = "extra == 'openai'", specifier = ">=1.102.0" },
     { name = "openapi-core", specifier = ">=0.19.5" },
     { name = "openapi-pydantic", specifier = ">=0.5.1" },
-    { name = "py-key-value-aio", extras = ["disk", "memory"], specifier = ">=0.2.0" },
+    { name = "py-key-value-aio", extras = ["disk", "memory"], specifier = ">=0.2.1" },
     { name = "pydantic", extras = ["email"], specifier = ">=2.11.7" },
     { name = "pyperclip", specifier = ">=1.9.0" },
     { name = "python-dotenv", specifier = ">=1.1.0" },
@@ -1310,14 +1310,14 @@ wheels = [
 
 [[package]]
 name = "py-key-value-aio"
-version = "0.2.0"
+version = "0.2.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "py-key-value-shared" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/b1/96/b1c6b8ca95f411725449ccae5a0d4554ccc98c785026e722a5faba33625d/py_key_value_aio-0.2.0.tar.gz", hash = "sha256:d8276ff0cac0eec313c6961854087e476dbb76b97eff7310df30a7228a7939d8", size = 19328, upload-time = "2025-09-29T02:00:33.664Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/f9/bf/7237a1d41b4afc33a8c0f71c991d95a6bb6719cd5ccab8d1628b72fbe03c/py_key_value_aio-0.2.1.tar.gz", hash = "sha256:79c8c835451b61d4abd863c65d33870612f3a80dc312120b2d1445269764d625", size = 19440, upload-time = "2025-10-09T03:26:28.357Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/d9/17/c962abd354d6a302d415b7fdd68fa2149597c5f8e2b477f25bff2a9ec6d7/py_key_value_aio-0.2.0-py3-none-any.whl", hash = "sha256:775cf30d26fe958499757410b190eca4d338ce87613e27f2f537526b508fffb1", size = 41397, upload-time = "2025-09-29T02:00:32.701Z" },
+    { url = "https://files.pythonhosted.org/packages/04/82/41b5574270fbed7171d34a9b7c9b1b18fd86c31421e45dc935ba354eb42f/py_key_value_aio-0.2.1-py3-none-any.whl", hash = "sha256:5f0bc1bb3f886578a88ed2b61858658142db35c59dd3ccd9ec727184c540288a", size = 41564, upload-time = "2025-10-09T03:26:26.174Z" },
 ]
 
 [package.optional-dependencies]
