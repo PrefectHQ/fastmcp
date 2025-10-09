@@ -90,7 +90,7 @@ class TestGetFastMCPInfo:
         assert info.fastmcp_version == fastmcp.__version__
         assert info.mcp_version == importlib.metadata.version("mcp")
         assert info.server_generation == 2  # v2 server
-        assert info.version is None
+        assert info.version == fastmcp.__version__
         assert info.tools == []
         assert info.prompts == []
         assert info.resources == []
@@ -405,7 +405,7 @@ class TestFastMCP1xCompatibility:
         assert info1x.server_generation == 1  # v1
         assert info2x.server_generation == 2  # v2
         assert info1x.version is None
-        assert info2x.version is None
+        assert info2x.version == fastmcp.__version__
 
         # No templates added in these tests
         assert len(info1x.templates) == 0

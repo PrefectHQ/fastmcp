@@ -245,10 +245,28 @@ config = {
 # Create a unified proxy to multiple servers
 composite_proxy = FastMCP.as_proxy(config, name="Composite Proxy")
 
-# Tools and resources are accessible with prefixes:
-# - weather_get_forecast, calendar_add_event 
-# - weather://weather/icons/sunny, calendar://calendar/events/today
+# Tools, resources, prompts, and templates are accessible with prefixes:
+# - Tools: weather_get_forecast, calendar_add_event
+# - Prompts: weather_daily_summary, calendar_quick_add
+# - Resources: weather://weather/icons/sunny, calendar://calendar/events/today
+# - Templates: weather://weather/locations/{id}, calendar://calendar/events/{date}
 ```
+
+## Component Prefixing
+
+When proxying one or more servers, component names are prefixed the same way as with mounting and importing:
+
+- Tools: `{prefix}_{tool_name}`
+- Prompts: `{prefix}_{prompt_name}`
+- Resources: `protocol://{prefix}/path/to/resource` (default path format)
+- Resource templates: `protocol://{prefix}/...` and template names are also prefixed
+
+These rules apply uniformly whether you:
+- Mount a proxy on another server
+- Create a multi-server proxy from an `MCPConfig`
+- Use `FastMCP.as_proxy()` directly
+
+For resource URI prefix formats (path vs legacy protocol style) and configuration options, see Server Composition → Resource Prefix Formats.
 
 ## Mirrored Components
 
@@ -332,4 +350,3 @@ def custom_client_factory():
 
 proxy = FastMCPProxy(client_factory=custom_client_factory)
 ```
-
