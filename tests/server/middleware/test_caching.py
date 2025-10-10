@@ -8,8 +8,10 @@ from unittest.mock import AsyncMock, MagicMock
 import mcp.types
 import pytest
 from inline_snapshot import snapshot
+from key_value.aio.stores.disk import DiskStore
+from key_value.aio.stores.memory import MemoryStore
 from mcp.server.lowlevel.helper_types import ReadResourceContents
-from mcp.types import GetPromptResult, PromptMessage, TextContent, TextResourceContents
+from mcp.types import PromptMessage, TextContent, TextResourceContents
 from pydantic import AnyUrl, BaseModel
 
 from fastmcp import FastMCP
@@ -18,23 +20,9 @@ from fastmcp.client.transports import FastMCPTransport
 from fastmcp.prompts.prompt import FunctionPrompt, Prompt
 from fastmcp.resources.resource import Resource
 from fastmcp.server.middleware.caching import (
-    BaseCacheEntry,
-    CachablePrompt,
-    CachableResource,
-    CacheMethodStats,
-    CacheProtocol,
-    CacheStats,
     CallToolSettings,
-    DiskCache,
-    GetPromptCacheEntry,
-    InMemoryCache,
-    ListPromptsCacheEntry,
-    ListResourcesCacheEntry,
-    ListToolsCacheEntry,
     MethodSettings,
-    ReadResourceCacheEntry,
     ResponseCachingMiddleware,
-    ToolResultCacheEntry,
 )
 from fastmcp.server.middleware.middleware import CallNext, MiddlewareContext
 from fastmcp.tools.tool import Tool, ToolResult
@@ -147,11 +135,13 @@ class TrackingCalculator:
     add_calls: int
     multiply_calls: int
     crazy_calls: int
+    very_large_response_calls: int
 
     def __init__(self):
         self.add_calls = 0
         self.multiply_calls = 0
         self.crazy_calls = 0
+        self.very_large_response_calls = 0
 
     def add(self, a: int, b: int) -> int:
         self.add_calls += 1
@@ -160,6 +150,10 @@ class TrackingCalculator:
     def multiply(self, a: int, b: int) -> int:
         self.multiply_calls += 1
         return a * b
+
+    def very_large_response(self) -> str:
+        self.very_large_response_calls += 1
+        return "istenchars" * 100000  # 1,000,000 characters, 1mb
 
     def crazy(self, a: CrazyModel) -> CrazyModel:
         self.crazy_calls += 1
@@ -183,6 +177,11 @@ class TrackingCalculator:
             tool=Tool.from_function(fn=self.multiply, name=f"{prefix}multiply")
         )
         fastmcp.add_tool(tool=Tool.from_function(fn=self.crazy, name=f"{prefix}crazy"))
+        fastmcp.add_tool(
+            tool=Tool.from_function(
+                fn=self.very_large_response, name=f"{prefix}very_large_response"
+            )
+        )
 
     def add_prompts(self, fastmcp: FastMCP, prefix: str = ""):
         fastmcp.add_prompt(
@@ -251,365 +250,6 @@ def sample_tool_result() -> ToolResult:
     )
 
 
-class TestCacheEntry:
-    """Test CacheEntry class functionality."""
-
-    def test_init_and_expiration(self):
-        """Test cache entry initialization and expiration logic."""
-        entry: ToolResultCacheEntry[ToolResult] = ToolResultCacheEntry(
-            key="test_key",
-            value=ToolResult(
-                content=[{"type": "text", "text": "success"}],
-                structured_content={"result": "success"},
-            ),
-            ttl=3600,
-        )
-
-        assert entry.key == "test_key"
-        assert not entry.is_expired()
-
-        # Test expired entry
-        expired_entry: ToolResultCacheEntry[ToolResult] = ToolResultCacheEntry(
-            key="test_key",
-            value=ToolResult(
-                content=[{"type": "text", "text": "success"}],
-                structured_content={"result": "success"},
-            ),
-            ttl=-1,
-        )
-
-        assert expired_entry.is_expired()
-
-    def test_tool_result_cache_entry_validation(self):
-        """Test ToolResultCacheEntry class functionality."""
-        entry: ToolResultCacheEntry[ToolResult] = ToolResultCacheEntry(
-            key="test_key",
-            value=SAMPLE_TOOL_RESULT,
-            ttl=3600,
-        )
-
-        dumped_entry = entry.model_dump()
-        new_entry = ToolResultCacheEntry.model_validate(dumped_entry)
-
-        assert dump_mcp_types(model=new_entry.value.content) == snapshot(
-            [{"type": "text", "text": "test_text", "annotations": None, "meta": None}]
-        )
-        assert new_entry.value.structured_content == snapshot({"result": "test_result"})
-
-    def test_read_resource_cache_entry_validation(self):
-        """Test ReadResourceCacheEntry class functionality."""
-        entry: ReadResourceCacheEntry[list[ReadResourceContents]] = (
-            ReadResourceCacheEntry(
-                key="test_key",
-                value=[SAMPLE_READ_RESOURCE_CONTENTS],
-                ttl=3600,
-            )
-        )
-
-        dumped_entry = entry.model_dump()
-        new_entry = ReadResourceCacheEntry.model_validate(dumped_entry)
-
-        assert new_entry.value == snapshot(
-            [ReadResourceContents(content="test_text", mime_type="text/plain")]
-        )
-
-    def test_get_prompt_cache_entry_validation(self):
-        """Test GetPromptCacheEntry class functionality."""
-        entry: GetPromptCacheEntry = GetPromptCacheEntry(
-            key="test_key",
-            value=SAMPLE_GET_PROMPT_RESULT,
-            ttl=3600,
-        )
-
-        dumped_entry = entry.model_dump()
-        new_entry = GetPromptCacheEntry.model_validate(dumped_entry)
-
-        assert new_entry.value == snapshot(
-            GetPromptResult(
-                messages=[
-                    PromptMessage(
-                        role="user", content=TextContent(type="text", text="test_text")
-                    )
-                ]
-            )
-        )
-
-    def test_list_tools_cache_entry_validation(self):
-        """Test ListToolsCacheEntry class functionality."""
-        entry: ListToolsCacheEntry = ListToolsCacheEntry(
-            key="test_key",
-            value=[SAMPLE_TOOL],
-            ttl=3600,
-        )
-
-        dumped_entry = entry.model_dump()
-        new_entry = ListToolsCacheEntry.model_validate(dumped_entry)
-
-        assert new_entry.value == snapshot(
-            [Tool(name="test_tool", parameters={"param1": "value1", "param2": 42})]
-        )
-
-    def test_list_resources_cache_entry_validation(self):
-        """Test ListResourcesCacheEntry class functionality."""
-        entry: ListResourcesCacheEntry = ListResourcesCacheEntry(
-            key="test_key",
-            value=[SAMPLE_RESOURCE],
-            ttl=3600,
-        )
-
-        dumped_entry = entry.model_dump()
-        new_entry = ListResourcesCacheEntry.model_validate(dumped_entry)
-
-        assert new_entry.value == snapshot(
-            [CachableResource(name="test_resource", uri=AnyUrl("https://test_uri/"))]
-        )
-
-    def test_list_prompts_cache_entry_validation(self):
-        """Test ListPromptsCacheEntry class functionality."""
-        entry: ListPromptsCacheEntry = ListPromptsCacheEntry(
-            key="test_key",
-            value=[SAMPLE_PROMPT],
-            ttl=3600,
-        )
-
-        dumped_entry = entry.model_dump()
-        new_entry = ListPromptsCacheEntry.model_validate(dumped_entry)
-
-        assert new_entry.value == snapshot(
-            [CachablePrompt(name="test_prompt", arguments=[])]
-        )
-
-
-class TestMemoryCache:
-    """Test InMemoryCache implementation."""
-
-    async def test_size_limit(self, sample_tool_result):
-        """Test cache size limit enforcement."""
-        cache = InMemoryCache(max_entries=2)
-
-        # Fill cache to capacity
-        await cache.set_entry(
-            cache_entry=ToolResultCacheEntry(
-                key="key1", value=sample_tool_result, ttl=3600
-            )
-        )
-        await cache.set_entry(
-            cache_entry=ToolResultCacheEntry(
-                key="key2", value=sample_tool_result, ttl=3600
-            )
-        )
-
-        # Add one more - should evict the first
-        await cache.set_entry(
-            cache_entry=ToolResultCacheEntry(
-                key="key3", value=sample_tool_result, ttl=3600
-            )
-        )
-
-        assert len(cache._cache) == 2
-        assert "tools/call:key1" not in cache._cache
-        assert "tools/call:key2" in cache._cache
-        assert "tools/call:key3" in cache._cache
-
-
-class TestCacheImplementations:
-    """Test InMemoryCache implementation."""
-
-    @pytest.fixture(params=["memory", "disk"])
-    async def cache(self, request):
-        if request.param == "memory":
-            return InMemoryCache()
-        else:
-            with tempfile.TemporaryDirectory() as temp_dir:
-                return DiskCache(path=temp_dir)
-
-    async def test_get_none_if_not_set(self, cache: CacheProtocol):
-        """Test that we get None if a value is not set."""
-        assert await cache.get_entry(collection="tools/call", key="test_key") is None
-
-    async def test_list_tools(self, cache: CacheProtocol):
-        """Test that we can list tools from the cache."""
-        await cache.set_entry(
-            cache_entry=ListToolsCacheEntry(
-                key="test_key", value=[SAMPLE_TOOL], ttl=3600
-            )
-        )
-        result = await cache.get_entry(collection="tools/list", key="test_key")
-
-        assert result is not None
-        assert dump_mcp_types(model=result.value) == snapshot(
-            [
-                {
-                    "name": "test_tool",
-                    "title": None,
-                    "description": None,
-                    "tags": set(),
-                    "meta": None,
-                    "enabled": True,
-                    "parameters": {"param1": "value1", "param2": 42},
-                    "output_schema": None,
-                    "annotations": None,
-                    "serializer": None,
-                }
-            ]
-        )
-
-    async def test_tool_result(self, cache: CacheProtocol):
-        """Test that we can get a tool result from the cache."""
-        await cache.set_entry(
-            cache_entry=ToolResultCacheEntry(
-                key="test_key", value=SAMPLE_TOOL_RESULT, ttl=3600
-            )
-        )
-        result = await cache.get_entry(collection="tools/call", key="test_key")
-
-        assert result is not None
-        assert dump_mcp_types(model=result.value) == snapshot(
-            {
-                "content": [
-                    {
-                        "type": "text",
-                        "text": "test_text",
-                        "annotations": None,
-                        "meta": None,
-                    }
-                ],
-                "structured_content": {"result": "test_result"},
-            }
-        )
-
-    async def test_list_resources(self, cache: CacheProtocol):
-        """Test that we can list resources from the cache."""
-        await cache.set_entry(
-            cache_entry=ListResourcesCacheEntry(
-                key="test_key", value=[SAMPLE_RESOURCE], ttl=3600
-            )
-        )
-        result = await cache.get_entry(collection="resources/list", key="test_key")
-
-        assert result is not None
-        assert dump_mcp_types(model=result.value) == snapshot(
-            [
-                {
-                    "name": "test_resource",
-                    "title": None,
-                    "description": None,
-                    "tags": set(),
-                    "meta": None,
-                    "enabled": True,
-                    "uri": AnyUrl("https://test_uri/"),
-                    "mime_type": "text/plain",
-                    "annotations": None,
-                }
-            ]
-        )
-
-    async def test_read_resource(self, cache: CacheProtocol):
-        """Test that we can read a resource from the cache."""
-        await cache.set_entry(
-            cache_entry=ReadResourceCacheEntry(
-                key="test_key", value=[SAMPLE_READ_RESOURCE_CONTENTS], ttl=3600
-            )
-        )
-        result = await cache.get_entry(collection="resources/read", key="test_key")
-
-        assert result is not None
-        assert dump_mcp_types(model=result.value) == snapshot(
-            [{"content": "test_text", "mime_type": "text/plain"}]
-        )
-
-    async def test_list_prompts(self, cache: CacheProtocol):
-        """Test that we can list prompts from the cache."""
-        await cache.set_entry(
-            cache_entry=ListPromptsCacheEntry(
-                key="test_key", value=[SAMPLE_PROMPT], ttl=3600
-            )
-        )
-        result = await cache.get_entry(collection="prompts/list", key="test_key")
-
-        assert result is not None
-        assert dump_mcp_types(model=result.value) == snapshot(
-            [
-                {
-                    "name": "test_prompt",
-                    "title": None,
-                    "description": None,
-                    "tags": set(),
-                    "meta": None,
-                    "enabled": True,
-                    "arguments": [],
-                }
-            ]
-        )
-
-    async def test_get_prompt(self, cache: CacheProtocol):
-        """Test that we can get a prompt from the cache."""
-        entry = GetPromptCacheEntry(
-            key="test_key", value=SAMPLE_GET_PROMPT_RESULT, ttl=3600
-        )
-        await cache.set_entry(cache_entry=entry)
-        result = await cache.get_entry(collection=entry.collection, key="test_key")
-
-        assert result is not None
-        assert dump_mcp_types(model=result.value) == snapshot(
-            {
-                "meta": None,
-                "description": None,
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": {
-                            "type": "text",
-                            "text": "test_text",
-                            "annotations": None,
-                            "meta": None,
-                        },
-                    }
-                ],
-            }
-        )
-
-    async def test_set_get_delete_get_value(self, cache: CacheProtocol):
-        """Test that we can set, get, delete, and get a value from the cache."""
-        await cache.set_entry(
-            cache_entry=ToolResultCacheEntry(
-                key="test_key",
-                value=SAMPLE_TOOL_RESULT,
-                ttl=3600,
-            )
-        )
-        result: BaseCacheEntry | None = await cache.get_entry(
-            collection="tools/call", key="test_key"
-        )
-
-        assert result is not None
-        assert dump_mcp_types(model=result.value) == dump_mcp_types(
-            model=SAMPLE_TOOL_RESULT
-        )
-
-        await cache.delete(collection="tools/call", key="test_key")
-
-        assert await cache.get_entry(collection="tools/call", key="test_key") is None
-
-    async def test_expiration_and_cleanup(self, cache: CacheProtocol):
-        """Test cache expiration and cleanup."""
-        # Create an expired entry
-        await cache.set_entry(
-            cache_entry=ToolResultCacheEntry(
-                key="expired_key",
-                value=SAMPLE_TOOL_RESULT,
-                ttl=-1,
-            )
-        )
-
-        # Should return None and remove expired entry
-        result = await cache.get_entry(collection="tools/call", key="expired_key")
-
-        assert result is None
-
-        assert await cache.get_entry(collection="tools/call", key="expired_key") is None
-
-
 class TestResponseCachingMiddleware:
     """Test ResponseCachingMiddleware functionality."""
 
@@ -676,21 +316,42 @@ class TestResponseCachingMiddleware:
             is result
         )
 
-    async def test_large_value(self):
-        """Test that we can set and get a large value."""
-        cache = InMemoryCache()
-        middleware = ResponseCachingMiddleware(cache, max_item_size=100)
-
-        await middleware._store_in_cache_and_return(
-            context=MiddlewareContext(
-                method="tools/call",
-                message=mcp.types.CallToolRequestParams(name="test_tool"),
-            ),
-            key="test_key",
-            value=SAMPLE_TOOL_RESULT_LARGE,
+    def test_method_settings(self):
+        """Test method TTL."""
+        middleware = ResponseCachingMiddleware(
+            method_settings={
+                "list_tools": {"ttl": 100},
+                "call_tool": {"enabled": False},
+            },
+            default_ttl=1000,
         )
 
-        assert middleware._stats.get_too_big("tools/call") == 1
+        tool_list_settings = middleware._get_cache_settings(
+            context=MiddlewareContext(method="tools/list", message=MagicMock())
+        )
+        assert tool_list_settings == {"ttl": 100}
+
+        call_tool_settings = middleware._get_cache_settings(
+            context=MiddlewareContext(method="tools/call", message=MagicMock())
+        )
+        assert call_tool_settings == {"enabled": False}
+
+        other_methods = [
+            "resources/list",
+            "prompts/list",
+            "resources/read",
+            "prompts/get",
+        ]
+        for method in other_methods:
+            cache_settings = middleware._get_cache_settings(
+                context=MiddlewareContext(method=method, message=MagicMock())
+            )
+            assert cache_settings is None
+
+            should_bypass = middleware._should_bypass_caching(
+                context=MiddlewareContext(method=method, message=MagicMock())
+            )
+            assert should_bypass
 
     def test_cache_key_generation(self):
         """Test cache key generation."""
@@ -734,50 +395,11 @@ class TestResponseCachingMiddleware:
             "6306ff84fd3ff247a4bd91271e9d727d7f051bba53fb2e3bf80958988c4baf57"
         )
 
-    async def test_cache_miss_and_hit(
-        self,
-    ):
-        """Test cache miss and hit scenarios."""
-        middleware = ResponseCachingMiddleware()
-
-        mock_call_next = AsyncMock(
-            return_value=ToolResult(
-                content=[{"type": "text", "text": "test result"}],
-                structured_content={"result": "success", "value": 123},
-            )
-        )
-
-        mock_context = MagicMock(
-            spec=MiddlewareContext[mcp.types.CallToolRequestParams]
-        )
-        mock_context.message = mcp.types.CallToolRequestParams(
-            name="test_tool", arguments={"param1": "value1", "param2": 42}
-        )
-        mock_context.method = "tools/call"
-
-        # First call - cache miss
-        result1 = await middleware.on_call_tool(
-            context=mock_context, call_next=mock_call_next
-        )
-        assert middleware._stats.get_misses("tools/call") == 1
-        assert middleware._stats.get_hits("tools/call") == 0
-
-        # Second call - cache hit
-        mock_call_next.reset_mock()
-        result2 = await middleware.on_call_tool(
-            context=mock_context, call_next=mock_call_next
-        )
-
-        assert result1.content == result2.content
-        assert not mock_call_next.called  # Should not call downstream
-        assert middleware._stats.get_hits("tools/call") == 1
-        assert middleware._stats.get_misses("tools/call") == 1
-
 
 class TestResponseCachingMiddlewareIntegration:
     """Integration tests with real FastMCP server."""
 
-    @pytest.fixture(params=["memory", "disk", "elasticsearch"])
+    @pytest.fixture(params=["memory", "disk"])
     async def caching_server(
         self,
         tracking_calculator: TrackingCalculator,
@@ -787,10 +409,10 @@ class TestResponseCachingMiddlewareIntegration:
         mcp = FastMCP("CachingTestServer")
 
         with tempfile.TemporaryDirectory() as temp_dir:
+            disk_store = DiskStore(directory=temp_dir)
             response_caching_middleware = ResponseCachingMiddleware(
-                cache_backend=DiskCache(path=temp_dir)
-                if request.param == "disk"
-                else InMemoryCache()
+                cache_store=disk_store if request.param == "disk" else MemoryStore(),
+                max_item_size=100000,  # 100kb
             )
 
             mcp.add_middleware(middleware=response_caching_middleware)
@@ -800,6 +422,8 @@ class TestResponseCachingMiddlewareIntegration:
             tracking_calculator.add_prompts(fastmcp=mcp)
 
             yield mcp
+
+            await disk_store.close()
 
     @pytest.fixture
     def non_caching_server(self, tracking_calculator: TrackingCalculator):
@@ -815,7 +439,7 @@ class TestResponseCachingMiddlewareIntegration:
 
         async with Client(caching_server) as client:
             pre_tool_list: list[mcp.types.Tool] = await client.list_tools()
-            assert len(pre_tool_list) == 3
+            assert len(pre_tool_list) == 4
 
             # Add a tool and make sure it's missing from the list tool response
             caching_server.add_tool(
@@ -823,7 +447,7 @@ class TestResponseCachingMiddlewareIntegration:
             )
 
             post_tool_list: list[mcp.types.Tool] = await client.list_tools()
-            assert len(post_tool_list) == 3
+            assert len(post_tool_list) == 4
 
             assert pre_tool_list == post_tool_list
 
@@ -845,6 +469,26 @@ class TestResponseCachingMiddlewareIntegration:
                 "add", {"a": 5, "b": 3}
             )
             assert call_tool_result_one == call_tool_result_two
+
+    async def test_call_tool_very_large_value(
+        self,
+        caching_server: FastMCP,
+        tracking_calculator: TrackingCalculator,
+    ):
+        """Test that caching works with a real FastMCP server."""
+        tracking_calculator.add_tools(fastmcp=caching_server)
+
+        async with Client[FastMCPTransport](caching_server) as client:
+            call_tool_result_one: CallToolResult = await client.call_tool(
+                "very_large_response", {}
+            )
+
+            assert tracking_calculator.very_large_response_calls == 1
+            call_tool_result_two: CallToolResult = await client.call_tool(
+                "very_large_response", {}
+            )
+            assert call_tool_result_one == call_tool_result_two
+            assert tracking_calculator.very_large_response_calls == 2
 
     async def test_list_resources(
         self, caching_server: FastMCP, tracking_calculator: TrackingCalculator
@@ -918,21 +562,3 @@ class TestResponseCachingMiddlewareIntegration:
             )
 
             assert pre_prompt == post_prompt
-
-
-class TestCacheStats:
-    """Test CacheStats functionality."""
-
-    def test_stats_initialization(self):
-        """Test cache stats initialization."""
-        stats = CacheStats(
-            collections={
-                "tools/call": CacheMethodStats(hits=5, misses=10),
-                "tools/list": CacheMethodStats(hits=0, misses=0),
-            }
-        )
-
-        assert stats.get_hits("tools/call") == 5
-        assert stats.get_misses("tools/call") == 10
-        assert stats.get_hits("tools/list") == 0
-        assert stats.get_misses("tools/list") == 0

@@ -762,7 +762,7 @@ requires-dist = [
     { name = "rich", specifier = ">=13.9.4" },
     { name = "websockets", specifier = ">=15.0.1" },
 ]
-provides-extras = ["openai"]
+provides-extras = ["caching", "contrib-middleware-elasticsearch-cache", "openai"]
 
 [package.metadata.requires-dev]
 dev = [
