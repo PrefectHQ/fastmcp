@@ -191,6 +191,14 @@ class OAuth(OAuthClientProvider):
         # Create server-specific token storage
         token_storage = token_storage or MemoryStore()
 
+        if isinstance(token_storage, MemoryStore):
+            from warnings import warn
+
+            warn(
+                message="Using in-memory token storage is not recommended for production use -- "
+                + "tokens will be lost on server restart."
+            )
+
         self.token_storage_adapter: TokenStorageAdapter = TokenStorageAdapter(
             async_key_value=token_storage, server_url=server_base_url
         )

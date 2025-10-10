@@ -388,6 +388,14 @@ class OAuthProxy(OAuthProvider):
 
         self._client_storage: AsyncKeyValue = client_storage or MemoryStore()
 
+        if isinstance(self._client_storage, MemoryStore):
+            from warnings import warn
+
+            warn(
+                message="Using in-memory client storage is not recommended for production use -- "
+                + "clients will be lost on server restart which may require manual clean-up of oauth information on the client."
+            )
+
         self._client_store = PydanticAdapter[ProxyDCRClient](
             key_value=self._client_storage,
             pydantic_model=ProxyDCRClient,
