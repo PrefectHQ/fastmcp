@@ -21,10 +21,12 @@ Example:
     ```
 """
 
+from key_value.aio.protocols import AsyncKeyValue
 from pydantic import AnyHttpUrl, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from fastmcp.server.auth.oidc_proxy import OIDCProxy
+from fastmcp.settings import ENV_FILE
 from fastmcp.utilities.auth import parse_scopes
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import NotSet, NotSetT
@@ -37,7 +39,7 @@ class Auth0ProviderSettings(BaseSettings):
 
     model_config = SettingsConfigDict(
         env_prefix="FASTMCP_SERVER_AUTH_AUTH0_",
-        env_file=".env",
+        env_file=ENV_FILE,
         extra="ignore",
     )
 
@@ -91,6 +93,7 @@ class Auth0Provider(OIDCProxy):
         required_scopes: list[str] | NotSetT = NotSet,
         redirect_path: str | NotSetT = NotSet,
         allowed_client_redirect_uris: list[str] | NotSetT = NotSet,
+        client_storage: AsyncKeyValue | None = None,
     ) -> None:
         """Initialize Auth0 OAuth provider.
 
@@ -104,6 +107,7 @@ class Auth0Provider(OIDCProxy):
             redirect_path: Redirect path configured in Auth0 application
             allowed_client_redirect_uris: List of allowed redirect URI patterns for MCP clients.
                 If None (default), all URIs are allowed. If empty list, no URIs are allowed.
+            client_storage: An AsyncKeyValue-compatible store for client registrations, registrations are stored in memory if not provided
         """
         settings = Auth0ProviderSettings.model_validate(
             {
@@ -155,12 +159,11 @@ class Auth0Provider(OIDCProxy):
             "client_secret": settings.client_secret.get_secret_value(),
             "audience": settings.audience,
             "base_url": settings.base_url,
+            "redirect_path": settings.redirect_path,
             "required_scopes": auth0_required_scopes,
             "allowed_client_redirect_uris": settings.allowed_client_redirect_uris,
+            "client_storage": client_storage,
         }
-
-        if settings.redirect_path:
-            init_kwargs["redirect_path"] = settings.redirect_path
 
         super().__init__(**init_kwargs)
 

@@ -12,6 +12,7 @@ This implementation is based on:
 from collections.abc import Sequence
 
 import httpx
+from key_value.aio.protocols import AsyncKeyValue
 from pydantic import AnyHttpUrl, BaseModel, model_validator
 from typing_extensions import Self
 
@@ -34,15 +35,15 @@ class OIDCConfiguration(BaseModel):
     strict: bool = True
 
     # OpenID Connect Discovery 1.0
-    issuer: AnyHttpUrl | None = None  # Strict
+    issuer: AnyHttpUrl | str | None = None  # Strict
 
-    authorization_endpoint: AnyHttpUrl | None = None  # Strict
-    token_endpoint: AnyHttpUrl | None = None  # Strict
-    userinfo_endpoint: AnyHttpUrl | None = None
+    authorization_endpoint: AnyHttpUrl | str | None = None  # Strict
+    token_endpoint: AnyHttpUrl | str | None = None  # Strict
+    userinfo_endpoint: AnyHttpUrl | str | None = None
 
-    jwks_uri: AnyHttpUrl | None = None  # Strict
+    jwks_uri: AnyHttpUrl | str | None = None  # Strict
 
-    registration_endpoint: AnyHttpUrl | None = None
+    registration_endpoint: AnyHttpUrl | str | None = None
 
     scopes_supported: Sequence[str] | None = None
 
@@ -75,7 +76,7 @@ class OIDCConfiguration(BaseModel):
     claim_types_supported: Sequence[str] | None = None
     claims_supported: Sequence[str] | None = None
 
-    service_documentation: AnyHttpUrl | None = None
+    service_documentation: AnyHttpUrl | str | None = None
 
     claims_locales_supported: Sequence[str] | None = None
     ui_locales_supported: Sequence[str] | None = None
@@ -86,15 +87,15 @@ class OIDCConfiguration(BaseModel):
 
     require_request_uri_registration: bool | None = None
 
-    op_policy_uri: AnyHttpUrl | None = None
-    op_tos_uri: AnyHttpUrl | None = None
+    op_policy_uri: AnyHttpUrl | str | None = None
+    op_tos_uri: AnyHttpUrl | str | None = None
 
     # OAuth 2.0 Authorization Server Metadata
-    revocation_endpoint: AnyHttpUrl | None = None
+    revocation_endpoint: AnyHttpUrl | str | None = None
     revocation_endpoint_auth_methods_supported: Sequence[str] | None = None
     revocation_endpoint_auth_signing_alg_values_supported: Sequence[str] | None = None
 
-    introspection_endpoint: AnyHttpUrl | None = None
+    introspection_endpoint: AnyHttpUrl | str | None = None
     introspection_endpoint_auth_methods_supported: Sequence[str] | None = None
     introspection_endpoint_auth_signing_alg_values_supported: Sequence[str] | None = (
         None
@@ -110,16 +111,27 @@ class OIDCConfiguration(BaseModel):
         if not self.strict:
             return self
 
-        def enforce(attr: str) -> None:
-            if not getattr(self, attr, None):
+        def enforce(attr: str, is_url: bool = False) -> None:
+            value = getattr(self, attr, None)
+            if not value:
                 message = f"Missing required configuration metadata: {attr}"
                 logger.error(message)
                 raise ValueError(message)
 
-        enforce("issuer")
-        enforce("authorization_endpoint")
-        enforce("token_endpoint")
-        enforce("jwks_uri")
+            if not is_url or isinstance(value, AnyHttpUrl):
+                return
+
+            try:
+                AnyHttpUrl(value)
+            except Exception:
+                message = f"Invalid URL for configuration metadata: {attr}"
+                logger.error(message)
+                raise ValueError(message)
+
+        enforce("issuer", True)
+        enforce("authorization_endpoint", True)
+        enforce("token_endpoint", True)
+        enforce("jwks_uri", True)
         enforce("response_types_supported")
         enforce("subject_types_supported")
         enforce("id_token_signing_alg_values_supported")
@@ -201,6 +213,7 @@ class OIDCProxy(OAuthProxy):
         redirect_path: str | None = None,
         # Client configuration
         allowed_client_redirect_uris: list[str] | None = None,
+        client_storage: AsyncKeyValue | None = None,
         # Token validation configuration
         token_endpoint_auth_method: str | None = None,
     ) -> None:
@@ -223,6 +236,7 @@ class OIDCProxy(OAuthProxy):
                 If None (default), only localhost redirect URIs are allowed.
                 If empty list, all redirect URIs are allowed (not recommended for production).
                 These are for MCP clients performing loopback redirects, NOT for the upstream OAuth app.
+            client_storage: An AsyncKeyValue-compatible store for client registrations, registrations are stored in memory if not provided
             token_endpoint_auth_method: Token endpoint authentication method for upstream server.
                 Common values: "client_secret_basic", "client_secret_post", "none".
                 If None, authlib will use its default (typically "client_secret_basic").
@@ -277,6 +291,7 @@ class OIDCProxy(OAuthProxy):
             "base_url": base_url,
             "service_documentation_url": self.oidc_config.service_documentation,
             "allowed_client_redirect_uris": allowed_client_redirect_uris,
+            "client_storage": client_storage,
             "token_endpoint_auth_method": token_endpoint_auth_method,
         }
 

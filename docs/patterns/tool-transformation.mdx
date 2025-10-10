@@ -548,7 +548,7 @@ Provide your own schema that differs from the parent. The tool must return data 
 
 **Remove Output Schema**
 ```python
-Tool.from_tool(parent_tool, output_schema=False)
+Tool.from_tool(parent_tool, output_schema=None)
 ```
 Removes the output schema declaration. Automatic structured content still works for object-like returns (dict, dataclass, Pydantic models) but primitive types won't be structured.
 
@@ -566,8 +566,139 @@ Use a transform function returning `ToolResult` for complete control over both c
 
 Tool transformation is a flexible feature that supports many powerful patterns. Here are a few common use cases to give you ideas.
 
+### Exposing Client Methods as Tools
+
+A powerful use case for tool transformation is exposing methods from existing Python clients (GitHub clients, API clients, database clients, etc.) directly as MCP tools. This pattern eliminates boilerplate wrapper functions and treats tools as annotations around client methods.
+
+**Without Tool Transformation**, you typically create wrapper functions that duplicate annotations:
+
+```python
+async def get_repository(
+    owner: Annotated[str, "The owner of the repository."],
+    repo: Annotated[str, "The name of the repository."],
+) -> Repository:
+    """Get basic information about a GitHub repository."""
+    return await github_client.get_repository(owner=owner, repo=repo)
+```
+
+**With Tool Transformation**, you can wrap the client method directly:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.tools import Tool
+from fastmcp.tools.tool_transform import ArgTransform
+
+mcp = FastMCP("GitHub Tools")
+
+# Wrap a client method directly as a tool
+get_repo_tool = Tool.from_tool(
+    tool=Tool.from_function(fn=github_client.get_repository),
+    description="Get basic information about a GitHub repository.",
+    transform_args={
+        "owner": ArgTransform(description="The owner of the repository."),
+        "repo": ArgTransform(description="The name of the repository."),
+    }
+)
+
+mcp.add_tool(get_repo_tool)
+```
+
+This pattern keeps the implementation in your client and treats the tool as an annotation layer, avoiding duplicate code.
+
+#### Hiding Client-Specific Arguments
+
+Client methods often have internal parameters (debug flags, auth tokens, rate limit settings) that shouldn't be exposed to LLMs. Use `hide=True` with a default value to handle these automatically:
+
+```python
+get_issues_tool = Tool.from_tool(
+    tool=Tool.from_function(fn=github_client.get_issues),
+    description="Get issues from a GitHub repository.",
+    transform_args={
+        "owner": ArgTransform(description="The owner of the repository."),
+        "repo": ArgTransform(description="The name of the repository."),
+        "limit": ArgTransform(description="Maximum number of issues to return."),
+        # Hide internal parameters
+        "include_debug_info": ArgTransform(hide=True, default=False),
+        "error_on_not_found": ArgTransform(hide=True, default=True),
+    }
+)
+
+mcp.add_tool(get_issues_tool)
+```
+
+The LLM only sees `owner`, `repo`, and `limit`. Internal parameters are supplied automatically.
+
+#### Reusable Argument Patterns
+
+When wrapping multiple client methods, you can define reusable argument transformations. This scales well for larger tool sets and keeps annotations consistent:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.tools import Tool
+from fastmcp.tools.tool_transform import ArgTransform
+
+mcp = FastMCP("GitHub Tools")
+
+# Define reusable argument patterns
+OWNER_ARG = ArgTransform(description="The repository owner.")
+REPO_ARG = ArgTransform(description="The repository name.")
+LIMIT_ARG = ArgTransform(description="Maximum number of items to return.")
+HIDE_ERROR = ArgTransform(hide=True, default=True)
+
+def create_github_tools(client):
+    """Create tools from GitHub client methods with shared argument patterns."""
+
+    owner_repo_args = {
+        "owner": OWNER_ARG,
+        "repo": REPO_ARG,
+    }
+
+    error_args = {
+        "error_on_not_found": HIDE_ERROR,
+    }
+
+    return [
+        Tool.from_tool(
+            tool=Tool.from_function(fn=client.get_repository),
+            description="Get basic information about a GitHub repository.",
+            transform_args={**owner_repo_args, **error_args}
+        ),
+        Tool.from_tool(
+            tool=Tool.from_function(fn=client.get_issue),
+            description="Get a specific issue from a repository.",
+            transform_args={
+                **owner_repo_args,
+                "issue_number": ArgTransform(description="The issue number."),
+                "limit_comments": LIMIT_ARG,
+                **error_args,
+            }
+        ),
+        Tool.from_tool(
+            tool=Tool.from_function(fn=client.get_pull_request),
+            description="Get a specific pull request from a repository.",
+            transform_args={
+                **owner_repo_args,
+                "pull_request_number": ArgTransform(description="The PR number."),
+                "limit_comments": LIMIT_ARG,
+                **error_args,
+            }
+        ),
+    ]
+
+# Add all tools to the server
+for tool in create_github_tools(github_client):
+    mcp.add_tool(tool)
+```
+
+This pattern provides several benefits:
+
+- **No duplicate implementation**: Logic stays in the client
+- **Consistent annotations**: Reusable argument patterns ensure consistency
+- **Easy maintenance**: Update the client, not wrapper functions
+- **Scalable**: Easily add new tools by wrapping additional client methods
+
 ### Adapting Remote or Generated Tools
-This is one of the most common reasons to use tool transformation. Tools from remote servers (via a [proxy](/servers/proxy)) or generated from an [OpenAPI spec](/integrations/openapi) are often too generic for direct use by an LLM. You can use transformation to create a simpler, more intuitive version for your specific needs.
+This is one of the most common reasons to use tool transformation. Tools from remote MCP servers (via a [proxy](/servers/proxy)) or generated from an [OpenAPI spec](/integrations/openapi) are often too generic for direct use by an LLM. You can use transformation to create a simpler, more intuitive version for your specific needs.
 
 ### Chaining Transformations
 You can chain transformations by using an already transformed tool as the parent for a new transformation. This lets you build up complex behaviors in layers, for example, first renaming arguments, and then adding validation logic to the renamed tool.

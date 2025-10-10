@@ -99,6 +99,8 @@ class Middleware:
         handler = call_next
 
         match context.method:
+            case "initialize":
+                handler = partial(self.on_initialize, call_next=handler)
             case "tools/call":
                 handler = partial(self.on_call_tool, call_next=handler)
             case "resources/read":
@@ -143,6 +145,13 @@ class Middleware:
         context: MiddlewareContext[mt.Notification],
         call_next: CallNext[mt.Notification, Any],
     ) -> Any:
+        return await call_next(context)
+
+    async def on_initialize(
+        self,
+        context: MiddlewareContext[mt.InitializeRequestParams],
+        call_next: CallNext[mt.InitializeRequestParams, None],
+    ) -> None:
         return await call_next(context)
 
     async def on_call_tool(

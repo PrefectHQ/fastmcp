@@ -74,7 +74,7 @@ def tools(mcp: FastMCP, test_dir: Path) -> FastMCP:
 
 
 async def test_list_resources(mcp: FastMCP):
-    resources = await mcp._mcp_list_resources()
+    resources = await mcp._list_resources_mcp()
     assert len(resources) == 4
 
     assert [str(r.uri) for r in resources] == [
@@ -86,7 +86,7 @@ async def test_list_resources(mcp: FastMCP):
 
 
 async def test_read_resource_dir(mcp: FastMCP):
-    res_iter = await mcp._mcp_read_resource("dir://test_dir")
+    res_iter = await mcp._read_resource_mcp("dir://test_dir")
     res_list = list(res_iter)
     assert len(res_list) == 1
     res = res_list[0]
@@ -102,7 +102,7 @@ async def test_read_resource_dir(mcp: FastMCP):
 
 
 async def test_read_resource_file(mcp: FastMCP):
-    res_iter = await mcp._mcp_read_resource("file://test_dir/example.py")
+    res_iter = await mcp._read_resource_mcp("file://test_dir/example.py")
     res_list = list(res_iter)
     assert len(res_list) == 1
     res = res_list[0]
@@ -110,17 +110,17 @@ async def test_read_resource_file(mcp: FastMCP):
 
 
 async def test_delete_file(mcp: FastMCP, test_dir: Path):
-    await mcp._mcp_call_tool(
+    await mcp._call_tool_mcp(
         "delete_file", arguments=dict(path=str(test_dir / "example.py"))
     )
     assert not (test_dir / "example.py").exists()
 
 
 async def test_delete_file_and_check_resources(mcp: FastMCP, test_dir: Path):
-    await mcp._mcp_call_tool(
+    await mcp._call_tool_mcp(
         "delete_file", arguments=dict(path=str(test_dir / "example.py"))
     )
-    res_iter = await mcp._mcp_read_resource("file://test_dir/example.py")
+    res_iter = await mcp._read_resource_mcp("file://test_dir/example.py")
     res_list = list(res_iter)
     assert len(res_list) == 1
     res = res_list[0]

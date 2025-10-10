@@ -105,6 +105,28 @@ class TestRemoteAuthProvider:
             "https://api.example.com/.well-known/oauth-protected-resource"
         )
 
+    def test_get_resource_url_with_nested_base_url(self):
+        """Test _get_resource_url returns correct URL for .well-known path with nested base_url."""
+        tokens = {
+            "test_token": {
+                "client_id": "test-client",
+                "scopes": ["read"],
+            }
+        }
+        token_verifier = StaticTokenVerifier(tokens=tokens)
+        provider = RemoteAuthProvider(
+            token_verifier=token_verifier,
+            authorization_servers=[AnyHttpUrl("https://auth.example.com")],
+            base_url="https://api.example.com/v1/",
+        )
+
+        metadata_url = provider._get_resource_url(
+            "/.well-known/oauth-protected-resource"
+        )
+        assert metadata_url == AnyHttpUrl(
+            "https://api.example.com/v1/.well-known/oauth-protected-resource"
+        )
+
     def test_get_resource_url_handles_trailing_slash(self):
         """Test _get_resource_url handles trailing slash correctly."""
         tokens = {
@@ -216,6 +238,7 @@ class TestRemoteAuthProviderIntegration:
         [
             ("https://api.example.com", "https://api.example.com/mcp"),
             ("https://api.example.com/", "https://api.example.com/mcp"),
+            ("https://api.example.com/v1/", "https://api.example.com/v1/mcp"),
         ],
     )
     async def test_base_url_configurations(self, base_url: str, expected_resource: str):

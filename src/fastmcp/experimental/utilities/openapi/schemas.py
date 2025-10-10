@@ -79,6 +79,7 @@ def _replace_ref_with_defs(
 
     Examples:
     - {"type": "object", "properties": {"$ref": "#/components/schemas/..."}}
+    - {"type": "object", "additionalProperties": {"$ref": "#/components/schemas/..."}, "properties": {...}}
     - {"$ref": "#/components/schemas/..."}
     - {"items": {"$ref": "#/components/schemas/..."}}
     - {"anyOf": [{"$ref": "#/components/schemas/..."}]}
@@ -117,6 +118,11 @@ def _replace_ref_with_defs(
     for section in ["anyOf", "allOf", "oneOf"]:
         for i, item in enumerate(schema.get(section, [])):
             schema[section][i] = _replace_ref_with_defs(item)
+    if additionalProperties := schema.get("additionalProperties"):
+        if not isinstance(additionalProperties, bool):
+            schema["additionalProperties"] = _replace_ref_with_defs(
+                additionalProperties
+            )
     if info.get("description", description) and not schema.get("description"):
         schema["description"] = description
     return schema
@@ -297,9 +303,11 @@ def _combine_schemas_and_map_params(
 
             # Convert refs if needed
             if convert_refs:
-                param_schema = _replace_ref_with_defs(param.schema_)
+                param_schema = _replace_ref_with_defs(param.schema_, param.description)
             else:
-                param_schema = param.schema_
+                param_schema = param.schema_.copy()
+                if param.description and not param_schema.get("description"):
+                    param_schema["description"] = param.description
             original_desc = param_schema.get("description", "")
             location_desc = f"({param.location.capitalize()} parameter)"
             if original_desc:
@@ -324,9 +332,11 @@ def _combine_schemas_and_map_params(
 
             # Convert refs if needed
             if convert_refs:
-                param_schema = _replace_ref_with_defs(param.schema_)
+                param_schema = _replace_ref_with_defs(param.schema_, param.description)
             else:
-                param_schema = param.schema_
+                param_schema = param.schema_.copy()
+                if param.description and not param_schema.get("description"):
+                    param_schema["description"] = param.description
 
             # Don't make optional parameters nullable - they can simply be omitted
             # The OpenAPI specification doesn't require optional parameters to accept null values
@@ -344,7 +354,7 @@ def _combine_schemas_and_map_params(
             if route.request_body.required:
                 required.append("body")
             parameter_map["body"] = {"location": "body", "openapi_name": "body"}
-        else:
+        elif body_props:
             # Normal case: body has properties
             for prop_name, prop_schema in body_props.items():
                 properties[prop_name] = prop_schema
@@ -357,6 +367,22 @@ def _combine_schemas_and_map_params(
 
             if route.request_body.required:
                 required.extend(body_schema.get("required", []))
+        else:
+            # Handle direct array/primitive schemas (like list[str] parameters from FastAPI)
+            # Use the schema title as parameter name, fall back to generic name
+            param_name = body_schema.get("title", "body").lower()
+
+            # Clean the parameter name to be valid
+            import re
+
+            param_name = re.sub(r"[^a-zA-Z0-9_]", "_", param_name)
+            if not param_name or param_name[0].isdigit():
+                param_name = "body_data"
+
+            properties[param_name] = body_schema
+            if route.request_body.required:
+                required.append(param_name)
+            parameter_map[param_name] = {"location": "body", "openapi_name": param_name}
 
     result = {
         "type": "object",

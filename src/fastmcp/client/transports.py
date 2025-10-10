@@ -583,15 +583,15 @@ class UvStdioTransport(StdioTransport):
         command: str,
         args: list[str] | None = None,
         module: bool = False,
-        project_directory: str | None = None,
+        project_directory: Path | None = None,
         python_version: str | None = None,
         with_packages: list[str] | None = None,
-        with_requirements: str | None = None,
+        with_requirements: Path | None = None,
         env_vars: dict[str, str] | None = None,
         keep_alive: bool | None = None,
     ):
         # Basic validation
-        if project_directory and not Path(project_directory).exists():
+        if project_directory and not project_directory.exists():
             raise NotADirectoryError(
                 f"Project directory not found: {project_directory}"
             )

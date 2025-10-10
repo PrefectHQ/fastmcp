@@ -76,7 +76,7 @@ class TestTools:
         def fn(x: int) -> int:
             return x + 1
 
-        mcp_tools = await mcp._mcp_list_tools()
+        mcp_tools = await mcp._list_tools_mcp()
         assert len(mcp_tools) == 1
         assert mcp_tools[0].name == "fn"
 
@@ -89,7 +89,7 @@ class TestTools:
         def fn(x: int) -> int:
             return x + 1
 
-        mcp_tools = await mcp._mcp_list_tools()
+        mcp_tools = await mcp._list_tools_mcp()
         assert len(mcp_tools) == 1
         assert mcp_tools[0].name == "custom_name"
 
@@ -110,7 +110,7 @@ class TestTools:
         assert "adder" not in mcp_tools
 
         with pytest.raises(NotFoundError, match="Unknown tool: adder"):
-            await mcp._mcp_call_tool("adder", {"a": 1, "b": 2})
+            await mcp._call_tool_mcp("adder", {"a": 1, "b": 2})
 
     async def test_add_tool_at_init(self):
         def f(x: int) -> int:
@@ -136,7 +136,7 @@ class TestToolDecorator:
         mcp = FastMCP()
 
         with pytest.raises(NotFoundError, match="Unknown tool: add"):
-            await mcp._mcp_call_tool("add", {"x": 1, "y": 2})
+            await mcp._call_tool_mcp("add", {"x": 1, "y": 2})
 
     async def test_tool_decorator(self):
         mcp = FastMCP()
@@ -185,7 +185,7 @@ class TestToolDecorator:
         def add(x: int, y: int) -> int:
             return x + y
 
-        tools = await mcp._mcp_list_tools()
+        tools = await mcp._list_tools_mcp()
         assert len(tools) == 1
         tool = tools[0]
         assert tool.description == "Add two numbers"

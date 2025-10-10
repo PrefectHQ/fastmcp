@@ -47,7 +47,7 @@ async def test_tool_annotations_in_mcp_protocol():
         return message
 
     # Check via MCP protocol
-    mcp_tools = await mcp._mcp_list_tools()
+    mcp_tools = await mcp._list_tools_mcp()
     assert len(mcp_tools) == 1
     assert mcp_tools[0].annotations is not None
     assert mcp_tools[0].annotations.title == "Echo Tool"

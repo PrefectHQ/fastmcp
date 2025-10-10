@@ -15,6 +15,8 @@ dependencies = [
     "pydantic[email]>=2.11.7",
     "pyperclip>=1.9.0",
     "openapi-core>=0.19.5",
+    "py-key-value-aio[disk,memory]>=0.2.1",
+    "websockets>=15.0.1",
 ]
 
 requires-python = ">=3.10"
@@ -41,7 +43,6 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-websockets = ["websockets>=15.0.1"]
 openai = ["openai>=1.102.0"]
 caching = ["diskcache>=5.6.3", "cachetools>=6.2.0"]
 contrib-middleware-elasticsearch_cache = ["fastmcp[caching]", "elasticsearch>=8.15.0", "aiohttp>=3.11.10"]
@@ -68,6 +69,7 @@ dev = [
     "pytest-flakefinder",
     "pytest-httpx>=0.35.0",
     "pytest-report>=0.2.1",
+    "pytest-retry>=1.7.0",
     "pytest-timeout>=2.4.0",
     "pytest-xdist>=3.6.1",
     "ruff",
@@ -105,7 +107,7 @@ asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "session"
 asyncio_default_test_loop_scope = "session"
 # filterwarnings = ["error::DeprecationWarning"]
-timeout = 3
+timeout = 5
 env = [
     "FASTMCP_TEST_MODE=1",
     'D:FASTMCP_LOG_LEVEL=DEBUG',
@@ -122,6 +124,7 @@ testpaths = ["tests"]
 python_files = ["test_*.py", "*_test.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+addopts = ["--inline-snapshot=disable"]
 
 [tool.ty.src]
 include = ["src", "tests"]
@@ -145,3 +148,6 @@ extend-select = ["I", "UP"]
 "__init__.py" = ["F401", "I001", "RUF013"]
 # allow imports not at the top of the file
 "src/fastmcp/__init__.py" = ["E402"]
+
+[tool.codespell]
+ignore-words-list = "asend,shttp,te"

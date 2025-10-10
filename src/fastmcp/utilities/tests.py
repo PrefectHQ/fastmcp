@@ -66,6 +66,7 @@ def _run_server(mcp_server: FastMCP, transport: Literal["sse"], port: int) -> No
             host="127.0.0.1",
             port=port,
             log_level="error",
+            ws="websockets-sansio",
         )
     )
     uvicorn_server.run()
@@ -74,11 +75,11 @@ def _run_server(mcp_server: FastMCP, transport: Literal["sse"], port: int) -> No
 @contextmanager
 def run_server_in_process(
     server_fn: Callable[..., None],
-    *args,
+    *args: Any,
     provide_host_and_port: bool = True,
     host: str = "127.0.0.1",
     port: int | None = None,
-    **kwargs,
+    **kwargs: Any,
 ) -> Generator[str, None, None]:
     """
     Context manager that runs a FastMCP server in a separate process and
@@ -109,7 +110,7 @@ def run_server_in_process(
     proc.start()
 
     # Wait for server to be running
-    max_attempts = 10
+    max_attempts = 30
     attempt = 0
     while attempt < max_attempts and proc.is_alive():
         try:
@@ -117,10 +118,12 @@ def run_server_in_process(
                 s.connect((host, port))
                 break
         except ConnectionRefusedError:
-            if attempt < 3:
-                time.sleep(0.01)
-            else:
+            if attempt < 5:
+                time.sleep(0.05)
+            elif attempt < 15:
                 time.sleep(0.1)
+            else:
+                time.sleep(0.2)
             attempt += 1
     else:
         raise RuntimeError(f"Server failed to start after {max_attempts} attempts")
@@ -141,10 +144,10 @@ def run_server_in_process(
 def caplog_for_fastmcp(caplog):
     """Context manager to capture logs from FastMCP loggers even when propagation is disabled."""
     caplog.clear()
-    logger = logging.getLogger("FastMCP")
+    logger = logging.getLogger("fastmcp")
     logger.addHandler(caplog.handler)
     try:
-        yield
+        yield caplog
     finally:
         logger.removeHandler(caplog.handler)
 

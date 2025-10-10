@@ -69,7 +69,7 @@ class ProxyManagerMixin:
 class ProxyToolManager(ToolManager, ProxyManagerMixin):
     """A ToolManager that sources its tools from a remote client in addition to local and mounted tools."""
 
-    def __init__(self, client_factory: ClientFactoryT, **kwargs):
+    def __init__(self, client_factory: ClientFactoryT, **kwargs: Any):
         super().__init__(**kwargs)
         self.client_factory = client_factory
 
@@ -123,7 +123,7 @@ class ProxyToolManager(ToolManager, ProxyManagerMixin):
 class ProxyResourceManager(ResourceManager, ProxyManagerMixin):
     """A ResourceManager that sources its resources from a remote client in addition to local and mounted resources."""
 
-    def __init__(self, client_factory: ClientFactoryT, **kwargs):
+    def __init__(self, client_factory: ClientFactoryT, **kwargs: Any):
         super().__init__(**kwargs)
         self.client_factory = client_factory
 
@@ -204,7 +204,7 @@ class ProxyResourceManager(ResourceManager, ProxyManagerMixin):
 class ProxyPromptManager(PromptManager, ProxyManagerMixin):
     """A PromptManager that sources its prompts from a remote client in addition to local and mounted prompts."""
 
-    def __init__(self, client_factory: ClientFactoryT, **kwargs):
+    def __init__(self, client_factory: ClientFactoryT, **kwargs: Any):
         super().__init__(**kwargs)
         self.client_factory = client_factory
 
@@ -258,7 +258,7 @@ class ProxyTool(Tool, MirroredComponent):
     A Tool that represents and executes a tool on a remote server.
     """
 
-    def __init__(self, client: Client, **kwargs):
+    def __init__(self, client: Client, **kwargs: Any):
         super().__init__(**kwargs)
         self._client = client
 
@@ -354,7 +354,7 @@ class ProxyTemplate(ResourceTemplate, MirroredComponent):
     A ResourceTemplate that represents and creates resources from a remote server template.
     """
 
-    def __init__(self, client: Client, **kwargs):
+    def __init__(self, client: Client, **kwargs: Any):
         super().__init__(**kwargs)
         self._client = client
 
@@ -640,7 +640,7 @@ class StatefulProxyClient(ProxyClient[ClientTransportT]):
     Note that it is essential to ensure that the proxy server itself is also stateful.
     """
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args: Any, **kwargs: Any):
         super().__init__(*args, **kwargs)
         self._caches: dict[ServerSession, Client[ClientTransportT]] = {}
 

@@ -132,7 +132,7 @@ def run_mcp_server(
     mcp.run(host=host, port=port, **run_kwargs or {})
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def mcp_server_url(rsa_key_pair: RSAKeyPair) -> Generator[str]:
     with run_server_in_process(
         run_mcp_server,

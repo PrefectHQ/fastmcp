@@ -413,7 +413,9 @@ class ParsedFunction:
 
         input_type_adapter = get_cached_typeadapter(fn)
         input_schema = input_type_adapter.json_schema()
-        input_schema = compress_schema(input_schema, prune_params=prune_params)
+        input_schema = compress_schema(
+            input_schema, prune_params=prune_params, prune_titles=True
+        )
 
         output_schema = None
         # Get the return annotation from the signature
@@ -473,7 +475,7 @@ class ParsedFunction:
                 else:
                     output_schema = base_schema
 
-                output_schema = compress_schema(output_schema)
+                output_schema = compress_schema(output_schema, prune_titles=True)
 
             except PydanticSchemaGenerationError as e:
                 if "_UnserializableType" not in str(e):
@@ -544,13 +546,12 @@ def _convert_to_content(
 
     # If any item is a ContentBlock, convert non-ContentBlock items to TextContent
     # without aggregating them
-    if any(isinstance(item, ContentBlock) for item in result):
+    if any(isinstance(item, ContentBlock | Image | Audio | File) for item in result):
         return [
             _convert_to_single_content_block(item, serializer)
             if not isinstance(item, ContentBlock)
             else item
             for item in result
         ]
-
     # If none of the items are ContentBlocks, aggregate all items into a single TextContent
     return [TextContent(type="text", text=_serialize_with_fallback(result, serializer))]

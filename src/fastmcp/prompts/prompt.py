@@ -4,7 +4,6 @@ from __future__ import annotations as _annotations
 
 import inspect
 import json
-from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable, Sequence
 from typing import Any
 
@@ -62,7 +61,7 @@ class PromptArgument(FastMCPBaseModel):
     )
 
 
-class Prompt(FastMCPComponent, ABC):
+class Prompt(FastMCPComponent):
     """A prompt template that can be rendered with parameters."""
 
     arguments: list[PromptArgument] | None = Field(
@@ -139,13 +138,16 @@ class Prompt(FastMCPComponent, ABC):
             meta=meta,
         )
 
-    @abstractmethod
     async def render(
         self,
         arguments: dict[str, Any] | None = None,
     ) -> list[PromptMessage]:
-        """Render the prompt with arguments."""
-        raise NotImplementedError("Prompt.render() must be implemented by subclasses")
+        """Render the prompt with arguments.
+
+        This method is not implemented in the base Prompt class and must be
+        implemented by subclasses.
+        """
+        raise NotImplementedError("Subclasses must implement render()")
 
 
 class FunctionPrompt(Prompt):

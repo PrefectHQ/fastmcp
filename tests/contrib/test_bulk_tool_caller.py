@@ -67,7 +67,7 @@ def no_return_tool_result_factory(arg1: str) -> CallToolRequestResult:
     )
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def live_server_with_tool() -> FastMCP:
     """Fixture to create a FastMCP server instance with the echo_tool registered."""
     server = FastMCP()

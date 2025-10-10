@@ -104,13 +104,12 @@ def install_gemini_cli(
         )
         return False
 
-    # Build uv run command using Environment.build_uv_run_command()
     env_config = UVEnvironment(
         python=python_version,
         dependencies=(with_packages or []) + ["fastmcp"],
-        requirements=str(with_requirements) if with_requirements else None,
-        project=str(project) if project else None,
-        editable=[str(p) for p in with_editable] if with_editable else None,
+        requirements=with_requirements,
+        project=project,
+        editable=with_editable,
     )
 
     # Build server spec from parsed components

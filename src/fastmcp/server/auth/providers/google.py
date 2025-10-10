@@ -24,12 +24,14 @@ from __future__ import annotations
 import time
 
 import httpx
+from key_value.aio.protocols import AsyncKeyValue
 from pydantic import AnyHttpUrl, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from fastmcp.server.auth import TokenVerifier
 from fastmcp.server.auth.auth import AccessToken
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
+from fastmcp.settings import ENV_FILE
 from fastmcp.utilities.auth import parse_scopes
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import NotSet, NotSetT
@@ -42,7 +44,7 @@ class GoogleProviderSettings(BaseSettings):
 
     model_config = SettingsConfigDict(
         env_prefix="FASTMCP_SERVER_AUTH_GOOGLE_",
-        env_file=".env",
+        env_file=ENV_FILE,
         extra="ignore",
     )
 
@@ -217,6 +219,7 @@ class GoogleProvider(OAuthProxy):
         required_scopes: list[str] | NotSetT = NotSet,
         timeout_seconds: int | NotSetT = NotSet,
         allowed_client_redirect_uris: list[str] | NotSetT = NotSet,
+        client_storage: AsyncKeyValue | None = None,
     ):
         """Initialize Google OAuth provider.
 
@@ -232,6 +235,7 @@ class GoogleProvider(OAuthProxy):
             timeout_seconds: HTTP request timeout for Google API calls
             allowed_client_redirect_uris: List of allowed redirect URI patterns for MCP clients.
                 If None (default), all URIs are allowed. If empty list, no URIs are allowed.
+            client_storage: An AsyncKeyValue-compatible store for client registrations, registrations are stored in memory if not provided
         """
 
         settings = GoogleProviderSettings.model_validate(
@@ -288,6 +292,7 @@ class GoogleProvider(OAuthProxy):
             redirect_path=settings.redirect_path,
             issuer_url=settings.base_url,  # We act as the issuer for client registration
             allowed_client_redirect_uris=allowed_client_redirect_uris_final,
+            client_storage=client_storage,
         )
 
         logger.info(

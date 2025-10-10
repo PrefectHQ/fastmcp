@@ -2,11 +2,15 @@
 
 import os
 from unittest.mock import patch
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 import pytest
+from mcp.server.auth.provider import AuthorizationParams
+from mcp.shared.auth import OAuthClientInformationFull
+from pydantic import AnyUrl
 
 from fastmcp.server.auth.providers.azure import AzureProvider
+from fastmcp.server.auth.providers.jwt import JWTVerifier
 
 
 class TestAzureProvider:
@@ -95,6 +99,7 @@ class TestAzureProvider:
             client_id="test_client",
             client_secret="test_secret",
             tenant_id="test-tenant",
+            required_scopes=["User.Read"],
         )
 
         # Check defaults
@@ -109,6 +114,7 @@ class TestAzureProvider:
             client_secret="test_secret",
             tenant_id="my-tenant-id",
             base_url="https://myserver.com",
+            required_scopes=["User.Read"],
         )
 
         # Check that endpoints use the correct Azure OAuth2 v2.0 endpoints with tenant
@@ -131,6 +137,7 @@ class TestAzureProvider:
             client_id="test_client",
             client_secret="test_secret",
             tenant_id="organizations",
+            required_scopes=["User.Read"],
         )
         parsed = urlparse(provider1._upstream_authorization_endpoint)
         assert "/organizations/" in parsed.path
@@ -140,6 +147,7 @@ class TestAzureProvider:
             client_id="test_client",
             client_secret="test_secret",
             tenant_id="consumers",
+            required_scopes=["User.Read"],
         )
         parsed = urlparse(provider2._upstream_authorization_endpoint)
         assert "/consumers/" in parsed.path
@@ -162,3 +170,107 @@ class TestAzureProvider:
 
         # Provider should initialize successfully with these scopes
         assert provider is not None
+
+    def test_init_does_not_require_api_client_id_anymore(self):
+        """API client ID is no longer required; audience is client_id."""
+        provider = AzureProvider(
+            client_id="test_client",
+            client_secret="test_secret",
+            tenant_id="test-tenant",
+            required_scopes=["User.Read"],
+        )
+        assert provider is not None
+
+    def test_init_with_custom_audience_uses_jwt_verifier(self):
+        """When audience is provided, JWTVerifier is configured with JWKS and issuer."""
+        provider = AzureProvider(
+            client_id="test_client",
+            client_secret="test_secret",
+            tenant_id="my-tenant",
+            identifier_uri="api://my-api",
+            required_scopes=[".default"],
+        )
+
+        assert provider._token_validator is not None
+        assert isinstance(provider._token_validator, JWTVerifier)
+        verifier = provider._token_validator
+        assert verifier.jwks_uri is not None
+        assert verifier.jwks_uri.startswith(
+            "https://login.microsoftonline.com/my-tenant/discovery/v2.0/keys"
+        )
+        assert verifier.issuer == "https://login.microsoftonline.com/my-tenant/v2.0"
+        assert verifier.audience == "test_client"
+
+    @pytest.mark.asyncio
+    async def test_authorize_filters_resource_and_prefixes_scopes_with_audience(self):
+        """authorize() should drop resource and prefix non-openid scopes with audience."""
+        provider = AzureProvider(
+            client_id="test_client",
+            client_secret="test_secret",
+            tenant_id="common",
+            identifier_uri="api://my-api",
+            required_scopes=["read", "write"],
+            base_url="https://srv.example",
+        )
+
+        client = OAuthClientInformationFull(
+            client_id="dummy",
+            client_secret="secret",
+            redirect_uris=[AnyUrl("http://localhost:12345/callback")],
+        )
+
+        params = AuthorizationParams(
+            redirect_uri=AnyUrl("http://localhost:12345/callback"),
+            redirect_uri_provided_explicitly=True,
+            scopes=["read", "profile"],
+            state="abc",
+            code_challenge="xyz",
+            resource="https://should.be.ignored",
+        )
+
+        url = await provider.authorize(client, params)
+
+        parsed = urlparse(url)
+        qs = parse_qs(parsed.query)
+        assert "resource" not in qs
+        scope_value = qs.get("scope", [""])[0]
+        scope_parts = scope_value.split(" ") if scope_value else []
+        assert "api://my-api/read" in scope_parts
+        assert "api://my-api/profile" in scope_parts
+
+    @pytest.mark.asyncio
+    async def test_authorize_appends_unprefixed_additional_scopes(self):
+        """authorize() should append additional_authorize_scopes without prefixing them."""
+        provider = AzureProvider(
+            client_id="test_client",
+            client_secret="test_secret",
+            tenant_id="common",
+            identifier_uri="api://my-api",
+            required_scopes=["read"],
+            base_url="https://srv.example",
+            additional_authorize_scopes=["Mail.Read", "User.Read"],
+        )
+
+        client = OAuthClientInformationFull(
+            client_id="dummy",
+            client_secret="secret",
+            redirect_uris=[AnyUrl("http://localhost:12345/callback")],
+        )
+
+        params = AuthorizationParams(
+            redirect_uri=AnyUrl("http://localhost:12345/callback"),
+            redirect_uri_provided_explicitly=True,
+            scopes=["read"],
+            state="abc",
+            code_challenge="xyz",
+        )
+
+        url = await provider.authorize(client, params)
+
+        parsed = urlparse(url)
+        qs = parse_qs(parsed.query)
+        scope_value = qs.get("scope", [""])[0]
+        scope_parts = scope_value.split(" ") if scope_value else []
+        assert "api://my-api/read" in scope_parts
+        assert "Mail.Read" in scope_parts
+        assert "User.Read" in scope_parts

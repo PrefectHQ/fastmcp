@@ -52,21 +52,21 @@ class ToolManager:
         """Adds a mounted server as a source for tools."""
         self._mounted_servers.append(server)
 
-    async def _load_tools(self, *, via_server: bool = False) -> dict[str, Tool]:
+    async def _load_tools(self, *, apply_filtering: bool = False) -> dict[str, Tool]:
         """
-        The single, consolidated recursive method for fetching tools. The 'via_server'
+        The single, consolidated recursive method for fetching tools. The 'apply_filtering'
         parameter determines the communication path.
 
-        - via_server=False: Manager-to-manager path for complete, unfiltered inventory
-        - via_server=True: Server-to-server path for filtered MCP requests
+        - apply_filtering=False: Manager-to-manager path for complete, unfiltered inventory
+        - apply_filtering=True: Server-to-server path for filtered MCP requests
         """
         all_tools: dict[str, Tool] = {}
 
         for mounted in self._mounted_servers:
             try:
-                if via_server:
+                if apply_filtering:
                     # Use the server-to-server filtered path
-                    child_results = await mounted.server._list_tools()
+                    child_results = await mounted.server._list_tools_middleware()
                 else:
                     # Use the manager-to-manager unfiltered path
                     child_results = await mounted.server._tool_manager.list_tools()
@@ -116,13 +116,13 @@ class ToolManager:
         """
         Gets the complete, unfiltered inventory of all tools.
         """
-        return await self._load_tools(via_server=False)
+        return await self._load_tools(apply_filtering=False)
 
     async def list_tools(self) -> list[Tool]:
         """
         Lists all tools, applying protocol filtering.
         """
-        tools_dict = await self._load_tools(via_server=True)
+        tools_dict = await self._load_tools(apply_filtering=True)
         return list(tools_dict.values())
 
     @property
@@ -247,7 +247,7 @@ class ToolManager:
                 else:
                     continue
             try:
-                return await mounted.server._call_tool(tool_key, arguments)
+                return await mounted.server._call_tool_middleware(tool_key, arguments)
             except NotFoundError:
                 continue
 

@@ -1,6 +1,7 @@
 from __future__ import annotations as _annotations
 
 import inspect
+import os
 import warnings
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any, Literal
@@ -19,9 +20,13 @@ from fastmcp.utilities.logging import get_logger
 
 logger = get_logger(__name__)
 
+ENV_FILE = os.getenv("FASTMCP_ENV_FILE", ".env")
+
 LOG_LEVEL = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 
 DuplicateBehavior = Literal["warn", "error", "replace", "ignore"]
+
+TEN_MB_IN_BYTES = 1024 * 1024 * 10
 
 if TYPE_CHECKING:
     from fastmcp.server.auth.auth import AuthProvider
@@ -82,7 +87,7 @@ class Settings(BaseSettings):
 
     model_config = ExtendedSettingsConfigDict(
         env_prefixes=["FASTMCP_", "FASTMCP_SERVER_"],
-        env_file=".env",
+        env_file=ENV_FILE,
         extra="ignore",
         env_nested_delimiter="__",
         nested_model_default_partial_update=True,

@@ -16,6 +16,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing_extensions import TypedDict
 
 from fastmcp.server.auth import AccessToken, TokenVerifier
+from fastmcp.settings import ENV_FILE
 from fastmcp.utilities.auth import parse_scopes
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import NotSet, NotSetT
@@ -143,7 +144,7 @@ class JWTVerifierSettings(BaseSettings):
 
     model_config = SettingsConfigDict(
         env_prefix="FASTMCP_SERVER_AUTH_JWT_",
-        env_file=".env",
+        env_file=ENV_FILE,
         extra="ignore",
     )
 

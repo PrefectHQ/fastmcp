@@ -184,8 +184,8 @@ async def run_command(
         kwargs["port"] = port
     if path:
         kwargs["path"] = path
-    # Note: log_level is not currently supported by run_async
-    # TODO: Add log_level support to server.run_async
+    if log_level:
+        kwargs["log_level"] = log_level
 
     if not show_banner:
         kwargs["show_banner"] = False

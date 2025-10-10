@@ -10,9 +10,8 @@ Choose based on your WorkOS setup and authentication requirements.
 
 from __future__ import annotations
 
-from typing import Any
-
 import httpx
+from key_value.aio.protocols import AsyncKeyValue
 from pydantic import AnyHttpUrl, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from starlette.responses import JSONResponse
@@ -21,6 +20,7 @@ from starlette.routing import Route
 from fastmcp.server.auth import AccessToken, RemoteAuthProvider, TokenVerifier
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from fastmcp.server.auth.providers.jwt import JWTVerifier
+from fastmcp.settings import ENV_FILE
 from fastmcp.utilities.auth import parse_scopes
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import NotSet, NotSetT
@@ -33,7 +33,7 @@ class WorkOSProviderSettings(BaseSettings):
 
     model_config = SettingsConfigDict(
         env_prefix="FASTMCP_SERVER_AUTH_WORKOS_",
-        env_file=".env",
+        env_file=ENV_FILE,
         extra="ignore",
     )
 
@@ -169,6 +169,7 @@ class WorkOSProvider(OAuthProxy):
         required_scopes: list[str] | None | NotSetT = NotSet,
         timeout_seconds: int | NotSetT = NotSet,
         allowed_client_redirect_uris: list[str] | NotSetT = NotSet,
+        client_storage: AsyncKeyValue | None = None,
     ):
         """Initialize WorkOS OAuth provider.
 
@@ -182,6 +183,7 @@ class WorkOSProvider(OAuthProxy):
             timeout_seconds: HTTP request timeout for WorkOS API calls
             allowed_client_redirect_uris: List of allowed redirect URI patterns for MCP clients.
                 If None (default), all URIs are allowed. If empty list, no URIs are allowed.
+            client_storage: An AsyncKeyValue-compatible store for client registrations, registrations are stored in memory if not provided
         """
 
         settings = WorkOSProviderSettings.model_validate(
@@ -247,6 +249,7 @@ class WorkOSProvider(OAuthProxy):
             redirect_path=settings.redirect_path,
             issuer_url=settings.base_url,
             allowed_client_redirect_uris=allowed_client_redirect_uris_final,
+            client_storage=client_storage,
         )
 
         logger.info(
@@ -259,7 +262,7 @@ class WorkOSProvider(OAuthProxy):
 class AuthKitProviderSettings(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="FASTMCP_SERVER_AUTH_AUTHKITPROVIDER_",
-        env_file=".env",
+        env_file=ENV_FILE,
         extra="ignore",
     )
 
@@ -359,7 +362,6 @@ class AuthKitProvider(RemoteAuthProvider):
     def get_routes(
         self,
         mcp_path: str | None = None,
-        mcp_endpoint: Any | None = None,
     ) -> list[Route]:
         """Get OAuth routes including AuthKit authorization server metadata forwarding.
 
@@ -368,10 +370,10 @@ class AuthKitProvider(RemoteAuthProvider):
 
         Args:
             mcp_path: The path where the MCP endpoint is mounted (e.g., "/mcp")
-            mcp_endpoint: The MCP endpoint handler to protect with auth
+                This is used to advertise the resource URL in metadata.
         """
         # Get the standard protected resource routes from RemoteAuthProvider
-        routes = super().get_routes(mcp_path, mcp_endpoint)
+        routes = super().get_routes(mcp_path)
 
         async def oauth_authorization_server_metadata(request):
             """Forward AuthKit OAuth authorization server metadata with FastMCP customizations."""

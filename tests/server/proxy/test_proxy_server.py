@@ -173,15 +173,15 @@ class TestTools:
 
     async def test_list_tools_same_as_original(self, fastmcp_server, proxy_server):
         assert (
-            await proxy_server._mcp_list_tools()
-            == await fastmcp_server._mcp_list_tools()
+            await proxy_server._list_tools_mcp()
+            == await fastmcp_server._list_tools_mcp()
         )
 
     async def test_call_tool_result_same_as_original(
         self, fastmcp_server: FastMCP, proxy_server: FastMCPProxy
     ):
-        result = await fastmcp_server._mcp_call_tool("greet", {"name": "Alice"})
-        proxy_result = await proxy_server._mcp_call_tool("greet", {"name": "Alice"})
+        result = await fastmcp_server._call_tool_mcp("greet", {"name": "Alice"})
+        proxy_result = await proxy_server._call_tool_mcp("greet", {"name": "Alice"})
 
         assert result == proxy_result
 
@@ -267,8 +267,8 @@ class TestResources:
 
     async def test_list_resources_same_as_original(self, fastmcp_server, proxy_server):
         assert (
-            await proxy_server._mcp_list_resources()
-            == await fastmcp_server._mcp_list_resources()
+            await proxy_server._list_resources_mcp()
+            == await fastmcp_server._list_resources_mcp()
         )
 
     async def test_read_resource(self, proxy_server: FastMCPProxy):
@@ -367,8 +367,8 @@ class TestResourceTemplates:
     async def test_list_resource_templates_same_as_original(
         self, fastmcp_server, proxy_server
     ):
-        result = await fastmcp_server._mcp_list_resource_templates()
-        proxy_result = await proxy_server._mcp_list_resource_templates()
+        result = await fastmcp_server._list_resource_templates_mcp()
+        proxy_result = await proxy_server._list_resource_templates_mcp()
         assert proxy_result == result
 
     @pytest.mark.parametrize("id", [1, 2, 3])

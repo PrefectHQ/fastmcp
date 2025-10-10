@@ -67,7 +67,7 @@ def run_server(host: str, port: int, **kwargs) -> None:
     fastmcp_server().run(host=host, port=port, **kwargs)
 
 
-@pytest.fixture(autouse=True, scope="module")
+@pytest.fixture(autouse=True)
 def sse_server() -> Generator[str, None, None]:
     with run_server_in_process(run_server, transport="sse") as url:
         yield f"{url}/sse"
@@ -96,7 +96,9 @@ def run_nested_server(host: str, port: int) -> None:
     mount = Starlette(routes=[Mount("/nest-inner", app=app)])
     mount2 = Starlette(routes=[Mount("/nest-outer", app=mount)])
     server = uvicorn.Server(
-        config=uvicorn.Config(app=mount2, host=host, port=port, log_level="error")
+        config=uvicorn.Config(
+            app=mount2, host=host, port=port, log_level="error", ws="websockets-sansio"
+        )
     )
     server.run()
 
@@ -128,18 +130,18 @@ class TestTimeout:
     async def test_timeout(self, sse_server: str):
         with pytest.raises(
             McpError,
-            match="Timed out while waiting for response to ClientRequest. Waited 0.01 seconds",
+            match="Timed out while waiting for response to ClientRequest. Waited 0.03 seconds",
         ):
             async with Client(
                 transport=SSETransport(sse_server),
-                timeout=0.01,
+                timeout=0.03,
             ) as client:
                 await client.call_tool("sleep", {"seconds": 0.1})
 
     async def test_timeout_tool_call(self, sse_server: str):
         async with Client(transport=SSETransport(sse_server)) as client:
             with pytest.raises(McpError, match="Timed out"):
-                await client.call_tool("sleep", {"seconds": 0.1}, timeout=0.01)
+                await client.call_tool("sleep", {"seconds": 0.1}, timeout=0.03)
 
     async def test_timeout_tool_call_overrides_client_timeout_if_lower(
         self, sse_server: str
@@ -149,7 +151,7 @@ class TestTimeout:
             timeout=2,
         ) as client:
             with pytest.raises(McpError, match="Timed out"):
-                await client.call_tool("sleep", {"seconds": 0.1}, timeout=0.01)
+                await client.call_tool("sleep", {"seconds": 0.1}, timeout=0.03)
 
     async def test_timeout_client_timeout_does_not_override_tool_call_timeout_if_lower(
         self, sse_server: str
@@ -161,6 +163,6 @@ class TestTimeout:
         """
         async with Client(
             transport=SSETransport(sse_server),
-            timeout=0.01,
+            timeout=0.1,
         ) as client:
-            await client.call_tool("sleep", {"seconds": 0.1}, timeout=2)
+            await client.call_tool("sleep", {"seconds": 0.03}, timeout=2)

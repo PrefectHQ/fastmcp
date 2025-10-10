@@ -1,0 +1,47 @@
+---
+title: auth0
+sidebarTitle: auth0
+---
+
+# `fastmcp.server.auth.providers.auth0`
+
+
+Auth0 OAuth provider for FastMCP.
+
+This module provides a complete Auth0 integration that's ready to use with
+just the configuration URL, client ID, client secret, audience, and base URL.
+
+Example:
+    ```python
+    from fastmcp import FastMCP
+    from fastmcp.server.auth.providers.auth0 import Auth0Provider
+
+    # Simple Auth0 OAuth protection
+    auth = Auth0Provider(
+        config_url="https://auth0.config.url",
+        client_id="your-auth0-client-id",
+        client_secret="your-auth0-client-secret",
+        audience="your-auth0-api-audience",
+        base_url="http://localhost:8000",
+    )
+
+    mcp = FastMCP("My Protected Server", auth=auth)
+    ```
+
+
+## Classes
+
+### `Auth0ProviderSettings` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/auth0.py#L36" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Settings for Auth0 OIDC provider.
+
+
+### `Auth0Provider` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/auth0.py#L60" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+An Auth0 provider implementation for FastMCP.
+
+This provider is a complete Auth0 integration that's ready to use with
+just the configuration URL, client ID, client secret, audience, and base URL.
+

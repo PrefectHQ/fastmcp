@@ -28,6 +28,13 @@ from urllib.parse import urlencode
 import httpx
 from authlib.common.security import generate_token
 from authlib.integrations.httpx_client import AsyncOAuth2Client
+from key_value.aio.adapters.pydantic import PydanticAdapter
+from key_value.aio.protocols import AsyncKeyValue
+from key_value.aio.stores.memory import MemoryStore
+from mcp.server.auth.handlers.token import TokenErrorResponse, TokenSuccessResponse
+from mcp.server.auth.handlers.token import TokenHandler as _SDKTokenHandler
+from mcp.server.auth.json_response import PydanticJSONResponse
+from mcp.server.auth.middleware.client_auth import ClientAuthenticator
 from mcp.server.auth.provider import (
     AccessToken,
     AuthorizationCode,
@@ -35,12 +42,13 @@ from mcp.server.auth.provider import (
     RefreshToken,
     TokenError,
 )
+from mcp.server.auth.routes import cors_middleware
 from mcp.server.auth.settings import (
     ClientRegistrationOptions,
     RevocationOptions,
 )
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
-from pydantic import AnyHttpUrl, AnyUrl, SecretStr
+from pydantic import AnyHttpUrl, AnyUrl, Field, SecretStr
 from starlette.requests import Request
 from starlette.responses import RedirectResponse
 from starlette.routing import Route
@@ -81,18 +89,7 @@ class ProxyDCRClient(OAuthClientInformationFull):
     arise from accepting arbitrary redirect URIs.
     """
 
-    def __init__(
-        self, *args, allowed_redirect_uri_patterns: list[str] | None = None, **kwargs
-    ):
-        """Initialize with allowed redirect URI patterns.
-
-        Args:
-            allowed_redirect_uri_patterns: List of allowed redirect URI patterns with wildcard support.
-                                          If None, defaults to localhost-only patterns.
-                                          If empty list, allows all redirect URIs.
-        """
-        super().__init__(*args, **kwargs)
-        self._allowed_redirect_uri_patterns = allowed_redirect_uri_patterns
+    allowed_redirect_uri_patterns: list[str] | None = Field(default=None)
 
     def validate_redirect_uri(self, redirect_uri: AnyUrl | None) -> AnyUrl:
         """Validate redirect URI against allowed patterns.
@@ -104,7 +101,10 @@ class ProxyDCRClient(OAuthClientInformationFull):
         """
         if redirect_uri is not None:
             # Validate against allowed patterns
-            if validate_redirect_uri(redirect_uri, self._allowed_redirect_uri_patterns):
+            if validate_redirect_uri(
+                redirect_uri=redirect_uri,
+                allowed_patterns=self.allowed_redirect_uri_patterns,
+            ):
                 return redirect_uri
             # Fall back to normal validation if not in allowed patterns
             return super().validate_redirect_uri(redirect_uri)
@@ -118,6 +118,55 @@ DEFAULT_AUTH_CODE_EXPIRY_SECONDS: Final[int] = 5 * 60  # 5 minutes
 
 # HTTP client timeout
 HTTP_TIMEOUT_SECONDS: Final[int] = 30
+
+
+class TokenHandler(_SDKTokenHandler):
+    """TokenHandler that returns OAuth 2.1 compliant error responses.
+
+    The MCP SDK always returns HTTP 400 for all client authentication issues.
+    However, OAuth 2.1 Section 5.3 and the MCP specification require that
+    invalid or expired tokens MUST receive a HTTP 401 response.
+
+    This handler extends the base MCP SDK TokenHandler to transform client
+    authentication failures into OAuth 2.1 compliant responses:
+    - Changes 'unauthorized_client' to 'invalid_client' error code
+    - Returns HTTP 401 status code instead of 400 for client auth failures
+
+    Per OAuth 2.1 Section 5.3: "The authorization server MAY return an HTTP 401
+    (Unauthorized) status code to indicate which HTTP authentication schemes
+    are supported."
+
+    Per MCP spec: "Invalid or expired tokens MUST receive a HTTP 401 response."
+    """
+
+    def response(self, obj: TokenSuccessResponse | TokenErrorResponse):
+        """Override response method to provide OAuth 2.1 compliant error handling."""
+        # Check if this is a client authentication failure (not just unauthorized for grant type)
+        # unauthorized_client can mean two things:
+        # 1. Client authentication failed (client_id not found or wrong credentials) -> invalid_client 401
+        # 2. Client not authorized for this grant type -> unauthorized_client 400 (correct per spec)
+        if (
+            isinstance(obj, TokenErrorResponse)
+            and obj.error == "unauthorized_client"
+            and obj.error_description
+            and "Invalid client_id" in obj.error_description
+        ):
+            # Transform client auth failure to OAuth 2.1 compliant response
+            return PydanticJSONResponse(
+                content=TokenErrorResponse(
+                    error="invalid_client",
+                    error_description=obj.error_description,
+                    error_uri=obj.error_uri,
+                ),
+                status_code=401,
+                headers={
+                    "Cache-Control": "no-store",
+                    "Pragma": "no-cache",
+                },
+            )
+
+        # Otherwise use default behavior from parent class
+        return super().response(obj)
 
 
 class OAuthProxy(OAuthProvider):
@@ -199,7 +248,6 @@ class OAuthProxy(OAuthProvider):
     State Management
     ---------------
     The proxy maintains minimal but crucial state:
-    - _clients: DCR registrations (all use ProxyDCRClient for flexibility)
     - _oauth_transactions: Active authorization flows with client context
     - _client_codes: Authorization codes with PKCE challenges and upstream tokens
     - _access_tokens, _refresh_tokens: Token storage for revocation
@@ -254,6 +302,8 @@ class OAuthProxy(OAuthProvider):
         extra_authorize_params: dict[str, str] | None = None,
         # Extra parameters to forward to token endpoint
         extra_token_params: dict[str, str] | None = None,
+        # Client storage
+        client_storage: AsyncKeyValue | None = None,
     ):
         """Initialize the OAuth proxy provider.
 
@@ -277,7 +327,7 @@ class OAuthProxy(OAuthProvider):
             valid_scopes: List of all the possible valid scopes for a client.
                 These are advertised to clients through the `/.well-known` endpoints. Defaults to `required_scopes` if not provided.
             forward_pkce: Whether to forward PKCE to upstream server (default True).
-                Enable for providers that support/require PKCE (Google, Azure, etc.).
+                Enable for providers that support/require PKCE (Google, Azure, AWS, etc.).
                 Disable only if upstream provider doesn't support PKCE.
             token_endpoint_auth_method: Token endpoint authentication method for upstream server.
                 Common values: "client_secret_basic", "client_secret_post", "none".
@@ -287,6 +337,7 @@ class OAuthProxy(OAuthProvider):
                 Example: {"audience": "https://api.example.com"}
             extra_token_params: Additional parameters to forward to the upstream token endpoint.
                 Useful for provider-specific parameters during token exchange.
+            client_storage: An AsyncKeyValue-compatible store for client registrations, registrations are stored in memory if not provided
         """
         # Always enable DCR since we implement it locally for MCP clients
         client_registration_options = ClientRegistrationOptions(
@@ -335,8 +386,16 @@ class OAuthProxy(OAuthProvider):
         self._extra_authorize_params = extra_authorize_params or {}
         self._extra_token_params = extra_token_params or {}
 
-        # Local state for DCR and token bookkeeping
-        self._clients: dict[str, OAuthClientInformationFull] = {}
+        self._client_storage: AsyncKeyValue = client_storage or MemoryStore()
+
+        self._client_store = PydanticAdapter[ProxyDCRClient](
+            key_value=self._client_storage,
+            pydantic_model=ProxyDCRClient,
+            default_collection="mcp-oauth-proxy-clients",
+            raise_on_validation_error=True,
+        )
+
+        # Local state for token bookkeeping only (no client caching)
         self._access_tokens: dict[str, AccessToken] = {}
         self._refresh_tokens: dict[str, RefreshToken] = {}
 
@@ -387,7 +446,12 @@ class OAuthProxy(OAuthProvider):
 
         For unregistered clients, returns None (which will raise an error in the SDK).
         """
-        client = self._clients.get(client_id)
+        # Load from storage
+        if not (client := await self._client_store.get(key=client_id)):
+            return None
+
+        if client.allowed_redirect_uri_patterns is None:
+            client.allowed_redirect_uri_patterns = self._allowed_client_redirect_uris
 
         return client
 
@@ -401,19 +465,21 @@ class OAuthProxy(OAuthProvider):
         """
 
         # Create a ProxyDCRClient with configured redirect URI validation
-        proxy_client = ProxyDCRClient(
+        proxy_client: ProxyDCRClient = ProxyDCRClient(
             client_id=client_info.client_id,
             client_secret=client_info.client_secret,
             redirect_uris=client_info.redirect_uris or [AnyUrl("http://localhost")],
             grant_types=client_info.grant_types
             or ["authorization_code", "refresh_token"],
-            scope=self._default_scope_str,
+            scope=client_info.scope or self._default_scope_str,
             token_endpoint_auth_method="none",
             allowed_redirect_uri_patterns=self._allowed_client_redirect_uris,
         )
 
-        # Store the ProxyDCRClient
-        self._clients[client_info.client_id] = proxy_client
+        await self._client_store.put(
+            key=client_info.client_id,
+            value=proxy_client,
+        )
 
         # Log redirect URIs to help users discover what patterns they might need
         if client_info.redirect_uris:
@@ -703,8 +769,7 @@ class OAuthProxy(OAuthProvider):
         )
 
         # Handle refresh token rotation if new one provided
-        if "refresh_token" in token_response:
-            new_refresh_token = token_response["refresh_token"]
+        if new_refresh_token := token_response.get("refresh_token"):
             if new_refresh_token != refresh_token.token:
                 # Remove old refresh token
                 self._refresh_tokens.pop(refresh_token.token, None)
@@ -792,7 +857,6 @@ class OAuthProxy(OAuthProvider):
     def get_routes(
         self,
         mcp_path: str | None = None,
-        mcp_endpoint: Any | None = None,
     ) -> list[Route]:
         """Get OAuth routes with custom proxy token handler.
 
@@ -801,10 +865,10 @@ class OAuthProxy(OAuthProvider):
 
         Args:
             mcp_path: The path where the MCP endpoint is mounted (e.g., "/mcp")
-            mcp_endpoint: The MCP endpoint handler to protect with auth
+                This is used to advertise the resource URL in metadata.
         """
         # Get standard OAuth routes from parent class
-        routes = super().get_routes(mcp_path, mcp_endpoint)
+        routes = super().get_routes(mcp_path)
         custom_routes = []
         token_route_found = False
 
@@ -817,9 +881,7 @@ class OAuthProxy(OAuthProvider):
                 f"Route {i}: {route} - path: {getattr(route, 'path', 'N/A')}, methods: {getattr(route, 'methods', 'N/A')}"
             )
 
-            # Keep all standard OAuth routes unchanged - our DCR-compliant flow handles everything
-            custom_routes.append(route)
-
+            # Replace the token endpoint with our custom handler that returns proper OAuth 2.1 error codes
             if (
                 isinstance(route, Route)
                 and route.path == "/token"
@@ -827,6 +889,22 @@ class OAuthProxy(OAuthProvider):
                 and "POST" in route.methods
             ):
                 token_route_found = True
+                # Replace with our OAuth 2.1 compliant token handler
+                token_handler = TokenHandler(
+                    provider=self, client_authenticator=ClientAuthenticator(self)
+                )
+                custom_routes.append(
+                    Route(
+                        path="/token",
+                        endpoint=cors_middleware(
+                            token_handler.handle, ["POST", "OPTIONS"]
+                        ),
+                        methods=["POST", "OPTIONS"],
+                    )
+                )
+            else:
+                # Keep all other standard OAuth routes unchanged
+                custom_routes.append(route)
 
         # Add OAuth callback endpoint for forwarding to client callbacks
         custom_routes.append(

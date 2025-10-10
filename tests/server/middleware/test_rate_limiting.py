@@ -306,9 +306,10 @@ class TestRateLimitingMiddlewareIntegration:
 
     async def test_rate_limiting_blocks_rapid_requests(self, rate_limit_server):
         """Test that rate limiting blocks rapid successive requests."""
-        # Very restrictive rate limit (accounting for extra list_tools calls per tool call)
+        # Very restrictive rate limit (accounting for initialization and list_tools calls)
+        # Requests: 1 initialize + 1 list_tools + 4 call_tools = 6 total before limit
         rate_limit_server.add_middleware(
-            RateLimitingMiddleware(max_requests_per_second=10.0, burst_capacity=5)
+            RateLimitingMiddleware(max_requests_per_second=10.0, burst_capacity=6)
         )
 
         async with Client(rate_limit_server) as client:
@@ -356,7 +357,7 @@ class TestRateLimitingMiddlewareIntegration:
         """Test sliding window rate limiting implementation."""
         rate_limit_server.add_middleware(
             SlidingWindowRateLimitingMiddleware(
-                max_requests=5,  # Accounting for extra list_tools calls
+                max_requests=6,  # 1 init + 1 list_tools + 3 calls + 1 to fail
                 window_minutes=1,  # 1-minute window
             )
         )
@@ -374,7 +375,7 @@ class TestRateLimitingMiddlewareIntegration:
     async def test_rate_limiting_with_different_operations(self, rate_limit_server):
         """Test that rate limiting applies to all types of operations."""
         rate_limit_server.add_middleware(
-            RateLimitingMiddleware(max_requests_per_second=9.0, burst_capacity=4)
+            RateLimitingMiddleware(max_requests_per_second=9.0, burst_capacity=5)
         )
 
         async with Client(rate_limit_server) as client:
@@ -395,8 +396,8 @@ class TestRateLimitingMiddlewareIntegration:
 
         rate_limit_server.add_middleware(
             RateLimitingMiddleware(
-                max_requests_per_second=6.0,  # Accounting for extra list_tools calls
-                burst_capacity=3,
+                max_requests_per_second=6.0,  # Accounting for initialization and list_tools calls
+                burst_capacity=4,
                 get_client_id=get_client_id,
             )
         )
@@ -416,8 +417,8 @@ class TestRateLimitingMiddlewareIntegration:
         rate_limit_server.add_middleware(
             RateLimitingMiddleware(
                 max_requests_per_second=6.0,
-                burst_capacity=4,
-                global_limit=True,  # Accounting for extra list_tools calls
+                burst_capacity=5,  # 1 init + 2 list_tools + 2 calls before limit
+                global_limit=True,  # Accounting for initialization and list_tools calls
             )
         )
 
@@ -435,7 +436,7 @@ class TestRateLimitingMiddlewareIntegration:
         rate_limit_server.add_middleware(
             RateLimitingMiddleware(
                 max_requests_per_second=10.0,  # 10 per second = 1 every 100ms
-                burst_capacity=3,
+                burst_capacity=4,
             )
         )
 

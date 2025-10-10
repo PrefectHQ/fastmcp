@@ -1,0 +1,88 @@
+---
+title: aws
+sidebarTitle: aws
+---
+
+# `fastmcp.server.auth.providers.aws`
+
+
+AWS Cognito OAuth provider for FastMCP.
+
+This module provides a complete AWS Cognito OAuth integration that's ready to use
+with a user pool ID, domain prefix, client ID and client secret. It handles all
+the complexity of AWS Cognito's OAuth flow, token validation, and user management.
+
+Example:
+    ```python
+    from fastmcp import FastMCP
+    from fastmcp.server.auth.providers.aws_cognito import AWSCognitoProvider
+
+    # Simple AWS Cognito OAuth protection
+    auth = AWSCognitoProvider(
+        user_pool_id="your-user-pool-id",
+        aws_region="eu-central-1",
+        client_id="your-cognito-client-id",
+        client_secret="your-cognito-client-secret"
+    )
+
+    mcp = FastMCP("My Protected Server", auth=auth)
+    ```
+
+
+## Classes
+
+### `AWSCognitoProviderSettings` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/aws.py#L40" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Settings for AWS Cognito OAuth provider.
+
+
+### `AWSCognitoTokenVerifier` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/aws.py#L64" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Token verifier that filters claims to Cognito-specific subset.
+
+
+**Methods:**
+
+#### `verify_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/aws.py#L67" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+verify_token(self, token: str) -> AccessToken | None
+```
+
+Verify token and filter claims to Cognito-specific subset.
+
+
+### `AWSCognitoProvider` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/aws.py#L91" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Complete AWS Cognito OAuth provider for FastMCP.
+
+This provider makes it trivial to add AWS Cognito OAuth protection to any
+FastMCP server using OIDC Discovery. Just provide your Cognito User Pool details,
+client credentials, and a base URL, and you're ready to go.
+
+Features:
+- Automatic OIDC Discovery from AWS Cognito User Pool
+- Automatic JWT token validation via Cognito's public keys
+- Cognito-specific claim filtering (sub, username, cognito:groups)
+- Support for Cognito User Pools
+
+
+**Methods:**
+
+#### `get_token_verifier` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/aws.py#L215" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_token_verifier(self) -> TokenVerifier
+```
+
+Creates a Cognito-specific token verifier with claim filtering.
+
+**Args:**
+- `algorithm`: Optional token verifier algorithm
+- `audience`: Optional token verifier audience
+- `required_scopes`: Optional token verifier required_scopes
+- `timeout_seconds`: HTTP request timeout in seconds
+

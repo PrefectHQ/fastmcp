@@ -785,6 +785,7 @@ class FastMCPOpenAPI(FastMCP):
         http_routes = openapi.parse_openapi_to_http_routes(openapi_spec)
 
         # Process routes
+        num_excluded = 0
         route_maps = (route_maps or []) + DEFAULT_ROUTE_MAPPINGS
         for route in http_routes:
             # Determine route type based on mappings or default rules
@@ -823,8 +824,11 @@ class FastMCPOpenAPI(FastMCP):
                 self._create_openapi_template(route, component_name, tags=route_tags)
             elif route_type == MCPType.EXCLUDE:
                 logger.info(f"Excluding route: {route.method} {route.path}")
+                num_excluded += 1
 
-        logger.info(f"Created FastMCP OpenAPI server with {len(http_routes)} routes")
+        logger.info(
+            f"Created FastMCP OpenAPI server with {len(http_routes) - num_excluded} routes"
+        )
 
     def _generate_default_name(
         self, route: openapi.HTTPRoute, mcp_names_map: dict[str, str] | None = None

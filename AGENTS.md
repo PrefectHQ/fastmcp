@@ -20,24 +20,24 @@ uv run pytest                        # Run full test suite
 
 ## Repository Structure
 
-| Path             | Purpose                                                |
-| ---------------- | ------------------------------------------------------ |
-| `src/fastmcp/`   | Library source code (Python ≥ 3.10)                   |
-| `├─server/`    | Server implementation, `FastMCP`, auth, networking    |
-| `│  ├─auth/`   | Authentication providers (Bearer, JWT, WorkOS)        |
-| `│  └─middleware/` | Error handling, logging, rate limiting             |
-| `├─client/`    | High-level client SDK + transports                    |
-| `│  └─auth/`   | Client authentication (Bearer, OAuth)                 |
-| `├─tools/`     | Tool implementations + `ToolManager`                  |
-| `├─resources/` | Resources, templates + `ResourceManager`              |
-| `├─prompts/`   | Prompt templates + `PromptManager`                     |
-| `├─cli/`       | FastMCP CLI commands (`run`, `dev`, `install`)         |
-| `├─contrib/`   | Community contributions (bulk caller, mixins)         |
-| `├─experimental/` | Experimental features (new OpenAPI parser)         |
-| `└─utilities/` | Shared utilities (logging, JSON schema, HTTP)         |
-| `tests/`         | Comprehensive pytest suite with markers               |
-| `docs/`          | Mintlify documentation (published to gofastmcp.com)   |
-| `examples/`      | Runnable demo servers (echo, smart_home, atproto)     |
+| Path               | Purpose                                             |
+| ------------------ | --------------------------------------------------- |
+| `src/fastmcp/`     | Library source code (Python ≥ 3.10)                 |
+| `├─server/`        | Server implementation, `FastMCP`, auth, networking  |
+| `│  ├─auth/`       | Authentication providers (Bearer, JWT, WorkOS)      |
+| `│  └─middleware/` | Error handling, logging, rate limiting              |
+| `├─client/`        | High-level client SDK + transports                  |
+| `│  └─auth/`       | Client authentication (Bearer, OAuth)               |
+| `├─tools/`         | Tool implementations + `ToolManager`                |
+| `├─resources/`     | Resources, templates + `ResourceManager`            |
+| `├─prompts/`       | Prompt templates + `PromptManager`                  |
+| `├─cli/`           | FastMCP CLI commands (`run`, `dev`, `install`)      |
+| `├─contrib/`       | Community contributions (bulk caller, mixins)       |
+| `├─experimental/`  | Experimental features (new OpenAPI parser)          |
+| `└─utilities/`     | Shared utilities (logging, JSON schema, HTTP)       |
+| `tests/`           | Comprehensive pytest suite with markers             |
+| `docs/`            | Mintlify documentation (published to gofastmcp.com) |
+| `examples/`        | Runnable demo servers (echo, smart_home, atproto)   |
 
 ## Core MCP Objects
 
@@ -64,13 +64,13 @@ When modifying MCP functionality, changes typically need to be applied across al
 - Every test: atomic, self-contained, single functionality
 - Use parameterization for multiple examples of same functionality
 - Use separate tests for different functionality pieces
-- Put imports at the top of the file, not in the test body
+- **ALWAYS** Put imports at the top of the file, not in the test body
 - **NEVER** add `@pytest.mark.asyncio` to tests - `asyncio_mode = "auto"` is set globally
 - **ALWAYS** run pytest after significant changes
 
 ### Inline Snapshots
 
-FastMCP uses `inline-snapshot` for testing complex data structures. On first run with empty `snapshot()`, pytest will auto-populate the expected value. To update snapshots after intentional changes, run `pytest --inline-snapshot=fix`. This is particularly useful for testing JSON schemas and API responses.
+FastMCP uses `inline-snapshot` for testing complex data structures. On first run with empty `snapshot()`, pytest will auto-populate the expected value when running `pytest --inline-snapshot=create`. To update snapshots after intentional changes, run `pytest --inline-snapshot=fix`. This is particularly useful for testing JSON schemas and API responses.
 
 ### Always Use In-Memory Transport
 

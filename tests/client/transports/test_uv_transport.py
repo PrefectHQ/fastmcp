@@ -84,7 +84,7 @@ async def test_uv_transport_module():
                 with_packages=["fastmcp"],
                 command="my_module",
                 module=True,
-                project_directory=tmpdir,
+                project_directory=Path(tmpdir),
                 keep_alive=False,
             )
         )
