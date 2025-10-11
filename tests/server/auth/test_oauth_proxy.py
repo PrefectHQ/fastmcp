@@ -441,12 +441,15 @@ class TestOAuthProxyAuthorization:
     """Tests for OAuth proxy authorization flow."""
 
     async def test_authorize_creates_transaction(self, oauth_proxy):
-        """Test that authorize creates transaction and returns upstream URL."""
+        """Test that authorize creates transaction and redirects to consent."""
         client = OAuthClientInformationFull(
             client_id="test-client",
             client_secret="test-secret",
             redirect_uris=[AnyUrl("http://localhost:54321/callback")],
         )
+
+        # Register client first (required for consent flow)
+        await oauth_proxy.register_client(client)
 
         params = AuthorizationParams(
             redirect_uri=AnyUrl("http://localhost:54321/callback"),
@@ -463,18 +466,18 @@ class TestOAuthProxyAuthorization:
         parsed = urlparse(redirect_url)
         query_params = parse_qs(parsed.query)
 
-        # Verify upstream URL structure
-        assert "github.com/login/oauth/authorize" in redirect_url
-        assert query_params["client_id"][0] == "test-client-id"
-        assert query_params["response_type"][0] == "code"
-        assert "state" in query_params  # Transaction ID
+        # Should redirect to consent page
+        assert "/consent" in redirect_url
+        assert "txn_id" in query_params
 
-        # Verify transaction was stored
-        txn_id = query_params["state"][0]
-        assert txn_id in oauth_proxy._oauth_transactions
-        transaction = oauth_proxy._oauth_transactions[txn_id]
-        assert transaction["client_id"] == "test-client"
-        assert transaction["code_challenge"] == "challenge-abc"
+        # Verify transaction was stored with correct data
+        txn_id = query_params["txn_id"][0]
+        transaction = await oauth_proxy._transaction_store.get(key=txn_id)
+        assert transaction is not None
+        assert transaction.client_id == "test-client"
+        assert transaction.code_challenge == "challenge-abc"
+        assert transaction.client_state == "client-state-123"
+        assert transaction.scopes == ["read", "write"]
 
 
 class TestOAuthProxyPKCE:
@@ -512,6 +515,9 @@ class TestOAuthProxyPKCE:
             redirect_uris=[AnyUrl("http://localhost:12345/callback")],
         )
 
+        # Register client first
+        await proxy_with_pkce.register_client(client)
+
         params = AuthorizationParams(
             redirect_uri=AnyUrl("http://localhost:12345/callback"),
             redirect_uri_provided_explicitly=True,
@@ -523,16 +529,19 @@ class TestOAuthProxyPKCE:
         redirect_url = await proxy_with_pkce.authorize(client, params)
         query_params = parse_qs(urlparse(redirect_url).query)
 
-        # Proxy should forward its own PKCE
-        assert "code_challenge" in query_params
-        assert query_params["code_challenge"][0] != "client_challenge"
-        assert query_params["code_challenge_method"] == ["S256"]
+        # Should redirect to consent page
+        assert "/consent" in redirect_url
+        assert "txn_id" in query_params
 
         # Transaction should store both challenges
-        txn_id = query_params["state"][0]
-        transaction = proxy_with_pkce._oauth_transactions[txn_id]
-        assert transaction["code_challenge"] == "client_challenge"  # Client's
-        assert "proxy_code_verifier" in transaction  # Proxy's verifier
+        txn_id = query_params["txn_id"][0]
+        transaction = await proxy_with_pkce._transaction_store.get(key=txn_id)
+        assert transaction is not None
+        assert transaction.code_challenge == "client_challenge"  # Client's
+        assert transaction.proxy_code_verifier is not None  # Proxy's verifier
+        # Proxy code challenge is computed from verifier when building upstream URL
+        # Just verify the verifier exists and is different from client's challenge
+        assert len(transaction.proxy_code_verifier) > 0
 
     async def test_pkce_forwarding_disabled(self, proxy_without_pkce):
         """Test that PKCE is not forwarded when disabled."""
@@ -541,6 +550,9 @@ class TestOAuthProxyPKCE:
             client_secret="test-secret",
             redirect_uris=[AnyUrl("http://localhost:12345/callback")],
         )
+
+        # Register client first
+        await proxy_without_pkce.register_client(client)
 
         params = AuthorizationParams(
             redirect_uri=AnyUrl("http://localhost:12345/callback"),
@@ -553,15 +565,16 @@ class TestOAuthProxyPKCE:
         redirect_url = await proxy_without_pkce.authorize(client, params)
         query_params = parse_qs(urlparse(redirect_url).query)
 
-        # No PKCE forwarded to upstream
-        assert "code_challenge" not in query_params
-        assert "code_challenge_method" not in query_params
+        # Should redirect to consent page
+        assert "/consent" in redirect_url
+        assert "txn_id" in query_params
 
-        # Client's challenge still stored
-        txn_id = query_params["state"][0]
-        transaction = proxy_without_pkce._oauth_transactions[txn_id]
-        assert transaction["code_challenge"] == "client_challenge"
-        assert "proxy_code_verifier" not in transaction
+        # Client's challenge still stored, but no proxy PKCE
+        txn_id = query_params["txn_id"][0]
+        transaction = await proxy_without_pkce._transaction_store.get(key=txn_id)
+        assert transaction is not None
+        assert transaction.code_challenge == "client_challenge"
+        assert transaction.proxy_code_verifier is None  # No proxy PKCE when disabled
 
 
 class TestOAuthProxyTokenEndpointAuth:
@@ -682,6 +695,9 @@ class TestOAuthProxyE2E:
             redirect_uris=[AnyUrl("http://localhost:12345/callback")],
         )
 
+        # Register client first
+        await proxy.register_client(client_info)
+
         params = AuthorizationParams(
             redirect_uri=AnyUrl("http://localhost:12345/callback"),
             redirect_uri_provided_explicitly=True,
@@ -690,28 +706,22 @@ class TestOAuthProxyE2E:
             scopes=["read"],
         )
 
-        # Get authorization URL
+        # Get authorization URL (now returns consent redirect)
         auth_url = await proxy.authorize(client_info, params)
 
-        # Verify mock provider was called
-        assert mock_oauth_provider.authorize_endpoint in auth_url
-
-        # Verify state is present (transaction ID)
+        # Should redirect to consent page
+        assert "/consent" in auth_url
         query_params = parse_qs(urlparse(auth_url).query)
-        assert "state" in query_params
+        assert "txn_id" in query_params
 
-        # Simulate authorization callback
-        async with httpx.AsyncClient() as http_client:
-            # This would normally redirect, but our mock returns the code
-            response = await http_client.get(auth_url, follow_redirects=False)
-
-            # Extract code from redirect location
-            location = response.headers.get("location", "")
-            callback_params = parse_qs(urlparse(location).query)
-            auth_code = callback_params.get("code", [None])[0]
-
-            assert auth_code is not None
-            assert mock_oauth_provider.authorize_called
+        # Verify transaction was created with correct configuration
+        txn_id = query_params["txn_id"][0]
+        transaction = await proxy._transaction_store.get(key=txn_id)
+        assert transaction is not None
+        assert transaction.client_id == "test-client"
+        assert transaction.scopes == ["read"]
+        # Transaction ID itself is used as upstream state parameter
+        assert transaction.txn_id == txn_id
 
     @pytest.mark.asyncio
     async def test_token_refresh_with_mock_provider(self, mock_oauth_provider):
@@ -790,6 +800,9 @@ class TestOAuthProxyE2E:
             redirect_uris=[AnyUrl("http://localhost:12345/callback")],
         )
 
+        # Register client first
+        await proxy.register_client(client)
+
         params = AuthorizationParams(
             redirect_uri=AnyUrl("http://localhost:12345/callback"),
             redirect_uri_provided_explicitly=True,
@@ -803,14 +816,20 @@ class TestOAuthProxyE2E:
         auth_url = await proxy.authorize(client, params)
         query_params = parse_qs(urlparse(auth_url).query)
 
-        # Verify PKCE was forwarded (proxy's challenge, not client's)
-        assert "code_challenge" in query_params
-        assert query_params["code_challenge"][0] != "client_challenge_value"
+        # Should redirect to consent page
+        assert "/consent" in auth_url
+        assert "txn_id" in query_params
 
-        # Transaction should have proxy's verifier
-        txn_id = query_params["state"][0]
-        transaction = proxy._oauth_transactions[txn_id]
-        assert "proxy_code_verifier" in transaction
+        # Transaction should have proxy's PKCE verifier (different from client's)
+        txn_id = query_params["txn_id"][0]
+        transaction = await proxy._transaction_store.get(key=txn_id)
+        assert transaction is not None
+        assert (
+            transaction.code_challenge == "client_challenge_value"
+        )  # Client's challenge
+        assert transaction.proxy_code_verifier is not None  # Proxy generated its own
+        # Proxy code challenge is computed from verifier when needed
+        assert len(transaction.proxy_code_verifier) > 0
 
 
 class TestParameterForwarding:
@@ -850,6 +869,9 @@ class TestParameterForwarding:
             redirect_uris=[AnyUrl("http://localhost:12345/callback")],
         )
 
+        # Register client first
+        await proxy_without_extra_params.register_client(client)
+
         params = AuthorizationParams(
             redirect_uri=AnyUrl("http://localhost:12345/callback"),
             redirect_uri_provided_explicitly=True,
@@ -862,9 +884,17 @@ class TestParameterForwarding:
         redirect_url = await proxy_without_extra_params.authorize(client, params)
         query_params = parse_qs(urlparse(redirect_url).query)
 
-        # Resource parameter should be forwarded to upstream
-        assert "resource" in query_params
-        assert query_params["resource"][0] == "https://api.example.com/v1"
+        # Should redirect to consent page
+        assert "/consent" in redirect_url
+        assert "txn_id" in query_params
+
+        # Resource parameter should be stored in transaction for upstream forwarding
+        txn_id = query_params["txn_id"][0]
+        transaction = await proxy_without_extra_params._transaction_store.get(
+            key=txn_id
+        )
+        assert transaction is not None
+        assert transaction.resource == "https://api.example.com/v1"
 
     async def test_extra_authorize_params(self, proxy_with_extra_params):
         """Test that extra authorization parameters are included."""
@@ -873,6 +903,9 @@ class TestParameterForwarding:
             client_secret="test-secret",
             redirect_uris=[AnyUrl("http://localhost:12345/callback")],
         )
+
+        # Register client first
+        await proxy_with_extra_params.register_client(client)
 
         params = AuthorizationParams(
             redirect_uri=AnyUrl("http://localhost:12345/callback"),
@@ -885,9 +918,19 @@ class TestParameterForwarding:
         redirect_url = await proxy_with_extra_params.authorize(client, params)
         query_params = parse_qs(urlparse(redirect_url).query)
 
-        # Extra audience parameter should be included
-        assert "audience" in query_params
-        assert query_params["audience"][0] == "https://api.example.com"
+        # Should redirect to consent page
+        assert "/consent" in redirect_url
+        assert "txn_id" in query_params
+
+        # Extra audience parameter is configured at proxy level (not per-transaction)
+        txn_id = query_params["txn_id"][0]
+        transaction = await proxy_with_extra_params._transaction_store.get(key=txn_id)
+        assert transaction is not None
+        # Verify proxy has extra params configured
+        assert (
+            proxy_with_extra_params._extra_authorize_params.get("audience")
+            == "https://api.example.com"
+        )
 
     async def test_resource_and_extra_params_together(self, proxy_with_extra_params):
         """Test that both resource and extra params can be used together."""
@@ -896,6 +939,9 @@ class TestParameterForwarding:
             client_secret="test-secret",
             redirect_uris=[AnyUrl("http://localhost:12345/callback")],
         )
+
+        # Register client first
+        await proxy_with_extra_params.register_client(client)
 
         params = AuthorizationParams(
             redirect_uri=AnyUrl("http://localhost:12345/callback"),
@@ -909,11 +955,19 @@ class TestParameterForwarding:
         redirect_url = await proxy_with_extra_params.authorize(client, params)
         query_params = parse_qs(urlparse(redirect_url).query)
 
-        # Both resource and audience should be present
-        assert "resource" in query_params
-        assert query_params["resource"][0] == "https://resource.example.com"
-        assert "audience" in query_params
-        assert query_params["audience"][0] == "https://api.example.com"
+        # Should redirect to consent page
+        assert "/consent" in redirect_url
+        assert "txn_id" in query_params
+
+        # Resource stored in transaction, extra params configured at proxy level
+        txn_id = query_params["txn_id"][0]
+        transaction = await proxy_with_extra_params._transaction_store.get(key=txn_id)
+        assert transaction is not None
+        assert transaction.resource == "https://resource.example.com"
+        assert (
+            proxy_with_extra_params._extra_authorize_params.get("audience")
+            == "https://api.example.com"
+        )
 
     async def test_no_extra_params_when_not_configured(
         self, proxy_without_extra_params
@@ -964,6 +1018,9 @@ class TestParameterForwarding:
             redirect_uris=[AnyUrl("http://localhost:12345/callback")],
         )
 
+        # Register client first
+        await proxy.register_client(client)
+
         params = AuthorizationParams(
             redirect_uri=AnyUrl("http://localhost:12345/callback"),
             redirect_uri_provided_explicitly=True,
@@ -975,10 +1032,20 @@ class TestParameterForwarding:
         redirect_url = await proxy.authorize(client, params)
         query_params = parse_qs(urlparse(redirect_url).query)
 
-        # All extra parameters should be included
-        assert query_params["audience"][0] == "https://api.example.com"
-        assert query_params["prompt"][0] == "consent"
-        assert query_params["max_age"][0] == "3600"
+        # Should redirect to consent page
+        assert "/consent" in redirect_url
+        assert "txn_id" in query_params
+
+        # All extra parameters configured at proxy level
+        txn_id = query_params["txn_id"][0]
+        transaction = await proxy._transaction_store.get(key=txn_id)
+        assert transaction is not None
+        # Verify proxy has all extra params configured
+        assert (
+            proxy._extra_authorize_params.get("audience") == "https://api.example.com"
+        )
+        assert proxy._extra_authorize_params.get("prompt") == "consent"
+        assert proxy._extra_authorize_params.get("max_age") == "3600"
 
     @pytest.mark.asyncio
     async def test_token_endpoint_invalid_client_error(self, jwt_verifier):

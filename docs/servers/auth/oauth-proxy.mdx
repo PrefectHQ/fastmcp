@@ -10,9 +10,9 @@ import { VersionBadge } from "/snippets/version-badge.mdx";
 
 <VersionBadge version="2.12.0" />
 
-OAuth Proxy enables FastMCP servers to authenticate with OAuth providers that **don't support Dynamic Client Registration (DCR)**. This includes virtually all traditional OAuth providers: GitHub, Google, Azure, AWS, Discord, Facebook, and most enterprise identity systems. For providers that do support DCR (like Descope and WorkOS AuthKit), use [`RemoteAuthProvider`](/servers/auth/remote-oauth) instead.
+The OAuth proxy enables FastMCP servers to authenticate with OAuth providers that **don't support Dynamic Client Registration (DCR)**. This includes virtually all traditional OAuth providers: GitHub, Google, Azure, AWS, Discord, Facebook, and most enterprise identity systems. For providers that do support DCR (like Descope and WorkOS AuthKit), use [`RemoteAuthProvider`](/servers/auth/remote-oauth) instead.
 
-MCP clients expect to register automatically and obtain credentials on the fly, but traditional providers require manual app registration through their developer consoles. OAuth Proxy bridges this gap by presenting a DCR-compliant interface to MCP clients while using your pre-registered credentials with the upstream provider. When a client attempts to register, the proxy returns your fixed credentials. When a client initiates authorization, the proxy handles the complexity of callback forwarding—storing the client's dynamic callback URL, using its own fixed callback with the provider, then forwarding back to the client after token exchange.
+MCP clients expect to register automatically and obtain credentials on the fly, but traditional providers require manual app registration through their developer consoles. The OAuth proxy bridges this gap by presenting a DCR-compliant interface to MCP clients while using your pre-registered credentials with the upstream provider. When a client attempts to register, the proxy returns your fixed credentials. When a client initiates authorization, the proxy handles the complexity of callback forwarding—storing the client's dynamic callback URL, using its own fixed callback with the provider, then forwarding back to the client after token exchange.
 
 This approach enables any MCP client (whether using random localhost ports or fixed URLs like Claude.ai) to authenticate with any traditional OAuth provider, all while maintaining full OAuth 2.1 and PKCE security.
 
@@ -20,7 +20,7 @@ This approach enables any MCP client (whether using random localhost ports or fi
   For providers that support OIDC discovery (Auth0, Google with OIDC
   configuration, Azure AD), consider using [`OIDC
   Proxy`](/servers/auth/oidc-proxy) for automatic configuration. OIDC Proxy
-  extends OAuth Proxy to automatically discover endpoints from the provider's
+  extends the OAuth proxy to automatically discover endpoints from the provider's
   `/.well-known/openid-configuration` URL, simplifying setup.
 </Note>
 
@@ -28,7 +28,7 @@ This approach enables any MCP client (whether using random localhost ports or fi
 
 ### Provider Setup Requirements
 
-Before using OAuth Proxy, you need to register your application with your OAuth provider:
+Before using the OAuth proxy, you need to register your application with your OAuth provider:
 
 1. **Register your application** in the provider's developer console (GitHub Settings, Google Cloud Console, Azure Portal, etc.)
 2. **Configure the redirect URI** as your FastMCP server URL plus your chosen callback path:
@@ -41,12 +41,12 @@ Before using OAuth Proxy, you need to register your application with your OAuth 
 <Warning>
   The redirect URI you configure with your provider must exactly match your
   FastMCP server's URL plus the callback path. If you customize `redirect_path`
-  in OAuth Proxy, update your provider's redirect URI accordingly.
+  in the OAuth proxy, update your provider's redirect URI accordingly.
 </Warning>
 
 ### Basic Setup
 
-Here's how to implement OAuth Proxy with any provider:
+Here's how to implement the OAuth proxy with any provider:
 
 ```python
 from fastmcp import FastMCP
@@ -203,48 +203,6 @@ auth = OAuthProxy(..., client_storage=InMemoryStorage())
 </ParamField>
 </Card>
 
-### Provider-Specific Parameters
-
-Some OAuth providers require additional parameters beyond the standard OAuth2 flow. Use `extra_authorize_params` and `extra_token_params` to handle these requirements:
-
-#### Auth0 Example
-
-Auth0 requires an `audience` parameter to issue JWT tokens instead of opaque tokens:
-
-```python
-auth = OAuthProxy(
-    upstream_authorization_endpoint="https://your-domain.auth0.com/authorize",
-    upstream_token_endpoint="https://your-domain.auth0.com/oauth/token",
-    upstream_client_id="your-auth0-client-id",
-    upstream_client_secret="your-auth0-client-secret",
-
-    # Auth0 requires audience for JWT tokens
-    extra_authorize_params={
-        "audience": "https://your-api-identifier.com"
-    },
-    extra_token_params={
-        "audience": "https://your-api-identifier.com"
-    },
-
-    token_verifier=JWTVerifier(
-        jwks_uri="https://your-domain.auth0.com/.well-known/jwks.json",
-        issuer="https://your-domain.auth0.com/",
-        audience="https://your-api-identifier.com"
-    ),
-
-    base_url="https://your-server.com"
-)
-```
-
-#### RFC 8707 Resource Indicators
-
-MCP clients can specify target resources using the standard `resource` parameter (RFC 8707). This is automatically forwarded when present:
-
-```python
-# Client code (automatic - no server configuration needed)
-# The resource parameter is passed through from AuthorizationParams
-```
-
 ### Using Built-in Providers
 
 FastMCP includes pre-configured providers for common services:
@@ -263,21 +221,57 @@ mcp = FastMCP(name="My Server", auth=auth)
 
 Available providers include `GitHubProvider`, `GoogleProvider`, and others. These handle token verification automatically.
 
+### Token Verification
+
+The OAuth proxy requires a compatible `TokenVerifier` to validate tokens from your provider. Different providers use different token formats:
+
+- **JWT tokens** (Google, Azure): Use `JWTVerifier` with the provider's JWKS endpoint
+- **Opaque tokens** (GitHub, Discord): Use provider-specific verifiers or implement custom validation
+
+See the [Token Verification guide](/servers/auth/token-verification) for detailed setup instructions for your provider.
+
 ### Scope Configuration
 
-OAuth scopes are configured through your `TokenVerifier`. Set `required_scopes` to automatically request the permissions your application needs:
+OAuth scopes control what permissions your application requests from users. They're configured through your `TokenVerifier` (required for the OAuth proxy to validate tokens from your provider). Set `required_scopes` to automatically request the permissions your application needs:
 
 ```python
 JWTVerifier(..., required_scopes = ["read:user", "write:data"])
 ```
 
-Dynamic clients created by the proxy will automatically include these scopes in their authorization requests.
+Dynamic clients created by the proxy will automatically include these scopes in their authorization requests. See the [Token Verification](#token-verification) section below for detailed setup.
 
-## How It Works
+### Custom Parameters
+
+Some OAuth providers require additional parameters beyond the standard OAuth2 flow. Use `extra_authorize_params` and `extra_token_params` to pass provider-specific requirements. For example, Auth0 requires an `audience` parameter to issue JWT tokens instead of opaque tokens:
+
+```python
+auth = OAuthProxy(
+    upstream_authorization_endpoint="https://your-domain.auth0.com/authorize",
+    upstream_token_endpoint="https://your-domain.auth0.com/oauth/token",
+    upstream_client_id="your-auth0-client-id",
+    upstream_client_secret="your-auth0-client-secret",
+
+    # Auth0-specific audience parameter
+    extra_authorize_params={"audience": "https://your-api-identifier.com"},
+    extra_token_params={"audience": "https://your-api-identifier.com"},
+
+    token_verifier=JWTVerifier(
+        jwks_uri="https://your-domain.auth0.com/.well-known/jwks.json",
+        issuer="https://your-domain.auth0.com/",
+        audience="https://your-api-identifier.com"
+    ),
+    base_url="https://your-server.com"
+)
+```
+
+The proxy also automatically forwards RFC 8707 `resource` parameters from MCP clients to upstream providers that support them.
+
+## OAuth Flow
 
 ```mermaid
 sequenceDiagram
     participant Client as MCP Client<br/>(localhost:random)
+    participant User as User
     participant Proxy as FastMCP OAuth Proxy<br/>(server:8000)
     participant Provider as OAuth Provider<br/>(GitHub, etc.)
 
@@ -285,25 +279,27 @@ sequenceDiagram
     Client->>Proxy: 1. POST /register<br/>redirect_uri: localhost:54321/callback
     Proxy-->>Client: 2. Returns fixed upstream credentials
 
-    Note over Client, Proxy: Authorization with PKCE & Callback Forwarding
+    Note over Client, User: Authorization with User Consent
     Client->>Proxy: 3. GET /authorize<br/>redirect_uri=localhost:54321/callback<br/>code_challenge=CLIENT_CHALLENGE
     Note over Proxy: Store transaction with client PKCE<br/>Generate proxy PKCE pair
-    Proxy->>Provider: 4. Redirect to provider<br/>redirect_uri=server:8000/auth/callback<br/>code_challenge=PROXY_CHALLENGE
+    Proxy->>User: 4. Show consent page<br/>(client details, redirect URI, scopes)
+    User->>Proxy: 5. Approve/deny consent
+    Proxy->>Provider: 6. Redirect to provider<br/>redirect_uri=server:8000/auth/callback<br/>code_challenge=PROXY_CHALLENGE
 
     Note over Provider, Proxy: Provider Callback
-    Provider->>Proxy: 5. GET /auth/callback<br/>with authorization code
-    Proxy->>Provider: 6. Exchange code for tokens<br/>code_verifier=PROXY_VERIFIER
-    Provider-->>Proxy: 7. Access & refresh tokens
+    Provider->>Proxy: 7. GET /auth/callback<br/>with authorization code
+    Proxy->>Provider: 8. Exchange code for tokens<br/>code_verifier=PROXY_VERIFIER
+    Provider-->>Proxy: 9. Access & refresh tokens
 
     Note over Proxy, Client: Client Callback Forwarding
-    Proxy->>Client: 8. Redirect to localhost:54321/callback<br/>with new authorization code
+    Proxy->>Client: 10. Redirect to localhost:54321/callback<br/>with new authorization code
 
     Note over Client, Proxy: Token Exchange
-    Client->>Proxy: 9. POST /token with code<br/>code_verifier=CLIENT_VERIFIER
-    Proxy-->>Client: 10. Returns stored provider tokens
+    Client->>Proxy: 11. POST /token with code<br/>code_verifier=CLIENT_VERIFIER
+    Proxy-->>Client: 12. Returns stored provider tokens
 ```
 
-The flow diagram above illustrates the complete OAuth Proxy pattern. Let's understand each phase:
+The flow diagram above illustrates the complete OAuth proxy pattern. Let's understand each phase:
 
 ### Registration Phase
 
@@ -315,9 +311,10 @@ The client initiates OAuth by redirecting to the proxy's `/authorize` endpoint. 
 
 1. Stores the client's transaction with its PKCE challenge
 2. Generates its own PKCE parameters for upstream security
-3. Redirects to the upstream provider using the fixed callback URL
+3. Shows the user a consent page with the client's details, redirect URI, and requested scopes
+4. If the user approves (or the client was previously approved), redirects to the upstream provider using the fixed callback URL
 
-This dual-PKCE approach maintains end-to-end security at both the client-to-proxy and proxy-to-provider layers.
+This dual-PKCE approach maintains end-to-end security at both the client-to-proxy and proxy-to-provider layers. The consent step protects against confused deputy attacks by ensuring you explicitly approve each client before it can complete authorization.
 
 ### Callback Phase
 
@@ -336,7 +333,7 @@ This entire flow is transparent to the MCP client—it experiences a standard OA
 
 ### PKCE Forwarding
 
-OAuth Proxy automatically handles PKCE (Proof Key for Code Exchange) when working with providers that support or require it. The proxy generates its own PKCE parameters to send upstream while separately validating the client's PKCE, ensuring end-to-end security at both layers.
+The OAuth proxy automatically handles PKCE (Proof Key for Code Exchange) when working with providers that support or require it. The proxy generates its own PKCE parameters to send upstream while separately validating the client's PKCE, ensuring end-to-end security at both layers.
 
 This is enabled by default via the `forward_pkce` parameter and works seamlessly with providers like Google, Azure AD, and GitHub. Only disable it for legacy providers that don't support PKCE:
 
@@ -350,7 +347,7 @@ auth = OAuthProxy(
 
 ### Redirect URI Validation
 
-While OAuth Proxy accepts all redirect URIs by default (for DCR compatibility), you can restrict which clients can connect by specifying allowed patterns:
+While the OAuth proxy accepts all redirect URIs by default (for DCR compatibility), you can restrict which clients can connect by specifying allowed patterns:
 
 ```python
 # Allow only localhost clients (common for development)
@@ -375,20 +372,29 @@ auth = OAuthProxy(
 
 Check your server logs for "Client registered with redirect_uri" messages to identify what URLs your clients use.
 
-## Token Verification
+## Security
 
-OAuth Proxy requires a compatible `TokenVerifier` to validate tokens from your provider. Different providers use different token formats:
+### Confused Deputy Attacks
 
-- **JWT tokens** (Google, Azure): Use `JWTVerifier` with the provider's JWKS endpoint
-- **Opaque tokens** (GitHub, Discord): Use provider-specific verifiers or implement custom validation
+<VersionBadge version="2.13.0" />
 
-See the [Token Verification guide](/servers/auth/token-verification) for detailed setup instructions for your provider.
+A confused deputy attack allows a malicious client to steal your authorization by tricking you into granting it access under your identity.
+
+The OAuth proxy works by bridging DCR clients to traditional auth providers, which means that multiple MCP clients connect through a single upstream OAuth application. An attacker can exploit this shared application by registering a malicious client with their own redirect URI, then sending you an authorization link. When you click it, your browser goes through the OAuth flow—but since you may have already authorized this OAuth app before, the provider might auto-approve the request. The authorization code then gets sent to the attacker's redirect URI instead of a legitimate client, giving them access under your credentials.
+
+#### Mitigation
+
+FastMCP's OAuth proxy requires you to explicitly consent whenever any new or unrecognized client attempts to connect to your server. Before any authorization happens, you see a consent page showing the client's details, redirect URI, and requested scopes. This gives you the opportunity to review and deny suspicious requests. Once you approve a client, it's remembered so you don't see the consent page again for that client. The consent mechanism is implemented with CSRF tokens and cryptographically signed cookies to prevent tampering.
+
+**Learn more:**
+- [MCP Security Best Practices](https://modelcontextprotocol.io/specification/2025-06-18/basic/security_best_practices#confused-deputy-problem) - Official specification guidance
+- [Confused Deputy Attacks Explained](https://den.dev/blog/mcp-confused-deputy-api-management/) - Detailed walkthrough by Den Delimarsky
 
 ## Environment Configuration
 
 <VersionBadge version="2.12.1" />
 
-For production deployments, configure OAuth Proxy through environment variables instead of hardcoding credentials:
+For production deployments, configure the OAuth proxy through environment variables instead of hardcoding credentials:
 
 ```bash
 # Specify the provider implementation
