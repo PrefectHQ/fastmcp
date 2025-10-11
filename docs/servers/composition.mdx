@@ -263,6 +263,64 @@ main_server.mount(remote_proxy, prefix="remote")
 
 
 
+## Tag Filtering with Composition
+
+<VersionBadge version="2.9.0" />
+
+When using `include_tags` or `exclude_tags` on a parent server, these filters apply **recursively** to all components, including those from mounted or imported servers. This allows you to control which components are exposed at the parent level, regardless of how your application is composed.
+
+```python
+import asyncio
+from fastmcp import FastMCP, Client
+
+# Create a subserver with tools tagged for different environments
+api_server = FastMCP(name="APIServer")
+
+@api_server.tool(tags={"production"})
+def prod_endpoint() -> str:
+    """Production-ready endpoint."""
+    return "Production data"
+
+@api_server.tool(tags={"development"})
+def dev_endpoint() -> str:
+    """Development-only endpoint."""
+    return "Debug data"
+
+# Mount the subserver with production tag filtering at parent level
+prod_app = FastMCP(name="ProductionApp", include_tags={"production"})
+prod_app.mount(api_server, prefix="api")
+
+# Test the filtering
+async def test_filtering():
+    async with Client(prod_app) as client:
+        tools = await client.list_tools()
+        print("Available tools:", [t.name for t in tools])
+        # Shows: ['api_prod_endpoint']
+        # The 'api_dev_endpoint' is filtered out
+
+        # Calling the filtered tool raises an error
+        try:
+            await client.call_tool("api_dev_endpoint")
+        except Exception as e:
+            print(f"Filtered tool not accessible: {e}")
+
+if __name__ == "__main__":
+    asyncio.run(test_filtering())
+```
+
+### How Recursive Filtering Works
+
+Tag filters apply in the following order:
+
+1. **Child Server Filters**: Each mounted/imported server first applies its own `include_tags`/`exclude_tags` to its components.
+2. **Parent Server Filters**: The parent server then applies its own `include_tags`/`exclude_tags` to all components, including those from child servers.
+
+This ensures that parent server tag policies act as a global policy for everything the parent server exposes, no matter how your application is composed.
+
+<Note>
+This filtering applies to both **listing** (e.g., `list_tools()`) and **execution** (e.g., `call_tool()`). Filtered components are neither visible nor executable through the parent server.
+</Note>
+
 ## Resource Prefix Formats
 
 <VersionBadge version="2.4.0" />

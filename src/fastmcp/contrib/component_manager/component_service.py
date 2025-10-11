@@ -41,7 +41,7 @@ class ComponentService:
             return tool
 
         # 2. Check mounted servers using the filtered protocol path.
-        for mounted in reversed(self._tool_manager._mounted_servers):
+        for mounted in reversed(self._server._mounted_servers):
             if mounted.prefix:
                 if key.startswith(f"{mounted.prefix}_"):
                     tool_key = key.removeprefix(f"{mounted.prefix}_")
@@ -70,7 +70,7 @@ class ComponentService:
             return tool
 
         # 2. Check mounted servers using the filtered protocol path.
-        for mounted in reversed(self._tool_manager._mounted_servers):
+        for mounted in reversed(self._server._mounted_servers):
             if mounted.prefix:
                 if key.startswith(f"{mounted.prefix}_"):
                     tool_key = key.removeprefix(f"{mounted.prefix}_")
@@ -103,7 +103,7 @@ class ComponentService:
             return template
 
         # 2. Check mounted servers using the filtered protocol path.
-        for mounted in reversed(self._resource_manager._mounted_servers):
+        for mounted in reversed(self._server._mounted_servers):
             if mounted.prefix:
                 if has_resource_prefix(
                     key,
@@ -146,7 +146,7 @@ class ComponentService:
             return template
 
         # 2. Check mounted servers using the filtered protocol path.
-        for mounted in reversed(self._resource_manager._mounted_servers):
+        for mounted in reversed(self._server._mounted_servers):
             if mounted.prefix:
                 if has_resource_prefix(
                     key,
@@ -185,7 +185,7 @@ class ComponentService:
             return prompt
 
         # 2. Check mounted servers using the filtered protocol path.
-        for mounted in reversed(self._prompt_manager._mounted_servers):
+        for mounted in reversed(self._server._mounted_servers):
             if mounted.prefix:
                 if key.startswith(f"{mounted.prefix}_"):
                     prompt_key = key.removeprefix(f"{mounted.prefix}_")
@@ -213,7 +213,7 @@ class ComponentService:
             return prompt
 
         # 2. Check mounted servers using the filtered protocol path.
-        for mounted in reversed(self._prompt_manager._mounted_servers):
+        for mounted in reversed(self._server._mounted_servers):
             if mounted.prefix:
                 if key.startswith(f"{mounted.prefix}_"):
                     prompt_key = key.removeprefix(f"{mounted.prefix}_")

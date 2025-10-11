@@ -2,7 +2,7 @@ from __future__ import annotations as _annotations
 
 import warnings
 from collections.abc import Awaitable, Callable
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from mcp import GetPromptResult
 
@@ -11,9 +11,6 @@ from fastmcp.exceptions import NotFoundError, PromptError
 from fastmcp.prompts.prompt import FunctionPrompt, Prompt, PromptResult
 from fastmcp.settings import DuplicateBehavior
 from fastmcp.utilities.logging import get_logger
-
-if TYPE_CHECKING:
-    from fastmcp.server.server import MountedServer
 
 logger = get_logger(__name__)
 
@@ -27,7 +24,6 @@ class PromptManager:
         mask_error_details: bool | None = None,
     ):
         self._prompts: dict[str, Prompt] = {}
-        self._mounted_servers: list[MountedServer] = []
         self.mask_error_details = mask_error_details or settings.mask_error_details
 
         # Default to "warn" if None is provided
@@ -41,54 +37,6 @@ class PromptManager:
             )
 
         self.duplicate_behavior = duplicate_behavior
-
-    def mount(self, server: MountedServer) -> None:
-        """Adds a mounted server as a source for prompts."""
-        self._mounted_servers.append(server)
-
-    async def _load_prompts(
-        self, *, apply_filtering: bool = False
-    ) -> dict[str, Prompt]:
-        """
-        The single, consolidated recursive method for fetching prompts. The 'apply_filtering'
-        parameter determines the communication path.
-
-        - apply_filtering=False: Manager-to-manager path for complete, unfiltered inventory
-        - apply_filtering=True: Server-to-server path for filtered MCP requests
-        """
-        all_prompts: dict[str, Prompt] = {}
-
-        for mounted in self._mounted_servers:
-            try:
-                if apply_filtering:
-                    # Use the server-to-server filtered path
-                    child_results = await mounted.server._list_prompts_middleware()
-                else:
-                    # Use the manager-to-manager unfiltered path
-                    child_results = await mounted.server._prompt_manager.list_prompts()
-
-                # The combination logic is the same for both paths
-                child_dict = {p.key: p for p in child_results}
-                if mounted.prefix:
-                    for prompt in child_dict.values():
-                        prefixed_prompt = prompt.model_copy(
-                            key=f"{mounted.prefix}_{prompt.key}"
-                        )
-                        all_prompts[prefixed_prompt.key] = prefixed_prompt
-                else:
-                    all_prompts.update(child_dict)
-            except Exception as e:
-                # Skip failed mounts silently, matches existing behavior
-                logger.warning(
-                    f"Failed to get prompts from server: {mounted.server.name!r}, mounted at: {mounted.prefix!r}: {e}"
-                )
-                if settings.mounted_components_raise_on_load_error:
-                    raise
-                continue
-
-        # Finally, add local prompts, which always take precedence
-        all_prompts.update(self._prompts)
-        return all_prompts
 
     async def has_prompt(self, key: str) -> bool:
         """Check if a prompt exists."""
@@ -104,16 +52,9 @@ class PromptManager:
 
     async def get_prompts(self) -> dict[str, Prompt]:
         """
-        Gets the complete, unfiltered inventory of all prompts.
+        Gets the complete, unfiltered inventory of local prompts.
         """
-        return await self._load_prompts(apply_filtering=False)
-
-    async def list_prompts(self) -> list[Prompt]:
-        """
-        Lists all prompts, applying protocol filtering.
-        """
-        prompts_dict = await self._load_prompts(apply_filtering=True)
-        return list(prompts_dict.values())
+        return dict(self._prompts)
 
     def add_prompt_from_fn(
         self,
@@ -162,46 +103,16 @@ class PromptManager:
         Internal API for servers: Finds and renders a prompt, respecting the
         filtered protocol path.
         """
-        # 1. Check local prompts first. The server will have already applied its filter.
-        if name in self._prompts:
-            prompt = await self.get_prompt(name)
-            if not prompt:
-                raise NotFoundError(f"Unknown prompt: {name}")
-
-            try:
-                messages = await prompt.render(arguments)
-                return GetPromptResult(
-                    description=prompt.description, messages=messages
-                )
-
-            # Pass through PromptErrors as-is
-            except PromptError as e:
-                logger.exception(f"Error rendering prompt {name!r}")
-                raise e
-
-            # Handle other exceptions
-            except Exception as e:
-                logger.exception(f"Error rendering prompt {name!r}")
-                if self.mask_error_details:
-                    # Mask internal details
-                    raise PromptError(f"Error rendering prompt {name!r}") from e
-                else:
-                    # Include original error details
-                    raise PromptError(f"Error rendering prompt {name!r}: {e}") from e
-
-        # 2. Check mounted servers using the filtered protocol path.
-        for mounted in reversed(self._mounted_servers):
-            prompt_key = name
-            if mounted.prefix:
-                if name.startswith(f"{mounted.prefix}_"):
-                    prompt_key = name.removeprefix(f"{mounted.prefix}_")
-                else:
-                    continue
-            try:
-                return await mounted.server._get_prompt_middleware(
-                    prompt_key, arguments
-                )
-            except NotFoundError:
-                continue
-
-        raise NotFoundError(f"Unknown prompt: {name}")
+        prompt = await self.get_prompt(name)
+        try:
+            messages = await prompt.render(arguments)
+            return GetPromptResult(description=prompt.description, messages=messages)
+        except PromptError as e:
+            logger.exception(f"Error rendering prompt {name!r}")
+            raise e
+        except Exception as e:
+            logger.exception(f"Error rendering prompt {name!r}")
+            if self.mask_error_details:
+                raise PromptError(f"Error rendering prompt {name!r}") from e
+            else:
+                raise PromptError(f"Error rendering prompt {name!r}: {e}") from e
