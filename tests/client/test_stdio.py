@@ -253,3 +253,112 @@ class TestKeepAlive:
         with pytest.raises(RuntimeError, match="Client failed to connect"):
             async with client:
                 pass
+
+
+class TestLogFile:
+    @pytest.fixture
+    def stdio_script_with_stderr(self, tmp_path):
+        script = inspect.cleandoc('''
+            import sys
+            from fastmcp import FastMCP
+
+            mcp = FastMCP()
+
+            @mcp.tool
+            def write_error(message: str) -> str:
+                """Writes a message to stderr and returns it"""
+                print(message, file=sys.stderr, flush=True)
+                return message
+
+            if __name__ == "__main__":
+                mcp.run()
+            ''')
+        script_file = tmp_path / "stderr_script.py"
+        script_file.write_text(script)
+        return script_file
+
+    async def test_log_file_parameter_accepted_by_stdio_transport(self, tmp_path):
+        """Test that log_file parameter can be set on StdioTransport"""
+        log_file_path = tmp_path / "errors.log"
+        transport = StdioTransport(
+            command="python", args=["script.py"], log_file=log_file_path
+        )
+        assert transport.log_file == log_file_path
+
+    async def test_log_file_parameter_accepted_by_python_stdio_transport(
+        self, tmp_path, stdio_script_with_stderr
+    ):
+        """Test that log_file parameter can be set on PythonStdioTransport"""
+        log_file_path = tmp_path / "errors.log"
+        transport = PythonStdioTransport(
+            script_path=stdio_script_with_stderr, log_file=log_file_path
+        )
+        assert transport.log_file == log_file_path
+
+    async def test_log_file_parameter_accepts_textio(self, tmp_path):
+        """Test that log_file parameter can accept a TextIO object"""
+        log_file_path = tmp_path / "errors.log"
+        with open(log_file_path, "w") as log_file:
+            transport = StdioTransport(
+                command="python", args=["script.py"], log_file=log_file
+            )
+            assert transport.log_file == log_file
+
+    async def test_log_file_captures_stderr_output_with_path(
+        self, tmp_path, stdio_script_with_stderr
+    ):
+        """Test that stderr output is written to the log_file when using Path"""
+        log_file_path = tmp_path / "errors.log"
+
+        transport = PythonStdioTransport(
+            script_path=stdio_script_with_stderr, log_file=log_file_path
+        )
+        client = Client(transport=transport)
+
+        async with client:
+            await client.call_tool("write_error", {"message": "Test error message"})
+
+        # Need to wait a bit for stderr to flush
+        await asyncio.sleep(0.1)
+
+        content = log_file_path.read_text()
+        assert "Test error message" in content
+
+    async def test_log_file_captures_stderr_output_with_textio(
+        self, tmp_path, stdio_script_with_stderr
+    ):
+        """Test that stderr output is written to the log_file when using TextIO"""
+        log_file_path = tmp_path / "errors.log"
+
+        with open(log_file_path, "w") as log_file:
+            transport = PythonStdioTransport(
+                script_path=stdio_script_with_stderr, log_file=log_file
+            )
+            client = Client(transport=transport)
+
+            async with client:
+                await client.call_tool(
+                    "write_error", {"message": "Test error with TextIO"}
+                )
+
+            # Need to wait a bit for stderr to flush
+            await asyncio.sleep(0.1)
+
+        content = log_file_path.read_text()
+        assert "Test error with TextIO" in content
+
+    async def test_log_file_none_uses_default_behavior(
+        self, tmp_path, stdio_script_with_stderr
+    ):
+        """Test that log_file=None uses default stderr handling"""
+        transport = PythonStdioTransport(
+            script_path=stdio_script_with_stderr, log_file=None
+        )
+        client = Client(transport=transport)
+
+        async with client:
+            # Should work without error even without explicit log_file
+            result = await client.call_tool(
+                "write_error", {"message": "Default stderr"}
+            )
+            assert result.data == "Default stderr"
