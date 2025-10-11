@@ -1564,6 +1564,7 @@ class FastMCP(Generic[LifespanResultT]):
         path: str | None = None,
         uvicorn_config: dict[str, Any] | None = None,
         middleware: list[ASGIMiddleware] | None = None,
+        json_response: bool | None = None,
         stateless_http: bool | None = None,
     ) -> None:
         """Run the server using HTTP transport.
@@ -1576,6 +1577,7 @@ class FastMCP(Generic[LifespanResultT]):
             path: Path for the endpoint (defaults to settings.streamable_http_path or settings.sse_path)
             uvicorn_config: Additional configuration for the Uvicorn server
             middleware: A list of middleware to apply to the app
+            json_response: Whether to use JSON response format (defaults to settings.json_response)
             stateless_http: Whether to use stateless HTTP (defaults to settings.stateless_http)
         """
         host = host or self._deprecated_settings.host
@@ -1588,6 +1590,7 @@ class FastMCP(Generic[LifespanResultT]):
             path=path,
             transport=transport,
             middleware=middleware,
+            json_response=json_response,
             stateless_http=stateless_http,
         )
 
