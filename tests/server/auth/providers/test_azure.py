@@ -213,6 +213,14 @@ class TestAzureProvider:
             base_url="https://srv.example",
         )
 
+        await provider.register_client(
+            OAuthClientInformationFull(
+                client_id="dummy",
+                client_secret="secret",
+                redirect_uris=[AnyUrl("http://localhost:12345/callback")],
+            )
+        )
+
         client = OAuthClientInformationFull(
             client_id="dummy",
             client_secret="secret",
@@ -230,13 +238,19 @@ class TestAzureProvider:
 
         url = await provider.authorize(client, params)
 
+        # Extract transaction ID from consent redirect
         parsed = urlparse(url)
         qs = parse_qs(parsed.query)
-        assert "resource" not in qs
-        scope_value = qs.get("scope", [""])[0]
-        scope_parts = scope_value.split(" ") if scope_value else []
-        assert "api://my-api/read" in scope_parts
-        assert "api://my-api/profile" in scope_parts
+        assert "txn_id" in qs, "Should redirect to consent page with transaction ID"
+        txn_id = qs["txn_id"][0]
+
+        # Verify transaction contains correct parameters (resource filtered, scopes prefixed)
+        transaction = await provider._transaction_store.get(key=txn_id)
+        assert transaction is not None
+        assert "api://my-api/read" in transaction.scopes
+        assert "api://my-api/profile" in transaction.scopes
+        # Azure provider filters resource parameter (not stored in transaction)
+        assert transaction.resource is None
 
     @pytest.mark.asyncio
     async def test_authorize_appends_unprefixed_additional_scopes(self):
@@ -249,6 +263,14 @@ class TestAzureProvider:
             required_scopes=["read"],
             base_url="https://srv.example",
             additional_authorize_scopes=["Mail.Read", "User.Read"],
+        )
+
+        await provider.register_client(
+            OAuthClientInformationFull(
+                client_id="dummy",
+                client_secret="secret",
+                redirect_uris=[AnyUrl("http://localhost:12345/callback")],
+            )
         )
 
         client = OAuthClientInformationFull(
@@ -267,10 +289,15 @@ class TestAzureProvider:
 
         url = await provider.authorize(client, params)
 
+        # Extract transaction ID from consent redirect
         parsed = urlparse(url)
         qs = parse_qs(parsed.query)
-        scope_value = qs.get("scope", [""])[0]
-        scope_parts = scope_value.split(" ") if scope_value else []
-        assert "api://my-api/read" in scope_parts
-        assert "Mail.Read" in scope_parts
-        assert "User.Read" in scope_parts
+        assert "txn_id" in qs, "Should redirect to consent page with transaction ID"
+        txn_id = qs["txn_id"][0]
+
+        # Verify transaction contains correct scopes (prefixed + unprefixed additional)
+        transaction = await provider._transaction_store.get(key=txn_id)
+        assert transaction is not None
+        assert "api://my-api/read" in transaction.scopes
+        assert "Mail.Read" in transaction.scopes
+        assert "User.Read" in transaction.scopes

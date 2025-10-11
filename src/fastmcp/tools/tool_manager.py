@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import warnings
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from mcp.types import ToolAnnotations
 
@@ -15,9 +15,6 @@ from fastmcp.tools.tool_transform import (
     apply_transformations_to_tools,
 )
 from fastmcp.utilities.logging import get_logger
-
-if TYPE_CHECKING:
-    from fastmcp.server.server import MountedServer
 
 logger = get_logger(__name__)
 
@@ -32,7 +29,6 @@ class ToolManager:
         transformations: dict[str, ToolTransformConfig] | None = None,
     ):
         self._tools: dict[str, Tool] = {}
-        self._mounted_servers: list[MountedServer] = []
         self.mask_error_details = mask_error_details or settings.mask_error_details
         self.transformations = transformations or {}
 
@@ -48,56 +44,12 @@ class ToolManager:
 
         self.duplicate_behavior = duplicate_behavior
 
-    def mount(self, server: MountedServer) -> None:
-        """Adds a mounted server as a source for tools."""
-        self._mounted_servers.append(server)
-
-    async def _load_tools(self, *, apply_filtering: bool = False) -> dict[str, Tool]:
-        """
-        The single, consolidated recursive method for fetching tools. The 'apply_filtering'
-        parameter determines the communication path.
-
-        - apply_filtering=False: Manager-to-manager path for complete, unfiltered inventory
-        - apply_filtering=True: Server-to-server path for filtered MCP requests
-        """
-        all_tools: dict[str, Tool] = {}
-
-        for mounted in self._mounted_servers:
-            try:
-                if apply_filtering:
-                    # Use the server-to-server filtered path
-                    child_results = await mounted.server._list_tools_middleware()
-                else:
-                    # Use the manager-to-manager unfiltered path
-                    child_results = await mounted.server._tool_manager.list_tools()
-
-                # The combination logic is the same for both paths
-                child_dict = {t.key: t for t in child_results}
-                if mounted.prefix:
-                    for tool in child_dict.values():
-                        prefixed_tool = tool.model_copy(
-                            key=f"{mounted.prefix}_{tool.key}"
-                        )
-                        all_tools[prefixed_tool.key] = prefixed_tool
-                else:
-                    all_tools.update(child_dict)
-            except Exception as e:
-                # Skip failed mounts silently, matches existing behavior
-                logger.warning(
-                    f"Failed to get tools from server: {mounted.server.name!r}, mounted at: {mounted.prefix!r}: {e}"
-                )
-                if settings.mounted_components_raise_on_load_error:
-                    raise
-                continue
-
-        # Finally, add local tools, which always take precedence
-        all_tools.update(self._tools)
-
+    async def _load_tools(self) -> dict[str, Tool]:
+        """Return this manager's local tools with transformations applied."""
         transformed_tools = apply_transformations_to_tools(
-            tools=all_tools,
+            tools=self._tools,
             transformations=self.transformations,
         )
-
         return transformed_tools
 
     async def has_tool(self, key: str) -> bool:
@@ -114,25 +66,9 @@ class ToolManager:
 
     async def get_tools(self) -> dict[str, Tool]:
         """
-        Gets the complete, unfiltered inventory of all tools.
+        Gets the complete, unfiltered inventory of local tools.
         """
-        return await self._load_tools(apply_filtering=False)
-
-    async def list_tools(self) -> list[Tool]:
-        """
-        Lists all tools, applying protocol filtering.
-        """
-        tools_dict = await self._load_tools(apply_filtering=True)
-        return list(tools_dict.values())
-
-    @property
-    def _tools_transformed(self) -> list[str]:
-        """Get the local tools."""
-
-        return [
-            transformation.name or tool_name
-            for tool_name, transformation in self.transformations.items()
-        ]
+        return await self._load_tools()
 
     def add_tool_from_fn(
         self,
@@ -214,41 +150,15 @@ class ToolManager:
         Internal API for servers: Finds and calls a tool, respecting the
         filtered protocol path.
         """
-        # 1. Check local tools first. The server will have already applied its filter.
-        if key in self._tools or key in self._tools_transformed:
-            tool = await self.get_tool(key)
-            if not tool:
-                raise NotFoundError(f"Tool {key!r} not found")
-
-            try:
-                return await tool.run(arguments)
-
-            # raise ToolErrors as-is
-            except ToolError as e:
-                logger.exception(f"Error calling tool {key!r}")
-                raise e
-
-            # Handle other exceptions
-            except Exception as e:
-                logger.exception(f"Error calling tool {key!r}")
-                if self.mask_error_details:
-                    # Mask internal details
-                    raise ToolError(f"Error calling tool {key!r}") from e
-                else:
-                    # Include original error details
-                    raise ToolError(f"Error calling tool {key!r}: {e}") from e
-
-        # 2. Check mounted servers using the filtered protocol path.
-        for mounted in reversed(self._mounted_servers):
-            tool_key = key
-            if mounted.prefix:
-                if key.startswith(f"{mounted.prefix}_"):
-                    tool_key = key.removeprefix(f"{mounted.prefix}_")
-                else:
-                    continue
-            try:
-                return await mounted.server._call_tool_middleware(tool_key, arguments)
-            except NotFoundError:
-                continue
-
-        raise NotFoundError(f"Tool {key!r} not found.")
+        tool = await self.get_tool(key)
+        try:
+            return await tool.run(arguments)
+        except ToolError as e:
+            logger.exception(f"Error calling tool {key!r}")
+            raise e
+        except Exception as e:
+            logger.exception(f"Error calling tool {key!r}")
+            if self.mask_error_details:
+                raise ToolError(f"Error calling tool {key!r}") from e
+            else:
+                raise ToolError(f"Error calling tool {key!r}: {e}") from e

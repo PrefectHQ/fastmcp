@@ -329,18 +329,15 @@ class TestMultipleServerMount:
             record.message for record in caplog.records if record.levelname == "WARNING"
         ]
         assert any(
-            "Failed to get tools from server: 'unreachable_proxy', mounted at: 'unreachable'"
-            in msg
+            "Failed to list tools from mounted server 'unreachable_proxy'" in msg
             for msg in warning_messages
         )
         assert any(
-            "Failed to get resources from server: 'unreachable_proxy', mounted at: 'unreachable'"
-            in msg
+            "Failed to list resources from 'unreachable_proxy'" in msg
             for msg in warning_messages
         )
         assert any(
-            "Failed to get prompts from server: 'unreachable_proxy', mounted at: 'unreachable'"
-            in msg
+            "Failed to list prompts from mounted server 'unreachable_proxy'" in msg
             for msg in warning_messages
         )
 
@@ -871,7 +868,7 @@ class TestAsProxyKwarg:
         sub = FastMCP("Sub")
 
         mcp.mount(sub, "sub")
-        assert mcp._tool_manager._mounted_servers[0].server is sub
+        assert mcp._mounted_servers[0].server is sub
 
     async def test_as_proxy_false(self):
         mcp = FastMCP("Main")
@@ -879,7 +876,7 @@ class TestAsProxyKwarg:
 
         mcp.mount(sub, "sub", as_proxy=False)
 
-        assert mcp._tool_manager._mounted_servers[0].server is sub
+        assert mcp._mounted_servers[0].server is sub
 
     async def test_as_proxy_true(self):
         mcp = FastMCP("Main")
@@ -887,8 +884,8 @@ class TestAsProxyKwarg:
 
         mcp.mount(sub, "sub", as_proxy=True)
 
-        assert mcp._tool_manager._mounted_servers[0].server is not sub
-        assert isinstance(mcp._tool_manager._mounted_servers[0].server, FastMCPProxy)
+        assert mcp._mounted_servers[0].server is not sub
+        assert isinstance(mcp._mounted_servers[0].server, FastMCPProxy)
 
     async def test_as_proxy_defaults_true_if_lifespan(self):
         @asynccontextmanager
@@ -900,8 +897,8 @@ class TestAsProxyKwarg:
 
         mcp.mount(sub, "sub")
 
-        assert mcp._tool_manager._mounted_servers[0].server is not sub
-        assert isinstance(mcp._tool_manager._mounted_servers[0].server, FastMCPProxy)
+        assert mcp._mounted_servers[0].server is not sub
+        assert isinstance(mcp._mounted_servers[0].server, FastMCPProxy)
 
     async def test_as_proxy_ignored_for_proxy_mounts_default(self):
         mcp = FastMCP("Main")
@@ -910,7 +907,7 @@ class TestAsProxyKwarg:
 
         mcp.mount(sub_proxy, "sub")
 
-        assert mcp._tool_manager._mounted_servers[0].server is sub_proxy
+        assert mcp._mounted_servers[0].server is sub_proxy
 
     async def test_as_proxy_ignored_for_proxy_mounts_false(self):
         mcp = FastMCP("Main")
@@ -919,7 +916,7 @@ class TestAsProxyKwarg:
 
         mcp.mount(sub_proxy, "sub", as_proxy=False)
 
-        assert mcp._tool_manager._mounted_servers[0].server is sub_proxy
+        assert mcp._mounted_servers[0].server is sub_proxy
 
     async def test_as_proxy_ignored_for_proxy_mounts_true(self):
         mcp = FastMCP("Main")
@@ -928,7 +925,7 @@ class TestAsProxyKwarg:
 
         mcp.mount(sub_proxy, "sub", as_proxy=True)
 
-        assert mcp._tool_manager._mounted_servers[0].server is sub_proxy
+        assert mcp._mounted_servers[0].server is sub_proxy
 
     async def test_as_proxy_mounts_still_have_live_link(self):
         mcp = FastMCP("Main")
@@ -1022,6 +1019,101 @@ class TestResourceNamePrefixing:
         # The template name should also be prefixed
         template = templates["resource://prefix/user/{user_id}"]
         assert template.name == "prefix_user_template"
+
+
+class TestParentTagFiltering:
+    """Test that parent server tag filters apply recursively to mounted servers."""
+
+    async def test_parent_include_tags_filters_mounted_tools(self):
+        """Test that parent include_tags filters out non-matching mounted tools."""
+        parent = FastMCP("Parent", include_tags={"allowed"})
+        mounted = FastMCP("Mounted")
+
+        @mounted.tool(tags={"allowed"})
+        def allowed_tool() -> str:
+            return "allowed"
+
+        @mounted.tool(tags={"blocked"})
+        def blocked_tool() -> str:
+            return "blocked"
+
+        parent.mount(mounted)
+
+        async with Client(parent) as client:
+            tools = await client.list_tools()
+            tool_names = {t.name for t in tools}
+            assert "allowed_tool" in tool_names
+            assert "blocked_tool" not in tool_names
+
+            # Verify execution also respects filters
+            result = await client.call_tool("allowed_tool", {})
+            assert result.data == "allowed"
+
+            with pytest.raises(Exception, match="Unknown tool"):
+                await client.call_tool("blocked_tool", {})
+
+    async def test_parent_exclude_tags_filters_mounted_tools(self):
+        """Test that parent exclude_tags filters out matching mounted tools."""
+        parent = FastMCP("Parent", exclude_tags={"blocked"})
+        mounted = FastMCP("Mounted")
+
+        @mounted.tool(tags={"production"})
+        def production_tool() -> str:
+            return "production"
+
+        @mounted.tool(tags={"blocked"})
+        def blocked_tool() -> str:
+            return "blocked"
+
+        parent.mount(mounted)
+
+        async with Client(parent) as client:
+            tools = await client.list_tools()
+            tool_names = {t.name for t in tools}
+            assert "production_tool" in tool_names
+            assert "blocked_tool" not in tool_names
+
+    async def test_parent_filters_apply_to_mounted_resources(self):
+        """Test that parent tag filters apply to mounted resources."""
+        parent = FastMCP("Parent", include_tags={"allowed"})
+        mounted = FastMCP("Mounted")
+
+        @mounted.resource("resource://allowed", tags={"allowed"})
+        def allowed_resource() -> str:
+            return "allowed"
+
+        @mounted.resource("resource://blocked", tags={"blocked"})
+        def blocked_resource() -> str:
+            return "blocked"
+
+        parent.mount(mounted)
+
+        async with Client(parent) as client:
+            resources = await client.list_resources()
+            resource_uris = {str(r.uri) for r in resources}
+            assert "resource://allowed" in resource_uris
+            assert "resource://blocked" not in resource_uris
+
+    async def test_parent_filters_apply_to_mounted_prompts(self):
+        """Test that parent tag filters apply to mounted prompts."""
+        parent = FastMCP("Parent", exclude_tags={"blocked"})
+        mounted = FastMCP("Mounted")
+
+        @mounted.prompt(tags={"allowed"})
+        def allowed_prompt() -> str:
+            return "allowed"
+
+        @mounted.prompt(tags={"blocked"})
+        def blocked_prompt() -> str:
+            return "blocked"
+
+        parent.mount(mounted)
+
+        async with Client(parent) as client:
+            prompts = await client.list_prompts()
+            prompt_names = {p.name for p in prompts}
+            assert "allowed_prompt" in prompt_names
+            assert "blocked_prompt" not in prompt_names
 
 
 class TestCustomRouteForwarding:

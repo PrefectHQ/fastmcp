@@ -567,7 +567,8 @@ class TestFastAPIDescriptionPropagation:
             print(f"  Template: {name}, Name attribute: {template.name}")
 
         print("\nDEBUG - Tools created:")
-        tools = await server._tool_manager.list_tools()
+        tools_dict = await server._tool_manager.get_tools()
+        tools = list(tools_dict.values())
         for tool in tools:
             print(f"  Tool: {tool.name}")
 
