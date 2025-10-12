@@ -135,15 +135,15 @@ class Middleware:
 
     async def on_request(
         self,
-        context: MiddlewareContext[mt.Request],
-        call_next: CallNext[mt.Request, Any],
+        context: MiddlewareContext[mt.Request[Any, Any]],
+        call_next: CallNext[mt.Request[Any, Any], Any],
     ) -> Any:
         return await call_next(context)
 
     async def on_notification(
         self,
-        context: MiddlewareContext[mt.Notification],
-        call_next: CallNext[mt.Notification, Any],
+        context: MiddlewareContext[mt.Notification[Any, Any]],
+        call_next: CallNext[mt.Notification[Any, Any], Any],
     ) -> Any:
         return await call_next(context)
 
