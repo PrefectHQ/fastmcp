@@ -293,7 +293,7 @@ class Audio:
 
 
 class File:
-    """Helper class for returning audio from tools."""
+    """Helper class for returning file data from tools."""
 
     def __init__(
         self,

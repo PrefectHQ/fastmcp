@@ -10,15 +10,15 @@ import { VersionBadge } from "/snippets/version-badge.mdx";
 
 <VersionBadge version="2.12.4" />
 
-OIDC Proxy enables FastMCP servers to authenticate with OIDC providers that **don't support Dynamic Client Registration (DCR)** out of the box. This includes OAuth providers like: Auth0, Google, Azure, AWS, etc. For providers that do support DCR (like WorkOS AuthKit), use [`RemoteAuthProvider`](/servers/auth/remote-oauth) instead.
+The OIDC proxy enables FastMCP servers to authenticate with OIDC providers that **don't support Dynamic Client Registration (DCR)** out of the box. This includes OAuth providers like: Auth0, Google, Azure, AWS, etc. For providers that do support DCR (like WorkOS AuthKit), use [`RemoteAuthProvider`](/servers/auth/remote-oauth) instead.
 
-The OIDC Proxy is built upon [`OAuthProxy`](/servers/auth/oauth-proxy) so it has all the same functionality under the covers.
+The OIDC proxy is built upon [`OAuthProxy`](/servers/auth/oauth-proxy) so it has all the same functionality under the covers.
 
 ## Implementation
 
 ### Provider Setup Requirements
 
-Before using OIDC Proxy, you need to register your application with your OAuth provider:
+Before using the OIDC proxy, you need to register your application with your OAuth provider:
 
 1. **Register your application** in the provider's developer console (Auth0 Applications, Google Cloud Console, Azure Portal, etc.)
 2. **Configure the redirect URI** as your FastMCP server URL plus your chosen callback path:
@@ -30,12 +30,12 @@ Before using OIDC Proxy, you need to register your application with your OAuth p
 <Warning>
   The redirect URI you configure with your provider must exactly match your
   FastMCP server's URL plus the callback path. If you customize `redirect_path`
-  in OAuth Proxy, update your provider's redirect URI accordingly.
+  in the OIDC proxy, update your provider's redirect URI accordingly.
 </Warning>
 
 ### Basic Setup
 
-Here's how to implement OIDC Proxy with any provider:
+Here's how to implement the OIDC proxy with any provider:
 
 ```python
 from fastmcp import FastMCP
@@ -172,7 +172,7 @@ Dynamic clients created by the proxy will automatically include these scopes in 
 
 <VersionBadge version="2.13.0" />
 
-For production deployments, configure OIDC Proxy through environment variables instead of hardcoding credentials:
+For production deployments, configure the OIDC proxy through environment variables instead of hardcoding credentials:
 
 ```bash
 # Specify the provider implementation

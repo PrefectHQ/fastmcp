@@ -307,10 +307,11 @@ class TestToolDecorator:
         def sample_tool(x: int) -> int:
             return x * 2
 
-        # Verify the tags were set correctly
-        tools = await mcp._tool_manager.list_tools()
-        assert len(tools) == 1
-        assert tools[0].tags == {"example", "test-tag"}
+        # Verify the tags were set correctly (local inventory)
+        tools_dict = await mcp._tool_manager.get_tools()
+        assert len(tools_dict) == 1
+        only_tool = next(iter(tools_dict.values()))
+        assert only_tool.tags == {"example", "test-tag"}
 
     async def test_add_tool_with_custom_name(self):
         """Test adding a tool with a custom name using server.add_tool()."""
