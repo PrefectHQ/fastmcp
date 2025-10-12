@@ -253,3 +253,70 @@ class TestMCPMixin:
         assert f"cust{_DEFAULT_SEPARATOR_TOOL}tool_cust" not in tools
         assert f"cust{_DEFAULT_SEPARATOR_RESOURCE}res://cust" not in resources
         assert f"cust{_DEFAULT_SEPARATOR_PROMPT}prompt_cust" not in prompts
+
+    async def test_tool_with_title_and_meta(self):
+        """Test that title (via annotations) and meta arguments are properly passed through."""
+        from mcp.types import ToolAnnotations
+
+        mcp = FastMCP()
+
+        class MyToolWithMeta(MCPMixin):
+            @mcp_tool(
+                annotations=ToolAnnotations(title="My Tool Title"),
+                meta={"version": "1.0", "author": "test"},
+            )
+            def sample_tool(self):
+                pass
+
+        instance = MyToolWithMeta()
+        instance.register_tools(mcp)
+
+        registered_tools = await mcp.get_tools()
+        tool = registered_tools["sample_tool"]
+
+        assert tool.annotations is not None
+        assert tool.annotations.title == "My Tool Title"
+        assert tool.meta == {"version": "1.0", "author": "test"}
+
+    async def test_resource_with_meta(self):
+        """Test that meta argument is properly passed through for resources."""
+        mcp = FastMCP()
+
+        class MyResourceWithMeta(MCPMixin):
+            @mcp_resource(
+                uri="test://resource",
+                title="My Resource Title",
+                meta={"category": "data", "internal": True},
+            )
+            def sample_resource(self):
+                pass
+
+        instance = MyResourceWithMeta()
+        instance.register_resources(mcp)
+
+        registered_resources = await mcp.get_resources()
+        resource = registered_resources["test://resource"]
+
+        assert resource.meta == {"category": "data", "internal": True}
+        assert resource.title == "My Resource Title"
+
+    async def test_prompt_with_title_and_meta(self):
+        """Test that title and meta arguments are properly passed through for prompts."""
+        mcp = FastMCP()
+
+        class MyPromptWithMeta(MCPMixin):
+            @mcp_prompt(
+                title="My Prompt Title",
+                meta={"priority": "high", "category": "analysis"},
+            )
+            def sample_prompt(self):
+                pass
+
+        instance = MyPromptWithMeta()
+        instance.register_prompts(mcp)
+
+        prompts = await mcp.get_prompts()
+        prompt = prompts["sample_prompt"]
+
+        assert prompt.title == "My Prompt Title"
+        assert prompt.meta == {"priority": "high", "category": "analysis"}
