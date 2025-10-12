@@ -18,12 +18,15 @@ production use with enterprise identity providers.
 
 from __future__ import annotations
 
+import base64
 import hashlib
+import hmac
+import json
 import secrets
 import time
 from base64 import urlsafe_b64encode
 from typing import TYPE_CHECKING, Any, Final
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 
 import httpx
 from authlib.common.security import generate_token
@@ -48,19 +51,87 @@ from mcp.server.auth.settings import (
     RevocationOptions,
 )
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
-from pydantic import AnyHttpUrl, AnyUrl, Field, SecretStr
+from pydantic import AnyHttpUrl, AnyUrl, BaseModel, Field, SecretStr
 from starlette.requests import Request
-from starlette.responses import RedirectResponse
+from starlette.responses import HTMLResponse, RedirectResponse
 from starlette.routing import Route
 
 from fastmcp.server.auth.auth import OAuthProvider, TokenVerifier
-from fastmcp.server.auth.redirect_validation import validate_redirect_uri
+from fastmcp.server.auth.redirect_validation import (
+    validate_redirect_uri,
+)
 from fastmcp.utilities.logging import get_logger
+from fastmcp.utilities.ui import (
+    BUTTON_STYLES,
+    DETAIL_BOX_STYLES,
+    INFO_BOX_STYLES,
+    TOOLTIP_STYLES,
+    create_detail_box,
+    create_logo,
+    create_page,
+    create_secure_html_response,
+)
 
 if TYPE_CHECKING:
     pass
 
 logger = get_logger(__name__)
+
+
+# -------------------------------------------------------------------------
+# Constants
+# -------------------------------------------------------------------------
+
+# Default token expiration times
+DEFAULT_ACCESS_TOKEN_EXPIRY_SECONDS: Final[int] = 60 * 60  # 1 hour
+DEFAULT_AUTH_CODE_EXPIRY_SECONDS: Final[int] = 5 * 60  # 5 minutes
+
+# HTTP client timeout
+HTTP_TIMEOUT_SECONDS: Final[int] = 30
+
+
+# -------------------------------------------------------------------------
+# Pydantic Models
+# -------------------------------------------------------------------------
+
+
+class OAuthTransaction(BaseModel):
+    """OAuth transaction state for consent flow.
+
+    Stored server-side to track active authorization flows with client context.
+    Includes CSRF tokens for consent protection per MCP security best practices.
+    """
+
+    txn_id: str
+    client_id: str
+    client_redirect_uri: str
+    client_state: str
+    code_challenge: str | None
+    code_challenge_method: str
+    scopes: list[str]
+    created_at: float
+    resource: str | None = None
+    proxy_code_verifier: str | None = None
+    csrf_token: str | None = None
+    csrf_expires_at: float | None = None
+
+
+class ClientCode(BaseModel):
+    """Client authorization code with PKCE and upstream tokens.
+
+    Stored server-side after upstream IdP callback. Contains the upstream
+    tokens bound to the client's PKCE challenge for secure token exchange.
+    """
+
+    code: str
+    client_id: str
+    redirect_uri: str
+    code_challenge: str | None
+    code_challenge_method: str
+    scopes: list[str]
+    idp_tokens: dict[str, Any]
+    expires_at: float
+    created_at: float
 
 
 class ProxyDCRClient(OAuthClientInformationFull):
@@ -90,6 +161,7 @@ class ProxyDCRClient(OAuthClientInformationFull):
     """
 
     allowed_redirect_uri_patterns: list[str] | None = Field(default=None)
+    client_name: str | None = Field(default=None)
 
     def validate_redirect_uri(self, redirect_uri: AnyUrl | None) -> AnyUrl:
         """Validate redirect URI against allowed patterns.
@@ -112,12 +184,110 @@ class ProxyDCRClient(OAuthClientInformationFull):
         return super().validate_redirect_uri(redirect_uri)
 
 
-# Default token expiration times
-DEFAULT_ACCESS_TOKEN_EXPIRY_SECONDS: Final[int] = 60 * 60  # 1 hour
-DEFAULT_AUTH_CODE_EXPIRY_SECONDS: Final[int] = 5 * 60  # 5 minutes
+# -------------------------------------------------------------------------
+# Helper Functions
+# -------------------------------------------------------------------------
 
-# HTTP client timeout
-HTTP_TIMEOUT_SECONDS: Final[int] = 30
+
+def create_consent_html(
+    client_id: str,
+    redirect_uri: str,
+    scopes: list[str],
+    txn_id: str,
+    csrf_token: str,
+    client_name: str | None = None,
+    title: str = "Authorization Consent",
+) -> str:
+    """Create a styled HTML consent page for OAuth authorization requests."""
+    # Format scopes for display
+    scopes_display = ", ".join(scopes) if scopes else "None"
+
+    # Build warning box with client name if available
+    client_display = client_name or client_id
+    warning_box = f"""
+        <div class="warning-box">
+            <p><strong>{client_display} is requesting access to this FastMCP server.</strong></p>
+            <p>Review the details below before approving.</p>
+        </div>
+    """
+
+    # Build detail box with client information
+    detail_rows = []
+    if client_name:
+        detail_rows.append(("Client Name", client_name))
+    detail_rows.extend(
+        [
+            ("Client ID", client_id),
+            ("Redirect URI", redirect_uri),
+            ("Requested Scopes", scopes_display),
+        ]
+    )
+    detail_box = create_detail_box(detail_rows)
+
+    # Build form with buttons
+    form = f"""
+        <form id="consentForm" method="POST" action="/consent/submit">
+            <input type="hidden" name="txn_id" value="{txn_id}" />
+            <input type="hidden" name="csrf_token" value="{csrf_token}" />
+            <div class="button-group">
+                <button type="submit" name="action" value="approve" class="btn-approve">Approve</button>
+                <button type="submit" name="action" value="deny" class="btn-deny">Deny</button>
+            </div>
+        </form>
+    """
+
+    # Build help link with tooltip
+    help_link = """
+        <div class="help-link-container">
+            <span class="help-link">
+                Why am I seeing this?
+                <span class="tooltip">
+                    This FastMCP server requires your consent to allow a new client
+                    to connect. This protects you from <a
+                    href="https://modelcontextprotocol.io/specification/2025-06-18/basic/security_best_practices#confused-deputy-problem"
+                    target="_blank" class="tooltip-link">confused deputy
+                    attacks</a>, where malicious clients could impersonate you
+                    and steal access.<br><br>
+                    <a
+                    href="https://gofastmcp.com/servers/auth/oauth-proxy#confused-deputy-attacks/"
+                    target="_blank" class="tooltip-link">Learn more about
+                    FastMCP security →</a>
+                </span>
+            </span>
+        </div>
+    """
+
+    # Build the page content
+    content = f"""
+        <div class="container">
+            {create_logo()}
+            <h1>Authorization Consent</h1>
+            {warning_box}
+            {detail_box}
+            {form}
+        </div>
+        {help_link}
+    """
+
+    # Additional styles needed for this page
+    additional_styles = (
+        INFO_BOX_STYLES + DETAIL_BOX_STYLES + BUTTON_STYLES + TOOLTIP_STYLES
+    )
+
+    # Need to allow form-action for form submission
+    csp_policy = "default-src 'none'; style-src 'unsafe-inline'; img-src https:; base-uri 'none'; form-action *"
+
+    return create_page(
+        content=content,
+        title=title,
+        additional_styles=additional_styles,
+        csp_policy=csp_policy,
+    )
+
+
+# -------------------------------------------------------------------------
+# Handler Classes
+# -------------------------------------------------------------------------
 
 
 class TokenHandler(_SDKTokenHandler):
@@ -374,7 +544,25 @@ class OAuthProxy(OAuthProvider):
             self._redirect_path = (
                 redirect_path if redirect_path.startswith("/") else f"/{redirect_path}"
             )
-        self._allowed_client_redirect_uris = allowed_client_redirect_uris
+        # Redirect URI validation (consent flow provides primary protection)
+        if allowed_client_redirect_uris is None:
+            logger.info(
+                "allowed_client_redirect_uris not specified; accepting all redirect URIs. "
+                "Consent flow provides protection against confused deputy attacks. "
+                "Configure allowed patterns for defense-in-depth."
+            )
+            self._allowed_client_redirect_uris = None
+        elif (
+            isinstance(allowed_client_redirect_uris, list)
+            and not allowed_client_redirect_uris
+        ):
+            logger.warning(
+                "allowed_client_redirect_uris is empty list; no redirect URIs will be accepted. "
+                "This will block all OAuth clients."
+            )
+            self._allowed_client_redirect_uris = []
+        else:
+            self._allowed_client_redirect_uris = allowed_client_redirect_uris
 
         # PKCE configuration
         self._forward_pkce = forward_pkce
@@ -388,10 +576,33 @@ class OAuthProxy(OAuthProvider):
 
         self._client_storage: AsyncKeyValue = client_storage or MemoryStore()
 
+        # Warn if using MemoryStore in production
+        if client_storage is None or isinstance(client_storage, MemoryStore):
+            logger.warning(
+                "Using in-memory storage - all OAuth state will be lost on restart. "
+                "For production, configure persistent storage (Redis, PostgreSQL, etc.)."
+            )
+
         self._client_store = PydanticAdapter[ProxyDCRClient](
             key_value=self._client_storage,
             pydantic_model=ProxyDCRClient,
             default_collection="mcp-oauth-proxy-clients",
+            raise_on_validation_error=True,
+        )
+
+        # OAuth transaction storage for IdP callback forwarding
+        # Reuse client_storage with different collections for state management
+        self._transaction_store = PydanticAdapter[OAuthTransaction](
+            key_value=self._client_storage,
+            pydantic_model=OAuthTransaction,
+            default_collection="mcp-oauth-transactions",
+            raise_on_validation_error=True,
+        )
+
+        self._code_store = PydanticAdapter[ClientCode](
+            key_value=self._client_storage,
+            pydantic_model=ClientCode,
+            default_collection="mcp-authorization-codes",
             raise_on_validation_error=True,
         )
 
@@ -402,12 +613,6 @@ class OAuthProxy(OAuthProvider):
         # Token relation mappings for cleanup
         self._access_to_refresh: dict[str, str] = {}
         self._refresh_to_access: dict[str, str] = {}
-
-        # OAuth transaction storage for IdP callback forwarding
-        self._oauth_transactions: dict[
-            str, dict[str, Any]
-        ] = {}  # txn_id -> transaction_data
-        self._client_codes: dict[str, dict[str, Any]] = {}  # client_code -> code_data
 
         # Use the provided token validator
         self._token_validator = token_verifier
@@ -474,6 +679,7 @@ class OAuthProxy(OAuthProvider):
             scope=client_info.scope or self._default_scope_str,
             token_endpoint_auth_method="none",
             allowed_redirect_uri_patterns=self._allowed_client_redirect_uris,
+            client_name=getattr(client_info, "client_name", None),
         )
 
         await self._client_store.put(
@@ -505,13 +711,12 @@ class OAuthProxy(OAuthProvider):
         client: OAuthClientInformationFull,
         params: AuthorizationParams,
     ) -> str:
-        """Start OAuth transaction and redirect to upstream IdP.
+        """Start OAuth transaction and route through consent interstitial.
 
-        This implements the DCR-compliant proxy pattern:
-        1. Store transaction with client details and PKCE challenge
-        2. Generate proxy's own PKCE parameters if forwarding is enabled
-        3. Use transaction ID as state for IdP
-        4. Redirect to IdP with our fixed callback URL and proxy's PKCE
+        Flow:
+        1. Store transaction with client details and PKCE (if forwarding)
+        2. Return local /consent URL; browser visits consent first
+        3. Consent handler redirects to upstream IdP if approved/already approved
         """
         # Generate transaction ID for this authorization request
         txn_id = secrets.token_urlsafe(32)
@@ -527,75 +732,31 @@ class OAuthProxy(OAuthProvider):
             )
 
         # Store transaction data for IdP callback processing
-        transaction_data = {
-            "client_id": client.client_id,
-            "client_redirect_uri": str(params.redirect_uri),
-            "client_state": params.state,
-            "code_challenge": params.code_challenge,
-            "code_challenge_method": getattr(params, "code_challenge_method", "S256"),
-            "scopes": params.scopes or [],
-            "created_at": time.time(),
-        }
+        await self._transaction_store.put(
+            key=txn_id,
+            value=OAuthTransaction(
+                txn_id=txn_id,
+                client_id=client.client_id,
+                client_redirect_uri=str(params.redirect_uri),
+                client_state=params.state or "",
+                code_challenge=params.code_challenge,
+                code_challenge_method=getattr(params, "code_challenge_method", "S256"),
+                scopes=params.scopes or [],
+                created_at=time.time(),
+                resource=getattr(params, "resource", None),
+                proxy_code_verifier=proxy_code_verifier,
+            ),
+        )
 
-        # Store proxy's PKCE verifier if we're forwarding
-        if proxy_code_verifier:
-            transaction_data["proxy_code_verifier"] = proxy_code_verifier
-
-        self._oauth_transactions[txn_id] = transaction_data
-
-        # Build query parameters for upstream IdP authorization request
-        # Use our fixed IdP callback and transaction ID as state
-        query_params: dict[str, Any] = {
-            "response_type": "code",
-            "client_id": self._upstream_client_id,
-            "redirect_uri": f"{str(self.base_url).rstrip('/')}{self._redirect_path}",
-            "state": txn_id,  # Use txn_id as IdP state
-        }
-
-        # Add scopes - use client scopes or fallback to required scopes
-        scopes_to_use = params.scopes or self.required_scopes or []
-
-        if scopes_to_use:
-            query_params["scope"] = " ".join(scopes_to_use)
-
-        # Forward proxy's PKCE challenge to upstream if enabled
-        if proxy_code_challenge:
-            query_params["code_challenge"] = proxy_code_challenge
-            query_params["code_challenge_method"] = "S256"
-            logger.debug(
-                "Forwarding proxy PKCE challenge to upstream for transaction %s",
-                txn_id,
-            )
-
-        # Forward resource parameter if provided (RFC 8707)
-        if params.resource:
-            query_params["resource"] = params.resource
-            logger.debug(
-                "Forwarding resource indicator '%s' to upstream for transaction %s",
-                params.resource,
-                txn_id,
-            )
-
-        # Add any extra authorization parameters configured for this proxy
-        if self._extra_authorize_params:
-            query_params.update(self._extra_authorize_params)
-            logger.debug(
-                "Adding extra authorization parameters for transaction %s: %s",
-                txn_id,
-                list(self._extra_authorize_params.keys()),
-            )
-
-        # Build the upstream authorization URL
-        separator = "&" if "?" in self._upstream_authorization_endpoint else "?"
-        upstream_url = f"{self._upstream_authorization_endpoint}{separator}{urlencode(query_params)}"
+        consent_url = f"{str(self.base_url).rstrip('/')}/consent?txn_id={txn_id}"
 
         logger.debug(
-            "Starting OAuth transaction %s for client %s, redirecting to IdP (PKCE forwarding: %s)",
+            "Starting OAuth transaction %s for client %s, redirecting to consent page (PKCE forwarding: %s)",
             txn_id,
             client.client_id,
             "enabled" if proxy_code_challenge else "disabled",
         )
-        return upstream_url
+        return consent_url
 
     # -------------------------------------------------------------------------
     # Authorization Code Handling
@@ -612,22 +773,22 @@ class OAuthProxy(OAuthProvider):
         with PKCE challenge for validation.
         """
         # Look up client code data
-        code_data = self._client_codes.get(authorization_code)
-        if not code_data:
+        code_model = await self._code_store.get(key=authorization_code)
+        if not code_model:
             logger.debug("Authorization code not found: %s", authorization_code)
             return None
 
         # Check if code expired
-        if time.time() > code_data["expires_at"]:
+        if time.time() > code_model.expires_at:
             logger.debug("Authorization code expired: %s", authorization_code)
-            self._client_codes.pop(authorization_code, None)
+            await self._code_store.delete(key=authorization_code)
             return None
 
         # Verify client ID matches
-        if code_data["client_id"] != client.client_id:
+        if code_model.client_id != client.client_id:
             logger.debug(
                 "Authorization code client ID mismatch: %s vs %s",
-                code_data["client_id"],
+                code_model.client_id,
                 client.client_id,
             )
             return None
@@ -636,11 +797,11 @@ class OAuthProxy(OAuthProvider):
         return AuthorizationCode(
             code=authorization_code,
             client_id=client.client_id,
-            redirect_uri=code_data["redirect_uri"],
+            redirect_uri=code_model.redirect_uri,
             redirect_uri_provided_explicitly=True,
-            scopes=code_data["scopes"],
-            expires_at=code_data["expires_at"],
-            code_challenge=code_data.get("code_challenge", ""),
+            scopes=code_model.scopes,
+            expires_at=code_model.expires_at,
+            code_challenge=code_model.code_challenge or "",
         )
 
     async def exchange_authorization_code(
@@ -654,8 +815,8 @@ class OAuthProxy(OAuthProvider):
         during the IdP callback exchange. PKCE validation is handled by the MCP framework.
         """
         # Look up stored code data
-        code_data = self._client_codes.get(authorization_code.code)
-        if not code_data:
+        code_model = await self._code_store.get(key=authorization_code.code)
+        if not code_model:
             logger.error(
                 "Authorization code not found in client codes: %s",
                 authorization_code.code,
@@ -663,10 +824,10 @@ class OAuthProxy(OAuthProvider):
             raise TokenError("invalid_grant", "Authorization code not found")
 
         # Get stored IdP tokens
-        idp_tokens = code_data["idp_tokens"]
+        idp_tokens = code_model.idp_tokens
 
         # Clean up client code (one-time use)
-        self._client_codes.pop(authorization_code.code, None)
+        await self._code_store.delete(key=authorization_code.code)
 
         # Extract token information for local tracking
         access_token_value = idp_tokens["access_token"]
@@ -915,8 +1076,18 @@ class OAuthProxy(OAuthProvider):
             )
         )
 
+        # Add consent endpoints
+        custom_routes.append(
+            Route(path="/consent", endpoint=self._show_consent_page, methods=["GET"])
+        )
+        custom_routes.append(
+            Route(
+                path="/consent/submit", endpoint=self._submit_consent, methods=["POST"]
+            )
+        )
+
         logger.debug(
-            f"✅ OAuth routes configured: token_endpoint={token_route_found}, total routes={len(custom_routes)} (includes OAuth callback)"
+            f"✅ OAuth routes configured: token_endpoint={token_route_found}, total routes={len(custom_routes)} (includes OAuth callback + consent)"
         )
         return custom_routes
 
@@ -958,13 +1129,14 @@ class OAuthProxy(OAuthProvider):
                 )
 
             # Look up transaction data
-            transaction = self._oauth_transactions.get(txn_id)
-            if not transaction:
+            transaction_model = await self._transaction_store.get(key=txn_id)
+            if not transaction_model:
                 logger.error("IdP callback with invalid transaction ID: %s", txn_id)
                 return RedirectResponse(
                     url="data:text/html,<h1>OAuth Error</h1><p>Invalid or expired transaction</p>",
                     status_code=302,
                 )
+            transaction = transaction_model.model_dump()
 
             # Exchange IdP code for tokens (server-side)
             oauth_client = AsyncOAuth2Client(
@@ -1028,19 +1200,23 @@ class OAuthProxy(OAuthProvider):
             code_expires_at = int(time.time() + DEFAULT_AUTH_CODE_EXPIRY_SECONDS)
 
             # Store client code with PKCE challenge and IdP tokens
-            self._client_codes[client_code] = {
-                "client_id": transaction["client_id"],
-                "redirect_uri": transaction["client_redirect_uri"],
-                "code_challenge": transaction["code_challenge"],
-                "code_challenge_method": transaction["code_challenge_method"],
-                "scopes": transaction["scopes"],
-                "idp_tokens": idp_tokens,
-                "expires_at": code_expires_at,
-                "created_at": time.time(),
-            }
+            await self._code_store.put(
+                key=client_code,
+                value=ClientCode(
+                    code=client_code,
+                    client_id=transaction["client_id"],
+                    redirect_uri=transaction["client_redirect_uri"],
+                    code_challenge=transaction["code_challenge"],
+                    code_challenge_method=transaction["code_challenge_method"],
+                    scopes=transaction["scopes"],
+                    idp_tokens=idp_tokens,
+                    expires_at=code_expires_at,
+                    created_at=time.time(),
+                ),
+            )
 
             # Clean up transaction
-            self._oauth_transactions.pop(txn_id, None)
+            await self._transaction_store.delete(key=txn_id)
 
             # Build client callback URL with our code and original state
             client_redirect_uri = transaction["client_redirect_uri"]
@@ -1066,4 +1242,301 @@ class OAuthProxy(OAuthProvider):
             return RedirectResponse(
                 url="data:text/html,<h1>OAuth Error</h1><p>Internal server error during IdP callback</p>",
                 status_code=302,
+            )
+
+    # -------------------------------------------------------------------------
+    # Consent Interstitial
+    # -------------------------------------------------------------------------
+
+    def _normalize_uri(self, uri: str) -> str:
+        """Normalize a URI to a canonical form for consent tracking."""
+        parsed = urlparse(uri)
+        path = parsed.path or ""
+        normalized = f"{parsed.scheme.lower()}://{parsed.netloc.lower()}{path}"
+        if normalized.endswith("/") and len(path) > 1:
+            normalized = normalized[:-1]
+        return normalized
+
+    def _make_client_key(self, client_id: str, redirect_uri: str | AnyUrl) -> str:
+        """Create a stable key for consent tracking from client_id and redirect_uri."""
+        normalized = self._normalize_uri(str(redirect_uri))
+        return f"{client_id}:{normalized}"
+
+    def _cookie_name(self, base_name: str) -> str:
+        """Return secure cookie name for HTTPS, fallback for HTTP development."""
+        base_url_str = str(self.base_url)
+        if base_url_str.startswith("https://"):
+            return f"__Host-{base_name}"
+        logger.warning(
+            "Using non-secure cookies for development; deploy with HTTPS for production."
+        )
+        return f"__{base_name}"
+
+    def _sign_cookie(self, payload: str) -> str:
+        """Sign a cookie payload with HMAC-SHA256.
+
+        Returns: base64(payload).base64(signature)
+        """
+        # Use upstream client secret as signing key
+        key = self._upstream_client_secret.get_secret_value().encode()
+        signature = hmac.new(key, payload.encode(), hashlib.sha256).digest()
+        signature_b64 = base64.b64encode(signature).decode()
+        return f"{payload}.{signature_b64}"
+
+    def _verify_cookie(self, signed_value: str) -> str | None:
+        """Verify and extract payload from signed cookie.
+
+        Returns: payload if signature valid, None otherwise
+        """
+        try:
+            if "." not in signed_value:
+                return None
+            payload, signature_b64 = signed_value.rsplit(".", 1)
+
+            # Verify signature
+            key = self._upstream_client_secret.get_secret_value().encode()
+            expected_sig = hmac.new(key, payload.encode(), hashlib.sha256).digest()
+            provided_sig = base64.b64decode(signature_b64.encode())
+
+            # Constant-time comparison
+            if not hmac.compare_digest(expected_sig, provided_sig):
+                return None
+
+            return payload
+        except Exception:
+            return None
+
+    def _decode_list_cookie(self, request: Request, base_name: str) -> list[str]:
+        """Decode and verify a signed base64-encoded JSON list from cookie. Returns [] if missing/invalid."""
+        # Prefer secure name, but also check non-secure variant for dev
+        secure_name = self._cookie_name(base_name)
+        raw = request.cookies.get(secure_name) or request.cookies.get(f"__{base_name}")
+        if not raw:
+            return []
+        try:
+            # Verify signature
+            payload = self._verify_cookie(raw)
+            if not payload:
+                logger.debug("Cookie signature verification failed for %s", secure_name)
+                return []
+
+            # Decode payload
+            data = base64.b64decode(payload.encode())
+            value = json.loads(data.decode())
+            if isinstance(value, list):
+                return [str(x) for x in value]
+        except Exception:
+            logger.debug("Failed to decode cookie %s; treating as empty", secure_name)
+        return []
+
+    def _encode_list_cookie(self, values: list[str]) -> str:
+        """Encode values to base64 and sign with HMAC.
+
+        Returns: signed cookie value (payload.signature)
+        """
+        payload = json.dumps(values, separators=(",", ":")).encode()
+        payload_b64 = base64.b64encode(payload).decode()
+        return self._sign_cookie(payload_b64)
+
+    def _set_list_cookie(
+        self,
+        response: HTMLResponse | RedirectResponse,
+        base_name: str,
+        value_b64: str,
+        max_age: int,
+    ) -> None:
+        name = self._cookie_name(base_name)
+        secure = str(self.base_url).startswith("https://")
+        response.set_cookie(
+            name,
+            value_b64,
+            max_age=max_age,
+            secure=secure,
+            httponly=True,
+            samesite="lax",
+            path="/",
+        )
+
+    def _build_upstream_authorize_url(
+        self, txn_id: str, transaction: dict[str, Any]
+    ) -> str:
+        """Construct the upstream IdP authorization URL using stored transaction data."""
+        query_params: dict[str, Any] = {
+            "response_type": "code",
+            "client_id": self._upstream_client_id,
+            "redirect_uri": f"{str(self.base_url).rstrip('/')}{self._redirect_path}",
+            "state": txn_id,
+        }
+
+        scopes_to_use = transaction.get("scopes") or self.required_scopes or []
+        if scopes_to_use:
+            query_params["scope"] = " ".join(scopes_to_use)
+
+        # If PKCE forwarding was enabled, include the proxy challenge
+        proxy_code_verifier = transaction.get("proxy_code_verifier")
+        if proxy_code_verifier:
+            challenge_bytes = hashlib.sha256(proxy_code_verifier.encode()).digest()
+            proxy_code_challenge = (
+                urlsafe_b64encode(challenge_bytes).decode().rstrip("=")
+            )
+            query_params["code_challenge"] = proxy_code_challenge
+            query_params["code_challenge_method"] = "S256"
+
+        # Forward resource indicator if present in transaction
+        if resource := transaction.get("resource"):
+            query_params["resource"] = resource
+
+        # Extra configured parameters
+        if self._extra_authorize_params:
+            query_params.update(self._extra_authorize_params)
+
+        separator = "&" if "?" in self._upstream_authorization_endpoint else "?"
+        return f"{self._upstream_authorization_endpoint}{separator}{urlencode(query_params)}"
+
+    async def _show_consent_page(
+        self, request: Request
+    ) -> HTMLResponse | RedirectResponse:
+        """Display consent page or auto-approve/deny based on cookies."""
+        txn_id = request.query_params.get("txn_id")
+        if not txn_id:
+            return create_secure_html_response(
+                "<h1>Error</h1><p>Invalid or expired transaction</p>", status_code=400
+            )
+
+        txn_model = await self._transaction_store.get(key=txn_id)
+        if not txn_model:
+            return create_secure_html_response(
+                "<h1>Error</h1><p>Invalid or expired transaction</p>", status_code=400
+            )
+
+        txn = txn_model.model_dump()
+        client_key = self._make_client_key(txn["client_id"], txn["client_redirect_uri"])
+
+        approved = set(self._decode_list_cookie(request, "MCP_APPROVED_CLIENTS"))
+        denied = set(self._decode_list_cookie(request, "MCP_DENIED_CLIENTS"))
+
+        if client_key in approved:
+            upstream_url = self._build_upstream_authorize_url(txn_id, txn)
+            return RedirectResponse(url=upstream_url, status_code=302)
+
+        if client_key in denied:
+            callback_params = {
+                "error": "access_denied",
+                "state": txn.get("client_state") or "",
+            }
+            sep = "&" if "?" in txn["client_redirect_uri"] else "?"
+            return RedirectResponse(
+                url=f"{txn['client_redirect_uri']}{sep}{urlencode(callback_params)}",
+                status_code=302,
+            )
+
+        # Need consent: issue CSRF token and show HTML
+        csrf_token = secrets.token_urlsafe(32)
+        csrf_expires_at = time.time() + 15 * 60
+
+        # Update transaction with CSRF token
+        txn_model.csrf_token = csrf_token
+        txn_model.csrf_expires_at = csrf_expires_at
+        await self._transaction_store.put(key=txn_id, value=txn_model)
+
+        # Update dict for use in HTML generation
+        txn["csrf_token"] = csrf_token
+        txn["csrf_expires_at"] = csrf_expires_at
+
+        # Load client to get client_name if available
+        client = await self.get_client(txn["client_id"])
+        client_name = getattr(client, "client_name", None) if client else None
+
+        html = create_consent_html(
+            client_id=txn["client_id"],
+            redirect_uri=txn["client_redirect_uri"],
+            scopes=txn.get("scopes") or [],
+            txn_id=txn_id,
+            csrf_token=csrf_token,
+            client_name=client_name,
+        )
+        response = create_secure_html_response(html)
+        # Store CSRF in cookie with short lifetime
+        self._set_list_cookie(
+            response,
+            "MCP_CONSENT_STATE",
+            self._encode_list_cookie([csrf_token]),
+            max_age=15 * 60,
+        )
+        return response
+
+    async def _submit_consent(
+        self, request: Request
+    ) -> RedirectResponse | HTMLResponse:
+        """Handle consent approval/denial, set cookies, and redirect appropriately."""
+        form = await request.form()
+        txn_id = str(form.get("txn_id", ""))
+        action = str(form.get("action", ""))
+        csrf_token = str(form.get("csrf_token", ""))
+
+        if not txn_id:
+            return create_secure_html_response(
+                "<h1>Error</h1><p>Invalid or expired transaction</p>", status_code=400
+            )
+
+        txn_model = await self._transaction_store.get(key=txn_id)
+        if not txn_model:
+            return create_secure_html_response(
+                "<h1>Error</h1><p>Invalid or expired transaction</p>", status_code=400
+            )
+
+        txn = txn_model.model_dump()
+        expected_csrf = txn.get("csrf_token")
+        expires_at = float(txn.get("csrf_expires_at") or 0)
+
+        if not expected_csrf or csrf_token != expected_csrf or time.time() > expires_at:
+            return create_secure_html_response(
+                "<h1>Error</h1><p>Invalid or expired consent token</p>", status_code=400
+            )
+
+        client_key = self._make_client_key(txn["client_id"], txn["client_redirect_uri"])
+
+        if action == "approve":
+            approved = set(self._decode_list_cookie(request, "MCP_APPROVED_CLIENTS"))
+            if client_key not in approved:
+                approved.add(client_key)
+            approved_b64 = self._encode_list_cookie(sorted(approved))
+
+            upstream_url = self._build_upstream_authorize_url(txn_id, txn)
+            response = RedirectResponse(url=upstream_url, status_code=302)
+            self._set_list_cookie(
+                response, "MCP_APPROVED_CLIENTS", approved_b64, max_age=365 * 24 * 3600
+            )
+            # Clear CSRF cookie by setting empty short-lived value
+            self._set_list_cookie(
+                response, "MCP_CONSENT_STATE", self._encode_list_cookie([]), max_age=60
+            )
+            return response
+
+        elif action == "deny":
+            denied = set(self._decode_list_cookie(request, "MCP_DENIED_CLIENTS"))
+            if client_key not in denied:
+                denied.add(client_key)
+            denied_b64 = self._encode_list_cookie(sorted(denied))
+
+            callback_params = {
+                "error": "access_denied",
+                "state": txn.get("client_state") or "",
+            }
+            sep = "&" if "?" in txn["client_redirect_uri"] else "?"
+            client_callback_url = (
+                f"{txn['client_redirect_uri']}{sep}{urlencode(callback_params)}"
+            )
+            response = RedirectResponse(url=client_callback_url, status_code=302)
+            self._set_list_cookie(
+                response, "MCP_DENIED_CLIENTS", denied_b64, max_age=365 * 24 * 3600
+            )
+            self._set_list_cookie(
+                response, "MCP_CONSENT_STATE", self._encode_list_cookie([]), max_age=60
+            )
+            return response
+
+        else:
+            return create_secure_html_response(
+                "<h1>Error</h1><p>Invalid action</p>", status_code=400
             )

@@ -102,7 +102,8 @@ class TestTagTransfer:
     ):
         """Test that tags from OpenAPI routes are correctly transferred to Tools."""
         # Get internal tools directly (not the public API which returns MCP.Content)
-        tools = await fastmcp_openapi_server._tool_manager.list_tools()
+        tools_dict = await fastmcp_openapi_server._tool_manager.get_tools()
+        tools = list(tools_dict.values())
 
         # Find the create_user and update_user_name tools
         create_user_tool = next(
@@ -201,7 +202,8 @@ class TestReprMethods:
 
     async def test_openapi_tool_repr(self, fastmcp_openapi_server: FastMCPOpenAPI):
         """Test that OpenAPITool's __repr__ method works without recursion errors."""
-        tools = await fastmcp_openapi_server._tool_manager.list_tools()
+        tools_dict = await fastmcp_openapi_server._tool_manager.get_tools()
+        tools = list(tools_dict.values())
         tool = next(iter(tools))
 
         # Verify repr doesn't cause recursion and contains expected elements
@@ -276,7 +278,8 @@ class TestEnumHandling:
         )
 
         # Get the tools from the server
-        tools = await server._tool_manager.list_tools()
+        tools_dict = await server._tool_manager.get_tools()
+        tools = list(tools_dict.values())
 
         # Find the read_item tool
         read_item_tool = next((t for t in tools if t.name == "read_item_items"), None)

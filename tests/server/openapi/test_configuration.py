@@ -65,8 +65,8 @@ class TestRouteMapWildcard:
         )
 
         # All operations should be mapped to tools
-        tools = await mcp._tool_manager.list_tools()
-        tool_names = {tool.name for tool in tools}
+        tools_dict = await mcp._tool_manager.get_tools()
+        tool_names = {tool.name for tool in tools_dict.values()}
 
         # Check that all 4 operations became tools
         expected_tools = {"getUsers", "createUser", "getPosts", "createPost"}
@@ -382,8 +382,8 @@ class TestMCPNames:
         )
 
         # Check tools use custom names
-        tools = await server._tool_manager.list_tools()
-        tool_names = {tool.name for tool in tools}
+        tools_dict = await server._tool_manager.get_tools()
+        tool_names = {tool.name for tool in tools_dict.values()}
         assert "admin_create_user" in tool_names
 
         # Check resource templates use custom names
@@ -412,7 +412,8 @@ class TestMCPNames:
             route_maps=GET_ROUTE_MAPS,
         )
 
-        tools = await server._tool_manager.list_tools()
+        tools_dict = await server._tool_manager.get_tools()
+        tools = list(tools_dict.values())
         tool_names = {tool.name for tool in tools}
 
         templates_dict = await server._resource_manager.get_resource_templates()
@@ -468,8 +469,8 @@ class TestMCPNames:
         # Check all component types
         all_names = []
 
-        tools = await server._tool_manager.list_tools()
-        all_names.extend(tool.name for tool in tools)
+        tools_dict = await server._tool_manager.get_tools()
+        all_names.extend(tool.name for tool in tools_dict.values())
 
         resources_dict = await server._resource_manager.get_resources()
         all_names.extend(resource.name for resource in resources_dict.values())
@@ -501,8 +502,8 @@ class TestMCPNames:
             mcp_names=mcp_names,
         )
 
-        tools = await server._tool_manager.list_tools()
-        tool_names = {tool.name for tool in tools}
+        tools_dict = await server._tool_manager.get_tools()
+        tool_names = {tool.name for tool in tools_dict.values()}
         assert "openapi_user_list" in tool_names
 
     async def test_mcp_names_with_from_fastapi_classmethod(self):
@@ -533,8 +534,8 @@ class TestMCPNames:
             mcp_names=mcp_names,
         )
 
-        tools = await server._tool_manager.list_tools()
-        tool_names = {tool.name for tool in tools}
+        tools_dict = await server._tool_manager.get_tools()
+        tool_names = {tool.name for tool in tools_dict.values()}
 
         assert "fastapi_create_user" in tool_names
         assert "fastapi_user_list" in tool_names
@@ -636,7 +637,8 @@ class TestRouteMapMCPTags:
         )
 
         # Get the POST tool
-        tools = await server._tool_manager.list_tools()
+        tools_dict = await server._tool_manager.get_tools()
+        tools = list(tools_dict.values())
         create_user_tool = next((t for t in tools if "create_user" in t.name), None)
 
         assert create_user_tool is not None, "create_user tool not found"
@@ -752,7 +754,8 @@ class TestRouteMapMCPTags:
         )
 
         # Check tool tags
-        tools = await server._tool_manager.list_tools()
+        tools_dict = await server._tool_manager.get_tools()
+        tools = list(tools_dict.values())
         create_tool = next((t for t in tools if "create_user" in t.name), None)
         assert create_tool is not None
         assert "write-operation" in create_tool.tags

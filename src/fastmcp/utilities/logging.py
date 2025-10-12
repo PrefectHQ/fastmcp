@@ -47,25 +47,48 @@ def configure_logging(
     if logger is None:
         logger = logging.getLogger("fastmcp")
 
-    # Only configure the FastMCP logger namespace
+    formatter = logging.Formatter("%(message)s")
+
+    # Don't propagate to the root logger
+    logger.propagate = False
+    logger.setLevel(level)
+
+    # Configure the handler for normal logs
     handler = RichHandler(
         console=Console(stderr=True),
-        rich_tracebacks=enable_rich_tracebacks,
         **rich_kwargs,
     )
-    formatter = logging.Formatter("%(message)s")
     handler.setFormatter(formatter)
 
-    logger.setLevel(level)
+    # filter to exclude tracebacks
+    handler.addFilter(lambda record: record.exc_info is None)
+
+    # Configure the handler for tracebacks, for tracebacks we use a compressed format:
+    # no path or level name to maximize width available for the traceback
+    # suppress framework frames and limit the number of frames to 3
+
+    import mcp
+    import pydantic
+
+    traceback_handler = RichHandler(
+        console=Console(stderr=True),
+        show_path=False,
+        show_level=False,
+        rich_tracebacks=enable_rich_tracebacks,
+        tracebacks_max_frames=3,
+        tracebacks_suppress=[fastmcp, mcp, pydantic],
+        **rich_kwargs,
+    )
+    traceback_handler.setFormatter(formatter)
+
+    traceback_handler.addFilter(lambda record: record.exc_info is not None)
 
     # Remove any existing handlers to avoid duplicates on reconfiguration
     for hdlr in logger.handlers[:]:
         logger.removeHandler(hdlr)
 
     logger.addHandler(handler)
-
-    # Don't propagate to the root logger
-    logger.propagate = False
+    logger.addHandler(traceback_handler)
 
 
 @contextlib.contextmanager

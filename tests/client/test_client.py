@@ -941,12 +941,7 @@ class TestInferTransport:
         transport = infer_transport(config)
         assert isinstance(transport, MCPConfigTransport)
         assert isinstance(transport.transport, FastMCPTransport)
-        assert (
-            len(
-                cast(FastMCP, transport.transport.server)._tool_manager._mounted_servers
-            )
-            == 2
-        )
+        assert len(cast(FastMCP, transport.transport.server)._mounted_servers) == 2
 
     def test_infer_fastmcp_server(self, fastmcp_server):
         """FastMCP server instances should infer to FastMCPTransport."""

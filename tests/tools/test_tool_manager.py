@@ -280,8 +280,8 @@ class TestListTools:
         tool_manager.add_tool_transformation(
             "add", ToolTransformConfig(name="add_transformed")
         )
-        tools = await tool_manager.list_tools()
-        tools_by_name = {tool.name: tool for tool in tools}
+        tools_dict = await tool_manager.get_tools()
+        tools_by_name = {tool.name: tool for tool in tools_dict.values()}
         assert "add_transformed" in tools_by_name
         assert "add" not in tools_by_name
 
@@ -303,8 +303,8 @@ class TestListTools:
                 name="add_transformed", description=None, tags={"enabled_tools"}
             ),
         )
-        tools = await tool_manager.list_tools()
-        tools_by_name = {tool.name: tool for tool in tools}
+        tools_dict = await tool_manager.get_tools()
+        tools_by_name = {tool.name: tool for tool in tools_dict.values()}
         assert "add_transformed" in tools_by_name
         assert "add" not in tools_by_name
         assert tools_by_name["add_transformed"].description is None
@@ -1027,12 +1027,12 @@ class TestMountedComponentsRaiseOnLoadError:
 
         # Create a failing mounted server by corrupting it
         parent_mcp.mount(child_mcp, prefix="child")
-        # Corrupt the child server to make it fail during tool loading
-        child_mcp._tool_manager._mounted_servers.append("invalid")  # type: ignore
+        # Corrupt the parent's mounted servers to make it fail during loading
+        parent_mcp._mounted_servers.append("invalid")  # type: ignore
 
-        # Should not raise, just warn
-        tools = await parent_mcp._tool_manager.list_tools()
-        assert isinstance(tools, list)  # Should return empty list, not raise
+        # Should not raise, just warn; use server middleware path now
+        tools = await parent_mcp._list_tools_middleware()
+        assert isinstance(tools, list)  # Should return list, not raise
 
     async def test_mounted_components_raise_on_load_error_true(self):
         """Test that when enabled, mounted component load errors are raised."""
@@ -1041,8 +1041,8 @@ class TestMountedComponentsRaiseOnLoadError:
 
         # Create a failing mounted server
         parent_mcp.mount(child_mcp, prefix="child")
-        # Corrupt the child server to make it fail during tool loading
-        child_mcp._tool_manager._mounted_servers.append("invalid")  # type: ignore
+        # Corrupt the parent's mounted servers to make it fail during loading
+        parent_mcp._mounted_servers.append("invalid")  # type: ignore
 
         # Use temporary settings context manager
         with temporary_settings(mounted_components_raise_on_load_error=True):
@@ -1050,4 +1050,4 @@ class TestMountedComponentsRaiseOnLoadError:
             with pytest.raises(
                 AttributeError, match="'str' object has no attribute 'server'"
             ):
-                await parent_mcp._tool_manager.list_tools()
+                await parent_mcp._list_tools_middleware()

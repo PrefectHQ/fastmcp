@@ -269,6 +269,198 @@ class TestGetFastMCPInfo:
             assert info.resources[0].uri == str(resources[0].uri)
             assert info.prompts[0].name == prompts[0].name
 
+    async def test_inspect_respects_tag_filtering(self):
+        """Test that inspect omits components filtered out by include_tags/exclude_tags.
+
+        Regression test for Issue #2032: inspect command was showing components
+        that were filtered out by tag rules, causing confusion when those
+        components weren't actually available to clients.
+        """
+        # Create server with include_tags that will filter out untagged components
+        mcp = FastMCP(
+            "FilteredServer",
+            include_tags={"fetch", "analyze", "create"},
+        )
+
+        # Add tools with and without matching tags
+        @mcp.tool(tags={"fetch"})
+        def tagged_tool() -> str:
+            """Tool with matching tag - should be visible."""
+            return "visible"
+
+        @mcp.tool
+        def untagged_tool() -> str:
+            """Tool without tags - should be filtered out."""
+            return "hidden"
+
+        # Add resources with and without matching tags
+        @mcp.resource("resource://tagged", tags={"analyze"})
+        def tagged_resource() -> str:
+            """Resource with matching tag - should be visible."""
+            return "visible resource"
+
+        @mcp.resource("resource://untagged")
+        def untagged_resource() -> str:
+            """Resource without tags - should be filtered out."""
+            return "hidden resource"
+
+        # Add templates with and without matching tags
+        @mcp.resource("resource://tagged/{id}", tags={"create"})
+        def tagged_template(id: str) -> str:
+            """Template with matching tag - should be visible."""
+            return f"visible template {id}"
+
+        @mcp.resource("resource://untagged/{id}")
+        def untagged_template(id: str) -> str:
+            """Template without tags - should be filtered out."""
+            return f"hidden template {id}"
+
+        # Add prompts with and without matching tags
+        @mcp.prompt(tags={"fetch"})
+        def tagged_prompt() -> list:
+            """Prompt with matching tag - should be visible."""
+            return [{"role": "user", "content": "visible prompt"}]
+
+        @mcp.prompt
+        def untagged_prompt() -> list:
+            """Prompt without tags - should be filtered out."""
+            return [{"role": "user", "content": "hidden prompt"}]
+
+        # Get inspect info
+        info = await inspect_fastmcp(mcp)
+
+        # Verify only tagged components are visible
+        assert len(info.tools) == 1
+        assert info.tools[0].name == "tagged_tool"
+
+        assert len(info.resources) == 1
+        assert info.resources[0].uri == "resource://tagged"
+
+        assert len(info.templates) == 1
+        assert info.templates[0].uri_template == "resource://tagged/{id}"
+
+        assert len(info.prompts) == 1
+        assert info.prompts[0].name == "tagged_prompt"
+
+        # Verify this matches what a client would see
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+            resources = await client.list_resources()
+            templates = await client.list_resource_templates()
+            prompts = await client.list_prompts()
+
+            assert len(info.tools) == len(tools)
+            assert len(info.resources) == len(resources)
+            assert len(info.templates) == len(templates)
+            assert len(info.prompts) == len(prompts)
+
+    async def test_inspect_respects_tag_filtering_with_mounted_servers(self):
+        """Test that inspect applies tag filtering to mounted servers.
+
+        Verifies that when a parent server has tag filters, those filters
+        are respected when inspecting components from mounted servers.
+        """
+        # Create a mounted server with various tagged and untagged components
+        mounted = FastMCP("MountedServer")
+
+        @mounted.tool(tags={"allowed"})
+        def allowed_tool() -> str:
+            return "allowed"
+
+        @mounted.tool(tags={"blocked"})
+        def blocked_tool() -> str:
+            return "blocked"
+
+        @mounted.tool
+        def untagged_tool() -> str:
+            return "untagged"
+
+        @mounted.resource("resource://allowed", tags={"allowed"})
+        def allowed_resource() -> str:
+            return "allowed resource"
+
+        @mounted.resource("resource://blocked", tags={"blocked"})
+        def blocked_resource() -> str:
+            return "blocked resource"
+
+        @mounted.prompt(tags={"allowed"})
+        def allowed_prompt() -> list:
+            return [{"role": "user", "content": "allowed"}]
+
+        @mounted.prompt(tags={"blocked"})
+        def blocked_prompt() -> list:
+            return [{"role": "user", "content": "blocked"}]
+
+        # Create parent server with tag filtering
+        parent = FastMCP("ParentServer", include_tags={"allowed"})
+        parent.mount(mounted)
+
+        # Get inspect info
+        info = await inspect_fastmcp(parent)
+
+        # Only components with "allowed" tag should be visible
+        tool_names = [t.name for t in info.tools]
+        assert "allowed_tool" in tool_names
+        assert "blocked_tool" not in tool_names
+        assert "untagged_tool" not in tool_names
+
+        resource_uris = [r.uri for r in info.resources]
+        assert "resource://allowed" in resource_uris
+        assert "resource://blocked" not in resource_uris
+
+        prompt_names = [p.name for p in info.prompts]
+        assert "allowed_prompt" in prompt_names
+        assert "blocked_prompt" not in prompt_names
+
+        # Verify this matches what a client would see
+        async with Client(parent) as client:
+            tools = await client.list_tools()
+            resources = await client.list_resources()
+            prompts = await client.list_prompts()
+
+            assert len(info.tools) == len(tools)
+            assert len(info.resources) == len(resources)
+            assert len(info.prompts) == len(prompts)
+
+    async def test_inspect_parent_filters_override_mounted_server_filters(self):
+        """Test that parent server tag filters apply to mounted servers.
+
+        Even if a mounted server has no tag filters of its own,
+        the parent server's filters should still apply.
+        """
+        # Create mounted server with NO tag filters (allows everything)
+        mounted = FastMCP("MountedServer")
+
+        @mounted.tool(tags={"production"})
+        def production_tool() -> str:
+            return "production"
+
+        @mounted.tool(tags={"development"})
+        def development_tool() -> str:
+            return "development"
+
+        @mounted.tool
+        def untagged_tool() -> str:
+            return "untagged"
+
+        # Create parent with exclude_tags - should filter mounted components
+        parent = FastMCP("ParentServer", exclude_tags={"development"})
+        parent.mount(mounted)
+
+        # Get inspect info
+        info = await inspect_fastmcp(parent)
+
+        # Only production and untagged should be visible
+        tool_names = [t.name for t in info.tools]
+        assert "production_tool" in tool_names
+        assert "untagged_tool" in tool_names
+        assert "development_tool" not in tool_names
+
+        # Verify this matches what a client would see
+        async with Client(parent) as client:
+            tools = await client.list_tools()
+            assert len(info.tools) == len(tools)
+
 
 class TestFastMCP1xCompatibility:
     """Tests for FastMCP 1.x compatibility."""
