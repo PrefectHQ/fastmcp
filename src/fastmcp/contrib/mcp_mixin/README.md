@@ -11,12 +11,15 @@ Tools:
 * [enable/disable](https://gofastmcp.com/servers/tools#disabling-tools)
 * [annotations](https://gofastmcp.com/servers/tools#annotations-2)
 * [excluded arguments](https://gofastmcp.com/servers/tools#excluding-arguments)
+* [meta](https://gofastmcp.com/servers/tools#param-meta)
 
 Prompts:
 * [enable/disable](https://gofastmcp.com/servers/prompts#disabling-prompts)
+* [meta](https://gofastmcp.com/servers/prompts#param-meta)
 
 Resources:
 * [enable/disable](https://gofastmcp.com/servers/resources#disabling-resources)
+* [meta](https://gofastmcp.com/servers/resources#param-meta)
   
 ## Usage
 
@@ -78,7 +81,16 @@ class MyComponent(MCPMixin):
         if delete_all:
             return "99 records deleted. I bet you're not a tool :)"
         return "Tool executed, but you might be a tool!"
-    
+
+    # example tool w/ meta
+    @mcp_tool(
+        name="data_tool",
+        description="Fetches user data from database",
+        meta={"version": "2.0", "category": "database", "author": "dev-team"}
+    )
+    def data_tool_method(self, user_id: int):
+        return f"Fetching data for user {user_id}"
+
     @mcp_resource(uri="component://data")
     def resource_method(self):
         return {"data": "some data"}
@@ -87,6 +99,15 @@ class MyComponent(MCPMixin):
     @mcp_resource(uri="component://data", enabled=False)
     def resource_method(self):
         return {"data": "some data"}
+
+    # example resource w/meta and title
+    @mcp_resource(
+        uri="component://config",
+        title="Data resource Title,
+        meta={"internal": True, "cache_ttl": 3600, "priority": "high"}
+    )
+    def config_resource_method(self):
+        return {"config": "data"}
 
     # prompt
     @mcp_prompt(name="A prompt")
@@ -97,6 +118,16 @@ class MyComponent(MCPMixin):
     @mcp_prompt(name="A prompt", enabled=False)
     def prompt_method(self, name):
         return f"What's up {name}?"
+
+    # example prompt w/title and meta
+    @mcp_prompt(
+        name="analysis_prompt",
+        title="Data Analysis Prompt",
+        description="Analyzes data patterns",
+        meta={"complexity": "high", "domain": "analytics", "requires_context": True}
+    )
+    def analysis_prompt_method(self, dataset: str):
+        return f"Analyze the patterns in {dataset}"
 
 mcp_server = FastMCP()
 component = MyComponent()
