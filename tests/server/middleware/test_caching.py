@@ -367,11 +367,7 @@ class TestResponseCachingMiddleware:
 
         key = _make_call_tool_cache_key(msg)
 
-        # Should be a SHA256 hash
-        assert len(key) == 64
-        assert key == snapshot(
-            "7fa3d5c7967a202457eeca0731709fd87ec98546ddaee829ee86ca54b1858c59"
-        )
+        assert key == snapshot('test_tool:{"param1":"value1","param2":42}')
 
         msg = mcp.types.ReadResourceRequestParams(
             uri=AnyUrl("https://test_uri"),
@@ -379,10 +375,7 @@ class TestResponseCachingMiddleware:
 
         key = _make_read_resource_cache_key(msg)
 
-        assert len(key) == 64
-        assert key == snapshot(
-            "e34cc47c03ed1ad54f02501d95ecc463b65646568961c97ca4b730cb274e9d42"
-        )
+        assert key == snapshot("https://test_uri/")
 
         msg = mcp.types.GetPromptRequestParams(
             name="test_prompt", arguments={"param1": "value1"}
@@ -390,10 +383,7 @@ class TestResponseCachingMiddleware:
 
         key = _make_get_prompt_cache_key(msg)
 
-        assert len(key) == 64
-        assert key == snapshot(
-            "6306ff84fd3ff247a4bd91271e9d727d7f051bba53fb2e3bf80958988c4baf57"
-        )
+        assert key == snapshot('test_prompt:{"param1":"value1"}')
 
 
 class TestResponseCachingMiddlewareIntegration:

@@ -1,11 +1,11 @@
 """A middleware for response caching."""
 
-import hashlib
 import json
 from collections.abc import Sequence
 from typing import Any, TypedDict, TypeVar, cast
 
 import mcp.types
+import pydantic_core
 from key_value.aio.adapters.pydantic import PydanticAdapter
 from key_value.aio.protocols.key_value import AsyncKeyValue
 from key_value.aio.stores.memory import MemoryStore
@@ -598,22 +598,19 @@ class ResponseCachingMiddleware(Middleware):
 def _make_call_tool_cache_key(msg: mcp.types.CallToolRequestParams) -> str:
     """Make a cache key for a tool call by hashing the tool name and its arguments."""
 
-    raw = f"{msg.name}:{_get_arguments_str(msg.arguments)}"
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+    return f"{msg.name}:{_get_arguments_str(msg.arguments)}"
 
 
 def _make_read_resource_cache_key(msg: mcp.types.ReadResourceRequestParams) -> str:
     """Make a cache key for a resource read by hashing the resource URI."""
 
-    raw = f"{msg.uri}"
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+    return f"{msg.uri}"
 
 
 def _make_get_prompt_cache_key(msg: mcp.types.GetPromptRequestParams) -> str:
     """Make a cache key for a prompt get by hashing the prompt name and its arguments."""
 
-    raw = f"{msg.name}:{_get_arguments_str(msg.arguments)}"
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+    return f"{msg.name}:{_get_arguments_str(msg.arguments)}"
 
 
 def _get_arguments_str(arguments: dict[str, Any] | None) -> str:
@@ -623,7 +620,7 @@ def _get_arguments_str(arguments: dict[str, Any] | None) -> str:
         return "null"
 
     try:
-        return json.dumps(arguments, sort_keys=True, separators=(",", ":"))
+        return pydantic_core.to_json(value=arguments, fallback=str).decode()
 
     except TypeError:
         return repr(arguments)
@@ -651,21 +648,3 @@ def _get_size_of_tool_result(value: ToolResult) -> int:
     )
 
     return content_size + structured_content_size
-
-
-# def get_size_of_one_value(value: BaseModel | ToolResult | ReadResourceContents) -> int:
-#     """Get the size of an mcp type."""
-
-#     if isinstance(value, ToolResult):
-#         return get_size_of_tool_result(value)
-#     if isinstance(value, ReadResourceContents):
-#         return len(value.content)
-#     return len(value.model_dump_json())
-
-
-# def get_size_of_value(value: CachableListTypes) -> int:
-#     """Get the size of a cache entry."""
-#     if isinstance(value, (BaseModel | ToolResult | ReadResourceContents)):
-#         return get_size_of_one_value(value)
-
-#     return sum(get_size_of_one_value(item) for item in value)
