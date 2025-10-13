@@ -641,7 +641,11 @@ class FastMCP(Generic[LifespanResultT]):
             )
 
             # Apply the middleware chain.
-            return await self._apply_middleware(mw_context, self._list_tools)
+            return list(
+                await self._apply_middleware(
+                    context=mw_context, call_next=self._list_tools
+                )
+            )
 
     async def _list_tools(
         self,
@@ -721,7 +725,11 @@ class FastMCP(Generic[LifespanResultT]):
             )
 
             # Apply the middleware chain.
-            return await self._apply_middleware(mw_context, self._list_resources)
+            return list(
+                await self._apply_middleware(
+                    context=mw_context, call_next=self._list_resources
+                )
+            )
 
     async def _list_resources(
         self,
@@ -811,8 +819,10 @@ class FastMCP(Generic[LifespanResultT]):
             )
 
             # Apply the middleware chain.
-            return await self._apply_middleware(
-                mw_context, self._list_resource_templates
+            return list(
+                await self._apply_middleware(
+                    context=mw_context, call_next=self._list_resource_templates
+                )
             )
 
     async def _list_resource_templates(
@@ -907,7 +917,11 @@ class FastMCP(Generic[LifespanResultT]):
             )
 
             # Apply the middleware chain.
-            return await self._apply_middleware(mw_context, self._list_prompts)
+            return list(
+                await self._apply_middleware(
+                    context=mw_context, call_next=self._list_prompts
+                )
+            )
 
     async def _list_prompts(
         self,
@@ -1002,7 +1016,9 @@ class FastMCP(Generic[LifespanResultT]):
             method="tools/call",
             fastmcp_context=fastmcp.server.dependencies.get_context(),
         )
-        return await self._apply_middleware(mw_context, self._call_tool)
+        return await self._apply_middleware(
+            context=mw_context, call_next=self._call_tool
+        )
 
     async def _call_tool(
         self,
@@ -1056,7 +1072,9 @@ class FastMCP(Generic[LifespanResultT]):
 
         async with fastmcp.server.context.Context(fastmcp=self):
             try:
-                return await self._read_resource_middleware(uri)
+                return list[ReadResourceContents](
+                    await self._read_resource_middleware(uri)
+                )
             except DisabledError:
                 # convert to NotFoundError to avoid leaking resource presence
                 raise NotFoundError(f"Unknown resource: {str(uri)!r}")
@@ -1085,7 +1103,11 @@ class FastMCP(Generic[LifespanResultT]):
             method="resources/read",
             fastmcp_context=fastmcp.server.dependencies.get_context(),
         )
-        return await self._apply_middleware(mw_context, self._read_resource)
+        return list(
+            await self._apply_middleware(
+                context=mw_context, call_next=self._read_resource
+            )
+        )
 
     async def _read_resource(
         self,
@@ -1114,7 +1136,7 @@ class FastMCP(Generic[LifespanResultT]):
                 if not self._should_enable_component(resource):
                     # Parent filter blocks this resource, continue searching
                     continue
-                result = await mounted.server._read_resource_middleware(key)
+                result = list(await mounted.server._read_resource_middleware(key))
                 return result
             except NotFoundError:
                 continue
@@ -1173,7 +1195,9 @@ class FastMCP(Generic[LifespanResultT]):
             method="prompts/get",
             fastmcp_context=fastmcp.server.dependencies.get_context(),
         )
-        return await self._apply_middleware(mw_context, self._get_prompt)
+        return await self._apply_middleware(
+            context=mw_context, call_next=self._get_prompt
+        )
 
     async def _get_prompt(
         self,
