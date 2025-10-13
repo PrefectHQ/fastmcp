@@ -641,7 +641,7 @@ class FastMCP(Generic[LifespanResultT]):
             )
 
             # Apply the middleware chain.
-            return list[Tool](
+            return list(
                 await self._apply_middleware(
                     context=mw_context, call_next=self._list_tools
                 )
@@ -725,7 +725,7 @@ class FastMCP(Generic[LifespanResultT]):
             )
 
             # Apply the middleware chain.
-            return list[Resource](
+            return list(
                 await self._apply_middleware(
                     context=mw_context, call_next=self._list_resources
                 )
@@ -819,7 +819,7 @@ class FastMCP(Generic[LifespanResultT]):
             )
 
             # Apply the middleware chain.
-            return list[ResourceTemplate](
+            return list(
                 await self._apply_middleware(
                     context=mw_context, call_next=self._list_resource_templates
                 )
@@ -917,7 +917,7 @@ class FastMCP(Generic[LifespanResultT]):
             )
 
             # Apply the middleware chain.
-            return list[Prompt](
+            return list(
                 await self._apply_middleware(
                     context=mw_context, call_next=self._list_prompts
                 )
@@ -1103,7 +1103,7 @@ class FastMCP(Generic[LifespanResultT]):
             method="resources/read",
             fastmcp_context=fastmcp.server.dependencies.get_context(),
         )
-        return list[ReadResourceContents](
+        return list(
             await self._apply_middleware(
                 context=mw_context, call_next=self._read_resource
             )
