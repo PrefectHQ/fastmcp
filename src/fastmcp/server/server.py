@@ -1136,9 +1136,7 @@ class FastMCP(Generic[LifespanResultT]):
                 if not self._should_enable_component(resource):
                     # Parent filter blocks this resource, continue searching
                     continue
-                result = list[ReadResourceContents](
-                    await mounted.server._read_resource_middleware(key)
-                )
+                result = list(await mounted.server._read_resource_middleware(key))
                 return result
             except NotFoundError:
                 continue
