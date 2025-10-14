@@ -145,7 +145,7 @@ class TestOpenDeeplink:
 
             assert result is True
             mock_run.assert_called_once_with(
-                ["start", "cursor://test"], shell=True, check=True, capture_output=True
+                ["cmd", "/c", "start", "cursor://test"], check=True, capture_output=True
             )
 
     @patch("subprocess.run")
