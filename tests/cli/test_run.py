@@ -274,6 +274,210 @@ mcp = fastmcp.FastMCP("TestServer")
         assert exc_info.value.code == 1
 
 
+class TestV1ServerAsync:
+    """Test FastMCP 1.x server async support."""
+
+    async def test_run_v1_server_stdio(self, tmp_path):
+        """Test that v1 server uses async stdio method."""
+        from unittest.mock import AsyncMock, patch
+
+        from mcp.server.fastmcp import FastMCP as FastMCP1x
+
+        from fastmcp.cli.run import run_command
+
+        # Create a v1 FastMCP server file with both sync and async tools
+        test_file = tmp_path / "v1_server.py"
+        test_file.write_text("""
+from mcp.server.fastmcp import FastMCP
+
+mcp = FastMCP("V1Server")
+
+@mcp.tool()
+def sync_echo(text: str) -> str:
+    '''Sync tool for testing'''
+    return f"sync: {text}"
+
+@mcp.tool()
+async def async_echo(text: str) -> str:
+    '''Async tool for testing'''
+    return f"async: {text}"
+""")
+
+        # Mock the async run method
+        with patch.object(
+            FastMCP1x, "run_stdio_async", new_callable=AsyncMock
+        ) as run_mock:
+            await run_command(str(test_file), transport="stdio")
+            run_mock.assert_called_once()
+
+    async def test_run_v1_server_http(self, tmp_path):
+        """Test that v1 server uses async http method."""
+        from unittest.mock import AsyncMock, patch
+
+        from mcp.server.fastmcp import FastMCP as FastMCP1x
+
+        from fastmcp.cli.run import run_command
+
+        # Create a v1 FastMCP server file with both sync and async tools
+        test_file = tmp_path / "v1_server.py"
+        test_file.write_text("""
+from mcp.server.fastmcp import FastMCP
+
+mcp = FastMCP("V1Server")
+
+@mcp.tool()
+def sync_echo(text: str) -> str:
+    '''Sync tool for testing'''
+    return f"sync: {text}"
+
+@mcp.tool()
+async def async_echo(text: str) -> str:
+    '''Async tool for testing'''
+    return f"async: {text}"
+""")
+
+        # Mock the async run method
+        with patch.object(
+            FastMCP1x, "run_streamable_http_async", new_callable=AsyncMock
+        ) as run_mock:
+            await run_command(str(test_file), transport="http")
+            run_mock.assert_called_once()
+
+    async def test_run_v1_server_streamable_http(self, tmp_path):
+        """Test that v1 server uses async streamable-http method."""
+        from unittest.mock import AsyncMock, patch
+
+        from mcp.server.fastmcp import FastMCP as FastMCP1x
+
+        from fastmcp.cli.run import run_command
+
+        # Create a v1 FastMCP server file with both sync and async tools
+        test_file = tmp_path / "v1_server.py"
+        test_file.write_text("""
+from mcp.server.fastmcp import FastMCP
+
+mcp = FastMCP("V1Server")
+
+@mcp.tool()
+def sync_echo(text: str) -> str:
+    '''Sync tool for testing'''
+    return f"sync: {text}"
+
+@mcp.tool()
+async def async_echo(text: str) -> str:
+    '''Async tool for testing'''
+    return f"async: {text}"
+""")
+
+        # Mock the async run method
+        with patch.object(
+            FastMCP1x, "run_streamable_http_async", new_callable=AsyncMock
+        ) as run_mock:
+            await run_command(str(test_file), transport="streamable-http")
+            run_mock.assert_called_once()
+
+    async def test_run_v1_server_sse(self, tmp_path):
+        """Test that v1 server uses async sse method."""
+        from unittest.mock import AsyncMock, patch
+
+        from mcp.server.fastmcp import FastMCP as FastMCP1x
+
+        from fastmcp.cli.run import run_command
+
+        # Create a v1 FastMCP server file with both sync and async tools
+        test_file = tmp_path / "v1_server.py"
+        test_file.write_text("""
+from mcp.server.fastmcp import FastMCP
+
+mcp = FastMCP("V1Server")
+
+@mcp.tool()
+def sync_echo(text: str) -> str:
+    '''Sync tool for testing'''
+    return f"sync: {text}"
+
+@mcp.tool()
+async def async_echo(text: str) -> str:
+    '''Async tool for testing'''
+    return f"async: {text}"
+""")
+
+        # Mock the async run method
+        with patch.object(
+            FastMCP1x, "run_sse_async", new_callable=AsyncMock
+        ) as run_mock:
+            await run_command(str(test_file), transport="sse")
+            run_mock.assert_called_once()
+
+    async def test_run_v1_server_default_transport(self, tmp_path):
+        """Test that v1 server uses streamable-http by default."""
+        from unittest.mock import AsyncMock, patch
+
+        from mcp.server.fastmcp import FastMCP as FastMCP1x
+
+        from fastmcp.cli.run import run_command
+
+        # Create a v1 FastMCP server file with both sync and async tools
+        test_file = tmp_path / "v1_server.py"
+        test_file.write_text("""
+from mcp.server.fastmcp import FastMCP
+
+mcp = FastMCP("V1Server")
+
+@mcp.tool()
+def sync_echo(text: str) -> str:
+    '''Sync tool for testing'''
+    return f"sync: {text}"
+
+@mcp.tool()
+async def async_echo(text: str) -> str:
+    '''Async tool for testing'''
+    return f"async: {text}"
+""")
+
+        # Mock the async run method
+        with patch.object(
+            FastMCP1x, "run_streamable_http_async", new_callable=AsyncMock
+        ) as run_mock:
+            await run_command(str(test_file))
+            run_mock.assert_called_once()
+
+    async def test_run_v1_server_with_host_port(self, tmp_path):
+        """Test that v1 server receives host/port settings."""
+        from unittest.mock import AsyncMock, patch
+
+        from mcp.server.fastmcp import FastMCP as FastMCP1x
+
+        from fastmcp.cli.run import run_command
+
+        # Create a v1 FastMCP server file with both sync and async tools
+        test_file = tmp_path / "v1_server.py"
+        test_file.write_text("""
+from mcp.server.fastmcp import FastMCP
+
+mcp = FastMCP("V1Server")
+
+@mcp.tool()
+def sync_echo(text: str) -> str:
+    '''Sync tool for testing'''
+    return f"sync: {text}"
+
+@mcp.tool()
+async def async_echo(text: str) -> str:
+    '''Async tool for testing'''
+    return f"async: {text}"
+""")
+
+        # Mock the async run method
+        with patch.object(
+            FastMCP1x, "run_streamable_http_async", new_callable=AsyncMock
+        ) as run_mock:
+            await run_command(
+                str(test_file), transport="http", host="0.0.0.0", port=9000
+            )
+            run_mock.assert_called_once()
+
+
 class TestSkipSource:
     """Test the --skip-source functionality."""
 

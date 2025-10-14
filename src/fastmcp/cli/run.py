@@ -172,7 +172,7 @@ async def run_command(
 
     # handle v1 servers
     if isinstance(server, FastMCP1x):
-        run_v1_server(server, host=host, port=port, transport=transport)
+        await run_v1_server_async(server, host=host, port=port, transport=transport)
         return
 
     kwargs = {}
@@ -197,24 +197,29 @@ async def run_command(
         sys.exit(1)
 
 
-def run_v1_server(
+async def run_v1_server_async(
     server: FastMCP1x,
     host: str | None = None,
     port: int | None = None,
     transport: TransportType | None = None,
 ) -> None:
-    from functools import partial
+    """Run a FastMCP 1.x server using async methods.
 
+    Args:
+        server: FastMCP 1.x server instance
+        host: Host to bind to
+        port: Port to bind to
+        transport: Transport protocol to use
+    """
     if host:
         server.settings.host = host
     if port:
         server.settings.port = port
+
     match transport:
         case "stdio":
-            runner = partial(server.run)
+            await server.run_stdio_async()
         case "http" | "streamable-http" | None:
-            runner = partial(server.run, transport="streamable-http")
+            await server.run_streamable_http_async()
         case "sse":
-            runner = partial(server.run, transport="sse")
-
-    runner()
+            await server.run_sse_async()
