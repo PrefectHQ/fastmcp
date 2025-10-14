@@ -150,6 +150,7 @@ class FastMCP(Generic[LifespanResultT]):
         on_duplicate_tools: DuplicateBehavior | None = None,
         on_duplicate_resources: DuplicateBehavior | None = None,
         on_duplicate_prompts: DuplicateBehavior | None = None,
+        strict_input_validation: bool | None = None,
         # ---
         # ---
         # --- The following arguments are DEPRECATED ---
@@ -219,6 +220,11 @@ class FastMCP(Generic[LifespanResultT]):
 
         self.include_tags = include_tags
         self.exclude_tags = exclude_tags
+        self.strict_input_validation = (
+            strict_input_validation
+            if strict_input_validation is not None
+            else fastmcp.settings.strict_input_validation
+        )
 
         self.middleware = middleware or []
 
@@ -391,7 +397,9 @@ class FastMCP(Generic[LifespanResultT]):
         self._mcp_server.list_resources()(self._list_resources_mcp)
         self._mcp_server.list_resource_templates()(self._list_resource_templates_mcp)
         self._mcp_server.list_prompts()(self._list_prompts_mcp)
-        self._mcp_server.call_tool()(self._call_tool_mcp)
+        self._mcp_server.call_tool(validate_input=self.strict_input_validation)(
+            self._call_tool_mcp
+        )
         self._mcp_server.read_resource()(self._read_resource_mcp)
         self._mcp_server.get_prompt()(self._get_prompt_mcp)
 

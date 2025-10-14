@@ -194,7 +194,6 @@ class Settings(BaseSettings):
     client_raise_first_exceptiongroup_error: Annotated[
         bool,
         Field(
-            default=True,
             description=inspect.cleandoc(
                 """
                 Many MCP components operate in anyio taskgroups, and raise
@@ -210,7 +209,6 @@ class Settings(BaseSettings):
     resource_prefix_format: Annotated[
         Literal["protocol", "path"],
         Field(
-            default="path",
             description=inspect.cleandoc(
                 """
                 When perfixing a resource URI, either use path formatting (resource://prefix/path)
@@ -240,7 +238,6 @@ class Settings(BaseSettings):
     mask_error_details: Annotated[
         bool,
         Field(
-            default=False,
             description=inspect.cleandoc(
                 """
                 If True, error details from user-supplied functions (tool, resource, prompt)
@@ -248,6 +245,22 @@ class Settings(BaseSettings):
                 raised ToolError, ResourceError, or PromptError will be included in responses.
                 If False (default), all error details will be included in responses, but prefixed
                 with appropriate context.
+                """
+            ),
+        ),
+    ] = False
+
+    strict_input_validation: Annotated[
+        bool,
+        Field(
+            description=inspect.cleandoc(
+                """
+                If True, tool inputs are strictly validated against the input
+                JSON schema. For example, providing the string \"10\" to an
+                integer field will raise an error. If False, compatible inputs
+                will be coerced to match the schema, which can increase
+                compatibility. For example, providing the string \"10\" to an
+                integer field will be coerced to 10. Defaults to False.
                 """
             ),
         ),
@@ -298,7 +311,6 @@ class Settings(BaseSettings):
     include_tags: Annotated[
         set[str] | None,
         Field(
-            default=None,
             description=inspect.cleandoc(
                 """
                 If provided, only components that match these tags will be
@@ -311,7 +323,6 @@ class Settings(BaseSettings):
     exclude_tags: Annotated[
         set[str] | None,
         Field(
-            default=None,
             description=inspect.cleandoc(
                 """
                 If provided, components that match these tags will be excluded
@@ -325,7 +336,6 @@ class Settings(BaseSettings):
     include_fastmcp_meta: Annotated[
         bool,
         Field(
-            default=True,
             description=inspect.cleandoc(
                 """
                 Whether to include FastMCP meta in the server's MCP responses.
@@ -340,7 +350,6 @@ class Settings(BaseSettings):
     mounted_components_raise_on_load_error: Annotated[
         bool,
         Field(
-            default=False,
             description=inspect.cleandoc(
                 """
                 If True, errors encountered when loading mounted components (tools, resources, prompts)
@@ -354,7 +363,6 @@ class Settings(BaseSettings):
     show_cli_banner: Annotated[
         bool,
         Field(
-            default=True,
             description=inspect.cleandoc(
                 """
                 If True, the server banner will be displayed when running the server via CLI.
