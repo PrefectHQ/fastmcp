@@ -101,7 +101,7 @@ class TestDefaultLogHandler:
 
         from fastmcp.client.logging import default_log_handler
 
-        with patch("fastmcp.client.logging.logger") as mock_logger:
+        with patch("fastmcp.client.logging.from_server_logger") as mock_logger:
             # Set up mock methods
             mock_logger.debug = MagicMock()
             mock_logger.info = MagicMock()
@@ -141,7 +141,8 @@ class TestDefaultLogHandler:
 
                 # Verify correct method was called
                 expected_method.assert_called_once_with(
-                    f"Server log: [test.logger] {msg}", extra={"test_key": "test_value"}
+                    msg=f"Received {level.upper()} from server (test.logger): {msg}",
+                    extra={"test_key": "test_value"},
                 )
 
     async def test_default_handler_without_logger_name(self):
@@ -152,7 +153,7 @@ class TestDefaultLogHandler:
 
         from fastmcp.client.logging import default_log_handler
 
-        with patch("fastmcp.client.logging.logger") as mock_logger:
+        with patch("fastmcp.client.logging.from_server_logger") as mock_logger:
             mock_logger.info = MagicMock()
 
             log_msg = LoggingMessageNotificationParams(
@@ -164,7 +165,7 @@ class TestDefaultLogHandler:
             await default_log_handler(log_msg)
 
             mock_logger.info.assert_called_once_with(
-                "Server log: Message without logger", extra={}
+                msg="Received INFO from server: Message without logger", extra={}
             )
 
     async def test_default_handler_with_missing_msg(self):
@@ -175,7 +176,7 @@ class TestDefaultLogHandler:
 
         from fastmcp.client.logging import default_log_handler
 
-        with patch("fastmcp.client.logging.logger") as mock_logger:
+        with patch("fastmcp.client.logging.from_server_logger") as mock_logger:
             mock_logger.info = MagicMock()
 
             log_msg = LoggingMessageNotificationParams(
@@ -189,5 +190,5 @@ class TestDefaultLogHandler:
             # Should use str(message) as fallback
             mock_logger.info.assert_called_once()
             call_args = mock_logger.info.call_args
-            assert "Server log:" in call_args[0][0]
+            assert "Received INFO from server" in call_args[1]["msg"]
             assert call_args[1]["extra"] == {"key": "value"}

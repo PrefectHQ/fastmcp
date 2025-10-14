@@ -3,13 +3,16 @@ from __future__ import annotations
 import asyncio
 import copy
 import inspect
+import logging
 import warnings
 import weakref
+from asyncio.locks import Lock
 from collections.abc import Generator, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar, Token
 from dataclasses import dataclass
 from enum import Enum
+from logging import Logger
 from typing import Any, Literal, cast, get_origin, overload
 
 from mcp import LoggingLevel, ServerSession
@@ -44,14 +47,21 @@ from fastmcp.server.elicitation import (
     get_elicitation_schema,
 )
 from fastmcp.server.server import FastMCP
-from fastmcp.utilities.logging import get_logger
+from fastmcp.utilities.logging import _clamp_logger, get_logger
 from fastmcp.utilities.types import get_cached_typeadapter
 
-logger = get_logger(__name__)
+logger: Logger = get_logger(name=__name__)
+to_client_logger: Logger = logger.getChild(suffix="to_client")
+
+# Convert all levels of server -> client messages to debug level
+# This clamp can be undone at runtime by calling `_unclamp_logger` or calling
+# `_clamp_logger` with a different max level.
+_clamp_logger(logger=to_client_logger, max_level="DEBUG")
+
 
 T = TypeVar("T", default=Any)
 _current_context: ContextVar[Context | None] = ContextVar("context", default=None)  # type: ignore[assignment]
-_flush_lock = asyncio.Lock()
+_flush_lock: Lock = asyncio.Lock()
 
 
 @dataclass
@@ -64,6 +74,18 @@ class LogData:
 
     msg: str
     extra: Mapping[str, Any] | None = None
+
+
+_mcp_level_to_python_level = {
+    "debug": logging.DEBUG,
+    "info": logging.INFO,
+    "notice": logging.INFO,
+    "warning": logging.WARNING,
+    "error": logging.ERROR,
+    "critical": logging.CRITICAL,
+    "alert": logging.CRITICAL,
+    "emergency": logging.CRITICAL,
+}
 
 
 @contextmanager
@@ -216,6 +238,8 @@ class Context:
     ) -> None:
         """Send a log message to the client.
 
+        Messages sent to Clients are also logged to the `fastmcp.server.context.to_client` logger with a level of `DEBUG`.
+
         Args:
             message: Log message
             level: Optional log level. One of "debug", "info", "notice", "warning", "error", "critical",
@@ -223,13 +247,13 @@ class Context:
             logger_name: Optional logger name
             extra: Optional mapping for additional arguments
         """
-        if level is None:
-            level = "info"
         data = LogData(msg=message, extra=extra)
-        await self.session.send_log_message(
-            level=level,
+
+        await _log_to_server_and_client(
             data=data,
-            logger=logger_name,
+            session=self.session,
+            level=level or "info",
+            logger_name=logger_name,
             related_request_id=self.request_id,
         )
 
@@ -303,9 +327,14 @@ class Context:
         logger_name: str | None = None,
         extra: Mapping[str, Any] | None = None,
     ) -> None:
-        """Send a debug log message."""
+        """Send a `DEBUG`-level message to the connected MCP Client.
+
+        Messages sent to Clients are also logged to the `fastmcp.server.context.to_client` logger with a level of `DEBUG`."""
         await self.log(
-            level="debug", message=message, logger_name=logger_name, extra=extra
+            level="debug",
+            message=message,
+            logger_name=logger_name,
+            extra=extra,
         )
 
     async def info(
@@ -314,9 +343,14 @@ class Context:
         logger_name: str | None = None,
         extra: Mapping[str, Any] | None = None,
     ) -> None:
-        """Send an info log message."""
+        """Send a `INFO`-level message to the connected MCP Client.
+
+        Messages sent to Clients are also logged to the `fastmcp.server.context.to_client` logger with a level of `DEBUG`."""
         await self.log(
-            level="info", message=message, logger_name=logger_name, extra=extra
+            level="info",
+            message=message,
+            logger_name=logger_name,
+            extra=extra,
         )
 
     async def warning(
@@ -325,9 +359,14 @@ class Context:
         logger_name: str | None = None,
         extra: Mapping[str, Any] | None = None,
     ) -> None:
-        """Send a warning log message."""
+        """Send a `WARNING`-level message to the connected MCP Client.
+
+        Messages sent to Clients are also logged to the `fastmcp.server.context.to_client` logger with a level of `DEBUG`."""
         await self.log(
-            level="warning", message=message, logger_name=logger_name, extra=extra
+            level="warning",
+            message=message,
+            logger_name=logger_name,
+            extra=extra,
         )
 
     async def error(
@@ -336,9 +375,14 @@ class Context:
         logger_name: str | None = None,
         extra: Mapping[str, Any] | None = None,
     ) -> None:
-        """Send an error log message."""
+        """Send a `ERROR`-level message to the connected MCP Client.
+
+        Messages sent to Clients are also logged to the `fastmcp.server.context.to_client` logger with a level of `DEBUG`."""
         await self.log(
-            level="error", message=message, logger_name=logger_name, extra=extra
+            level="error",
+            message=message,
+            logger_name=logger_name,
+            extra=extra,
         )
 
     async def list_roots(self) -> list[Root]:
@@ -675,3 +719,31 @@ def _parse_model_preferences(
         raise ValueError(
             "model_preferences must be one of: ModelPreferences, str, list[str], or None."
         )
+
+
+async def _log_to_server_and_client(
+    data: LogData,
+    session: ServerSession,
+    level: LoggingLevel,
+    logger_name: str | None = None,
+    related_request_id: str | None = None,
+) -> None:
+    """Log a message to the server and client."""
+
+    msg_prefix = f"Sending {level.upper()} to client"
+
+    if logger_name:
+        msg_prefix += f" ({logger_name})"
+
+    to_client_logger.log(
+        level=_mcp_level_to_python_level[level],
+        msg=f"{msg_prefix}: {data.msg}",
+        extra=data.extra,
+    )
+
+    await session.send_log_message(
+        level=level,
+        data=data,
+        logger=logger_name,
+        related_request_id=related_request_id,
+    )
