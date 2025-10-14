@@ -56,7 +56,7 @@ def open_deeplink(deeplink: str) -> bool:
             subprocess.run(["open", deeplink], check=True, capture_output=True)
         elif sys.platform == "win32":  # Windows
             subprocess.run(
-                ["start", deeplink], shell=True, check=True, capture_output=True
+                ["cmd", "/c", "start", deeplink], check=True, capture_output=True
             )
         else:  # Linux and others
             subprocess.run(["xdg-open", deeplink], check=True, capture_output=True)
