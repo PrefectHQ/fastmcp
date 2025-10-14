@@ -6,6 +6,7 @@ from typing import Any, Literal, cast
 
 from rich.console import Console
 from rich.logging import RichHandler
+from typing_extensions import override
 
 import fastmcp
 
@@ -19,7 +20,10 @@ def get_logger(name: str) -> logging.Logger:
     Returns:
         a configured logger instance
     """
-    return logging.getLogger(f"fastmcp.{name}")
+    if name.startswith("fastmcp."):
+        return logging.getLogger(name=name)
+
+    return logging.getLogger(name=f"fastmcp.{name}")
 
 
 def configure_logging(
@@ -141,3 +145,86 @@ def temporary_log_level(
             )
     else:
         yield
+
+
+class _ClampedLogFilter(logging.Filter):
+    min_level: tuple[int, str] | None
+    max_level: tuple[int, str] | None
+
+    def __init__(
+        self,
+        min_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+        | None = None,
+        max_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+        | None = None,
+    ):
+        self.min_level = None
+        self.max_level = None
+
+        if min_level_no := self._level_to_no(level=min_level):
+            self.min_level = (min_level_no, str(min_level))
+        if max_level_no := self._level_to_no(level=max_level):
+            self.max_level = (max_level_no, str(max_level))
+
+        super().__init__()
+
+    def _level_to_no(
+        self, level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] | None
+    ) -> int | None:
+        if level == "DEBUG":
+            return logging.DEBUG
+        elif level == "INFO":
+            return logging.INFO
+        elif level == "WARNING":
+            return logging.WARNING
+        elif level == "ERROR":
+            return logging.ERROR
+        elif level == "CRITICAL":
+            return logging.CRITICAL
+        else:
+            return None
+
+    @override
+    def filter(self, record: logging.LogRecord) -> bool:
+        if self.max_level:
+            max_level_no, max_level_name = self.max_level
+
+            if record.levelno > max_level_no:
+                record.levelno = max_level_no
+                record.levelname = max_level_name
+                return True
+
+        if self.min_level:
+            min_level_no, min_level_name = self.min_level
+            if record.levelno < min_level_no:
+                record.levelno = min_level_no
+                record.levelname = min_level_name
+                return True
+
+        return True
+
+
+def _clamp_logger(
+    logger: logging.Logger,
+    min_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] | None = None,
+    max_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] | None = None,
+) -> None:
+    """Clamp the logger to a minimum and maximum level.
+
+    If min_level is provided, messages logged at a lower level than `min_level` will have their level increased to `min_level`.
+    If max_level is provided, messages logged at a higher level than `max_level` will have their level decreased to `max_level`.
+
+    Args:
+        min_level: The lower bound of the clamp
+        max_level: The upper bound of the clamp
+    """
+    _unclamp_logger(logger=logger)
+
+    logger.addFilter(filter=_ClampedLogFilter(min_level=min_level, max_level=max_level))
+
+
+def _unclamp_logger(logger: logging.Logger) -> None:
+    """Remove all clamped log filters from the logger."""
+    for filter in logger.filters[:]:
+        if isinstance(filter, _ClampedLogFilter):
+            logger.removeFilter(filter)

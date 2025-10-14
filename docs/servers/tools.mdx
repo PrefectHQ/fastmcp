@@ -9,8 +9,6 @@ import { VersionBadge } from '/snippets/version-badge.mdx'
 
 Tools are the core building blocks that allow your LLM to interact with external systems, execute code, and access data that isn't in its training data. In FastMCP, tools are Python functions exposed to LLMs through the MCP protocol.
 
-## What Are Tools?
-
 Tools in FastMCP transform regular Python functions into capabilities that LLMs can invoke during conversations. When an LLM decides to use a tool:
 
 1.  It sends a request with parameters based on the tool's schema.
@@ -20,9 +18,8 @@ Tools in FastMCP transform regular Python functions into capabilities that LLMs 
 
 This allows LLMs to perform tasks like querying databases, calling APIs, making calculations, or accessing files—extending their capabilities beyond what's in their training data.
 
-## Tools
 
-### The `@tool` Decorator
+## The `@tool` Decorator
 
 Creating a tool is as simple as decorating a Python function with `@mcp.tool`:
 
@@ -49,7 +46,7 @@ The way you define your Python function dictates how the tool appears and behave
 Functions with `*args` or `**kwargs` are not supported as tools. This restriction exists because FastMCP needs to generate a complete parameter schema for the MCP protocol, which isn't possible with variable argument lists.
 </Tip>
 
-#### Decorator Arguments
+### Decorator Arguments
 
 While FastMCP infers the name and description from your function, you can override these and add additional metadata using arguments to the `@mcp.tool` decorator:
 
@@ -117,7 +114,7 @@ def search_products_implementation(query: str, category: str | None = None) -> l
 </Card>
 
 
-### Async and Synchronous Tools
+### Async Support
 
 FastMCP is an async-first framework that seamlessly supports both asynchronous (`async def`) and synchronous (`def`) functions as tools. Async tools are preferred for I/O-bound operations to keep your server responsive.
 
@@ -170,15 +167,13 @@ def my_tool() -> None:
 ```
 </CodeGroup>
 
+## Arguments
+
+By default, FastMCP converts Python functions into MCP tools by inspecting the function's signature and type annotations. This allows you to use standard Python type annotations for your tools. In general, the framework strives to "just work": idiomatic Python behaviors like parameter defaults and type annotations are automatically translated into MCP schemas. However, there are a number of ways to customize the behavior of your tools.
 
 ### Type Annotations
 
-Type annotations for parameters are essential for proper tool functionality. They:
-1. Inform the LLM about the expected data types for each parameter
-2. Enable FastMCP to validate input data from clients
-3. Generate accurate JSON schemas for the MCP protocol
-
-Use standard Python type annotations for parameters:
+MCP tools have typed arguments, and FastMCP uses type annotations to determine those types. Therefore, you should use standard Python type annotations for tool arguments:
 
 ```python
 @mcp.tool
@@ -195,18 +190,83 @@ FastMCP supports a wide range of type annotations, including all Pydantic types:
 
 | Type Annotation         | Example                       | Description                         |
 | :---------------------- | :---------------------------- | :---------------------------------- |
-| Basic types             | `int`, `float`, `str`, `bool` | Simple scalar values - see [Built-in Types](#built-in-types) |
-| Binary data             | `bytes`                       | Binary content - see [Binary Data](#binary-data) |
-| Date and Time           | `datetime`, `date`, `timedelta` | Date and time objects - see [Date and Time Types](#date-and-time-types) |
-| Collection types        | `list[str]`, `dict[str, int]`, `set[int]` | Collections of items - see [Collection Types](#collection-types) |
-| Optional types          | `float \| None`, `Optional[float]`| Parameters that may be null/omitted - see [Union and Optional Types](#union-and-optional-types) |
-| Union types             | `str \| int`, `Union[str, int]`| Parameters accepting multiple types - see [Union and Optional Types](#union-and-optional-types) |
-| Constrained types       | `Literal["A", "B"]`, `Enum`   | Parameters with specific allowed values - see [Constrained Types](#constrained-types) |
-| Paths                   | `Path`                        | File system paths - see [Paths](#paths) |
-| UUIDs                   | `UUID`                        | Universally unique identifiers - see [UUIDs](#uuids) |
-| Pydantic models         | `UserData`                    | Complex structured data - see [Pydantic Models](#pydantic-models) |
+| Basic types             | `int`, `float`, `str`, `bool` | Simple scalar values |
+| Binary data             | `bytes`                       | Binary content (raw strings, not auto-decoded base64) |
+| Date and Time           | `datetime`, `date`, `timedelta` | Date and time objects (ISO format strings) |
+| Collection types        | `list[str]`, `dict[str, int]`, `set[int]` | Collections of items |
+| Optional types          | `float \| None`, `Optional[float]`| Parameters that may be null/omitted |
+| Union types             | `str \| int`, `Union[str, int]`| Parameters accepting multiple types |
+| Constrained types       | `Literal["A", "B"]`, `Enum`   | Parameters with specific allowed values |
+| Paths                   | `Path`                        | File system paths (auto-converted from strings) |
+| UUIDs                   | `UUID`                        | Universally unique identifiers (auto-converted from strings) |
+| Pydantic models         | `UserData`                    | Complex structured data with validation |
 
-For additional type annotations not listed here, see the [Parameter Types](#parameter-types) section below for more detailed information and examples.
+FastMCP supports all types that Pydantic supports as fields, including all Pydantic custom types. A few FastMCP-specific behaviors to note:
+
+**Binary Data**: `bytes` parameters accept raw strings without automatic base64 decoding. For base64 data, use `str` and decode manually with `base64.b64decode()`.
+
+**Enums**: Clients send enum values (`"red"`), not names (`"RED"`). Your function receives the Enum member (`Color.RED`).
+
+**Paths and UUIDs**: String inputs are automatically converted to `Path` and `UUID` objects.
+
+**Pydantic Models**: Must be provided as JSON objects (dicts), not stringified JSON. Even with flexible validation, `{"user": {"name": "Alice"}}` works, but `{"user": '{"name": "Alice"}'}` does not.
+
+### Optional Arguments
+
+FastMCP follows Python's standard function parameter conventions. Parameters without default values are required, while those with default values are optional.
+
+```python
+@mcp.tool
+def search_products(
+    query: str,                   # Required - no default value
+    max_results: int = 10,        # Optional - has default value
+    sort_by: str = "relevance",   # Optional - has default value
+    category: str | None = None   # Optional - can be None
+) -> list[dict]:
+    """Search the product catalog."""
+    # Implementation...
+```
+
+In this example, the LLM must provide a `query` parameter, while `max_results`, `sort_by`, and `category` will use their default values if not explicitly provided.
+
+### Validation Modes
+
+<VersionBadge version="2.13.0" />
+
+By default, FastMCP uses Pydantic's flexible validation that coerces compatible inputs to match your type annotations. This improves compatibility with LLM clients that may send string representations of values (like `"10"` for an integer parameter).
+
+If you need stricter validation that rejects any type mismatches, you can enable strict input validation. Strict mode uses the MCP SDK's built-in JSON Schema validation to validate inputs against the exact schema before passing them to your function:
+
+```python
+# Enable strict validation for this server
+mcp = FastMCP("StrictServer", strict_input_validation=True)
+
+@mcp.tool
+def add_numbers(a: int, b: int) -> int:
+    """Add two numbers."""
+    return a + b
+
+# With strict_input_validation=True, sending {"a": "10", "b": "20"} will fail
+# With strict_input_validation=False (default), it will be coerced to integers
+```
+
+**Validation Behavior Comparison:**
+
+| Input Type | strict_input_validation=False (default) | strict_input_validation=True |
+| :--------- | :-------------------------------------- | :--------------------------- |
+| String integers (`"10"` for `int`) | ✅ Coerced to integer | ❌ Validation error |
+| String floats (`"3.14"` for `float`) | ✅ Coerced to float | ❌ Validation error |
+| String booleans (`"true"` for `bool`) | ✅ Coerced to boolean | ❌ Validation error |
+| Lists with string elements (`["1", "2"]` for `list[int]`) | ✅ Elements coerced | ❌ Validation error |
+| Pydantic model fields with type mismatches | ✅ Fields coerced | ❌ Validation error |
+| Invalid values (`"abc"` for `int`) | ❌ Validation error | ❌ Validation error |
+
+<Note>
+**Note on Pydantic Models:** Even with `strict_input_validation=False`, Pydantic model parameters must be provided as JSON objects (dicts), not as stringified JSON. For example, `{"user": {"name": "Alice"}}` works, but `{"user": '{"name": "Alice"}'}` does not.
+</Note>
+
+The default flexible validation mode is recommended for most use cases as it handles common LLM client behaviors gracefully while still providing strong type safety through Pydantic's validation.
+
 ### Parameter Metadata
 
 You can provide additional metadata about parameters in several ways:
@@ -281,24 +341,6 @@ Field provides several validation and documentation features:
 
 
 
-### Optional Arguments
-
-FastMCP follows Python's standard function parameter conventions. Parameters without default values are required, while those with default values are optional.
-
-```python
-@mcp.tool
-def search_products(
-    query: str,                   # Required - no default value
-    max_results: int = 10,        # Optional - has default value
-    sort_by: str = "relevance",   # Optional - has default value
-    category: str | None = None   # Optional - can be None
-) -> list[dict]:
-    """Search the product catalog."""
-    # Implementation...
-```
-
-In this example, the LLM must provide a `query` parameter, while `max_results`, `sort_by`, and `category` will use their default values if not explicitly provided.
-
 
 ### Excluding Arguments
 
@@ -322,34 +364,8 @@ With this configuration, `user_id` will not appear in the tool's parameter schem
 
 For more complex tool transformations, see [Transforming Tools](/patterns/tool-transformation).
 
-### Disabling Tools
 
-<VersionBadge version="2.8.0" />
-
-You can control the visibility and availability of tools by enabling or disabling them. This is useful for feature flagging, maintenance, or dynamically changing the toolset available to a client. Disabled tools will not appear in the list of available tools returned by `list_tools`, and attempting to call a disabled tool will result in an "Unknown tool" error, just as if the tool did not exist.
-
-By default, all tools are enabled. You can disable a tool upon creation using the `enabled` parameter in the decorator:
-
-```python
-@mcp.tool(enabled=False)
-def maintenance_tool():
-    """This tool is currently under maintenance."""
-    return "This tool is disabled."
-```
-
-You can also toggle a tool's state programmatically after it has been created:
-
-```python
-@mcp.tool
-def dynamic_tool():
-    return "I am a dynamic tool."
-
-# Disable and re-enable the tool
-dynamic_tool.disable()
-dynamic_tool.enable()
-```
-
-### Return Values
+## Return Values
 
 
 FastMCP tools can return data in two complementary formats: **traditional content blocks** (like text and images) and **structured outputs** (machine-readable JSON). When you add return type annotations, FastMCP automatically generates **output schemas** to validate the structured data and enables clients to deserialize results back to Python objects.
@@ -362,7 +378,7 @@ Understanding how these three concepts work together:
 
 The following sections explain each concept in detail.
 
-#### Content Blocks
+### Content Blocks
 
 FastMCP automatically converts tool return values into appropriate MCP content blocks:
 
@@ -374,7 +390,43 @@ FastMCP automatically converts tool return values into appropriate MCP content b
 - **A list of any of the above**: Converts each item appropriately
 - **`None`**: Results in an empty response
 
-#### Structured Output
+#### Media Helper Classes
+
+For returning images, audio, and files, FastMCP provides helper classes that handle MIME type detection and base64 encoding automatically, returning them in MCP-native formats that meet the protocol's requirements:
+
+```python
+from fastmcp.utilities.types import Image, Audio, File
+
+@mcp.tool
+def get_chart() -> Image:
+    """Generate a chart image."""
+    # From file path - MIME type detected from extension
+    return Image(path="chart.png")
+
+    # Or from raw bytes with explicit format
+    # return Image(data=image_bytes, format="png")
+
+@mcp.tool
+def get_recording() -> Audio:
+    """Get an audio recording."""
+    return Audio(path="recording.wav")
+    # Or: Audio(data=audio_bytes, format="wav")
+
+@mcp.tool
+def get_document() -> File:
+    """Retrieve a PDF document."""
+    return File(path="report.pdf")
+    # Or: File(data=pdf_bytes, format="pdf", name="report")
+```
+
+Each helper class accepts either `path=` or `data=` (mutually exclusive):
+- **`path`**: File path (string or Path object) - MIME type detected from extension
+- **`data`**: Raw bytes - requires `format=` parameter for MIME type
+- **`format`**: Optional format override (e.g., "png", "wav", "pdf")
+- **`name`**: Optional name for `File` when using `data=`
+- **`annotations`**: Optional MCP annotations for the content
+
+### Structured Output
 
 <VersionBadge version="2.10.0" />
 
@@ -389,7 +441,7 @@ The 6/18/2025 MCP spec update [introduced](https://modelcontextprotocol.io/speci
 This automatic behavior enables clients to receive machine-readable data alongside human-readable content without requiring explicit output schemas for object-like returns.
 </Note>
 
-##### Object-like Results (Automatic Structured Content)
+#### Object-like Results (Automatic Structured Content)
 
 <CodeGroup>
 ```python Dict Return (No Schema Needed)
@@ -412,7 +464,7 @@ def get_user_data(user_id: str) -> dict:
 ```
 </CodeGroup>
 
-##### Non-object Results (Schema Required)
+#### Non-object Results (Schema Required)
 
 <CodeGroup>
 ```python Integer Return (No Schema)
@@ -444,7 +496,7 @@ def calculate_sum(a: int, b: int) -> int:
 ```
 </CodeGroup>
 
-##### Complex Type Example
+#### Complex Type Example
 
 <CodeGroup>
 ```python Tool Definition
@@ -487,7 +539,7 @@ def get_user_profile(user_id: str) -> Person:
 ```
 </CodeGroup>
 
-#### Output Schemas
+### Output Schemas
 
 <VersionBadge version="2.10.0" />
 
@@ -495,7 +547,7 @@ The 6/18/2025 MCP spec update [introduced](https://modelcontextprotocol.io/speci
 
 When you add return type annotations to your functions, FastMCP automatically generates JSON schemas that describe the expected output format. These schemas help MCP clients understand and validate the structured data they receive.
 
-##### Primitive Type Wrapping
+#### Primitive Type Wrapping
 
 For primitive return types (like `int`, `str`, `bool`), FastMCP automatically wraps the result under a `"result"` key to create valid structured output:
 
@@ -524,7 +576,7 @@ def calculate_sum(a: int, b: int) -> int:
 ```
 </CodeGroup>
 
-##### Manual Schema Control
+#### Manual Schema Control
 
 You can override the automatically generated schema by providing a custom `output_schema`:
 
@@ -550,7 +602,7 @@ Schema generation works for most common types including basic types, collections
 - However, you can provide structured output without an output schema (using `ToolResult`)
 </Warning>
 
-#### Full Control with ToolResult
+### Full Control with ToolResult
 
 For complete control over both traditional content and structured output, return a `ToolResult` object:
 
@@ -575,7 +627,7 @@ When returning `ToolResult`:
 If your return type annotation cannot be converted to a JSON schema (e.g., complex custom classes without Pydantic support), the output schema will be omitted but the tool will still function normally with traditional content.
 </Note>
 
-### Error Handling
+## Error Handling
 
 <VersionBadge version="2.4.1" />
 
@@ -613,7 +665,33 @@ def divide(a: float, b: float) -> float:
 
 When `mask_error_details=True`, only error messages from `ToolError` will include details, other exceptions will be converted to a generic message.
 
-### Annotations
+## Disabling Tools
+
+<VersionBadge version="2.8.0" />
+
+You can control the visibility and availability of tools by enabling or disabling them. This is useful for feature flagging, maintenance, or dynamically changing the toolset available to a client. Disabled tools will not appear in the list of available tools returned by `list_tools`, and attempting to call a disabled tool will result in an "Unknown tool" error, just as if the tool did not exist.
+
+By default, all tools are enabled. You can disable a tool upon creation using the `enabled` parameter in the decorator:
+
+```python
+@mcp.tool(enabled=False)
+def maintenance_tool():
+    """This tool is currently under maintenance."""
+    return "This tool is disabled."
+```
+
+You can also toggle a tool's state programmatically after it has been created:
+
+```python
+@mcp.tool
+def dynamic_tool():
+    return "I am a dynamic tool."
+
+# Disable and re-enable the tool
+dynamic_tool.disable()
+dynamic_tool.enable()
+```
+## MCP Annotations
 
 <VersionBadge version="2.2.7" />
 
@@ -652,7 +730,7 @@ FastMCP supports these standard annotations:
 
 Remember that annotations help make better user experiences but should be treated as advisory hints. They help client applications present appropriate UI elements and safety controls, but won't enforce security boundaries on their own. Always focus on making your annotations accurately represent what your tool actually does.
 
-### Notifications
+## Notifications
 
 <VersionBadge version="2.9.1" />
 
@@ -674,7 +752,7 @@ Notifications are only sent when these operations occur within an active MCP req
 
 Clients can handle these notifications using a [message handler](/clients/messages) to automatically refresh their tool lists or update their interfaces.
 
-## MCP Context
+## Accessing the MCP Context
 
 Tools can access MCP features like logging, reading resources, or reporting progress through the `Context` object. To use it, add a parameter to your tool function with the type hint `Context`.
 
@@ -714,333 +792,6 @@ The Context object provides access to:
 - **Request Information**: `ctx.request_id`, `ctx.client_id`
 
 For full documentation on the Context object and all its capabilities, see the [Context documentation](/servers/context).
-
-## Parameter Types
-
-FastMCP supports a wide variety of parameter types to give you flexibility when designing your tools.
-
-FastMCP generally supports all types that Pydantic supports as fields, including all Pydantic custom types. This means you can use any type that can be validated and parsed by Pydantic in your tool parameters.
-
-FastMCP supports **type coercion** when possible. This means that if a client sends data that doesn't match the expected type, FastMCP will attempt to convert it to the appropriate type. For example, if a client sends a string for a parameter annotated as `int`, FastMCP will attempt to convert it to an integer. If the conversion is not possible, FastMCP will return a validation error.
-
-### Built-in Types
-
-The most common parameter types are Python's built-in scalar types:
-
-```python
-@mcp.tool
-def process_values(
-    name: str,             # Text data
-    count: int,            # Integer numbers
-    amount: float,         # Floating point numbers
-    enabled: bool          # Boolean values (True/False)
-):
-    """Process various value types."""
-    # Implementation...
-```
-
-These types provide clear expectations to the LLM about what values are acceptable and allow FastMCP to validate inputs properly. Even if a client provides a string like "42", it will be coerced to an integer for parameters annotated as `int`.
-
-### Date and Time Types
-
-FastMCP supports various date and time types from the `datetime` module:
-
-```python
-from datetime import datetime, date, timedelta
-
-@mcp.tool
-def process_date_time(
-    event_date: date,             # ISO format date string or date object
-    event_time: datetime,         # ISO format datetime string or datetime object
-    duration: timedelta = timedelta(hours=1)  # Integer seconds or timedelta
-) -> str:
-    """Process date and time information."""
-    # Types are automatically converted from strings
-    assert isinstance(event_date, date)  
-    assert isinstance(event_time, datetime)
-    assert isinstance(duration, timedelta)
-    
-    return f"Event on {event_date} at {event_time} for {duration}"
-```
-
-- `datetime` - Accepts ISO format strings (e.g., "2023-04-15T14:30:00")
-- `date` - Accepts ISO format date strings (e.g., "2023-04-15")
-- `timedelta` - Accepts integer seconds or timedelta objects
-
-### Collection Types
-
-FastMCP supports all standard Python collection types:
-
-```python
-@mcp.tool
-def analyze_data(
-    values: list[float],           # List of numbers
-    properties: dict[str, str],    # Dictionary with string keys and values
-    unique_ids: set[int],          # Set of unique integers
-    coordinates: tuple[float, float],  # Tuple with fixed structure
-    mixed_data: dict[str, list[int]] # Nested collections
-):
-    """Analyze collections of data."""
-    # Implementation...
-```
-
-All collection types can be used as parameter annotations:
-- `list[T]` - Ordered sequence of items
-- `dict[K, V]` - Key-value mapping
-- `set[T]` - Unordered collection of unique items
-- `tuple[T1, T2, ...]` - Fixed-length sequence with potentially different types
-
-Collection types can be nested and combined to represent complex data structures. JSON strings that match the expected structure will be automatically parsed and converted to the appropriate Python collection type.
-
-### Union and Optional Types
-
-For parameters that can accept multiple types or may be omitted:
-
-```python
-@mcp.tool
-def flexible_search(
-    query: str | int,              # Can be either string or integer
-    filters: dict[str, str] | None = None,  # Optional dictionary
-    sort_field: str | None = None  # Optional string
-):
-    """Search with flexible parameter types."""
-    # Implementation...
-```
-
-Modern Python syntax (`str | int`) is preferred over older `Union[str, int]` forms. Similarly, `str | None` is preferred over `Optional[str]`.
-
-### Constrained Types
-
-When a parameter must be one of a predefined set of values, you can use either Literal types or Enums:
-
-#### Literals
-
-Literals constrain parameters to a specific set of values:
-
-```python
-from typing import Literal
-
-@mcp.tool
-def sort_data(
-    data: list[float],
-    order: Literal["ascending", "descending"] = "ascending",
-    algorithm: Literal["quicksort", "mergesort", "heapsort"] = "quicksort"
-):
-    """Sort data using specific options."""
-    # Implementation...
-```
-
-Literal types:
-- Specify exact allowable values directly in the type annotation
-- Help LLMs understand exactly which values are acceptable
-- Provide input validation (errors for invalid values)
-- Create clear schemas for clients
-
-#### Enums
-
-For more structured sets of constrained values, use Python's Enum class:
-
-```python
-from enum import Enum
-
-class Color(Enum):
-    RED = "red"
-    GREEN = "green"
-    BLUE = "blue"
-
-@mcp.tool
-def process_image(
-    image_path: str, 
-    color_filter: Color = Color.RED
-):
-    """Process an image with a color filter."""
-    # Implementation...
-    # color_filter will be a Color enum member
-```
-
-When using Enum types:
-- Clients should provide the enum's value (e.g., "red"), not the enum member name (e.g., "RED")
-- FastMCP automatically coerces the string value into the appropriate Enum object
-- Your function receives the actual Enum member (e.g., `Color.RED`)
-- Validation errors are raised for values not in the enum
-
-### Binary Data
-
-There are two approaches to handling binary data in tool parameters:
-
-#### Bytes
-
-```python
-@mcp.tool
-def process_binary(data: bytes):
-    """Process binary data directly.
-    
-    The client can send a binary string, which will be 
-    converted directly to bytes.
-    """
-    # Implementation using binary data
-    data_length = len(data)
-    # ...
-```
-
-When you annotate a parameter as `bytes`, FastMCP will:
-- Convert raw strings directly to bytes
-- Validate that the input can be properly represented as bytes
-
-FastMCP does not automatically decode base64-encoded strings for bytes parameters. If you need to accept base64-encoded data, you should handle the decoding manually as shown below.
-
-#### Base64-encoded strings
-
-```python
-from typing import Annotated
-from pydantic import Field
-
-@mcp.tool
-def process_image_data(
-    image_data: Annotated[str, Field(description="Base64-encoded image data")]
-):
-    """Process an image from base64-encoded string.
-    
-    The client is expected to provide base64-encoded data as a string.
-    You'll need to decode it manually.
-    """
-    # Manual base64 decoding
-    import base64
-    binary_data = base64.b64decode(image_data)
-    # Process binary_data...
-```
-
-This approach is recommended when you expect to receive base64-encoded binary data from clients.
-
-### Paths
-
-The `Path` type from the `pathlib` module can be used for file system paths:
-
-```python
-from pathlib import Path
-
-@mcp.tool
-def process_file(path: Path) -> str:
-    """Process a file at the given path."""
-    assert isinstance(path, Path)  # Path is properly converted
-    return f"Processing file at {path}"
-```
-
-When a client sends a string path, FastMCP automatically converts it to a `Path` object.
-
-### UUIDs
-
-The `UUID` type from the `uuid` module can be used for unique identifiers:
-
-```python
-import uuid
-
-@mcp.tool
-def process_item(
-    item_id: uuid.UUID  # String UUID or UUID object
-) -> str:
-    """Process an item with the given UUID."""
-    assert isinstance(item_id, uuid.UUID)  # Properly converted to UUID
-    return f"Processing item {item_id}"
-```
-
-When a client sends a string UUID (e.g., "123e4567-e89b-12d3-a456-426614174000"), FastMCP automatically converts it to a `UUID` object.
-
-### Pydantic Models
-
-For complex, structured data with nested fields and validation, use Pydantic models:
-
-```python
-from pydantic import BaseModel, Field
-from typing import Optional
-
-class User(BaseModel):
-    username: str
-    email: str = Field(description="User's email address")
-    age: int | None = None
-    is_active: bool = True
-
-@mcp.tool
-def create_user(user: User):
-    """Create a new user in the system."""
-    # The input is automatically validated against the User model
-    # Even if provided as a JSON string or dict
-    # Implementation...
-```
-
-Using Pydantic models provides:
-- Clear, self-documenting structure for complex inputs
-- Built-in data validation
-- Automatic generation of detailed JSON schemas for the LLM
-- Automatic conversion from dict/JSON input
-
-Clients can provide data for Pydantic model parameters as either:
-- A JSON object (string)
-- A dictionary with the appropriate structure
-- Nested parameters in the appropriate format
-
-### Pydantic Fields
-
-FastMCP supports robust parameter validation through Pydantic's `Field` class. This is especially useful to ensure that input values meet specific requirements beyond just their type.
-
-Note that fields can be used *outside* Pydantic models to provide metadata and validation constraints. The preferred approach is using `Annotated` with `Field`:
-
-```python
-from typing import Annotated
-from pydantic import Field
-
-@mcp.tool
-def analyze_metrics(
-    # Numbers with range constraints
-    count: Annotated[int, Field(ge=0, le=100)],         # 0 <= count <= 100
-    ratio: Annotated[float, Field(gt=0, lt=1.0)],       # 0 < ratio < 1.0
-    
-    # String with pattern and length constraints
-    user_id: Annotated[str, Field(
-        pattern=r"^[A-Z]{2}\d{4}$",                     # Must match regex pattern
-        description="User ID in format XX0000"
-    )],
-    
-    # String with length constraints
-    comment: Annotated[str, Field(min_length=3, max_length=500)] = "",
-    
-    # Numeric constraints
-    factor: Annotated[int, Field(multiple_of=5)] = 10,  # Must be multiple of 5
-):
-    """Analyze metrics with validated parameters."""
-    # Implementation...
-```
-
-You can also use `Field` as a default value, though the `Annotated` approach is preferred:
-
-```python
-@mcp.tool
-def validate_data(
-    # Value constraints
-    age: int = Field(ge=0, lt=120),                     # 0 <= age < 120
-    
-    # String constraints
-    email: str = Field(pattern=r"^[\w\.-]+@[\w\.-]+\.\w+$"),  # Email pattern
-    
-    # Collection constraints
-    tags: list[str] = Field(min_length=1, max_length=10)  # 1-10 tags
-):
-    """Process data with field validations."""
-    # Implementation...
-```
-
-Common validation options include:
-
-| Validation | Type | Description |
-| :--------- | :--- | :---------- |
-| `ge`, `gt` | Number | Greater than (or equal) constraint |
-| `le`, `lt` | Number | Less than (or equal) constraint |
-| `multiple_of` | Number | Value must be a multiple of this number |
-| `min_length`, `max_length` | String, List, etc. | Length constraints |
-| `pattern` | String | Regular expression pattern constraint |
-| `description` | Any | Human-readable description (appears in schema) |
-
-When a client sends invalid data, FastMCP will return a validation error explaining why the parameter failed validation.
 
 ## Server Behavior
 

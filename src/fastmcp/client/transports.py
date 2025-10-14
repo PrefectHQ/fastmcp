@@ -852,27 +852,40 @@ class FastMCPTransport(ClientTransport):
 
             # Create a cancel scope for the server task
             async with anyio.create_task_group() as tg:
-                tg.start_soon(
-                    lambda: self.server._mcp_server.run(
-                        server_read,
-                        server_write,
-                        self.server._mcp_server.create_initialization_options(),
-                        raise_exceptions=self.raise_exceptions,
+                async with _enter_server_lifespan(server=self.server):
+                    tg.start_soon(
+                        lambda: self.server._mcp_server.run(
+                            server_read,
+                            server_write,
+                            self.server._mcp_server.create_initialization_options(),
+                            raise_exceptions=self.raise_exceptions,
+                        )
                     )
-                )
 
-                try:
-                    async with ClientSession(
-                        read_stream=client_read,
-                        write_stream=client_write,
-                        **session_kwargs,
-                    ) as client_session:
-                        yield client_session
-                finally:
-                    tg.cancel_scope.cancel()
+                    try:
+                        async with ClientSession(
+                            read_stream=client_read,
+                            write_stream=client_write,
+                            **session_kwargs,
+                        ) as client_session:
+                            yield client_session
+                    finally:
+                        tg.cancel_scope.cancel()
 
     def __repr__(self) -> str:
         return f"<FastMCPTransport(server='{self.server.name}')>"
+
+
+@contextlib.asynccontextmanager
+async def _enter_server_lifespan(
+    server: FastMCP | FastMCP1Server,
+) -> AsyncIterator[None]:
+    """Enters the server's lifespan context for FastMCP servers and does nothing for FastMCP 1 servers."""
+    if isinstance(server, FastMCP):
+        async with server._lifespan_manager():
+            yield
+    else:
+        yield
 
 
 class MCPConfigTransport(ClientTransport):

@@ -5,7 +5,10 @@ import pytest
 from mcp.types import ModelPreferences
 from starlette.requests import Request
 
-from fastmcp.server.context import Context, _parse_model_preferences
+from fastmcp.server.context import (
+    Context,
+    _parse_model_preferences,
+)
 from fastmcp.server.server import FastMCP
 
 

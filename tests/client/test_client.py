@@ -678,7 +678,8 @@ class TestErrorHandling:
         async with Client(transport=FastMCPTransport(mcp)) as client:
             result = await client.call_tool_mcp("validated_tool", {"x": "abc"})
             assert result.isError
-            assert "'abc' is not of type 'integer'" in result.content[0].text  # type: ignore[attr-defined]
+            # Pydantic validation error message should NOT be masked
+            assert "Input should be a valid integer" in result.content[0].text  # type: ignore[attr-defined]
 
     async def test_specific_tool_errors_are_sent_to_client(self):
         mcp = FastMCP("TestServer")
