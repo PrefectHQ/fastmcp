@@ -577,7 +577,7 @@ class OAuthProxy(OAuthProvider):
         self._client_storage: AsyncKeyValue = client_storage or MemoryStore()
 
         # Warn if using MemoryStore in production
-        if client_storage is None or isinstance(client_storage, MemoryStore):
+        if isinstance(client_storage, MemoryStore):
             logger.warning(
                 "Using in-memory storage - all OAuth state will be lost on restart. "
                 "For production, configure persistent storage (Redis, PostgreSQL, etc.)."
