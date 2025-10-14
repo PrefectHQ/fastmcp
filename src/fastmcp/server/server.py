@@ -89,6 +89,10 @@ Transport = Literal["stdio", "http", "sse", "streamable-http"]
 # Compiled URI parsing regex to split a URI into protocol and path components
 URI_PATTERN = re.compile(r"^([^:]+://)(.*?)$")
 
+LifespanCallable = Callable[
+    ["FastMCP[LifespanResultT]"], AbstractAsyncContextManager[LifespanResultT]
+]
+
 
 @asynccontextmanager
 async def default_lifespan(server: FastMCP[LifespanResultT]) -> AsyncIterator[Any]:
@@ -98,26 +102,31 @@ async def default_lifespan(server: FastMCP[LifespanResultT]) -> AsyncIterator[An
         server: The server instance this lifespan is managing
 
     Returns:
-        An empty context object
+        An empty dictionary as the lifespan result.
     """
     yield {}
 
 
-def _lifespan_wrapper(
-    app: FastMCP[LifespanResultT],
-    lifespan: Callable[
-        [FastMCP[LifespanResultT]], AbstractAsyncContextManager[LifespanResultT]
-    ],
+def _lifespan_proxy(
+    fastmcp_server: FastMCP[LifespanResultT],
 ) -> Callable[
     [LowLevelServer[LifespanResultT]], AbstractAsyncContextManager[LifespanResultT]
 ]:
     @asynccontextmanager
     async def wrap(
-        s: LowLevelServer[LifespanResultT],
+        low_level_server: LowLevelServer[LifespanResultT],
     ) -> AsyncIterator[LifespanResultT]:
-        async with AsyncExitStack() as stack:
-            context = await stack.enter_async_context(lifespan(app))
-            yield context
+        if fastmcp_server._lifespan is default_lifespan:
+            yield {}
+            return
+
+        if not fastmcp_server._lifespan_result_set:
+            raise RuntimeError(
+                "FastMCP server has a lifespan defined but no lifespan result is set, which means the server's context manager was not entered. "
+                + " Are you running the server in a way that supports lifespans? If so, please file an issue at https://github.com/jlowin/fastmcp/issues."
+            )
+
+        yield fastmcp_server._lifespan_result
 
     return wrap
 
@@ -131,13 +140,7 @@ class FastMCP(Generic[LifespanResultT]):
         version: str | None = None,
         auth: AuthProvider | None | NotSetT = NotSet,
         middleware: list[Middleware] | None = None,
-        lifespan: (
-            Callable[
-                [FastMCP[LifespanResultT]],
-                AbstractAsyncContextManager[LifespanResultT],
-            ]
-            | None
-        ) = None,
+        lifespan: LifespanCallable | None = None,
         dependencies: list[str] | None = None,
         resource_prefix_format: Literal["protocol", "path"] | None = None,
         mask_error_details: bool | None = None,
@@ -189,18 +192,17 @@ class FastMCP(Generic[LifespanResultT]):
         )
         self._tool_serializer = tool_serializer
 
-        if lifespan is None:
-            self._has_lifespan = False
-            lifespan = default_lifespan
-        else:
-            self._has_lifespan = True
+        self._lifespan: LifespanCallable[LifespanResultT] = lifespan or default_lifespan
+        self._lifespan_result: LifespanResultT | None = None
+        self._lifespan_result_set = False
+
         # Generate random ID if no name provided
         self._mcp_server = LowLevelServer[LifespanResultT](
             fastmcp=self,
             name=name or self.generate_name(),
             version=version or fastmcp.__version__,
             instructions=instructions,
-            lifespan=_lifespan_wrapper(self, lifespan),
+            lifespan=_lifespan_proxy(fastmcp_server=self),
         )
 
         # if auth is `NotSet`, try to create a provider from the environment
@@ -339,6 +341,27 @@ class FastMCP(Generic[LifespanResultT]):
     @property
     def version(self) -> str | None:
         return self._mcp_server.version
+
+    @asynccontextmanager
+    async def _lifespan_manager(self) -> AsyncIterator[None]:
+        if self._lifespan_result_set:
+            yield
+            return
+
+        async with self._lifespan(self) as lifespan_result:
+            self._lifespan_result = lifespan_result
+            self._lifespan_result_set = True
+
+            async with AsyncExitStack[bool | None]() as stack:
+                for server in self._mounted_servers:
+                    await stack.enter_async_context(
+                        cm=server.server._lifespan_manager()
+                    )
+
+                yield
+
+        self._lifespan_result_set = False
+        self._lifespan_result = None
 
     async def run_async(
         self,
@@ -1888,15 +1911,18 @@ class FastMCP(Generic[LifespanResultT]):
             )
 
         with temporary_log_level(log_level):
-            async with stdio_server() as (read_stream, write_stream):
-                logger.info(f"Starting MCP server {self.name!r} with transport 'stdio'")
-                await self._mcp_server.run(
-                    read_stream,
-                    write_stream,
-                    self._mcp_server.create_initialization_options(
-                        NotificationOptions(tools_changed=True)
-                    ),
-                )
+            async with self._lifespan_manager():
+                async with stdio_server() as (read_stream, write_stream):
+                    logger.info(
+                        f"Starting MCP server {self.name!r} with transport 'stdio'"
+                    )
+                    await self._mcp_server.run(
+                        read_stream,
+                        write_stream,
+                        self._mcp_server.create_initialization_options(
+                            NotificationOptions(tools_changed=True)
+                        ),
+                    )
 
     async def run_http_async(
         self,
@@ -1967,14 +1993,15 @@ class FastMCP(Generic[LifespanResultT]):
             config_kwargs["log_level"] = default_log_level_to_use
 
         with temporary_log_level(log_level):
-            config = uvicorn.Config(app, host=host, port=port, **config_kwargs)
-            server = uvicorn.Server(config)
-            path = app.state.path.lstrip("/")  # type: ignore
-            logger.info(
-                f"Starting MCP server {self.name!r} with transport {transport!r} on http://{host}:{port}/{path}"
-            )
+            async with self._lifespan_manager():
+                config = uvicorn.Config(app, host=host, port=port, **config_kwargs)
+                server = uvicorn.Server(config)
+                path = app.state.path.lstrip("/")  # type: ignore
+                logger.info(
+                    f"Starting MCP server {self.name!r} with transport {transport!r} on http://{host}:{port}/{path}"
+                )
 
-            await server.serve()
+                await server.serve()
 
     async def run_sse_async(
         self,
@@ -2236,7 +2263,7 @@ class FastMCP(Generic[LifespanResultT]):
         # if as_proxy is not specified and the server has a custom lifespan,
         # we should treat it as a proxy
         if as_proxy is None:
-            as_proxy = server._has_lifespan
+            as_proxy = server._lifespan != default_lifespan
 
         if as_proxy and not isinstance(server, FastMCPProxy):
             server = FastMCP.as_proxy(server)
@@ -2369,6 +2396,15 @@ class FastMCP(Generic[LifespanResultT]):
             if prefix:
                 prompt = prompt.model_copy(key=f"{prefix}_{key}")
             self._prompt_manager.add_prompt(prompt)
+
+        if server._lifespan != default_lifespan:
+            from warnings import warn
+
+            warn(
+                message="When importing from a server with a lifespan, the lifespan from the imported server will not be used.",
+                category=RuntimeWarning,
+                stacklevel=2,
+            )
 
         if prefix:
             logger.debug(

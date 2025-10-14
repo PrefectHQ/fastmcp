@@ -224,11 +224,17 @@ def create_sse_app(
     if middleware:
         server_middleware.extend(middleware)
 
+    @asynccontextmanager
+    async def lifespan(app: Starlette) -> AsyncGenerator[None, None]:
+        async with server._lifespan_manager():
+            yield
+
     # Create and return the app
     app = create_base_app(
         routes=server_routes,
         middleware=server_middleware,
         debug=debug,
+        lifespan=lifespan,
     )
     # Store the FastMCP server instance on the Starlette app state
     app.state.fastmcp_server = server
@@ -320,8 +326,9 @@ def create_streamable_http_app(
     # Create a lifespan manager to start and stop the session manager
     @asynccontextmanager
     async def lifespan(app: Starlette) -> AsyncGenerator[None, None]:
-        async with session_manager.run():
-            yield
+        async with server._lifespan_manager():
+            async with session_manager.run():
+                yield
 
     # Create and return the app with lifespan
     app = create_base_app(
