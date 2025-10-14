@@ -5,6 +5,7 @@ from collections.abc import Callable
 from typing import Any
 
 from mcp.types import ToolAnnotations
+from pydantic import ValidationError
 
 from fastmcp import settings
 from fastmcp.exceptions import NotFoundError, ToolError
@@ -153,6 +154,9 @@ class ToolManager:
         tool = await self.get_tool(key)
         try:
             return await tool.run(arguments)
+        except ValidationError as e:
+            logger.exception(f"Error validating tool {key!r}: {e}")
+            raise e
         except ToolError as e:
             logger.exception(f"Error calling tool {key!r}")
             raise e

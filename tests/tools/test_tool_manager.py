@@ -7,7 +7,7 @@ import pydantic_core
 import pytest
 from inline_snapshot import snapshot
 from mcp.types import ImageContent, TextContent
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from fastmcp import Context, FastMCP
 from fastmcp.exceptions import NotFoundError, ToolError
@@ -472,7 +472,7 @@ class TestCallTools:
         manager = ToolManager()
         tool = Tool.from_function(add)
         manager.add_tool(tool)
-        with pytest.raises(ToolError):
+        with pytest.raises(ValidationError):
             await manager.call_tool("add", {"a": 1})
 
     async def test_call_unknown_tool(self):

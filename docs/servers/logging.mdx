@@ -1,5 +1,5 @@
 ---
-title: Server Logging
+title: Client Logging
 sidebarTitle: Logging
 description: Send log messages back to MCP clients through the context.
 icon: receipt
@@ -71,12 +71,25 @@ async def process_transaction(transaction_id: str, amount: float, ctx: Context):
     # ... processing logic ...
 ```
 
+## Server Logs
+
+Client Logging in the form of `ctx.log()` and its convenience methods (`debug`, `info`, `warning`, `error`) are meant for sending messages to the MCP clients. Messages sent to clients are also logged to the server's log at `DEBUG` level. Enable debug logging on the server or enable debug logging on the `fastmcp.server.context.to_client` logger to see these messages in the server's log.
+
+```python
+import logging
+
+from fastmcp.utilities.logging import get_logger
+
+to_client_logger = get_logger(name="fastmcp.server.context.to_client")
+to_client_logger.setLevel(level=logging.DEBUG)
+```
+
 ## Logging Methods
 
 <Card icon="code" title="Context Logging Methods">
 <ResponseField name="ctx.debug" type="async method">
   Send debug-level messages for detailed execution information
-  
+
   <Expandable title="parameters">
     <ResponseField name="message" type="str">
       The debug message to send to the client
@@ -89,7 +102,7 @@ async def process_transaction(transaction_id: str, amount: float, ctx: Context):
 
 <ResponseField name="ctx.info" type="async method">
   Send informational messages about normal execution
-  
+
   <Expandable title="parameters">
     <ResponseField name="message" type="str">
       The information message to send to the client
@@ -102,7 +115,7 @@ async def process_transaction(transaction_id: str, amount: float, ctx: Context):
 
 <ResponseField name="ctx.warning" type="async method">
   Send warning messages for potential issues that didn't prevent execution
-  
+
   <Expandable title="parameters">
     <ResponseField name="message" type="str">
       The warning message to send to the client
@@ -115,7 +128,7 @@ async def process_transaction(transaction_id: str, amount: float, ctx: Context):
 
 <ResponseField name="ctx.error" type="async method">
   Send error messages for problems that occurred during execution
-  
+
   <Expandable title="parameters">
     <ResponseField name="message" type="str">
       The error message to send to the client
@@ -128,16 +141,16 @@ async def process_transaction(transaction_id: str, amount: float, ctx: Context):
 
 <ResponseField name="ctx.log" type="async method">
   Generic logging method with custom level and logger name
-  
+
   <Expandable title="parameters">
     <ResponseField name="level" type="Literal['debug', 'info', 'warning', 'error']">
       The log level for the message
     </ResponseField>
-    
+
     <ResponseField name="message" type="str">
       The message to send to the client
     </ResponseField>
-    
+
     <ResponseField name="logger_name" type="str | None" default="None">
       Optional custom logger name for categorizing messages
     </ResponseField>

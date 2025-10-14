@@ -416,7 +416,6 @@ class TestWindowsSpecific:
                 ["npx.cmd", "--version"],
                 check=True,
                 capture_output=True,
-                shell=True,
             )
 
     @patch("subprocess.run")

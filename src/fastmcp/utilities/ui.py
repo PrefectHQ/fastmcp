@@ -7,6 +7,8 @@ consent pages, and other user-facing interfaces.
 
 from __future__ import annotations
 
+import html
+
 from starlette.responses import HTMLResponse
 
 # FastMCP branding
@@ -339,6 +341,7 @@ def create_page(
     Returns:
         Complete HTML page as string
     """
+    title = html.escape(title)
     return f"""
     <!DOCTYPE html>
     <html lang="en">
@@ -375,6 +378,7 @@ def create_status_message(message: str, is_success: bool = True) -> str:
     Returns:
         HTML for status message
     """
+    message = html.escape(message)
     icon = "✓" if is_success else "✕"
     icon_class = "success" if is_success else "error"
 
@@ -400,6 +404,7 @@ def create_info_box(
     Returns:
         HTML for info box
     """
+    content = html.escape(content)
     classes = ["info-box"]
     if is_error:
         classes.append("error")
@@ -422,8 +427,8 @@ def create_detail_box(rows: list[tuple[str, str]]) -> str:
     rows_html = "\n".join(
         f"""
         <div class="detail-row">
-            <div class="detail-label">{label}:</div>
-            <div class="detail-value">{value}</div>
+            <div class="detail-label">{html.escape(label)}:</div>
+            <div class="detail-value">{html.escape(value)}</div>
         </div>
         """
         for label, value in rows

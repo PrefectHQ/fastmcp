@@ -46,9 +46,7 @@ def _get_npx_command():
         # Try both npx.cmd and npx.exe on Windows
         for cmd in ["npx.cmd", "npx.exe", "npx"]:
             try:
-                subprocess.run(
-                    [cmd, "--version"], check=True, capture_output=True, shell=True
-                )
+                subprocess.run([cmd, "--version"], check=True, capture_output=True)
                 return cmd
             except subprocess.CalledProcessError:
                 continue
@@ -277,12 +275,10 @@ async def dev(
         # Set marker to prevent infinite loops when subprocess calls FastMCP
         env = dict(os.environ.items()) | env_vars | {"FASTMCP_UV_SPAWNED": "1"}
 
-        # Run the MCP Inspector command with shell=True on Windows
-        shell = sys.platform == "win32"
+        # Run the MCP Inspector command
         process = subprocess.run(
             [npx_cmd, inspector_cmd] + uv_cmd,
             check=True,
-            shell=shell,
             env=env,
         )
         sys.exit(process.returncode)

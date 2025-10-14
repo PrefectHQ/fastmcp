@@ -382,7 +382,12 @@ class JWTVerifier(TokenVerifier):
             claims = self.jwt.decode(token, verification_key)
 
             # Extract client ID early for logging
-            client_id = claims.get("client_id") or claims.get("sub") or "unknown"
+            client_id = (
+                claims.get("client_id")
+                or claims.get("azp")
+                or claims.get("sub")
+                or "unknown"
+            )
 
             # Validate expiration
             exp = claims.get("exp")

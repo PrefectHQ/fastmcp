@@ -92,7 +92,8 @@ async def test_http_headers(sse_server: str):
 
 
 def run_nested_server(host: str, port: int) -> None:
-    app = fastmcp_server().sse_app(path="/mcp/sse/", message_path="/mcp/messages")
+    fastmcp = fastmcp_server()
+    app = fastmcp.sse_app(path="/mcp/sse/", message_path="/mcp/messages")
     mount = Starlette(routes=[Mount("/nest-inner", app=app)])
     mount2 = Starlette(routes=[Mount("/nest-outer", app=mount)])
     server = uvicorn.Server(
