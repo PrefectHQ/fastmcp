@@ -46,9 +46,7 @@ def create_callback_html(
     # Add detail info box for both success and error cases
     detail_info = ""
     if is_success and server_url:
-        detail_info = create_info_box(
-            f"Connected to: <strong>{server_url}</strong>", centered=True
-        )
+        detail_info = create_info_box(f"Connected to: {server_url}", centered=True)
     elif not is_success:
         detail_info = create_info_box(message, is_error=True, centered=True)
 
