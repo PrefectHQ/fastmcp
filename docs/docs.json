@@ -9,10 +9,10 @@
       "dark": "#222831",
       "light": "#EEEEEE"
     },
-    "decoration": "windows"
+    "decoration": "gradient"
   },
   "banner": {
-    "content": "Host your server on [FastMCP Cloud](https://fastmcp.cloud) for free!"
+    "content": "Join the [FastMCP community](https://discord.gg/uu8dJCgttd)!"
   },
   "colors": {
     "dark": "#f72585",
@@ -20,10 +20,7 @@
     "primary": "#2d00f7"
   },
   "contextual": {
-    "options": [
-      "copy",
-      "view"
-    ]
+    "options": ["copy", "view"]
   },
   "description": "The fast, Pythonic way to build MCP servers and clients.",
   "favicon": {
@@ -32,9 +29,10 @@
   },
   "footer": {
     "socials": {
-      "bluesky": "https://bsky.app/profile/jlowin.dev",
+      "discord": "https://discord.gg/uu8dJCgttd",
       "github": "https://github.com/jlowin/fastmcp",
-      "x": "https://x.com/jlowin"
+      "website": "https://prefect.ai",
+      "x": "https://x.com/fastmcp"
     }
   },
   "integrations": {
@@ -56,6 +54,11 @@
         "href": "https://fastmcp.cloud",
         "icon": "cloud",
         "label": "FastMCP Cloud"
+      },
+      {
+        "href": "https://discord.gg/uu8dJCgttd",
+        "icon": "discord",
+        "label": "Discord"
       }
     ],
     "primary": {
@@ -64,7 +67,7 @@
     }
   },
   "navigation": {
-    "tabs": [
+    "dropdowns": [
       {
         "groups": [
           {
@@ -72,7 +75,8 @@
             "pages": [
               "getting-started/welcome",
               "getting-started/installation",
-              "getting-started/quickstart"
+              "getting-started/quickstart",
+              "updates"
             ]
           },
           {
@@ -132,10 +136,7 @@
               {
                 "group": "Essentials",
                 "icon": "cube",
-                "pages": [
-                  "clients/client",
-                  "clients/transports"
-                ]
+                "pages": ["clients/client", "clients/transports"]
               },
               {
                 "group": "Core Operations",
@@ -161,10 +162,7 @@
               {
                 "group": "Authentication",
                 "icon": "user-shield",
-                "pages": [
-                  "clients/auth/oauth",
-                  "clients/auth/bearer"
-                ]
+                "pages": ["clients/auth/oauth", "clients/auth/bearer"]
               }
             ]
           },
@@ -240,18 +238,13 @@
             "pages": [
               "development/contributing",
               "development/tests",
-              "development/releases"
+              "development/releases",
+              "changelog"
             ]
           }
         ],
-        "tab": "Documentation"
-      },
-      {
-        "pages": [
-          "updates",
-          "changelog"
-        ],
-        "tab": "What's New"
+        "dropdown": "Documentation",
+        "icon": "book"
       },
       {
         "anchors": [
@@ -437,7 +430,8 @@
             ]
           }
         ],
-        "tab": "SDK Reference"
+        "dropdown": "SDK Reference",
+        "icon": "code"
       }
     ]
   },
@@ -454,7 +448,14 @@
   "search": {
     "prompt": "Search the docs..."
   },
-  "theme": "mint",
+  "theme": "almond",
+  "errors": {
+    "404": {
+      "redirect": false,
+      "title": "Don't panic.",
+      "description": "You’ve wandered outside the context."
+    }
+  },
   "thumbnails": {
     "appearance": "light",
     "background": "/assets/brand/thumbnail-background.png"
