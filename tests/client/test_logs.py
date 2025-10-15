@@ -91,7 +91,7 @@ class TestClientLogs:
 
 
 class TestDefaultLogHandler:
-    """Tests for default_log_handler bug fix (issue #1394)."""
+    """Tests for default_log_handler with data as any JSON-serializable type."""
 
     async def test_default_handler_routes_to_correct_levels(self):
         """Test that default_log_handler routes server logs to appropriate Python log levels."""
@@ -129,11 +129,11 @@ class TestDefaultLogHandler:
                 # Reset mocks
                 mock_logger.reset_mock()
 
-                # Create log message
+                # Create log message with data as a string
                 log_msg = LoggingMessageNotificationParams(
                     level=level,  # type: ignore[arg-type]
                     logger="test.logger",
-                    data={"msg": msg, "extra": {"test_key": "test_value"}},
+                    data=msg,
                 )
 
                 # Call handler
@@ -141,8 +141,7 @@ class TestDefaultLogHandler:
 
                 # Verify correct method was called
                 expected_method.assert_called_once_with(
-                    msg=f"Received {level.upper()} from server (test.logger): {msg}",
-                    extra={"test_key": "test_value"},
+                    msg=f"Received {level.upper()} from server (test.logger): {msg}"
                 )
 
     async def test_default_handler_without_logger_name(self):
@@ -159,17 +158,17 @@ class TestDefaultLogHandler:
             log_msg = LoggingMessageNotificationParams(
                 level="info",
                 logger=None,
-                data={"msg": "Message without logger", "extra": {}},
+                data="Message without logger",
             )
 
             await default_log_handler(log_msg)
 
             mock_logger.info.assert_called_once_with(
-                msg="Received INFO from server: Message without logger", extra={}
+                msg="Received INFO from server: Message without logger"
             )
 
-    async def test_default_handler_with_missing_msg(self):
-        """Test that default_log_handler handles missing 'msg' gracefully."""
+    async def test_default_handler_with_dict_data(self):
+        """Test that default_log_handler handles dict data correctly."""
         from unittest.mock import MagicMock, patch
 
         from mcp.types import LoggingMessageNotificationParams
@@ -182,13 +181,62 @@ class TestDefaultLogHandler:
             log_msg = LoggingMessageNotificationParams(
                 level="info",
                 logger="test.logger",
-                data={"extra": {"key": "value"}},  # Missing 'msg' key
+                data={"key": "value", "count": 42},
             )
 
             await default_log_handler(log_msg)
 
-            # Should use str(message) as fallback
+            # Should log the entire dict as a string
             mock_logger.info.assert_called_once()
             call_args = mock_logger.info.call_args
-            assert "Received INFO from server" in call_args[1]["msg"]
-            assert call_args[1]["extra"] == {"key": "value"}
+            assert "Received INFO from server (test.logger):" in call_args[1]["msg"]
+            assert "key" in call_args[1]["msg"]
+            assert "value" in call_args[1]["msg"]
+
+    async def test_default_handler_with_list_data(self):
+        """Test that default_log_handler handles list data correctly."""
+        from unittest.mock import MagicMock, patch
+
+        from mcp.types import LoggingMessageNotificationParams
+
+        from fastmcp.client.logging import default_log_handler
+
+        with patch("fastmcp.client.logging.from_server_logger") as mock_logger:
+            mock_logger.warning = MagicMock()
+
+            log_msg = LoggingMessageNotificationParams(
+                level="warning",
+                logger="test.logger",
+                data=["item1", "item2", "item3"],
+            )
+
+            await default_log_handler(log_msg)
+
+            # Should log the entire list as a string
+            mock_logger.warning.assert_called_once()
+            call_args = mock_logger.warning.call_args
+            assert "Received WARNING from server (test.logger):" in call_args[1]["msg"]
+            assert "item1" in call_args[1]["msg"]
+
+    async def test_default_handler_with_number_data(self):
+        """Test that default_log_handler handles numeric data correctly."""
+        from unittest.mock import MagicMock, patch
+
+        from mcp.types import LoggingMessageNotificationParams
+
+        from fastmcp.client.logging import default_log_handler
+
+        with patch("fastmcp.client.logging.from_server_logger") as mock_logger:
+            mock_logger.error = MagicMock()
+
+            log_msg = LoggingMessageNotificationParams(
+                level="error",
+                logger=None,
+                data=404,
+            )
+
+            await default_log_handler(log_msg)
+
+            mock_logger.error.assert_called_once_with(
+                msg="Received ERROR from server: 404"
+            )

@@ -16,8 +16,8 @@ LogHandler: TypeAlias = Callable[[LogMessage], Awaitable[None]]
 
 async def default_log_handler(message: LogMessage) -> None:
     """Default handler that properly routes server log messages to appropriate log levels."""
-    msg = message.data.get("msg", str(message))
-    extra = message.data.get("extra", {})
+    # data can be any JSON-serializable type, not just a dict
+    data = message.data
 
     # Map MCP log levels to Python logging levels
     level_map = {
@@ -40,8 +40,8 @@ async def default_log_handler(message: LogMessage) -> None:
     if message.logger:
         msg_prefix += f" ({message.logger})"
 
-    # Log with appropriate level and extra data
-    log_fn(msg=f"{msg_prefix}: {msg}", extra=extra)
+    # Log with appropriate level and data
+    log_fn(msg=f"{msg_prefix}: {data}")
 
 
 def create_log_callback(handler: LogHandler | None = None) -> LoggingFnT:
