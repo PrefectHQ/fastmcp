@@ -1,12 +1,12 @@
-name: Auto-close duplicate issues
-description: Auto-closes issues that are duplicates of existing issues
+name: Auto-close needs MRE issues
+description: Auto-closes issues that need minimal reproducible examples after 7 days of author inactivity
 on:
   schedule:
     - cron: "0 9 * * *" # Run daily at 9 AM UTC
   workflow_dispatch:
 
 jobs:
-  auto-close-duplicates:
+  auto-close-needs-mre:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -28,8 +28,8 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v7
 
-      - name: Auto-close duplicate issues
-        run: uv run scripts/auto_close_duplicates.py
+      - name: Auto-close needs MRE issues
+        run: uv run scripts/auto_close_needs_mre.py
         env:
           GITHUB_TOKEN: ${{ steps.marvin-token.outputs.token }}
           GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
