@@ -17,7 +17,7 @@ The `Context` object provides a clean interface to access MCP features within yo
 - **Resource Access**: Read data from resources registered with the server
 - **LLM Sampling**: Request the client's LLM to generate text based on provided messages
 - **User Elicitation**: Request structured input from users during tool execution
-- **State Management**: Store and share data across middleware and tool calls within a request
+- **State Management**: Store and share data between middleware and the handler within a single request
 - **Request Information**: Access metadata about the current request
 - **Server Access**: When needed, access the underlying FastMCP server instance
 
@@ -34,6 +34,7 @@ To use the context object within any of your functions, simply add a parameter t
 - The context is optional - functions that don't need it can omit the parameter entirely.
 - Context methods are async, so your function usually needs to be async as well.
 - The type hint can be a union (`Context | None`) or use `Annotated[]` and it will still work properly.
+- **Each MCP request receives a new context object.** Context is scoped to a single request; state or data set in one request will not be available in subsequent requests.
 - Context is only available during a request; attempting to use context methods outside a request will raise errors. If you need to debug or call your context methods outside of a request, you can type your variable as `Context | None=None` to avoid missing argument errors.
 
 #### Tools
@@ -190,9 +191,13 @@ content = content_list[0].content
 
 <VersionBadge version="2.11.0" />
 
-Store and share data across middleware and tool calls within a request. Context objects maintain a state dictionary that's especially useful for passing information from [middleware](/servers/middleware) to your tools.
+Store and share data between middleware and handlers within a single MCP request. Each MCP request (such as calling a tool, reading a resource, listing tools, or listing resources) receives its own context object with isolated state. Context state is particularly useful for passing information from [middleware](/servers/middleware) to your handlers.
 
 To store a value in the context state, use `ctx.set_state(key, value)`. To retrieve a value, use `ctx.get_state(key)`.
+
+<Warning>
+Context state is scoped to a single MCP request. Each operation (tool call, resource read, list operation, etc.) receives a new context object. State set during one request will not be available in subsequent requests. For persistent data storage across requests, use external storage mechanisms like databases, files, or in-memory caches.
+</Warning>
 
 This simplified example shows how to use MCP middleware to store user info in the context state, and how to access that state in a tool:
 
