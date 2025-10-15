@@ -1,5 +1,8 @@
 """Tests for nullable field handling in OpenAPI schemas."""
 
+import pytest
+from jsonschema import ValidationError, validate
+
 from fastmcp.experimental.utilities.openapi.json_schema_converter import (
     convert_openapi_schema_to_json_schema,
 )
@@ -243,3 +246,130 @@ class TestHandleNullableFields:
         }
         result = convert_openapi_schema_to_json_schema(input_schema, "3.0.0")
         assert result == expected
+
+    def test_nullable_enum_field(self):
+        """Test nullable enum field - issue #2082."""
+        input_schema = {
+            "type": "string",
+            "nullable": True,
+            "enum": ["VALUE1", "VALUE2", "VALUE3"],
+        }
+        expected = {
+            "type": ["string", "null"],
+            "enum": ["VALUE1", "VALUE2", "VALUE3", None],
+        }
+        result = convert_openapi_schema_to_json_schema(input_schema, "3.0.0")
+        assert result == expected
+
+    def test_nullable_enum_already_contains_null(self):
+        """Test nullable enum that already contains None."""
+        input_schema = {
+            "type": "string",
+            "nullable": True,
+            "enum": ["VALUE1", "VALUE2", None],
+        }
+        expected = {
+            "type": ["string", "null"],
+            "enum": ["VALUE1", "VALUE2", None],
+        }
+        result = convert_openapi_schema_to_json_schema(input_schema, "3.0.0")
+        assert result == expected
+
+    def test_nullable_enum_without_type(self):
+        """Test nullable enum without explicit type field."""
+        input_schema = {
+            "nullable": True,
+            "enum": ["VALUE1", "VALUE2", "VALUE3"],
+        }
+        expected = {
+            "enum": ["VALUE1", "VALUE2", "VALUE3", None],
+        }
+        result = convert_openapi_schema_to_json_schema(input_schema, "3.0.0")
+        assert result == expected
+
+    def test_non_nullable_enum_unchanged(self):
+        """Test that enum without nullable is unchanged."""
+        input_schema = {
+            "type": "string",
+            "enum": ["VALUE1", "VALUE2", "VALUE3"],
+        }
+        expected = {
+            "type": "string",
+            "enum": ["VALUE1", "VALUE2", "VALUE3"],
+        }
+        result = convert_openapi_schema_to_json_schema(input_schema, "3.0.0")
+        assert result == expected
+
+    def test_property_level_nullable_enum(self):
+        """Test nullable enum in object properties."""
+        input_schema = {
+            "type": "object",
+            "properties": {
+                "status": {
+                    "type": "string",
+                    "nullable": True,
+                    "enum": ["ACTIVE", "INACTIVE", "PENDING"],
+                },
+                "name": {"type": "string"},
+            },
+        }
+        expected = {
+            "type": "object",
+            "properties": {
+                "status": {
+                    "type": ["string", "null"],
+                    "enum": ["ACTIVE", "INACTIVE", "PENDING", None],
+                },
+                "name": {"type": "string"},
+            },
+        }
+        result = convert_openapi_schema_to_json_schema(input_schema, "3.0.0")
+        assert result == expected
+
+    def test_nullable_integer_enum(self):
+        """Test nullable enum with integer values."""
+        input_schema = {
+            "type": "integer",
+            "nullable": True,
+            "enum": [1, 2, 3],
+        }
+        expected = {
+            "type": ["integer", "null"],
+            "enum": [1, 2, 3, None],
+        }
+        result = convert_openapi_schema_to_json_schema(input_schema, "3.0.0")
+        assert result == expected
+
+
+class TestNullableFieldValidation:
+    """Test that converted schemas validate correctly with jsonschema."""
+
+    def test_nullable_string_validates(self):
+        """Test that nullable string validates both null and string values."""
+        openapi_schema = {"type": "string", "nullable": True}
+        json_schema = convert_openapi_schema_to_json_schema(openapi_schema, "3.0.0")
+
+        # Both null and string should validate
+        validate(instance=None, schema=json_schema)
+        validate(instance="test", schema=json_schema)
+
+        # Other types should fail
+        with pytest.raises(ValidationError):
+            validate(instance=123, schema=json_schema)
+
+    def test_nullable_enum_validates(self):
+        """Test that nullable enum validates null, enum values, and rejects invalid values."""
+        openapi_schema = {
+            "type": "string",
+            "nullable": True,
+            "enum": ["VALUE1", "VALUE2", "VALUE3"],
+        }
+        json_schema = convert_openapi_schema_to_json_schema(openapi_schema, "3.0.0")
+
+        # Null and enum values should validate
+        validate(instance=None, schema=json_schema)
+        validate(instance="VALUE1", schema=json_schema)
+
+        # Invalid values should fail
+        with pytest.raises(ValidationError):
+            validate(instance="INVALID", schema=json_schema)

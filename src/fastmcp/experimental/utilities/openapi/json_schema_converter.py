@@ -176,6 +176,10 @@ def _convert_nullable_field(schema: dict[str, Any]) -> dict[str, Any]:
         # Wrap allOf in anyOf with null option
         result["anyOf"] = [{"allOf": result.pop("allOf")}, {"type": "null"}]
 
+    # Handle enum fields - add null to enum values if present
+    if "enum" in result and None not in result["enum"]:
+        result["enum"] = result["enum"] + [None]
+
     return result
 
 
