@@ -86,7 +86,12 @@ FastMCP provides `RemoteAuthProvider` to handle the complexities of remote OAuth
 
 `RemoteAuthProvider` works by composing a [`TokenVerifier`](/servers/auth/token-verification) with authorization server information. A `TokenVerifier` is another FastMCP authentication class that focuses solely on token validation - signature verification, expiration checking, and claim extraction. The `RemoteAuthProvider` takes that token validation capability and adds the OAuth discovery endpoints that enable MCP clients to automatically find and authenticate with your identity provider.
 
-This composition pattern means you can use any token validation strategy (JWT verification, introspection endpoints, custom validation logic) while maintaining consistent OAuth discovery behavior. The separation allows you to change token validation approaches without affecting the client discovery experience.
+This composition pattern means you can use any token validation strategy while maintaining consistent OAuth discovery behavior:
+- **JWT tokens**: Use `JWTVerifier` for self-contained tokens
+- **Opaque tokens**: Use `IntrospectionTokenVerifier` for RFC 7662 introspection
+- **Custom validation**: Implement your own `TokenVerifier` subclass
+
+The separation allows you to change token validation approaches without affecting the client discovery experience.
 
 The class automatically generates the required OAuth metadata endpoints using the MCP SDK's standardized route creation functions. This ensures compatibility with MCP clients while reducing the implementation complexity for server developers.
 

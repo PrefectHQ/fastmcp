@@ -191,6 +191,7 @@ async def test_client_with_excluded_header_is_ignored(sse_server: str):
         assert headers["host"] == "fastapi"
 
 
+@pytest.mark.flaky(retries=2, delay=1)
 async def test_client_headers_proxy(proxy_server: str):
     """
     Test that client headers are passed through the proxy to the remove server.

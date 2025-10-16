@@ -226,7 +226,8 @@ Available providers include `GitHubProvider`, `GoogleProvider`, and others. Thes
 The OAuth proxy requires a compatible `TokenVerifier` to validate tokens from your provider. Different providers use different token formats:
 
 - **JWT tokens** (Google, Azure): Use `JWTVerifier` with the provider's JWKS endpoint
-- **Opaque tokens** (GitHub, Discord): Use provider-specific verifiers or implement custom validation
+- **Opaque tokens with RFC 7662 introspection** (Auth0, Okta, WorkOS): Use `IntrospectionTokenVerifier`
+- **Opaque tokens (provider-specific)** (GitHub, Discord): Use provider-specific verifiers like `GitHubTokenVerifier`
 
 See the [Token Verification guide](/servers/auth/token-verification) for detailed setup instructions for your provider.
 
