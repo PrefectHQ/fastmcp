@@ -387,12 +387,13 @@ FastMCP automatically converts tool return values into appropriate MCP content b
 - **`fastmcp.utilities.types.Image`**: Sent as `ImageContent`
 - **`fastmcp.utilities.types.Audio`**: Sent as `AudioContent`
 - **`fastmcp.utilities.types.File`**: Sent as base64-encoded `EmbeddedResource`
-- **A list of any of the above**: Converts each item appropriately
+- **MCP SDK content blocks**: Sent as-is
+- **A list of any of the above**: Converts each item according to the above rules
 - **`None`**: Results in an empty response
 
 #### Media Helper Classes
 
-For returning images, audio, and files, FastMCP provides helper classes that handle MIME type detection and base64 encoding automatically, returning them in MCP-native formats that meet the protocol's requirements:
+FastMCP provides helper classes for returning images, audio, and files. When you return one of these classes, either directly or as part of a list, FastMCP automatically converts it to the appropriate MCP content block. For example, if you return a `fastmcp.utilities.types.Image` object, FastMCP will convert it to an MCP `ImageContent` block with the correct MIME type and base64 encoding.
 
 ```python
 from fastmcp.utilities.types import Image, Audio, File
@@ -400,24 +401,29 @@ from fastmcp.utilities.types import Image, Audio, File
 @mcp.tool
 def get_chart() -> Image:
     """Generate a chart image."""
-    # From file path - MIME type detected from extension
     return Image(path="chart.png")
 
-    # Or from raw bytes with explicit format
-    # return Image(data=image_bytes, format="png")
-
 @mcp.tool
-def get_recording() -> Audio:
-    """Get an audio recording."""
-    return Audio(path="recording.wav")
-    # Or: Audio(data=audio_bytes, format="wav")
-
-@mcp.tool
-def get_document() -> File:
-    """Retrieve a PDF document."""
-    return File(path="report.pdf")
-    # Or: File(data=pdf_bytes, format="pdf", name="report")
+def get_multiple_charts() -> list[Image]:
+    """Return multiple charts."""
+    return [Image(path="chart1.png"), Image(path="chart2.png")]
 ```
+
+<Tip>
+Helper classes are only automatically converted to MCP content blocks when returned **directly** or as part of a **list**. For more complex containers like dicts, you can manually convert them to MCP types:
+
+```python
+# ✅ Automatic conversion
+return Image(path="chart.png")
+return [Image(path="chart1.png"), "text content"]
+
+# ❌ Will not be automatically converted
+return {"image": Image(path="chart.png")}
+
+# ✅ Manual conversion for nested use
+return {"image": Image(path="chart.png").to_image_content()}
+```
+</Tip>
 
 Each helper class accepts either `path=` or `data=` (mutually exclusive):
 - **`path`**: File path (string or Path object) - MIME type detected from extension
