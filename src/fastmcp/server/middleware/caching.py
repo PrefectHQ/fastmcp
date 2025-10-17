@@ -60,6 +60,20 @@ class CachableReadResourceContents(BaseModel):
         ]
 
 
+class CachableToolResult(BaseModel):
+    content: list[mcp.types.ContentBlock]
+    structured_content: dict[str, Any] | None
+
+    @classmethod
+    def wrap(cls, value: ToolResult) -> Self:
+        return cls(content=value.content, structured_content=value.structured_content)
+
+    def unwrap(self) -> ToolResult:
+        return ToolResult(
+            content=self.content, structured_content=self.structured_content
+        )
+
+
 class SharedMethodSettings(TypedDict):
     """Shared config for a cache method."""
 
@@ -202,9 +216,9 @@ class ResponseCachingMiddleware(Middleware):
             )
         )
 
-        self._call_tool_cache: PydanticAdapter[ToolResult] = PydanticAdapter(
+        self._call_tool_cache: PydanticAdapter[CachableToolResult] = PydanticAdapter(
             key_value=self._stats,
-            pydantic_model=ToolResult,
+            pydantic_model=CachableToolResult,
             default_collection="tools/call",
         )
 
@@ -344,17 +358,20 @@ class ResponseCachingMiddleware(Middleware):
         cache_key: str = f"{tool_name}:{_get_arguments_str(context.message.arguments)}"
 
         if cached_value := await self._call_tool_cache.get(key=cache_key):
-            return cached_value
+            return cached_value.unwrap()
 
         tool_result: ToolResult = await call_next(context=context)
+        cachable_tool_result: CachableToolResult = CachableToolResult.wrap(
+            value=tool_result
+        )
 
         await self._call_tool_cache.put(
             key=cache_key,
-            value=tool_result,
+            value=cachable_tool_result,
             ttl=self._call_tool_settings.get("ttl", ONE_HOUR_IN_SECONDS),
         )
 
-        return tool_result
+        return cachable_tool_result.unwrap()
 
     @override
     async def on_read_resource(
