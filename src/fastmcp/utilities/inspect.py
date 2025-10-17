@@ -28,6 +28,7 @@ class ToolInfo:
     tags: list[str] | None = None
     enabled: bool | None = None
     title: str | None = None
+    icons: list[dict[str, Any]] | None = None
     meta: dict[str, Any] | None = None
 
 
@@ -42,6 +43,7 @@ class PromptInfo:
     tags: list[str] | None = None
     enabled: bool | None = None
     title: str | None = None
+    icons: list[dict[str, Any]] | None = None
     meta: dict[str, Any] | None = None
 
 
@@ -58,6 +60,7 @@ class ResourceInfo:
     tags: list[str] | None = None
     enabled: bool | None = None
     title: str | None = None
+    icons: list[dict[str, Any]] | None = None
     meta: dict[str, Any] | None = None
 
 
@@ -75,6 +78,7 @@ class TemplateInfo:
     tags: list[str] | None = None
     enabled: bool | None = None
     title: str | None = None
+    icons: list[dict[str, Any]] | None = None
     meta: dict[str, Any] | None = None
 
 
@@ -85,6 +89,8 @@ class FastMCPInfo:
     name: str
     instructions: str | None
     version: str | None  # The server's own version string (if specified)
+    website_url: str | None
+    icons: list[dict[str, Any]] | None
     fastmcp_version: str  # Version of FastMCP generating this manifest
     mcp_version: str  # Version of MCP protocol library
     server_generation: int  # Server generation: 1 (mcp package) or 2 (fastmcp)
@@ -125,6 +131,9 @@ async def inspect_fastmcp_v2(mcp: FastMCP[Any]) -> FastMCPInfo:
                 tags=list(tool.tags) if tool.tags else None,
                 enabled=tool.enabled,
                 title=tool.title,
+                icons=[icon.model_dump() for icon in tool.icons]
+                if tool.icons
+                else None,
                 meta=tool.meta,
             )
         )
@@ -143,6 +152,9 @@ async def inspect_fastmcp_v2(mcp: FastMCP[Any]) -> FastMCPInfo:
                 tags=list(prompt.tags) if prompt.tags else None,
                 enabled=prompt.enabled,
                 title=prompt.title,
+                icons=[icon.model_dump() for icon in prompt.icons]
+                if prompt.icons
+                else None,
                 meta=prompt.meta,
             )
         )
@@ -163,6 +175,9 @@ async def inspect_fastmcp_v2(mcp: FastMCP[Any]) -> FastMCPInfo:
                 tags=list(resource.tags) if resource.tags else None,
                 enabled=resource.enabled,
                 title=resource.title,
+                icons=[icon.model_dump() for icon in resource.icons]
+                if resource.icons
+                else None,
                 meta=resource.meta,
             )
         )
@@ -184,6 +199,9 @@ async def inspect_fastmcp_v2(mcp: FastMCP[Any]) -> FastMCPInfo:
                 tags=list(template.tags) if template.tags else None,
                 enabled=template.enabled,
                 title=template.title,
+                icons=[icon.model_dump() for icon in template.icons]
+                if template.icons
+                else None,
                 meta=template.meta,
             )
         )
@@ -196,13 +214,25 @@ async def inspect_fastmcp_v2(mcp: FastMCP[Any]) -> FastMCPInfo:
         "logging": {},
     }
 
+    # Extract server-level icons and website_url
+    server_icons = (
+        [icon.model_dump() for icon in mcp._mcp_server.icons]
+        if hasattr(mcp._mcp_server, "icons") and mcp._mcp_server.icons
+        else None
+    )
+    server_website_url = (
+        mcp._mcp_server.website_url if hasattr(mcp._mcp_server, "website_url") else None
+    )
+
     return FastMCPInfo(
         name=mcp.name,
         instructions=mcp.instructions,
+        version=(mcp.version if hasattr(mcp, "version") else mcp._mcp_server.version),
+        website_url=server_website_url,
+        icons=server_icons,
         fastmcp_version=fastmcp.__version__,
         mcp_version=importlib.metadata.version("mcp"),
         server_generation=2,  # FastMCP v2
-        version=(mcp.version if hasattr(mcp, "version") else mcp._mcp_server.version),
         tools=tool_infos,
         prompts=prompt_infos,
         resources=resource_infos,
@@ -247,6 +277,9 @@ async def inspect_fastmcp_v1(mcp: FastMCP1x) -> FastMCPInfo:
                     tags=None,  # v1 doesn't have tags
                     enabled=None,  # v1 doesn't have enabled field
                     title=None,  # v1 doesn't have title
+                    icons=[icon.model_dump() for icon in mcp_tool.icons]
+                    if hasattr(mcp_tool, "icons") and mcp_tool.icons
+                    else None,
                     meta=None,  # v1 doesn't have meta field
                 )
             )
@@ -268,6 +301,9 @@ async def inspect_fastmcp_v1(mcp: FastMCP1x) -> FastMCPInfo:
                     tags=None,  # v1 doesn't have tags
                     enabled=None,  # v1 doesn't have enabled field
                     title=None,  # v1 doesn't have title
+                    icons=[icon.model_dump() for icon in mcp_prompt.icons]
+                    if hasattr(mcp_prompt, "icons") and mcp_prompt.icons
+                    else None,
                     meta=None,  # v1 doesn't have meta field
                 )
             )
@@ -286,6 +322,9 @@ async def inspect_fastmcp_v1(mcp: FastMCP1x) -> FastMCPInfo:
                     tags=None,  # v1 doesn't have tags
                     enabled=None,  # v1 doesn't have enabled field
                     title=None,  # v1 doesn't have title
+                    icons=[icon.model_dump() for icon in mcp_resource.icons]
+                    if hasattr(mcp_resource, "icons") and mcp_resource.icons
+                    else None,
                     meta=None,  # v1 doesn't have meta field
                 )
             )
@@ -305,6 +344,9 @@ async def inspect_fastmcp_v1(mcp: FastMCP1x) -> FastMCPInfo:
                     tags=None,  # v1 doesn't have tags
                     enabled=None,  # v1 doesn't have enabled field
                     title=None,  # v1 doesn't have title
+                    icons=[icon.model_dump() for icon in mcp_template.icons]
+                    if hasattr(mcp_template, "icons") and mcp_template.icons
+                    else None,
                     meta=None,  # v1 doesn't have meta field
                 )
             )
@@ -317,13 +359,26 @@ async def inspect_fastmcp_v1(mcp: FastMCP1x) -> FastMCPInfo:
             "logging": {},
         }
 
+        # Extract server-level icons and website_url from serverInfo
+        server_info = client.initialize_result.serverInfo
+        server_icons = (
+            [icon.model_dump() for icon in server_info.icons]
+            if hasattr(server_info, "icons") and server_info.icons
+            else None
+        )
+        server_website_url = (
+            server_info.websiteUrl if hasattr(server_info, "websiteUrl") else None
+        )
+
         return FastMCPInfo(
             name=mcp._mcp_server.name,
             instructions=mcp._mcp_server.instructions,
+            version=mcp._mcp_server.version,
+            website_url=server_website_url,
+            icons=server_icons,
             fastmcp_version=fastmcp.__version__,  # Version generating this manifest
             mcp_version=importlib.metadata.version("mcp"),
             server_generation=1,  # MCP v1
-            version=mcp._mcp_server.version,
             tools=tool_infos,
             prompts=prompt_infos,
             resources=resource_infos,
@@ -368,6 +423,8 @@ async def format_fastmcp_info(info: FastMCPInfo) -> bytes:
             "name": info.name,
             "instructions": info.instructions,
             "version": info.version,
+            "website_url": info.website_url,
+            "icons": info.icons,
             "generation": info.server_generation,
             "capabilities": info.capabilities,
         },

@@ -106,6 +106,12 @@ def get_application_status() -> dict:
   A boolean to enable or disable the resource. See [Disabling Resources](#disabling-resources) for more information
 </ParamField>
 
+<ParamField body="icons" type="list[Icon] | None">
+  <VersionBadge version="2.14.0" />
+
+  Optional list of icon representations for this resource or template. See [Icons](/servers/icons) for detailed examples
+</ParamField>
+
 <ParamField body="annotations" type="Annotations | dict | None">
     An optional `Annotations` object or dictionary to add additional metadata about the resource.
   <Expandable title="Annotations attributes">

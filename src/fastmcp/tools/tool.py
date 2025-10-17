@@ -16,7 +16,7 @@ from typing import (
 
 import mcp.types
 import pydantic_core
-from mcp.types import ContentBlock, TextContent, ToolAnnotations
+from mcp.types import ContentBlock, Icon, TextContent, ToolAnnotations
 from mcp.types import Tool as MCPTool
 from pydantic import Field, PydanticSchemaGenerationError
 from typing_extensions import TypeVar
@@ -156,6 +156,7 @@ class Tool(FastMCPComponent):
             description=overrides.get("description", self.description),
             inputSchema=overrides.get("inputSchema", self.parameters),
             outputSchema=overrides.get("outputSchema", self.output_schema),
+            icons=overrides.get("icons", self.icons),
             annotations=overrides.get("annotations", self.annotations),
             _meta=overrides.get(
                 "_meta", self.get_meta(include_fastmcp_meta=include_fastmcp_meta)
@@ -168,6 +169,7 @@ class Tool(FastMCPComponent):
         name: str | None = None,
         title: str | None = None,
         description: str | None = None,
+        icons: list[Icon] | None = None,
         tags: set[str] | None = None,
         annotations: ToolAnnotations | None = None,
         exclude_args: list[str] | None = None,
@@ -182,6 +184,7 @@ class Tool(FastMCPComponent):
             name=name,
             title=title,
             description=description,
+            icons=icons,
             tags=tags,
             annotations=annotations,
             exclude_args=exclude_args,
@@ -248,6 +251,7 @@ class FunctionTool(Tool):
         name: str | None = None,
         title: str | None = None,
         description: str | None = None,
+        icons: list[Icon] | None = None,
         tags: set[str] | None = None,
         annotations: ToolAnnotations | None = None,
         exclude_args: list[str] | None = None,
@@ -291,6 +295,7 @@ class FunctionTool(Tool):
             name=name or parsed_fn.name,
             title=title,
             description=description or parsed_fn.description,
+            icons=icons,
             parameters=parsed_fn.input_schema,
             output_schema=final_output_schema,
             annotations=annotations,

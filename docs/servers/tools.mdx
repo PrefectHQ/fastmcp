@@ -81,6 +81,12 @@ def search_products_implementation(query: str, category: str | None = None) -> l
   A boolean to enable or disable the tool. See [Disabling Tools](#disabling-tools) for more information
 </ParamField>
 
+<ParamField body="icons" type="list[Icon] | None">
+  <VersionBadge version="2.14.0" />
+
+  Optional list of icon representations for this tool. See [Icons](/servers/icons) for detailed examples
+</ParamField>
+
 <ParamField body="exclude_args" type="list[str] | None">
   A list of argument names to exclude from the tool schema shown to the LLM. See [Excluding Arguments](#excluding-arguments) for more information
 </ParamField>

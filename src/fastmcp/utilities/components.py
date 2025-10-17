@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Annotated, Any, TypedDict
 
+from mcp.types import Icon
 from pydantic import BeforeValidator, Field, PrivateAttr
 from typing_extensions import Self, TypeVar
 
@@ -38,6 +39,10 @@ class FastMCPComponent(FastMCPBaseModel):
     description: str | None = Field(
         default=None,
         description="The description of the component.",
+    )
+    icons: list[Icon] | None = Field(
+        default=None,
+        description="Optional list of icons for this component to display in user interfaces.",
     )
     tags: Annotated[set[str], BeforeValidator(_convert_set_default_none)] = Field(
         default_factory=set,

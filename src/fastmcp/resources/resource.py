@@ -7,7 +7,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Annotated, Any
 
 import pydantic_core
-from mcp.types import Annotations
+from mcp.types import Annotations, Icon
 from mcp.types import Resource as MCPResource
 from pydantic import (
     AnyUrl,
@@ -72,6 +72,7 @@ class Resource(FastMCPComponent):
         name: str | None = None,
         title: str | None = None,
         description: str | None = None,
+        icons: list[Icon] | None = None,
         mime_type: str | None = None,
         tags: set[str] | None = None,
         enabled: bool | None = None,
@@ -84,6 +85,7 @@ class Resource(FastMCPComponent):
             name=name,
             title=title,
             description=description,
+            icons=icons,
             mime_type=mime_type,
             tags=tags,
             enabled=enabled,
@@ -132,6 +134,7 @@ class Resource(FastMCPComponent):
             description=overrides.get("description", self.description),
             mimeType=overrides.get("mimeType", self.mime_type),
             title=overrides.get("title", self.title),
+            icons=overrides.get("icons", self.icons),
             annotations=overrides.get("annotations", self.annotations),
             _meta=overrides.get(
                 "_meta", self.get_meta(include_fastmcp_meta=include_fastmcp_meta)
@@ -175,6 +178,7 @@ class FunctionResource(Resource):
         name: str | None = None,
         title: str | None = None,
         description: str | None = None,
+        icons: list[Icon] | None = None,
         mime_type: str | None = None,
         tags: set[str] | None = None,
         enabled: bool | None = None,
@@ -190,6 +194,7 @@ class FunctionResource(Resource):
             name=name or get_fn_name(fn),
             title=title,
             description=description or inspect.getdoc(fn),
+            icons=icons,
             mime_type=mime_type or "text/plain",
             tags=tags or set(),
             enabled=enabled if enabled is not None else True,

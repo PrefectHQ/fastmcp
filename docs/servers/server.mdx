@@ -40,6 +40,22 @@ The `FastMCP` constructor accepts several arguments:
   Description of how to interact with this server. These instructions help clients understand the server's purpose and available functionality
 </ParamField>
 
+<ParamField body="version" type="str | None">
+  Version string for your server. If not provided, defaults to the FastMCP library version
+</ParamField>
+
+<ParamField body="website_url" type="str | None">
+  <VersionBadge version="2.14.0" />
+
+  URL to a website with more information about your server. Displayed in client applications
+</ParamField>
+
+<ParamField body="icons" type="list[Icon] | None">
+  <VersionBadge version="2.14.0" />
+
+  List of icon representations for your server. Icons help users visually identify your server in client applications. See [Icons](/servers/icons) for detailed examples
+</ParamField>
+
 <ParamField body="auth" type="OAuthProvider | TokenVerifier | None">
   Authentication provider for securing HTTP-based transports. See [Authentication](/servers/auth/authentication) for configuration options
 </ParamField>

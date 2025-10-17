@@ -8,7 +8,7 @@ from collections.abc import Callable
 from typing import Any
 from urllib.parse import parse_qs, unquote
 
-from mcp.types import Annotations
+from mcp.types import Annotations, Icon
 from mcp.types import ResourceTemplate as MCPResourceTemplate
 from pydantic import (
     Field,
@@ -133,6 +133,7 @@ class ResourceTemplate(FastMCPComponent):
         name: str | None = None,
         title: str | None = None,
         description: str | None = None,
+        icons: list[Icon] | None = None,
         mime_type: str | None = None,
         tags: set[str] | None = None,
         enabled: bool | None = None,
@@ -145,6 +146,7 @@ class ResourceTemplate(FastMCPComponent):
             name=name,
             title=title,
             description=description,
+            icons=icons,
             mime_type=mime_type,
             tags=tags,
             enabled=enabled,
@@ -202,6 +204,7 @@ class ResourceTemplate(FastMCPComponent):
             description=overrides.get("description", self.description),
             mimeType=overrides.get("mimeType", self.mime_type),
             title=overrides.get("title", self.title),
+            icons=overrides.get("icons", self.icons),
             annotations=overrides.get("annotations", self.annotations),
             _meta=overrides.get(
                 "_meta", self.get_meta(include_fastmcp_meta=include_fastmcp_meta)
@@ -285,6 +288,7 @@ class FunctionResourceTemplate(ResourceTemplate):
         name: str | None = None,
         title: str | None = None,
         description: str | None = None,
+        icons: list[Icon] | None = None,
         mime_type: str | None = None,
         tags: set[str] | None = None,
         enabled: bool | None = None,
@@ -388,6 +392,7 @@ class FunctionResourceTemplate(ResourceTemplate):
             name=func_name,
             title=title,
             description=description,
+            icons=icons,
             mime_type=mime_type or "text/plain",
             fn=fn,
             parameters=parameters,

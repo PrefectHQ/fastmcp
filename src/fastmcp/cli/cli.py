@@ -713,6 +713,10 @@ async def inspect(
             console.print(f"  Name:         {info.name}")
             if info.version:
                 console.print(f"  Version:      {info.version}")
+            if info.website_url:
+                console.print(f"  Website:      {info.website_url}")
+            if info.icons:
+                console.print(f"  Icons:        {len(info.icons)}")
             console.print(f"  Generation:   {info.server_generation}")
             if info.instructions:
                 console.print(f"  Instructions: {info.instructions}")

@@ -97,9 +97,15 @@ def data_analysis_prompt(
   A boolean to enable or disable the prompt. See [Disabling Prompts](#disabling-prompts) for more information
 </ParamField>
 
+<ParamField body="icons" type="list[Icon] | None">
+  <VersionBadge version="2.14.0" />
+
+  Optional list of icon representations for this prompt. See [Icons](/servers/icons) for detailed examples
+</ParamField>
+
 <ParamField body="meta" type="dict[str, Any] | None">
   <VersionBadge version="2.11.0" />
-  
+
   Optional meta information about the prompt. This data is passed through to the MCP client as the `_meta` field of the client-side prompt object and can be used for custom metadata, versioning, or other application-specific purposes.
 </ParamField>
 </Card>
