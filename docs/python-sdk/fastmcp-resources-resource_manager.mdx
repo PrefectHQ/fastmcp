@@ -10,7 +10,7 @@ Resource manager functionality.
 
 ## Classes
 
-### `ResourceManager` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/resource_manager.py#L28" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ResourceManager` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/resource_manager.py#L25" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Manages FastMCP resources.
@@ -18,16 +18,7 @@ Manages FastMCP resources.
 
 **Methods:**
 
-#### `mount` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/resource_manager.py#L60" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
-
-```python
-mount(self, server: MountedServer) -> None
-```
-
-Adds a mounted server as a source for resources and templates.
-
-
-#### `get_resources` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/resource_manager.py#L64" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_resources` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/resource_manager.py#L56" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_resources(self) -> dict[str, Resource]
@@ -36,7 +27,7 @@ get_resources(self) -> dict[str, Resource]
 Get all registered resources, keyed by URI.
 
 
-#### `get_resource_templates` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/resource_manager.py#L68" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_resource_templates` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/resource_manager.py#L60" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_resource_templates(self) -> dict[str, ResourceTemplate]
@@ -45,25 +36,7 @@ get_resource_templates(self) -> dict[str, ResourceTemplate]
 Get all registered templates, keyed by URI template.
 
 
-#### `list_resources` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/resource_manager.py#L178" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
-
-```python
-list_resources(self) -> list[Resource]
-```
-
-Lists all resources, applying protocol filtering.
-
-
-#### `list_resource_templates` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/resource_manager.py#L185" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
-
-```python
-list_resource_templates(self) -> list[ResourceTemplate]
-```
-
-Lists all templates, applying protocol filtering.
-
-
-#### `add_resource_or_template_from_fn` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/resource_manager.py#L192" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `add_resource_or_template_from_fn` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/resource_manager.py#L64" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 add_resource_or_template_from_fn(self, fn: Callable[..., Any], uri: str, name: str | None = None, description: str | None = None, mime_type: str | None = None, tags: set[str] | None = None) -> Resource | ResourceTemplate
@@ -84,7 +57,7 @@ Add a resource or template to the manager from a function.
 - returns the existing resource or template.
 
 
-#### `add_resource_from_fn` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/resource_manager.py#L240" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `add_resource_from_fn` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/resource_manager.py#L112" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 add_resource_from_fn(self, fn: Callable[..., Any], uri: str, name: str | None = None, description: str | None = None, mime_type: str | None = None, tags: set[str] | None = None) -> Resource
@@ -105,7 +78,7 @@ Add a resource to the manager from a function.
 - returns the existing resource.
 
 
-#### `add_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/resource_manager.py#L280" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `add_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/resource_manager.py#L152" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 add_resource(self, resource: Resource) -> Resource
@@ -119,7 +92,7 @@ will be used as the storage key. To overwrite it, call
 Resource.model_copy(key=new_key) before calling this method.
 
 
-#### `add_template_from_fn` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/resource_manager.py#L302" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `add_template_from_fn` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/resource_manager.py#L174" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 add_template_from_fn(self, fn: Callable[..., Any], uri_template: str, name: str | None = None, description: str | None = None, mime_type: str | None = None, tags: set[str] | None = None) -> ResourceTemplate
@@ -128,7 +101,7 @@ add_template_from_fn(self, fn: Callable[..., Any], uri_template: str, name: str 
 Create a template from a function.
 
 
-#### `add_template` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/resource_manager.py#L329" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `add_template` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/resource_manager.py#L201" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 add_template(self, template: ResourceTemplate) -> ResourceTemplate
@@ -146,7 +119,7 @@ ResourceTemplate.model_copy(key=new_key) before calling this method.
 - returns the existing template.
 
 
-#### `has_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/resource_manager.py#L355" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `has_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/resource_manager.py#L227" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 has_resource(self, uri: AnyUrl | str) -> bool
@@ -155,7 +128,7 @@ has_resource(self, uri: AnyUrl | str) -> bool
 Check if a resource exists.
 
 
-#### `get_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/resource_manager.py#L372" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/resource_manager.py#L244" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_resource(self, uri: AnyUrl | str) -> Resource
@@ -170,7 +143,7 @@ Get resource by URI, checking concrete resources first, then templates.
 - `NotFoundError`: If no resource or template matching the URI is found.
 
 
-#### `read_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/resource_manager.py#L417" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `read_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/resource_manager.py#L289" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 read_resource(self, uri: AnyUrl | str) -> str | bytes

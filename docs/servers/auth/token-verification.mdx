@@ -42,11 +42,10 @@ Token validation must address several security requirements: signature verificat
 
 The challenge in MCP environments is that clients need to obtain valid tokens before making requests, but the MCP protocol doesn't provide built-in discovery mechanisms for token endpoints. Clients must obtain tokens through separate channels or prior configuration.
 
-## FastMCP Token Verification
+
+## TokenVerifier Class
 
 FastMCP provides the `TokenVerifier` class to handle token validation complexity while remaining flexible about token sources and validation strategies.
-
-### TokenVerifier Design
 
 `TokenVerifier` focuses exclusively on token validation without providing OAuth discovery metadata. This makes it ideal for internal systems where clients already know how to obtain tokens, or for microservices that trust tokens from known issuers.
 
@@ -54,11 +53,11 @@ The class validates token signatures, checks expiration timestamps, and extracts
 
 You can subclass `TokenVerifier` to implement custom validation logic for specialized token formats or validation requirements. The base class handles common patterns while allowing extension for unique use cases.
 
-### JWT Token Verification
+## JWT Token Verification
 
 JSON Web Tokens (JWTs) represent the most common token format for modern applications. FastMCP's `JWTVerifier` validates JWTs using industry-standard cryptographic techniques and claim validation.
 
-#### JWKS Endpoint Integration
+### JWKS Endpoint Integration
 
 JWKS endpoint integration provides the most flexible approach for production systems. The verifier automatically fetches public keys from a JSON Web Key Set endpoint, enabling automatic key rotation without server configuration changes.
 
@@ -80,7 +79,7 @@ This configuration creates a server that validates JWTs issued by `auth.yourcomp
 
 The `issuer` parameter ensures tokens come from your trusted authentication system, while `audience` validation prevents tokens intended for other services from being accepted by your MCP server.
 
-#### Symmetric Key Verification (HMAC)
+### Symmetric Key Verification (HMAC)
 
 Symmetric key verification uses a shared secret for both signing and validation, making it ideal for internal microservices and trusted environments where the same secret can be securely distributed to both token issuers and validators.
 
@@ -119,7 +118,7 @@ The parameter is named `public_key` for backwards compatibility, but when using 
 - Consider using asymmetric keys (RSA/ECDSA) for external-facing APIs
 </Warning>
 
-#### Static Public Key Verification
+### Static Public Key Verification
 
 Static public key verification works when you have a fixed RSA or ECDSA signing key and don't need automatic key rotation. This approach is primarily useful for development environments or controlled deployments where JWKS endpoints aren't available.
 
@@ -142,12 +141,44 @@ mcp = FastMCP(name="Protected API", auth=verifier)
 ```
 
 This configuration validates tokens using a specific RSA or ECDSA public key. The key must correspond to the private key used by your token issuer. While less flexible than JWKS endpoints, this approach can be useful in development environments or when testing with fixed keys.
+## Opaque Token Verification
 
-### Development and Testing
+Many authorization servers issue opaque tokens rather than self-contained JWTs. Opaque tokens are random strings that carry no information themselves - the authorization server maintains their state and validation requires querying the server. FastMCP supports opaque token validation through OAuth 2.0 Token Introspection (RFC 7662).
+
+### Understanding Opaque Tokens
+
+Opaque tokens differ fundamentally from JWTs in their verification model. Where JWTs carry signed claims that can be validated locally, opaque tokens require network calls to the issuing authorization server for validation. The authorization server maintains token state and can revoke tokens immediately, providing stronger security guarantees for sensitive operations.
+
+This approach trades performance (network latency on each validation) for security and flexibility. Authorization servers can revoke opaque tokens instantly, implement complex authorization logic, and maintain detailed audit logs of token usage. Many enterprise OAuth providers default to opaque tokens for these security advantages.
+
+### Token Introspection Protocol
+
+RFC 7662 standardizes how resource servers validate opaque tokens. The protocol defines an introspection endpoint where resource servers authenticate using client credentials and receive token metadata including active status, scopes, expiration, and subject identity.
+
+FastMCP implements this protocol through the `IntrospectionTokenVerifier` class, handling authentication, request formatting, and response parsing according to the specification.
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.auth.providers.introspection import IntrospectionTokenVerifier
+
+# Configure introspection with your OAuth provider
+verifier = IntrospectionTokenVerifier(
+    introspection_url="https://auth.yourcompany.com/oauth/introspect",
+    client_id="mcp-resource-server",
+    client_secret="your-client-secret",
+    required_scopes=["api:read", "api:write"]
+)
+
+mcp = FastMCP(name="Protected API", auth=verifier)
+```
+
+The verifier authenticates to the introspection endpoint using HTTP Basic Auth with your client credentials. When a request arrives with a bearer token, FastMCP queries the introspection endpoint to determine if the token is active and has sufficient scopes.
+
+## Development and Testing
 
 Development environments often need simpler token management without the complexity of full JWT infrastructure. FastMCP provides tools specifically designed for these scenarios.
 
-#### Static Token Verification
+### Static Token Verification
 
 Static token verification enables rapid development by accepting predefined tokens with associated claims. This approach eliminates the need for token generation infrastructure during development and testing.
 
@@ -179,7 +210,8 @@ Clients can now authenticate using `Authorization: Bearer dev-alice-token` heade
 Static token verification stores tokens as plain text and should never be used in production environments. It's designed exclusively for development and testing scenarios.
 </Warning>
 
-#### Test Token Generation
+
+### Test Token Generation
 
 Test token generation helps when you need to test JWT verification without setting up complete identity infrastructure. FastMCP includes utilities for generating test key pairs and signed tokens.
 

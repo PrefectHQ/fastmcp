@@ -786,3 +786,57 @@ class TestTransitiveAndNestedReferences:
         assert len(overlap) == 0, (
             f"Found overlapping schemas between input and output: {overlap}"
         )
+
+    def test_issue_2087_top_level_response_ref_includes_all_nested_schemas(self):
+        """Issue #2087: Top-level response $ref must include itself in response_schemas."""
+        spec = {
+            "openapi": "3.0.1",
+            "info": {"title": "Test", "version": "1.0"},
+            "paths": {
+                "/persons": {
+                    "get": {
+                        "responses": {
+                            "200": {
+                                "description": "OK",
+                                "content": {
+                                    "application/json": {
+                                        "schema": {
+                                            "$ref": "#/components/schemas/PersonList"
+                                        }
+                                    }
+                                },
+                            }
+                        }
+                    }
+                }
+            },
+            "components": {
+                "schemas": {
+                    "PersonList": {
+                        "properties": {
+                            "Items": {
+                                "type": "array",
+                                "items": {"$ref": "#/components/schemas/Person"},
+                            }
+                        }
+                    },
+                    "Person": {
+                        "properties": {
+                            "Name": {"$ref": "#/components/schemas/Name"},
+                            "Job": {"$ref": "#/components/schemas/Job"},
+                        }
+                    },
+                    "Name": {"properties": {"First": {"type": "string"}}},
+                    "Job": {"properties": {"Company": {"type": "string"}}},
+                }
+            },
+        }
+
+        routes = parse_openapi_to_http_routes(spec)
+        route = routes[0]
+
+        # Bug was: PersonList missing from response_schemas despite being top-level ref
+        assert "PersonList" in route.response_schemas
+        assert "Person" in route.response_schemas
+        assert "Name" in route.response_schemas
+        assert "Job" in route.response_schemas

@@ -14,33 +14,13 @@ using the OAuth Proxy pattern for non-DCR OAuth flows.
 
 ## Classes
 
-### `AzureProviderSettings` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L23" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `AzureProviderSettings` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L29" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Settings for Azure OAuth provider.
 
 
-### `AzureTokenVerifier` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L47" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
-
-
-Token verifier for Azure OAuth tokens.
-
-Azure tokens are JWTs, but we verify them by calling the Microsoft Graph API
-to get user information and validate the token.
-
-
-**Methods:**
-
-#### `verify_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L69" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
-
-```python
-verify_token(self, token: str) -> AccessToken | None
-```
-
-Verify Azure OAuth token by calling Microsoft Graph API.
-
-
-### `AzureProvider` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L118" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `AzureProvider` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L59" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Azure (Microsoft Entra) OAuth provider for FastMCP.
@@ -50,14 +30,37 @@ OAuth Proxy pattern. It supports both organizational accounts and personal
 Microsoft accounts depending on the tenant configuration.
 
 Features:
-- Transparent OAuth proxy to Azure/Microsoft identity platform
-- Automatic token validation via Microsoft Graph API
-- User information extraction
-- Support for different tenant configurations (common, organizations, consumers)
+- OAuth proxy to Azure/Microsoft identity platform
+- JWT validation using tenant issuer and JWKS
+- Supports tenant configurations: specific tenant ID, "organizations", or "consumers"
 
-Setup Requirements:
-1. Register an application in Azure Portal (portal.azure.com)
-2. Configure redirect URI as: http://localhost:8000/auth/callback
-3. Note your Application (client) ID and create a client secret
-4. Optionally note your Directory (tenant) ID for single-tenant apps
+Setup:
+1. Create an App registration in Azure Portal
+2. Configure Web platform redirect URI: http://localhost:8000/auth/callback (or your custom path)
+3. Add an Application ID URI. Either use the default (api://{client_id}) or set a custom one.
+4. Add a custom scope.
+5. Create a client secret.
+6. Get Application (client) ID, Directory (tenant) ID, and client secret
+
+
+**Methods:**
+
+#### `authorize` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L222" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+authorize(self, client: OAuthClientInformationFull, params: AuthorizationParams) -> str
+```
+
+Start OAuth transaction and redirect to Azure AD.
+
+Override parent's authorize method to filter out the 'resource' parameter
+which is not supported by Azure AD v2.0 endpoints. The v2.0 endpoints use
+scopes to determine the resource/audience instead of a separate parameter.
+
+**Args:**
+- `client`: OAuth client information
+- `params`: Authorization parameters from the client
+
+**Returns:**
+- Authorization URL to redirect the user to Azure AD
 

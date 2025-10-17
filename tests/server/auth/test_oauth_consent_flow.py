@@ -231,10 +231,12 @@ class TestServerSideStorage:
                 csrf_token = secrets.token_urlsafe(32)
 
             # Approve consent with CSRF token
+            # Set cookies on client instance to avoid deprecation warning
+            for k, v in consent_response.cookies.items():
+                test_client.cookies.set(k, v)
             approval_response = test_client.post(
                 "/consent",
                 data={"action": "approve", "txn": txn_id, "csrf_token": csrf_token},
-                cookies=consent_response.cookies,
                 follow_redirects=False,
             )
 

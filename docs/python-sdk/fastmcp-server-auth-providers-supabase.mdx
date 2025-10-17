@@ -1,0 +1,62 @@
+---
+title: supabase
+sidebarTitle: supabase
+---
+
+# `fastmcp.server.auth.providers.supabase`
+
+
+Supabase authentication provider for FastMCP.
+
+This module provides SupabaseProvider - a complete authentication solution that integrates
+with Supabase Auth's JWT verification, supporting Dynamic Client Registration (DCR)
+for seamless MCP client authentication.
+
+
+## Classes
+
+### `SupabaseProviderSettings` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/supabase.py#L26" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+### `SupabaseProvider` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/supabase.py#L43" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Supabase metadata provider for DCR (Dynamic Client Registration).
+
+This provider implements Supabase Auth integration using metadata forwarding.
+This approach allows Supabase to handle the OAuth flow directly while FastMCP acts
+as a resource server, verifying JWTs issued by Supabase Auth.
+
+IMPORTANT SETUP REQUIREMENTS:
+
+1. Supabase Project Setup:
+   - Create a Supabase project at https://supabase.com
+   - Note your project URL (e.g., "https://abc123.supabase.co")
+   - For projects created after May 1st, 2025, asymmetric RS256 keys are used by default
+   - For older projects, consider migrating to asymmetric keys for better security
+
+2. JWT Verification:
+   - FastMCP verifies JWTs using the JWKS endpoint at {project_url}/auth/v1/.well-known/jwks.json
+   - JWTs are issued by {project_url}/auth/v1
+   - Tokens are cached for up to 10 minutes by Supabase's edge servers
+
+For detailed setup instructions, see:
+https://supabase.com/docs/guides/auth/jwts
+
+
+**Methods:**
+
+#### `get_routes` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/supabase.py#L128" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_routes(self, mcp_path: str | None = None) -> list[Route]
+```
+
+Get OAuth routes including Supabase authorization server metadata forwarding.
+
+This returns the standard protected resource routes plus an authorization server
+metadata endpoint that forwards Supabase's OAuth metadata to clients.
+
+**Args:**
+- `mcp_path`: The path where the MCP endpoint is mounted (e.g., "/mcp")
+This is used to advertise the resource URL in metadata.
+

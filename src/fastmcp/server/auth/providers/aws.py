@@ -23,6 +23,7 @@ Example:
 
 from __future__ import annotations
 
+from key_value.aio.protocols import AsyncKeyValue
 from pydantic import AnyHttpUrl, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -131,6 +132,7 @@ class AWSCognitoProvider(OIDCProxy):
         redirect_path: str | NotSetT = NotSet,
         required_scopes: list[str] | NotSetT = NotSet,
         allowed_client_redirect_uris: list[str] | NotSetT = NotSet,
+        client_storage: AsyncKeyValue | None = None,
     ):
         """Initialize AWS Cognito OAuth provider.
 
@@ -144,6 +146,7 @@ class AWSCognitoProvider(OIDCProxy):
             required_scopes: Required Cognito scopes (defaults to ["openid"])
             allowed_client_redirect_uris: List of allowed redirect URI patterns for MCP clients.
                 If None (default), all URIs are allowed. If empty list, no URIs are allowed.
+            client_storage: An AsyncKeyValue-compatible store for client registrations, registrations are stored in memory if not provided
         """
 
         settings = AWSCognitoProviderSettings.model_validate(
@@ -205,6 +208,7 @@ class AWSCognitoProvider(OIDCProxy):
             base_url=settings.base_url,
             redirect_path=redirect_path_final,
             allowed_client_redirect_uris=allowed_client_redirect_uris_final,
+            client_storage=client_storage,
         )
 
         logger.info(

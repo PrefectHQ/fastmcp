@@ -9,10 +9,10 @@
       "dark": "#222831",
       "light": "#EEEEEE"
     },
-    "decoration": "windows"
+    "decoration": "gradient"
   },
   "banner": {
-    "content": "Host your server on [FastMCP Cloud](https://fastmcp.cloud) for free!"
+    "content": "Join the [FastMCP community](https://discord.gg/uu8dJCgttd)!"
   },
   "colors": {
     "dark": "#f72585",
@@ -26,15 +26,23 @@
     ]
   },
   "description": "The fast, Pythonic way to build MCP servers and clients.",
+  "errors": {
+    "404": {
+      "description": "You\u2019ve wandered outside the context.",
+      "redirect": false,
+      "title": "Don't panic."
+    }
+  },
   "favicon": {
     "dark": "/assets/brand/favicon.svg",
     "light": "/assets/brand/favicon.svg"
   },
   "footer": {
     "socials": {
-      "bluesky": "https://bsky.app/profile/jlowin.dev",
+      "discord": "https://discord.gg/uu8dJCgttd",
       "github": "https://github.com/jlowin/fastmcp",
-      "x": "https://x.com/jlowin"
+      "website": "https://prefect.ai",
+      "x": "https://x.com/fastmcp"
     }
   },
   "integrations": {
@@ -56,6 +64,11 @@
         "href": "https://fastmcp.cloud",
         "icon": "cloud",
         "label": "FastMCP Cloud"
+      },
+      {
+        "href": "https://discord.gg/uu8dJCgttd",
+        "icon": "discord",
+        "label": "Discord"
       }
     ],
     "primary": {
@@ -64,15 +77,17 @@
     }
   },
   "navigation": {
-    "tabs": [
+    "dropdowns": [
       {
+        "dropdown": "Documentation",
         "groups": [
           {
             "group": "Get Started",
             "pages": [
               "getting-started/welcome",
               "getting-started/installation",
-              "getting-started/quickstart"
+              "getting-started/quickstart",
+              "updates"
             ]
           },
           {
@@ -240,18 +255,12 @@
             "pages": [
               "development/contributing",
               "development/tests",
-              "development/releases"
+              "development/releases",
+              "changelog"
             ]
           }
         ],
-        "tab": "Documentation"
-      },
-      {
-        "pages": [
-          "updates",
-          "changelog"
-        ],
-        "tab": "What's New"
+        "icon": "book"
       },
       {
         "anchors": [
@@ -266,7 +275,6 @@
                 "group": "fastmcp.cli",
                 "pages": [
                   "python-sdk/fastmcp-cli-__init__",
-                  "python-sdk/fastmcp-cli-claude",
                   "python-sdk/fastmcp-cli-cli",
                   {
                     "group": "install",
@@ -347,8 +355,10 @@
                           "python-sdk/fastmcp-server-auth-providers-github",
                           "python-sdk/fastmcp-server-auth-providers-google",
                           "python-sdk/fastmcp-server-auth-providers-in_memory",
+                          "python-sdk/fastmcp-server-auth-providers-introspection",
                           "python-sdk/fastmcp-server-auth-providers-jwt",
                           "python-sdk/fastmcp-server-auth-providers-scalekit",
+                          "python-sdk/fastmcp-server-auth-providers-supabase",
                           "python-sdk/fastmcp-server-auth-providers-workos"
                         ]
                       },
@@ -429,15 +439,16 @@
                     ]
                   },
                   "python-sdk/fastmcp-utilities-openapi",
-                  "python-sdk/fastmcp-utilities-storage",
                   "python-sdk/fastmcp-utilities-tests",
-                  "python-sdk/fastmcp-utilities-types"
+                  "python-sdk/fastmcp-utilities-types",
+                  "python-sdk/fastmcp-utilities-ui"
                 ]
               }
             ]
           }
         ],
-        "tab": "SDK Reference"
+        "dropdown": "SDK Reference",
+        "icon": "code"
       }
     ]
   },
@@ -454,7 +465,7 @@
   "search": {
     "prompt": "Search the docs..."
   },
-  "theme": "mint",
+  "theme": "almond",
   "thumbnails": {
     "appearance": "light",
     "background": "/assets/brand/thumbnail-background.png"

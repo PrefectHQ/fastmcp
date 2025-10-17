@@ -24,9 +24,39 @@ This implementation is based on the OAuth 2.1 specification and is designed for
 production use with enterprise identity providers.
 
 
+## Functions
+
+### `create_consent_html` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy.py#L192" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+create_consent_html(client_id: str, redirect_uri: str, scopes: list[str], txn_id: str, csrf_token: str, client_name: str | None = None, title: str = 'Authorization Consent') -> str
+```
+
+
+Create a styled HTML consent page for OAuth authorization requests.
+
+
 ## Classes
 
-### `ProxyDCRClient` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy.py#L60" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `OAuthTransaction` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy.py#L98" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+OAuth transaction state for consent flow.
+
+Stored server-side to track active authorization flows with client context.
+Includes CSRF tokens for consent protection per MCP security best practices.
+
+
+### `ClientCode` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy.py#L119" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Client authorization code with PKCE and upstream tokens.
+
+Stored server-side after upstream IdP callback. Contains the upstream
+tokens bound to the client's PKCE challenge for secure token exchange.
+
+
+### `ProxyDCRClient` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy.py#L137" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Client for DCR proxy with configurable redirect URI validation.
@@ -56,7 +86,7 @@ arise from accepting arbitrary redirect URIs.
 
 **Methods:**
 
-#### `validate_redirect_uri` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy.py#L99" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `validate_redirect_uri` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy.py#L166" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 validate_redirect_uri(self, redirect_uri: AnyUrl | None) -> AnyUrl
@@ -70,7 +100,39 @@ This is essential for cached token scenarios where the client may
 reconnect with a different port.
 
 
-### `OAuthProxy` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy.py#L125" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `TokenHandler` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy.py#L293" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+TokenHandler that returns OAuth 2.1 compliant error responses.
+
+The MCP SDK always returns HTTP 400 for all client authentication issues.
+However, OAuth 2.1 Section 5.3 and the MCP specification require that
+invalid or expired tokens MUST receive a HTTP 401 response.
+
+This handler extends the base MCP SDK TokenHandler to transform client
+authentication failures into OAuth 2.1 compliant responses:
+- Changes 'unauthorized_client' to 'invalid_client' error code
+- Returns HTTP 401 status code instead of 400 for client auth failures
+
+Per OAuth 2.1 Section 5.3: "The authorization server MAY return an HTTP 401
+(Unauthorized) status code to indicate which HTTP authentication schemes
+are supported."
+
+Per MCP spec: "Invalid or expired tokens MUST receive a HTTP 401 response."
+
+
+**Methods:**
+
+#### `response` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy.py#L312" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+response(self, obj: TokenSuccessResponse | TokenErrorResponse)
+```
+
+Override response method to provide OAuth 2.1 compliant error handling.
+
+
+### `OAuthProxy` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy.py#L342" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 OAuth provider that presents a DCR-compliant interface while proxying to non-DCR IDPs.
@@ -151,7 +213,6 @@ OAuth Flow Implementation
 State Management
 ---------------
 The proxy maintains minimal but crucial state:
-- _clients: DCR registrations (all use ProxyDCRClient for flexibility)
 - _oauth_transactions: Active authorization flows with client context
 - _client_codes: Authorization codes with PKCE challenges and upstream tokens
 - _access_tokens, _refresh_tokens: Token storage for revocation
@@ -181,7 +242,7 @@ Handles provider-specific requirements:
 
 **Methods:**
 
-#### `get_client` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy.py#L396" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_client` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy.py#L648" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_client(self, client_id: str) -> OAuthClientInformationFull | None
@@ -193,7 +254,7 @@ provided to the DCR client during registration, not the upstream client ID.
 For unregistered clients, returns None (which will raise an error in the SDK).
 
 
-#### `register_client` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy.py#L417" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `register_client` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy.py#L663" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 register_client(self, client_info: OAuthClientInformationFull) -> None
@@ -207,22 +268,21 @@ redirect URI will likely be localhost or unknown to the proxied IDP. The
 proxied IDP only knows about this server's fixed redirect URI.
 
 
-#### `authorize` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy.py#L464" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `authorize` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy.py#L709" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 authorize(self, client: OAuthClientInformationFull, params: AuthorizationParams) -> str
 ```
 
-Start OAuth transaction and redirect to upstream IdP.
+Start OAuth transaction and route through consent interstitial.
 
-This implements the DCR-compliant proxy pattern:
-1. Store transaction with client details and PKCE challenge
-2. Generate proxy's own PKCE parameters if forwarding is enabled
-3. Use transaction ID as state for IdP
-4. Redirect to IdP with our fixed callback URL and proxy's PKCE
+Flow:
+1. Store transaction with client details and PKCE (if forwarding)
+2. Return local /consent URL; browser visits consent first
+3. Consent handler redirects to upstream IdP if approved/already approved
 
 
-#### `load_authorization_code` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy.py#L565" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `load_authorization_code` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy.py#L765" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 load_authorization_code(self, client: OAuthClientInformationFull, authorization_code: str) -> AuthorizationCode | None
@@ -234,7 +294,7 @@ Look up our client code and return authorization code object
 with PKCE challenge for validation.
 
 
-#### `exchange_authorization_code` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy.py#L607" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `exchange_authorization_code` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy.py#L807" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 exchange_authorization_code(self, client: OAuthClientInformationFull, authorization_code: AuthorizationCode) -> OAuthToken
@@ -246,7 +306,7 @@ For the DCR-compliant proxy flow, we return the IdP tokens that were obtained
 during the IdP callback exchange. PKCE validation is handled by the MCP framework.
 
 
-#### `load_refresh_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy.py#L674" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `load_refresh_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy.py#L874" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 load_refresh_token(self, client: OAuthClientInformationFull, refresh_token: str) -> RefreshToken | None
@@ -255,7 +315,7 @@ load_refresh_token(self, client: OAuthClientInformationFull, refresh_token: str)
 Load refresh token from local storage.
 
 
-#### `exchange_refresh_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy.py#L682" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `exchange_refresh_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy.py#L882" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 exchange_refresh_token(self, client: OAuthClientInformationFull, refresh_token: RefreshToken, scopes: list[str]) -> OAuthToken
@@ -264,7 +324,7 @@ exchange_refresh_token(self, client: OAuthClientInformationFull, refresh_token: 
 Exchange refresh token for new access token using authlib.
 
 
-#### `load_access_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy.py#L758" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `load_access_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy.py#L957" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 load_access_token(self, token: str) -> AccessToken | None
@@ -276,7 +336,7 @@ Delegates to the JWT verifier which handles signature validation,
 expiration checking, and claims validation using the upstream JWKS.
 
 
-#### `revoke_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy.py#L775" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `revoke_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy.py#L974" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 revoke_token(self, token: AccessToken | RefreshToken) -> None
@@ -288,10 +348,10 @@ Removes tokens from local storage and attempts to revoke them with
 the upstream server if a revocation endpoint is configured.
 
 
-#### `get_routes` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy.py#L819" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_routes` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/oauth_proxy.py#L1018" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-get_routes(self, mcp_path: str | None = None, mcp_endpoint: Any | None = None) -> list[Route]
+get_routes(self, mcp_path: str | None = None) -> list[Route]
 ```
 
 Get OAuth routes with custom proxy token handler.
@@ -301,5 +361,5 @@ with our proxy handler that forwards requests to the upstream OAuth server.
 
 **Args:**
 - `mcp_path`: The path where the MCP endpoint is mounted (e.g., "/mcp")
-- `mcp_endpoint`: The MCP endpoint handler to protect with auth
+This is used to advertise the resource URL in metadata.
 

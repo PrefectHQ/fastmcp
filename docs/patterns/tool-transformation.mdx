@@ -456,7 +456,7 @@ In the following example, we wrap a parent tool that accepts two arguments `x` a
 ```python {12, 15}
 from fastmcp import FastMCP
 from fastmcp.tools import Tool
-from fastmcp.tools.tool_transform import forward
+from fastmcp.tools.tool_transform import forward, ArgTransform
 
 mcp = FastMCP()
 

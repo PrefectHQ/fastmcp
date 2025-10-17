@@ -1,4 +1,4 @@
-name: Run tests
+name: Tests
 
 env:
   # enable colored output
