@@ -45,62 +45,68 @@ Base class for FastMCP middleware with dispatching hooks.
 
 **Methods:**
 
-#### `on_message` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/middleware.py#L127" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `on_message` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/middleware.py#L129" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 on_message(self, context: MiddlewareContext[Any], call_next: CallNext[Any, Any]) -> Any
 ```
 
-#### `on_request` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/middleware.py#L134" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `on_request` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/middleware.py#L136" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-on_request(self, context: MiddlewareContext[mt.Request], call_next: CallNext[mt.Request, Any]) -> Any
+on_request(self, context: MiddlewareContext[mt.Request[Any, Any]], call_next: CallNext[mt.Request[Any, Any], Any]) -> Any
 ```
 
-#### `on_notification` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/middleware.py#L141" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `on_notification` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/middleware.py#L143" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-on_notification(self, context: MiddlewareContext[mt.Notification], call_next: CallNext[mt.Notification, Any]) -> Any
+on_notification(self, context: MiddlewareContext[mt.Notification[Any, Any]], call_next: CallNext[mt.Notification[Any, Any], Any]) -> Any
 ```
 
-#### `on_call_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/middleware.py#L148" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `on_initialize` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/middleware.py#L150" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+on_initialize(self, context: MiddlewareContext[mt.InitializeRequestParams], call_next: CallNext[mt.InitializeRequestParams, None]) -> None
+```
+
+#### `on_call_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/middleware.py#L157" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 on_call_tool(self, context: MiddlewareContext[mt.CallToolRequestParams], call_next: CallNext[mt.CallToolRequestParams, ToolResult]) -> ToolResult
 ```
 
-#### `on_read_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/middleware.py#L155" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `on_read_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/middleware.py#L164" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-on_read_resource(self, context: MiddlewareContext[mt.ReadResourceRequestParams], call_next: CallNext[mt.ReadResourceRequestParams, list[ReadResourceContents]]) -> list[ReadResourceContents]
+on_read_resource(self, context: MiddlewareContext[mt.ReadResourceRequestParams], call_next: CallNext[mt.ReadResourceRequestParams, Sequence[ReadResourceContents]]) -> Sequence[ReadResourceContents]
 ```
 
-#### `on_get_prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/middleware.py#L162" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `on_get_prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/middleware.py#L173" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 on_get_prompt(self, context: MiddlewareContext[mt.GetPromptRequestParams], call_next: CallNext[mt.GetPromptRequestParams, mt.GetPromptResult]) -> mt.GetPromptResult
 ```
 
-#### `on_list_tools` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/middleware.py#L169" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `on_list_tools` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/middleware.py#L180" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-on_list_tools(self, context: MiddlewareContext[mt.ListToolsRequest], call_next: CallNext[mt.ListToolsRequest, list[Tool]]) -> list[Tool]
+on_list_tools(self, context: MiddlewareContext[mt.ListToolsRequest], call_next: CallNext[mt.ListToolsRequest, Sequence[Tool]]) -> Sequence[Tool]
 ```
 
-#### `on_list_resources` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/middleware.py#L176" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `on_list_resources` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/middleware.py#L187" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-on_list_resources(self, context: MiddlewareContext[mt.ListResourcesRequest], call_next: CallNext[mt.ListResourcesRequest, list[Resource]]) -> list[Resource]
+on_list_resources(self, context: MiddlewareContext[mt.ListResourcesRequest], call_next: CallNext[mt.ListResourcesRequest, Sequence[Resource]]) -> Sequence[Resource]
 ```
 
-#### `on_list_resource_templates` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/middleware.py#L183" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `on_list_resource_templates` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/middleware.py#L194" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-on_list_resource_templates(self, context: MiddlewareContext[mt.ListResourceTemplatesRequest], call_next: CallNext[mt.ListResourceTemplatesRequest, list[ResourceTemplate]]) -> list[ResourceTemplate]
+on_list_resource_templates(self, context: MiddlewareContext[mt.ListResourceTemplatesRequest], call_next: CallNext[mt.ListResourceTemplatesRequest, Sequence[ResourceTemplate]]) -> Sequence[ResourceTemplate]
 ```
 
-#### `on_list_prompts` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/middleware.py#L190" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `on_list_prompts` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/middleware.py#L203" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-on_list_prompts(self, context: MiddlewareContext[mt.ListPromptsRequest], call_next: CallNext[mt.ListPromptsRequest, list[Prompt]]) -> list[Prompt]
+on_list_prompts(self, context: MiddlewareContext[mt.ListPromptsRequest], call_next: CallNext[mt.ListPromptsRequest, Sequence[Prompt]]) -> Sequence[Prompt]
 ```

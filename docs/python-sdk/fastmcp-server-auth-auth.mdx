@@ -7,13 +7,13 @@ sidebarTitle: auth
 
 ## Classes
 
-### `AccessToken` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L35" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `AccessToken` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L32" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 AccessToken that includes all JWT claims.
 
 
-### `AuthProvider` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L41" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `AuthProvider` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L38" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Base class for all FastMCP authentication providers.
@@ -26,7 +26,7 @@ custom authentication routes.
 
 **Methods:**
 
-#### `verify_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L68" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `verify_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L65" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 verify_token(self, token: str) -> AccessToken | None
@@ -43,10 +43,10 @@ All auth providers must implement token verification.
 - AccessToken object if valid, None if invalid or expired
 
 
-#### `get_routes` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L81" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_routes` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L78" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-get_routes(self, mcp_path: str | None = None, mcp_endpoint: Any | None = None) -> list[Route]
+get_routes(self, mcp_path: str | None = None) -> list[Route]
 ```
 
 Get the routes for this authentication provider.
@@ -59,13 +59,14 @@ Each provider is responsible for creating whatever routes it needs:
 
 **Args:**
 - `mcp_path`: The path where the MCP endpoint is mounted (e.g., "/mcp")
-- `mcp_endpoint`: The MCP endpoint handler to protect with auth
+This is used to advertise the resource URL in metadata, but the
+provider does not create the actual MCP endpoint route.
 
 **Returns:**
-- List of routes for this provider, including protected MCP endpoints if provided
+- List of routes for this provider (excluding the MCP endpoint itself)
 
 
-#### `get_middleware` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L121" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_middleware` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L100" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_middleware(self) -> list
@@ -77,7 +78,7 @@ Get HTTP application-level middleware for this auth provider.
 - List of Starlette Middleware instances to apply to the HTTP app
 
 
-### `TokenVerifier` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L154" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `TokenVerifier` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L133" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Base class for token verifiers (Resource Servers).
@@ -88,7 +89,7 @@ Token verifiers typically don't provide authentication routes by default.
 
 **Methods:**
 
-#### `verify_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L175" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `verify_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L154" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 verify_token(self, token: str) -> AccessToken | None
@@ -97,7 +98,7 @@ verify_token(self, token: str) -> AccessToken | None
 Verify a bearer token and return access info if valid.
 
 
-### `RemoteAuthProvider` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L180" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `RemoteAuthProvider` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L159" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Authentication provider for resource servers that verify tokens from known authorization servers.
@@ -114,7 +115,7 @@ the authorization servers that issue valid tokens.
 
 **Methods:**
 
-#### `verify_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L221" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `verify_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L200" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 verify_token(self, token: str) -> AccessToken | None
@@ -123,18 +124,18 @@ verify_token(self, token: str) -> AccessToken | None
 Verify token using the configured token verifier.
 
 
-#### `get_routes` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L225" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_routes` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L204" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-get_routes(self, mcp_path: str | None = None, mcp_endpoint: Any | None = None) -> list[Route]
+get_routes(self, mcp_path: str | None = None) -> list[Route]
 ```
 
 Get OAuth routes for this provider.
 
-Creates protected resource metadata routes and optionally wraps MCP endpoints with auth.
+Creates protected resource metadata routes.
 
 
-### `OAuthProvider` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L255" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `OAuthProvider` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L233" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 OAuth Authorization Server provider.
@@ -145,7 +146,7 @@ authorization flows, token issuance, and token verification.
 
 **Methods:**
 
-#### `verify_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L311" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `verify_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L289" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 verify_token(self, token: str) -> AccessToken | None
@@ -163,10 +164,10 @@ to our existing load_access_token method.
 - AccessToken object if valid, None if invalid or expired
 
 
-#### `get_routes` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L326" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_routes` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/auth.py#L304" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-get_routes(self, mcp_path: str | None = None, mcp_endpoint: Any | None = None) -> list[Route]
+get_routes(self, mcp_path: str | None = None) -> list[Route]
 ```
 
 Get OAuth authorization server routes and optional protected resource routes.
@@ -174,7 +175,6 @@ Get OAuth authorization server routes and optional protected resource routes.
 This method creates the full set of OAuth routes including:
 - Standard OAuth authorization server routes (/.well-known/oauth-authorization-server, /authorize, /token, etc.)
 - Optional protected resource routes
-- Protected MCP endpoints if provided
 
 **Returns:**
 - List of OAuth routes

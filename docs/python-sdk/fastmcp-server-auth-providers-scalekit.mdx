@@ -15,9 +15,9 @@ authentication for seamless MCP client authentication.
 
 ## Classes
 
-### `ScalekitProviderSettings` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/scalekit.py#L26" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ScalekitProviderSettings` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/scalekit.py#L25" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
-### `ScalekitProvider` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/scalekit.py#L39" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ScalekitProvider` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/scalekit.py#L38" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Scalekit resource server provider for OAuth 2.1 authentication.
@@ -47,10 +47,10 @@ https://docs.scalekit.com/mcp/overview/
 
 **Methods:**
 
-#### `get_routes` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/scalekit.py#L135" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_routes` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/scalekit.py#L134" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-get_routes(self, mcp_path: str | None = None, mcp_endpoint: Any | None = None) -> list[Route]
+get_routes(self, mcp_path: str | None = None) -> list[Route]
 ```
 
 Get OAuth routes including Scalekit authorization server metadata forwarding.
@@ -60,5 +60,5 @@ metadata endpoint that forwards Scalekit's OAuth metadata to clients.
 
 **Args:**
 - `mcp_path`: The path where the MCP endpoint is mounted (e.g., "/mcp")
-- `mcp_endpoint`: The MCP endpoint handler to protect with auth
+This is used to advertise the resource URL in metadata.
 

@@ -26,7 +26,7 @@ Extract information from a FastMCP v2.x instance.
 - FastMCPInfo dataclass containing the extracted information
 
 
-### `inspect_fastmcp_v1` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/inspect.py#L215" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `inspect_fastmcp_v1` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/inspect.py#L214" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 inspect_fastmcp_v1(mcp: FastMCP1x) -> FastMCPInfo
@@ -42,7 +42,7 @@ Extract information from a FastMCP v1.x instance using a Client.
 - FastMCPInfo dataclass containing the extracted information
 
 
-### `inspect_fastmcp` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/inspect.py#L336" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `inspect_fastmcp` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/inspect.py#L335" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 inspect_fastmcp(mcp: FastMCP[Any] | FastMCP1x) -> FastMCPInfo
@@ -61,7 +61,7 @@ and uses the appropriate extraction method.
 - FastMCPInfo dataclass containing the extracted information
 
 
-### `format_fastmcp_info` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/inspect.py#L361" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `format_fastmcp_info` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/inspect.py#L360" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 format_fastmcp_info(info: FastMCPInfo) -> bytes
@@ -73,7 +73,7 @@ Format FastMCPInfo as FastMCP-specific JSON.
 This includes FastMCP-specific fields like tags, enabled, annotations, etc.
 
 
-### `format_mcp_info` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/inspect.py#L388" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `format_mcp_info` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/inspect.py#L387" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 format_mcp_info(mcp: FastMCP[Any] | FastMCP1x) -> bytes
@@ -86,7 +86,7 @@ Uses Client to get the standard MCP protocol format with camelCase fields.
 Includes version metadata at the top level.
 
 
-### `format_info` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/inspect.py#L421" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `format_info` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/inspect.py#L420" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 format_info(mcp: FastMCP[Any] | FastMCP1x, format: InspectFormat | Literal['fastmcp', 'mcp'], info: FastMCPInfo | None = None) -> bytes
@@ -136,7 +136,7 @@ Information about a resource template.
 Information extracted from a FastMCP instance.
 
 
-### `InspectFormat` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/inspect.py#L354" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `InspectFormat` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/inspect.py#L353" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Output format for inspect command.

@@ -7,12 +7,47 @@ sidebarTitle: low_level
 
 ## Classes
 
-### `LowLevelServer` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/low_level.py#L14" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `MiddlewareServerSession` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/low_level.py#L32" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+ServerSession that routes initialization requests through FastMCP middleware.
+
 
 **Methods:**
 
-#### `create_initialization_options` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/low_level.py#L24" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `fastmcp` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/low_level.py#L40" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+fastmcp(self) -> FastMCP
+```
+
+Get the FastMCP instance.
+
+
+### `LowLevelServer` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/low_level.py#L89" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+**Methods:**
+
+#### `fastmcp` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/low_level.py#L103" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+fastmcp(self) -> FastMCP
+```
+
+Get the FastMCP instance.
+
+
+#### `create_initialization_options` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/low_level.py#L110" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 create_initialization_options(self, notification_options: NotificationOptions | None = None, experimental_capabilities: dict[str, dict[str, Any]] | None = None, **kwargs: Any) -> InitializationOptions
 ```
+
+#### `run` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/low_level.py#L125" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+run(self, read_stream: MemoryObjectReceiveStream[SessionMessage | Exception], write_stream: MemoryObjectSendStream[SessionMessage], initialization_options: InitializationOptions, raise_exceptions: bool = False, stateless: bool = False)
+```
+
+Overrides the run method to use the MiddlewareServerSession.
+

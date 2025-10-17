@@ -20,9 +20,19 @@
     "primary": "#2d00f7"
   },
   "contextual": {
-    "options": ["copy", "view"]
+    "options": [
+      "copy",
+      "view"
+    ]
   },
   "description": "The fast, Pythonic way to build MCP servers and clients.",
+  "errors": {
+    "404": {
+      "description": "You\u2019ve wandered outside the context.",
+      "redirect": false,
+      "title": "Don't panic."
+    }
+  },
   "favicon": {
     "dark": "/assets/brand/favicon.svg",
     "light": "/assets/brand/favicon.svg"
@@ -69,6 +79,7 @@
   "navigation": {
     "dropdowns": [
       {
+        "dropdown": "Documentation",
         "groups": [
           {
             "group": "Get Started",
@@ -136,7 +147,10 @@
               {
                 "group": "Essentials",
                 "icon": "cube",
-                "pages": ["clients/client", "clients/transports"]
+                "pages": [
+                  "clients/client",
+                  "clients/transports"
+                ]
               },
               {
                 "group": "Core Operations",
@@ -162,7 +176,10 @@
               {
                 "group": "Authentication",
                 "icon": "user-shield",
-                "pages": ["clients/auth/oauth", "clients/auth/bearer"]
+                "pages": [
+                  "clients/auth/oauth",
+                  "clients/auth/bearer"
+                ]
               }
             ]
           },
@@ -243,7 +260,6 @@
             ]
           }
         ],
-        "dropdown": "Documentation",
         "icon": "book"
       },
       {
@@ -259,7 +275,6 @@
                 "group": "fastmcp.cli",
                 "pages": [
                   "python-sdk/fastmcp-cli-__init__",
-                  "python-sdk/fastmcp-cli-claude",
                   "python-sdk/fastmcp-cli-cli",
                   {
                     "group": "install",
@@ -340,8 +355,10 @@
                           "python-sdk/fastmcp-server-auth-providers-github",
                           "python-sdk/fastmcp-server-auth-providers-google",
                           "python-sdk/fastmcp-server-auth-providers-in_memory",
+                          "python-sdk/fastmcp-server-auth-providers-introspection",
                           "python-sdk/fastmcp-server-auth-providers-jwt",
                           "python-sdk/fastmcp-server-auth-providers-scalekit",
+                          "python-sdk/fastmcp-server-auth-providers-supabase",
                           "python-sdk/fastmcp-server-auth-providers-workos"
                         ]
                       },
@@ -422,9 +439,9 @@
                     ]
                   },
                   "python-sdk/fastmcp-utilities-openapi",
-                  "python-sdk/fastmcp-utilities-storage",
                   "python-sdk/fastmcp-utilities-tests",
-                  "python-sdk/fastmcp-utilities-types"
+                  "python-sdk/fastmcp-utilities-types",
+                  "python-sdk/fastmcp-utilities-ui"
                 ]
               }
             ]
@@ -449,13 +466,6 @@
     "prompt": "Search the docs..."
   },
   "theme": "almond",
-  "errors": {
-    "404": {
-      "redirect": false,
-      "title": "Don't panic.",
-      "description": "You’ve wandered outside the context."
-    }
-  },
   "thumbnails": {
     "appearance": "light",
     "background": "/assets/brand/thumbnail-background.png"
