@@ -44,8 +44,8 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install FastMCP
-        # run with frozen to use the current lockfile; static checks will determine if it needs updating
-        run: uv sync --frozen
+        # run with upgrade to always test against the latest compatible versions
+        run: uv sync --upgrade
 
       - name: Run tests (excluding integration and client_process)
         run: uv run pytest --inline-snapshot=disable tests -m "not integration and not client_process" --numprocesses auto --maxprocesses 4 --dist worksteal
@@ -69,8 +69,8 @@ jobs:
           python-version: "3.10"
 
       - name: Install FastMCP
-        # run with frozen to use the current lockfile; static checks will determine if it needs updating
-        run: uv sync --frozen
+        # run with upgrade to always test against the latest compatible versions
+        run: uv sync --upgrade
 
       - name: Run integration tests
         # use longer per-test timeout than the default 3s

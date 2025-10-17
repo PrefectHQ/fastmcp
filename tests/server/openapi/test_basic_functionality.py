@@ -100,6 +100,7 @@ class TestTools:
             meta=dict(_fastmcp=dict(tags=["create", "users"])),
             title=None,
             annotations=None,
+            icons=None,
             description=IsStr(regex=r"^Create a new user\..*$", regex_flags=re.DOTALL),
             inputSchema={
                 "type": "object",
@@ -125,6 +126,7 @@ class TestTools:
             meta=dict(_fastmcp=dict(tags=["update", "users"])),
             title=None,
             annotations=None,
+            icons=None,
             description=IsStr(
                 regex=r"^Update a user's name\..*$", regex_flags=re.DOTALL
             ),
