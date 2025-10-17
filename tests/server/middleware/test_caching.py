@@ -1,8 +1,6 @@
 """Tests for response caching middleware."""
 
 import tempfile
-from collections.abc import Sequence
-from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import mcp.types
@@ -10,19 +8,24 @@ import pytest
 from inline_snapshot import snapshot
 from key_value.aio.stores.disk import DiskStore
 from key_value.aio.stores.memory import MemoryStore
+from key_value.aio.wrappers.statistics.wrapper import (
+    GetStatistics,
+    KVStoreCollectionStatistics,
+    PutStatistics,
+)
 from mcp.server.lowlevel.helper_types import ReadResourceContents
 from mcp.types import PromptMessage, TextContent, TextResourceContents
 from pydantic import AnyUrl, BaseModel
 
-from fastmcp import FastMCP
+from fastmcp import Context, FastMCP
 from fastmcp.client.client import CallToolResult, Client
 from fastmcp.client.transports import FastMCPTransport
 from fastmcp.prompts.prompt import FunctionPrompt, Prompt
 from fastmcp.resources.resource import Resource
 from fastmcp.server.middleware.caching import (
     CallToolSettings,
-    MethodSettings,
     ResponseCachingMiddleware,
+    ResponseCachingStatistics,
 )
 from fastmcp.server.middleware.middleware import CallNext, MiddlewareContext
 from fastmcp.tools.tool import Tool, ToolResult
@@ -81,41 +84,6 @@ class CrazyModel(BaseModel):
     i: dict[str, list[int]]
 
 
-def extract_content_for_snapshot(result: ToolResult | CallToolResult) -> dict[str, Any]:
-    return {
-        "content": [c.model_dump() for c in result.content],
-        "structured_content": result.structured_content,
-    }
-
-
-def dump_mcp_type(
-    model: BaseModel | ToolResult | ReadResourceContents,
-) -> dict[str, Any]:
-    if isinstance(model, ToolResult):
-        return extract_content_for_snapshot(model)
-
-    if isinstance(model, ReadResourceContents):
-        return {
-            "content": model.content,
-            "mime_type": model.mime_type,
-        }
-
-    return model.model_dump()
-
-
-def dump_mcp_types(
-    model: BaseModel
-    | ToolResult
-    | Sequence[BaseModel]
-    | Sequence[ToolResult]
-    | Sequence[ReadResourceContents],
-) -> list[dict[str, Any]]:
-    if isinstance(model, Sequence):
-        return [dump_mcp_type(model=m) for m in model]
-
-    return dump_mcp_type(model=model)  # type: ignore
-
-
 @pytest.fixture
 def crazy_model() -> CrazyModel:
     return CrazyModel(
@@ -171,41 +139,51 @@ class TrackingCalculator:
     def get_crazy_calls(self) -> int:
         return self.crazy_calls
 
+    async def update_tool_list(self, context: Context):
+        await context.send_tool_list_changed()
+
     def add_tools(self, fastmcp: FastMCP, prefix: str = ""):
-        fastmcp.add_tool(tool=Tool.from_function(fn=self.add, name=f"{prefix}add"))
-        fastmcp.add_tool(
+        _ = fastmcp.add_tool(tool=Tool.from_function(fn=self.add, name=f"{prefix}add"))
+        _ = fastmcp.add_tool(
             tool=Tool.from_function(fn=self.multiply, name=f"{prefix}multiply")
         )
-        fastmcp.add_tool(tool=Tool.from_function(fn=self.crazy, name=f"{prefix}crazy"))
-        fastmcp.add_tool(
+        _ = fastmcp.add_tool(
+            tool=Tool.from_function(fn=self.crazy, name=f"{prefix}crazy")
+        )
+        _ = fastmcp.add_tool(
             tool=Tool.from_function(
                 fn=self.very_large_response, name=f"{prefix}very_large_response"
             )
         )
+        _ = fastmcp.add_tool(
+            tool=Tool.from_function(
+                fn=self.update_tool_list, name=f"{prefix}update_tool_list"
+            )
+        )
 
     def add_prompts(self, fastmcp: FastMCP, prefix: str = ""):
-        fastmcp.add_prompt(
+        _ = fastmcp.add_prompt(
             prompt=FunctionPrompt.from_function(
                 fn=self.how_to_calculate, name=f"{prefix}how_to_calculate"
             )
         )
 
     def add_resources(self, fastmcp: FastMCP, prefix: str = ""):
-        fastmcp.add_resource(
+        _ = fastmcp.add_resource(
             resource=Resource.from_function(
                 fn=self.get_add_calls,
                 uri="resource://add_calls",
                 name=f"{prefix}add_calls",
             )
         )
-        fastmcp.add_resource(
+        _ = fastmcp.add_resource(
             resource=Resource.from_function(
                 fn=self.get_multiply_calls,
                 uri="resource://multiply_calls",
                 name=f"{prefix}multiply_calls",
             )
         )
-        fastmcp.add_resource(
+        _ = fastmcp.add_resource(
             resource=Resource.from_function(
                 fn=self.get_crazy_calls,
                 uri="resource://crazy_calls",
@@ -235,7 +213,7 @@ def mock_call_next() -> CallNext[mcp.types.CallToolRequestParams, ToolResult]:
     """Create a mock call_next function."""
     return AsyncMock(
         return_value=ToolResult(
-            content=[{"type": "text", "text": "test result"}],
+            content=[TextContent(type="text", text="test result")],
             structured_content={"result": "success", "value": 123},
         )
     )
@@ -245,7 +223,7 @@ def mock_call_next() -> CallNext[mcp.types.CallToolRequestParams, ToolResult]:
 def sample_tool_result() -> ToolResult:
     """Create a sample tool result for testing."""
     return ToolResult(
-        content=[{"type": "text", "text": "cached result"}],
+        content=[TextContent(type="text", text="cached result")],
         structured_content={"cached": True, "data": "test"},
     )
 
@@ -255,21 +233,12 @@ class TestResponseCachingMiddleware:
 
     def test_initialization(self):
         """Test middleware initialization."""
-        middleware = ResponseCachingMiddleware(
-            method_settings=MethodSettings(
-                call_tool=CallToolSettings(
-                    included_tools=["tool1"],
-                    excluded_tools=["tool2"],
-                )
+        assert ResponseCachingMiddleware(
+            call_tool_settings=CallToolSettings(
+                included_tools=["tool1"],
+                excluded_tools=["tool2"],
             ),
-            default_ttl=1800,
         )
-
-        assert middleware.method_settings == snapshot(
-            {"call_tool": {"included_tools": ["tool1"], "excluded_tools": ["tool2"]}}
-        )
-        assert middleware._default_ttl == 1800
-        assert middleware._max_item_size is None
 
     @pytest.mark.parametrize(
         ("tool_name", "included_tools", "excluded_tools", "result"),
@@ -300,90 +269,11 @@ class TestResponseCachingMiddleware:
         """Test tool filtering logic."""
 
         middleware1 = ResponseCachingMiddleware(
-            method_settings=MethodSettings(
-                call_tool=CallToolSettings(
-                    included_tools=included_tools, excluded_tools=excluded_tools
-                )
+            call_tool_settings=CallToolSettings(
+                included_tools=included_tools, excluded_tools=excluded_tools
             ),
         )
-        assert (
-            middleware1._matches_tool_cache_settings(
-                context=MiddlewareContext(
-                    method="tools/call",
-                    message=mcp.types.CallToolRequestParams(name=tool_name),
-                )
-            )
-            is result
-        )
-
-    def test_method_settings(self):
-        """Test method TTL."""
-        middleware = ResponseCachingMiddleware(
-            method_settings={
-                "list_tools": {"ttl": 100},
-                "call_tool": {"enabled": False},
-            },
-            default_ttl=1000,
-        )
-
-        tool_list_settings = middleware._get_cache_settings(
-            context=MiddlewareContext(method="tools/list", message=MagicMock())
-        )
-        assert tool_list_settings == {"ttl": 100}
-
-        call_tool_settings = middleware._get_cache_settings(
-            context=MiddlewareContext(method="tools/call", message=MagicMock())
-        )
-        assert call_tool_settings == {"enabled": False}
-
-        other_methods = [
-            "resources/list",
-            "prompts/list",
-            "resources/read",
-            "prompts/get",
-        ]
-        for method in other_methods:
-            cache_settings = middleware._get_cache_settings(
-                context=MiddlewareContext(method=method, message=MagicMock())
-            )
-            assert cache_settings is None
-
-            should_bypass = middleware._should_bypass_caching(
-                context=MiddlewareContext(method=method, message=MagicMock())
-            )
-            assert should_bypass
-
-    def test_cache_key_generation(self):
-        """Test cache key generation."""
-        from fastmcp.server.middleware.caching import (
-            _make_call_tool_cache_key,
-            _make_get_prompt_cache_key,
-            _make_read_resource_cache_key,
-        )
-
-        msg = mcp.types.CallToolRequestParams(
-            name="test_tool", arguments={"param1": "value1", "param2": 42}
-        )
-
-        key = _make_call_tool_cache_key(msg)
-
-        assert key == snapshot('test_tool:{"param1":"value1","param2":42}')
-
-        msg = mcp.types.ReadResourceRequestParams(
-            uri=AnyUrl("https://test_uri"),
-        )
-
-        key = _make_read_resource_cache_key(msg)
-
-        assert key == snapshot("https://test_uri/")
-
-        msg = mcp.types.GetPromptRequestParams(
-            name="test_prompt", arguments={"param1": "value1"}
-        )
-
-        key = _make_get_prompt_cache_key(msg)
-
-        assert key == snapshot('test_prompt:{"param1":"value1"}')
+        assert middleware1._matches_tool_cache_settings(tool_name=tool_name) is result
 
 
 class TestResponseCachingMiddlewareIntegration:
@@ -393,7 +283,7 @@ class TestResponseCachingMiddlewareIntegration:
     async def caching_server(
         self,
         tracking_calculator: TrackingCalculator,
-        request,
+        request: pytest.FixtureRequest,
     ):
         """Create a FastMCP server for caching tests."""
         mcp = FastMCP("CachingTestServer")
@@ -401,8 +291,7 @@ class TestResponseCachingMiddlewareIntegration:
         with tempfile.TemporaryDirectory() as temp_dir:
             disk_store = DiskStore(directory=temp_dir)
             response_caching_middleware = ResponseCachingMiddleware(
-                cache_store=disk_store if request.param == "disk" else MemoryStore(),
-                max_item_size=100000,  # 100kb
+                cache_storage=disk_store if request.param == "disk" else MemoryStore(),
             )
 
             mcp.add_middleware(middleware=response_caching_middleware)
@@ -429,15 +318,15 @@ class TestResponseCachingMiddlewareIntegration:
 
         async with Client(caching_server) as client:
             pre_tool_list: list[mcp.types.Tool] = await client.list_tools()
-            assert len(pre_tool_list) == 4
+            assert len(pre_tool_list) == 5
 
             # Add a tool and make sure it's missing from the list tool response
-            caching_server.add_tool(
+            _ = caching_server.add_tool(
                 tool=Tool.from_function(fn=tracking_calculator.add, name="add_2")
             )
 
             post_tool_list: list[mcp.types.Tool] = await client.list_tools()
-            assert len(post_tool_list) == 4
+            assert len(post_tool_list) == 5
 
             assert pre_tool_list == post_tool_list
 
@@ -449,7 +338,7 @@ class TestResponseCachingMiddlewareIntegration:
         """Test that caching works with a real FastMCP server."""
         tracking_calculator.add_tools(fastmcp=caching_server)
 
-        async with Client[FastMCPTransport](caching_server) as client:
+        async with Client[FastMCPTransport](transport=caching_server) as client:
             call_tool_result_one: CallToolResult = await client.call_tool(
                 "add", {"a": 5, "b": 3}
             )
@@ -468,7 +357,7 @@ class TestResponseCachingMiddlewareIntegration:
         """Test that caching works with a real FastMCP server."""
         tracking_calculator.add_tools(fastmcp=caching_server)
 
-        async with Client[FastMCPTransport](caching_server) as client:
+        async with Client[FastMCPTransport](transport=caching_server) as client:
             call_tool_result_one: CallToolResult = await client.call_tool(
                 "very_large_response", {}
             )
@@ -479,6 +368,27 @@ class TestResponseCachingMiddlewareIntegration:
             )
             assert call_tool_result_one == call_tool_result_two
             assert tracking_calculator.very_large_response_calls == 2
+
+    async def test_call_tool_crazy_value(
+        self,
+        caching_server: FastMCP,
+        tracking_calculator: TrackingCalculator,
+        crazy_model: CrazyModel,
+    ):
+        """Test that caching works with a real FastMCP server."""
+        tracking_calculator.add_tools(fastmcp=caching_server)
+
+        async with Client[FastMCPTransport](transport=caching_server) as client:
+            call_tool_result_one: CallToolResult = await client.call_tool(
+                "crazy", {"a": crazy_model}
+            )
+
+            assert tracking_calculator.crazy_calls == 1
+            call_tool_result_two: CallToolResult = await client.call_tool(
+                "crazy", {"a": crazy_model}
+            )
+            assert call_tool_result_one == call_tool_result_two
+            assert tracking_calculator.crazy_calls == 1
 
     async def test_list_resources(
         self, caching_server: FastMCP, tracking_calculator: TrackingCalculator
@@ -552,3 +462,46 @@ class TestResponseCachingMiddlewareIntegration:
             )
 
             assert pre_prompt == post_prompt
+
+    async def test_statistics(
+        self,
+        caching_server: FastMCP,
+    ):
+        """Test that statistics are collected correctly."""
+        caching_middleware = caching_server.middleware[0]
+        assert isinstance(caching_middleware, ResponseCachingMiddleware)
+
+        async with Client[FastMCPTransport](transport=caching_server) as client:
+            statistics = caching_middleware.statistics()
+            assert statistics == snapshot(ResponseCachingStatistics())
+
+            _ = await client.call_tool("add", {"a": 5, "b": 3})
+
+            statistics = caching_middleware.statistics()
+            assert statistics == snapshot(
+                ResponseCachingStatistics(
+                    list_tools=KVStoreCollectionStatistics(
+                        get=GetStatistics(count=2, hit=1, miss=1),
+                        put=PutStatistics(count=1),
+                    ),
+                    call_tool=KVStoreCollectionStatistics(
+                        get=GetStatistics(count=1, miss=1), put=PutStatistics(count=1)
+                    ),
+                )
+            )
+
+            _ = await client.call_tool("add", {"a": 5, "b": 3})
+
+            statistics = caching_middleware.statistics()
+            assert statistics == snapshot(
+                ResponseCachingStatistics(
+                    list_tools=KVStoreCollectionStatistics(
+                        get=GetStatistics(count=2, hit=1, miss=1),
+                        put=PutStatistics(count=1),
+                    ),
+                    call_tool=KVStoreCollectionStatistics(
+                        get=GetStatistics(count=2, hit=1, miss=1),
+                        put=PutStatistics(count=1),
+                    ),
+                )
+            )

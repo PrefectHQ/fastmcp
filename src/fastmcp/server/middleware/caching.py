@@ -1,20 +1,20 @@
 """A middleware for response caching."""
 
-import json
 from collections.abc import Sequence
-from typing import Any, TypedDict, TypeVar, cast
+from logging import Logger
+from typing import Any, TypedDict
 
 import mcp.types
 import pydantic_core
 from key_value.aio.adapters.pydantic import PydanticAdapter
 from key_value.aio.protocols.key_value import AsyncKeyValue
 from key_value.aio.stores.memory import MemoryStore
+from key_value.aio.wrappers.limit_size import LimitSizeWrapper
 from key_value.aio.wrappers.statistics import StatisticsWrapper
 from key_value.aio.wrappers.statistics.wrapper import (
     KVStoreCollectionStatistics,
 )
 from mcp.server.lowlevel.helper_types import ReadResourceContents
-from mcp.types import PromptMessage
 from pydantic import BaseModel, Field
 from typing_extensions import NotRequired, Self, override
 
@@ -24,130 +24,40 @@ from fastmcp.server.middleware.middleware import CallNext, Middleware, Middlewar
 from fastmcp.tools.tool import Tool, ToolResult
 from fastmcp.utilities.logging import get_logger
 
-logger = get_logger(__name__)
+logger: Logger = get_logger(name=__name__)
 
 # Constants
 ONE_HOUR_IN_SECONDS = 3600
 FIVE_MINUTES_IN_SECONDS = 300
 
-ONE_GB_IN_BYTES = 1024 * 1024 * 1024
 ONE_MB_IN_BYTES = 1024 * 1024
 
 GLOBAL_KEY = "__global__"
 
 
-class CachableToolResult(BaseModel, ToolResult):
-    structured_content: dict[str, Any] | None
-    content: list[mcp.types.ContentBlock]
+class CachableReadResourceContents(BaseModel):
+    """A wrapper for ReadResourceContents that can be cached."""
 
-    @classmethod
-    def from_tool_result(cls, tool_result: ToolResult) -> Self:
-        return cls(
-            structured_content=tool_result.structured_content,
-            content=tool_result.content,
-        )
+    content: str | bytes
+    mime_type: str | None = None
 
     def get_size(self) -> int:
-        return _get_size_of_tool_result(self)
-
-
-class CachablePrompt(Prompt):
-    @override
-    async def render(
-        self,
-        arguments: dict[str, Any] | None = None,
-    ) -> list[PromptMessage]:
-        """Render the prompt with arguments."""
-        raise NotImplementedError(
-            "Prompt.render() is not implemented on cached prompts"
-        )
+        return len(self.model_dump_json())
 
     @classmethod
-    def from_list_prompts(cls, prompts: list[Prompt]) -> list[Self]:
-        cachable_prompts: list[Self] = []
-        for prompt in prompts:
-            cachable_prompts.append(
-                cls(
-                    name=prompt.name,
-                    title=prompt.title,
-                    description=prompt.description,
-                    arguments=prompt.arguments,
-                    meta=prompt.meta,
-                    tags=prompt.tags,
-                    enabled=prompt.enabled,
-                )
-            )
-        return cachable_prompts
-
-
-class CachablePromptResult(mcp.types.GetPromptResult): ...
-
-
-class CachableResource(Resource):
-    @override
-    async def read(self) -> str | bytes:
-        """Read the resource content."""
-        raise NotImplementedError(
-            "Resource.read() is not implemented on cached resources"
-        )
+    def get_sizes(cls, values: Sequence[Self]) -> int:
+        return sum([item.get_size() for item in values])
 
     @classmethod
-    def from_list_resources(cls, resources: list[Resource]) -> list[Self]:
-        cachable_resources: list[Self] = []
-        for resource in resources:
-            cachable_resources.append(
-                cls(
-                    name=resource.name,
-                    description=resource.description,
-                    uri=resource.uri,
-                    mime_type=resource.mime_type,
-                    annotations=resource.annotations,
-                    meta=resource.meta,
-                    tags=resource.tags,
-                    enabled=resource.enabled,
-                )
-            )
-        return cachable_resources
+    def wrap(cls, values: Sequence[ReadResourceContents]) -> list[Self]:
+        return [cls(content=item.content, mime_type=item.mime_type) for item in values]
 
-
-class CachableTool(Tool):
     @classmethod
-    def from_list_tools(cls, tools: list[Tool]) -> list[Self]:
-        cachable_tools: list[Self] = []
-        for tool in tools:
-            cachable_tools.append(
-                cls(
-                    name=tool.name,
-                    description=tool.description,
-                    parameters=tool.parameters,
-                    output_schema=tool.output_schema,
-                    annotations=tool.annotations,
-                    serializer=tool.serializer,
-                    meta=tool.meta,
-                    tags=tool.tags,
-                    enabled=tool.enabled,
-                )
-            )
-        return cachable_tools
-
-
-class CachableReadResourceContents(BaseModel, ReadResourceContents): ...
-
-
-class CachableToolList(BaseModel):
-    cachable_tools: list[CachableTool]
-
-
-class CachableResourceList(BaseModel):
-    cachable_resources: list[CachableResource]
-
-
-class CachablePromptList(BaseModel):
-    cachable_prompts: list[CachablePrompt]
-
-
-class CachableReadResourceContentsList(BaseModel):
-    cachable_read_resource_contents: list[CachableReadResourceContents]
+    def unwrap(cls, values: Sequence[Self]) -> list[ReadResourceContents]:
+        return [
+            ReadResourceContents(content=item.content, mime_type=item.mime_type)
+            for item in values
+        ]
 
 
 class SharedMethodSettings(TypedDict):
@@ -184,53 +94,6 @@ class GetPromptSettings(SharedMethodSettings):
     """Configuration options for Prompt-related caching."""
 
 
-class MethodSettings(TypedDict):
-    """Configuration options for mcp "methods" in the response caching middleware."""
-
-    list_tools: NotRequired[ListToolsSettings]
-    call_tool: NotRequired[CallToolSettings]
-
-    list_resources: NotRequired[ListResourcesSettings]
-    read_resource: NotRequired[ReadResourceSettings]
-
-    list_prompts: NotRequired[ListPromptsSettings]
-    get_prompt: NotRequired[GetPromptSettings]
-
-
-MethodSettingsType = TypeVar("MethodSettingsType", bound=SharedMethodSettings)
-
-
-MCP_METHOD_TO_METHOD_SETTINGS_KEY = {
-    "tools/list": "list_tools",
-    "tools/call": "call_tool",
-    "resources/list": "list_resources",
-    "resources/read": "read_resource",
-    "prompts/list": "list_prompts",
-    "prompts/get": "get_prompt",
-}
-
-DEFAULT_METHOD_SETTINGS: MethodSettings = MethodSettings(
-    list_tools=SharedMethodSettings(
-        ttl=FIVE_MINUTES_IN_SECONDS,
-    ),
-    call_tool=CallToolSettings(
-        ttl=ONE_HOUR_IN_SECONDS,
-    ),
-    list_resources=SharedMethodSettings(
-        ttl=FIVE_MINUTES_IN_SECONDS,
-    ),
-    list_prompts=SharedMethodSettings(
-        ttl=FIVE_MINUTES_IN_SECONDS,
-    ),
-    read_resource=SharedMethodSettings(
-        ttl=ONE_HOUR_IN_SECONDS,
-    ),
-    get_prompt=SharedMethodSettings(
-        ttl=ONE_HOUR_IN_SECONDS,
-    ),
-)
-
-
 class ResponseCachingStatistics(BaseModel):
     list_tools: KVStoreCollectionStatistics | None = Field(default=None)
     list_resources: KVStoreCollectionStatistics | None = Field(default=None)
@@ -255,66 +118,93 @@ class ResponseCachingMiddleware(Middleware):
 
     def __init__(
         self,
-        cache_store: AsyncKeyValue | None = None,
-        method_settings: MethodSettings | None = None,
-        default_ttl: int = ONE_HOUR_IN_SECONDS,
-        max_item_size: int | None = None,
+        cache_storage: AsyncKeyValue | None = None,
+        list_tools_settings: ListToolsSettings | None = None,
+        list_resources_settings: ListResourcesSettings | None = None,
+        list_prompts_settings: ListPromptsSettings | None = None,
+        read_resource_settings: ReadResourceSettings | None = None,
+        get_prompt_settings: GetPromptSettings | None = None,
+        call_tool_settings: CallToolSettings | None = None,
+        max_item_size: int = ONE_MB_IN_BYTES,
     ):
         """Initialize the response caching middleware.
 
         Args:
-            cache_backend: The cache backend to use. If None, an in-memory cache is used.
-            method_settings: The settings for the middleware. If None, the default settings are used.
-            default_ttl: The default TTL for cached responses. Defaults to one hour.
-            max_item_size: The maximum size of an item to cache. Defaults to no size limit.
+            cache_storage: The cache backend to use. If None, an in-memory cache is used.
+            list_tools_settings: The settings for the list tools method. If None, the default settings are used (5 minute TTL).
+            list_resources_settings: The settings for the list resources method. If None, the default settings are used (5 minute TTL).
+            list_prompts_settings: The settings for the list prompts method. If None, the default settings are used (5 minute TTL).
+            read_resource_settings: The settings for the read resource method. If None, the default settings are used (1 hour TTL).
+            get_prompt_settings: The settings for the get prompt method. If None, the default settings are used (1 hour TTL).
+            call_tool_settings: The settings for the call tool method. If None, the default settings are used (1 hour TTL).
+            max_item_size: The maximum size of items eligible for caching. Defaults to 1MB.
         """
-        self._default_ttl: int = default_ttl
-        self._backend: AsyncKeyValue = cache_store or MemoryStore()
-        self._stats: StatisticsWrapper = StatisticsWrapper(store=self._backend)
 
-        self._max_item_size: int | None = max_item_size
+        self._backend: AsyncKeyValue = cache_storage or MemoryStore()
 
-        self.method_settings: MethodSettings = (
-            method_settings or DEFAULT_METHOD_SETTINGS
+        # When the size limit is exceeded, the put will silently fail
+        self._size_limiter: LimitSizeWrapper = LimitSizeWrapper(
+            key_value=self._backend, max_size=max_item_size, raise_on_too_large=False
+        )
+        self._stats: StatisticsWrapper = StatisticsWrapper(key_value=self._size_limiter)
+
+        self._list_tools_settings: ListToolsSettings = (
+            list_tools_settings or ListToolsSettings()
+        )
+        self._list_resources_settings: ListResourcesSettings = (
+            list_resources_settings or ListResourcesSettings()
+        )
+        self._list_prompts_settings: ListPromptsSettings = (
+            list_prompts_settings or ListPromptsSettings()
         )
 
-        self._list_tools_cache: PydanticAdapter[CachableToolList] = PydanticAdapter(
+        self._read_resource_settings: ReadResourceSettings = (
+            read_resource_settings or ReadResourceSettings()
+        )
+        self._get_prompt_settings: GetPromptSettings = (
+            get_prompt_settings or GetPromptSettings()
+        )
+        self._call_tool_settings: CallToolSettings = (
+            call_tool_settings or CallToolSettings()
+        )
+
+        self._list_tools_cache: PydanticAdapter[list[Tool]] = PydanticAdapter(
             key_value=self._stats,
-            pydantic_model=CachableToolList,
+            pydantic_model=list[Tool],
             default_collection="tools/list",
         )
 
-        self._list_resources_cache: PydanticAdapter[CachableResourceList] = (
-            PydanticAdapter(
-                key_value=self._stats,
-                pydantic_model=CachableResourceList,
-                default_collection="resources/list",
-            )
+        self._list_resources_cache: PydanticAdapter[list[Resource]] = PydanticAdapter(
+            key_value=self._stats,
+            pydantic_model=list[Resource],
+            default_collection="resources/list",
         )
 
-        self._list_prompts_cache: PydanticAdapter[CachablePromptList] = PydanticAdapter(
+        self._list_prompts_cache: PydanticAdapter[list[Prompt]] = PydanticAdapter(
             key_value=self._stats,
-            pydantic_model=CachablePromptList,
+            pydantic_model=list[Prompt],
             default_collection="prompts/list",
         )
 
-        self._read_resource_cache: PydanticAdapter[CachableReadResourceContentsList] = (
+        self._read_resource_cache: PydanticAdapter[
+            list[CachableReadResourceContents]
+        ] = PydanticAdapter(
+            key_value=self._stats,
+            pydantic_model=list[CachableReadResourceContents],
+            default_collection="resources/read",
+        )
+
+        self._get_prompt_cache: PydanticAdapter[mcp.types.GetPromptResult] = (
             PydanticAdapter(
                 key_value=self._stats,
-                pydantic_model=CachableReadResourceContentsList,
-                default_collection="resources/read",
+                pydantic_model=mcp.types.GetPromptResult,
+                default_collection="prompts/get",
             )
         )
 
-        self._get_prompt_cache: PydanticAdapter[CachablePromptResult] = PydanticAdapter(
+        self._call_tool_cache: PydanticAdapter[ToolResult] = PydanticAdapter(
             key_value=self._stats,
-            pydantic_model=CachablePromptResult,
-            default_collection="prompts/get",
-        )
-
-        self._call_tool_cache: PydanticAdapter[CachableToolResult] = PydanticAdapter(
-            key_value=self._stats,
-            pydantic_model=CachableToolResult,
+            pydantic_model=ToolResult,
             default_collection="tools/call",
         )
 
@@ -322,21 +212,38 @@ class ResponseCachingMiddleware(Middleware):
     async def on_list_tools(
         self,
         context: MiddlewareContext[mcp.types.ListToolsRequest],
-        call_next: CallNext[mcp.types.ListToolsRequest, list[Tool]],
-    ) -> list[Tool]:
-        if self._should_bypass_caching(context=context):
-            return await call_next(context=context)
+        call_next: CallNext[mcp.types.ListToolsRequest, Sequence[Tool]],
+    ) -> Sequence[Tool]:
+        """List tools from the cache, if caching is enabled, and the result is in the cache. Otherwise,
+        otherwise call the next middleware and store the result in the cache if caching is enabled."""
+        if self._list_tools_settings.get("enabled") is False:
+            return await call_next(context)
 
         if cached_value := await self._list_tools_cache.get(key=GLOBAL_KEY):
-            return cached_value.cachable_tools
+            return cached_value
 
-        value: list[Tool] = await call_next(context=context)
+        tools: Sequence[Tool] = await call_next(context=context)
 
-        cachable_tools: list[CachableTool] = CachableTool.from_list_tools(tools=value)
+        # Turn any subclass of Tool into a Tool
+        cachable_tools: list[Tool] = [
+            Tool(
+                name=tool.name,
+                title=tool.title,
+                description=tool.description,
+                parameters=tool.parameters,
+                output_schema=tool.output_schema,
+                annotations=tool.annotations,
+                meta=tool.meta,
+                tags=tool.tags,
+                enabled=tool.enabled,
+            )
+            for tool in tools
+        ]
 
         await self._list_tools_cache.put(
             key=GLOBAL_KEY,
-            value=CachableToolList(cachable_tools=cachable_tools),
+            value=cachable_tools,
+            ttl=self._list_tools_settings.get("ttl", FIVE_MINUTES_IN_SECONDS),
         )
 
         return cachable_tools
@@ -345,25 +252,38 @@ class ResponseCachingMiddleware(Middleware):
     async def on_list_resources(
         self,
         context: MiddlewareContext[mcp.types.ListResourcesRequest],
-        call_next: CallNext[mcp.types.ListResourcesRequest, list[Resource]],
-    ) -> list[Resource]:
+        call_next: CallNext[mcp.types.ListResourcesRequest, Sequence[Resource]],
+    ) -> Sequence[Resource]:
         """List resources from the cache, if caching is enabled, and the result is in the cache. Otherwise,
         otherwise call the next middleware and store the result in the cache if caching is enabled."""
-        if self._should_bypass_caching(context=context):
+        if self._list_resources_settings.get("enabled") is False:
             return await call_next(context)
 
         if cached_value := await self._list_resources_cache.get(key=GLOBAL_KEY):
-            return cached_value.cachable_resources
+            return cached_value
 
-        value: list[Resource] = await call_next(context=context)
+        resources: Sequence[Resource] = await call_next(context=context)
 
-        cachable_resources: list[CachableResource] = (
-            CachableResource.from_list_resources(resources=value)
-        )
+        # Turn any subclass of Resource into a Resource
+        cachable_resources: list[Resource] = [
+            Resource(
+                name=resource.name,
+                title=resource.title,
+                description=resource.description,
+                tags=resource.tags,
+                meta=resource.meta,
+                mime_type=resource.mime_type,
+                annotations=resource.annotations,
+                enabled=resource.enabled,
+                uri=resource.uri,
+            )
+            for resource in resources
+        ]
 
         await self._list_resources_cache.put(
             key=GLOBAL_KEY,
-            value=CachableResourceList(cachable_resources=cachable_resources),
+            value=cachable_resources,
+            ttl=self._list_resources_settings.get("ttl", FIVE_MINUTES_IN_SECONDS),
         )
 
         return cachable_resources
@@ -372,25 +292,36 @@ class ResponseCachingMiddleware(Middleware):
     async def on_list_prompts(
         self,
         context: MiddlewareContext[mcp.types.ListPromptsRequest],
-        call_next: CallNext[mcp.types.ListPromptsRequest, list[Prompt]],
-    ) -> list[Prompt]:
+        call_next: CallNext[mcp.types.ListPromptsRequest, Sequence[Prompt]],
+    ) -> Sequence[Prompt]:
         """List prompts from the cache, if caching is enabled, and the result is in the cache. Otherwise,
         otherwise call the next middleware and store the result in the cache if caching is enabled."""
-        if self._should_bypass_caching(context=context):
+        if self._list_prompts_settings.get("enabled") is False:
             return await call_next(context)
 
         if cached_value := await self._list_prompts_cache.get(key=GLOBAL_KEY):
-            return cached_value.cachable_prompts
+            return cached_value
 
-        value: list[Prompt] = await call_next(context=context)
+        prompts: Sequence[Prompt] = await call_next(context=context)
 
-        cachable_prompts: list[CachablePrompt] = CachablePrompt.from_list_prompts(
-            prompts=value
-        )
+        # Turn any subclass of Prompt into a Prompt
+        cachable_prompts: list[Prompt] = [
+            Prompt(
+                name=prompt.name,
+                title=prompt.title,
+                description=prompt.description,
+                tags=prompt.tags,
+                meta=prompt.meta,
+                enabled=prompt.enabled,
+                arguments=prompt.arguments,
+            )
+            for prompt in prompts
+        ]
 
         await self._list_prompts_cache.put(
             key=GLOBAL_KEY,
-            value=CachablePromptList(cachable_prompts=cachable_prompts),
+            value=cachable_prompts,
+            ttl=self._list_prompts_settings.get("ttl", FIVE_MINUTES_IN_SECONDS),
         )
 
         return cachable_prompts
@@ -400,69 +331,60 @@ class ResponseCachingMiddleware(Middleware):
         self,
         context: MiddlewareContext[mcp.types.CallToolRequestParams],
         call_next: CallNext[mcp.types.CallToolRequestParams, ToolResult],
-    ) -> Any:
+    ) -> ToolResult:
         """Call a tool from the cache, if caching is enabled, and the result is in the cache. Otherwise,
         otherwise call the next middleware and store the result in the cache if caching is enabled."""
-        if self._should_bypass_caching(context=context):
+        tool_name = context.message.name
+
+        if self._call_tool_settings.get(
+            "enabled"
+        ) is False or not self._matches_tool_cache_settings(tool_name=tool_name):
             return await call_next(context=context)
 
-        if not self._matches_tool_cache_settings(context=context):
-            return await call_next(context=context)
+        cache_key: str = f"{tool_name}:{_get_arguments_str(context.message.arguments)}"
 
-        if cached_value := await self._call_tool_cache.get(
-            key=_make_call_tool_cache_key(msg=context.message)
-        ):
+        if cached_value := await self._call_tool_cache.get(key=cache_key):
             return cached_value
 
         tool_result: ToolResult = await call_next(context=context)
 
-        cachable_value: CachableToolResult = CachableToolResult.from_tool_result(
-            tool_result=tool_result
-        )
-
-        if self._max_item_size and cachable_value.get_size() > self._max_item_size:
-            return tool_result
-
         await self._call_tool_cache.put(
-            key=_make_call_tool_cache_key(msg=context.message),
-            value=cachable_value,
+            key=cache_key,
+            value=tool_result,
+            ttl=self._call_tool_settings.get("ttl", ONE_HOUR_IN_SECONDS),
         )
 
-        return cachable_value
+        return tool_result
 
     @override
     async def on_read_resource(
         self,
         context: MiddlewareContext[mcp.types.ReadResourceRequestParams],
         call_next: CallNext[
-            mcp.types.ReadResourceRequestParams, list[ReadResourceContents]
+            mcp.types.ReadResourceRequestParams, Sequence[ReadResourceContents]
         ],
-    ) -> list[ReadResourceContents]:
+    ) -> Sequence[ReadResourceContents]:
         """Read a resource from the cache, if caching is enabled, and the result is in the cache. Otherwise,
         otherwise call the next middleware and store the result in the cache if caching is enabled."""
-        if self._should_bypass_caching(context=context):
+        if self._read_resource_settings.get("enabled") is False:
             return await call_next(context=context)
 
-        if cached_value := await self._read_resource_cache.get(
-            key=_make_read_resource_cache_key(msg=context.message)
-        ):
-            return cached_value.cachable_read_resource_contents
+        cache_key: str = str(context.message.uri)
+        cached_value: list[CachableReadResourceContents] | None
 
-        value: list[ReadResourceContents] = await call_next(context=context)
+        if cached_value := await self._read_resource_cache.get(key=cache_key):
+            return CachableReadResourceContents.unwrap(values=cached_value)
 
-        cachable_read_resource_contents: list[CachableReadResourceContents] = [
-            CachableReadResourceContents(content=item.content, mime_type=item.mime_type)
-            for item in value
-        ]
+        value: Sequence[ReadResourceContents] = await call_next(context=context)
+        cached_value = CachableReadResourceContents.wrap(values=value)
 
         await self._read_resource_cache.put(
-            key=_make_read_resource_cache_key(msg=context.message),
-            value=CachableReadResourceContentsList(
-                cachable_read_resource_contents=cachable_read_resource_contents
-            ),
+            key=cache_key,
+            value=cached_value,
+            ttl=self._read_resource_settings.get("ttl", ONE_HOUR_IN_SECONDS),
         )
 
-        return cachable_read_resource_contents
+        return CachableReadResourceContents.unwrap(values=cached_value)
 
     @override
     async def on_get_prompt(
@@ -474,117 +396,39 @@ class ResponseCachingMiddleware(Middleware):
     ) -> mcp.types.GetPromptResult:
         """Get a prompt from the cache, if caching is enabled, and the result is in the cache. Otherwise,
         otherwise call the next middleware and store the result in the cache if caching is enabled."""
-        if self._should_bypass_caching(context=context):
-            return await call_next(context)
+        if self._get_prompt_settings.get("enabled") is False:
+            return await call_next(context=context)
 
-        if cached_value := await self._get_prompt_cache.get(
-            key=_make_get_prompt_cache_key(msg=context.message)
-        ):
+        cache_key: str = f"{context.message.name}:{_get_arguments_str(arguments=context.message.arguments)}"
+
+        if cached_value := await self._get_prompt_cache.get(key=cache_key):
             return cached_value
 
         value: mcp.types.GetPromptResult = await call_next(context=context)
 
-        cachable_value: CachablePromptResult = CachablePromptResult(
-            messages=value.messages, description=value.description, _meta=value.meta
-        )
-
         await self._get_prompt_cache.put(
-            key=_make_get_prompt_cache_key(msg=context.message),
-            value=cachable_value,
+            key=cache_key,
+            value=value,
+            ttl=self._get_prompt_settings.get("ttl", ONE_HOUR_IN_SECONDS),
         )
 
-        return cachable_value
+        return value
 
-    @override
-    async def on_notification(
-        self,
-        context: MiddlewareContext[mcp.types.Notification[Any, Any]],
-        call_next: CallNext[mcp.types.Notification[Any, Any], Any],
-    ) -> Any:
-        """Handle a notification from the server. If the notification is a tool/resource/prompt list changed
-        notification, delete the cache for the affected method."""
-        if isinstance(context.message, mcp.types.ToolListChangedNotification):
-            _ = await self._list_tools_cache.delete(key=GLOBAL_KEY)
-        elif isinstance(context.message, mcp.types.ResourceListChangedNotification):
-            _ = await self._list_resources_cache.delete(key=GLOBAL_KEY)
-        elif isinstance(context.message, mcp.types.PromptListChangedNotification):
-            _ = await self._list_prompts_cache.delete(key=GLOBAL_KEY)
-        else:
-            pass
-
-        return await call_next(context=context)
-
-    def _matches_tool_cache_settings(
-        self, context: MiddlewareContext[mcp.types.CallToolRequestParams]
-    ) -> bool:
+    def _matches_tool_cache_settings(self, tool_name: str) -> bool:
         """Check if the tool matches the cache settings for tool calls."""
 
-        tool_name = context.message.name
-
-        tool_call_cache_settings: CallToolSettings | None = self._get_cache_settings(
-            context=context,
-            settings_type=CallToolSettings,
-        )
-
-        if not tool_call_cache_settings:
-            return True
-
-        if included_tools := tool_call_cache_settings.get("included_tools"):
+        if included_tools := self._call_tool_settings.get("included_tools"):
             if tool_name not in included_tools:
                 return False
 
-        if excluded_tools := tool_call_cache_settings.get("excluded_tools"):
+        if excluded_tools := self._call_tool_settings.get("excluded_tools"):
             if tool_name in excluded_tools:
                 return False
 
         return True
 
-    def _get_cache_settings(
-        self,
-        context: MiddlewareContext[Any],
-        settings_type: type[MethodSettingsType] = SharedMethodSettings,
-    ) -> MethodSettingsType | None:
-        """Get the cache settings for a method."""
-
-        if not context.method:
-            return None
-
-        method_settings_key = MCP_METHOD_TO_METHOD_SETTINGS_KEY.get(
-            context.method, None
-        )
-
-        if (
-            method_settings_key is None
-            or method_settings_key not in self.method_settings
-        ):
-            return None
-
-        return cast(MethodSettingsType, self.method_settings[method_settings_key])
-
-    def _get_cache_ttl(self, context: MiddlewareContext[Any]) -> int:
-        """Get the cache TTL for a method."""
-
-        settings: SharedMethodSettings | None = self._get_cache_settings(
-            context=context,
-        )
-
-        if not settings or "ttl" not in settings:
-            return self._default_ttl
-
-        return settings["ttl"]
-
-    def _should_bypass_caching(self, context: MiddlewareContext[Any]) -> bool:
-        """Check if the method should bypass caching."""
-
-        if not (cache_settings := self._get_cache_settings(context=context)):
-            return True
-
-        if cache_settings.get("enabled") is False:
-            return True
-
-        return False
-
     def statistics(self) -> ResponseCachingStatistics:
+        """Get the statistics for the cache."""
         return ResponseCachingStatistics(
             list_tools=self._stats.statistics.collections.get("tools/list"),
             list_resources=self._stats.statistics.collections.get("resources/list"),
@@ -593,24 +437,6 @@ class ResponseCachingMiddleware(Middleware):
             get_prompt=self._stats.statistics.collections.get("prompts/get"),
             call_tool=self._stats.statistics.collections.get("tools/call"),
         )
-
-
-def _make_call_tool_cache_key(msg: mcp.types.CallToolRequestParams) -> str:
-    """Make a cache key for a tool call by hashing the tool name and its arguments."""
-
-    return f"{msg.name}:{_get_arguments_str(msg.arguments)}"
-
-
-def _make_read_resource_cache_key(msg: mcp.types.ReadResourceRequestParams) -> str:
-    """Make a cache key for a resource read by hashing the resource URI."""
-
-    return f"{msg.uri}"
-
-
-def _make_get_prompt_cache_key(msg: mcp.types.GetPromptRequestParams) -> str:
-    """Make a cache key for a prompt get by hashing the prompt name and its arguments."""
-
-    return f"{msg.name}:{_get_arguments_str(msg.arguments)}"
 
 
 def _get_arguments_str(arguments: dict[str, Any] | None) -> str:
@@ -624,27 +450,3 @@ def _get_arguments_str(arguments: dict[str, Any] | None) -> str:
 
     except TypeError:
         return repr(arguments)
-
-
-def _get_size_of_content_blocks(
-    value: mcp.types.ContentBlock | Sequence[mcp.types.ContentBlock],
-) -> int:
-    """Get the size of a series of content blocks by summing the size of the JSON representation of each block."""
-
-    if isinstance(value, mcp.types.ContentBlock):
-        value = [value]
-
-    return sum([len(item.model_dump_json()) for item in value])
-
-
-def _get_size_of_tool_result(value: ToolResult) -> int:
-    """Get the size of a tool result by summing the size of the content blocks and the size of the structured content."""
-
-    content_size = _get_size_of_content_blocks(value.content)
-    structured_content_size = len(
-        json.dumps(
-            value.structured_content, sort_keys=True, separators=(",", ":")
-        ).encode("utf-8")
-    )
-
-    return content_size + structured_content_size
