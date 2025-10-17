@@ -1,0 +1,44 @@
+---
+title: Upgrade Guide
+sidebarTitle: Upgrade Guide
+description: Migration instructions for upgrading between FastMCP versions
+icon: up
+---
+
+This guide provides migration instructions for breaking changes and major updates when upgrading between FastMCP versions.
+
+## v2.13.0
+
+### OAuth Token Key Management
+
+The OAuth proxy now issues its own JWT tokens to clients instead of forwarding upstream provider tokens. This improves security by maintaining proper token audience boundaries.
+
+**What changed:**
+
+The OAuth proxy now implements a token factory pattern - it receives tokens from your OAuth provider (GitHub, Google, etc.), encrypts and stores them, then issues its own FastMCP JWT tokens to clients. This requires cryptographic keys for JWT signing and token encryption.
+
+By default, these keys are ephemeral (random salt at startup, not persisted). For most users (development/testing), this works fine since re-authentication after restart is acceptable. For production deployments where you want tokens to persist across restarts, provide explicit keys via parameters.
+
+**Production deployments:**
+
+If you want tokens to survive server restarts, add two new parameters:
+
+```python
+auth = GitHubProvider(
+    client_id=os.environ["GITHUB_CLIENT_ID"],
+    client_secret=os.environ["GITHUB_CLIENT_SECRET"],
+    base_url="https://your-server.com",
+
+    # Add these for production token persistence
+    jwt_signing_key=os.environ["JWT_SIGNING_KEY"],
+    token_encryption_key=os.environ["TOKEN_ENCRYPTION_KEY"],
+
+    client_storage=RedisStore(...)  # Persistent storage
+)
+```
+
+Both keys accept any secret string. Make sure they're different from each other.
+
+**More information:**
+- [OAuth Token Security](/deployment/http#oauth-token-security) - Complete production setup guide
+- [OAuth Proxy Parameters](/servers/auth/oauth-proxy#configuration-parameters) - Parameter documentation

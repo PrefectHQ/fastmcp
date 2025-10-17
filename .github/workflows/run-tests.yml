@@ -31,7 +31,7 @@ jobs:
         os: [ubuntu-latest, windows-latest]
         python-version: ["3.10"]
       fail-fast: false
-    timeout-minutes: 5
+    timeout-minutes: 10
 
     steps:
       - uses: actions/checkout@v5

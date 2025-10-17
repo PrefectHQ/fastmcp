@@ -57,6 +57,10 @@ from starlette.responses import HTMLResponse, RedirectResponse
 from starlette.routing import Route
 
 from fastmcp.server.auth.auth import OAuthProvider, TokenVerifier
+from fastmcp.server.auth.jwt_issuer import (
+    JWTIssuer,
+    TokenEncryption,
+)
 from fastmcp.server.auth.redirect_validation import (
     validate_redirect_uri,
 )
@@ -132,6 +136,39 @@ class ClientCode(BaseModel):
     idp_tokens: dict[str, Any]
     expires_at: float
     created_at: float
+
+
+class UpstreamTokenSet(BaseModel):
+    """Stored upstream OAuth tokens from identity provider.
+
+    These tokens are obtained from the upstream provider (Google, GitHub, etc.)
+    and are stored encrypted at rest. They are never exposed to MCP clients.
+    """
+
+    upstream_token_id: str  # Unique ID for this token set
+    access_token: bytes  # Encrypted upstream access token
+    refresh_token: bytes | None  # Encrypted upstream refresh token
+    refresh_token_expires_at: (
+        float | None
+    )  # Unix timestamp when refresh token expires (if known)
+    expires_at: float  # Unix timestamp when access token expires
+    token_type: str  # Usually "Bearer"
+    scope: str  # Space-separated scopes
+    client_id: str  # MCP client this is bound to
+    created_at: float  # Unix timestamp
+    raw_token_data: dict[str, Any] = Field(default_factory=dict)  # Full token response
+
+
+class JTIMapping(BaseModel):
+    """Maps FastMCP token JTI to upstream token ID.
+
+    This allows stateless JWT validation while still being able to look up
+    the corresponding upstream token when tools need to access upstream APIs.
+    """
+
+    jti: str  # JWT ID from FastMCP-issued token
+    upstream_token_id: str  # References UpstreamTokenSet
+    created_at: float  # Unix timestamp
 
 
 class ProxyDCRClient(OAuthClientInformationFull):
@@ -474,6 +511,10 @@ class OAuthProxy(OAuthProvider):
         extra_token_params: dict[str, str] | None = None,
         # Client storage
         client_storage: AsyncKeyValue | None = None,
+        # JWT signing key (optional, ephemeral if not provided)
+        jwt_signing_key: str | bytes | None = None,
+        # Token encryption key (optional, ephemeral if not provided)
+        token_encryption_key: str | bytes | None = None,
     ):
         """Initialize the OAuth proxy provider.
 
@@ -508,6 +549,12 @@ class OAuthProxy(OAuthProvider):
             extra_token_params: Additional parameters to forward to the upstream token endpoint.
                 Useful for provider-specific parameters during token exchange.
             client_storage: An AsyncKeyValue-compatible store for client registrations, registrations are stored in memory if not provided
+            jwt_signing_key: Optional secret for signing FastMCP JWT tokens (accepts any string or bytes).
+                Default: ephemeral (random salt at startup, won't survive restart).
+                Production: provide explicit key from environment variable.
+            token_encryption_key: Optional secret for encrypting upstream tokens at rest (accepts any string or bytes).
+                Default: ephemeral (random salt at startup, won't survive restart).
+                Production: provide explicit key from environment variable.
         """
         # Always enable DCR since we implement it locally for MCP clients
         client_registration_options = ClientRegistrationOptions(
@@ -579,8 +626,10 @@ class OAuthProxy(OAuthProvider):
         # Warn if using MemoryStore in production
         if isinstance(client_storage, MemoryStore):
             logger.warning(
-                "Using in-memory storage - all OAuth state will be lost on restart. "
-                "For production, configure persistent storage (Redis, PostgreSQL, etc.)."
+                "Using in-memory storage - all OAuth state (clients, tokens) will be lost on restart. "
+                "Additionally, without explicit jwt_signing_key and token_encryption_key, "
+                "keys are ephemeral and tokens won't survive restart even with persistent storage. "
+                "For production, configure persistent storage AND explicit keys."
             )
 
         # Cache HTTPS check to avoid repeated logging
@@ -612,6 +661,29 @@ class OAuthProxy(OAuthProvider):
             default_collection="mcp-authorization-codes",
             raise_on_validation_error=True,
         )
+
+        # Storage for upstream tokens (encrypted at rest)
+        self._upstream_token_store = PydanticAdapter[UpstreamTokenSet](
+            key_value=self._client_storage,
+            pydantic_model=UpstreamTokenSet,
+            default_collection="mcp-upstream-tokens",
+            raise_on_validation_error=True,
+        )
+
+        # Storage for JTI mappings (FastMCP token -> upstream token)
+        self._jti_mapping_store = PydanticAdapter[JTIMapping](
+            key_value=self._client_storage,
+            pydantic_model=JTIMapping,
+            default_collection="mcp-jti-mappings",
+            raise_on_validation_error=True,
+        )
+
+        # JWT issuer and encryption (initialized lazily on first use)
+        self._custom_jwt_key = jwt_signing_key
+        self._custom_encryption_key = token_encryption_key
+        self._jwt_issuer: JWTIssuer | None = None
+        self._token_encryption: TokenEncryption | None = None
+        self._jwt_initialized = False
 
         # Local state for token bookkeeping only (no client caching)
         self._access_tokens: dict[str, AccessToken] = {}
@@ -647,6 +719,87 @@ class OAuthProxy(OAuthProvider):
         code_challenge = urlsafe_b64encode(challenge_bytes).decode().rstrip("=")
 
         return code_verifier, code_challenge
+
+    # -------------------------------------------------------------------------
+    # JWT Token Factory Initialization
+    # -------------------------------------------------------------------------
+
+    async def _ensure_jwt_initialized(self) -> None:
+        """Initialize JWT issuer and token encryption (lazy initialization).
+
+        Key derivation strategy:
+        - Default: Generate random salt at startup, derive ephemeral keys
+          → Keys change on restart, all tokens become invalid
+          → Perfect for development/testing where re-auth is acceptable
+
+        - Production: User provides explicit keys via parameters
+          → Keys stable across restarts when combined with persistent storage
+          → Tokens survive restart, seamless client reconnection
+        """
+        if self._jwt_initialized:
+            return
+
+        # Generate random salt for this server instance (NOT persisted)
+        server_salt = secrets.token_urlsafe(32)
+
+        # Derive or use custom JWT signing key
+        from fastmcp.server.auth.jwt_issuer import derive_key_from_secret
+
+        if self._custom_jwt_key:
+            jwt_key = derive_key_from_secret(
+                secret=self._custom_jwt_key,
+                salt="fastmcp-jwt-signing-v1",
+                info=b"HS256",
+            )
+            logger.info("Using explicit JWT signing key (will survive restarts)")
+        else:
+            # Ephemeral key from random salt + upstream secret
+            upstream_secret = self._upstream_client_secret.get_secret_value()
+            jwt_key = derive_key_from_secret(
+                secret=upstream_secret,
+                salt=f"fastmcp-jwt-signing-v1-{server_salt}",
+                info=b"HS256",
+            )
+            logger.info(
+                "Using ephemeral JWT signing key - tokens will NOT survive server restart. "
+                "For production, provide explicit jwt_signing_key parameter."
+            )
+
+        # Initialize JWT issuer
+        issuer = str(self.base_url)
+        audience = f"{str(self.base_url).rstrip('/')}/mcp"
+        self._jwt_issuer = JWTIssuer(
+            issuer=issuer,
+            audience=audience,
+            signing_key=jwt_key,
+        )
+
+        # Derive or use custom encryption key
+        if self._custom_encryption_key:
+            encryption_key = derive_key_from_secret(
+                secret=self._custom_encryption_key,
+                salt="fastmcp-token-encryption-v1",
+                info=b"Fernet",
+            )
+            # Fernet needs base64url-encoded key
+            encryption_key = base64.urlsafe_b64encode(encryption_key)
+            logger.info("Using explicit token encryption key (will survive restarts)")
+        else:
+            # Ephemeral key from random salt + upstream secret
+            upstream_secret = self._upstream_client_secret.get_secret_value()
+            key_material = derive_key_from_secret(
+                secret=upstream_secret,
+                salt=f"fastmcp-token-encryption-v1-{server_salt}",
+                info=b"Fernet",
+            )
+            encryption_key = base64.urlsafe_b64encode(key_material)
+            logger.info(
+                "Using ephemeral token encryption key - encrypted tokens will NOT survive server restart. "
+                "For production, provide explicit token_encryption_key parameter."
+            )
+
+        self._token_encryption = TokenEncryption(encryption_key)
+        self._jwt_initialized = True
 
     # -------------------------------------------------------------------------
     # Client Registration (Local Implementation)
@@ -753,6 +906,7 @@ class OAuthProxy(OAuthProvider):
                 resource=getattr(params, "resource", None),
                 proxy_code_verifier=proxy_code_verifier,
             ),
+            ttl=15 * 60,  # Auto-expire after 15 minutes
         )
 
         consent_url = f"{str(self.base_url).rstrip('/')}/consent?txn_id={txn_id}"
@@ -816,11 +970,22 @@ class OAuthProxy(OAuthProvider):
         client: OAuthClientInformationFull,
         authorization_code: AuthorizationCode,
     ) -> OAuthToken:
-        """Exchange authorization code for stored IdP tokens.
+        """Exchange authorization code for FastMCP-issued tokens.
 
-        For the DCR-compliant proxy flow, we return the IdP tokens that were obtained
-        during the IdP callback exchange. PKCE validation is handled by the MCP framework.
+        Implements the token factory pattern:
+        1. Retrieves upstream tokens from stored authorization code
+        2. Extracts user identity from upstream token
+        3. Encrypts and stores upstream tokens
+        4. Issues FastMCP-signed JWT tokens
+        5. Returns FastMCP tokens (NOT upstream tokens)
+
+        PKCE validation is handled by the MCP framework before this method is called.
         """
+        # Ensure JWT issuer is initialized
+        await self._ensure_jwt_initialized()
+        assert self._jwt_issuer is not None
+        assert self._token_encryption is not None
+
         # Look up stored code data
         code_model = await self._code_store.get(key=authorization_code.code)
         if not code_model:
@@ -830,49 +995,141 @@ class OAuthProxy(OAuthProvider):
             )
             raise TokenError("invalid_grant", "Authorization code not found")
 
-        # Get stored IdP tokens
+        # Get stored upstream tokens
         idp_tokens = code_model.idp_tokens
 
         # Clean up client code (one-time use)
         await self._code_store.delete(key=authorization_code.code)
 
-        # Extract token information for local tracking
-        access_token_value = idp_tokens["access_token"]
-        refresh_token_value = idp_tokens.get("refresh_token")
+        # Generate IDs for token storage
+        upstream_token_id = secrets.token_urlsafe(32)
+        access_jti = secrets.token_urlsafe(32)
+        refresh_jti = (
+            secrets.token_urlsafe(32) if idp_tokens.get("refresh_token") else None
+        )
+
+        # Calculate token expiry times
         expires_in = int(
             idp_tokens.get("expires_in", DEFAULT_ACCESS_TOKEN_EXPIRY_SECONDS)
         )
-        expires_at = int(time.time() + expires_in)
 
-        # Store access token locally for tracking
-        access_token = AccessToken(
-            token=access_token_value,
+        # Calculate refresh token expiry if provided by upstream
+        # Some providers include refresh_expires_in, some don't
+        refresh_expires_in = None
+        refresh_token_expires_at = None
+        if idp_tokens.get("refresh_token"):
+            if "refresh_expires_in" in idp_tokens:
+                refresh_expires_in = int(idp_tokens["refresh_expires_in"])
+                refresh_token_expires_at = time.time() + refresh_expires_in
+                logger.debug(
+                    "Upstream refresh token expires in %d seconds", refresh_expires_in
+                )
+            else:
+                # Default to 30 days if upstream doesn't specify
+                # This is conservative - most providers use longer expiry
+                refresh_expires_in = 60 * 60 * 24 * 30  # 30 days
+                refresh_token_expires_at = time.time() + refresh_expires_in
+                logger.debug(
+                    "Upstream refresh token expiry unknown, using 30-day default"
+                )
+
+        # Encrypt and store upstream tokens
+        upstream_token_set = UpstreamTokenSet(
+            upstream_token_id=upstream_token_id,
+            access_token=self._token_encryption.encrypt(idp_tokens["access_token"]),
+            refresh_token=self._token_encryption.encrypt(idp_tokens["refresh_token"])
+            if idp_tokens.get("refresh_token")
+            else None,
+            refresh_token_expires_at=refresh_token_expires_at,
+            expires_at=time.time() + expires_in,
+            token_type=idp_tokens.get("token_type", "Bearer"),
+            scope=" ".join(authorization_code.scopes),
+            client_id=client.client_id,
+            created_at=time.time(),
+            raw_token_data=idp_tokens,
+        )
+        await self._upstream_token_store.put(
+            key=upstream_token_id,
+            value=upstream_token_set,
+            ttl=expires_in,  # Auto-expire when access token expires
+        )
+        logger.debug("Stored encrypted upstream tokens (jti=%s)", access_jti[:8])
+
+        # Issue minimal FastMCP access token (just a reference via JTI)
+        fastmcp_access_token = self._jwt_issuer.issue_access_token(
             client_id=client.client_id,
             scopes=authorization_code.scopes,
-            expires_at=expires_at,
+            jti=access_jti,
+            expires_in=expires_in,
         )
-        self._access_tokens[access_token_value] = access_token
 
-        # Store refresh token if provided
-        if refresh_token_value:
-            refresh_token = RefreshToken(
-                token=refresh_token_value,
+        # Issue minimal FastMCP refresh token if upstream provided one
+        # Use upstream refresh token expiry to align lifetimes
+        fastmcp_refresh_token = None
+        if refresh_jti and refresh_expires_in:
+            fastmcp_refresh_token = self._jwt_issuer.issue_refresh_token(
                 client_id=client.client_id,
                 scopes=authorization_code.scopes,
-                expires_at=None,  # Refresh tokens typically don't expire
+                jti=refresh_jti,
+                expires_in=refresh_expires_in,
             )
-            self._refresh_tokens[refresh_token_value] = refresh_token
 
-            # Maintain token relationships for cleanup
-            self._access_to_refresh[access_token_value] = refresh_token_value
-            self._refresh_to_access[refresh_token_value] = access_token_value
+        # Store JTI mappings
+        await self._jti_mapping_store.put(
+            key=access_jti,
+            value=JTIMapping(
+                jti=access_jti,
+                upstream_token_id=upstream_token_id,
+                created_at=time.time(),
+            ),
+            ttl=expires_in,  # Auto-expire with access token
+        )
+        if refresh_jti:
+            await self._jti_mapping_store.put(
+                key=refresh_jti,
+                value=JTIMapping(
+                    jti=refresh_jti,
+                    upstream_token_id=upstream_token_id,
+                    created_at=time.time(),
+                ),
+                ttl=60 * 60 * 24 * 30,  # Auto-expire with refresh token (30 days)
+            )
 
-        logger.debug(
-            "Successfully exchanged client code for stored IdP tokens (client: %s)",
-            client.client_id,
+        # Store FastMCP access token for MCP framework validation
+        self._access_tokens[fastmcp_access_token] = AccessToken(
+            token=fastmcp_access_token,
+            client_id=client.client_id,
+            scopes=authorization_code.scopes,
+            expires_at=int(time.time() + expires_in),
         )
 
-        return OAuthToken(**idp_tokens)  # type: ignore[arg-type]
+        # Store FastMCP refresh token if provided
+        if fastmcp_refresh_token:
+            self._refresh_tokens[fastmcp_refresh_token] = RefreshToken(
+                token=fastmcp_refresh_token,
+                client_id=client.client_id,
+                scopes=authorization_code.scopes,
+                expires_at=None,
+            )
+            # Maintain token relationships for cleanup
+            self._access_to_refresh[fastmcp_access_token] = fastmcp_refresh_token
+            self._refresh_to_access[fastmcp_refresh_token] = fastmcp_access_token
+
+        logger.debug(
+            "Issued FastMCP tokens for client=%s (access_jti=%s, refresh_jti=%s)",
+            client.client_id,
+            access_jti[:8],
+            refresh_jti[:8] if refresh_jti else "none",
+        )
+
+        # Return FastMCP-issued tokens (NOT upstream tokens!)
+        return OAuthToken(
+            access_token=fastmcp_access_token,
+            token_type="Bearer",
+            expires_in=expires_in,
+            refresh_token=fastmcp_refresh_token,
+            scope=" ".join(authorization_code.scopes),
+        )
 
     # -------------------------------------------------------------------------
     # Refresh Token Flow
@@ -892,9 +1149,54 @@ class OAuthProxy(OAuthProvider):
         refresh_token: RefreshToken,
         scopes: list[str],
     ) -> OAuthToken:
-        """Exchange refresh token for new access token using authlib."""
+        """Exchange FastMCP refresh token for new FastMCP access token.
 
-        # Use authlib's AsyncOAuth2Client for refresh token exchange
+        Implements two-tier refresh:
+        1. Verify FastMCP refresh token
+        2. Look up upstream token via JTI mapping
+        3. Refresh upstream token with upstream provider
+        4. Update stored upstream token
+        5. Issue new FastMCP access token
+        6. Keep same FastMCP refresh token (unless upstream rotates)
+        """
+        # Ensure JWT issuer is initialized
+        await self._ensure_jwt_initialized()
+        assert self._jwt_issuer is not None
+        assert self._token_encryption is not None
+
+        # Verify FastMCP refresh token
+        try:
+            refresh_payload = self._jwt_issuer.verify_token(refresh_token.token)
+            refresh_jti = refresh_payload["jti"]
+        except Exception as e:
+            logger.debug("FastMCP refresh token validation failed: %s", e)
+            raise TokenError("invalid_grant", "Invalid refresh token") from e
+
+        # Look up upstream token via JTI mapping
+        jti_mapping = await self._jti_mapping_store.get(key=refresh_jti)
+        if not jti_mapping:
+            logger.error("JTI mapping not found for refresh token: %s", refresh_jti[:8])
+            raise TokenError("invalid_grant", "Refresh token mapping not found")
+
+        upstream_token_set = await self._upstream_token_store.get(
+            key=jti_mapping.upstream_token_id
+        )
+        if not upstream_token_set:
+            logger.error(
+                "Upstream token set not found: %s", jti_mapping.upstream_token_id[:8]
+            )
+            raise TokenError("invalid_grant", "Upstream token not found")
+
+        # Decrypt upstream refresh token
+        if not upstream_token_set.refresh_token:
+            logger.error("No upstream refresh token available")
+            raise TokenError("invalid_grant", "Refresh not supported for this token")
+
+        upstream_refresh_token = self._token_encryption.decrypt(
+            upstream_token_set.refresh_token
+        )
+
+        # Refresh upstream token using authlib
         oauth_client = AsyncOAuth2Client(
             client_id=self._upstream_client_id,
             client_secret=self._upstream_client_secret.get_secret_value(),
@@ -903,76 +1205,217 @@ class OAuthProxy(OAuthProvider):
         )
 
         try:
-            logger.debug("Using authlib to refresh token from upstream")
-
-            # Let authlib handle the refresh token exchange
+            logger.debug("Refreshing upstream token (jti=%s)", refresh_jti[:8])
             token_response: dict[str, Any] = await oauth_client.refresh_token(  # type: ignore[misc]
                 url=self._upstream_token_endpoint,
-                refresh_token=refresh_token.token,
+                refresh_token=upstream_refresh_token,
                 scope=" ".join(scopes) if scopes else None,
             )
-
-            logger.debug(
-                "Successfully refreshed access token via authlib (client: %s)",
-                client.client_id,
-            )
-
+            logger.debug("Successfully refreshed upstream token")
         except Exception as e:
-            logger.error("Authlib refresh token exchange failed: %s", e)
-            raise TokenError(
-                "invalid_grant", f"Upstream refresh token exchange failed: {e}"
-            ) from e
+            logger.error("Upstream token refresh failed: %s", e)
+            raise TokenError("invalid_grant", f"Upstream refresh failed: {e}") from e
 
-        # Update local token storage
-        new_access_token = token_response["access_token"]
-        expires_in = int(
+        # Update stored upstream token
+        new_expires_in = int(
             token_response.get("expires_in", DEFAULT_ACCESS_TOKEN_EXPIRY_SECONDS)
         )
+        upstream_token_set.access_token = self._token_encryption.encrypt(
+            token_response["access_token"]
+        )
+        upstream_token_set.expires_at = time.time() + new_expires_in
 
-        self._access_tokens[new_access_token] = AccessToken(
-            token=new_access_token,
-            client_id=client.client_id,
-            scopes=scopes,
-            expires_at=int(time.time() + expires_in),
+        # Handle upstream refresh token rotation and expiry
+        new_refresh_expires_in = None
+        if new_upstream_refresh := token_response.get("refresh_token"):
+            if new_upstream_refresh != upstream_refresh_token:
+                upstream_token_set.refresh_token = self._token_encryption.encrypt(
+                    new_upstream_refresh
+                )
+                logger.debug("Upstream refresh token rotated")
+
+            # Update refresh token expiry if provided
+            if "refresh_expires_in" in token_response:
+                new_refresh_expires_in = int(token_response["refresh_expires_in"])
+                upstream_token_set.refresh_token_expires_at = (
+                    time.time() + new_refresh_expires_in
+                )
+                logger.debug(
+                    "Upstream refresh token expires in %d seconds",
+                    new_refresh_expires_in,
+                )
+            elif upstream_token_set.refresh_token_expires_at:
+                # Keep existing expiry if upstream doesn't provide new one
+                new_refresh_expires_in = int(
+                    upstream_token_set.refresh_token_expires_at - time.time()
+                )
+            else:
+                # Default to 30 days if unknown
+                new_refresh_expires_in = 60 * 60 * 24 * 30
+                upstream_token_set.refresh_token_expires_at = (
+                    time.time() + new_refresh_expires_in
+                )
+
+        upstream_token_set.raw_token_data = token_response
+        await self._upstream_token_store.put(
+            key=upstream_token_set.upstream_token_id,
+            value=upstream_token_set,
+            ttl=new_expires_in,  # Auto-expire when refreshed access token expires
         )
 
-        # Handle refresh token rotation if new one provided
-        if new_refresh_token := token_response.get("refresh_token"):
-            if new_refresh_token != refresh_token.token:
-                # Remove old refresh token
-                self._refresh_tokens.pop(refresh_token.token, None)
-                old_access = self._refresh_to_access.pop(refresh_token.token, None)
-                if old_access:
-                    self._access_to_refresh.pop(old_access, None)
+        # Issue new minimal FastMCP access token (just a reference via JTI)
+        new_access_jti = secrets.token_urlsafe(32)
+        new_fastmcp_access = self._jwt_issuer.issue_access_token(
+            client_id=client.client_id,
+            scopes=scopes,
+            jti=new_access_jti,
+            expires_in=new_expires_in,
+        )
 
-                # Store new refresh token
-                self._refresh_tokens[new_refresh_token] = RefreshToken(
-                    token=new_refresh_token,
-                    client_id=client.client_id,
-                    scopes=scopes,
-                    expires_at=None,
-                )
-                self._access_to_refresh[new_access_token] = new_refresh_token
-                self._refresh_to_access[new_refresh_token] = new_access_token
+        # Store new access token JTI mapping
+        await self._jti_mapping_store.put(
+            key=new_access_jti,
+            value=JTIMapping(
+                jti=new_access_jti,
+                upstream_token_id=upstream_token_set.upstream_token_id,
+                created_at=time.time(),
+            ),
+            ttl=new_expires_in,  # Auto-expire with refreshed access token
+        )
 
-        return OAuthToken(**token_response)  # type: ignore[arg-type]
+        # Issue NEW minimal FastMCP refresh token (rotation for security)
+        # Use upstream refresh token expiry to align lifetimes
+        new_refresh_jti = secrets.token_urlsafe(32)
+        new_fastmcp_refresh = self._jwt_issuer.issue_refresh_token(
+            client_id=client.client_id,
+            scopes=scopes,
+            jti=new_refresh_jti,
+            expires_in=new_refresh_expires_in
+            or 60 * 60 * 24 * 30,  # Fallback to 30 days
+        )
+
+        # Store new refresh token JTI mapping with aligned expiry
+        refresh_ttl = new_refresh_expires_in or 60 * 60 * 24 * 30
+        await self._jti_mapping_store.put(
+            key=new_refresh_jti,
+            value=JTIMapping(
+                jti=new_refresh_jti,
+                upstream_token_id=upstream_token_set.upstream_token_id,
+                created_at=time.time(),
+            ),
+            ttl=refresh_ttl,  # Align with upstream refresh token expiry
+        )
+
+        # Invalidate old refresh token (refresh token rotation - enforces one-time use)
+        await self._jti_mapping_store.delete(key=refresh_jti)
+        logger.debug(
+            "Rotated refresh token (old JTI invalidated - one-time use enforced)"
+        )
+
+        # Update local token tracking
+        self._access_tokens[new_fastmcp_access] = AccessToken(
+            token=new_fastmcp_access,
+            client_id=client.client_id,
+            scopes=scopes,
+            expires_at=int(time.time() + new_expires_in),
+        )
+        self._refresh_tokens[new_fastmcp_refresh] = RefreshToken(
+            token=new_fastmcp_refresh,
+            client_id=client.client_id,
+            scopes=scopes,
+            expires_at=None,
+        )
+
+        # Update token relationship mappings
+        self._access_to_refresh[new_fastmcp_access] = new_fastmcp_refresh
+        self._refresh_to_access[new_fastmcp_refresh] = new_fastmcp_access
+
+        # Clean up old token from in-memory tracking
+        self._refresh_tokens.pop(refresh_token.token, None)
+        old_access = self._refresh_to_access.pop(refresh_token.token, None)
+        if old_access:
+            self._access_tokens.pop(old_access, None)
+            self._access_to_refresh.pop(old_access, None)
+
+        logger.info(
+            "Issued new FastMCP tokens (rotated refresh) for client=%s (access_jti=%s, refresh_jti=%s)",
+            client.client_id,
+            new_access_jti[:8],
+            new_refresh_jti[:8],
+        )
+
+        # Return new FastMCP tokens (both access AND refresh are new)
+        return OAuthToken(
+            access_token=new_fastmcp_access,
+            token_type="Bearer",
+            expires_in=new_expires_in,
+            refresh_token=new_fastmcp_refresh,  # NEW refresh token (rotated)
+            scope=" ".join(scopes),
+        )
 
     # -------------------------------------------------------------------------
     # Token Validation
     # -------------------------------------------------------------------------
 
     async def load_access_token(self, token: str) -> AccessToken | None:
-        """Validate access token using upstream JWKS.
+        """Validate FastMCP JWT by swapping for upstream token.
 
-        Delegates to the JWT verifier which handles signature validation,
-        expiration checking, and claims validation using the upstream JWKS.
+        This implements the token swap pattern:
+        1. Verify FastMCP JWT signature (proves it's our token)
+        2. Look up upstream token via JTI mapping
+        3. Decrypt upstream token
+        4. Validate upstream token with provider (GitHub API, JWT validation, etc.)
+        5. Return upstream validation result
+
+        The FastMCP JWT is a reference token - all authorization data comes
+        from validating the upstream token via the TokenVerifier.
         """
-        result = await self._token_validator.verify_token(token)
-        if result:
-            logger.debug("Token validated successfully")
-        else:
-            logger.debug("Token validation failed")
-        return result
+        # Ensure JWT issuer and encryption are initialized
+        await self._ensure_jwt_initialized()
+        assert self._jwt_issuer is not None
+        assert self._token_encryption is not None
+
+        try:
+            # 1. Verify FastMCP JWT signature and claims
+            payload = self._jwt_issuer.verify_token(token)
+            jti = payload["jti"]
+
+            # 2. Look up upstream token via JTI mapping
+            jti_mapping = await self._jti_mapping_store.get(key=jti)
+            if not jti_mapping:
+                logger.debug("JTI mapping not found: %s", jti)
+                return None
+
+            upstream_token_set = await self._upstream_token_store.get(
+                key=jti_mapping.upstream_token_id
+            )
+            if not upstream_token_set:
+                logger.debug(
+                    "Upstream token not found: %s", jti_mapping.upstream_token_id
+                )
+                return None
+
+            # 3. Decrypt upstream token
+            upstream_token = self._token_encryption.decrypt(
+                upstream_token_set.access_token
+            )
+
+            # 4. Validate with upstream provider (delegated to TokenVerifier)
+            # This calls the real token validator (GitHub API, JWKS, etc.)
+            validated = await self._token_validator.verify_token(upstream_token)
+
+            if not validated:
+                logger.debug("Upstream token validation failed")
+                return None
+
+            logger.debug(
+                "Token swap successful for JTI=%s (upstream validated)", jti[:8]
+            )
+            return validated
+
+        except Exception as e:
+            logger.debug("Token swap validation failed: %s", e)
+            return None
 
     # -------------------------------------------------------------------------
     # Token Revocation
@@ -1220,6 +1663,7 @@ class OAuthProxy(OAuthProvider):
                     expires_at=code_expires_at,
                     created_at=time.time(),
                 ),
+                ttl=DEFAULT_AUTH_CODE_EXPIRY_SECONDS,  # Auto-expire after 5 minutes
             )
 
             # Clean up transaction
@@ -1439,7 +1883,9 @@ class OAuthProxy(OAuthProvider):
         # Update transaction with CSRF token
         txn_model.csrf_token = csrf_token
         txn_model.csrf_expires_at = csrf_expires_at
-        await self._transaction_store.put(key=txn_id, value=txn_model)
+        await self._transaction_store.put(
+            key=txn_id, value=txn_model, ttl=15 * 60
+        )  # Auto-expire after 15 minutes
 
         # Update dict for use in HTML generation
         txn["csrf_token"] = csrf_token

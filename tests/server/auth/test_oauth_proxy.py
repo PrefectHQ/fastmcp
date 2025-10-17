@@ -630,33 +630,103 @@ class TestOAuthProxyTokenEndpointAuth:
             token_endpoint_auth_method="client_secret_post",
         )
 
+        # First, create a valid FastMCP token via full OAuth flow
+        client = OAuthClientInformationFull(
+            client_id="test-client",
+            client_secret="test-secret",
+            redirect_uris=[AnyUrl("http://localhost:12345/callback")],
+        )
+
+        # Mock the upstream OAuth provider response
         with patch("fastmcp.server.auth.oauth_proxy.AsyncOAuth2Client") as MockClient:
             mock_client = AsyncMock()
+
+            # Mock initial token exchange (authorization code flow)
+            mock_client.fetch_token = AsyncMock(
+                return_value={
+                    "access_token": "upstream-access-token",
+                    "refresh_token": "upstream-refresh-token",
+                    "expires_in": 3600,
+                    "token_type": "Bearer",
+                }
+            )
+
+            # Mock token refresh
             mock_client.refresh_token = AsyncMock(
                 return_value={
-                    "access_token": "new-token",
-                    "refresh_token": "new-refresh",
+                    "access_token": "new-upstream-token",
+                    "refresh_token": "new-upstream-refresh",
                     "expires_in": 3600,
+                    "token_type": "Bearer",
                 }
             )
             MockClient.return_value = mock_client
 
-            client = OAuthClientInformationFull(
+            # Register client and do initial OAuth flow to get valid FastMCP tokens
+            await proxy.register_client(client)
+
+            # Store client code that would be created during OAuth callback
+            from fastmcp.server.auth.oauth_proxy import ClientCode
+
+            client_code = ClientCode(
+                code="test-auth-code",
                 client_id="test-client",
-                client_secret="test-secret",
-                redirect_uris=[AnyUrl("http://localhost:12345/callback")],
+                redirect_uri="http://localhost:12345/callback",
+                code_challenge="",
+                code_challenge_method="S256",
+                scopes=["read"],
+                idp_tokens={
+                    "access_token": "upstream-access-token",
+                    "refresh_token": "upstream-refresh-token",
+                    "expires_in": 3600,
+                    "token_type": "Bearer",
+                },
+                expires_at=time.time() + 300,
+                created_at=time.time(),
+            )
+            await proxy._code_store.put(key=client_code.code, value=client_code)
+
+            # Exchange authorization code to get FastMCP tokens
+            from mcp.server.auth.provider import AuthorizationCode
+
+            auth_code = AuthorizationCode(
+                code="test-auth-code",
+                scopes=["read"],
+                expires_at=time.time() + 300,
+                client_id="test-client",
+                code_challenge="",
+                redirect_uri=AnyUrl("http://localhost:12345/callback"),
+                redirect_uri_provided_explicitly=True,
+            )
+            result = await proxy.exchange_authorization_code(
+                client=client,
+                authorization_code=auth_code,
             )
 
-            refresh_token = RefreshToken(
-                token="old-refresh",
+            # Now test refresh with the valid FastMCP refresh token
+            assert result.refresh_token is not None
+            fastmcp_refresh = RefreshToken(
+                token=result.refresh_token,
                 client_id="test-client",
                 scopes=["read"],
                 expires_at=None,
             )
 
-            await proxy.exchange_refresh_token(client, refresh_token, ["read"])
+            # Reset mock to check refresh call
+            MockClient.reset_mock()
+            mock_client.refresh_token = AsyncMock(
+                return_value={
+                    "access_token": "new-upstream-token-2",
+                    "refresh_token": "new-upstream-refresh-2",
+                    "expires_in": 3600,
+                    "token_type": "Bearer",
+                }
+            )
+            MockClient.return_value = mock_client
 
-            # Verify auth method was passed
+            await proxy.exchange_refresh_token(client, fastmcp_refresh, ["read"])
+
+            # Verify auth method was passed to OAuth client
             MockClient.assert_called_with(
                 client_id="client-id",
                 client_secret="client-secret",
@@ -735,9 +805,18 @@ class TestOAuthProxyE2E:
             base_url="http://localhost:8000",
         )
 
-        # Mock initial tokens in provider
-        refresh_token = "mock_refresh_initial"
-        mock_oauth_provider.refresh_tokens[refresh_token] = {
+        client = OAuthClientInformationFull(
+            client_id="test-client",
+            client_secret="test-secret",
+            redirect_uris=[AnyUrl("http://localhost:12345/callback")],
+        )
+
+        # Register client first
+        await proxy.register_client(client)
+
+        # Set up initial upstream tokens in mock provider
+        upstream_refresh_token = "mock_refresh_initial"
+        mock_oauth_provider.refresh_tokens[upstream_refresh_token] = {
             "client_id": "mock-client",
             "scope": "read write",
         }
@@ -745,14 +824,24 @@ class TestOAuthProxyE2E:
         with patch("fastmcp.server.auth.oauth_proxy.AsyncOAuth2Client") as MockClient:
             mock_client = AsyncMock()
 
-            # Configure mock to call real provider
+            # Mock initial token exchange to get FastMCP tokens
+            mock_client.fetch_token = AsyncMock(
+                return_value={
+                    "access_token": "upstream-access-initial",
+                    "refresh_token": upstream_refresh_token,
+                    "expires_in": 3600,
+                    "token_type": "Bearer",
+                }
+            )
+
+            # Configure mock to call real provider for refresh
             async def mock_refresh(*args, **kwargs):
                 async with httpx.AsyncClient() as http:
                     response = await http.post(
                         mock_oauth_provider.token_endpoint,
                         data={
                             "grant_type": "refresh_token",
-                            "refresh_token": refresh_token,
+                            "refresh_token": upstream_refresh_token,
                         },
                     )
                     return response.json()
@@ -760,23 +849,61 @@ class TestOAuthProxyE2E:
             mock_client.refresh_token = mock_refresh
             MockClient.return_value = mock_client
 
-            # Test refresh
-            client = OAuthClientInformationFull(
+            # Store client code that would be created during OAuth callback
+            from fastmcp.server.auth.oauth_proxy import ClientCode
+
+            client_code = ClientCode(
+                code="test-auth-code",
                 client_id="test-client",
-                client_secret="test-secret",
-                redirect_uris=[AnyUrl("http://localhost:12345/callback")],
+                redirect_uri="http://localhost:12345/callback",
+                code_challenge="",
+                code_challenge_method="S256",
+                scopes=["read", "write"],
+                idp_tokens={
+                    "access_token": "upstream-access-initial",
+                    "refresh_token": upstream_refresh_token,
+                    "expires_in": 3600,
+                    "token_type": "Bearer",
+                },
+                expires_at=time.time() + 300,
+                created_at=time.time(),
+            )
+            await proxy._code_store.put(key=client_code.code, value=client_code)
+
+            # Exchange authorization code to get FastMCP tokens
+            from mcp.server.auth.provider import AuthorizationCode
+
+            auth_code = AuthorizationCode(
+                code="test-auth-code",
+                scopes=["read", "write"],
+                expires_at=time.time() + 300,
+                client_id="test-client",
+                code_challenge="",
+                redirect_uri=AnyUrl("http://localhost:12345/callback"),
+                redirect_uri_provided_explicitly=True,
+            )
+            initial_result = await proxy.exchange_authorization_code(
+                client=client,
+                authorization_code=auth_code,
             )
 
-            refresh = RefreshToken(
-                token=refresh_token,
+            # Now test refresh with the valid FastMCP refresh token
+            assert initial_result.refresh_token is not None
+            fastmcp_refresh = RefreshToken(
+                token=initial_result.refresh_token,
                 client_id="test-client",
                 scopes=["read"],
                 expires_at=None,
             )
 
-            result = await proxy.exchange_refresh_token(client, refresh, ["read"])
+            result = await proxy.exchange_refresh_token(
+                client, fastmcp_refresh, ["read"]
+            )
 
-            assert result.access_token.startswith("mock_access_")
+            # Should return new FastMCP tokens (not upstream tokens)
+            assert result.access_token != "upstream-access-initial"
+            # FastMCP tokens are JWTs (have 3 segments)
+            assert len(result.access_token.split(".")) == 3
             assert mock_oauth_provider.refresh_called
 
     @pytest.mark.asyncio

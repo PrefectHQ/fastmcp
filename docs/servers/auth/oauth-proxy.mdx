@@ -211,7 +211,9 @@ These parameters are included in all token requests to the upstream provider.
 </ParamField>
 
 <ParamField body="client_storage" type="KVStorage | None">
-  Storage backend for persisting OAuth client registrations. By default, clients are automatically persisted to disk in `~/.config/fastmcp/oauth-proxy-clients/`, allowing them to survive server restarts as long as the filesystem remains accessible. This means MCP clients only need to register once and can reconnect seamlessly after your server restarts.
+  Storage backend for persisting OAuth client registrations and encrypted upstream tokens. By default, clients are automatically persisted to disk in `~/.config/fastmcp/oauth-proxy-clients/`, allowing them to survive server restarts as long as the filesystem remains accessible. This means MCP clients only need to register once and can reconnect seamlessly after your server restarts.
+
+For production deployments with token persistence, use this with `jwt_signing_key` and `token_encryption_key` - all three work together to ensure tokens survive restarts. See [OAuth Token Security](/deployment/http#oauth-token-security).
 
 ```python
 from fastmcp.utilities.storage import InMemoryStorage
@@ -220,6 +222,47 @@ from fastmcp.utilities.storage import InMemoryStorage
 auth = OAuthProxy(..., client_storage=InMemoryStorage())
 ```
 
+</ParamField>
+
+<ParamField body="jwt_signing_key" type="str | bytes | None">
+  Secret used to sign FastMCP JWT tokens issued to clients. Accepts any string or bytes - will be derived into a proper 32-byte cryptographic key using HKDF.
+
+  **Default behavior (None):**
+  Keys are ephemeral (random salt at startup). Tokens become invalid on server restart, triggering client re-authentication. This is fine for development and testing.
+
+  **Production:**
+  Provide an explicit secret (e.g., from environment variable). Works with `token_encryption_key` and `client_storage` to ensure tokens survive restarts - all three parameters are required for production token persistence.
+
+  ```python
+  import os
+
+  auth = OAuthProxy(
+      ...,
+      jwt_signing_key=os.environ["JWT_SIGNING_KEY"],  # Any string!
+      token_encryption_key=os.environ["TOKEN_ENCRYPTION_KEY"],
+      client_storage=RedisStore(...)  # Persistent storage
+  )
+  ```
+
+  See [HTTP Deployment - OAuth Token Security](/deployment/http#oauth-token-security) for complete production setup.
+</ParamField>
+
+<ParamField body="token_encryption_key" type="str | bytes | None">
+  Secret used to encrypt upstream tokens at rest in `client_storage`. Accepts any string or bytes - will be derived into a proper 32-byte cryptographic key using HKDF.
+
+  **Default behavior (None):**
+  Like `jwt_signing_key`, this is ephemeral. However, without a valid JWT signing key, encrypted tokens are useless anyway (JWT validation fails first).
+
+  **Production:**
+  Provide an explicit secret distinct from `jwt_signing_key`. Works with `jwt_signing_key` and persistent `client_storage` - all three are required for production token persistence.
+
+  ```python
+  # Use different secrets for each key
+  jwt_signing_key="my-jwt-secret-v1"
+  token_encryption_key="my-encryption-secret-v1"
+  ```
+
+  See [HTTP Deployment - OAuth Token Security](/deployment/http#oauth-token-security).
 </ParamField>
 </Card>
 
@@ -351,6 +394,44 @@ After user authorization, the provider redirects back to the proxy's fixed callb
 Finally, the client exchanges its authorization code with the proxy to receive the provider's tokens. The proxy validates the client's PKCE verifier before returning the stored tokens.
 
 This entire flow is transparent to the MCP client—it experiences a standard OAuth flow with dynamic registration, unaware that a proxy is managing the complexity behind the scenes.
+
+### Token Architecture
+
+The OAuth proxy implements a **token factory pattern**: instead of directly forwarding tokens from the upstream OAuth provider, it issues its own JWT tokens to MCP clients. This maintains proper OAuth 2.0 token audience boundaries and enables better security controls.
+
+**How it works:**
+
+When an MCP client completes authorization, the proxy:
+
+1. **Receives upstream tokens** from the OAuth provider (GitHub, Google, etc.)
+2. **Encrypts and stores** these tokens using Fernet encryption (AES-128-CBC + HMAC-SHA256)
+3. **Issues FastMCP JWT tokens** to the client, signed with HS256
+
+The FastMCP JWT contains minimal claims: issuer, audience, client ID, scopes, expiration, and a unique token identifier (JTI). The JTI acts as a reference linking to the encrypted upstream token.
+
+**Token validation:**
+
+When a client makes an MCP request with its FastMCP token:
+
+1. **FastMCP validates the JWT** signature, expiration, issuer, and audience
+2. **Looks up the upstream token** using the JTI from the validated JWT
+3. **Decrypts and validates** the upstream token with the provider
+
+This two-tier validation ensures that FastMCP tokens can only be used with this server (via audience validation) while maintaining full upstream token security.
+
+**Token expiry alignment:**
+
+FastMCP token lifetimes match the upstream token lifetimes. When the upstream token expires, the FastMCP token also expires, maintaining consistent security boundaries.
+
+**Refresh tokens:**
+
+The proxy issues its own refresh tokens that map to upstream refresh tokens. When a client uses a FastMCP refresh token, the proxy refreshes the upstream token and issues a new FastMCP access token.
+
+**Key and storage configuration:**
+
+The token architecture requires cryptographic keys for JWT signing and token encryption. By default, these keys are ephemeral—generated from a random salt at startup and not persisted. This means tokens become invalid on server restart, requiring clients to re-authenticate. For development and testing, this is acceptable.
+
+For production, configure three parameters together: `jwt_signing_key` (for signing FastMCP JWTs), `token_encryption_key` (for encrypting upstream tokens at rest), and persistent `client_storage` (for storing encrypted tokens). All three are required for tokens to survive server restarts. The keys accept any secret string and derive proper cryptographic keys using HKDF. See [OAuth Token Security](/deployment/http#oauth-token-security) for complete production setup.
 
 ### PKCE Forwarding
 

@@ -243,6 +243,7 @@
               "development/contributing",
               "development/tests",
               "development/releases",
+              "development/upgrade-guide",
               "changelog"
             ]
           }

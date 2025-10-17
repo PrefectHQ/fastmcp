@@ -3,6 +3,7 @@ title: HTTP Deployment
 sidebarTitle: HTTP Deployment
 description: Deploy your FastMCP server over HTTP for remote access
 icon: server
+tag: NEW
 ---
 
 import { VersionBadge } from "/snippets/version-badge.mdx";
@@ -478,6 +479,44 @@ Deploy with your secrets safely stored in environment variables:
 ```bash
 MCP_AUTH_TOKEN=secret uvicorn app:app --host 0.0.0.0 --port 8000
 ```
+
+### OAuth Token Security
+
+<VersionBadge version="2.13.0" />
+
+If you're using the [OAuth Proxy](/servers/auth/oauth-proxy), FastMCP issues its own JWT tokens to clients instead of forwarding upstream provider tokens. This maintains proper OAuth 2.0 token boundaries, but requires specific production configuration to ensure tokens survive server restarts.
+
+**Development vs Production:**
+
+By default, token cryptographic keys are ephemeral—generated from a random salt at startup and not persisted anywhere. This means keys change on every restart, invalidating all tokens and triggering client re-authentication. This works fine for development and testing where re-auth after restart is acceptable.
+
+For production, tokens should survive restarts to avoid disrupting clients. This requires four things working together:
+
+1. **Explicit JWT signing key** for signing tokens issued to clients
+2. **Explicit token encryption key** for encrypting upstream OAuth tokens at rest
+3. **Persistent storage** so encrypted upstream tokens survive restart
+4. **HTTPS deployment** for secure cookie handling
+
+The two keys can be any secret strings (environment variables, secret manager, etc.) and should be different from each other. FastMCP derives proper cryptographic keys from whatever you provide using HKDF.
+
+**Configuration:**
+
+Add two parameters to your auth provider and use persistent storage and HTTPS:
+
+```python {4-7}
+auth = GitHubProvider(
+    client_id=os.environ["GITHUB_CLIENT_ID"],
+    client_secret=os.environ["GITHUB_CLIENT_SECRET"],
+    jwt_signing_key=os.environ["JWT_SIGNING_KEY"],
+    token_encryption_key=os.environ["TOKEN_ENCRYPTION_KEY"],
+    client_storage=RedisStore(host="redis.example.com", ...),
+    base_url="https://your-server.com"  # use HTTPS 
+)
+```
+
+Without explicit keys, new keys are generated each time the server starts. Without persistent storage, encrypted tokens are lost. Both cause token validation to fail after restart, requiring all clients to re-authenticate.
+
+For more details on the token architecture, see [OAuth Proxy Token Architecture](/servers/auth/oauth-proxy#token-architecture).
 
 ## Testing Your Deployment
 
