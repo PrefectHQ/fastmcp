@@ -17,7 +17,7 @@ extract_query_params(uri_template: str) -> set[str]
 ```
 
 
-Extract query parameter names from RFC 6570 {?param1,param2} syntax.
+Extract query parameter names from RFC 6570 `{?param1,param2}` syntax.
 
 
 ### `build_regex` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/template.py#L37" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
@@ -30,9 +30,9 @@ build_regex(template: str) -> re.Pattern
 Build regex pattern for URI template, handling RFC 6570 syntax.
 
 Supports:
-- {var} - simple path parameter
-- {var*} - wildcard path parameter (captures multiple segments)
-- {?var1,var2} - query parameters (ignored in path matching)
+- `{var}` - simple path parameter
+- `{var*}` - wildcard path parameter (captures multiple segments)
+- `{?var1,var2}` - query parameters (ignored in path matching)
 
 
 ### `match_uri_template` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/resources/template.py#L63" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
@@ -45,8 +45,8 @@ match_uri_template(uri: str, uri_template: str) -> dict[str, str] | None
 Match URI against template and extract both path and query parameters.
 
 Supports RFC 6570 URI templates:
-- Path params: {var}, {var*}
-- Query params: {?var1,var2}
+- Path params: `{var}`, `{var*}`
+- Query params: `{?var1,var2}`
 
 
 ## Classes

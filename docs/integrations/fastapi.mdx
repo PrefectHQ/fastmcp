@@ -405,6 +405,8 @@ app = FastAPI()
 app.mount("/mcp", mcp.http_app())  # Session manager won't initialize
 ```
 
+If you're mounting an authenticated MCP server under a path prefix, see [Mounting Authenticated Servers](/deployment/http#mounting-authenticated-servers) for important OAuth routing considerations.
+
 ### Combining Lifespans
 
 If your FastAPI app already has a lifespan (for database connections, startup tasks, etc.), you can't simply replace it with the MCP lifespan. Instead, you need to create a new lifespan function that manages both contexts. This ensures that both your app's initialization logic and the MCP server's session manager run properly:

@@ -49,6 +49,7 @@ class GitHubProviderSettings(BaseSettings):
     client_id: str | None = None
     client_secret: SecretStr | None = None
     base_url: AnyHttpUrl | str | None = None
+    issuer_url: AnyHttpUrl | str | None = None
     redirect_path: str | None = None
     required_scopes: list[str] | None = None
     timeout_seconds: int | None = None
@@ -199,6 +200,7 @@ class GitHubProvider(OAuthProxy):
         client_id: str | NotSetT = NotSet,
         client_secret: str | NotSetT = NotSet,
         base_url: AnyHttpUrl | str | NotSetT = NotSet,
+        issuer_url: AnyHttpUrl | str | NotSetT = NotSet,
         redirect_path: str | NotSetT = NotSet,
         required_scopes: list[str] | NotSetT = NotSet,
         timeout_seconds: int | NotSetT = NotSet,
@@ -210,7 +212,9 @@ class GitHubProvider(OAuthProxy):
         Args:
             client_id: GitHub OAuth app client ID (e.g., "Ov23li...")
             client_secret: GitHub OAuth app client secret
-            base_url: Public URL of your FastMCP server (for OAuth callbacks)
+            base_url: Public URL where OAuth endpoints will be accessible (includes any mount path)
+            issuer_url: Issuer URL for OAuth metadata (defaults to base_url). Use root-level URL
+                to avoid 404s during discovery when mounting under a path.
             redirect_path: Redirect path configured in GitHub OAuth app (defaults to "/auth/callback")
             required_scopes: Required GitHub scopes (defaults to ["user"])
             timeout_seconds: HTTP request timeout for GitHub API calls
@@ -226,6 +230,7 @@ class GitHubProvider(OAuthProxy):
                     "client_id": client_id,
                     "client_secret": client_secret,
                     "base_url": base_url,
+                    "issuer_url": issuer_url,
                     "redirect_path": redirect_path,
                     "required_scopes": required_scopes,
                     "timeout_seconds": timeout_seconds,
@@ -271,7 +276,8 @@ class GitHubProvider(OAuthProxy):
             token_verifier=token_verifier,
             base_url=settings.base_url,
             redirect_path=settings.redirect_path,
-            issuer_url=settings.base_url,  # We act as the issuer for client registration
+            issuer_url=settings.issuer_url
+            or settings.base_url,  # Default to base_url if not specified
             allowed_client_redirect_uris=allowed_client_redirect_uris_final,
             client_storage=client_storage,
         )

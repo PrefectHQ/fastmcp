@@ -160,7 +160,11 @@ Your WorkOS AuthKit domain (e.g., `https://your-app.authkit.app`)
 </ParamField>
 
 <ParamField path="FASTMCP_SERVER_AUTH_WORKOS_BASE_URL" default="http://localhost:8000">
-Public URL of your FastMCP server for OAuth callbacks
+Public URL where OAuth endpoints will be accessible (includes any mount path)
+</ParamField>
+
+<ParamField path="FASTMCP_SERVER_AUTH_WORKOS_ISSUER_URL" default="Uses BASE_URL">
+Issuer URL for OAuth metadata (defaults to `BASE_URL`). Set to root-level URL when mounting under a path prefix to avoid 404 logs. See [HTTP Deployment guide](/deployment/http#mounting-authenticated-servers) for details.
 </ParamField>
 
 <ParamField path="FASTMCP_SERVER_AUTH_WORKOS_REDIRECT_PATH" default="/auth/callback">

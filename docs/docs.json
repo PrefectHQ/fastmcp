@@ -20,10 +20,7 @@
     "primary": "#2d00f7"
   },
   "contextual": {
-    "options": [
-      "copy",
-      "view"
-    ]
+    "options": ["copy", "view"]
   },
   "description": "The fast, Pythonic way to build MCP servers and clients.",
   "errors": {
@@ -134,9 +131,9 @@
                 "icon": "rocket",
                 "pages": [
                   "deployment/running-server",
-                  "deployment/server-configuration",
-                  "deployment/self-hosted",
-                  "deployment/fastmcp-cloud"
+                  "deployment/http",
+                  "deployment/fastmcp-cloud",
+                  "deployment/server-configuration"
                 ]
               }
             ]
@@ -147,10 +144,7 @@
               {
                 "group": "Essentials",
                 "icon": "cube",
-                "pages": [
-                  "clients/client",
-                  "clients/transports"
-                ]
+                "pages": ["clients/client", "clients/transports"]
               },
               {
                 "group": "Core Operations",
@@ -176,10 +170,7 @@
               {
                 "group": "Authentication",
                 "icon": "user-shield",
-                "pages": [
-                  "clients/auth/oauth",
-                  "clients/auth/bearer"
-                ]
+                "pages": ["clients/auth/oauth", "clients/auth/bearer"]
               }
             ]
           },
@@ -231,13 +222,9 @@
                 ]
               },
               {
-                "group": "Web Frameworks",
+                "group": "API Integration",
                 "icon": "globe",
-                "pages": [
-                  "integrations/asgi",
-                  "integrations/fastapi",
-                  "integrations/openapi"
-                ]
+                "pages": ["integrations/fastapi", "integrations/openapi"]
               }
             ]
           },
@@ -374,6 +361,7 @@
                     "group": "middleware",
                     "pages": [
                       "python-sdk/fastmcp-server-middleware-__init__",
+                      "python-sdk/fastmcp-server-middleware-caching",
                       "python-sdk/fastmcp-server-middleware-error_handling",
                       "python-sdk/fastmcp-server-middleware-logging",
                       "python-sdk/fastmcp-server-middleware-middleware",

@@ -78,6 +78,7 @@ class TestRemoteAuthProvider:
         assert len(routes) == 1
 
         # Check that the route is the OAuth protected resource metadata endpoint
+        # When called without mcp_path, it creates route at /.well-known/oauth-protected-resource
         route = routes[0]
         assert route.path == "/.well-known/oauth-protected-resource"
         assert route.methods is not None
@@ -99,10 +100,10 @@ class TestRemoteAuthProvider:
         )
 
         metadata_url = provider._get_resource_url(
-            "/.well-known/oauth-protected-resource"
+            "/.well-known/oauth-protected-resource/mcp"
         )
         assert metadata_url == AnyHttpUrl(
-            "https://api.example.com/.well-known/oauth-protected-resource"
+            "https://api.example.com/.well-known/oauth-protected-resource/mcp"
         )
 
     def test_get_resource_url_with_nested_base_url(self):
@@ -121,10 +122,10 @@ class TestRemoteAuthProvider:
         )
 
         metadata_url = provider._get_resource_url(
-            "/.well-known/oauth-protected-resource"
+            "/.well-known/oauth-protected-resource/mcp"
         )
         assert metadata_url == AnyHttpUrl(
-            "https://api.example.com/v1/.well-known/oauth-protected-resource"
+            "https://api.example.com/v1/.well-known/oauth-protected-resource/mcp"
         )
 
     def test_get_resource_url_handles_trailing_slash(self):
@@ -143,10 +144,10 @@ class TestRemoteAuthProvider:
         )
 
         metadata_url = provider._get_resource_url(
-            "/.well-known/oauth-protected-resource"
+            "/.well-known/oauth-protected-resource/mcp"
         )
         assert metadata_url == AnyHttpUrl(
-            "https://api.example.com/.well-known/oauth-protected-resource"
+            "https://api.example.com/.well-known/oauth-protected-resource/mcp"
         )
 
 

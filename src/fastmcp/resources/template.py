@@ -27,7 +27,7 @@ from fastmcp.utilities.types import (
 
 
 def extract_query_params(uri_template: str) -> set[str]:
-    """Extract query parameter names from RFC 6570 {?param1,param2} syntax."""
+    """Extract query parameter names from RFC 6570 `{?param1,param2}` syntax."""
     match = re.search(r"\{\?([^}]+)\}", uri_template)
     if match:
         return {p.strip() for p in match.group(1).split(",")}
@@ -38,9 +38,9 @@ def build_regex(template: str) -> re.Pattern:
     """Build regex pattern for URI template, handling RFC 6570 syntax.
 
     Supports:
-    - {var} - simple path parameter
-    - {var*} - wildcard path parameter (captures multiple segments)
-    - {?var1,var2} - query parameters (ignored in path matching)
+    - `{var}` - simple path parameter
+    - `{var*}` - wildcard path parameter (captures multiple segments)
+    - `{?var1,var2}` - query parameters (ignored in path matching)
     """
     # Remove query parameter syntax for path matching
     template_without_query = re.sub(r"\{\?[^}]+\}", "", template)
@@ -64,8 +64,8 @@ def match_uri_template(uri: str, uri_template: str) -> dict[str, str] | None:
     """Match URI against template and extract both path and query parameters.
 
     Supports RFC 6570 URI templates:
-    - Path params: {var}, {var*}
-    - Query params: {?var1,var2}
+    - Path params: `{var}`, `{var*}`
+    - Query params: `{?var1,var2}`
     """
     # Split URI into path and query parts
     uri_path, _, query_string = uri.partition("?")

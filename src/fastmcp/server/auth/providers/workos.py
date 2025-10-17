@@ -41,6 +41,7 @@ class WorkOSProviderSettings(BaseSettings):
     client_secret: SecretStr | None = None
     authkit_domain: str | None = None  # e.g., "https://your-app.authkit.app"
     base_url: AnyHttpUrl | str | None = None
+    issuer_url: AnyHttpUrl | str | None = None
     redirect_path: str | None = None
     required_scopes: list[str] | None = None
     timeout_seconds: int | None = None
@@ -165,6 +166,7 @@ class WorkOSProvider(OAuthProxy):
         client_secret: str | NotSetT = NotSet,
         authkit_domain: str | NotSetT = NotSet,
         base_url: AnyHttpUrl | str | NotSetT = NotSet,
+        issuer_url: AnyHttpUrl | str | NotSetT = NotSet,
         redirect_path: str | NotSetT = NotSet,
         required_scopes: list[str] | None | NotSetT = NotSet,
         timeout_seconds: int | NotSetT = NotSet,
@@ -177,7 +179,9 @@ class WorkOSProvider(OAuthProxy):
             client_id: WorkOS client ID
             client_secret: WorkOS client secret
             authkit_domain: Your WorkOS AuthKit domain (e.g., "https://your-app.authkit.app")
-            base_url: Public URL of your FastMCP server (for OAuth callbacks)
+            base_url: Public URL where OAuth endpoints will be accessible (includes any mount path)
+            issuer_url: Issuer URL for OAuth metadata (defaults to base_url). Use root-level URL
+                to avoid 404s during discovery when mounting under a path.
             redirect_path: Redirect path configured in WorkOS (defaults to "/auth/callback")
             required_scopes: Required OAuth scopes (no default)
             timeout_seconds: HTTP request timeout for WorkOS API calls
@@ -194,6 +198,7 @@ class WorkOSProvider(OAuthProxy):
                     "client_secret": client_secret,
                     "authkit_domain": authkit_domain,
                     "base_url": base_url,
+                    "issuer_url": issuer_url,
                     "redirect_path": redirect_path,
                     "required_scopes": required_scopes,
                     "timeout_seconds": timeout_seconds,
@@ -247,7 +252,8 @@ class WorkOSProvider(OAuthProxy):
             token_verifier=token_verifier,
             base_url=settings.base_url,
             redirect_path=settings.redirect_path,
-            issuer_url=settings.base_url,
+            issuer_url=settings.issuer_url
+            or settings.base_url,  # Default to base_url if not specified
             allowed_client_redirect_uris=allowed_client_redirect_uris_final,
             client_storage=client_storage,
         )

@@ -40,6 +40,7 @@ class AzureProviderSettings(BaseSettings):
     tenant_id: str | None = None
     identifier_uri: str | None = None
     base_url: str | None = None
+    issuer_url: str | None = None
     redirect_path: str | None = None
     required_scopes: list[str] | None = None
     additional_authorize_scopes: list[str] | None = None
@@ -102,6 +103,7 @@ class AzureProvider(OAuthProxy):
         tenant_id: str | NotSetT = NotSet,
         identifier_uri: str | None | NotSetT = NotSet,
         base_url: str | NotSetT = NotSet,
+        issuer_url: str | NotSetT = NotSet,
         redirect_path: str | NotSetT = NotSet,
         required_scopes: list[str] | None | NotSetT = NotSet,
         additional_authorize_scopes: list[str] | None | NotSetT = NotSet,
@@ -117,7 +119,9 @@ class AzureProvider(OAuthProxy):
             identifier_uri: Optional Application ID URI for your API. (defaults to api://{client_id})
                 Used only to prefix scopes in authorization requests. Tokens are always validated
                 against your app's client ID.
-            base_url: Public URL of your FastMCP server (for OAuth callbacks)
+            base_url: Public URL where OAuth endpoints will be accessible (includes any mount path)
+            issuer_url: Issuer URL for OAuth metadata (defaults to base_url). Use root-level URL
+                to avoid 404s during discovery when mounting under a path.
             redirect_path: Redirect path configured in Azure (defaults to "/auth/callback")
             required_scopes: Required scopes. These are validated on tokens and used as defaults
                 when the client does not request specific scopes.
@@ -137,6 +141,7 @@ class AzureProvider(OAuthProxy):
                     "tenant_id": tenant_id,
                     "identifier_uri": identifier_uri,
                     "base_url": base_url,
+                    "issuer_url": issuer_url,
                     "redirect_path": redirect_path,
                     "required_scopes": required_scopes,
                     "additional_authorize_scopes": additional_authorize_scopes,
@@ -207,7 +212,8 @@ class AzureProvider(OAuthProxy):
             token_verifier=token_verifier,
             base_url=settings.base_url,
             redirect_path=settings.redirect_path,
-            issuer_url=settings.base_url,
+            issuer_url=settings.issuer_url
+            or settings.base_url,  # Default to base_url if not specified
             allowed_client_redirect_uris=settings.allowed_client_redirect_uris,
             client_storage=client_storage,
         )

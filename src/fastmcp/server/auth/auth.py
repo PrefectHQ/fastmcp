@@ -79,8 +79,9 @@ class AuthProvider(TokenVerifierProtocol):
         self,
         mcp_path: str | None = None,
     ) -> list[Route]:
-        """Get the routes for this authentication provider.
+        """Get all routes for this authentication provider.
 
+        This includes both well-known discovery routes and operational routes.
         Each provider is responsible for creating whatever routes it needs:
         - TokenVerifier: typically no routes (default implementation)
         - RemoteAuthProvider: protected resource metadata routes
@@ -93,9 +94,41 @@ class AuthProvider(TokenVerifierProtocol):
                 provider does not create the actual MCP endpoint route.
 
         Returns:
-            List of routes for this provider (excluding the MCP endpoint itself)
+            List of all routes for this provider (excluding the MCP endpoint itself)
         """
         return []
+
+    def get_well_known_routes(
+        self,
+        mcp_path: str | None = None,
+    ) -> list[Route]:
+        """Get well-known discovery routes for this authentication provider.
+
+        This is a utility method that filters get_routes() to return only
+        well-known discovery routes (those starting with /.well-known/).
+
+        Well-known routes provide OAuth metadata and discovery endpoints that
+        clients use to discover authentication capabilities. These routes should
+        be mounted at the root level of the application to comply with RFC 8414
+        and RFC 9728.
+
+        Common well-known routes:
+        - /.well-known/oauth-authorization-server (authorization server metadata)
+        - /.well-known/oauth-protected-resource/* (protected resource metadata)
+
+        Args:
+            mcp_path: The path where the MCP endpoint is mounted (e.g., "/mcp")
+                This is used to construct path-scoped well-known URLs.
+
+        Returns:
+            List of well-known discovery routes (typically mounted at root level)
+        """
+        all_routes = self.get_routes(mcp_path)
+        return [
+            route
+            for route in all_routes
+            if isinstance(route, Route) and route.path.startswith("/.well-known/")
+        ]
 
     def get_middleware(self) -> list:
         """Get HTTP application-level middleware for this auth provider.
@@ -205,12 +238,11 @@ class RemoteAuthProvider(AuthProvider):
         self,
         mcp_path: str | None = None,
     ) -> list[Route]:
-        """Get OAuth routes for this provider.
+        """Get routes for this provider.
 
-        Creates protected resource metadata routes.
+        Creates protected resource metadata routes (RFC 9728).
         """
-        # Start with base routes
-        routes = super().get_routes(mcp_path)
+        routes = []
 
         # Get the resource URL based on the MCP path
         resource_url = self._get_resource_url(mcp_path)

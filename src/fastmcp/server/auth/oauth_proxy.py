@@ -583,6 +583,13 @@ class OAuthProxy(OAuthProvider):
                 "For production, configure persistent storage (Redis, PostgreSQL, etc.)."
             )
 
+        # Cache HTTPS check to avoid repeated logging
+        self._is_https = str(self.base_url).startswith("https://")
+        if not self._is_https:
+            logger.warning(
+                "Using non-secure cookies for development; deploy with HTTPS for production."
+            )
+
         self._client_store = PydanticAdapter[ProxyDCRClient](
             key_value=self._client_storage,
             pydantic_model=ProxyDCRClient,
@@ -1264,12 +1271,8 @@ class OAuthProxy(OAuthProvider):
 
     def _cookie_name(self, base_name: str) -> str:
         """Return secure cookie name for HTTPS, fallback for HTTP development."""
-        base_url_str = str(self.base_url)
-        if base_url_str.startswith("https://"):
+        if self._is_https:
             return f"__Host-{base_name}"
-        logger.warning(
-            "Using non-secure cookies for development; deploy with HTTPS for production."
-        )
         return f"__{base_name}"
 
     def _sign_cookie(self, payload: str) -> str:
@@ -1346,12 +1349,11 @@ class OAuthProxy(OAuthProvider):
         max_age: int,
     ) -> None:
         name = self._cookie_name(base_name)
-        secure = str(self.base_url).startswith("https://")
         response.set_cookie(
             name,
             value_b64,
             max_age=max_age,
-            secure=secure,
+            secure=self._is_https,
             httponly=True,
             samesite="lax",
             path="/",
