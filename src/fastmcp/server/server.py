@@ -346,6 +346,17 @@ class FastMCP(Generic[LifespanResultT]):
     def version(self) -> str | None:
         return self._mcp_server.version
 
+    @property
+    def website_url(self) -> str | None:
+        return self._mcp_server.website_url
+
+    @property
+    def icons(self) -> list[mcp.types.Icon]:
+        if self._mcp_server.icons is None:
+            return []
+        else:
+            return list(self._mcp_server.icons)
+
     @asynccontextmanager
     async def _lifespan_manager(self) -> AsyncIterator[None]:
         if self._lifespan_result_set:

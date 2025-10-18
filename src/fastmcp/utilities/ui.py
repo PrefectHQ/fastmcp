@@ -138,18 +138,18 @@ INFO_BOX_STYLES = """
     }
 
     .warning-box {
-        background: #fffbeb;
-        border: 1px solid #fcd34d;
+        background: #f0f9ff;
+        border: 1px solid #bae6fd;
         border-radius: 0.5rem;
         padding: 1rem;
         margin-bottom: 1.5rem;
-        text-align: left;
+        text-align: center;
     }
 
     .warning-box p {
         margin-bottom: 0.5rem;
         line-height: 1.5;
-        color: #92400e;
+        color: #6b7280;
         font-size: 0.9375rem;
     }
 
@@ -158,7 +158,19 @@ INFO_BOX_STYLES = """
     }
 
     .warning-box strong {
+        color: #0ea5e9;
         font-weight: 600;
+    }
+
+    .warning-box a {
+        color: #0ea5e9;
+        text-decoration: underline;
+        font-weight: 600;
+    }
+
+    .warning-box a:hover {
+        color: #0284c7;
+        text-decoration: underline;
     }
 """
 
@@ -362,9 +374,19 @@ def create_page(
     """
 
 
-def create_logo() -> str:
-    """Create FastMCP logo HTML."""
-    return f'<img src="{FASTMCP_LOGO_URL}" alt="FastMCP" class="logo" />'
+def create_logo(icon_url: str | None = None, alt_text: str = "FastMCP") -> str:
+    """Create logo HTML.
+
+    Args:
+        icon_url: Optional custom icon URL. If not provided, uses the FastMCP logo.
+        alt_text: Alt text for the logo image.
+
+    Returns:
+        HTML for logo image tag.
+    """
+    url = icon_url or FASTMCP_LOGO_URL
+    alt = html.escape(alt_text)
+    return f'<img src="{html.escape(url)}" alt="{alt}" class="logo" />'
 
 
 def create_status_message(message: str, is_success: bool = True) -> str:

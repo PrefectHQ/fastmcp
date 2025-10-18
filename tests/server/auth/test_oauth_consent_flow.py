@@ -657,3 +657,214 @@ class TestConsentSecurity:
             assert r2.headers.get("location", "").startswith(
                 "https://github.com/login/oauth/authorize"
             )
+
+
+class TestConsentPageServerIcon:
+    """Tests for server icon display in OAuth consent screen."""
+
+    async def test_consent_screen_displays_server_icon(self):
+        """Test that consent screen shows server's custom icon when available."""
+        from unittest.mock import Mock
+
+        from fastmcp import FastMCP
+
+        # Create mock JWT verifier
+        verifier = Mock(spec=TokenVerifier)
+        verifier.required_scopes = ["read"]
+        verifier.verify_token = Mock(return_value=None)
+
+        # Create OAuthProxy
+        proxy = OAuthProxy(
+            upstream_authorization_endpoint="https://oauth.example.com/authorize",
+            upstream_token_endpoint="https://oauth.example.com/token",
+            upstream_client_id="upstream-client",
+            upstream_client_secret="upstream-secret",
+            token_verifier=verifier,
+            base_url="https://proxy.example.com",
+        )
+
+        # Create FastMCP server with custom icon
+        from mcp.types import Icon
+
+        server = FastMCP(
+            name="My Custom Server",
+            auth=proxy,
+            icons=[Icon(src="https://example.com/custom-icon.png")],
+            website_url="https://example.com",
+        )
+
+        # Create HTTP app
+        app = server.http_app()
+
+        # Register a test client with the proxy
+        client_info = OAuthClientInformationFull(
+            client_id="test-client",
+            client_secret="test-secret",
+            redirect_uris=[AnyUrl("http://localhost:12345/callback")],
+        )
+        await proxy.register_client(client_info)
+
+        # Create a transaction manually
+        from fastmcp.server.auth.oauth_proxy import OAuthTransaction
+
+        txn_id = "test-txn-id"
+        transaction = OAuthTransaction(
+            txn_id=txn_id,
+            client_id="test-client",
+            client_redirect_uri="http://localhost:12345/callback",
+            client_state="client-state",
+            code_challenge="challenge",
+            code_challenge_method="S256",
+            scopes=["read"],
+            created_at=time.time(),
+        )
+        await proxy._transaction_store.put(key=txn_id, value=transaction)
+
+        # Make request to consent page
+        with TestClient(app) as client:
+            response = client.get(f"/consent?txn_id={txn_id}")
+
+            # Check that response is successful
+            assert response.status_code == 200
+
+            # Check that HTML contains custom icon
+            assert "https://example.com/custom-icon.png" in response.text
+
+            # Check that server name is used as alt text
+            assert 'alt="My Custom Server"' in response.text
+
+    async def test_consent_screen_falls_back_to_fastmcp_logo(self):
+        """Test that consent screen shows FastMCP logo when no server icon provided."""
+        from unittest.mock import Mock
+
+        from fastmcp import FastMCP
+
+        # Create mock JWT verifier
+        verifier = Mock(spec=TokenVerifier)
+        verifier.required_scopes = ["read"]
+        verifier.verify_token = Mock(return_value=None)
+
+        # Create OAuthProxy
+        proxy = OAuthProxy(
+            upstream_authorization_endpoint="https://oauth.example.com/authorize",
+            upstream_token_endpoint="https://oauth.example.com/token",
+            upstream_client_id="upstream-client",
+            upstream_client_secret="upstream-secret",
+            token_verifier=verifier,
+            base_url="https://proxy.example.com",
+        )
+
+        # Create FastMCP server without icon
+        server = FastMCP(name="Server Without Icon", auth=proxy)
+
+        # Create HTTP app
+        app = server.http_app()
+
+        # Register a test client
+        client_info = OAuthClientInformationFull(
+            client_id="test-client",
+            client_secret="test-secret",
+            redirect_uris=[AnyUrl("http://localhost:12345/callback")],
+        )
+        await proxy.register_client(client_info)
+
+        # Create a transaction
+        from fastmcp.server.auth.oauth_proxy import OAuthTransaction
+
+        txn_id = "test-txn-id"
+        transaction = OAuthTransaction(
+            txn_id=txn_id,
+            client_id="test-client",
+            client_redirect_uri="http://localhost:12345/callback",
+            client_state="client-state",
+            code_challenge="challenge",
+            code_challenge_method="S256",
+            scopes=["read"],
+            created_at=time.time(),
+        )
+        await proxy._transaction_store.put(key=txn_id, value=transaction)
+
+        # Make request to consent page
+        with TestClient(app) as client:
+            response = client.get(f"/consent?txn_id={txn_id}")
+
+            # Check that response is successful
+            assert response.status_code == 200
+
+            # Check that HTML contains FastMCP logo
+            assert "gofastmcp.com/assets/brand/blue-logo.png" in response.text
+
+            # Check that alt text is still the server name
+            assert 'alt="Server Without Icon"' in response.text
+
+    async def test_consent_screen_escapes_server_name(self):
+        """Test that server name is properly HTML-escaped."""
+        from unittest.mock import Mock
+
+        from mcp.types import Icon
+
+        from fastmcp import FastMCP
+
+        # Create mock JWT verifier
+        verifier = Mock(spec=TokenVerifier)
+        verifier.required_scopes = ["read"]
+        verifier.verify_token = Mock(return_value=None)
+
+        # Create OAuthProxy
+        proxy = OAuthProxy(
+            upstream_authorization_endpoint="https://oauth.example.com/authorize",
+            upstream_token_endpoint="https://oauth.example.com/token",
+            upstream_client_id="upstream-client",
+            upstream_client_secret="upstream-secret",
+            token_verifier=verifier,
+            base_url="https://proxy.example.com",
+        )
+
+        # Create FastMCP server with special characters in name
+        server = FastMCP(
+            name='<script>alert("xss")</script>Server',
+            auth=proxy,
+            icons=[Icon(src="https://example.com/icon.png")],
+        )
+
+        # Create HTTP app
+        app = server.http_app()
+
+        # Register a test client
+        client_info = OAuthClientInformationFull(
+            client_id="test-client",
+            client_secret="test-secret",
+            redirect_uris=[AnyUrl("http://localhost:12345/callback")],
+        )
+        await proxy.register_client(client_info)
+
+        # Create a transaction
+        from fastmcp.server.auth.oauth_proxy import OAuthTransaction
+
+        txn_id = "test-txn-id"
+        transaction = OAuthTransaction(
+            txn_id=txn_id,
+            client_id="test-client",
+            client_redirect_uri="http://localhost:12345/callback",
+            client_state="client-state",
+            code_challenge="challenge",
+            code_challenge_method="S256",
+            scopes=["read"],
+            created_at=time.time(),
+        )
+        await proxy._transaction_store.put(key=txn_id, value=transaction)
+
+        # Make request to consent page
+        with TestClient(app) as client:
+            response = client.get(f"/consent?txn_id={txn_id}")
+
+            # Check that response is successful
+            assert response.status_code == 200
+
+            # Check that script tag is escaped
+            assert "<script>" not in response.text
+            assert "&lt;script&gt;" in response.text
+            assert (
+                'alt="&lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt;Server"'
+                in response.text
+            )

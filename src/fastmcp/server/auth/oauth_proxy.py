@@ -234,16 +234,30 @@ def create_consent_html(
     csrf_token: str,
     client_name: str | None = None,
     title: str = "Authorization Consent",
+    server_name: str | None = None,
+    server_icon_url: str | None = None,
+    server_website_url: str | None = None,
 ) -> str:
     """Create a styled HTML consent page for OAuth authorization requests."""
     # Format scopes for display
     scopes_display = ", ".join(scopes) if scopes else "None"
 
     # Build warning box with client name if available
-    client_display = client_name or client_id
+    import html as html_module
+
+    client_display = html_module.escape(client_name or client_id)
+    server_name_escaped = html_module.escape(server_name or "FastMCP")
+
+    # Make server name a hyperlink if website URL is available
+    if server_website_url:
+        website_url_escaped = html_module.escape(server_website_url)
+        server_display = f'<a href="{website_url_escaped}" target="_blank" rel="noopener noreferrer">{server_name_escaped}</a>'
+    else:
+        server_display = server_name_escaped
+
     warning_box = f"""
         <div class="warning-box">
-            <p><strong>{client_display} is requesting access to this FastMCP server.</strong></p>
+            <p><strong>{client_display}</strong> is requesting access to <strong>{server_display}</strong>.</p>
             <p>Review the details below before approving.</p>
         </div>
     """
@@ -286,7 +300,7 @@ def create_consent_html(
                     attacks</a>, where malicious clients could impersonate you
                     and steal access.<br><br>
                     <a
-                    href="https://gofastmcp.com/servers/auth/oauth-proxy#confused-deputy-attacks/"
+                    href="https://gofastmcp.com/servers/auth/oauth-proxy#confused-deputy-attacks"
                     target="_blank" class="tooltip-link">Learn more about
                     FastMCP security →</a>
                 </span>
@@ -297,7 +311,7 @@ def create_consent_html(
     # Build the page content
     content = f"""
         <div class="container">
-            {create_logo()}
+            {create_logo(icon_url=server_icon_url, alt_text=server_name or "FastMCP")}
             <h1>Authorization Consent</h1>
             {warning_box}
             {detail_box}
@@ -1843,6 +1857,8 @@ class OAuthProxy(OAuthProvider):
         self, request: Request
     ) -> HTMLResponse | RedirectResponse:
         """Display consent page or auto-approve/deny based on cookies."""
+        from fastmcp.server.server import FastMCP
+
         txn_id = request.query_params.get("txn_id")
         if not txn_id:
             return create_secure_html_response(
@@ -1895,6 +1911,19 @@ class OAuthProxy(OAuthProvider):
         client = await self.get_client(txn["client_id"])
         client_name = getattr(client, "client_name", None) if client else None
 
+        # Extract server metadata from app state
+        fastmcp = getattr(request.app.state, "fastmcp_server", None)
+
+        if isinstance(fastmcp, FastMCP):
+            server_name = fastmcp.name
+            icons = fastmcp.icons
+            server_icon_url = icons[0].src if icons else None
+            server_website_url = fastmcp.website_url
+        else:
+            server_name = None
+            server_icon_url = None
+            server_website_url = None
+
         html = create_consent_html(
             client_id=txn["client_id"],
             redirect_uri=txn["client_redirect_uri"],
@@ -1902,6 +1931,9 @@ class OAuthProxy(OAuthProvider):
             txn_id=txn_id,
             csrf_token=csrf_token,
             client_name=client_name,
+            server_name=server_name,
+            server_icon_url=server_icon_url,
+            server_website_url=server_website_url,
         )
         response = create_secure_html_response(html)
         # Store CSRF in cookie with short lifetime
