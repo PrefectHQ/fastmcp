@@ -20,7 +20,10 @@
     "primary": "#2d00f7"
   },
   "contextual": {
-    "options": ["copy", "view"]
+    "options": [
+      "copy",
+      "view"
+    ]
   },
   "description": "The fast, Pythonic way to build MCP servers and clients.",
   "errors": {
@@ -145,7 +148,10 @@
               {
                 "group": "Essentials",
                 "icon": "cube",
-                "pages": ["clients/client", "clients/transports"]
+                "pages": [
+                  "clients/client",
+                  "clients/transports"
+                ]
               },
               {
                 "group": "Core Operations",
@@ -171,7 +177,10 @@
               {
                 "group": "Authentication",
                 "icon": "user-shield",
-                "pages": ["clients/auth/oauth", "clients/auth/bearer"]
+                "pages": [
+                  "clients/auth/oauth",
+                  "clients/auth/bearer"
+                ]
               }
             ]
           },
@@ -225,7 +234,10 @@
               {
                 "group": "API Integration",
                 "icon": "globe",
-                "pages": ["integrations/fastapi", "integrations/openapi"]
+                "pages": [
+                  "integrations/fastapi",
+                  "integrations/openapi"
+                ]
               }
             ]
           },
@@ -330,6 +342,7 @@
                     "pages": [
                       "python-sdk/fastmcp-server-auth-__init__",
                       "python-sdk/fastmcp-server-auth-auth",
+                      "python-sdk/fastmcp-server-auth-jwt_issuer",
                       "python-sdk/fastmcp-server-auth-oauth_proxy",
                       "python-sdk/fastmcp-server-auth-oidc_proxy",
                       {

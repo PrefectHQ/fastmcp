@@ -15,7 +15,7 @@ consent pages, and other user-facing interfaces.
 
 ## Functions
 
-### `create_page` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/ui.py#L326" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `create_page` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/ui.py#L338" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 create_page(content: str, title: str = 'FastMCP', additional_styles: str = '', csp_policy: str = "default-src 'none'; style-src 'unsafe-inline'; img-src https:; base-uri 'none'") -> str
@@ -34,17 +34,24 @@ Create a complete HTML page with FastMCP styling.
 - Complete HTML page as string
 
 
-### `create_logo` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/ui.py#L365" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `create_logo` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/ui.py#L377" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-create_logo() -> str
+create_logo(icon_url: str | None = None, alt_text: str = 'FastMCP') -> str
 ```
 
 
-Create FastMCP logo HTML.
+Create logo HTML.
+
+**Args:**
+- `icon_url`: Optional custom icon URL. If not provided, uses the FastMCP logo.
+- `alt_text`: Alt text for the logo image.
+
+**Returns:**
+- HTML for logo image tag.
 
 
-### `create_status_message` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/ui.py#L370" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `create_status_message` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/ui.py#L392" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 create_status_message(message: str, is_success: bool = True) -> str
@@ -61,7 +68,7 @@ Create a status message with icon.
 - HTML for status message
 
 
-### `create_info_box` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/ui.py#L393" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `create_info_box` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/ui.py#L415" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 create_info_box(content: str, is_error: bool = False, centered: bool = False) -> str
@@ -79,7 +86,7 @@ Create an info box.
 - HTML for info box
 
 
-### `create_detail_box` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/ui.py#L417" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `create_detail_box` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/ui.py#L439" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 create_detail_box(rows: list[tuple[str, str]]) -> str
@@ -95,7 +102,7 @@ Create a detail box with key-value pairs.
 - HTML for detail box
 
 
-### `create_button_group` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/ui.py#L440" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `create_button_group` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/ui.py#L462" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 create_button_group(buttons: list[tuple[str, str, str]]) -> str
@@ -111,7 +118,7 @@ Create a group of buttons.
 - HTML for button group
 
 
-### `create_secure_html_response` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/ui.py#L458" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `create_secure_html_response` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/ui.py#L480" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 create_secure_html_response(html: str, status_code: int = 200) -> HTMLResponse

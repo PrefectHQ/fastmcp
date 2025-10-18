@@ -10,7 +10,7 @@ Error handling middleware for consistent error responses and tracking.
 
 ## Classes
 
-### `ErrorHandlingMiddleware` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/error_handling.py#L15" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ErrorHandlingMiddleware` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/error_handling.py#L17" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Middleware that provides consistent error handling and logging.
@@ -21,7 +21,7 @@ proper MCP error responses. Also tracks error patterns for monitoring.
 
 **Methods:**
 
-#### `on_message` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/error_handling.py#L110" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `on_message` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/error_handling.py#L112" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 on_message(self, context: MiddlewareContext, call_next: CallNext) -> Any
@@ -30,7 +30,7 @@ on_message(self, context: MiddlewareContext, call_next: CallNext) -> Any
 Handle errors for all messages.
 
 
-#### `get_error_stats` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/error_handling.py#L121" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_error_stats` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/error_handling.py#L123" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_error_stats(self) -> dict[str, int]
@@ -39,7 +39,7 @@ get_error_stats(self) -> dict[str, int]
 Get error statistics for monitoring.
 
 
-### `RetryMiddleware` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/error_handling.py#L126" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `RetryMiddleware` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/error_handling.py#L128" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Middleware that implements automatic retry logic for failed requests.
@@ -50,7 +50,7 @@ backoff to avoid overwhelming the server or external dependencies.
 
 **Methods:**
 
-#### `on_request` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/error_handling.py#L182" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `on_request` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/error_handling.py#L184" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 on_request(self, context: MiddlewareContext, call_next: CallNext) -> Any
