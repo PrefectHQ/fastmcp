@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from mcp import McpError
 
+from fastmcp.exceptions import NotFoundError
 from fastmcp.server.middleware.error_handling import (
     ErrorHandlingMiddleware,
     RetryMiddleware,
@@ -139,6 +140,17 @@ class TestErrorHandlingMiddleware:
         """Test transforming FileNotFoundError."""
         middleware = ErrorHandlingMiddleware()
         error = FileNotFoundError("test error")
+
+        result = middleware._transform_error(error)
+
+        assert isinstance(result, McpError)
+        assert result.error.code == -32001
+        assert "Resource not found: test error" in result.error.message
+
+    def test_transform_error_not_found_error(self):
+        """Test transforming NotFoundError."""
+        middleware = ErrorHandlingMiddleware()
+        error = NotFoundError("test error")
 
         result = middleware._transform_error(error)
 

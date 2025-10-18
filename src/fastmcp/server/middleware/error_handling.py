@@ -9,6 +9,8 @@ from typing import Any
 from mcp import McpError
 from mcp.types import ErrorData
 
+from fastmcp.exceptions import NotFoundError
+
 from .middleware import CallNext, Middleware, MiddlewareContext
 
 
@@ -90,7 +92,7 @@ class ErrorHandlingMiddleware(Middleware):
             return McpError(
                 ErrorData(code=-32602, message=f"Invalid params: {str(error)}")
             )
-        elif error_type in (FileNotFoundError, KeyError):
+        elif error_type in (FileNotFoundError, KeyError, NotFoundError):
             return McpError(
                 ErrorData(code=-32001, message=f"Resource not found: {str(error)}")
             )
