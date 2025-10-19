@@ -79,7 +79,7 @@ class GoogleTokenVerifier(TokenVerifier):
         """Initialize the Google token verifier.
 
         Args:
-            required_scopes: Required OAuth scopes (e.g., ['openid', 'email'])
+            required_scopes: Required OAuth scopes (e.g., ['openid', 'https://www.googleapis.com/auth/userinfo.email'])
             timeout_seconds: HTTP request timeout
         """
         super().__init__(required_scopes=required_scopes)
