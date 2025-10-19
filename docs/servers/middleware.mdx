@@ -461,9 +461,9 @@ from fastmcp.server.middleware.caching import ResponseCachingMiddleware
 mcp.add_middleware(ResponseCachingMiddleware())
 ```
 
-Out of the box, it caches call/list tool, resources, and prompts to an in-memory cache. Sending a notification of a tool/resource/prompt change will invalidate the cache for the affected method. List calls are stored under global keys, if you share a key_value backend across servers, keep this in mind and consider using the PrefixCollectionsWrapper in py-key-value-aio to namespace collections by server.
+Out of the box, it caches call/list tool, resources, and prompts to an in-memory cache with TTL-based expiration. Cache entries expire based on their TTL; there is no event-based cache invalidation. List calls are stored under global keys—when sharing a storage backend across multiple servers, consider namespacing collections to prevent conflicts. See [Storage Backends](/servers/storage-backends) for advanced configuration options.
 
-Each method can be configured individually, for example, caching list tools for 30 seconds, skipping caching for tools other than `tool1` and not caching and requests to read resources:
+Each method can be configured individually, for example, caching list tools for 30 seconds, limiting caching to specific tools, and disabling caching for resource reads:
 
 ```python
 from fastmcp.server.middleware.caching import ResponseCachingMiddleware, CallToolSettings, ListToolsSettings, ReadResourceSettings
@@ -481,7 +481,11 @@ mcp.add_middleware(ResponseCachingMiddleware(
 ))
 ```
 
-It can also be configured to cache to disk:
+#### Storage Backends
+
+By default, caching uses in-memory storage, which is fast but doesn't persist across restarts. For production or persistent caching across server restarts, configure a different storage backend. See [Storage Backends](/servers/storage-backends) for complete options including disk, Redis, DynamoDB, and custom implementations.
+
+Disk-based caching example:
 
 ```python
 from fastmcp.server.middleware.caching import ResponseCachingMiddleware
@@ -492,7 +496,31 @@ mcp.add_middleware(ResponseCachingMiddleware(
 ))
 ```
 
-See the Contrib modules for caching middleware implementations that support additional features like distributed caching.
+Redis for distributed deployments:
+
+```python
+from fastmcp.server.middleware.caching import ResponseCachingMiddleware
+from key_value.aio.stores.redis import RedisStore
+
+mcp.add_middleware(ResponseCachingMiddleware(
+    cache_storage=RedisStore(host="redis.example.com", port=6379),
+))
+```
+
+#### Cache Statistics
+
+The caching middleware collects operation statistics (hits, misses, etc.) through the underlying storage layer. Access statistics from the middleware instance:
+
+```python
+from fastmcp.server.middleware.caching import ResponseCachingMiddleware
+
+middleware = ResponseCachingMiddleware()
+mcp.add_middleware(middleware)
+
+# Later, retrieve statistics
+stats = middleware.statistics()
+print(f"Total cache operations: {stats}")
+```
 
 ### Logging Middleware
 

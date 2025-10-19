@@ -210,16 +210,34 @@ These parameters are included in all token requests to the upstream provider.
 
 </ParamField>
 
-<ParamField body="client_storage" type="KVStorage | None">
+<ParamField body="client_storage" type="AsyncKeyValue | None">
   Storage backend for persisting OAuth client registrations and encrypted upstream tokens. By default, clients are automatically persisted to disk in `~/.config/fastmcp/oauth-proxy-clients/`, allowing them to survive server restarts as long as the filesystem remains accessible. This means MCP clients only need to register once and can reconnect seamlessly after your server restarts.
 
-For production deployments with token persistence, use this with `jwt_signing_key` and `token_encryption_key` - all three work together to ensure tokens survive restarts. See [OAuth Token Security](/deployment/http#oauth-token-security).
+For production deployments with multiple servers or cloud deployments, see [Storage Backends](/servers/storage-backends) for options including Redis, DynamoDB, and custom implementations.
+
+For production token persistence, use this with `jwt_signing_key` and `token_encryption_key` - all three work together to ensure tokens survive restarts. See [OAuth Token Security](/deployment/http#oauth-token-security).
+
+Testing with in-memory storage:
 
 ```python
-from fastmcp.utilities.storage import InMemoryStorage
+from key_value.aio.stores.memory import MemoryStore
 
 # Use in-memory storage for testing (clients lost on restart)
-auth = OAuthProxy(..., client_storage=InMemoryStorage())
+auth = OAuthProxy(..., client_storage=MemoryStore())
+```
+
+Production with Redis for distributed deployments:
+
+```python
+from key_value.aio.stores.redis import RedisStore
+import os
+
+auth = OAuthProxy(
+    ...,
+    jwt_signing_key=os.environ["JWT_SIGNING_KEY"],
+    token_encryption_key=os.environ["TOKEN_ENCRYPTION_KEY"],
+    client_storage=RedisStore(host="redis.example.com", port=6379)
+)
 ```
 
 </ParamField>
