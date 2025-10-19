@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import asyncio
 import time
 import webbrowser
-from asyncio import Future
 from collections.abc import AsyncGenerator
 from typing import Any
 from urllib.parse import urlparse
@@ -24,6 +22,7 @@ from typing_extensions import override
 from uvicorn.server import Server
 
 from fastmcp.client.oauth_callback import (
+    OAuthCallbackResult,
     create_oauth_callback_server,
 )
 from fastmcp.utilities.http import find_available_port
@@ -247,14 +246,16 @@ class OAuth(OAuthClientProvider):
 
     async def callback_handler(self) -> tuple[str, str | None]:
         """Handle OAuth callback and return (auth_code, state)."""
-        # Create a future to capture the OAuth response
-        response_future: Future[Any] = asyncio.get_running_loop().create_future()
+        # Create result container and event to capture the OAuth response
+        result = OAuthCallbackResult()
+        result_ready = anyio.Event()
 
-        # Create server with the future
+        # Create server with result tracking
         server: Server = create_oauth_callback_server(
             port=self.redirect_port,
             server_url=self.server_base_url,
-            response_future=response_future,
+            result_container=result,
+            result_ready=result_ready,
         )
 
         # Run server until response is received with timeout logic
@@ -267,13 +268,15 @@ class OAuth(OAuthClientProvider):
             TIMEOUT = 300.0  # 5 minute timeout
             try:
                 with anyio.fail_after(TIMEOUT):
-                    auth_code, state = await response_future
-                    return auth_code, state
+                    await result_ready.wait()
+                    if result.error:
+                        raise result.error
+                    return result.code, result.state  # type: ignore
             except TimeoutError:
                 raise TimeoutError(f"OAuth callback timed out after {TIMEOUT} seconds")
             finally:
                 server.should_exit = True
-                await asyncio.sleep(0.1)  # Allow server to shut down gracefully
+                await anyio.sleep(0.1)  # Allow server to shut down gracefully
                 tg.cancel_scope.cancel()
 
         raise RuntimeError("OAuth callback handler could not be started")

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import copy
 import inspect
 import logging
@@ -636,30 +635,14 @@ class Context:
     def _queue_tool_list_changed(self) -> None:
         """Queue a tool list changed notification."""
         self._notification_queue.add("notifications/tools/list_changed")
-        self._try_flush_notifications()
 
     def _queue_resource_list_changed(self) -> None:
         """Queue a resource list changed notification."""
         self._notification_queue.add("notifications/resources/list_changed")
-        self._try_flush_notifications()
 
     def _queue_prompt_list_changed(self) -> None:
         """Queue a prompt list changed notification."""
         self._notification_queue.add("notifications/prompts/list_changed")
-        self._try_flush_notifications()
-
-    def _try_flush_notifications(self) -> None:
-        """Synchronous method that attempts to flush notifications if we're in an async context."""
-        try:
-            # Check if we're in an async context
-            loop = asyncio.get_running_loop()
-            if loop and not loop.is_running():
-                return
-            # Schedule flush as a task (fire-and-forget)
-            asyncio.create_task(self._flush_notifications())
-        except RuntimeError:
-            # No event loop - will flush later
-            pass
 
     async def _flush_notifications(self) -> None:
         """Send all queued notifications."""

@@ -7,9 +7,9 @@ and display styled responses to users.
 
 from __future__ import annotations
 
-import asyncio
 from dataclasses import dataclass
 
+import anyio
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.routing import Route
@@ -87,11 +87,21 @@ class CallbackResponse:
         return {k: v for k, v in self.__dict__.items() if v is not None}
 
 
+@dataclass
+class OAuthCallbackResult:
+    """Container for OAuth callback results, used with anyio.Event for async coordination."""
+
+    code: str | None = None
+    state: str | None = None
+    error: Exception | None = None
+
+
 def create_oauth_callback_server(
     port: int,
     callback_path: str = "/callback",
     server_url: str | None = None,
-    response_future: asyncio.Future | None = None,
+    result_container: OAuthCallbackResult | None = None,
+    result_ready: anyio.Event | None = None,
 ) -> Server:
     """
     Create an OAuth callback server.
@@ -100,7 +110,8 @@ def create_oauth_callback_server(
         port: The port to run the server on
         callback_path: The path to listen for OAuth redirects on
         server_url: Optional server URL to display in success messages
-        response_future: Optional future to resolve when OAuth callback is received
+        result_container: Optional container to store callback results
+        result_ready: Optional event to signal when callback is received
 
     Returns:
         Configured uvicorn Server instance (not yet running)
@@ -120,9 +131,10 @@ def create_oauth_callback_server(
             else:
                 user_message = f"Authorization failed: {error_desc}"
 
-            # Resolve future with exception if provided
-            if response_future and not response_future.done():
-                response_future.set_exception(RuntimeError(user_message))
+            # Store error and signal completion if result tracking provided
+            if result_container is not None and result_ready is not None:
+                result_container.error = RuntimeError(user_message)
+                result_ready.set()
 
             return create_secure_html_response(
                 create_callback_html(
@@ -135,9 +147,10 @@ def create_oauth_callback_server(
         if not callback_response.code:
             user_message = "No authorization code was received from the server."
 
-            # Resolve future with exception if provided
-            if response_future and not response_future.done():
-                response_future.set_exception(RuntimeError(user_message))
+            # Store error and signal completion if result tracking provided
+            if result_container is not None and result_ready is not None:
+                result_container.error = RuntimeError(user_message)
+                result_ready.set()
 
             return create_secure_html_response(
                 create_callback_html(
@@ -153,9 +166,10 @@ def create_oauth_callback_server(
                 "The OAuth server did not return the expected state parameter."
             )
 
-            # Resolve future with exception if provided
-            if response_future and not response_future.done():
-                response_future.set_exception(RuntimeError(user_message))
+            # Store error and signal completion if result tracking provided
+            if result_container is not None and result_ready is not None:
+                result_container.error = RuntimeError(user_message)
+                result_ready.set()
 
             return create_secure_html_response(
                 create_callback_html(
@@ -165,11 +179,11 @@ def create_oauth_callback_server(
                 status_code=400,
             )
 
-        # Success case
-        if response_future and not response_future.done():
-            response_future.set_result(
-                (callback_response.code, callback_response.state)
-            )
+        # Success case - store result and signal completion if result tracking provided
+        if result_container is not None and result_ready is not None:
+            result_container.code = callback_response.code
+            result_container.state = callback_response.state
+            result_ready.set()
 
         return create_secure_html_response(
             create_callback_html("", is_success=True, server_url=server_url)
