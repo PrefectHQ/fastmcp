@@ -174,7 +174,6 @@ class TestDeepObjectStyle:
             },
         }
 
-    @pytest.mark.asyncio
     async def test_deepobject_style_parsing_from_spec(self, deepobject_spec):
         """Test that deepObject style parameters are correctly parsed from OpenAPI spec."""
         async with httpx.AsyncClient(base_url="https://api.example.com") as client:
@@ -208,7 +207,6 @@ class TestDeepObjectStyle:
                 # Should have some structure, exact format may vary
                 assert target_param is not None
 
-    @pytest.mark.asyncio
     async def test_deepobject_explode_true_handling(self, deepobject_spec):
         """Test deepObject with explode=true parameter handling."""
         async with httpx.AsyncClient(base_url="https://api.example.com") as client:
@@ -234,7 +232,6 @@ class TestDeepObjectStyle:
                 assert "type" in target_properties
                 assert target_properties["type"]["enum"] == ["location", "organisation"]
 
-    @pytest.mark.asyncio
     async def test_deepobject_explode_false_handling(self, deepobject_spec):
         """Test deepObject with explode=false parameter handling."""
         async with httpx.AsyncClient(base_url="https://api.example.com") as client:
@@ -263,7 +260,6 @@ class TestDeepObjectStyle:
                 if "type" in compact_param:
                     assert compact_param["type"] == "object"
 
-    @pytest.mark.asyncio
     async def test_nested_object_structure_in_request_body(self, deepobject_spec):
         """Test nested object structures in request body are preserved."""
         async with httpx.AsyncClient(base_url="https://api.example.com") as client:
@@ -308,7 +304,6 @@ class TestDeepObjectStyle:
                 assert "push" in notif_props
                 assert "frequency" in notif_props
 
-    @pytest.mark.asyncio
     async def test_deepobject_tool_functionality(self, deepobject_spec):
         """Test that tools with deepObject parameters maintain basic functionality."""
         async with httpx.AsyncClient(base_url="https://api.example.com") as client:

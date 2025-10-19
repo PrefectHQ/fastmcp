@@ -1,7 +1,6 @@
 """Tests for Scalekit OAuth provider."""
 
 import os
-from collections.abc import Generator
 from unittest.mock import patch
 
 import httpx
@@ -10,7 +9,7 @@ import pytest
 from fastmcp import Client, FastMCP
 from fastmcp.client.transports import StreamableHttpTransport
 from fastmcp.server.auth.providers.scalekit import ScalekitProvider
-from fastmcp.utilities.tests import HeadlessOAuth, run_server_in_process
+from fastmcp.utilities.tests import HeadlessOAuth, run_server_async
 
 
 class TestScalekitProvider:
@@ -109,7 +108,9 @@ class TestScalekitProvider:
         )
 
 
-def run_mcp_server(host: str, port: int) -> None:
+@pytest.fixture
+async def mcp_server_url():
+    """Start Scalekit server."""
     mcp = FastMCP(
         auth=ScalekitProvider(
             environment_url="https://test-env.scalekit.com",
@@ -123,25 +124,17 @@ def run_mcp_server(host: str, port: int) -> None:
     def add(a: int, b: int) -> int:
         return a + b
 
-    mcp.run(host=host, port=port, transport="http")
+    async with run_server_async(mcp, transport="http") as url:
+        yield url
 
 
 @pytest.fixture
-def mcp_server_url() -> Generator[str]:
-    with run_server_in_process(run_mcp_server) as url:
-        yield f"{url}/mcp"
-
-
-@pytest.fixture()
-def client_with_headless_oauth(
-    mcp_server_url: str,
-) -> Generator[Client, None, None]:
+def client_with_headless_oauth(mcp_server_url: str) -> Client:
     """Client with headless OAuth that bypasses browser interaction."""
-    client = Client(
+    return Client(
         transport=StreamableHttpTransport(mcp_server_url),
         auth=HeadlessOAuth(mcp_url=mcp_server_url),
     )
-    yield client
 
 
 class TestScalekitProviderIntegration:

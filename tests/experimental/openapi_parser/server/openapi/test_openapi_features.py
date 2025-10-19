@@ -124,7 +124,6 @@ class TestParameterHandling:
             },
         }
 
-    @pytest.mark.asyncio
     async def test_query_parameters_in_tools(self, parameter_spec):
         """Test that query parameters are properly included in tool parameters."""
         async with httpx.AsyncClient(base_url="https://api.example.com") as client:
@@ -173,7 +172,6 @@ class TestParameterHandling:
                 assert "query" in required
                 assert "X-API-Key" in required
 
-    @pytest.mark.asyncio
     async def test_path_parameters_in_tools(self, parameter_spec):
         """Test that path parameters are properly included in tool parameters."""
         async with httpx.AsyncClient(base_url="https://api.example.com") as client:
@@ -279,7 +277,6 @@ class TestRequestBodyHandling:
             },
         }
 
-    @pytest.mark.asyncio
     async def test_request_body_properties_in_tool(self, request_body_spec):
         """Test that request body properties are included in tool parameters."""
         async with httpx.AsyncClient(base_url="https://api.example.com") as client:
@@ -381,7 +378,6 @@ class TestResponseSchemas:
             },
         }
 
-    @pytest.mark.asyncio
     async def test_tool_has_output_schema(self, response_schema_spec):
         """Test that tools have output schemas from response definitions."""
         async with httpx.AsyncClient(base_url="https://api.example.com") as client:

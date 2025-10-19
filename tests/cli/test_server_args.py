@@ -11,7 +11,6 @@ from fastmcp.utilities.mcp_server_config.v1.sources.filesystem import FileSystem
 class TestServerArguments:
     """Test passing arguments to servers."""
 
-    @pytest.mark.asyncio
     async def test_server_with_argparse(self, tmp_path):
         """Test a server that uses argparse with command line arguments."""
         server_file = tmp_path / "argparse_server.py"
@@ -53,7 +52,6 @@ def get_config() -> dict:
         tools = await server.get_tools()
         assert "get_config" in tools
 
-    @pytest.mark.asyncio
     async def test_server_with_no_args(self, tmp_path):
         """Test a server that uses argparse with no arguments (defaults)."""
         server_file = tmp_path / "default_server.py"
@@ -79,7 +77,6 @@ mcp = FastMCP(args.name)
 
         assert server.name == "DefaultName"
 
-    @pytest.mark.asyncio
     async def test_server_with_sys_argv_access(self, tmp_path):
         """Test a server that directly accesses sys.argv."""
         server_file = tmp_path / "sysargv_server.py"
@@ -112,7 +109,6 @@ mcp = FastMCP(name)
 
         assert server.name == "DirectServer"
 
-    @pytest.mark.asyncio
     async def test_config_server_example(self):
         """Test the actual config_server.py example."""
         # Find the examples directory

@@ -145,7 +145,6 @@ class TestOAuthProxyRedirectValidation:
 
         assert proxy._allowed_client_redirect_uris == []
 
-    @pytest.mark.asyncio
     async def test_proxy_register_client_uses_patterns(self):
         """Test that registered clients use the configured patterns."""
         custom_patterns = ["https://app.example.com/*"]
@@ -178,7 +177,6 @@ class TestOAuthProxyRedirectValidation:
         assert isinstance(registered, ProxyDCRClient)
         assert registered.allowed_redirect_uri_patterns == custom_patterns
 
-    @pytest.mark.asyncio
     async def test_proxy_unregistered_client_returns_none(self):
         """Test that unregistered clients return None."""
         custom_patterns = ["http://localhost:*", "http://127.0.0.1:*"]

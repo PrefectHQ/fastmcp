@@ -5,8 +5,8 @@ import logging
 import multiprocessing
 import socket
 import time
-from collections.abc import Callable, Generator
-from contextlib import contextmanager
+from collections.abc import AsyncGenerator, Callable, Generator
+from contextlib import asynccontextmanager, contextmanager
 from typing import TYPE_CHECKING, Any, Literal
 from urllib.parse import parse_qs, urlparse
 
@@ -138,6 +138,88 @@ def run_server_in_process(
         proc.join(timeout=2)
         if proc.is_alive():
             raise RuntimeError("Server process failed to terminate even after kill")
+
+
+@asynccontextmanager
+async def run_server_async(
+    server: FastMCP,
+    port: int | None = None,
+    transport: Literal["http", "streamable-http", "sse"] = "http",
+    path: str = "/mcp",
+    host: str = "127.0.0.1",
+) -> AsyncGenerator[str, None]:
+    """
+    Start a FastMCP server as an asyncio task for in-process async testing.
+
+    This is the recommended way to test FastMCP servers. It runs the server
+    as an async task in the same process, eliminating subprocess coordination,
+    sleeps, and cleanup issues.
+
+    Args:
+        server: FastMCP server instance
+        port: Port to bind to (default: find available port)
+        transport: Transport type ("http", "streamable-http", or "sse")
+        path: URL path for the server (default: "/mcp")
+        host: Host to bind to (default: "127.0.0.1")
+
+    Yields:
+        Server URL string
+
+    Example:
+        ```python
+        import pytest
+        from fastmcp import FastMCP, Client
+        from fastmcp.client.transports import StreamableHttpTransport
+        from fastmcp.utilities.tests import run_server_async
+
+        @pytest.fixture
+        async def server():
+            mcp = FastMCP("test")
+
+            @mcp.tool()
+            def greet(name: str) -> str:
+                return f"Hello, {name}!"
+
+            async with run_server_async(mcp) as url:
+                yield url
+
+        async def test_greet(server: str):
+            async with Client(StreamableHttpTransport(server)) as client:
+                result = await client.call_tool("greet", {"name": "World"})
+                assert result.content[0].text == "Hello, World!"
+        ```
+    """
+    import asyncio
+
+    if port is None:
+        port = find_available_port()
+
+    # Wait a tiny bit for the port to be released if it was just used
+    await asyncio.sleep(0.01)
+
+    # Start server as a background task
+    server_task = asyncio.create_task(
+        server.run_http_async(
+            host=host,
+            port=port,
+            transport=transport,
+            path=path,
+            show_banner=False,
+        )
+    )
+
+    # Give the server a moment to start
+    await asyncio.sleep(0.1)
+
+    try:
+        yield f"http://{host}:{port}{path}"
+    finally:
+        # Cleanup: cancel the task
+        server_task.cancel()
+        try:
+            await server_task
+        except asyncio.CancelledError:
+            pass
 
 
 @contextmanager

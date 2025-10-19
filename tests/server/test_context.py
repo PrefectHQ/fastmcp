@@ -137,7 +137,6 @@ class TestSessionId:
 class TestContextState:
     """Test suite for Context state functionality."""
 
-    @pytest.mark.asyncio
     async def test_context_state(self):
         """Test that state modifications in child contexts don't affect parent."""
         mock_fastmcp = MagicMock()
@@ -152,7 +151,6 @@ class TestContextState:
             context.set_state("test1", "new_value")
             assert context.get_state("test1") == "new_value"
 
-    @pytest.mark.asyncio
     async def test_context_state_inheritance(self):
         """Test that child contexts inherit parent state."""
         mock_fastmcp = MagicMock()

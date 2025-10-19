@@ -617,7 +617,6 @@ class TestOAuthProxyTokenEndpointAuth:
         )
         assert proxy_default._token_endpoint_auth_method is None
 
-    @pytest.mark.asyncio
     async def test_token_auth_method_passed_to_client(self, jwt_verifier):
         """Test that auth method is passed to AsyncOAuth2Client."""
         proxy = OAuthProxy(
@@ -738,7 +737,6 @@ class TestOAuthProxyTokenEndpointAuth:
 class TestOAuthProxyE2E:
     """End-to-end tests using mock OAuth provider."""
 
-    @pytest.mark.asyncio
     async def test_full_oauth_flow_with_mock_provider(self, mock_oauth_provider):
         """Test complete OAuth flow with mock provider."""
         # Create proxy pointing to mock provider
@@ -793,7 +791,6 @@ class TestOAuthProxyE2E:
         # Transaction ID itself is used as upstream state parameter
         assert transaction.txn_id == txn_id
 
-    @pytest.mark.asyncio
     async def test_token_refresh_with_mock_provider(self, mock_oauth_provider):
         """Test token refresh flow with mock provider."""
         proxy = OAuthProxy(
@@ -906,7 +903,6 @@ class TestOAuthProxyE2E:
             assert len(result.access_token.split(".")) == 3
             assert mock_oauth_provider.refresh_called
 
-    @pytest.mark.asyncio
     async def test_pkce_validation_with_mock_provider(self, mock_oauth_provider):
         """Test PKCE validation with mock provider."""
         mock_oauth_provider.require_pkce = True
@@ -1174,7 +1170,6 @@ class TestParameterForwarding:
         assert proxy._extra_authorize_params.get("prompt") == "consent"
         assert proxy._extra_authorize_params.get("max_age") == "3600"
 
-    @pytest.mark.asyncio
     async def test_token_endpoint_invalid_client_error(self, jwt_verifier):
         """Test that invalid client_id returns OAuth 2.1 compliant error response.
 

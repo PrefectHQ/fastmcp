@@ -1,11 +1,11 @@
 """Rate limiting middleware for protecting FastMCP servers from abuse."""
 
-import asyncio
 import time
 from collections import defaultdict, deque
 from collections.abc import Callable
 from typing import Any
 
+import anyio
 from mcp import McpError
 from mcp.types import ErrorData
 
@@ -33,7 +33,7 @@ class TokenBucketRateLimiter:
         self.refill_rate = refill_rate
         self.tokens = capacity
         self.last_refill = time.time()
-        self._lock = asyncio.Lock()
+        self._lock = anyio.Lock()
 
     async def consume(self, tokens: int = 1) -> bool:
         """Try to consume tokens from the bucket.
@@ -71,7 +71,7 @@ class SlidingWindowRateLimiter:
         self.max_requests = max_requests
         self.window_seconds = window_seconds
         self.requests = deque()
-        self._lock = asyncio.Lock()
+        self._lock = anyio.Lock()
 
     async def is_allowed(self) -> bool:
         """Check if a request is allowed."""

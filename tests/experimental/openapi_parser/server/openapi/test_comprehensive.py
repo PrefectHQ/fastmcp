@@ -352,7 +352,6 @@ class TestOpenAPIComprehensive:
             },
         }
 
-    @pytest.mark.asyncio
     async def test_comprehensive_server_initialization(
         self, comprehensive_openapi_spec
     ):
@@ -387,7 +386,6 @@ class TestOpenAPIComprehensive:
 
                 assert tool_names == expected_operations
 
-    @pytest.mark.asyncio
     async def test_openapi_31_compatibility(self, openapi_31_spec):
         """Test that OpenAPI 3.1 specs work correctly."""
         async with httpx.AsyncClient(base_url="https://api.example.com") as client:
@@ -404,7 +402,6 @@ class TestOpenAPIComprehensive:
                 tool = tools[0]
                 assert tool.name == "get_item_31"
 
-    @pytest.mark.asyncio
     async def test_parameter_collision_handling(self, comprehensive_openapi_spec):
         """Test that parameter collisions are handled correctly."""
         async with httpx.AsyncClient(base_url="https://api.example.com") as client:
@@ -436,7 +433,6 @@ class TestOpenAPIComprehensive:
                 # Should have other parameters
                 assert "data" in param_names
 
-    @pytest.mark.asyncio
     async def test_deep_object_parameters(self, comprehensive_openapi_spec):
         """Test deepObject parameter handling."""
         async with httpx.AsyncClient(base_url="https://api.example.com") as client:
@@ -462,7 +458,6 @@ class TestOpenAPIComprehensive:
                 filter_params = [name for name in properties.keys() if "filter" in name]
                 assert len(filter_params) > 0
 
-    @pytest.mark.asyncio
     async def test_request_building_and_execution(self, comprehensive_openapi_spec):
         """Test that requests are built and executed correctly."""
         # Create a mock client that tracks requests
@@ -503,7 +498,6 @@ class TestOpenAPIComprehensive:
             assert "123" in str(request.url)
             assert "users/123" in str(request.url)
 
-    @pytest.mark.asyncio
     async def test_complex_request_with_body_and_parameters(
         self, comprehensive_openapi_spec
     ):
@@ -554,7 +548,6 @@ class TestOpenAPIComprehensive:
             assert body_data["email"] == "new@example.com"
             assert body_data["age"] == 25
 
-    @pytest.mark.asyncio
     async def test_query_parameters(self, comprehensive_openapi_spec):
         """Test query parameter handling."""
         mock_client = Mock(spec=httpx.AsyncClient)
@@ -593,7 +586,6 @@ class TestOpenAPIComprehensive:
             assert "offset=10" in url_str
             assert "sort=name" in url_str
 
-    @pytest.mark.asyncio
     async def test_error_handling(self, comprehensive_openapi_spec):
         """Test error handling for HTTP errors."""
         mock_client = Mock(spec=httpx.AsyncClient)
@@ -630,7 +622,6 @@ class TestOpenAPIComprehensive:
             error_message = str(exc_info.value)
             assert "404" in error_message
 
-    @pytest.mark.asyncio
     async def test_schema_refs_resolution(self, comprehensive_openapi_spec):
         """Test that schema references are resolved correctly."""
         async with httpx.AsyncClient(base_url="https://api.example.com") as client:
@@ -652,7 +643,6 @@ class TestOpenAPIComprehensive:
                 assert "email" in properties
                 # May also have id and age depending on implementation
 
-    @pytest.mark.asyncio
     async def test_optional_vs_required_parameters(self, comprehensive_openapi_spec):
         """Test handling of optional vs required parameters."""
         async with httpx.AsyncClient(base_url="https://api.example.com") as client:
@@ -680,7 +670,6 @@ class TestOpenAPIComprehensive:
                 # Should have some required parameters
                 assert len(search_schema["properties"]) > 0
 
-    @pytest.mark.asyncio
     async def test_server_performance_no_latency(self, comprehensive_openapi_spec):
         """Test that server initialization is fast (no code generation latency)."""
         import time

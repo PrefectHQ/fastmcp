@@ -6,7 +6,6 @@ import inspect
 import logging
 import warnings
 import weakref
-from asyncio.locks import Lock
 from collections.abc import Generator, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar, Token
@@ -15,6 +14,7 @@ from enum import Enum
 from logging import Logger
 from typing import Any, Literal, cast, get_origin, overload
 
+import anyio
 from mcp import LoggingLevel, ServerSession
 from mcp.server.lowlevel.helper_types import ReadResourceContents
 from mcp.server.lowlevel.server import request_ctx
@@ -61,7 +61,7 @@ _clamp_logger(logger=to_client_logger, max_level="DEBUG")
 
 T = TypeVar("T", default=Any)
 _current_context: ContextVar[Context | None] = ContextVar("context", default=None)  # type: ignore[assignment]
-_flush_lock: Lock = asyncio.Lock()
+_flush_lock = anyio.Lock()
 
 
 @dataclass

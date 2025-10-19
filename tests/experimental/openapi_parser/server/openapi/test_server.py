@@ -112,7 +112,6 @@ class TestFastMCPOpenAPIBasicFunctionality:
         # Should use default name
         assert server.name == "OpenAPI FastMCP"
 
-    @pytest.mark.asyncio
     async def test_server_creates_tools_from_spec(self, simple_openapi_spec):
         """Test that server creates tools from OpenAPI spec."""
         async with httpx.AsyncClient(base_url="https://api.example.com") as client:
@@ -131,7 +130,6 @@ class TestFastMCPOpenAPIBasicFunctionality:
                 assert "get_user" in tool_names
                 assert "create_user" in tool_names
 
-    @pytest.mark.asyncio
     async def test_server_tool_execution_fallback_to_http(self, simple_openapi_spec):
         """Test tool execution falls back to HTTP when callables aren't available."""
         # Use a mock client that will be used for HTTP fallback
@@ -203,7 +201,6 @@ class TestFastMCPOpenAPIBasicFunctionality:
         assert hasattr(server, "_director")
         assert hasattr(server, "_spec")
 
-    @pytest.mark.asyncio
     async def test_clean_schema_output_no_unused_defs(self):
         """Test that unused schema definitions are removed from tool schemas."""
         # Create a spec with unused HTTPValidationError-like definitions

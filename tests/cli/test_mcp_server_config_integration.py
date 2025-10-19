@@ -84,7 +84,6 @@ class TestConfigFileDetection:
 class TestConfigWithClient:
     """Test fastmcp.json configuration with client connections."""
 
-    @pytest.mark.asyncio
     async def test_config_server_with_client(self, server_with_config):
         """Test that a server loaded from config works with a client."""
         # Load the config

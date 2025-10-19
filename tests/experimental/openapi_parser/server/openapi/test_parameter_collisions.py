@@ -118,7 +118,6 @@ class TestParameterCollisions:
             },
         }
 
-    @pytest.mark.asyncio
     async def test_path_body_collision_handling(self, collision_spec):
         """Test that path and body parameters with same name are handled correctly."""
         async with httpx.AsyncClient(base_url="https://api.example.com") as client:
@@ -159,7 +158,6 @@ class TestParameterCollisions:
                 id_required = any("id" in req for req in required)
                 assert id_required
 
-    @pytest.mark.asyncio
     async def test_query_header_collision_handling(self, collision_spec):
         """Test that query and header parameters with same name are handled correctly."""
         async with httpx.AsyncClient(base_url="https://api.example.com") as client:
@@ -190,7 +188,6 @@ class TestParameterCollisions:
                 query_required = any("query" in req for req in required)
                 assert query_required
 
-    @pytest.mark.asyncio
     async def test_collision_resolution_maintains_functionality(self, collision_spec):
         """Test that collision resolution doesn't break basic tool functionality."""
         async with httpx.AsyncClient(base_url="https://api.example.com") as client:

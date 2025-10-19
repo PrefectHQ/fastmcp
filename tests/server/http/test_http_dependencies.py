@@ -1,5 +1,4 @@
 import json
-from collections.abc import Generator
 
 import pytest
 
@@ -7,7 +6,7 @@ from fastmcp.client import Client
 from fastmcp.client.transports import SSETransport, StreamableHttpTransport
 from fastmcp.server.dependencies import get_http_request
 from fastmcp.server.server import FastMCP
-from fastmcp.utilities.tests import run_server_in_process
+from fastmcp.utilities.tests import run_server_async
 
 
 def fastmcp_server():
@@ -38,20 +37,20 @@ def fastmcp_server():
     return server
 
 
-def run_server(host: str, port: int, **kwargs) -> None:
-    fastmcp_server().run(host=host, port=port, **kwargs)
+@pytest.fixture
+async def shttp_server():
+    """Start a test server with StreamableHttp transport."""
+    server = fastmcp_server()
+    async with run_server_async(server, transport="http") as url:
+        yield url
 
 
-@pytest.fixture(autouse=True)
-def shttp_server() -> Generator[str, None, None]:
-    with run_server_in_process(run_server, transport="http") as url:
-        yield f"{url}/mcp"
-
-
-@pytest.fixture(autouse=True)
-def sse_server() -> Generator[str, None, None]:
-    with run_server_in_process(run_server, transport="sse") as url:
-        yield f"{url}/sse"
+@pytest.fixture
+async def sse_server():
+    """Start a test server with SSE transport."""
+    server = fastmcp_server()
+    async with run_server_async(server, transport="sse") as url:
+        yield url
 
 
 async def test_http_headers_resource_shttp(shttp_server: str):

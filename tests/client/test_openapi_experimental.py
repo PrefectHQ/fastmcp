@@ -1,19 +1,16 @@
 import json
-from collections.abc import Generator
 
 import pytest
 from fastapi import FastAPI, Request
 
-import fastmcp
 from fastmcp import Client, FastMCP
 from fastmcp.client.transports import SSETransport, StreamableHttpTransport
 from fastmcp.experimental.server.openapi import MCPType, RouteMap
-from fastmcp.utilities.tests import run_server_in_process
+from fastmcp.utilities.tests import run_server_async, temporary_settings
 
 
-def fastmcp_server_for_headers() -> FastMCP:
-    fastmcp.settings.experimental.enable_new_openapi_parser = True
-
+def create_fastmcp_server_for_headers() -> FastMCP:
+    """Create a FastMCP server from FastAPI app with experimental parser."""
     app = FastAPI()
 
     @app.get("/headers")
@@ -46,35 +43,30 @@ def fastmcp_server_for_headers() -> FastMCP:
     return mcp
 
 
-def run_server(host: str, port: int, **kwargs) -> None:
-    fastmcp_server_for_headers().run(host=host, port=port, **kwargs)
-
-
-def run_proxy_server(host: str, port: int, shttp_url: str, **kwargs) -> None:
-    app = FastMCP.as_proxy(StreamableHttpTransport(shttp_url))
-    app.run(host=host, port=port, **kwargs)
+@pytest.fixture
+async def shttp_server():
+    """Start a test server with StreamableHttp transport."""
+    with temporary_settings(experimental__enable_new_openapi_parser=True):
+        server = create_fastmcp_server_for_headers()
+        async with run_server_async(server, transport="http") as url:
+            yield url
 
 
 @pytest.fixture
-def shttp_server() -> Generator[str, None, None]:
-    with run_server_in_process(run_server, transport="http") as url:
-        yield f"{url}/mcp"
+async def sse_server():
+    """Start a test server with SSE transport."""
+    with temporary_settings(experimental__enable_new_openapi_parser=True):
+        server = create_fastmcp_server_for_headers()
+        async with run_server_async(server, transport="sse") as url:
+            yield url
 
 
 @pytest.fixture
-def sse_server() -> Generator[str, None, None]:
-    with run_server_in_process(run_server, transport="sse") as url:
-        yield f"{url}/sse"
-
-
-@pytest.fixture
-def proxy_server(shttp_server: str) -> Generator[str, None, None]:
-    with run_server_in_process(
-        run_proxy_server,
-        shttp_url=shttp_server,
-        transport="http",
-    ) as url:
-        yield f"{url}/mcp"
+async def proxy_server(shttp_server: str):
+    """Start a proxy server."""
+    proxy = FastMCP.as_proxy(StreamableHttpTransport(shttp_server))
+    async with run_server_async(proxy, transport="http") as url:
+        yield url
 
 
 async def test_fastapi_client_headers_streamable_http_resource(shttp_server: str):

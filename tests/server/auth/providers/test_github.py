@@ -177,7 +177,6 @@ class TestGitHubTokenVerifier:
         )  # Parent TokenVerifier sets empty list as default
         assert verifier.timeout_seconds == 10
 
-    @pytest.mark.asyncio
     async def test_verify_token_github_api_failure(self):
         """Test token verification when GitHub API returns error."""
         verifier = GitHubTokenVerifier()
@@ -196,7 +195,6 @@ class TestGitHubTokenVerifier:
             result = await verifier.verify_token("invalid_token")
             assert result is None
 
-    @pytest.mark.asyncio
     async def test_verify_token_success(self):
         """Test successful token verification."""
         from unittest.mock import AsyncMock
