@@ -625,7 +625,7 @@ from fastmcp.tools.tool import ToolResult
 def advanced_tool() -> ToolResult:
     """Tool with full control over output."""
     return ToolResult(
-        content=[TextContent(text="Human-readable summary")],
+        content=[TextContent(type="text", text="Human-readable summary")],
         structured_content={"data": "value", "count": 42}
     )
 ```
