@@ -470,7 +470,7 @@
     "codeblocks": {
       "theme": {
         "light": "snazzy-light",
-        "dark": "material-theme-palenight"
+        "dark": "dark-plus"
       }
     }
   }
