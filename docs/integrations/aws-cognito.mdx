@@ -86,21 +86,19 @@ Set up AWS Cognito user pool with an app client to get the credentials needed fo
     </Tip>
 </Step>
 
-<Step title="Pick Up AWS Cognito Domain">
-    Navigate to **"Branding" → "Domain"** in the side navigation to find or configure Your AWS Cognito domain:
+<Step title="Configure Resource Server">
+    AWS Cognito requires a resource server entry to support OAuth with protected resources. Without this, token exchange will fail with an `invalid_grant` error.
 
-    **Option 1: Use Auto-Generated Domain**
-    - If AWS has already created a domain automatically, note the **domain prefix** (the part before `.auth.region.amazoncognito.com`)
-    - This prefix is what you'll use in your FastMCP configuration
+    Navigate to **"Branding" → "Domain"** in the side navigation, then:
 
-    **Option 2: Create a Custom Domain Prefix**
-    - If no domain exists or you want a better name, delete the existing domain and create a new one using the **"Actions"** menu
-    - Under **"Domain"** → **"Cognito domain"** in the **"Create Cognito domain"** dialog, enter a meaningful prefix (e.g., `my-app`) that is available in the AWS region you are in
-    - Just note the **domain prefix** you entered (e.g., `my-fastmcp-app`) - this is what you'll use in your FastMCP configuration
+    1. Click **"Create resource server"**
+    2. **Resource server name**: Enter a descriptive name (e.g., `My MCP Server`)
+    3. **Resource server identifier**: Enter your MCP endpoint URL exactly as it will be accessed (e.g., `http://localhost:8000/mcp` for development, or `https://your-server.com/mcp` for production)
+    4. Click **"Create resource server"**
 
-    <Info>
-    The FastMCP AWS Cognito provider automatically constructs the full domain from your prefix and region, simplifying configuration.
-    </Info>
+    <Warning>
+    The resource server identifier must exactly match your `base_url + mcp_path`. For the default configuration with `base_url="http://localhost:8000"` and `path="/mcp"`, use `http://localhost:8000/mcp`.
+    </Warning>
 </Step>
 
 <Step title="Save Your Credentials">
@@ -109,7 +107,6 @@ Set up AWS Cognito user pool with an app client to get the credentials needed fo
     - **User Pool ID**: Format like `eu-central-1_XXXXXXXXX`
     - **Client ID**: Your application's client identifier
     - **Client Secret**: Generated client secret (keep secure)
-    - **Domain Prefix**: The prefix of Your AWS Cognito domain
     - **AWS Region**: Where Your AWS Cognito user pool is located
 
     <Tip>

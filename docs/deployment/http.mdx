@@ -280,6 +280,14 @@ OAuth specifications (RFC 8414 and RFC 9728) require discovery metadata to be ac
 Follow the configuration instructions below to set up mounting correctly.
 </Warning>
 
+<Warning>
+**CORS Middleware Conflicts:**
+
+If you're integrating FastMCP into an existing application with its own CORS middleware, be aware that layering CORS middleware can cause conflicts (such as 404 errors on `.well-known` routes or OPTIONS requests).
+
+FastMCP and the MCP SDK already handle CORS for OAuth routes. If you need CORS on your own application routes, consider using the sub-app pattern: mount FastMCP and your routes as separate apps, each with their own middleware, rather than adding application-wide CORS middleware.
+</Warning>
+
 ### Route Types
 
 OAuth-protected MCP servers expose two categories of routes:
