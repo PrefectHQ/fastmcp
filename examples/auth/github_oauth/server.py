@@ -22,16 +22,7 @@ auth = GitHubProvider(
     # redirect_path="/auth/callback",  # Default path - change if using a different callback URL
 )
 
-mcp = FastMCP(
-    auth=auth,
-    # "GitHub OAuth Example Server",
-    # icons=[
-    #     Icon(
-    #         src="https://upload.wikimedia.org/wikipedia/commons/thumb/9/91/Octicons-mark-github.svg/2048px-Octicons-mark-github.svg.png"
-    #     )
-    # ],
-    # website_url="https://example.com",
-)
+mcp = FastMCP("GitHub OAuth Example Server", auth=auth)
 
 
 @mcp.tool
