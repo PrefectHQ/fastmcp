@@ -25,10 +25,10 @@ create_callback_html(message: str, is_success: bool = True, title: str = 'FastMC
 Create a styled HTML response for OAuth callbacks.
 
 
-### `create_oauth_callback_server` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/oauth_callback.py#L90" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `create_oauth_callback_server` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/oauth_callback.py#L99" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-create_oauth_callback_server(port: int, callback_path: str = '/callback', server_url: str | None = None, response_future: asyncio.Future | None = None) -> Server
+create_oauth_callback_server(port: int, callback_path: str = '/callback', server_url: str | None = None, result_container: OAuthCallbackResult | None = None, result_ready: anyio.Event | None = None) -> Server
 ```
 
 
@@ -38,7 +38,8 @@ Create an OAuth callback server.
 - `port`: The port to run the server on
 - `callback_path`: The path to listen for OAuth redirects on
 - `server_url`: Optional server URL to display in success messages
-- `response_future`: Optional future to resolve when OAuth callback is received
+- `result_container`: Optional container to store callback results
+- `result_ready`: Optional event to signal when callback is received
 
 **Returns:**
 - Configured uvicorn Server instance (not yet running)
@@ -61,3 +62,9 @@ from_dict(cls, data: dict[str, str]) -> CallbackResponse
 ```python
 to_dict(self) -> dict[str, str]
 ```
+
+### `OAuthCallbackResult` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/oauth_callback.py#L91" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Container for OAuth callback results, used with anyio.Event for async coordination.
+

@@ -43,7 +43,28 @@ not pickleable, so we need a function that creates and runs one.
 - The server URL.
 
 
-### `caplog_for_fastmcp` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/tests.py#L144" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `run_server_async` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/tests.py#L144" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+run_server_async(server: FastMCP, port: int | None = None, transport: Literal['http', 'streamable-http', 'sse'] = 'http', path: str = '/mcp', host: str = '127.0.0.1') -> AsyncGenerator[str, None]
+```
+
+
+Start a FastMCP server as an asyncio task for in-process async testing.
+
+This is the recommended way to test FastMCP servers. It runs the server
+as an async task in the same process, eliminating subprocess coordination,
+sleeps, and cleanup issues.
+
+**Args:**
+- `server`: FastMCP server instance
+- `port`: Port to bind to (default\: find available port)
+- `transport`: Transport type ("http", "streamable-http", or "sse")
+- `path`: URL path for the server (default\: "/mcp")
+- `host`: Host to bind to (default\: "127.0.0.1")
+
+
+### `caplog_for_fastmcp` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/tests.py#L226" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 caplog_for_fastmcp(caplog)
@@ -55,7 +76,7 @@ Context manager to capture logs from FastMCP loggers even when propagation is di
 
 ## Classes
 
-### `HeadlessOAuth` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/tests.py#L155" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `HeadlessOAuth` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/tests.py#L237" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 OAuth provider that bypasses browser interaction for testing.
@@ -66,7 +87,7 @@ instead of opening a browser and running a callback server. Useful for automated
 
 **Methods:**
 
-#### `redirect_handler` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/tests.py#L168" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `redirect_handler` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/tests.py#L250" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 redirect_handler(self, authorization_url: str) -> None
@@ -75,7 +96,7 @@ redirect_handler(self, authorization_url: str) -> None
 Make HTTP request to authorization URL and store response for callback handler.
 
 
-#### `callback_handler` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/tests.py#L174" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `callback_handler` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/tests.py#L256" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 callback_handler(self) -> tuple[str, str | None]
