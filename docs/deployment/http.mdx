@@ -145,6 +145,59 @@ middleware = [
 http_app = mcp.http_app(middleware=middleware)
 ```
 
+### CORS for Browser-Based Clients
+
+<Tip>
+Most MCP clients, including those that you access through a browser like ChatGPT or Claude, don't need CORS configuration. Only enable CORS if you're working with an MCP client that connects directly from a browser, such as debugging tools or inspectors.
+</Tip>
+
+CORS (Cross-Origin Resource Sharing) is needed when JavaScript running in a web browser connects directly to your MCP server. This is different from using an LLM through a browser—in that case, the browser connects to the LLM service, and the LLM service connects to your MCP server (no CORS needed).
+
+Browser-based MCP clients that need CORS include:
+
+- **MCP Inspector** - Browser-based debugging tool for testing MCP servers
+- **Custom browser-based MCP clients** - If you're building a web app that directly connects to MCP servers
+
+For these scenarios, add CORS middleware with the specific headers required for MCP protocol:
+
+```python
+from fastmcp import FastMCP
+from starlette.middleware import Middleware
+from starlette.middleware.cors import CORSMiddleware
+
+mcp = FastMCP("MyServer")
+
+# Configure CORS for browser-based clients
+middleware = [
+    Middleware(
+        CORSMiddleware,
+        allow_origins=["*"],  # Allow all origins; use specific origins for security
+        allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+        allow_headers=[
+            "mcp-protocol-version",
+            "mcp-session-id",
+            "Authorization",
+            "Content-Type",
+        ],
+        expose_headers=["mcp-session-id"],
+    )
+]
+
+app = mcp.http_app(middleware=middleware)
+```
+
+**Key configuration details:**
+
+- **`allow_origins`**: Specify exact origins (e.g., `["http://localhost:3000"]`) rather than `["*"]` for production deployments
+- **`allow_headers`**: Must include `mcp-protocol-version`, `mcp-session-id`, and `Authorization` (for authenticated servers)
+- **`expose_headers`**: Must include `mcp-session-id` so JavaScript can read the session ID from responses and send it in subsequent requests
+
+Without `expose_headers=["mcp-session-id"]`, browsers will receive the session ID but JavaScript won't be able to access it, causing session management to fail.
+
+<Warning>
+**Production Security**: Never use `allow_origins=["*"]` in production. Specify the exact origins of your browser-based clients. Using wildcards exposes your server to unauthorized access from any website.
+</Warning>
+
 ## Integration with Web Frameworks
 
 If you already have a web application running, you can add MCP capabilities by mounting a FastMCP server as a sub-application. This allows you to expose MCP tools alongside your existing API endpoints, sharing the same domain and infrastructure. The MCP server becomes just another route in your application, making it easy to manage and deploy.

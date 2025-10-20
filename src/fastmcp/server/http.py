@@ -9,7 +9,9 @@ from mcp.server.auth.middleware.bearer_auth import RequireAuthMiddleware
 from mcp.server.auth.routes import build_resource_metadata_url
 from mcp.server.lowlevel.server import LifespanResultT
 from mcp.server.sse import SseServerTransport
-from mcp.server.streamable_http import EventStore
+from mcp.server.streamable_http import (
+    EventStore,
+)
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
@@ -179,7 +181,7 @@ def create_sse_app(
             build_resource_metadata_url(resource_url) if resource_url else None
         )
 
-        # Create protected SSE endpoint route with GET method only
+        # Create protected SSE endpoint route
         server_routes.append(
             Route(
                 sse_path,
@@ -316,6 +318,7 @@ def create_streamable_http_app(
                     auth.required_scopes,
                     resource_metadata_url,
                 ),
+                methods=["GET", "POST", "DELETE"],
             )
         )
     else:
