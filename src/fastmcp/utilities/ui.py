@@ -157,6 +157,34 @@ INFO_BOX_STYLES = """
         opacity: 0.8;
     }
 
+    /* Monospace info box - gray styling with code font */
+    .info-box-mono {
+        background: #f9fafb;
+        border: 1px solid #e5e7eb;
+        border-radius: 0.5rem;
+        padding: 0.875rem;
+        margin: 1.25rem 0;
+        font-size: 0.875rem;
+        color: #6b7280;
+        font-family: 'SF Mono', 'Monaco', 'Consolas', 'Courier New', monospace;
+        text-align: left;
+    }
+
+    .info-box-mono.centered {
+        text-align: center;
+    }
+
+    .info-box-mono.error {
+        background: #fef2f2;
+        border-color: #fecaca;
+        color: #991b1b;
+    }
+
+    .info-box-mono strong {
+        color: #111827;
+        font-weight: 600;
+    }
+
     .warning-box {
         background: #f0f9ff;
         border: 1px solid #bae6fd;
@@ -500,7 +528,10 @@ def create_status_message(message: str, is_success: bool = True) -> str:
 
 
 def create_info_box(
-    content: str, is_error: bool = False, centered: bool = False
+    content: str,
+    is_error: bool = False,
+    centered: bool = False,
+    monospace: bool = False,
 ) -> str:
     """
     Create an info box.
@@ -509,12 +540,14 @@ def create_info_box(
         content: HTML content for the info box
         is_error: True for error styling, False for normal
         centered: True to center the text, False for left-aligned
+        monospace: True to use gray monospace font styling instead of blue
 
     Returns:
         HTML for info box
     """
     content = html.escape(content)
-    classes = ["info-box"]
+    base_class = "info-box-mono" if monospace else "info-box"
+    classes = [base_class]
     if is_error:
         classes.append("error")
     if centered:
