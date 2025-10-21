@@ -748,6 +748,7 @@ class UvxStdioTransport(StdioTransport):
         env: dict[str, str] | None = None
         if env_vars:
             env = os.environ.copy()
+            env.update(env_vars)
 
         super().__init__(
             command="uvx",
