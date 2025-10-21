@@ -19,10 +19,6 @@
     "light": "#4cc9f0",
     "primary": "#2d00f7"
   },
-  "fonts": {
-    "heading": { "family": "Google Sans" },
-    "body": { "family": "BlinkMacSystemFont" }
-  },
   "contextual": {
     "options": ["copy", "view"]
   },
