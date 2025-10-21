@@ -217,7 +217,7 @@ class AWSCognitoProvider(OIDCProxy):
             client_storage=client_storage,
         )
 
-        logger.info(
+        logger.debug(
             "Initialized AWS Cognito OAuth provider for client %s with scopes: %s",
             settings.client_id,
             required_scopes_final,

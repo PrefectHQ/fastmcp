@@ -301,7 +301,7 @@ class GoogleProvider(OAuthProxy):
             client_storage=client_storage,
         )
 
-        logger.info(
+        logger.debug(
             "Initialized Google OAuth provider for client %s with scopes: %s",
             settings.client_id,
             required_scopes_final,

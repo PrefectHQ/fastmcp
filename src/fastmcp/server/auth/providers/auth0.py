@@ -173,7 +173,7 @@ class Auth0Provider(OIDCProxy):
 
         super().__init__(**init_kwargs)
 
-        logger.info(
+        logger.debug(
             "Initialized Auth0 OAuth provider for client %s with scopes: %s",
             settings.client_id,
             auth0_required_scopes,

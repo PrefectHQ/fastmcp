@@ -282,7 +282,7 @@ class GitHubProvider(OAuthProxy):
             client_storage=client_storage,
         )
 
-        logger.info(
+        logger.debug(
             "Initialized GitHub OAuth provider for client %s with scopes: %s",
             settings.client_id,
             required_scopes_final,

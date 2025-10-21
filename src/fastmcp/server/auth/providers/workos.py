@@ -258,7 +258,7 @@ class WorkOSProvider(OAuthProxy):
             client_storage=client_storage,
         )
 
-        logger.info(
+        logger.debug(
             "Initialized WorkOS OAuth provider for client %s with AuthKit domain %s",
             settings.client_id,
             authkit_domain_final,
