@@ -96,6 +96,7 @@ class Auth0Provider(OIDCProxy):
         redirect_path: str | NotSetT = NotSet,
         allowed_client_redirect_uris: list[str] | NotSetT = NotSet,
         client_storage: AsyncKeyValue | None = None,
+        require_authorization_consent: bool = True,
     ) -> None:
         """Initialize Auth0 OAuth provider.
 
@@ -112,6 +113,10 @@ class Auth0Provider(OIDCProxy):
             allowed_client_redirect_uris: List of allowed redirect URI patterns for MCP clients.
                 If None (default), all URIs are allowed. If empty list, no URIs are allowed.
             client_storage: An AsyncKeyValue-compatible store for client registrations, registrations are stored in memory if not provided
+            require_authorization_consent: Whether to require user consent before authorizing clients (default True).
+                When True, users see a consent screen before being redirected to Auth0.
+                When False, authorization proceeds directly without user confirmation.
+                SECURITY WARNING: Only disable for local development or testing environments.
         """
         settings = Auth0ProviderSettings.model_validate(
             {
@@ -169,6 +174,7 @@ class Auth0Provider(OIDCProxy):
             "required_scopes": auth0_required_scopes,
             "allowed_client_redirect_uris": settings.allowed_client_redirect_uris,
             "client_storage": client_storage,
+            "require_authorization_consent": require_authorization_consent,
         }
 
         super().__init__(**init_kwargs)

@@ -282,6 +282,28 @@ auth = OAuthProxy(
 
   See [HTTP Deployment - OAuth Token Security](/deployment/http#oauth-token-security).
 </ParamField>
+
+<ParamField body="require_authorization_consent" type="bool" default="True">
+  Whether to require user consent before authorizing MCP clients. When enabled (default), users see a consent screen that displays which client is requesting access, preventing [confused deputy attacks](https://modelcontextprotocol.io/specification/2025-06-18/basic/security_best_practices#confused-deputy-problem) by ensuring users explicitly approve new clients.
+
+  **Default behavior (True):**
+  Users see a consent screen on first authorization. Consent choices are remembered via signed cookies, so users only need to approve each client once. This protects against malicious clients impersonating the user.
+
+  **Disabling consent (False):**
+  Authorization proceeds directly to the upstream provider without user confirmation. Only use this for local development or testing environments where the security trade-off is acceptable.
+
+  ```python
+  # Development/testing only - skip consent screen
+  auth = OAuthProxy(
+      ...,
+      require_authorization_consent=False  # ⚠️ Security warning: only for local/testing
+  )
+  ```
+
+  <Warning>
+    Disabling consent removes an important security layer. Only disable for local development or testing environments where you fully control all connecting clients.
+  </Warning>
+</ParamField>
 </Card>
 
 ### Using Built-in Providers

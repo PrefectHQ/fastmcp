@@ -217,6 +217,8 @@ class OIDCProxy(OAuthProxy):
         client_storage: AsyncKeyValue | None = None,
         # Token validation configuration
         token_endpoint_auth_method: str | None = None,
+        # Consent screen configuration
+        require_authorization_consent: bool = True,
     ) -> None:
         """Initialize the OIDC proxy provider.
 
@@ -242,6 +244,10 @@ class OIDCProxy(OAuthProxy):
             token_endpoint_auth_method: Token endpoint authentication method for upstream server.
                 Common values: "client_secret_basic", "client_secret_post", "none".
                 If None, authlib will use its default (typically "client_secret_basic").
+            require_authorization_consent: Whether to require user consent before authorizing clients (default True).
+                When True, users see a consent screen before being redirected to the upstream IdP.
+                When False, authorization proceeds directly without user confirmation.
+                SECURITY WARNING: Only disable for local development or testing environments.
         """
         if not config_url:
             raise ValueError("Missing required config URL")
@@ -296,6 +302,7 @@ class OIDCProxy(OAuthProxy):
             "allowed_client_redirect_uris": allowed_client_redirect_uris,
             "client_storage": client_storage,
             "token_endpoint_auth_method": token_endpoint_auth_method,
+            "require_authorization_consent": require_authorization_consent,
         }
 
         if redirect_path:

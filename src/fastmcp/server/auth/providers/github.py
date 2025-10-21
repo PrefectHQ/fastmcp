@@ -206,6 +206,7 @@ class GitHubProvider(OAuthProxy):
         timeout_seconds: int | NotSetT = NotSet,
         allowed_client_redirect_uris: list[str] | NotSetT = NotSet,
         client_storage: AsyncKeyValue | None = None,
+        require_authorization_consent: bool = True,
     ):
         """Initialize GitHub OAuth provider.
 
@@ -221,6 +222,10 @@ class GitHubProvider(OAuthProxy):
             allowed_client_redirect_uris: List of allowed redirect URI patterns for MCP clients.
                 If None (default), all URIs are allowed. If empty list, no URIs are allowed.
             client_storage: An AsyncKeyValue-compatible store for client registrations, registrations are stored in memory if not provided
+            require_authorization_consent: Whether to require user consent before authorizing clients (default True).
+                When True, users see a consent screen before being redirected to GitHub.
+                When False, authorization proceeds directly without user confirmation.
+                SECURITY WARNING: Only disable for local development or testing environments.
         """
 
         settings = GitHubProviderSettings.model_validate(
@@ -280,6 +285,7 @@ class GitHubProvider(OAuthProxy):
             or settings.base_url,  # Default to base_url if not specified
             allowed_client_redirect_uris=allowed_client_redirect_uris_final,
             client_storage=client_storage,
+            require_authorization_consent=require_authorization_consent,
         )
 
         logger.debug(

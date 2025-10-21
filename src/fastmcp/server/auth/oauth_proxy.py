@@ -562,6 +562,8 @@ class OAuthProxy(OAuthProvider):
         jwt_signing_key: str | bytes | None = None,
         # Token encryption key (optional, ephemeral if not provided)
         token_encryption_key: str | bytes | None = None,
+        # Consent screen configuration
+        require_authorization_consent: bool = True,
     ):
         """Initialize the OAuth proxy provider.
 
@@ -602,6 +604,10 @@ class OAuthProxy(OAuthProvider):
             token_encryption_key: Optional secret for encrypting upstream tokens at rest (accepts any string or bytes).
                 Default: ephemeral (random salt at startup, won't survive restart).
                 Production: provide explicit key from environment variable.
+            require_authorization_consent: Whether to require user consent before authorizing clients (default True).
+                When True, users see a consent screen before being redirected to the upstream IdP.
+                When False, authorization proceeds directly without user confirmation.
+                SECURITY WARNING: Only disable for local development or testing environments.
         """
         # Always enable DCR since we implement it locally for MCP clients
         client_registration_options = ClientRegistrationOptions(
@@ -654,6 +660,14 @@ class OAuthProxy(OAuthProvider):
 
         # Token endpoint authentication
         self._token_endpoint_auth_method = token_endpoint_auth_method
+
+        # Consent screen configuration
+        self._require_authorization_consent = require_authorization_consent
+        if not require_authorization_consent:
+            logger.warning(
+                "Authorization consent screen disabled - only use for local development or testing. "
+                "In production, this screen protects against confused deputy attacks."
+            )
 
         # Extra parameters for authorization and token endpoints
         self._extra_authorize_params = extra_authorize_params or {}
@@ -915,6 +929,9 @@ class OAuthProxy(OAuthProvider):
         1. Store transaction with client details and PKCE (if forwarding)
         2. Return local /consent URL; browser visits consent first
         3. Consent handler redirects to upstream IdP if approved/already approved
+
+        If consent is disabled (require_authorization_consent=False), skip the consent screen
+        and redirect directly to the upstream IdP.
         """
         # Generate transaction ID for this authorization request
         txn_id = secrets.token_urlsafe(32)
@@ -930,22 +947,36 @@ class OAuthProxy(OAuthProvider):
             )
 
         # Store transaction data for IdP callback processing
+        transaction = OAuthTransaction(
+            txn_id=txn_id,
+            client_id=client.client_id,
+            client_redirect_uri=str(params.redirect_uri),
+            client_state=params.state or "",
+            code_challenge=params.code_challenge,
+            code_challenge_method=getattr(params, "code_challenge_method", "S256"),
+            scopes=params.scopes or [],
+            created_at=time.time(),
+            resource=getattr(params, "resource", None),
+            proxy_code_verifier=proxy_code_verifier,
+        )
         await self._transaction_store.put(
             key=txn_id,
-            value=OAuthTransaction(
-                txn_id=txn_id,
-                client_id=client.client_id,
-                client_redirect_uri=str(params.redirect_uri),
-                client_state=params.state or "",
-                code_challenge=params.code_challenge,
-                code_challenge_method=getattr(params, "code_challenge_method", "S256"),
-                scopes=params.scopes or [],
-                created_at=time.time(),
-                resource=getattr(params, "resource", None),
-                proxy_code_verifier=proxy_code_verifier,
-            ),
+            value=transaction,
             ttl=15 * 60,  # Auto-expire after 15 minutes
         )
+
+        # If consent is disabled, skip consent screen and go directly to upstream IdP
+        if not self._require_authorization_consent:
+            upstream_url = self._build_upstream_authorize_url(
+                txn_id, transaction.model_dump()
+            )
+            logger.debug(
+                "Starting OAuth transaction %s for client %s, redirecting directly to upstream IdP (consent disabled, PKCE forwarding: %s)",
+                txn_id,
+                client.client_id,
+                "enabled" if proxy_code_challenge else "disabled",
+            )
+            return upstream_url
 
         consent_url = f"{str(self.base_url).rstrip('/')}/consent?txn_id={txn_id}"
 
