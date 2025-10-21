@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import os
-from importlib.metadata import version
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -138,7 +137,7 @@ def load_and_merge_config(
     return new_config, resolved_spec
 
 
-LOGO_ASCII = r"""
+LOGO_ASCII_1 = r"""
     _ __ ___  _____           __  __  _____________    ____    ____ 
    _ __ ___ .'____/___ ______/ /_/  |/  / ____/ __ \  |___ \  / __ \
   _ __ ___ / /_  / __ `/ ___/ __/ /|_/ / /   / /_/ /  ___/ / / / / /
@@ -146,6 +145,26 @@ LOGO_ASCII = r"""
 _ __ ___ /_/    \____/____/\__/_/  /_/\____/_/      /_____(*)____/  
 
 """.lstrip("\n")
+
+# This prints the below in a blue gradient
+#  █▀▀ ▄▀█ █▀▀ ▀█▀ █▀▄▀█ █▀▀ █▀█
+#  █▀  █▀█ ▄▄█  █  █ ▀ █ █▄▄ █▀▀
+LOGO_ASCII_2 = (
+    "\033[38;2;0;198;255m \033[38;2;0;195;255m█\033[38;2;0;192;255m▀\033[38;2;0;189;255m▀\033[38;2;0;186;255m "
+    "\033[38;2;0;184;255m▄\033[38;2;0;181;255m▀\033[38;2;0;178;255m█\033[38;2;0;175;255m "
+    "\033[38;2;0;172;255m█\033[38;2;0;169;255m▀\033[38;2;0;166;255m▀\033[38;2;0;163;255m "
+    "\033[38;2;0;160;255m▀\033[38;2;0;157;255m█\033[38;2;0;155;255m▀\033[38;2;0;152;255m "
+    "\033[38;2;0;149;255m█\033[38;2;0;146;255m▀\033[38;2;0;143;255m▄\033[38;2;0;140;255m▀\033[38;2;0;137;255m█\033[38;2;0;134;255m "
+    "\033[38;2;0;131;255m█\033[38;2;0;128;255m▀\033[38;2;0;126;255m▀\033[38;2;0;123;255m "
+    "\033[38;2;0;120;255m█\033[38;2;0;117;255m▀\033[38;2;0;114;255m█\033[39m\n"
+    "\033[38;2;0;198;255m \033[38;2;0;195;255m█\033[38;2;0;192;255m▀\033[38;2;0;189;255m \033[38;2;0;186;255m "
+    "\033[38;2;0;184;255m█\033[38;2;0;181;255m▀\033[38;2;0;178;255m█\033[38;2;0;175;255m "
+    "\033[38;2;0;172;255m▄\033[38;2;0;169;255m▄\033[38;2;0;166;255m█\033[38;2;0;163;255m "
+    "\033[38;2;0;160;255m \033[38;2;0;157;255m█\033[38;2;0;155;255m \033[38;2;0;152;255m "
+    "\033[38;2;0;149;255m█\033[38;2;0;146;255m \033[38;2;0;143;255m▀\033[38;2;0;140;255m \033[38;2;0;137;255m█\033[38;2;0;134;255m "
+    "\033[38;2;0;131;255m█\033[38;2;0;128;255m▄\033[38;2;0;126;255m▄\033[38;2;0;123;255m "
+    "\033[38;2;0;120;255m█\033[38;2;0;117;255m▀\033[38;2;0;114;255m▀\033[39m"
+).strip()
 
 
 def log_server_banner(
@@ -167,10 +186,11 @@ def log_server_banner(
     """
 
     # Create the logo text
-    logo_text = Text(LOGO_ASCII, style="bold green")
+    # Use Text with no_wrap and markup disabled to preserve ANSI escape codes
+    logo_text = Text.from_ansi(LOGO_ASCII_2, no_wrap=True)
 
     # Create the main title
-    title_text = Text("FastMCP  2.0", style="bold blue")
+    title_text = Text(f"FastMCP {fastmcp.__version__}", style="bold blue")
 
     # Create the information table
     info_table = Table.grid(padding=(0, 1))
@@ -180,13 +200,13 @@ def log_server_banner(
 
     match transport:
         case "http" | "streamable-http":
-            display_transport = "Streamable-HTTP"
+            display_transport = "HTTP"
         case "sse":
             display_transport = "SSE"
         case "stdio":
             display_transport = "STDIO"
 
-    info_table.add_row("🖥", "Server name:", server.name)
+    info_table.add_row("🖥", "Server name:", Text(server.name + "\n", style="bold blue"))
     info_table.add_row("📦", "Transport:", display_transport)
 
     # Show connection info based on transport
@@ -197,27 +217,15 @@ def log_server_banner(
                 server_url += f"/{path.lstrip('/')}"
             info_table.add_row("🔗", "Server URL:", server_url)
 
-    # Add version information with explicit style overrides
-    info_table.add_row("", "", "")
-    info_table.add_row(
-        "🏎",
-        "FastMCP version:",
-        Text(fastmcp.__version__, style="dim white", no_wrap=True),
-    )
-    info_table.add_row(
-        "🤝",
-        "MCP SDK version:",
-        Text(version("mcp"), style="dim white", no_wrap=True),
-    )
-
     # Add documentation link
     info_table.add_row("", "", "")
     info_table.add_row("📚", "Docs:", "https://gofastmcp.com")
-    info_table.add_row("🚀", "Deploy:", "https://fastmcp.cloud")
+    info_table.add_row("🚀", "Hosting:", "https://fastmcp.cloud")
 
     # Create panel with logo, title, and information using Group
     panel_content = Group(
         Align.center(logo_text),
+        "",
         Align.center(title_text),
         "",
         "",
@@ -228,8 +236,10 @@ def log_server_banner(
         panel_content,
         border_style="dim",
         padding=(1, 4),
-        expand=False,
+        # expand=False,
+        width=80,  # Set max width for the panel
     )
 
     console = Console(stderr=True)
-    console.print(Group("\n", panel, "\n"))
+    # Center the panel itself
+    console.print(Group("\n", Align.center(panel), "\n"))
