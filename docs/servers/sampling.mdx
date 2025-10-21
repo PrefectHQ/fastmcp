@@ -1,7 +1,7 @@
 ---
 title: LLM Sampling
 sidebarTitle: Sampling
-description: Request the client's LLM to generate text based on provided messages through the MCP context.
+description: Request LLM text generation from the client or a configured provider through the MCP context.
 icon: robot
 ---
 
@@ -9,7 +9,7 @@ import { VersionBadge } from '/snippets/version-badge.mdx'
 
 <VersionBadge version="2.0.0" />
 
-LLM sampling allows MCP tools to request the client's LLM to generate text based on provided messages. This is useful when tools need to leverage the LLM's capabilities to process data, generate responses, or perform text-based analysis.
+LLM sampling allows MCP tools to request LLM text generation based on provided messages. By default, sampling requests are sent to the client's LLM, but you can also configure a fallback handler or always use a specific LLM provider. This is useful when tools need to leverage LLM capabilities to process data, generate responses, or perform text-based analysis.
 
 ## Why Use LLM Sampling?
 
@@ -182,10 +182,89 @@ async def multi_turn_analysis(user_query: str, context_data: str, ctx: Context) 
     return response.text
 ```
 
+## Sampling Fallback Handler
+
+Client support for sampling is optional. If the client does not support sampling, the server will report an error indicating that the client does not support sampling.
+
+However, you can provide a `sampling_handler` to the FastMCP server, which sends sampling requests directly to an LLM provider instead of routing through the client. The `sampling_handler_behavior` parameter controls when this handler is used:
+
+- **`"fallback"`** (default): Uses the handler only when the client doesn't support sampling. Requests go to the client first, falling back to the handler if needed.
+- **`"always"`**: Always uses the handler, bypassing the client entirely. Useful when you want full control over the LLM used for sampling.
+
+Sampling handlers can be implemented using any LLM provider, but a sample implementation for OpenAI is provided as a Contrib module. Sampling lacks the full capabilities of typical LLM completions. For this reason, the OpenAI sampling handler, pointed at a third-party provider's OpenAI-compatible API, is often sufficient to implement a sampling handler.
+
+### Fallback Mode (Default)
+
+Uses the handler only when the client doesn't support sampling:
+
+```python
+import asyncio
+import os
+
+from mcp.types import ContentBlock
+from openai import OpenAI
+
+from fastmcp import FastMCP
+from fastmcp.experimental.sampling.handlers.openai import OpenAISamplingHandler
+from fastmcp.server.context import Context
+
+
+async def async_main():
+    server = FastMCP(
+        name="OpenAI Sampling Fallback Example",
+        sampling_handler=OpenAISamplingHandler(
+            default_model="gpt-4o-mini",
+            client=OpenAI(
+                api_key=os.getenv("API_KEY"),
+                base_url=os.getenv("BASE_URL"),
+            ),
+        ),
+        sampling_handler_behavior="fallback",  # Default - only use when client doesn't support sampling
+    )
+
+    @server.tool
+    async def test_sample_fallback(ctx: Context) -> ContentBlock:
+        # Will use client's LLM if available, otherwise falls back to the handler
+        return await ctx.sample(
+            messages=["hello world!"],
+        )
+
+    await server.run_http_async()
+
+
+if __name__ == "__main__":
+    asyncio.run(async_main())
+```
+
+### Always Mode
+
+Always uses the handler, bypassing the client:
+
+```python
+server = FastMCP(
+    name="Server-Controlled Sampling",
+    sampling_handler=OpenAISamplingHandler(
+        default_model="gpt-4o-mini",
+        client=OpenAI(api_key=os.getenv("API_KEY")),
+    ),
+    sampling_handler_behavior="always",  # Always use the handler, never the client
+)
+
+@server.tool
+async def analyze_data(data: str, ctx: Context) -> str:
+    # Will ALWAYS use the server's configured LLM, not the client's
+    result = await ctx.sample(
+        messages=f"Analyze this data: {data}",
+        system_prompt="You are a data analyst.",
+    )
+    return result.text
+```
+
 ## Client Requirements
 
-LLM sampling requires client support:
+By default, LLM sampling requires client support:
 
-- Clients must implement sampling handlers to process requests
-- If the client doesn't support sampling, calls to `ctx.sample()` will fail
-- See [Client Sampling](/clients/sampling) for details on implementing client-side sampling handlers
+- Clients must implement sampling handlers to process requests (see [Client Sampling](/clients/sampling))
+- If the client doesn't support sampling and no fallback handler is configured, `ctx.sample()` will raise an error
+- Configure a `sampling_handler` with `sampling_handler_behavior="fallback"` to automatically handle clients that don't support sampling
+- Use `sampling_handler_behavior="always"` to completely bypass the client and control which LLM is used

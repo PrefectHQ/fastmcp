@@ -151,51 +151,6 @@ client = Client(
 )
 ```
 
-## Sampling fallback
-
-Client support for sampling is optional, if the client does not support sampling, the server will report an error indicating
-that the client does not support sampling.
-
-A `sampling_handler` can also be provided to the FastMCP server, which will be used to handle sampling requests if the client
-does not support sampling. This sampling handler bypasses the client and sends sampling requests directly to the LLM provider.
-
-Sampling handlers can be implemented using any LLM provider but a sample implementation for OpenAI is provided as a Contrib
-module. Sampling lacks the full capabilities of typical LLM completions. For this reason, the OpenAI sampling handler, pointed at
-a third-party provider's OpenAI-compatible API, is often sufficient to implement a sampling handler.
-
-```python
-import asyncio
-import os
-
-from mcp.types import ContentBlock
-from openai import OpenAI
-
-from fastmcp import FastMCP
-from fastmcp.experimental.sampling.handlers.openai import OpenAISamplingHandler
-from fastmcp.server.context import Context
-
-
-async def async_main():
-    server = FastMCP(
-        name="OpenAI Sampling Fallback Example",
-        sampling_handler=OpenAISamplingHandler(
-            default_model="gpt-4o-mini",
-            client=OpenAI(
-                api_key=os.getenv("API_KEY"),
-                base_url=os.getenv("BASE_URL"),
-            ),
-        ),
-    )
-
-    @server.tool
-    async def test_sample_fallback(ctx: Context) -> ContentBlock:
-        return await ctx.sample(
-            messages=["hello world!"],
-        )
-
-    await server.run_http_async()
-
-
-if __name__ == "__main__":
-    asyncio.run(async_main())
-```
+<Note>
+If the client doesn't provide a sampling handler, servers can optionally configure a fallback handler. See [Server Sampling](/servers/sampling#sampling-fallback-handler) for details.
+</Note>
