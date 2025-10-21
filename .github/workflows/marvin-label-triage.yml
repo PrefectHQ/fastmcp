@@ -131,7 +131,7 @@ jobs:
           bot_name: "Marvin Context Protocol"
           prompt: ${{ steps.triage-prompt.outputs.PROMPT }}
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY_FOR_CI }}
-          allowed_non_write_users: "*" # Required for issue triage workflow, if users without repo write access create issues
+          allowed_non_write_users: "*"
           claude_args: |
             --allowedTools Bash(gh label list),mcp__github__get_issue,mcp__github__get_issue_comments,mcp__github__update_issue,mcp__github__get_pull_request_files
           settings: |
