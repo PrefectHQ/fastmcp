@@ -68,9 +68,10 @@ from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.ui import (
     BUTTON_STYLES,
     DETAIL_BOX_STYLES,
+    DETAILS_STYLES,
     INFO_BOX_STYLES,
+    REDIRECT_SECTION_STYLES,
     TOOLTIP_STYLES,
-    create_detail_box,
     create_logo,
     create_page,
     create_secure_html_response,
@@ -233,16 +234,13 @@ def create_consent_html(
     txn_id: str,
     csrf_token: str,
     client_name: str | None = None,
-    title: str = "Authorization Consent",
+    title: str = "Application Access Request",
     server_name: str | None = None,
     server_icon_url: str | None = None,
     server_website_url: str | None = None,
+    client_website_url: str | None = None,
 ) -> str:
     """Create a styled HTML consent page for OAuth authorization requests."""
-    # Format scopes for display
-    scopes_display = ", ".join(scopes) if scopes else "None"
-
-    # Build warning box with client name if available
     import html as html_module
 
     client_display = html_module.escape(client_name or client_id)
@@ -251,29 +249,58 @@ def create_consent_html(
     # Make server name a hyperlink if website URL is available
     if server_website_url:
         website_url_escaped = html_module.escape(server_website_url)
-        server_display = f'<a href="{website_url_escaped}" target="_blank" rel="noopener noreferrer">{server_name_escaped}</a>'
+        server_display = f'<a href="{website_url_escaped}" target="_blank" rel="noopener noreferrer" class="server-name-link">{server_name_escaped}</a>'
     else:
         server_display = server_name_escaped
 
-    warning_box = f"""
-        <div class="warning-box">
-            <p><strong>{client_display}</strong> is requesting access to <strong>{server_display}</strong>.</p>
-            <p>Review the details below before approving.</p>
+    # Build intro box with call-to-action
+    intro_box = f"""
+        <div class="info-box">
+            <p>The application <strong>{client_display}</strong> wants to access the MCP server <strong>{server_display}</strong>. Please ensure you recognize the callback address below.</p>
         </div>
     """
 
-    # Build detail box with client information
-    detail_rows = []
-    if client_name:
-        detail_rows.append(("Client Name", client_name))
-    detail_rows.extend(
+    # Build redirect URI section (yellow box, centered)
+    redirect_uri_escaped = html_module.escape(redirect_uri)
+    redirect_section = f"""
+        <div class="redirect-section">
+            <span class="label">Credentials will be sent to:</span>
+            <div class="value">{redirect_uri_escaped}</div>
+        </div>
+    """
+
+    # Build advanced details with collapsible section
+    detail_rows = [
+        ("Application Name", html_module.escape(client_name or client_id)),
+        ("Application Website", html_module.escape(client_website_url or "N/A")),
+        ("Application ID", client_id),
+        ("Redirect URI", redirect_uri_escaped),
+        (
+            "Requested Scopes",
+            ", ".join(html_module.escape(s) for s in scopes) if scopes else "None",
+        ),
+    ]
+
+    detail_rows_html = "\n".join(
         [
-            ("Client ID", client_id),
-            ("Redirect URI", redirect_uri),
-            ("Requested Scopes", scopes_display),
+            f"""
+        <div class="detail-row">
+            <div class="detail-label">{label}:</div>
+            <div class="detail-value">{value}</div>
+        </div>
+        """
+            for label, value in detail_rows
         ]
     )
-    detail_box = create_detail_box(detail_rows)
+
+    advanced_details = f"""
+        <details>
+            <summary>Advanced Details</summary>
+            <div class="detail-box">
+                {detail_rows_html}
+            </div>
+        </details>
+    """
 
     # Build form with buttons
     form = f"""
@@ -281,13 +308,13 @@ def create_consent_html(
             <input type="hidden" name="txn_id" value="{txn_id}" />
             <input type="hidden" name="csrf_token" value="{csrf_token}" />
             <div class="button-group">
-                <button type="submit" name="action" value="approve" class="btn-approve">Approve</button>
+                <button type="submit" name="action" value="approve" class="btn-approve">Allow Access</button>
                 <button type="submit" name="action" value="deny" class="btn-deny">Deny</button>
             </div>
         </form>
     """
 
-    # Build help link with tooltip
+    # Build help link with tooltip (identical to current implementation)
     help_link = """
         <div class="help-link-container">
             <span class="help-link">
@@ -312,9 +339,10 @@ def create_consent_html(
     content = f"""
         <div class="container">
             {create_logo(icon_url=server_icon_url, alt_text=server_name or "FastMCP")}
-            <h1>Authorization Consent</h1>
-            {warning_box}
-            {detail_box}
+            <h1>Application Access Request</h1>
+            {intro_box}
+            {redirect_section}
+            {advanced_details}
             {form}
         </div>
         {help_link}
@@ -322,7 +350,12 @@ def create_consent_html(
 
     # Additional styles needed for this page
     additional_styles = (
-        INFO_BOX_STYLES + DETAIL_BOX_STYLES + BUTTON_STYLES + TOOLTIP_STYLES
+        INFO_BOX_STYLES
+        + REDIRECT_SECTION_STYLES
+        + DETAILS_STYLES
+        + DETAIL_BOX_STYLES
+        + BUTTON_STYLES
+        + TOOLTIP_STYLES
     )
 
     # Need to allow form-action for form submission
