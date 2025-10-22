@@ -16,7 +16,7 @@ def hub_status() -> str:
     """Checks the status of the main hub and connections."""
     try:
         bridge = Bridge(
-            ip=str(settings.hue_bridge_ip),
+            ip=settings.hue_bridge_ip,
             username=settings.hue_bridge_username,
             save_config=False,
         )

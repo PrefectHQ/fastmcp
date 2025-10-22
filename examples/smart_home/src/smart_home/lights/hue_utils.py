@@ -10,7 +10,7 @@ def _get_bridge() -> Bridge | None:
     """Attempts to connect to the Hue bridge using settings."""
     try:
         return Bridge(
-            ip=str(settings.hue_bridge_ip),
+            ip=settings.hue_bridge_ip,
             username=settings.hue_bridge_username,
             save_config=False,
         )
