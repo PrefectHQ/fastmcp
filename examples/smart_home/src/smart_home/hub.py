@@ -4,15 +4,10 @@ from fastmcp import FastMCP
 from smart_home.lights.server import lights_mcp
 from smart_home.settings import settings
 
-hub_mcp = FastMCP(
-    "Smart Home Hub (phue2)",
-    dependencies=[
-        "smart_home@git+https://github.com/jlowin/fastmcp.git#subdirectory=examples/smart_home",
-    ],
-)
+hub_mcp = FastMCP("Smart Home Hub (phue2)")
 
 # Mount the lights service under the 'hue' prefix
-hub_mcp.mount("hue", lights_mcp)
+hub_mcp.mount(lights_mcp, prefix="hue")
 
 
 # Add a status check for the hub
