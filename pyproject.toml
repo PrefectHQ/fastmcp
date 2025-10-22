@@ -9,6 +9,7 @@ dependencies = [
     "httpx>=0.28.1",
     "mcp>=1.17.0,<2.0.0",
     "openapi-pydantic>=0.5.1",
+    "platformdirs>=4.0.0",
     "rich>=13.9.4",
     "cyclopts>=3.0.0",
     "authlib>=1.5.2",

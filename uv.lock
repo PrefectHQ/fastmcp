@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.10"
 resolution-markers = [
     "python_full_version >= '3.11'",
@@ -553,6 +553,7 @@ dependencies = [
     { name = "mcp" },
     { name = "openapi-core" },
     { name = "openapi-pydantic" },
+    { name = "platformdirs" },
     { name = "py-key-value-aio", extra = ["disk", "memory"] },
     { name = "pydantic", extra = ["email"] },
     { name = "pyperclip" },
@@ -603,6 +604,7 @@ requires-dist = [
     { name = "openai", marker = "extra == 'openai'", specifier = ">=1.102.0" },
     { name = "openapi-core", specifier = ">=0.19.5" },
     { name = "openapi-pydantic", specifier = ">=0.5.1" },
+    { name = "platformdirs", specifier = ">=4.0.0" },
     { name = "py-key-value-aio", extras = ["disk", "memory"], specifier = ">=0.2.6,<0.3.0" },
     { name = "pydantic", extras = ["email"], specifier = ">=2.11.7" },
     { name = "pyperclip", specifier = ">=1.9.0" },

@@ -6,6 +6,7 @@ import warnings
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any, Literal
 
+from platformdirs import user_data_dir
 from pydantic import Field, ImportString, field_validator
 from pydantic.fields import FieldInfo
 from pydantic_settings import (
@@ -150,7 +151,7 @@ class Settings(BaseSettings):
         )
         return self
 
-    home: Path = Path.home() / ".fastmcp"
+    home: Path = Path(user_data_dir("fastmcp", appauthor=False))
 
     test_mode: bool = False
 

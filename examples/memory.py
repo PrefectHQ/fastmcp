@@ -14,7 +14,6 @@ import math
 import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Annotated, Any, Self
 
 import asyncpg
@@ -24,6 +23,7 @@ from pgvector.asyncpg import register_vector  # Import register_vector
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent
 
+import fastmcp
 from fastmcp import FastMCP
 
 MAX_DEPTH = 5
@@ -45,9 +45,9 @@ mcp = FastMCP(
 )
 
 DB_DSN = "postgresql://postgres:postgres@localhost:54320/memory_db"
-# reset memory with rm ~/.fastmcp/{USER}/memory/*
+# reset memory by deleting the profile directory
 PROFILE_DIR = (
-    Path.home() / ".fastmcp" / os.environ.get("USER", "anon") / "memory"
+    fastmcp.settings.home / os.environ.get("USER", "anon") / "memory"
 ).resolve()
 PROFILE_DIR.mkdir(parents=True, exist_ok=True)
 
