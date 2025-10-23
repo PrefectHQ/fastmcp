@@ -60,6 +60,7 @@ from starlette.routing import Route
 
 from fastmcp import settings
 from fastmcp.server.auth.auth import OAuthProvider, TokenVerifier
+from fastmcp.server.auth.handlers.authorize import AuthorizationHandler
 from fastmcp.server.auth.jwt_issuer import (
     JWTIssuer,
     TokenEncryption,
@@ -1590,10 +1591,11 @@ class OAuthProxy(OAuthProvider):
         self,
         mcp_path: str | None = None,
     ) -> list[Route]:
-        """Get OAuth routes with custom proxy token handler.
+        """Get OAuth routes with custom handlers for better error UX.
 
-        This method creates standard OAuth routes and replaces the token endpoint
-        with our proxy handler that forwards requests to the upstream OAuth server.
+        This method creates standard OAuth routes and replaces:
+        - /authorize endpoint: Enhanced error responses for unregistered clients
+        - /token endpoint: OAuth 2.1 compliant error codes
 
         Args:
             mcp_path: The path where the MCP endpoint is mounted (e.g., "/mcp")
@@ -1603,6 +1605,7 @@ class OAuthProxy(OAuthProvider):
         routes = super().get_routes(mcp_path)
         custom_routes = []
         token_route_found = False
+        authorize_route_found = False
 
         logger.debug(
             f"get_routes called - configuring OAuth routes in {len(routes)} routes"
@@ -1613,8 +1616,30 @@ class OAuthProxy(OAuthProvider):
                 f"Route {i}: {route} - path: {getattr(route, 'path', 'N/A')}, methods: {getattr(route, 'methods', 'N/A')}"
             )
 
-            # Replace the token endpoint with our custom handler that returns proper OAuth 2.1 error codes
+            # Replace the authorize endpoint with our enhanced handler for better error UX
             if (
+                isinstance(route, Route)
+                and route.path == "/authorize"
+                and route.methods is not None
+                and ("GET" in route.methods or "POST" in route.methods)
+            ):
+                authorize_route_found = True
+                # Replace with our enhanced authorization handler
+                authorize_handler = AuthorizationHandler(
+                    provider=self,
+                    base_url=self.base_url,
+                    server_name=None,  # Could be extended to pass server metadata
+                    server_icon_url=None,
+                )
+                custom_routes.append(
+                    Route(
+                        path="/authorize",
+                        endpoint=authorize_handler.handle,
+                        methods=["GET", "POST"],
+                    )
+                )
+            # Replace the token endpoint with our custom handler that returns proper OAuth 2.1 error codes
+            elif (
                 isinstance(route, Route)
                 and route.path == "/token"
                 and route.methods is not None
@@ -1658,7 +1683,7 @@ class OAuthProxy(OAuthProvider):
         )
 
         logger.debug(
-            f"✅ OAuth routes configured: token_endpoint={token_route_found}, total routes={len(custom_routes)} (includes OAuth callback + consent)"
+            f"✅ OAuth routes configured: authorize_endpoint={authorize_route_found}, token_endpoint={token_route_found}, total routes={len(custom_routes)} (includes OAuth callback + consent)"
         )
         return custom_routes
 

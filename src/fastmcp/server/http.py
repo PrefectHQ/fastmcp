@@ -5,7 +5,6 @@ from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar
 from typing import TYPE_CHECKING
 
-from mcp.server.auth.middleware.bearer_auth import RequireAuthMiddleware
 from mcp.server.auth.routes import build_resource_metadata_url
 from mcp.server.lowlevel.server import LifespanResultT
 from mcp.server.sse import SseServerTransport
@@ -21,6 +20,7 @@ from starlette.routing import BaseRoute, Mount, Route
 from starlette.types import Lifespan, Receive, Scope, Send
 
 from fastmcp.server.auth import AuthProvider
+from fastmcp.server.auth.middleware import RequireAuthMiddleware
 from fastmcp.utilities.logging import get_logger
 
 if TYPE_CHECKING:
