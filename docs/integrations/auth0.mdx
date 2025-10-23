@@ -149,6 +149,44 @@ When you run the client for the first time:
 2. After you authorize the app, you'll be redirected back
 3. The client receives the token and can make authenticated requests
 
+## Production Configuration
+
+<VersionBadge version="2.13.0" />
+
+For production deployments with persistent token management across server restarts, configure `jwt_signing_key`, `token_encryption_key`, and `client_storage`:
+
+```python server.py
+import os
+from fastmcp import FastMCP
+from fastmcp.server.auth.providers.auth0 import Auth0Provider
+from key_value.aio.stores.redis import RedisStore
+
+# Production setup with persistent token storage
+auth_provider = Auth0Provider(
+    config_url="https://.../.well-known/openid-configuration",
+    client_id="tv2ObNgaZAWWhhycr7Bz1LU2mxlnsmsB",
+    client_secret="vPYqbjemq...",
+    audience="https://...",
+    base_url="https://your-production-domain.com",
+
+    # Production token management
+    jwt_signing_key=os.environ["JWT_SIGNING_KEY"],           # Secret for signing JWT tokens
+    token_encryption_key=os.environ["TOKEN_ENCRYPTION_KEY"], # Secret for encrypting tokens at rest
+    client_storage=RedisStore(                               # Persistent storage for client registrations
+        host=os.environ["REDIS_HOST"],
+        port=int(os.environ["REDIS_PORT"])
+    )
+)
+
+mcp = FastMCP(name="Production Auth0 App", auth=auth_provider)
+```
+
+<Note>
+All three parameters (`jwt_signing_key`, `token_encryption_key`, and `client_storage`) work together to ensure tokens and client registrations survive server restarts. Store secrets in environment variables and use a persistent storage backend like Redis or PostgreSQL for distributed deployments.
+
+For complete details on these parameters, see the [OAuth Proxy documentation](/servers/auth/oauth-proxy#configuration-parameters).
+</Note>
+
 <Info>
 The client caches tokens locally, so you won't need to re-authenticate for subsequent runs unless the token expires or you explicitly clear the cache.
 </Info>

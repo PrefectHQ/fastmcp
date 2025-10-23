@@ -196,6 +196,44 @@ When you run the client for the first time:
 The client caches tokens locally, so you won't need to re-authenticate for subsequent runs unless the token expires or you explicitly clear the cache.
 </Info>
 
+## Production Configuration
+
+<VersionBadge version="2.13.0" />
+
+For production deployments with persistent token management across server restarts, configure `jwt_signing_key`, `token_encryption_key`, and `client_storage`:
+
+```python server.py
+import os
+from fastmcp import FastMCP
+from fastmcp.server.auth.providers.aws import AWSCognitoProvider
+from key_value.aio.stores.redis import RedisStore
+
+# Production setup with persistent token storage
+auth_provider = AWSCognitoProvider(
+    user_pool_id="eu-central-1_XXXXXXXXX",
+    aws_region="eu-central-1",
+    client_id="your-app-client-id",
+    client_secret="your-app-client-secret",
+    base_url="https://your-production-domain.com",
+
+    # Production token management
+    jwt_signing_key=os.environ["JWT_SIGNING_KEY"],           # Secret for signing JWT tokens
+    token_encryption_key=os.environ["TOKEN_ENCRYPTION_KEY"], # Secret for encrypting tokens at rest
+    client_storage=RedisStore(                               # Persistent storage for client registrations
+        host=os.environ["REDIS_HOST"],
+        port=int(os.environ["REDIS_PORT"])
+    )
+)
+
+mcp = FastMCP(name="Production AWS Cognito App", auth=auth_provider)
+```
+
+<Note>
+All three parameters (`jwt_signing_key`, `token_encryption_key`, and `client_storage`) work together to ensure tokens and client registrations survive server restarts. Store secrets in environment variables and use a persistent storage backend like Redis or PostgreSQL for distributed deployments.
+
+For complete details on these parameters, see the [OAuth Proxy documentation](/servers/auth/oauth-proxy#configuration-parameters).
+</Note>
+
 ## Environment Variables
 
 For production deployments, use environment variables instead of hardcoding credentials.

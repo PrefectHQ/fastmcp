@@ -96,6 +96,8 @@ class Auth0Provider(OIDCProxy):
         redirect_path: str | NotSetT = NotSet,
         allowed_client_redirect_uris: list[str] | NotSetT = NotSet,
         client_storage: AsyncKeyValue | None = None,
+        jwt_signing_key: str | bytes | None = None,
+        token_encryption_key: str | bytes | None = None,
         require_authorization_consent: bool = True,
     ) -> None:
         """Initialize Auth0 OAuth provider.
@@ -113,6 +115,12 @@ class Auth0Provider(OIDCProxy):
             allowed_client_redirect_uris: List of allowed redirect URI patterns for MCP clients.
                 If None (default), all URIs are allowed. If empty list, no URIs are allowed.
             client_storage: An AsyncKeyValue-compatible store for client registrations, registrations are stored in memory if not provided
+            jwt_signing_key: Secret for signing FastMCP JWT tokens (any string or bytes).
+                None (default): Auto-managed via system keyring (Mac/Windows) or ephemeral (Linux).
+                Explicit value: For production deployments. Recommended to store in environment variable.
+            token_encryption_key: Secret for encrypting upstream tokens at rest (any string or bytes).
+                None (default): Auto-managed via system keyring (Mac/Windows) or ephemeral (Linux).
+                Explicit value: For production deployments. Recommended to store in environment variable.
             require_authorization_consent: Whether to require user consent before authorizing clients (default True).
                 When True, users see a consent screen before being redirected to Auth0.
                 When False, authorization proceeds directly without user confirmation.
@@ -174,6 +182,8 @@ class Auth0Provider(OIDCProxy):
             "required_scopes": auth0_required_scopes,
             "allowed_client_redirect_uris": settings.allowed_client_redirect_uris,
             "client_storage": client_storage,
+            "jwt_signing_key": jwt_signing_key,
+            "token_encryption_key": token_encryption_key,
             "require_authorization_consent": require_authorization_consent,
         }
 
