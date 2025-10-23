@@ -148,10 +148,17 @@ For configuration details on these backends, consult the [py-key-value-aio docum
 
 ### Server-Side OAuth Token Storage
 
-The [OAuth Proxy](/servers/auth/oauth-proxy) and OAuth auth providers use storage for persisting OAuth client registrations and encrypted upstream tokens. By default, registrations are stored in memory:
+The [OAuth Proxy](/servers/auth/oauth-proxy) and OAuth auth providers use storage for persisting OAuth client registrations and encrypted upstream tokens.
+
+**Development (default behavior):**
+
+By default, FastMCP automatically manages keys and storage based on your platform:
+- **Mac/Windows**: Keys are auto-managed via system keyring, storage defaults to disk. Suitable **only** for development and local testing.
+- **Linux**: Keys are ephemeral, storage defaults to memory.
+
+No configuration needed:
 
 ```python
-# In-memory storage (default behavior - lost on restart)
 from fastmcp.server.auth.providers.github import GitHubProvider
 
 auth = GitHubProvider(
@@ -161,7 +168,9 @@ auth = GitHubProvider(
 )
 ```
 
-For production with token persistence across restarts, configure persistent storage and encryption keys:
+**Production:**
+
+For production deployments, configure explicit keys and persistent network-accessible storage:
 
 ```python
 import os
@@ -172,15 +181,15 @@ auth = GitHubProvider(
     client_id=os.environ["GITHUB_CLIENT_ID"],
     client_secret=os.environ["GITHUB_CLIENT_SECRET"],
     base_url="https://your-server.com",
-    # Token encryption and signing keys
+    # Explicit token encryption and signing keys (required for production)
     jwt_signing_key=os.environ["JWT_SIGNING_KEY"],
     token_encryption_key=os.environ["TOKEN_ENCRYPTION_KEY"],
-    # Persistent distributed storage
+    # Persistent distributed storage (required for production)
     client_storage=RedisStore(host="redis.example.com", port=6379)
 )
 ```
 
-See [OAuth Token Security](/deployment/http#oauth-token-security) for complete production setup details.
+All three parameters (both keys and storage) are required for production. See [OAuth Token Security](/deployment/http#oauth-token-security) and [Key and Storage Management](/servers/auth/oauth-proxy#key-and-storage-management) for complete setup details.
 
 ### Response Caching Middleware
 

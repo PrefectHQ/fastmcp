@@ -18,11 +18,17 @@ The OAuth proxy now issues its own JWT tokens to clients instead of forwarding u
 
 The OAuth proxy now implements a token factory pattern - it receives tokens from your OAuth provider (GitHub, Google, etc.), encrypts and stores them, then issues its own FastMCP JWT tokens to clients. This requires cryptographic keys for JWT signing and token encryption.
 
-By default, these keys are ephemeral (random salt at startup, not persisted). For most users (development/testing), this works fine since re-authentication after restart is acceptable. For production deployments where you want tokens to persist across restarts, provide explicit keys via parameters.
+**Default behavior (development):**
 
-**Production deployments:**
+By default, FastMCP automatically manages keys based on your platform:
+- **Mac/Windows**: Keys are auto-managed via system keyring, surviving server restarts with zero configuration. Suitable **only** for development and local testing.
+- **Linux**: Keys are ephemeral (random salt at startup, regenerated on each restart).
 
-If you want tokens to survive server restarts, add two new parameters:
+This works fine for development and testing where re-authentication after restart is acceptable.
+
+**For production:**
+
+Production deployments must provide explicit keys and use persistent storage. Add these three things:
 
 ```python
 auth = GitHubProvider(
@@ -30,16 +36,18 @@ auth = GitHubProvider(
     client_secret=os.environ["GITHUB_CLIENT_SECRET"],
     base_url="https://your-server.com",
 
-    # Add these for production token persistence
+    # Explicit keys (required for production)
     jwt_signing_key=os.environ["JWT_SIGNING_KEY"],
     token_encryption_key=os.environ["TOKEN_ENCRYPTION_KEY"],
 
-    client_storage=RedisStore(...)  # Persistent storage
+    # Persistent network storage (required for production)
+    client_storage=RedisStore(host="redis.example.com", port=6379)
 )
 ```
 
-Both keys accept any secret string. Make sure they're different from each other.
+All three are required for production. The keys accept any secret string and should be different from each other.
 
 **More information:**
 - [OAuth Token Security](/deployment/http#oauth-token-security) - Complete production setup guide
+- [Key and Storage Management](/servers/auth/oauth-proxy#key-and-storage-management) - Detailed explanation of defaults and production requirements
 - [OAuth Proxy Parameters](/servers/auth/oauth-proxy#configuration-parameters) - Parameter documentation

@@ -1,6 +1,7 @@
 import socket
 from collections.abc import Callable
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 
@@ -19,6 +20,19 @@ def import_rich_rule():
     import rich.rule  # noqa: F401
 
     yield
+
+
+@pytest.fixture(autouse=True)
+def mock_keyring():
+    """Globally mock keyring to prevent OS keyring pollution during tests.
+
+    This prevents any test from accidentally writing to the system keyring.
+    Individual tests can override this mock if they need to test keyring behavior.
+    """
+    with patch("fastmcp.utilities.key_management.keyring") as mock:
+        # Return None by default (keyring unavailable)
+        mock.get_password.return_value = None
+        yield mock
 
 
 def get_fn_name(fn: Callable[..., Any]) -> str:

@@ -22,6 +22,7 @@ import base64
 import hashlib
 import hmac
 import json
+import platform
 import secrets
 import time
 from base64 import urlsafe_b64encode
@@ -33,6 +34,7 @@ from authlib.common.security import generate_token
 from authlib.integrations.httpx_client import AsyncOAuth2Client
 from key_value.aio.adapters.pydantic import PydanticAdapter
 from key_value.aio.protocols import AsyncKeyValue
+from key_value.aio.stores.disk import DiskStore
 from key_value.aio.stores.memory import MemoryStore
 from mcp.server.auth.handlers.token import TokenErrorResponse, TokenSuccessResponse
 from mcp.server.auth.handlers.token import TokenHandler as _SDKTokenHandler
@@ -56,6 +58,7 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse, RedirectResponse
 from starlette.routing import Route
 
+from fastmcp import settings
 from fastmcp.server.auth.auth import OAuthProvider, TokenVerifier
 from fastmcp.server.auth.jwt_issuer import (
     JWTIssuer,
@@ -64,6 +67,7 @@ from fastmcp.server.auth.jwt_issuer import (
 from fastmcp.server.auth.redirect_validation import (
     validate_redirect_uri,
 )
+from fastmcp.utilities.key_management import get_or_generate_keyring_key
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.ui import (
     BUTTON_STYLES,
@@ -597,13 +601,16 @@ class OAuthProxy(OAuthProvider):
                 Example: {"audience": "https://api.example.com"}
             extra_token_params: Additional parameters to forward to the upstream token endpoint.
                 Useful for provider-specific parameters during token exchange.
-            client_storage: An AsyncKeyValue-compatible store for client registrations, registrations are stored in memory if not provided
-            jwt_signing_key: Optional secret for signing FastMCP JWT tokens (accepts any string or bytes).
-                Default: ephemeral (random salt at startup, won't survive restart).
-                Production: provide explicit key from environment variable.
-            token_encryption_key: Optional secret for encrypting upstream tokens at rest (accepts any string or bytes).
-                Default: ephemeral (random salt at startup, won't survive restart).
-                Production: provide explicit key from environment variable.
+            client_storage: Storage backend for OAuth state (client registrations, encrypted tokens).
+                Default (Mac/Windows): DiskStore at $FASTMCP_HOME/oauth-proxy (~/.fastmcp/oauth-proxy).
+                Default (Linux): MemoryStore (ephemeral keys make persistence pointless).
+                Custom: Pass DiskStore/RedisStore instance or override location via FASTMCP_HOME.
+            jwt_signing_key: Secret for signing FastMCP JWT tokens (any string or bytes).
+                None (default): Auto-managed via system keyring (Mac/Windows) or ephemeral (Linux).
+                Explicit value: For production deployments. Recommended to store in environment variable.
+            token_encryption_key: Secret for encrypting upstream tokens at rest (any string or bytes).
+                None (default): Auto-managed via system keyring (Mac/Windows) or ephemeral (Linux).
+                Explicit value: For production deployments. Recommended to store in environment variable.
             require_authorization_consent: Whether to require user consent before authorizing clients (default True).
                 When True, users see a consent screen before being redirected to the upstream IdP.
                 When False, authorization proceeds directly without user confirmation.
@@ -673,15 +680,41 @@ class OAuthProxy(OAuthProvider):
         self._extra_authorize_params = extra_authorize_params or {}
         self._extra_token_params = extra_token_params or {}
 
-        self._client_storage: AsyncKeyValue = client_storage or MemoryStore()
+        # Default storage: match persistence to key availability
+        # On Mac/Windows: DiskStore + keyring keys = full persistence
+        # On Linux: MemoryStore + ephemeral keys = consistent (nothing persists)
+        if client_storage is None:
+            if platform.system() != "Linux":
+                # Keyring available: use persistent storage
+                default_storage_path = settings.home / "oauth-proxy"
+                default_storage_path.mkdir(parents=True, exist_ok=True)
+                self._client_storage = DiskStore(directory=str(default_storage_path))
+                logger.debug(
+                    "Using disk storage for OAuth state: %s", default_storage_path
+                )
+            else:
+                # Keyring unavailable: use memory storage (ephemeral keys make disk pointless)
+                self._client_storage = MemoryStore()
+                logger.debug(
+                    "Using in-memory storage on Linux (keyring unavailable). "
+                    "For persistent tokens, provide explicit jwt_signing_key, "
+                    "token_encryption_key, and client_storage."
+                )
+            self._auto_selected_storage = True
+        else:
+            self._client_storage = client_storage
+            self._auto_selected_storage = False
 
-        # Warn if using MemoryStore in production
-        if isinstance(client_storage, MemoryStore):
+        # Warn if explicitly using MemoryStore when keyring is available
+        if (
+            isinstance(self._client_storage, MemoryStore)
+            and not self._auto_selected_storage
+            and platform.system() != "Linux"
+        ):
             logger.warning(
-                "Using in-memory storage - all OAuth state (clients, tokens) will be lost on restart. "
-                "Additionally, without explicit jwt_signing_key and token_encryption_key, "
-                "keys are ephemeral and tokens won't survive restart even with persistent storage. "
-                "For production, configure persistent storage AND explicit keys."
+                "Using in-memory storage on a platform with keyring support. "
+                "OAuth state will be lost on restart. Consider using default storage "
+                "or providing explicit jwt_signing_key and token_encryption_key with persistent storage."
             )
 
         # Cache HTTPS check to avoid repeated logging
@@ -780,19 +813,12 @@ class OAuthProxy(OAuthProvider):
         """Initialize JWT issuer and token encryption (lazy initialization).
 
         Key derivation strategy:
-        - Default: Generate random salt at startup, derive ephemeral keys
-          → Keys change on restart, all tokens become invalid
-          → Perfect for development/testing where re-auth is acceptable
-
-        - Production: User provides explicit keys via parameters
-          → Keys stable across restarts when combined with persistent storage
-          → Tokens survive restart, seamless client reconnection
+        - Explicit key (production): User-provided via parameters
+        - Keyring key (local/dev): Auto-managed via system keyring
+        - Ephemeral key (fallback): Random salt at startup when keyring unavailable
         """
         if self._jwt_initialized:
             return
-
-        # Generate random salt for this server instance (NOT persisted)
-        server_salt = secrets.token_urlsafe(32)
 
         # Derive or use custom JWT signing key
         from fastmcp.server.auth.jwt_issuer import derive_key_from_secret
@@ -803,19 +829,40 @@ class OAuthProxy(OAuthProvider):
                 salt="fastmcp-jwt-signing-v1",
                 info=b"HS256",
             )
-            logger.info("Using explicit JWT signing key (will survive restarts)")
+            logger.debug("Using user-provided JWT signing key")
         else:
-            # Ephemeral key from random salt + upstream secret
-            upstream_secret = self._upstream_client_secret.get_secret_value()
-            jwt_key = derive_key_from_secret(
-                secret=upstream_secret,
-                salt=f"fastmcp-jwt-signing-v1-{server_salt}",
-                info=b"HS256",
+            keyring_key = get_or_generate_keyring_key(
+                "jwt-signing", self._upstream_client_id
             )
-            logger.info(
-                "Using ephemeral JWT signing key - tokens will NOT survive server restart. "
-                "For production, provide explicit jwt_signing_key parameter and use persistent storage."
-            )
+            if keyring_key:
+                jwt_key = derive_key_from_secret(
+                    secret=keyring_key,
+                    salt="fastmcp-jwt-signing-v1",
+                    info=b"HS256",
+                )
+            else:
+                server_salt = secrets.token_urlsafe(32)
+                upstream_secret = self._upstream_client_secret.get_secret_value()
+                jwt_key = derive_key_from_secret(
+                    secret=upstream_secret,
+                    salt=f"fastmcp-jwt-signing-v1-{server_salt}",
+                    info=b"HS256",
+                )
+
+                if platform.system() == "Linux":
+                    logger.warning(
+                        "Keyring unavailable on Linux - using ephemeral keys. "
+                        "Storage persists at %s but tokens will become unreadable after restart. "
+                        "For persistent tokens, provide explicit jwt_signing_key and token_encryption_key.",
+                        self._client_storage
+                        if hasattr(self, "_client_storage")
+                        else "disk",
+                    )
+                else:
+                    logger.warning(
+                        "Keyring unavailable - using ephemeral keys. "
+                        "For production, provide explicit jwt_signing_key and token_encryption_key."
+                    )
 
         # Initialize JWT issuer
         issuer = str(self.base_url)
@@ -826,29 +873,34 @@ class OAuthProxy(OAuthProvider):
             signing_key=jwt_key,
         )
 
-        # Derive or use custom encryption key
         if self._custom_encryption_key:
             encryption_key = derive_key_from_secret(
                 secret=self._custom_encryption_key,
                 salt="fastmcp-token-encryption-v1",
                 info=b"Fernet",
             )
-            # Fernet needs base64url-encoded key
             encryption_key = base64.urlsafe_b64encode(encryption_key)
-            logger.info("Using explicit token encryption key (will survive restarts)")
+            logger.debug("Using user-provided token encryption key")
         else:
-            # Ephemeral key from random salt + upstream secret
-            upstream_secret = self._upstream_client_secret.get_secret_value()
-            key_material = derive_key_from_secret(
-                secret=upstream_secret,
-                salt=f"fastmcp-token-encryption-v1-{server_salt}",
-                info=b"Fernet",
+            encryption_keyring_key = get_or_generate_keyring_key(
+                "token-encryption", self._upstream_client_id
             )
-            encryption_key = base64.urlsafe_b64encode(key_material)
-            logger.info(
-                "Using ephemeral token encryption key - encrypted tokens will NOT survive server restart. "
-                "For production, provide explicit token_encryption_key parameter and use persistent storage."
-            )
+            if encryption_keyring_key:
+                key_material = derive_key_from_secret(
+                    secret=encryption_keyring_key,
+                    salt="fastmcp-token-encryption-v1",
+                    info=b"Fernet",
+                )
+                encryption_key = base64.urlsafe_b64encode(key_material)
+            else:
+                server_salt = secrets.token_urlsafe(32)
+                upstream_secret = self._upstream_client_secret.get_secret_value()
+                key_material = derive_key_from_secret(
+                    secret=upstream_secret,
+                    salt=f"fastmcp-token-encryption-v1-{server_salt}",
+                    info=b"Fernet",
+                )
+                encryption_key = base64.urlsafe_b64encode(key_material)
 
         self._token_encryption = TokenEncryption(encryption_key)
         self._jwt_initialized = True
