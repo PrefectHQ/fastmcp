@@ -236,7 +236,8 @@
               "patterns/tool-transformation",
               "patterns/decorating-methods",
               "patterns/cli",
-              "patterns/contrib"
+              "patterns/contrib",
+              "patterns/testing"
             ]
           },
           {
