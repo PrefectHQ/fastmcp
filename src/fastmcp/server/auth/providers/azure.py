@@ -64,18 +64,28 @@ class AzureProvider(OAuthProxy):
     OAuth Proxy pattern. It supports both organizational accounts and personal
     Microsoft accounts depending on the tenant configuration.
 
+    Scope Handling:
+    - required_scopes: Provide unprefixed scope names (e.g., ["read", "write"])
+      → Automatically prefixed with identifier_uri during initialization
+      → Validated on all tokens and advertised to MCP clients
+    - additional_authorize_scopes: Provide full format (e.g., ["User.Read"])
+      → NOT prefixed, NOT validated, NOT advertised to clients
+      → Used to request Microsoft Graph or other upstream API permissions
+
     Features:
     - OAuth proxy to Azure/Microsoft identity platform
     - JWT validation using tenant issuer and JWKS
     - Supports tenant configurations: specific tenant ID, "organizations", or "consumers"
+    - Custom API scopes and Microsoft Graph scopes in a single provider
 
     Setup:
     1. Create an App registration in Azure Portal
     2. Configure Web platform redirect URI: http://localhost:8000/auth/callback (or your custom path)
-    3. Add an Application ID URI. Either use the default (api://{client_id}) or set a custom one.
-    4. Add a custom scope.
-    5. Create a client secret.
-    6. Get Application (client) ID, Directory (tenant) ID, and client secret
+    3. Add an Application ID URI under "Expose an API" (defaults to api://{client_id})
+    4. Add custom scopes (e.g., "read", "write") under "Expose an API"
+    5. Set access token version to 2 in the App manifest: "requestedAccessTokenVersion": 2
+    6. Create a client secret
+    7. Get Application (client) ID, Directory (tenant) ID, and client secret
 
     Example:
         ```python
@@ -86,7 +96,8 @@ class AzureProvider(OAuthProxy):
             client_id="your-client-id",
             client_secret="your-client-secret",
             tenant_id="your-tenant-id",
-            required_scopes=["your-scope"],
+            required_scopes=["read", "write"],  # Unprefixed scope names
+            additional_authorize_scopes=["User.Read", "Mail.Read"],  # Optional Graph scopes
             base_url="http://localhost:8000",
             # identifier_uri defaults to api://{client_id}
         )
@@ -116,21 +127,31 @@ class AzureProvider(OAuthProxy):
         """Initialize Azure OAuth provider.
 
         Args:
-            client_id: Azure application (client) ID
-            client_secret: Azure client secret
-            tenant_id: Azure tenant ID (your specific tenant ID, "organizations", or "consumers")
-            identifier_uri: Optional Application ID URI for your API. (defaults to api://{client_id})
-                Used only to prefix scopes in authorization requests. Tokens are always validated
-                against your app's client ID.
+            client_id: Azure application (client) ID from your App registration
+            client_secret: Azure client secret from your App registration
+            tenant_id: Azure tenant ID (specific tenant GUID, "organizations", or "consumers")
+            identifier_uri: Optional Application ID URI for your custom API (defaults to api://{client_id}).
+                This URI is automatically prefixed to all required_scopes during initialization.
+                Example: identifier_uri="api://my-api" + required_scopes=["read"]
+                → tokens validated for "api://my-api/read"
             base_url: Public URL where OAuth endpoints will be accessible (includes any mount path)
             issuer_url: Issuer URL for OAuth metadata (defaults to base_url). Use root-level URL
                 to avoid 404s during discovery when mounting under a path.
-            redirect_path: Redirect path configured in Azure (defaults to "/auth/callback")
-            required_scopes: Required scopes. These are validated on tokens and used as defaults
-                when the client does not request specific scopes.
-            additional_authorize_scopes: Additional scopes to include in the authorization request
-                without prefixing. Use this to request upstream scopes such as Microsoft Graph
-                permissions. These are not used for token validation.
+            redirect_path: Redirect path configured in Azure App registration (defaults to "/auth/callback")
+            required_scopes: Custom API scope names WITHOUT prefix (e.g., ["read", "write"]).
+                - Automatically prefixed with identifier_uri during initialization
+                - Validated on all tokens
+                - Advertised in Protected Resource Metadata
+                - Must match scope names defined in Azure Portal under "Expose an API"
+                Example: ["read", "write"] → validates tokens containing ["api://xxx/read", "api://xxx/write"]
+            additional_authorize_scopes: Microsoft Graph or other upstream scopes in full format.
+                - NOT prefixed with identifier_uri
+                - NOT validated on tokens
+                - NOT advertised to MCP clients
+                - Used to request additional permissions from Azure (e.g., Graph API access)
+                Example: ["User.Read", "Mail.Read", "offline_access"]
+                These scopes allow your FastMCP server to call Microsoft Graph APIs using the
+                upstream Azure token, but MCP clients are unaware of them.
             allowed_client_redirect_uris: List of allowed redirect URI patterns for MCP clients.
                 If None (default), all URIs are allowed. If empty list, no URIs are allowed.
             client_storage: An AsyncKeyValue-compatible store for client registrations, registrations are stored in memory if not provided
@@ -189,6 +210,12 @@ class AzureProvider(OAuthProxy):
         self.additional_authorize_scopes = settings.additional_authorize_scopes or []
         tenant_id_final = settings.tenant_id
 
+        # Prefix required scopes with identifier_uri for Azure
+        # Azure returns scopes as full URIs (e.g., "api://xxx/read") in tokens
+        prefixed_required_scopes = [
+            f"{self.identifier_uri}/{scope}" for scope in settings.required_scopes
+        ]
+
         # Always validate tokens against the app's API client ID using JWT
         issuer = f"https://login.microsoftonline.com/{tenant_id_final}/v2.0"
         jwks_uri = (
@@ -200,7 +227,7 @@ class AzureProvider(OAuthProxy):
             issuer=issuer,
             audience=settings.client_id,
             algorithm="RS256",
-            required_scopes=settings.required_scopes,
+            required_scopes=prefixed_required_scopes,
         )
 
         # Extract secret string from SecretStr
@@ -272,14 +299,14 @@ class AzureProvider(OAuthProxy):
                         "Filtering out 'resource' parameter '%s' for Azure AD v2.0 (use scopes instead)",
                         original_resource,
                     )
-        original_scopes = params_to_use.scopes or self.required_scopes
-        prefixed_scopes = (
-            self._add_prefix_to_scopes(original_scopes)
-            if self.identifier_uri
-            else original_scopes
-        )
+        # Scopes are already prefixed:
+        # - self.required_scopes was prefixed during __init__
+        # - Client scopes come from PRM which advertises prefixed scopes
+        scopes = params_to_use.scopes or self.required_scopes
 
-        final_scopes = list(prefixed_scopes)
+        final_scopes = list(scopes)
+        # Add Microsoft Graph scopes separately - these use shorthand format (e.g., "User.Read")
+        # and should not be prefixed with identifier_uri. Azure returns them as-is in tokens.
         if self.additional_authorize_scopes:
             final_scopes.extend(self.additional_authorize_scopes)
 
@@ -288,7 +315,3 @@ class AzureProvider(OAuthProxy):
         auth_url = await super().authorize(client, modified_params)
         separator = "&" if "?" in auth_url else "?"
         return f"{auth_url}{separator}prompt=select_account"
-
-    def _add_prefix_to_scopes(self, scopes: list[str]) -> list[str]:
-        """Add Application ID URI prefix for authorization request."""
-        return [f"{self.identifier_uri}/{scope}" for scope in scopes]
