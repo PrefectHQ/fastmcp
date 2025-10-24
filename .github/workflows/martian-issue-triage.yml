@@ -13,7 +13,7 @@ jobs:
     concurrency:
       group: triage-martian-${{ github.event.issue.number }}
       cancel-in-progress: true
-      
+
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
