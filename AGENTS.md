@@ -24,7 +24,7 @@ uv run pytest                        # Run full test suite
 | ------------------ | --------------------------------------------------- |
 | `src/fastmcp/`     | Library source code (Python ≥ 3.10)                 |
 | `├─server/`        | Server implementation, `FastMCP`, auth, networking  |
-| `│  ├─auth/`       | Authentication providers (Bearer, JWT, WorkOS)      |
+| `│  ├─auth/`       | Authentication providers (Google, GitHub, Azure, AWS, WorkOS, Auth0, JWT, and more) |
 | `│  └─middleware/` | Error handling, logging, rate limiting              |
 | `├─client/`        | High-level client SDK + transports                  |
 | `│  └─auth/`       | Client authentication (Bearer, OAuth)               |
@@ -262,4 +262,4 @@ uv sync                    # Installs all deps including dev tools
 1. **Dependencies**: Always `uv sync` first
 2. **Pre-commit fails**: Run `uv run pre-commit run --all-files` to see failures
 3. **Type errors**: Use `uv run ty check` directly, check `pyproject.toml` config
-4. **Test timeouts**: Default 3s - optimize or mark as integration tests
+4. **Test timeouts**: Default 5s - optimize or mark as integration tests

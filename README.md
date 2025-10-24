@@ -211,7 +211,6 @@ Access MCP session capabilities within your tools, resources, or prompts by addi
 
 - **Logging:** Log messages to MCP clients with `ctx.info()`, `ctx.error()`, etc.
 - **LLM Sampling:** Use `ctx.sample()` to request completions from the client's LLM.
-- **HTTP Request:** Use `ctx.http_request()` to make HTTP requests to other servers.
 - **Resource Access:** Use `ctx.read_resource()` to access resources on the server
 - **Progress Reporting:** Use `ctx.report_progress()` to report progress to the client.
 - and more...
@@ -321,7 +320,7 @@ FastMCP provides comprehensive authentication support that sets it apart from ba
 Protecting a server takes just two lines:
 
 ```python
-from fastmcp.server.auth import GoogleProvider
+from fastmcp.server.auth.providers.google import GoogleProvider
 
 auth = GoogleProvider(client_id="...", client_secret="...", base_url="https://myserver.com")
 mcp = FastMCP("Protected Server", auth=auth)

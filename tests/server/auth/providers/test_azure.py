@@ -217,7 +217,6 @@ class TestAzureProvider:
         # Scopes should be prefixed with identifier_uri
         assert verifier.required_scopes == ["api://my-api/.default"]
 
-    @pytest.mark.asyncio
     async def test_authorize_filters_resource_and_accepts_prefixed_scopes(self):
         """authorize() should drop resource parameter and accept prefixed scopes from clients."""
         provider = AzureProvider(
@@ -272,7 +271,6 @@ class TestAzureProvider:
         # Azure provider filters resource parameter (not stored in transaction)
         assert transaction.resource is None
 
-    @pytest.mark.asyncio
     async def test_authorize_appends_additional_scopes(self):
         """authorize() should append additional_authorize_scopes to the authorization request."""
         provider = AzureProvider(
