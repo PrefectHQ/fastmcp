@@ -23,6 +23,7 @@ class TestOpenAPIPerformance:
     """Performance tests for OpenAPI parsing with real-world large schemas."""
 
     # 10 second maximum timeout for this test no matter what
+    @pytest.mark.integration
     @pytest.mark.timeout(10)
     async def test_github_api_schema_performance(self):
         """
