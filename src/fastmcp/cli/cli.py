@@ -772,6 +772,7 @@ async def inspect(
                 "server_spec": server_spec,
                 "error": str(e),
             },
+            exc_info=True,
         )
         console.print(f"[bold red]✗[/bold red] Failed to inspect server: {e}")
         sys.exit(1)
