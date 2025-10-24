@@ -41,6 +41,7 @@ class TestEnhancedAuthorizationHandler:
                 base_url="https://test.com",
             ),
             base_url="https://myserver.com",
+            jwt_signing_key="test-secret",
         )
 
     def test_unregistered_client_returns_html_for_browser(self, oauth_proxy):
@@ -301,6 +302,7 @@ class TestContentNegotiation:
                 base_url="https://test.com",
             ),
             base_url="https://myserver.com",
+            jwt_signing_key="test-secret",
         )
 
     def test_html_preferred_when_both_accepted(self, oauth_proxy):

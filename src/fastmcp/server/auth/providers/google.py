@@ -56,6 +56,7 @@ class GoogleProviderSettings(BaseSettings):
     required_scopes: list[str] | None = None
     timeout_seconds: int | None = None
     allowed_client_redirect_uris: list[str] | None = None
+    jwt_signing_key: str | None = None
 
     @field_validator("required_scopes", mode="before")
     @classmethod
@@ -222,8 +223,7 @@ class GoogleProvider(OAuthProxy):
         timeout_seconds: int | NotSetT = NotSet,
         allowed_client_redirect_uris: list[str] | NotSetT = NotSet,
         client_storage: AsyncKeyValue | None = None,
-        jwt_signing_key: str | bytes | None = None,
-        token_encryption_key: str | bytes | None = None,
+        jwt_signing_key: str | bytes | NotSetT = NotSet,
         require_authorization_consent: bool = True,
     ):
         """Initialize Google OAuth provider.
@@ -242,13 +242,12 @@ class GoogleProvider(OAuthProxy):
             timeout_seconds: HTTP request timeout for Google API calls
             allowed_client_redirect_uris: List of allowed redirect URI patterns for MCP clients.
                 If None (default), all URIs are allowed. If empty list, no URIs are allowed.
-            client_storage: An AsyncKeyValue-compatible store for client registrations, registrations are stored in memory if not provided
-            jwt_signing_key: Secret for signing FastMCP JWT tokens (any string or bytes).
-                None (default): Auto-managed via system keyring (Mac/Windows) or ephemeral (Linux).
-                Explicit value: For production deployments. Recommended to store in environment variable.
-            token_encryption_key: Secret for encrypting upstream tokens at rest (any string or bytes).
-                None (default): Auto-managed via system keyring (Mac/Windows) or ephemeral (Linux).
-                Explicit value: For production deployments. Recommended to store in environment variable.
+            client_storage: Storage backend for OAuth state (client registrations, encrypted tokens).
+                If None, a DiskStore will be created in the data directory (derived from `platformdirs`). The
+                disk store will be encrypted using a key derived from the JWT Signing Key.
+            jwt_signing_key: Secret for signing FastMCP JWT tokens (any string or bytes). If bytes are provided,
+                they will be used as is. If a string is provided, it will be derived into a 32-byte key. If not
+                provided, the upstream client secret will be used to derive a 32-byte key using PBKDF2.
             require_authorization_consent: Whether to require user consent before authorizing clients (default True).
                 When True, users see a consent screen before being redirected to Google.
                 When False, authorization proceeds directly without user confirmation.
@@ -267,6 +266,7 @@ class GoogleProvider(OAuthProxy):
                     "required_scopes": required_scopes,
                     "timeout_seconds": timeout_seconds,
                     "allowed_client_redirect_uris": allowed_client_redirect_uris,
+                    "jwt_signing_key": jwt_signing_key,
                 }.items()
                 if v is not NotSet
             }
@@ -312,8 +312,7 @@ class GoogleProvider(OAuthProxy):
             or settings.base_url,  # Default to base_url if not specified
             allowed_client_redirect_uris=allowed_client_redirect_uris_final,
             client_storage=client_storage,
-            jwt_signing_key=jwt_signing_key,
-            token_encryption_key=token_encryption_key,
+            jwt_signing_key=settings.jwt_signing_key,
             require_authorization_consent=require_authorization_consent,
         )
 

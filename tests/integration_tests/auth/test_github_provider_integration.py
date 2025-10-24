@@ -46,6 +46,7 @@ def create_github_server(base_url: str) -> FastMCP:
         client_id=FASTMCP_TEST_AUTH_GITHUB_CLIENT_ID,
         client_secret=FASTMCP_TEST_AUTH_GITHUB_CLIENT_SECRET,
         base_url=base_url,
+        jwt_signing_key="test-secret",
     )
 
     # Create FastMCP server with GitHub authentication
@@ -74,6 +75,7 @@ def create_github_server_with_mock_callback(base_url: str) -> FastMCP:
         client_id=FASTMCP_TEST_AUTH_GITHUB_CLIENT_ID,
         client_secret=FASTMCP_TEST_AUTH_GITHUB_CLIENT_SECRET,
         base_url=base_url,
+        jwt_signing_key="test-secret",
     )
 
     # Mock the authorize method to return a fake code instead of redirecting to GitHub

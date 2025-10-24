@@ -110,6 +110,7 @@ class TestOAuthProxyRedirectValidation:
             upstream_client_secret="test-secret",
             token_verifier=MockTokenVerifier(),
             base_url="http://localhost:8000",
+            jwt_signing_key="test-secret",
         )
 
         # The proxy should store None for default (allow all)
@@ -127,6 +128,7 @@ class TestOAuthProxyRedirectValidation:
             token_verifier=MockTokenVerifier(),
             base_url="http://localhost:8000",
             allowed_client_redirect_uris=custom_patterns,
+            jwt_signing_key="test-secret",
         )
 
         assert proxy._allowed_client_redirect_uris == custom_patterns
@@ -141,6 +143,7 @@ class TestOAuthProxyRedirectValidation:
             token_verifier=MockTokenVerifier(),
             base_url="http://localhost:8000",
             allowed_client_redirect_uris=[],
+            jwt_signing_key="test-secret",
         )
 
         assert proxy._allowed_client_redirect_uris == []
@@ -157,6 +160,7 @@ class TestOAuthProxyRedirectValidation:
             token_verifier=MockTokenVerifier(),
             base_url="http://localhost:8000",
             allowed_client_redirect_uris=custom_patterns,
+            jwt_signing_key="test-secret",
         )
 
         # Register a client
@@ -189,6 +193,7 @@ class TestOAuthProxyRedirectValidation:
             token_verifier=MockTokenVerifier(),
             base_url="http://localhost:8000",
             allowed_client_redirect_uris=custom_patterns,
+            jwt_signing_key="test-secret",
         )
 
         # Get an unregistered client

@@ -38,14 +38,11 @@ auth = GitHubProvider(
 
     # Explicit keys (required for production)
     jwt_signing_key=os.environ["JWT_SIGNING_KEY"],
-    token_encryption_key=os.environ["TOKEN_ENCRYPTION_KEY"],
 
     # Persistent network storage (required for production)
     client_storage=RedisStore(host="redis.example.com", port=6379)
 )
 ```
-
-All three are required for production. The keys accept any secret string and should be different from each other.
 
 **More information:**
 - [OAuth Token Security](/deployment/http#oauth-token-security) - Complete production setup guide

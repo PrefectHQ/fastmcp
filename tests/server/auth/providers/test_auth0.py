@@ -49,6 +49,7 @@ class TestAuth0ProviderSettings:
                 "FASTMCP_SERVER_AUTH_AUTH0_REQUIRED_SCOPES": ",".join(
                     TEST_REQUIRED_SCOPES
                 ),
+                "FASTMCP_SERVER_AUTH_AUTH0_JWT_SIGNING_KEY": "test-secret",
             },
         ):
             settings = Auth0ProviderSettings()
@@ -108,6 +109,7 @@ class TestAuth0Provider:
                 base_url=TEST_BASE_URL,
                 redirect_path=TEST_REDIRECT_PATH,
                 required_scopes=TEST_REQUIRED_SCOPES,
+                jwt_signing_key="test-secret",
             )
 
             mock_get.assert_called_once()
@@ -147,6 +149,7 @@ class TestAuth0Provider:
                     "FASTMCP_SERVER_AUTH_AUTH0_AUDIENCE": TEST_AUDIENCE,
                     "FASTMCP_SERVER_AUTH_AUTH0_BASE_URL": TEST_BASE_URL,
                     "FASTMCP_SERVER_AUTH_AUTH0_REQUIRED_SCOPES": scopes_env,
+                    "FASTMCP_SERVER_AUTH_AUTH0_JWT_SIGNING_KEY": "test-secret",
                 },
             ),
             patch(
@@ -188,6 +191,7 @@ class TestAuth0Provider:
                     "FASTMCP_SERVER_AUTH_AUTH0_CLIENT_SECRET": TEST_CLIENT_SECRET,
                     "FASTMCP_SERVER_AUTH_AUTH0_AUDIENCE": TEST_AUDIENCE,
                     "FASTMCP_SERVER_AUTH_AUTH0_BASE_URL": TEST_BASE_URL,
+                    "FASTMCP_SERVER_AUTH_AUTH0_JWT_SIGNING_KEY": "test-secret",
                 },
             ),
             patch(
@@ -239,6 +243,7 @@ class TestAuth0Provider:
                     config_url=TEST_CONFIG_URL,
                     client_id=TEST_CLIENT_ID,
                     client_secret=TEST_CLIENT_SECRET,
+                    jwt_signing_key="test-secret",
                 )
 
     def test_init_missing_base_url_raises_error(self):
@@ -251,6 +256,7 @@ class TestAuth0Provider:
                     client_id=TEST_CLIENT_ID,
                     client_secret=TEST_CLIENT_SECRET,
                     audience=TEST_AUDIENCE,
+                    jwt_signing_key="test-secret",
                 )
 
     def test_init_defaults(self, valid_oidc_configuration_dict):
@@ -269,6 +275,7 @@ class TestAuth0Provider:
                 client_secret=TEST_CLIENT_SECRET,
                 audience=TEST_AUDIENCE,
                 base_url=TEST_BASE_URL,
+                jwt_signing_key="test-secret",
             )
 
             # Check defaults

@@ -52,6 +52,7 @@ class Auth0ProviderSettings(BaseSettings):
     redirect_path: str | None = None
     required_scopes: list[str] | None = None
     allowed_client_redirect_uris: list[str] | None = None
+    jwt_signing_key: str | None = None
 
     @field_validator("required_scopes", mode="before")
     @classmethod
@@ -96,8 +97,7 @@ class Auth0Provider(OIDCProxy):
         redirect_path: str | NotSetT = NotSet,
         allowed_client_redirect_uris: list[str] | NotSetT = NotSet,
         client_storage: AsyncKeyValue | None = None,
-        jwt_signing_key: str | bytes | None = None,
-        token_encryption_key: str | bytes | None = None,
+        jwt_signing_key: str | bytes | NotSetT = NotSet,
         require_authorization_consent: bool = True,
     ) -> None:
         """Initialize Auth0 OAuth provider.
@@ -114,13 +114,12 @@ class Auth0Provider(OIDCProxy):
             redirect_path: Redirect path configured in Auth0 application
             allowed_client_redirect_uris: List of allowed redirect URI patterns for MCP clients.
                 If None (default), all URIs are allowed. If empty list, no URIs are allowed.
-            client_storage: An AsyncKeyValue-compatible store for client registrations, registrations are stored in memory if not provided
-            jwt_signing_key: Secret for signing FastMCP JWT tokens (any string or bytes).
-                None (default): Auto-managed via system keyring (Mac/Windows) or ephemeral (Linux).
-                Explicit value: For production deployments. Recommended to store in environment variable.
-            token_encryption_key: Secret for encrypting upstream tokens at rest (any string or bytes).
-                None (default): Auto-managed via system keyring (Mac/Windows) or ephemeral (Linux).
-                Explicit value: For production deployments. Recommended to store in environment variable.
+            client_storage: Storage backend for OAuth state (client registrations, encrypted tokens).
+                If None, a DiskStore will be created in the data directory (derived from `platformdirs`). The
+                disk store will be encrypted using a key derived from the JWT Signing Key.
+            jwt_signing_key: Secret for signing FastMCP JWT tokens (any string or bytes). If bytes are provided,
+                they will be used as is. If a string is provided, it will be derived into a 32-byte key. If not
+                provided, the upstream client secret will be used to derive a 32-byte key using PBKDF2.
             require_authorization_consent: Whether to require user consent before authorizing clients (default True).
                 When True, users see a consent screen before being redirected to Auth0.
                 When False, authorization proceeds directly without user confirmation.
@@ -139,6 +138,7 @@ class Auth0Provider(OIDCProxy):
                     "required_scopes": required_scopes,
                     "redirect_path": redirect_path,
                     "allowed_client_redirect_uris": allowed_client_redirect_uris,
+                    "jwt_signing_key": jwt_signing_key,
                 }.items()
                 if v is not NotSet
             }
@@ -171,23 +171,20 @@ class Auth0Provider(OIDCProxy):
 
         auth0_required_scopes = settings.required_scopes or ["openid"]
 
-        init_kwargs = {
-            "config_url": settings.config_url,
-            "client_id": settings.client_id,
-            "client_secret": settings.client_secret.get_secret_value(),
-            "audience": settings.audience,
-            "base_url": settings.base_url,
-            "issuer_url": settings.issuer_url,
-            "redirect_path": settings.redirect_path,
-            "required_scopes": auth0_required_scopes,
-            "allowed_client_redirect_uris": settings.allowed_client_redirect_uris,
-            "client_storage": client_storage,
-            "jwt_signing_key": jwt_signing_key,
-            "token_encryption_key": token_encryption_key,
-            "require_authorization_consent": require_authorization_consent,
-        }
-
-        super().__init__(**init_kwargs)
+        super().__init__(
+            config_url=settings.config_url,
+            client_id=settings.client_id,
+            client_secret=settings.client_secret.get_secret_value(),
+            audience=settings.audience,
+            base_url=settings.base_url,
+            issuer_url=settings.issuer_url,
+            redirect_path=settings.redirect_path,
+            required_scopes=auth0_required_scopes,
+            allowed_client_redirect_uris=settings.allowed_client_redirect_uris,
+            client_storage=client_storage,
+            jwt_signing_key=settings.jwt_signing_key,
+            require_authorization_consent=require_authorization_consent,
+        )
 
         logger.debug(
             "Initialized Auth0 OAuth provider for client %s with scopes: %s",

@@ -458,6 +458,7 @@ class TestOIDCProxyInitialization:
                 client_id=TEST_CLIENT_ID,
                 client_secret=TEST_CLIENT_SECRET,
                 base_url=TEST_BASE_URL,
+                jwt_signing_key="test-secret",
             )
 
             validate_proxy(mock_get, proxy, oidc_config)
@@ -478,6 +479,7 @@ class TestOIDCProxyInitialization:
                 client_secret=TEST_CLIENT_SECRET,
                 base_url=TEST_BASE_URL,
                 timeout_seconds=12,
+                jwt_signing_key="test-secret",
             )
 
             validate_proxy(mock_get, proxy, oidc_config)
@@ -503,6 +505,7 @@ class TestOIDCProxyInitialization:
                 algorithm="RS256",
                 audience="oidc-proxy-test-audience",
                 required_scopes=["required", "scopes"],
+                jwt_signing_key="test-secret",
             )
 
             validate_proxy(mock_get, proxy, oidc_config)
@@ -529,6 +532,7 @@ class TestOIDCProxyInitialization:
                 client_secret=TEST_CLIENT_SECRET,
                 base_url=TEST_BASE_URL,
                 audience="oidc-proxy-test-audience",
+                jwt_signing_key="test-secret",
             )
 
             validate_proxy(mock_get, proxy, oidc_config)
@@ -556,6 +560,7 @@ class TestOIDCProxyInitialization:
                 redirect_path="/oidc/proxy",
                 allowed_client_redirect_uris=["http://localhost:*"],
                 token_endpoint_auth_method="client_secret_post",
+                jwt_signing_key="test-secret",
             )
 
             validate_proxy(mock_get, proxy, oidc_config)
@@ -582,6 +587,7 @@ class TestOIDCProxyInitialization:
                     client_id=TEST_CLIENT_ID,
                     client_secret=TEST_CLIENT_SECRET,
                     base_url=TEST_BASE_URL,
+                    jwt_signing_key="test-secret",
                 )
 
     def test_no_client_id_initialization_raises_error(

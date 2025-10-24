@@ -319,6 +319,7 @@ def oauth_proxy(jwt_verifier):
         token_verifier=jwt_verifier,
         base_url="https://myserver.com",
         redirect_path="/auth/callback",
+        jwt_signing_key="test-secret",
     )
 
 
@@ -348,6 +349,7 @@ class TestOAuthProxyInitialization:
             upstream_client_secret="secret-456",
             token_verifier=jwt_verifier,
             base_url="https://api.example.com",
+            jwt_signing_key="test-secret",
         )
 
         assert (
@@ -376,6 +378,7 @@ class TestOAuthProxyInitialization:
             valid_scopes=["custom", "scopes"],
             forward_pkce=False,
             token_endpoint_auth_method="client_secret_post",
+            jwt_signing_key="test-secret",
         )
 
         assert proxy._upstream_revocation_endpoint == "https://auth.example.com/revoke"
@@ -395,6 +398,7 @@ class TestOAuthProxyInitialization:
             token_verifier=jwt_verifier,
             base_url="https://api.com",
             redirect_path="auth/callback",  # No leading slash
+            jwt_signing_key="test-secret",
         )
         assert proxy._redirect_path == "/auth/callback"
 
@@ -446,6 +450,7 @@ class TestOAuthProxyAuthorization:
             client_id="test-client",
             client_secret="test-secret",
             redirect_uris=[AnyUrl("http://localhost:54321/callback")],
+            jwt_signing_key="test-secret",
         )
 
         # Register client first (required for consent flow)
@@ -493,6 +498,7 @@ class TestOAuthProxyPKCE:
             token_verifier=jwt_verifier,
             base_url="https://proxy.example.com",
             forward_pkce=True,
+            jwt_signing_key="test-secret",
         )
 
     @pytest.fixture
@@ -505,6 +511,7 @@ class TestOAuthProxyPKCE:
             token_verifier=jwt_verifier,
             base_url="https://proxy.example.com",
             forward_pkce=False,
+            jwt_signing_key="test-secret",
         )
 
     async def test_pkce_forwarding_enabled(self, proxy_with_pkce):
@@ -591,6 +598,7 @@ class TestOAuthProxyTokenEndpointAuth:
             token_verifier=jwt_verifier,
             base_url="https://proxy.example.com",
             token_endpoint_auth_method="client_secret_post",
+            jwt_signing_key="test-secret",
         )
         assert proxy_post._token_endpoint_auth_method == "client_secret_post"
 
@@ -603,6 +611,7 @@ class TestOAuthProxyTokenEndpointAuth:
             token_verifier=jwt_verifier,
             base_url="https://proxy.example.com",
             token_endpoint_auth_method="client_secret_basic",
+            jwt_signing_key="test-secret",
         )
         assert proxy_basic._token_endpoint_auth_method == "client_secret_basic"
 
@@ -614,6 +623,7 @@ class TestOAuthProxyTokenEndpointAuth:
             upstream_client_secret="secret",
             token_verifier=jwt_verifier,
             base_url="https://proxy.example.com",
+            jwt_signing_key="test-secret",
         )
         assert proxy_default._token_endpoint_auth_method is None
 
@@ -627,6 +637,7 @@ class TestOAuthProxyTokenEndpointAuth:
             token_verifier=jwt_verifier,
             base_url="https://proxy.example.com",
             token_endpoint_auth_method="client_secret_post",
+            jwt_signing_key="test-secret",
         )
 
         # First, create a valid FastMCP token via full OAuth flow
@@ -747,6 +758,7 @@ class TestOAuthProxyE2E:
             upstream_client_secret="mock-secret",
             token_verifier=MockTokenVerifier(),
             base_url="http://localhost:8000",
+            jwt_signing_key="test-secret",
         )
 
         # Create FastMCP server with proxy
@@ -800,6 +812,7 @@ class TestOAuthProxyE2E:
             upstream_client_secret="mock-secret",
             token_verifier=MockTokenVerifier(),
             base_url="http://localhost:8000",
+            jwt_signing_key="test-secret",
         )
 
         client = OAuthClientInformationFull(
@@ -915,6 +928,7 @@ class TestOAuthProxyE2E:
             token_verifier=MockTokenVerifier(),
             base_url="http://localhost:8000",
             forward_pkce=True,  # Enable PKCE forwarding
+            jwt_signing_key="test-secret",
         )
 
         client = OAuthClientInformationFull(
@@ -970,6 +984,7 @@ class TestParameterForwarding:
             base_url="https://proxy.example.com",
             extra_authorize_params={"audience": "https://api.example.com"},
             extra_token_params={"audience": "https://api.example.com"},
+            jwt_signing_key="test-secret",
         )
 
     @pytest.fixture
@@ -982,6 +997,7 @@ class TestParameterForwarding:
             upstream_client_secret="upstream-secret",
             token_verifier=jwt_verifier,
             base_url="https://proxy.example.com",
+            jwt_signing_key="test-secret",
         )
 
     async def test_resource_parameter_forwarding(self, proxy_without_extra_params):
@@ -1133,6 +1149,7 @@ class TestParameterForwarding:
                 "prompt": "consent",
                 "max_age": "3600",
             },
+            jwt_signing_key="test-secret",
         )
 
         client = OAuthClientInformationFull(
@@ -1189,6 +1206,7 @@ class TestParameterForwarding:
             upstream_client_secret="upstream-secret",
             token_verifier=jwt_verifier,
             base_url="https://proxy.example.com",
+            jwt_signing_key="test-secret",
         )
 
         # Create a test app with OAuth routes

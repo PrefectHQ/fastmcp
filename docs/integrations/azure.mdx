@@ -209,15 +209,17 @@ The client caches tokens locally, so you won't need to re-authenticate for subse
 
 <VersionBadge version="2.13.0" />
 
-For production deployments with persistent token management across server restarts, configure `jwt_signing_key`, `token_encryption_key`, and `client_storage`:
+For production deployments with persistent token management across server restarts, configure `jwt_signing_key` and `client_storage`:
 
 ```python server.py
 import os
 from fastmcp import FastMCP
 from fastmcp.server.auth.providers.azure import AzureProvider
 from key_value.aio.stores.redis import RedisStore
+from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
+from cryptography.fernet import Fernet
 
-# Production setup with persistent token storage
+# Production setup with encrypted persistent token storage
 auth_provider = AzureProvider(
     client_id="835f09b6-0f0f-40cc-85cb-f32c5829a149",
     client_secret="your-client-secret",
@@ -226,11 +228,13 @@ auth_provider = AzureProvider(
     required_scopes=["your-scope"],
 
     # Production token management
-    jwt_signing_key=os.environ["JWT_SIGNING_KEY"],           # Secret for signing JWT tokens
-    token_encryption_key=os.environ["TOKEN_ENCRYPTION_KEY"], # Secret for encrypting tokens at rest
-    client_storage=RedisStore(                               # Persistent storage for client registrations
-        host=os.environ["REDIS_HOST"],
-        port=int(os.environ["REDIS_PORT"])
+    jwt_signing_key=os.environ["JWT_SIGNING_KEY"],
+    client_storage=FernetEncryptionWrapper(
+        key_value=RedisStore(
+            host=os.environ["REDIS_HOST"],
+            port=int(os.environ["REDIS_PORT"])
+        ),
+        fernet=Fernet(os.environ["STORAGE_ENCRYPTION_KEY"])
     )
 )
 
@@ -238,7 +242,7 @@ mcp = FastMCP(name="Production Azure App", auth=auth_provider)
 ```
 
 <Note>
-All three parameters (`jwt_signing_key`, `token_encryption_key`, and `client_storage`) work together to ensure tokens and client registrations survive server restarts. Store secrets in environment variables and use a persistent storage backend like Redis or PostgreSQL for distributed deployments.
+Parameters (`jwt_signing_key` and `client_storage`) work together to ensure tokens and client registrations survive server restarts. **Wrap your storage in `FernetEncryptionWrapper` to encrypt sensitive OAuth tokens at rest** - without it, tokens are stored in plaintext. Store secrets in environment variables and use a persistent storage backend like Redis for distributed deployments.
 
 For complete details on these parameters, see the [OAuth Proxy documentation](/servers/auth/oauth-proxy#configuration-parameters).
 </Note>

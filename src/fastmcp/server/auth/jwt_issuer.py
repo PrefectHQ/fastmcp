@@ -9,82 +9,66 @@ from __future__ import annotations
 
 import base64
 import time
-from typing import Any
+from typing import Any, overload
 
 from authlib.jose import JsonWebToken
 from authlib.jose.errors import JoseError
-from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 from fastmcp.utilities.logging import get_logger
 
 logger = get_logger(__name__)
 
-
-def derive_jwt_key(upstream_secret: str, server_salt: str) -> bytes:
-    """Derive JWT signing key from upstream client secret and server salt.
-
-    Uses HKDF (RFC 5869) to derive a cryptographically secure signing key from
-    the upstream OAuth client secret combined with a server-specific salt.
-
-    Args:
-        upstream_secret: The OAuth client secret from upstream provider
-        server_salt: Random salt unique to this server instance
-
-    Returns:
-        32-byte key suitable for HS256 JWT signing
-    """
-    return HKDF(
-        algorithm=hashes.SHA256(),
-        length=32,
-        salt=f"fastmcp-jwt-signing-v1-{server_salt}".encode(),
-        info=b"HS256",
-    ).derive(upstream_secret.encode())
+KDF_ITERATIONS = 1000000
 
 
-def derive_encryption_key(upstream_secret: str) -> bytes:
-    """Derive Fernet encryption key from upstream client secret.
-
-    Uses HKDF to derive a cryptographically secure encryption key for
-    encrypting upstream tokens at rest.
-
-    Args:
-        upstream_secret: The OAuth client secret from upstream provider
-
-    Returns:
-        32-byte Fernet key (base64url-encoded)
-    """
-    key_material = HKDF(
-        algorithm=hashes.SHA256(),
-        length=32,
-        salt=b"fastmcp-token-encryption-v1",
-        info=b"Fernet",
-    ).derive(upstream_secret.encode())
-    return base64.urlsafe_b64encode(key_material)
+@overload
+def derive_jwt_key(*, high_entropy_material: str, salt: str) -> bytes:
+    """Derive JWT signing key from a high-entropy key material and server salt."""
 
 
-def derive_key_from_secret(secret: str | bytes, salt: str, info: bytes) -> bytes:
-    """Derive 32-byte key from user-provided secret (string or bytes).
+@overload
+def derive_jwt_key(*, low_entropy_material: str, salt: str) -> bytes:
+    """Derive JWT signing key from a low-entropy key material and server salt."""
 
-    Accepts any length input and derives a proper cryptographic key.
-    Uses HKDF to stretch weak inputs into strong keys.
 
-    Args:
-        secret: User-provided secret (any string or bytes)
-        salt: Application-specific salt string
-        info: Key purpose identifier
+def derive_jwt_key(
+    *,
+    high_entropy_material: str | None = None,
+    low_entropy_material: str | None = None,
+    salt: str,
+) -> bytes:
+    """Derive JWT signing key from a high-entropy or low-entropy key material and server salt."""
+    if high_entropy_material is not None and low_entropy_material is not None:
+        raise ValueError(
+            "Either high_entropy_material or low_entropy_material must be provided, but not both"
+        )
 
-    Returns:
-        32-byte key suitable for HS256 JWT signing or Fernet encryption
-    """
-    secret_bytes = secret.encode() if isinstance(secret, str) else secret
-    return HKDF(
-        algorithm=hashes.SHA256(),
-        length=32,
-        salt=salt.encode(),
-        info=info,
-    ).derive(secret_bytes)
+    if high_entropy_material is not None:
+        derived_key = HKDF(
+            algorithm=hashes.SHA256(),
+            length=32,
+            salt=salt.encode(),
+            info=b"Fernet",
+        ).derive(key_material=high_entropy_material.encode())
+
+        return base64.urlsafe_b64encode(derived_key)
+
+    if low_entropy_material is not None:
+        pbkdf2 = PBKDF2HMAC(
+            algorithm=hashes.SHA256(),
+            length=32,
+            salt=salt.encode(),
+            iterations=KDF_ITERATIONS,
+        ).derive(key_material=low_entropy_material.encode())
+
+        return base64.urlsafe_b64encode(pbkdf2)
+
+    raise ValueError(
+        "Either high_entropy_material or low_entropy_material must be provided"
+    )
 
 
 class JWTIssuer:
@@ -250,40 +234,3 @@ class JWTIssuer:
         except JoseError as e:
             logger.debug("Token validation failed: %s", e)
             raise
-
-
-class TokenEncryption:
-    """Handles encryption/decryption of upstream OAuth tokens at rest."""
-
-    def __init__(self, encryption_key: bytes):
-        """Initialize token encryption.
-
-        Args:
-            encryption_key: Fernet encryption key (32 bytes, base64url-encoded)
-        """
-        self._fernet = Fernet(encryption_key)
-
-    def encrypt(self, token: str) -> bytes:
-        """Encrypt a token for storage.
-
-        Args:
-            token: Plain text token
-
-        Returns:
-            Encrypted token bytes
-        """
-        return self._fernet.encrypt(token.encode())
-
-    def decrypt(self, encrypted_token: bytes) -> str:
-        """Decrypt a token from storage.
-
-        Args:
-            encrypted_token: Encrypted token bytes
-
-        Returns:
-            Plain text token
-
-        Raises:
-            cryptography.fernet.InvalidToken: If token is corrupted or key is wrong
-        """
-        return self._fernet.decrypt(encrypted_token).decode()

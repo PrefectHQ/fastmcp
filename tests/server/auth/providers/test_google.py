@@ -18,6 +18,7 @@ class TestGoogleProvider:
             client_secret="GOCSPX-test123",
             base_url="https://myserver.com",
             required_scopes=["openid", "email", "profile"],
+            jwt_signing_key="test-secret",
         )
 
         assert provider._upstream_client_id == "123456789.apps.googleusercontent.com"
@@ -40,6 +41,7 @@ class TestGoogleProvider:
                 "FASTMCP_SERVER_AUTH_GOOGLE_CLIENT_SECRET": "GOCSPX-env456",
                 "FASTMCP_SERVER_AUTH_GOOGLE_BASE_URL": "https://envserver.com",
                 "FASTMCP_SERVER_AUTH_GOOGLE_REQUIRED_SCOPES": scopes_env,
+                "FASTMCP_SERVER_AUTH_GOOGLE_JWT_SIGNING_KEY": "test-secret",
             },
         ):
             provider = GoogleProvider()
@@ -73,6 +75,7 @@ class TestGoogleProvider:
         provider = GoogleProvider(
             client_id="123456789.apps.googleusercontent.com",
             client_secret="GOCSPX-test123",
+            jwt_signing_key="test-secret",
         )
 
         # Check defaults
@@ -86,6 +89,7 @@ class TestGoogleProvider:
             client_id="123456789.apps.googleusercontent.com",
             client_secret="GOCSPX-test123",
             base_url="https://myserver.com",
+            jwt_signing_key="test-secret",
         )
 
         # Check that endpoints use Google's OAuth2 endpoints
@@ -110,6 +114,7 @@ class TestGoogleProvider:
                 "https://www.googleapis.com/auth/userinfo.email",
                 "https://www.googleapis.com/auth/userinfo.profile",
             ],
+            jwt_signing_key="test-secret",
         )
 
         # Provider should initialize successfully with these scopes

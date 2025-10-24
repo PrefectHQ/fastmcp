@@ -78,6 +78,7 @@ def oauth_proxy_with_storage(storage):
         base_url="https://myserver.com",
         redirect_path="/auth/callback",
         client_storage=storage,  # Use our test storage
+        jwt_signing_key="test-secret",
     )
 
 
@@ -92,6 +93,7 @@ def oauth_proxy_https():
         token_verifier=_Verifier(),
         base_url="https://myserver.example",
         client_storage=MemoryStore(),
+        jwt_signing_key="test-secret",
     )
 
 
@@ -681,6 +683,7 @@ class TestConsentPageServerIcon:
             upstream_client_secret="upstream-secret",
             token_verifier=verifier,
             base_url="https://proxy.example.com",
+            jwt_signing_key="test-secret",
         )
 
         # Create FastMCP server with custom icon
@@ -752,6 +755,7 @@ class TestConsentPageServerIcon:
             upstream_client_secret="upstream-secret",
             token_verifier=verifier,
             base_url="https://proxy.example.com",
+            jwt_signing_key="test-secret",
         )
 
         # Create FastMCP server without icon
@@ -818,6 +822,7 @@ class TestConsentPageServerIcon:
             upstream_client_secret="upstream-secret",
             token_verifier=verifier,
             base_url="https://proxy.example.com",
+            jwt_signing_key="test-secret",
         )
 
         # Create FastMCP server with special characters in name

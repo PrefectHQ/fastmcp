@@ -557,30 +557,33 @@ This automatic approach is convenient for development but not suitable for produ
 
 **For Production:**
 
-Production requires explicit key management to ensure tokens survive restarts and can be shared across multiple server instances. This requires three things working together:
+Production requires explicit key management to ensure tokens survive restarts and can be shared across multiple server instances. This requires the following two things working together:
 
 1. **Explicit JWT signing key** for signing tokens issued to clients
-2. **Explicit token encryption key** for encrypting upstream OAuth tokens at rest
-3. **Persistent network-accessible storage** for encrypted upstream tokens
-
-The keys can be any secret strings (environment variables, secret manager, etc.) and should be different from each other. FastMCP derives proper cryptographic keys from whatever you provide using HKDF.
+3. **Persistent network-accessible storage** for upstream tokens (wrapped in `FernetEncryptionWrapper` to encrypt sensitive data at rest)
 
 **Configuration:**
 
-Add three parameters to your auth provider:
+Add two parameters to your auth provider:
 
-```python {4-7}
+```python {8-12}
+from key_value.aio.stores.redis import RedisStore
+from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
+from cryptography.fernet import Fernet
+
 auth = GitHubProvider(
     client_id=os.environ["GITHUB_CLIENT_ID"],
     client_secret=os.environ["GITHUB_CLIENT_SECRET"],
     jwt_signing_key=os.environ["JWT_SIGNING_KEY"],
-    token_encryption_key=os.environ["TOKEN_ENCRYPTION_KEY"],
-    client_storage=RedisStore(host="redis.example.com", ...),
+    client_storage=FernetEncryptionWrapper(
+        key_value=RedisStore(host="redis.example.com", port=6379),
+        fernet=Fernet(os.environ["STORAGE_ENCRYPTION_KEY"])
+    ),
     base_url="https://your-server.com"  # use HTTPS
 )
 ```
 
-All three parameters are required for production. Without explicit keys, new keys are generated each time the server starts (on Mac/Windows from keyring, on Linux ephemeral). Without persistent storage, encrypted tokens are lost. Both cause token validation to fail after restart, requiring all clients to re-authenticate.
+Both parameters are required for production. Without an explicit signing key, keys are signed using a key derived from the client_secret, which will cause invalidation upon rotation of the client secret. Without persistent storage, tokens are local to the server and won't be trusted across hosts. **Wrap your storage backend in `FernetEncryptionWrapper` to encrypt sensitive OAuth tokens at rest** - without encryption, tokens are stored in plaintext.
 
 For more details on the token architecture and key management, see [OAuth Proxy Key and Storage Management](/servers/auth/oauth-proxy#key-and-storage-management).
 

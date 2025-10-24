@@ -8,8 +8,6 @@ from authlib.jose.errors import JoseError
 
 from fastmcp.server.auth.jwt_issuer import (
     JWTIssuer,
-    TokenEncryption,
-    derive_encryption_key,
     derive_jwt_key,
 )
 
@@ -19,58 +17,51 @@ class TestKeyDerivation:
 
     def test_derive_jwt_key_produces_32_bytes(self):
         """Test that JWT key derivation produces 32-byte key."""
-        key = derive_jwt_key("test-secret", "test-salt")
-        assert len(key) == 32
+        key = derive_jwt_key(high_entropy_material="test-secret", salt="test-salt")
+        assert len(key) == 44
         assert isinstance(key, bytes)
+
+        # base64 decode and make sure its 32 bytes
+        key_bytes = base64.urlsafe_b64decode(key)
+        assert len(key_bytes) == 32
+
+        key = derive_jwt_key(low_entropy_material="test-secret", salt="test-salt")
+        assert len(key) == 44
+        assert isinstance(key, bytes)
+
+        # base64 decode and make sure its 32 bytes
+        key_bytes = base64.urlsafe_b64decode(key)
+        assert len(key_bytes) == 32
 
     def test_derive_jwt_key_with_different_secrets_produces_different_keys(self):
         """Test that different secrets produce different keys."""
-        key1 = derive_jwt_key("secret1", "salt")
-        key2 = derive_jwt_key("secret2", "salt")
+        key1 = derive_jwt_key(high_entropy_material="secret1", salt="salt")
+        key2 = derive_jwt_key(high_entropy_material="secret2", salt="salt")
+        assert key1 != key2
+
+        key1 = derive_jwt_key(low_entropy_material="secret1", salt="salt")
+        key2 = derive_jwt_key(low_entropy_material="secret2", salt="salt")
         assert key1 != key2
 
     def test_derive_jwt_key_with_different_salts_produces_different_keys(self):
         """Test that different salts produce different keys."""
-        key1 = derive_jwt_key("secret", "salt1")
-        key2 = derive_jwt_key("secret", "salt2")
+        key1 = derive_jwt_key(high_entropy_material="secret", salt="salt1")
+        key2 = derive_jwt_key(high_entropy_material="secret", salt="salt2")
+        assert key1 != key2
+
+        key1 = derive_jwt_key(low_entropy_material="secret", salt="salt1")
+        key2 = derive_jwt_key(low_entropy_material="secret", salt="salt2")
         assert key1 != key2
 
     def test_derive_jwt_key_is_deterministic(self):
         """Test that same inputs always produce same key."""
-        key1 = derive_jwt_key("secret", "salt")
-        key2 = derive_jwt_key("secret", "salt")
+        key1 = derive_jwt_key(high_entropy_material="secret", salt="salt")
+        key2 = derive_jwt_key(high_entropy_material="secret", salt="salt")
         assert key1 == key2
 
-    def test_derive_encryption_key_produces_base64_key(self):
-        """Test that encryption key is base64url-encoded."""
-        key = derive_encryption_key("test-secret")
-        assert len(key) == 44  # 32 bytes base64url-encoded = 44 chars
-        assert isinstance(key, bytes)
-        # Should be valid base64url (no padding issues)
-        import base64
-
-        decoded = base64.urlsafe_b64decode(key)
-        assert len(decoded) == 32
-
-    def test_derive_encryption_key_with_different_secrets_produces_different_keys(
-        self,
-    ):
-        """Test that different secrets produce different encryption keys."""
-        key1 = derive_encryption_key("secret1")
-        key2 = derive_encryption_key("secret2")
-        assert key1 != key2
-
-    def test_derive_encryption_key_is_deterministic(self):
-        """Test that same input always produces same encryption key."""
-        key1 = derive_encryption_key("secret")
-        key2 = derive_encryption_key("secret")
+        key1 = derive_jwt_key(low_entropy_material="secret", salt="salt")
+        key2 = derive_jwt_key(low_entropy_material="secret", salt="salt")
         assert key1 == key2
-
-    def test_jwt_and_encryption_keys_are_different(self):
-        """Test that JWT and encryption keys derived from same secret are different."""
-        jwt_key = derive_jwt_key("secret", "salt")
-        enc_key_raw = base64.urlsafe_b64decode(derive_encryption_key("secret"))
-        assert jwt_key != enc_key_raw
 
 
 class TestJWTIssuer:
@@ -79,7 +70,9 @@ class TestJWTIssuer:
     @pytest.fixture
     def issuer(self):
         """Create a JWT issuer for testing."""
-        signing_key = derive_jwt_key("test-secret", "test-salt")
+        signing_key = derive_jwt_key(
+            low_entropy_material="test-secret", salt="test-salt"
+        )
         return JWTIssuer(
             issuer="https://test-server.com",
             audience="https://test-server.com/mcp",
@@ -156,7 +149,9 @@ class TestJWTIssuer:
         )
 
         # Try to verify with different issuer (different key)
-        other_key = derive_jwt_key("different-secret", "different-salt")
+        other_key = derive_jwt_key(
+            low_entropy_material="different-secret", salt="different-salt"
+        )
         other_issuer = JWTIssuer(
             issuer="https://test-server.com",
             audience="https://test-server.com/mcp",
@@ -233,65 +228,3 @@ class TestJWTIssuer:
 
         with pytest.raises(JoseError):
             issuer.verify_token("header.payload")  # Missing signature
-
-
-class TestTokenEncryption:
-    """Tests for token encryption/decryption."""
-
-    @pytest.fixture
-    def encryption(self):
-        """Create token encryption instance for testing."""
-        key = derive_encryption_key("test-secret")
-        return TokenEncryption(key)
-
-    def test_encrypt_decrypt_roundtrip(self, encryption):
-        """Test that encryption and decryption work correctly."""
-        plaintext = "sensitive-token-value"
-        encrypted = encryption.encrypt(plaintext)
-        decrypted = encryption.decrypt(encrypted)
-        assert decrypted == plaintext
-
-    def test_encrypt_produces_different_ciphertext_each_time(self, encryption):
-        """Test that encrypting the same plaintext produces different ciphertext."""
-        plaintext = "token-value"
-        ciphertext1 = encryption.encrypt(plaintext)
-        ciphertext2 = encryption.encrypt(plaintext)
-        # Fernet includes timestamp and IV, so ciphertext differs each time
-        assert ciphertext1 != ciphertext2
-        # But both decrypt to same plaintext
-        assert encryption.decrypt(ciphertext1) == plaintext
-        assert encryption.decrypt(ciphertext2) == plaintext
-
-    def test_decrypt_with_wrong_key_fails(self, encryption):
-        """Test that decryption with wrong key fails."""
-        plaintext = "token-value"
-        encrypted = encryption.encrypt(plaintext)
-
-        # Create different encryption instance with different key
-        other_key = derive_encryption_key("different-secret")
-        other_encryption = TokenEncryption(other_key)
-
-        from cryptography.fernet import InvalidToken
-
-        with pytest.raises(InvalidToken):
-            other_encryption.decrypt(encrypted)
-
-    def test_encrypt_handles_unicode(self, encryption):
-        """Test that encryption handles unicode strings correctly."""
-        plaintext = "token-with-émojis-🔒"
-        encrypted = encryption.encrypt(plaintext)
-        decrypted = encryption.decrypt(encrypted)
-        assert decrypted == plaintext
-
-    def test_decrypt_rejects_tampered_ciphertext(self, encryption):
-        """Test that tampered ciphertext is rejected."""
-        plaintext = "token-value"
-        encrypted = encryption.encrypt(plaintext)
-
-        # Tamper with ciphertext
-        tampered = encrypted[:-1] + b"X"
-
-        from cryptography.fernet import InvalidToken
-
-        with pytest.raises(InvalidToken):
-            encryption.decrypt(tampered)

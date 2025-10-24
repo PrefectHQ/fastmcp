@@ -139,42 +139,47 @@ Set this if your provider requires a specific authentication method and the defa
   - **Linux**: Ephemeral (random salt at startup). Tokens become invalid on server restart, triggering client re-authentication.
 
   **For production:**
-  Provide an explicit secret (e.g., from environment variable) to use a fixed key instead of the auto-generated one. Works with `token_encryption_key` and `client_storage` to ensure tokens survive restarts - all three parameters are required for production deployments.
-</ParamField>
-
-<ParamField body="token_encryption_key" type="str | bytes | None">
-
-<VersionBadge version="2.13.0" />
-  Secret used to encrypt upstream tokens at rest in `client_storage`. Accepts any string or bytes - will be derived into a proper 32-byte cryptographic key using HKDF.
-
-  **Default behavior (`None`):**
-  - **Mac/Windows**: FastMCP will generate a key and store it in the system's keyring. Keys are automatically derived from server attributes, so this approach, while convenient, is **only** suitable for development and local testing. For production, you must provide an explicit secret.
-  - **Linux**: Ephemeral (random salt at startup). Like `jwt_signing_key`, this is ephemeral, though without a valid JWT signing key, encrypted tokens are useless anyway (JWT validation fails first).
-
-  **For production:**
-  Provide an explicit secret distinct from `jwt_signing_key`. Works with `jwt_signing_key` and persistent `client_storage` - all three are required for production deployments.
+  Provide an explicit secret (e.g., from environment variable) to use a fixed key instead of the auto-generated one.
 </ParamField>
 
 <ParamField body="client_storage" type="AsyncKeyValue | None">
 
 <VersionBadge version="2.13.0" />
-  Storage backend for persisting OAuth client registrations and encrypted upstream tokens.
+  Storage backend for persisting OAuth client registrations and upstream tokens.
 
   **Default behavior:**
-  - **Mac/Windows**: DiskStore in your platform's data directory (derived from `platformdirs`)
+  - **Mac/Windows**: Encrypted DiskStore in your platform's data directory (derived from `platformdirs`)
   - **Linux**: MemoryStore (ephemeral - clients lost on restart)
 
-  By default on Mac/Windows, clients are automatically persisted to disk, allowing them to survive server restarts as long as the filesystem remains accessible. This means MCP clients only need to register once and can reconnect seamlessly. On Linux where keyring isn't available, ephemeral storage is used to match the ephemeral key strategy.
+  By default on Mac/Windows, clients are automatically persisted to encrypted disk storage, allowing them to survive server restarts as long as the filesystem remains accessible. This means MCP clients only need to register once and can reconnect seamlessly. On Linux where keyring isn't available, ephemeral storage is used to match the ephemeral key strategy.
 
-For production deployments with multiple servers or cloud deployments, use a network-accessible storage backend rather than local disk storage. See [Storage Backends](/servers/storage-backends) for available options.
+For production deployments with multiple servers or cloud deployments, use a network-accessible storage backend rather than local disk storage. **Wrap your storage in `FernetEncryptionWrapper` to encrypt sensitive OAuth tokens at rest.** See [Storage Backends](/servers/storage-backends) for available options.
 
-Testing with in-memory storage:
+Testing with in-memory storage (unencrypted):
 
 ```python
 from key_value.aio.stores.memory import MemoryStore
 
 # Use in-memory storage for testing (clients lost on restart)
 auth = OIDCProxy(..., client_storage=MemoryStore())
+```
+
+Production with encrypted Redis storage:
+
+```python
+from key_value.aio.stores.redis import RedisStore
+from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
+from cryptography.fernet import Fernet
+import os
+
+auth = OIDCProxy(
+    ...,
+    jwt_signing_key=os.environ["JWT_SIGNING_KEY"],
+    client_storage=FernetEncryptionWrapper(
+        key_value=RedisStore(host="redis.example.com", port=6379),
+        fernet=Fernet(os.environ["STORAGE_ENCRYPTION_KEY"])
+    )
+)
 ```
 
 </ParamField>

@@ -18,7 +18,7 @@ This maintains proper OAuth 2.0 token audience boundaries.
 ### `derive_jwt_key` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/jwt_issuer.py#L25" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-derive_jwt_key(upstream_secret: str, server_salt: str) -> bytes
+derive_jwt_key(from_secret: str, server_salt: str) -> bytes
 ```
 
 
@@ -28,7 +28,7 @@ Uses HKDF (RFC 5869) to derive a cryptographically secure signing key from
 the upstream OAuth client secret combined with a server-specific salt.
 
 **Args:**
-- `upstream_secret`: The OAuth client secret from upstream provider
+- `from_secret`: The OAuth client secret from upstream provider
 - `server_salt`: Random salt unique to this server instance
 
 **Returns:**
@@ -38,7 +38,7 @@ the upstream OAuth client secret combined with a server-specific salt.
 ### `derive_encryption_key` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/jwt_issuer.py#L46" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-derive_encryption_key(upstream_secret: str) -> bytes
+derive_encryption_key(from_secret: str) -> bytes
 ```
 
 
@@ -48,7 +48,7 @@ Uses HKDF to derive a cryptographically secure encryption key for
 encrypting upstream tokens at rest.
 
 **Args:**
-- `upstream_secret`: The OAuth client secret from upstream provider
+- `from_secret`: The OAuth client secret from upstream provider
 
 **Returns:**
 - 32-byte Fernet key (base64url-encoded)

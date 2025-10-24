@@ -106,6 +106,7 @@ class TestAWSCognitoProvider:
                 base_url="https://example.com",
                 redirect_path="/custom/callback",
                 required_scopes=["openid", "email"],
+                jwt_signing_key="test-secret",
             )
 
             # Check that the provider was initialized correctly
@@ -143,6 +144,7 @@ class TestAWSCognitoProvider:
                 "FASTMCP_SERVER_AUTH_AWS_COGNITO_CLIENT_SECRET": "env_secret",
                 "FASTMCP_SERVER_AUTH_AWS_COGNITO_BASE_URL": "https://env-example.com",
                 "FASTMCP_SERVER_AUTH_AWS_COGNITO_REQUIRED_SCOPES": scopes_env,
+                "FASTMCP_SERVER_AUTH_AWS_COGNITO_JWT_SIGNING_KEY": "test-secret",
             },
         ):
             with mock_cognito_oidc_discovery():
@@ -163,6 +165,7 @@ class TestAWSCognitoProvider:
                 "FASTMCP_SERVER_AUTH_AWS_COGNITO_USER_POOL_ID": "env_pool_id",
                 "FASTMCP_SERVER_AUTH_AWS_COGNITO_CLIENT_ID": "env_client_id",
                 "FASTMCP_SERVER_AUTH_AWS_COGNITO_CLIENT_SECRET": "env_secret",
+                "FASTMCP_SERVER_AUTH_AWS_COGNITO_JWT_SIGNING_KEY": "test-secret",
             },
         ):
             with mock_cognito_oidc_discovery():
@@ -171,6 +174,7 @@ class TestAWSCognitoProvider:
                     client_id="explicit_client",
                     client_secret="explicit_secret",
                     base_url="https://example.com",
+                    jwt_signing_key="test-secret",
                 )
 
                 assert provider._upstream_client_id == "explicit_client"
@@ -216,6 +220,7 @@ class TestAWSCognitoProvider:
                 client_id="test_client",
                 client_secret="test_secret",
                 base_url="https://example.com",
+                jwt_signing_key="test-secret",
             )
 
             # Check defaults
@@ -233,6 +238,7 @@ class TestAWSCognitoProvider:
                 client_id="test_client",
                 client_secret="test_secret",
                 base_url="https://example.com",
+                jwt_signing_key="test-secret",
             )
 
             # OIDC discovery should have configured the endpoints automatically

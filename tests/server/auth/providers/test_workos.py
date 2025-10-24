@@ -24,6 +24,7 @@ class TestWorkOSProvider:
             authkit_domain="https://test.authkit.app",
             base_url="https://myserver.com",
             required_scopes=["openid", "profile"],
+            jwt_signing_key="test-secret",
         )
 
         assert provider._upstream_client_id == "client_test123"
@@ -47,6 +48,7 @@ class TestWorkOSProvider:
                 "FASTMCP_SERVER_AUTH_WORKOS_AUTHKIT_DOMAIN": "https://env.authkit.app",
                 "FASTMCP_SERVER_AUTH_WORKOS_BASE_URL": "https://envserver.com",
                 "FASTMCP_SERVER_AUTH_WORKOS_REQUIRED_SCOPES": scopes_env,
+                "FASTMCP_SERVER_AUTH_WORKOS_JWT_SIGNING_KEY": "test-secret",
             },
         ):
             provider = WorkOSProvider()
@@ -91,6 +93,7 @@ class TestWorkOSProvider:
             client_secret="test_secret",
             authkit_domain="test.authkit.app",
             base_url="https://myserver.com",
+            jwt_signing_key="test-secret",
         )
         parsed = urlparse(provider1._upstream_authorization_endpoint)
         assert parsed.scheme == "https"
@@ -103,6 +106,7 @@ class TestWorkOSProvider:
             client_secret="test_secret",
             authkit_domain="https://test.authkit.app",
             base_url="https://myserver.com",
+            jwt_signing_key="test-secret",
         )
         parsed = urlparse(provider2._upstream_authorization_endpoint)
         assert parsed.scheme == "https"
@@ -115,6 +119,7 @@ class TestWorkOSProvider:
             client_secret="test_secret",
             authkit_domain="http://localhost:8080",
             base_url="https://myserver.com",
+            jwt_signing_key="test-secret",
         )
         parsed = urlparse(provider3._upstream_authorization_endpoint)
         assert parsed.scheme == "http"
@@ -127,6 +132,7 @@ class TestWorkOSProvider:
             client_id="test_client",
             client_secret="test_secret",
             authkit_domain="https://test.authkit.app",
+            jwt_signing_key="test-secret",
         )
 
         # Check defaults
@@ -141,6 +147,7 @@ class TestWorkOSProvider:
             client_secret="test_secret",
             authkit_domain="https://test.authkit.app",
             base_url="https://myserver.com",
+            jwt_signing_key="test-secret",
         )
 
         # Check that endpoints use the authkit domain

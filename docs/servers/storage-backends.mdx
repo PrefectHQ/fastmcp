@@ -118,7 +118,6 @@ auth = GitHubProvider(
     client_secret=os.environ["GITHUB_CLIENT_SECRET"],
     base_url="https://your-server.com",
     jwt_signing_key=os.environ["JWT_SIGNING_KEY"],
-    token_encryption_key=os.environ["TOKEN_ENCRYPTION_KEY"],
     client_storage=RedisStore(host="redis.example.com", port=6379)
 )
 ```
@@ -148,7 +147,7 @@ For configuration details on these backends, consult the [py-key-value-aio docum
 
 ### Server-Side OAuth Token Storage
 
-The [OAuth Proxy](/servers/auth/oauth-proxy) and OAuth auth providers use storage for persisting OAuth client registrations and encrypted upstream tokens.
+The [OAuth Proxy](/servers/auth/oauth-proxy) and OAuth auth providers use storage for persisting OAuth client registrations and upstream tokens. **By default, storage is automatically encrypted using `FernetEncryptionWrapper`.** When providing custom storage, wrap it in `FernetEncryptionWrapper` to encrypt sensitive OAuth tokens at rest.
 
 **Development (default behavior):**
 
@@ -170,26 +169,30 @@ auth = GitHubProvider(
 
 **Production:**
 
-For production deployments, configure explicit keys and persistent network-accessible storage:
+For production deployments, configure explicit keys and persistent network-accessible storage with encryption:
 
 ```python
 import os
 from fastmcp.server.auth.providers.github import GitHubProvider
 from key_value.aio.stores.redis import RedisStore
+from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
+from cryptography.fernet import Fernet
 
 auth = GitHubProvider(
     client_id=os.environ["GITHUB_CLIENT_ID"],
     client_secret=os.environ["GITHUB_CLIENT_SECRET"],
     base_url="https://your-server.com",
-    # Explicit token encryption and signing keys (required for production)
+    # Explicit JWT signing key (required for production)
     jwt_signing_key=os.environ["JWT_SIGNING_KEY"],
-    token_encryption_key=os.environ["TOKEN_ENCRYPTION_KEY"],
-    # Persistent distributed storage (required for production)
-    client_storage=RedisStore(host="redis.example.com", port=6379)
+    # Encrypted persistent storage (required for production)
+    client_storage=FernetEncryptionWrapper(
+        key_value=RedisStore(host="redis.example.com", port=6379),
+        fernet=Fernet(os.environ["STORAGE_ENCRYPTION_KEY"])
+    )
 )
 ```
 
-All three parameters (both keys and storage) are required for production. See [OAuth Token Security](/deployment/http#oauth-token-security) and [Key and Storage Management](/servers/auth/oauth-proxy#key-and-storage-management) for complete setup details.
+Both parameters are required for production. **Wrap your storage in `FernetEncryptionWrapper` to encrypt sensitive OAuth tokens at rest** - without it, tokens are stored in plaintext. See [OAuth Token Security](/deployment/http#oauth-token-security) and [Key and Storage Management](/servers/auth/oauth-proxy#key-and-storage-management) for complete setup details.
 
 ### Response Caching Middleware
 

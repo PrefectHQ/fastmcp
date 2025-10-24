@@ -25,6 +25,7 @@ class TestGitHubProviderSettings:
                 "FASTMCP_SERVER_AUTH_GITHUB_BASE_URL": "https://example.com",
                 "FASTMCP_SERVER_AUTH_GITHUB_REDIRECT_PATH": "/custom/callback",
                 "FASTMCP_SERVER_AUTH_GITHUB_TIMEOUT_SECONDS": "30",
+                "FASTMCP_SERVER_AUTH_GITHUB_JWT_SIGNING_KEY": "test-secret",
             },
         ):
             settings = GitHubProviderSettings()
@@ -51,6 +52,7 @@ class TestGitHubProviderSettings:
                 {
                     "client_id": "explicit_client_id",
                     "client_secret": "explicit_secret",
+                    "jwt_signing_key": "test-secret",
                 }
             )
 
@@ -73,6 +75,7 @@ class TestGitHubProvider:
             redirect_path="/custom/callback",
             required_scopes=["user", "repo"],
             timeout_seconds=30,
+            jwt_signing_key="test-secret",
         )
 
         # Check that the provider was initialized correctly
@@ -99,6 +102,7 @@ class TestGitHubProvider:
                 "FASTMCP_SERVER_AUTH_GITHUB_CLIENT_SECRET": "env_secret",
                 "FASTMCP_SERVER_AUTH_GITHUB_BASE_URL": "https://env-example.com",
                 "FASTMCP_SERVER_AUTH_GITHUB_REQUIRED_SCOPES": scopes_env,
+                "FASTMCP_SERVER_AUTH_GITHUB_JWT_SIGNING_KEY": "test-secret",
             },
         ):
             provider = GitHubProvider()
@@ -115,11 +119,13 @@ class TestGitHubProvider:
             {
                 "FASTMCP_SERVER_AUTH_GITHUB_CLIENT_ID": "env_client_id",
                 "FASTMCP_SERVER_AUTH_GITHUB_CLIENT_SECRET": "env_secret",
+                "FASTMCP_SERVER_AUTH_GITHUB_JWT_SIGNING_KEY": "test-secret",
             },
         ):
             provider = GitHubProvider(
                 client_id="explicit_client",
                 client_secret="explicit_secret",
+                jwt_signing_key="test-secret",
             )
 
             assert provider._upstream_client_id == "explicit_client"
@@ -146,6 +152,7 @@ class TestGitHubProvider:
         provider = GitHubProvider(
             client_id="test_client",
             client_secret="test_secret",
+            jwt_signing_key="test-secret",
         )
 
         # Check defaults
