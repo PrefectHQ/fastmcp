@@ -210,8 +210,8 @@ class UserAuthMiddleware(Middleware):
         # Middleware stores user info in context state
         context.fastmcp_context.set_state("user_id", "user_123")
         context.fastmcp_context.set_state("permissions", ["read", "write"])
-        
-        return await call_next()
+
+        return await call_next(context)
 
 @mcp.tool
 async def secure_operation(data: str, ctx: Context) -> str:
