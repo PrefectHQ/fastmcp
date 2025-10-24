@@ -4,15 +4,16 @@ on:
   issues:
     types: [opened, labeled]
 
-concurrency:
-  group: triage-martian-${{ github.event.issue.number }}
-  cancel-in-progress: true
-
 jobs:
   martian-issue-triage:
     if: |
       (github.event.action == 'opened' && github.actor == 'strawgate') ||
       (github.event.action == 'labeled' && github.event.label.name == 'triage-martian')
+
+    concurrency:
+      group: triage-martian-${{ github.event.issue.number }}
+      cancel-in-progress: true
+
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
