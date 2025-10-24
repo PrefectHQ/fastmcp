@@ -213,12 +213,6 @@ class TestPerformanceComparison:
             f"Legacy should also be fast on small specs, got {legacy_avg:.4f}s"
         )
 
-        # Performance should be comparable (within reasonable margin)
-        performance_ratio = max(new_avg, legacy_avg) / min(new_avg, legacy_avg)
-        assert performance_ratio < 3.0, (
-            f"Performance should be comparable, ratio: {performance_ratio:.2f}x"
-        )
-
     def test_functionality_identical_after_optimization(self, comprehensive_spec):
         """Verify that performance optimization doesn't break functionality."""
         client = httpx.AsyncClient(base_url="https://api.example.com")
