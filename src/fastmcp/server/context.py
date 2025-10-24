@@ -224,8 +224,6 @@ class Context:
         Returns:
             List of Resource objects available on the server
         """
-        if self.fastmcp is None:
-            raise ValueError("Context is not available outside of a request")
         return await self.fastmcp._list_resources_mcp()
 
     async def list_prompts(self) -> list[MCPPrompt]:
@@ -234,8 +232,6 @@ class Context:
         Returns:
             List of Prompt objects available on the server
         """
-        if self.fastmcp is None:
-            raise ValueError("Context is not available outside of a request")
         return await self.fastmcp._list_prompts_mcp()
 
     async def get_prompt(
@@ -250,8 +246,6 @@ class Context:
         Returns:
             The prompt result
         """
-        if self.fastmcp is None:
-            raise ValueError("Context is not available outside of a request")
         return await self.fastmcp._get_prompt_mcp(name, arguments)
 
     async def read_resource(self, uri: str | AnyUrl) -> list[ReadResourceContents]:
@@ -263,8 +257,6 @@ class Context:
         Returns:
             The resource content as either text or bytes
         """
-        if self.fastmcp is None:
-            raise ValueError("Context is not available outside of a request")
         return await self.fastmcp._read_resource_mcp(uri)
 
     async def log(
