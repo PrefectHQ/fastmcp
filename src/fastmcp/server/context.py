@@ -22,6 +22,7 @@ from mcp.types import (
     AudioContent,
     ClientCapabilities,
     CreateMessageResult,
+    GetPromptResult,
     ImageContent,
     IncludeContext,
     ModelHint,
@@ -32,6 +33,8 @@ from mcp.types import (
     TextContent,
 )
 from mcp.types import CreateMessageRequestParams as SamplingParams
+from mcp.types import Prompt as MCPPrompt
+from mcp.types import Resource as MCPResource
 from pydantic.networks import AnyUrl
 from starlette.requests import Request
 from typing_extensions import TypeVar
@@ -214,6 +217,42 @@ class Context:
             message=message,
             related_request_id=self.request_id,
         )
+
+    async def list_resources(self) -> list[MCPResource]:
+        """List all available resources from the server.
+
+        Returns:
+            List of Resource objects available on the server
+        """
+        if self.fastmcp is None:
+            raise ValueError("Context is not available outside of a request")
+        return await self.fastmcp._list_resources_mcp()
+
+    async def list_prompts(self) -> list[MCPPrompt]:
+        """List all available prompts from the server.
+
+        Returns:
+            List of Prompt objects available on the server
+        """
+        if self.fastmcp is None:
+            raise ValueError("Context is not available outside of a request")
+        return await self.fastmcp._list_prompts_mcp()
+
+    async def get_prompt(
+        self, name: str, arguments: dict[str, Any] | None = None
+    ) -> GetPromptResult:
+        """Get a prompt by name with optional arguments.
+
+        Args:
+            name: The name of the prompt to get
+            arguments: Optional arguments to pass to the prompt
+
+        Returns:
+            The prompt result
+        """
+        if self.fastmcp is None:
+            raise ValueError("Context is not available outside of a request")
+        return await self.fastmcp._get_prompt_mcp(name, arguments)
 
     async def read_resource(self, uri: str | AnyUrl) -> list[ReadResourceContents]:
         """Read a resource by URI.

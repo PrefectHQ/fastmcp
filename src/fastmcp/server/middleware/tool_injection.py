@@ -10,8 +10,6 @@ from mcp.types import Prompt
 from pydantic import AnyUrl
 from typing_extensions import override
 
-from fastmcp.client.client import Client
-from fastmcp.client.transports import FastMCPTransport
 from fastmcp.server.context import Context
 from fastmcp.server.middleware.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.tools.tool import Tool, ToolResult
@@ -55,9 +53,7 @@ class ToolInjectionMiddleware(Middleware):
 
 async def list_prompts(context: Context) -> list[Prompt]:
     """List prompts available on the server."""
-
-    async with Client[FastMCPTransport](context.fastmcp) as client:
-        return await client.list_prompts()
+    return await context.list_prompts()
 
 
 list_prompts_tool = Tool.from_function(
@@ -73,9 +69,7 @@ async def get_prompt(
     ] = None,
 ) -> mcp.types.GetPromptResult:
     """Render a prompt available on the server."""
-
-    async with Client[FastMCPTransport](context.fastmcp) as client:
-        return await client.get_prompt(name=name, arguments=arguments)
+    return await context.get_prompt(name=name, arguments=arguments)
 
 
 get_prompt_tool = Tool.from_function(
@@ -93,9 +87,7 @@ class PromptToolMiddleware(ToolInjectionMiddleware):
 
 async def list_resources(context: Context) -> list[mcp.types.Resource]:
     """List resources available on the server."""
-
-    async with Client[FastMCPTransport](context.fastmcp) as client:
-        return await client.list_resources()
+    return await context.list_resources()
 
 
 list_resources_tool = Tool.from_function(

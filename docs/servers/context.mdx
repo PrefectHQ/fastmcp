@@ -14,7 +14,8 @@ The `Context` object provides a clean interface to access MCP features within yo
 
 - **Logging**: Send debug, info, warning, and error messages back to the client
 - **Progress Reporting**: Update the client on the progress of long-running operations
-- **Resource Access**: Read data from resources registered with the server
+- **Resource Access**: List and read data from resources registered with the server
+- **Prompt Access**: List and retrieve prompts registered with the server
 - **LLM Sampling**: Request the client's LLM to generate text based on provided messages
 - **User Elicitation**: Request structured input from users during tool execution
 - **State Management**: Store and share data between middleware and the handler within a single request
@@ -177,15 +178,39 @@ See [Progress Reporting](/servers/progress) for detailed patterns and examples.
 
 ### Resource Access
 
-Read data from resources registered with your FastMCP server, allowing access to files, configuration, or dynamic content.
+List and read data from resources registered with your FastMCP server, allowing access to files, configuration, or dynamic content.
 
 ```python
+# List available resources
+resources = await ctx.list_resources()
+
+# Read a specific resource
 content_list = await ctx.read_resource("resource://config")
 content = content_list[0].content
 ```
 
-**Method signature:**
+**Method signatures:**
+- **`ctx.list_resources() -> list[MCPResource]`**: <VersionBadge version="2.13.0" /> Returns list of all available resources
 - **`ctx.read_resource(uri: str | AnyUrl) -> list[ReadResourceContents]`**: Returns a list of resource content parts
+
+### Prompt Access
+
+<VersionBadge version="2.13.0" />
+
+List and retrieve prompts registered with your FastMCP server, allowing tools and middleware to discover and use available prompts programmatically.
+
+```python
+# List available prompts
+prompts = await ctx.list_prompts()
+
+# Get a specific prompt with arguments
+result = await ctx.get_prompt("analyze_data", {"dataset": "users"})
+messages = result.messages
+```
+
+**Method signatures:**
+- **`ctx.list_prompts() -> list[MCPPrompt]`**: Returns list of all available prompts
+- **`ctx.get_prompt(name: str, arguments: dict[str, Any] | None = None) -> GetPromptResult`**: Get a specific prompt with optional arguments
 
 ### State Management
 
