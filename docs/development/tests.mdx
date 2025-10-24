@@ -4,6 +4,8 @@ description: "Testing patterns and requirements for FastMCP"
 icon: vial
 ---
 
+import { VersionBadge } from "/snippets/version-badge.mdx"
+
 Good tests are the foundation of reliable software. In FastMCP, we treat tests as first-class documentation that demonstrates how features work while protecting against regressions. Every new capability needs comprehensive tests that demonstrate correctness.
 
 ## FastMCP Tests
@@ -300,6 +302,8 @@ async def test_database_tool():
 While in-memory testing covers most unit testing needs, you'll occasionally need to test actual network transports like HTTP or SSE. FastMCP provides two approaches: in-process async servers using AnyIO task groups (preferred), and separate subprocess servers (for special cases).
 
 #### In-Process Network Testing (Preferred)
+
+<VersionBadge version="2.13.0" />
 
 For most network transport tests, use `run_server_async` with AnyIO task groups. This runs the server as a task in the same process, providing fast, deterministic tests with full debugger support:
 
