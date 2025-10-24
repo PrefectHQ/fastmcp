@@ -449,6 +449,41 @@ mcp.add_middleware(DetailedTimingMiddleware())
 
 The built-in versions include custom logger support, proper formatting, and **DetailedTimingMiddleware** provides operation-specific hooks like `on_call_tool` and `on_read_resource` for granular timing.
 
+### Tool Injection Middleware
+
+Tool injection middleware is a middleware that injects tools into the server during the request lifecycle:
+
+```python
+from fastmcp.server.middleware.tool_injection import ToolInjectionMiddleware
+
+def my_tool_fn(a: int, b: int) -> int:
+    return a + b
+
+my_tool = Tool.from_function(fn=my_tool_fn, name="my_tool")
+
+mcp.add_middleware(ToolInjectionMiddleware(tools=[my_tool]))
+```
+
+### Prompt Tool Middleware
+
+Prompt tool middleware is a compatibility middleware for clients that are unable to list or get prompts. It provides two tools: `list_prompts` and `get_prompt` which allow clients to list and get prompts respectively using only tool calls.
+
+```python
+from fastmcp.server.middleware.tool_injection import PromptToolMiddleware
+
+mcp.add_middleware(PromptToolMiddleware())
+```
+
+### Resource Tool Middleware
+
+Resource tool middleware is a compatibility middleware for clients that are unable to list or read resources. It provides two tools: `list_resources` and `read_resource` which allow clients to list and read resources respectively using only tool calls.
+
+```python
+from fastmcp.server.middleware.tool_injection import ResourceToolMiddleware
+
+mcp.add_middleware(ResourceToolMiddleware())
+```
+
 ### Caching Middleware
 
 Caching middleware is essential for improving performance and reducing server load. FastMCP provides caching middleware at `fastmcp.server.middleware.caching`.
