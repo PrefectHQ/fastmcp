@@ -7,7 +7,14 @@ import json
 import re
 import secrets
 import warnings
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import (
+    AsyncIterator,
+    Awaitable,
+    Callable,
+    Collection,
+    Mapping,
+    Sequence,
+)
 from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from functools import partial
@@ -43,9 +50,11 @@ import fastmcp
 import fastmcp.server
 from fastmcp.exceptions import DisabledError, NotFoundError
 from fastmcp.mcp_config import MCPConfig
-from fastmcp.prompts import Prompt, PromptManager
+from fastmcp.prompts import Prompt
 from fastmcp.prompts.prompt import FunctionPrompt
-from fastmcp.resources import Resource, ResourceManager
+from fastmcp.prompts.prompt_manager import PromptManager
+from fastmcp.resources.resource import Resource
+from fastmcp.resources.resource_manager import ResourceManager
 from fastmcp.resources.template import ResourceTemplate
 from fastmcp.server.auth import AuthProvider
 from fastmcp.server.http import (
@@ -56,8 +65,8 @@ from fastmcp.server.http import (
 from fastmcp.server.low_level import LowLevelServer
 from fastmcp.server.middleware import Middleware, MiddlewareContext
 from fastmcp.settings import Settings
-from fastmcp.tools import ToolManager
 from fastmcp.tools.tool import FunctionTool, Tool, ToolResult
+from fastmcp.tools.tool_manager import ToolManager
 from fastmcp.tools.tool_transform import ToolTransformConfig
 from fastmcp.utilities.cli import log_server_banner
 from fastmcp.utilities.components import FastMCPComponent
@@ -66,7 +75,6 @@ from fastmcp.utilities.types import NotSet, NotSetT
 
 if TYPE_CHECKING:
     from fastmcp.client import Client
-    from fastmcp.client.sampling import ServerSamplingHandler
     from fastmcp.client.transports import ClientTransport, ClientTransportT
     from fastmcp.experimental.server.openapi import FastMCPOpenAPI as FastMCPOpenAPINew
     from fastmcp.experimental.server.openapi.routing import (
@@ -80,6 +88,8 @@ if TYPE_CHECKING:
     from fastmcp.server.openapi import FastMCPOpenAPI, RouteMap
     from fastmcp.server.openapi import RouteMapFn as OpenAPIRouteMapFn
     from fastmcp.server.proxy import FastMCPProxy
+    from fastmcp.server.sampling.handler import ServerSamplingHandler
+    from fastmcp.tools.tool import ToolResultSerializerType
 
 logger = get_logger(__name__)
 
@@ -141,16 +151,16 @@ class FastMCP(Generic[LifespanResultT]):
         website_url: str | None = None,
         icons: list[mcp.types.Icon] | None = None,
         auth: AuthProvider | None | NotSetT = NotSet,
-        middleware: list[Middleware] | None = None,
+        middleware: Sequence[Middleware] | None = None,
         lifespan: LifespanCallable | None = None,
         dependencies: list[str] | None = None,
         resource_prefix_format: Literal["protocol", "path"] | None = None,
         mask_error_details: bool | None = None,
-        tools: list[Tool | Callable[..., Any]] | None = None,
-        tool_transformations: dict[str, ToolTransformConfig] | None = None,
-        tool_serializer: Callable[[Any], str] | None = None,
-        include_tags: set[str] | None = None,
-        exclude_tags: set[str] | None = None,
+        tools: Sequence[Tool | Callable[..., Any]] | None = None,
+        tool_transformations: Mapping[str, ToolTransformConfig] | None = None,
+        tool_serializer: ToolResultSerializerType | None = None,
+        include_tags: Collection[str] | None = None,
+        exclude_tags: Collection[str] | None = None,
         include_fastmcp_meta: bool | None = None,
         on_duplicate_tools: DuplicateBehavior | None = None,
         on_duplicate_resources: DuplicateBehavior | None = None,
@@ -179,27 +189,29 @@ class FastMCP(Generic[LifespanResultT]):
 
         self._additional_http_routes: list[BaseRoute] = []
         self._mounted_servers: list[MountedServer] = []
-        self._tool_manager = ToolManager(
+        self._tool_manager: ToolManager = ToolManager(
             duplicate_behavior=on_duplicate_tools,
             mask_error_details=mask_error_details,
             transformations=tool_transformations,
         )
-        self._resource_manager = ResourceManager(
+        self._resource_manager: ResourceManager = ResourceManager(
             duplicate_behavior=on_duplicate_resources,
             mask_error_details=mask_error_details,
         )
-        self._prompt_manager = PromptManager(
+        self._prompt_manager: PromptManager = PromptManager(
             duplicate_behavior=on_duplicate_prompts,
             mask_error_details=mask_error_details,
         )
-        self._tool_serializer = tool_serializer
+        self._tool_serializer: Callable[[Any], str] | None = tool_serializer
 
         self._lifespan: LifespanCallable[LifespanResultT] = lifespan or default_lifespan
         self._lifespan_result: LifespanResultT | None = None
-        self._lifespan_result_set = False
+        self._lifespan_result_set: bool = False
 
         # Generate random ID if no name provided
-        self._mcp_server = LowLevelServer[LifespanResultT](
+        self._mcp_server: LowLevelServer[LifespanResultT, Any] = LowLevelServer[
+            LifespanResultT
+        ](
             fastmcp=self,
             name=name or self.generate_name(),
             version=version or fastmcp.__version__,
@@ -216,7 +228,7 @@ class FastMCP(Generic[LifespanResultT]):
                 auth = fastmcp.settings.server_auth_class()
             else:
                 auth = None
-        self.auth = cast(AuthProvider | None, auth)
+        self.auth: AuthProvider | None = cast(AuthProvider | None, auth)
 
         if tools:
             for tool in tools:
@@ -224,15 +236,20 @@ class FastMCP(Generic[LifespanResultT]):
                     tool = Tool.from_function(tool, serializer=self._tool_serializer)
                 self.add_tool(tool)
 
-        self.include_tags = include_tags
-        self.exclude_tags = exclude_tags
-        self.strict_input_validation = (
+        self.include_tags: set[str] | None = (
+            set(include_tags) if include_tags is not None else None
+        )
+        self.exclude_tags: set[str] | None = (
+            set(exclude_tags) if exclude_tags is not None else None
+        )
+
+        self.strict_input_validation: bool = (
             strict_input_validation
             if strict_input_validation is not None
             else fastmcp.settings.strict_input_validation
         )
 
-        self.middleware = middleware or []
+        self.middleware: list[Middleware] = list(middleware or [])
 
         # Set up MCP protocol handlers
         self._setup_handlers()
@@ -251,14 +268,18 @@ class FastMCP(Generic[LifespanResultT]):
                 DeprecationWarning,
                 stacklevel=2,
             )
-        self.dependencies = (
+        self.dependencies: list[str] = (
             dependencies or fastmcp.settings.server_dependencies
         )  # TODO: Remove (deprecated in v2.11.4)
 
-        self.sampling_handler = sampling_handler
-        self.sampling_handler_behavior = sampling_handler_behavior or "fallback"
+        self.sampling_handler: ServerSamplingHandler[LifespanResultT] | None = (
+            sampling_handler
+        )
+        self.sampling_handler_behavior: Literal["always", "fallback"] = (
+            sampling_handler_behavior or "fallback"
+        )
 
-        self.include_fastmcp_meta = (
+        self.include_fastmcp_meta: bool = (
             include_fastmcp_meta
             if include_fastmcp_meta is not None
             else fastmcp.settings.include_fastmcp_meta
