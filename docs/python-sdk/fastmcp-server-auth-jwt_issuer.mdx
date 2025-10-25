@@ -15,69 +15,19 @@ This maintains proper OAuth 2.0 token audience boundaries.
 
 ## Functions
 
-### `derive_jwt_key` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/jwt_issuer.py#L25" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `derive_jwt_key` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/jwt_issuer.py#L37" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-derive_jwt_key(from_secret: str, server_salt: str) -> bytes
+derive_jwt_key() -> bytes
 ```
 
 
-Derive JWT signing key from upstream client secret and server salt.
-
-Uses HKDF (RFC 5869) to derive a cryptographically secure signing key from
-the upstream OAuth client secret combined with a server-specific salt.
-
-**Args:**
-- `from_secret`: The OAuth client secret from upstream provider
-- `server_salt`: Random salt unique to this server instance
-
-**Returns:**
-- 32-byte key suitable for HS256 JWT signing
-
-
-### `derive_encryption_key` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/jwt_issuer.py#L46" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
-
-```python
-derive_encryption_key(from_secret: str) -> bytes
-```
-
-
-Derive Fernet encryption key from upstream client secret.
-
-Uses HKDF to derive a cryptographically secure encryption key for
-encrypting upstream tokens at rest.
-
-**Args:**
-- `from_secret`: The OAuth client secret from upstream provider
-
-**Returns:**
-- 32-byte Fernet key (base64url-encoded)
-
-
-### `derive_key_from_secret` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/jwt_issuer.py#L67" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
-
-```python
-derive_key_from_secret(secret: str | bytes, salt: str, info: bytes) -> bytes
-```
-
-
-Derive 32-byte key from user-provided secret (string or bytes).
-
-Accepts any length input and derives a proper cryptographic key.
-Uses HKDF to stretch weak inputs into strong keys.
-
-**Args:**
-- `secret`: User-provided secret (any string or bytes)
-- `salt`: Application-specific salt string
-- `info`: Key purpose identifier
-
-**Returns:**
-- 32-byte key suitable for HS256 JWT signing or Fernet encryption
+Derive JWT signing key from a high-entropy or low-entropy key material and server salt.
 
 
 ## Classes
 
-### `JWTIssuer` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/jwt_issuer.py#L90" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `JWTIssuer` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/jwt_issuer.py#L74" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Issues and validates FastMCP-signed JWT tokens using HS256.
@@ -89,7 +39,7 @@ a key derived from the upstream client secret.
 
 **Methods:**
 
-#### `issue_access_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/jwt_issuer.py#L116" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `issue_access_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/jwt_issuer.py#L100" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 issue_access_token(self, client_id: str, scopes: list[str], jti: str, expires_in: int = 3600) -> str
@@ -111,7 +61,7 @@ which contains actual user identity and authorization data.
 - Signed JWT token
 
 
-#### `issue_refresh_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/jwt_issuer.py#L163" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `issue_refresh_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/jwt_issuer.py#L147" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 issue_refresh_token(self, client_id: str, scopes: list[str], jti: str, expires_in: int) -> str
@@ -133,7 +83,7 @@ token which contains actual user identity and authorization data.
 - Signed JWT token
 
 
-#### `verify_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/jwt_issuer.py#L211" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `verify_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/jwt_issuer.py#L195" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 verify_token(self, token: str) -> dict[str, Any]
@@ -151,45 +101,4 @@ Validates JWT signature, expiration, issuer, and audience.
 
 **Raises:**
 - `JoseError`: If token is invalid, expired, or has wrong claims
-
-
-### `TokenEncryption` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/jwt_issuer.py#L255" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
-
-
-Handles encryption/decryption of upstream OAuth tokens at rest.
-
-
-**Methods:**
-
-#### `encrypt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/jwt_issuer.py#L266" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
-
-```python
-encrypt(self, token: str) -> bytes
-```
-
-Encrypt a token for storage.
-
-**Args:**
-- `token`: Plain text token
-
-**Returns:**
-- Encrypted token bytes
-
-
-#### `decrypt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/jwt_issuer.py#L277" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
-
-```python
-decrypt(self, encrypted_token: bytes) -> str
-```
-
-Decrypt a token from storage.
-
-**Args:**
-- `encrypted_token`: Encrypted token bytes
-
-**Returns:**
-- Plain text token
-
-**Raises:**
-- `cryptography.fernet.InvalidToken`: If token is corrupted or key is wrong
 

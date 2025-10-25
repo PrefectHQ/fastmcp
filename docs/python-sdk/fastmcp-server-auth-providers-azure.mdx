@@ -20,7 +20,7 @@ using the OAuth Proxy pattern for non-DCR OAuth flows.
 Settings for Azure OAuth provider.
 
 
-### `AzureProvider` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L60" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `AzureProvider` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L61" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Azure (Microsoft Entra) OAuth provider for FastMCP.
@@ -29,23 +29,33 @@ This provider implements Azure/Microsoft Entra ID authentication using the
 OAuth Proxy pattern. It supports both organizational accounts and personal
 Microsoft accounts depending on the tenant configuration.
 
+Scope Handling:
+- required_scopes: Provide unprefixed scope names (e.g., ["read", "write"])
+  → Automatically prefixed with identifier_uri during initialization
+  → Validated on all tokens and advertised to MCP clients
+- additional_authorize_scopes: Provide full format (e.g., ["User.Read"])
+  → NOT prefixed, NOT validated, NOT advertised to clients
+  → Used to request Microsoft Graph or other upstream API permissions
+
 Features:
 - OAuth proxy to Azure/Microsoft identity platform
 - JWT validation using tenant issuer and JWKS
 - Supports tenant configurations: specific tenant ID, "organizations", or "consumers"
+- Custom API scopes and Microsoft Graph scopes in a single provider
 
 Setup:
 1. Create an App registration in Azure Portal
 2. Configure Web platform redirect URI: http://localhost:8000/auth/callback (or your custom path)
-3. Add an Application ID URI. Either use the default (api://{client_id}) or set a custom one.
-4. Add a custom scope.
-5. Create a client secret.
-6. Get Application (client) ID, Directory (tenant) ID, and client secret
+3. Add an Application ID URI under "Expose an API" (defaults to api://{client_id})
+4. Add custom scopes (e.g., "read", "write") under "Expose an API"
+5. Set access token version to 2 in the App manifest: "requestedAccessTokenVersion": 2
+6. Create a client secret
+7. Get Application (client) ID, Directory (tenant) ID, and client secret
 
 
 **Methods:**
 
-#### `authorize` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L234" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `authorize` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L270" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 authorize(self, client: OAuthClientInformationFull, params: AuthorizationParams) -> str

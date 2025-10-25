@@ -1,0 +1,91 @@
+---
+title: tool_injection
+sidebarTitle: tool_injection
+---
+
+# `fastmcp.server.middleware.tool_injection`
+
+
+A middleware for injecting tools into the MCP server context.
+
+## Functions
+
+### `list_prompts` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/tool_injection.py#L54" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+list_prompts(context: Context) -> list[Prompt]
+```
+
+
+List prompts available on the server.
+
+
+### `get_prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/tool_injection.py#L64" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_prompt(context: Context, name: Annotated[str, 'The name of the prompt to render.'], arguments: Annotated[dict[str, Any] | None, 'The arguments to pass to the prompt.'] = None) -> mcp.types.GetPromptResult
+```
+
+
+Render a prompt available on the server.
+
+
+### `list_resources` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/tool_injection.py#L88" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+list_resources(context: Context) -> list[mcp.types.Resource]
+```
+
+
+List resources available on the server.
+
+
+### `read_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/tool_injection.py#L98" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+read_resource(context: Context, uri: Annotated[AnyUrl | str, 'The URI of the resource to read.']) -> list[ReadResourceContents]
+```
+
+
+Read a resource available on the server.
+
+
+## Classes
+
+### `ToolInjectionMiddleware` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/tool_injection.py#L21" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+A middleware for injecting tools into the context.
+
+
+**Methods:**
+
+#### `on_list_tools` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/tool_injection.py#L32" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+on_list_tools(self, context: MiddlewareContext[mcp.types.ListToolsRequest], call_next: CallNext[mcp.types.ListToolsRequest, Sequence[Tool]]) -> Sequence[Tool]
+```
+
+Inject tools into the response.
+
+
+#### `on_call_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/tool_injection.py#L41" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+on_call_tool(self, context: MiddlewareContext[mcp.types.CallToolRequestParams], call_next: CallNext[mcp.types.CallToolRequestParams, ToolResult]) -> ToolResult
+```
+
+Intercept tool calls to injected tools.
+
+
+### `PromptToolMiddleware` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/tool_injection.py#L80" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+A middleware for injecting prompts as tools into the context.
+
+
+### `ResourceToolMiddleware` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/tool_injection.py#L111" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+A middleware for injecting resources as tools into the context.
+
