@@ -19,7 +19,6 @@ class Environment(BaseModel, ABC):
         Returns:
             Full command ready for subprocess execution
         """
-        pass
 
     async def prepare(self, output_dir: Path | None = None) -> None:
         """Prepare the environment (optional, can be no-op).
@@ -27,4 +26,4 @@ class Environment(BaseModel, ABC):
         Args:
             output_dir: Directory for persistent environment setup
         """
-        pass  # Default no-op implementation
+        # Default no-op implementation

@@ -342,9 +342,8 @@ def create_streamable_http_app(
     # Create a lifespan manager to start and stop the session manager
     @asynccontextmanager
     async def lifespan(app: Starlette) -> AsyncGenerator[None, None]:
-        async with server._lifespan_manager():
-            async with session_manager.run():
-                yield
+        async with server._lifespan_manager(), session_manager.run():
+            yield
 
     # Create and return the app with lifespan
     app = create_base_app(

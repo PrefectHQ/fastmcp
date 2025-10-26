@@ -887,7 +887,7 @@ class TestIconExtraction:
             return "icon"
 
         info = await inspect_fastmcp(mcp)
-        json_bytes = await format_fastmcp_info(info)
+        json_bytes = format_fastmcp_info(info)
 
         import json
 
@@ -915,7 +915,7 @@ class TestIconExtraction:
             return "none"
 
         info = await inspect_fastmcp(mcp)
-        json_bytes = await format_fastmcp_info(info)
+        json_bytes = format_fastmcp_info(info)
 
         import json
 
@@ -945,7 +945,7 @@ class TestFormatFunctions:
             return {"result": x * 2}
 
         info = await inspect_fastmcp(mcp)
-        json_bytes = await format_fastmcp_info(info)
+        json_bytes = format_fastmcp_info(info)
 
         # Verify it's valid JSON
         import json
@@ -1104,7 +1104,7 @@ class TestFormatFunctions:
         assert "result" in info.tools[0].output_schema["properties"]
 
         # Verify it's included in FastMCP format
-        json_bytes = await format_fastmcp_info(info)
+        json_bytes = format_fastmcp_info(info)
         import json
 
         data = json.loads(json_bytes)

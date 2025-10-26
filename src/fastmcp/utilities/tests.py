@@ -6,7 +6,7 @@ import multiprocessing
 import socket
 import time
 from collections.abc import AsyncGenerator, Callable, Generator
-from contextlib import asynccontextmanager, contextmanager
+from contextlib import asynccontextmanager, contextmanager, suppress
 from typing import TYPE_CHECKING, Any, Literal
 from urllib.parse import parse_qs, urlparse
 
@@ -216,10 +216,8 @@ async def run_server_async(
     finally:
         # Cleanup: cancel the task
         server_task.cancel()
-        try:
+        with suppress(asyncio.CancelledError):
             await server_task
-        except asyncio.CancelledError:
-            pass
 
 
 @contextmanager

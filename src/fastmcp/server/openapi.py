@@ -513,11 +513,11 @@ class OpenAPITool(Tool):
                 if e.response.text:
                     error_message += f" - {e.response.text}"
 
-            raise ValueError(error_message)
+            raise ValueError(error_message) from e
 
         except httpx.RequestError as e:
             # Handle request errors (connection, timeout, etc.)
-            raise ValueError(f"Request error: {str(e)}")
+            raise ValueError(f"Request error: {e!s}") from e
 
 
 class OpenAPIResource(Resource):
@@ -531,9 +531,11 @@ class OpenAPIResource(Resource):
         name: str,
         description: str,
         mime_type: str = "application/json",
-        tags: set[str] = set(),
+        tags: set[str] | None = None,
         timeout: float | None = None,
     ):
+        if tags is None:
+            tags = set()
         super().__init__(
             uri=AnyUrl(uri),  # Convert string to AnyUrl
             name=name,
@@ -632,11 +634,11 @@ class OpenAPIResource(Resource):
                 if e.response.text:
                     error_message += f" - {e.response.text}"
 
-            raise ValueError(error_message)
+            raise ValueError(error_message) from e
 
         except httpx.RequestError as e:
             # Handle request errors (connection, timeout, etc.)
-            raise ValueError(f"Request error: {str(e)}")
+            raise ValueError(f"Request error: {e!s}") from e
 
 
 class OpenAPIResourceTemplate(ResourceTemplate):
@@ -650,9 +652,11 @@ class OpenAPIResourceTemplate(ResourceTemplate):
         name: str,
         description: str,
         parameters: dict[str, Any],
-        tags: set[str] = set(),
+        tags: set[str] | None = None,
         timeout: float | None = None,
     ):
+        if tags is None:
+            tags = set()
         super().__init__(
             uri_template=uri_template,
             name=name,

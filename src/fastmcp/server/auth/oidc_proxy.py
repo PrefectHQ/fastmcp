@@ -123,10 +123,10 @@ class OIDCConfiguration(BaseModel):
 
             try:
                 AnyHttpUrl(value)
-            except Exception:
+            except Exception as e:
                 message = f"Invalid URL for configuration metadata: {attr}"
                 logger.error(message)
-                raise ValueError(message)
+                raise ValueError(message) from e
 
         enforce("issuer", True)
         enforce("authorization_endpoint", True)

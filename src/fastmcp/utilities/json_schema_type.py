@@ -61,7 +61,7 @@ from pydantic import (
 )
 from typing_extensions import NotRequired, TypedDict
 
-__all__ = ["json_schema_to_type", "JSONSchema"]
+__all__ = ["JSONSchema", "json_schema_to_type"]
 
 
 FORMAT_TYPES: dict[str, Any] = {
@@ -368,7 +368,7 @@ def _schema_to_type(
                 return types[0]
         else:
             if has_null:
-                return Union[tuple(types + [type(None)])]  # type: ignore # noqa: UP007
+                return Union[(*types, type(None))]  # type: ignore
             else:
                 return Union[tuple(types)]  # type: ignore # noqa: UP007
 
@@ -389,7 +389,7 @@ def _schema_to_type(
             if len(types) == 1:
                 return types[0] | None  # type: ignore
             else:
-                return Union[tuple(types + [type(None)])]  # type: ignore # noqa: UP007
+                return Union[(*types, type(None))]  # type: ignore
         return Union[tuple(types)]  # type: ignore # noqa: UP007
 
     return _get_from_type_handler(schema, schemas)(schema)
@@ -578,7 +578,7 @@ def _create_dataclass(
             return _merge_defaults(data, original_schema)
         return data
 
-    setattr(cls, "_apply_defaults", _apply_defaults)
+    cls._apply_defaults = _apply_defaults  # type: ignore[attr-defined]
 
     # Store completed class
     _classes[cache_key] = cls

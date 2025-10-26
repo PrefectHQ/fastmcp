@@ -164,10 +164,10 @@ def _convert_nullable_field(schema: dict[str, Any]) -> dict[str, Any]:
         if isinstance(current_type, str):
             result["type"] = [current_type, "null"]
         elif isinstance(current_type, list) and "null" not in current_type:
-            result["type"] = current_type + ["null"]
+            result["type"] = [*current_type, "null"]
     elif "oneOf" in result:
         # Convert oneOf to anyOf with null
-        result["anyOf"] = result.pop("oneOf") + [{"type": "null"}]
+        result["anyOf"] = [*result.pop("oneOf"), {"type": "null"}]
     elif "anyOf" in result:
         # Add null to anyOf if not present
         if not any(item.get("type") == "null" for item in result["anyOf"]):

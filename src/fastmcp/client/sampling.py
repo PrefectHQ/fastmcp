@@ -11,7 +11,7 @@ from mcp.types import SamplingMessage
 
 from fastmcp.server.sampling.handler import ServerSamplingHandler
 
-__all__ = ["SamplingMessage", "SamplingParams", "SamplingHandler"]
+__all__ = ["SamplingHandler", "SamplingMessage", "SamplingParams"]
 
 
 ClientSamplingHandler: TypeAlias = Callable[

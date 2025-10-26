@@ -240,12 +240,11 @@ def log_server_banner(
     info_table.add_row("📦", "Transport:", display_transport)
 
     # Show connection info based on transport
-    if transport in ("http", "streamable-http", "sse"):
-        if host and port:
-            server_url = f"http://{host}:{port}"
-            if path:
-                server_url += f"/{path.lstrip('/')}"
-            info_table.add_row("🔗", "Server URL:", server_url)
+    if transport in ("http", "streamable-http", "sse") and host and port:
+        server_url = f"http://{host}:{port}"
+        if path:
+            server_url += f"/{path.lstrip('/')}"
+        info_table.add_row("🔗", "Server URL:", server_url)
 
     # Add documentation link
     info_table.add_row("", "", "")

@@ -17,7 +17,6 @@ class Source(BaseModel, ABC):
         need preparation (e.g., local files), this is a no-op.
         """
         # Default implementation for sources that don't need preparation
-        pass
 
     @abstractmethod
     async def load_server(self) -> Any:

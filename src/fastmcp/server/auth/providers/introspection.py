@@ -97,8 +97,8 @@ class IntrospectionTokenVerifier(TokenVerifier):
         client_id: str | NotSetT = NotSet,
         client_secret: str | NotSetT = NotSet,
         timeout_seconds: int | NotSetT = NotSet,
-        required_scopes: list[str] | None | NotSetT = NotSet,
-        base_url: AnyHttpUrl | str | None | NotSetT = NotSet,
+        required_scopes: list[str] | NotSetT | None = NotSet,
+        base_url: AnyHttpUrl | str | NotSetT | None = NotSet,
     ):
         """
         Initialize the introspection token verifier.

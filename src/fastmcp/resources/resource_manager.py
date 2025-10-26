@@ -235,7 +235,7 @@ class ResourceManager:
 
         # Then check templates (local and mounted) only if not found in concrete resources
         templates = await self.get_resource_templates()
-        for template_key in templates.keys():
+        for template_key in templates:
             if match_uri_template(uri_str, template_key):
                 return True
 

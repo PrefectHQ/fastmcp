@@ -412,7 +412,7 @@ class InspectFormat(str, Enum):
     MCP = "mcp"
 
 
-async def format_fastmcp_info(info: FastMCPInfo) -> bytes:
+def format_fastmcp_info(info: FastMCPInfo) -> bytes:
     """Format FastMCPInfo as FastMCP-specific JSON.
 
     This includes FastMCP-specific fields like tags, enabled, annotations, etc.
@@ -501,6 +501,6 @@ async def format_info(
         # This works for both v1 and v2 servers
         if info is None:
             info = await inspect_fastmcp(mcp)
-        return await format_fastmcp_info(info)
+        return format_fastmcp_info(info)
     else:
         raise ValueError(f"Unknown format: {format}")

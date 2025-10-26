@@ -79,10 +79,10 @@ class HTTPRoute(FastMCPBaseModel):
 # Export public symbols
 __all__ = [
     "HTTPRoute",
+    "HttpMethod",
+    "JsonSchema",
     "ParameterInfo",
+    "ParameterLocation",
     "RequestBodyInfo",
     "ResponseInfo",
-    "HttpMethod",
-    "ParameterLocation",
-    "JsonSchema",
 ]

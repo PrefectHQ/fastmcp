@@ -147,6 +147,18 @@ def temporary_log_level(
         yield
 
 
+_level_to_no: dict[
+    Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] | None, int | None
+] = {
+    "DEBUG": logging.DEBUG,
+    "INFO": logging.INFO,
+    "WARNING": logging.WARNING,
+    "ERROR": logging.ERROR,
+    "CRITICAL": logging.CRITICAL,
+    None: None,
+}
+
+
 class _ClampedLogFilter(logging.Filter):
     min_level: tuple[int, str] | None
     max_level: tuple[int, str] | None
@@ -161,28 +173,12 @@ class _ClampedLogFilter(logging.Filter):
         self.min_level = None
         self.max_level = None
 
-        if min_level_no := self._level_to_no(level=min_level):
+        if min_level_no := _level_to_no.get(min_level):
             self.min_level = (min_level_no, str(min_level))
-        if max_level_no := self._level_to_no(level=max_level):
+        if max_level_no := _level_to_no.get(max_level):
             self.max_level = (max_level_no, str(max_level))
 
         super().__init__()
-
-    def _level_to_no(
-        self, level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] | None
-    ) -> int | None:
-        if level == "DEBUG":
-            return logging.DEBUG
-        elif level == "INFO":
-            return logging.INFO
-        elif level == "WARNING":
-            return logging.WARNING
-        elif level == "ERROR":
-            return logging.ERROR
-        elif level == "CRITICAL":
-            return logging.CRITICAL
-        else:
-            return None
 
     @override
     def filter(self, record: logging.LogRecord) -> bool:

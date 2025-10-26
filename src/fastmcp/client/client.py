@@ -61,15 +61,15 @@ from .transports import (
 
 __all__ = [
     "Client",
-    "SessionKwargs",
-    "RootsHandler",
-    "RootsList",
+    "ClientSamplingHandler",
+    "ElicitationHandler",
     "LogHandler",
     "MessageHandler",
-    "ClientSamplingHandler",
-    "SamplingHandler",
-    "ElicitationHandler",
     "ProgressHandler",
+    "RootsHandler",
+    "RootsList",
+    "SamplingHandler",
+    "SessionKwargs",
 ]
 
 logger = get_logger(__name__)
@@ -362,10 +362,10 @@ class Client(Generic[ClientTransportT]):
                             await self._session_state.session.initialize()
                         )
                     yield
-                except anyio.ClosedResourceError:
-                    raise RuntimeError("Server session was closed unexpectedly")
-                except TimeoutError:
-                    raise RuntimeError("Failed to initialize server session")
+                except anyio.ClosedResourceError as e:
+                    raise RuntimeError("Server session was closed unexpectedly") from e
+                except TimeoutError as e:
+                    raise RuntimeError("Failed to initialize server session") from e
                 finally:
                     self._session_state.session = None
                     self._session_state.initialize_result = None

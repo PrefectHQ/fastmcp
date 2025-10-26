@@ -184,13 +184,13 @@ class JWTVerifier(TokenVerifier):
     def __init__(
         self,
         *,
-        public_key: str | None | NotSetT = NotSet,
-        jwks_uri: str | None | NotSetT = NotSet,
-        issuer: str | None | NotSetT = NotSet,
-        audience: str | list[str] | None | NotSetT = NotSet,
-        algorithm: str | None | NotSetT = NotSet,
-        required_scopes: list[str] | None | NotSetT = NotSet,
-        base_url: AnyHttpUrl | str | None | NotSetT = NotSet,
+        public_key: str | NotSetT | None = NotSet,
+        jwks_uri: str | NotSetT | None = NotSet,
+        issuer: str | NotSetT | None = NotSet,
+        audience: str | list[str] | NotSetT | None = NotSet,
+        algorithm: str | NotSetT | None = NotSet,
+        required_scopes: list[str] | NotSetT | None = NotSet,
+        base_url: AnyHttpUrl | str | NotSetT | None = NotSet,
     ):
         """
         Initialize the JWT token verifier.
@@ -283,7 +283,7 @@ class JWTVerifier(TokenVerifier):
             return await self._get_jwks_key(kid)
 
         except Exception as e:
-            raise ValueError(f"Failed to extract key ID from token: {e}")
+            raise ValueError(f"Failed to extract key ID from token: {e}") from e
 
     async def _get_jwks_key(self, kid: str | None) -> str:
         """Fetch key from JWKS with simple caching."""
@@ -342,10 +342,10 @@ class JWTVerifier(TokenVerifier):
                     raise ValueError("No keys found in JWKS")
 
         except httpx.HTTPError as e:
-            raise ValueError(f"Failed to fetch JWKS: {e}")
+            raise ValueError(f"Failed to fetch JWKS: {e}") from e
         except Exception as e:
             self.logger.debug(f"JWKS fetch failed: {e}")
-            raise ValueError(f"Failed to fetch JWKS: {e}")
+            raise ValueError(f"Failed to fetch JWKS: {e}") from e
 
     def _extract_scopes(self, claims: dict[str, Any]) -> list[str]:
         """
@@ -400,14 +400,13 @@ class JWTVerifier(TokenVerifier):
 
             # Validate issuer - note we use issuer instead of issuer_url here because
             # issuer is optional, allowing users to make this check optional
-            if self.issuer:
-                if claims.get("iss") != self.issuer:
-                    self.logger.debug(
-                        "Token validation failed: issuer mismatch for client %s",
-                        client_id,
-                    )
-                    self.logger.info("Bearer token rejected for client %s", client_id)
-                    return None
+            if self.issuer and claims.get("iss") != self.issuer:
+                self.logger.debug(
+                    "Token validation failed: issuer mismatch for client %s",
+                    client_id,
+                )
+                self.logger.info("Bearer token rejected for client %s", client_id)
+                return None
 
             # Validate audience if configured
             if self.audience:

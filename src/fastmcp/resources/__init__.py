@@ -10,13 +10,13 @@ from .types import (
 from .resource_manager import ResourceManager
 
 __all__ = [
-    "Resource",
-    "TextResource",
     "BinaryResource",
-    "FunctionResource",
-    "FileResource",
-    "HttpResource",
     "DirectoryResource",
-    "ResourceTemplate",
+    "FileResource",
+    "FunctionResource",
+    "HttpResource",
+    "Resource",
     "ResourceManager",
+    "ResourceTemplate",
+    "TextResource",
 ]

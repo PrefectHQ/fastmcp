@@ -20,8 +20,8 @@ __all__ = [
     "AcceptedElicitation",
     "CancelledElicitation",
     "DeclinedElicitation",
-    "get_elicitation_schema",
     "ScalarElicitationType",
+    "get_elicitation_schema",
 ]
 
 logger = get_logger(__name__)

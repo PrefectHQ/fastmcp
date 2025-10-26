@@ -11,7 +11,7 @@ from fastmcp.server.auth.providers.jwt import JWKData, JWKSData, RSAKeyPair
 from fastmcp.server.auth.providers.jwt import JWTVerifier as BearerAuthProvider
 
 # Re-export for backwards compatibility
-__all__ = ["BearerAuthProvider", "RSAKeyPair", "JWKData", "JWKSData"]
+__all__ = ["BearerAuthProvider", "JWKData", "JWKSData", "RSAKeyPair"]
 
 # Deprecated in 2.11
 if fastmcp.settings.deprecation_warnings:

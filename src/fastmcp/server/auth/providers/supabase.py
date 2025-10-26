@@ -83,7 +83,7 @@ class SupabaseProvider(RemoteAuthProvider):
         *,
         project_url: AnyHttpUrl | str | NotSetT = NotSet,
         base_url: AnyHttpUrl | str | NotSetT = NotSet,
-        required_scopes: list[str] | None | NotSetT = NotSet,
+        required_scopes: list[str] | NotSetT | None = NotSet,
         token_verifier: TokenVerifier | None = None,
     ):
         """Initialize Supabase metadata provider.

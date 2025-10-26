@@ -22,17 +22,14 @@ from .components import (
 
 # Export public symbols - maintaining backward compatibility
 __all__ = [
-    # Server
-    "FastMCPOpenAPI",
-    # Routing
-    "MCPType",
-    "RouteMap",
-    "RouteMapFn",
-    "ComponentFn",
     "DEFAULT_ROUTE_MAPPINGS",
-    "_determine_route_type",
-    # Components
-    "OpenAPITool",
+    "ComponentFn",
+    "FastMCPOpenAPI",
+    "MCPType",
     "OpenAPIResource",
     "OpenAPIResourceTemplate",
+    "OpenAPITool",
+    "RouteMap",
+    "RouteMapFn",
+    "_determine_route_type",
 ]

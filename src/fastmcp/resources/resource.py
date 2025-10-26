@@ -217,9 +217,7 @@ class FunctionResource(Resource):
 
         if isinstance(result, Resource):
             return await result.read()
-        elif isinstance(result, bytes):
-            return result
-        elif isinstance(result, str):
+        elif isinstance(result, bytes | str):
             return result
         else:
             return pydantic_core.to_json(result, fallback=str).decode()

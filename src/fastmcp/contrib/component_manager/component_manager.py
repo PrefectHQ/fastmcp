@@ -97,11 +97,11 @@ def make_endpoint(action, component, config):
             return JSONResponse(
                 {"message": f"{action.capitalize()}d {component}: {name}"}
             )
-        except NotFoundError:
+        except NotFoundError as e:
             raise StarletteHTTPException(
                 status_code=404,
                 detail=f"Unknown {component}: {name}",
-            )
+            ) from e
 
     return endpoint
 

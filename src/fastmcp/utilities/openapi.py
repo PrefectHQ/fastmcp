@@ -175,16 +175,16 @@ class HTTPRoute(FastMCPBaseModel):
 # Export public symbols
 __all__ = [
     "HTTPRoute",
+    "HttpMethod",
+    "JsonSchema",
     "ParameterInfo",
+    "ParameterLocation",
     "RequestBodyInfo",
     "ResponseInfo",
-    "HttpMethod",
-    "ParameterLocation",
-    "JsonSchema",
-    "parse_openapi_to_http_routes",
+    "_handle_nullable_fields",
     "extract_output_schema_from_responses",
     "format_deep_object_parameter",
-    "_handle_nullable_fields",
+    "parse_openapi_to_http_routes",
 ]
 
 # Type variables for generic parser
@@ -321,7 +321,7 @@ class OpenAPIParser(
                         else:
                             # Special handling for components
                             if part == "components" and hasattr(target, "components"):
-                                target = getattr(target, "components")
+                                target = target.components
                             elif hasattr(target, part):  # Fallback check
                                 target = getattr(target, part, None)
                             else:
@@ -1178,10 +1178,10 @@ def _add_null_to_type(schema: dict[str, Any]) -> None:
         elif isinstance(current_type, list):
             # Add null to array if not already present
             if "null" not in current_type:
-                schema["type"] = current_type + ["null"]
+                schema["type"] = [*current_type, "null"]
     elif "oneOf" in schema:
         # Convert oneOf to anyOf with null type
-        schema["anyOf"] = schema.pop("oneOf") + [{"type": "null"}]
+        schema["anyOf"] = [*schema.pop("oneOf"), {"type": "null"}]
     elif "anyOf" in schema:
         # Add null type to anyOf if not already present
         if not any(item.get("type") == "null" for item in schema["anyOf"]):
@@ -1233,7 +1233,7 @@ def _handle_nullable_fields(schema: dict[str, Any] | Any) -> dict[str, Any] | An
 
     # Handle properties nullable fields
     if has_property_nullable_field and "properties" in result:
-        for prop_name, prop_schema in result["properties"].items():
+        for _prop_name, prop_schema in result["properties"].items():
             if isinstance(prop_schema, dict) and "nullable" in prop_schema:
                 nullable_value = prop_schema.pop("nullable")
                 if nullable_value and (

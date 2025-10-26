@@ -3,4 +3,4 @@ from .context import Context
 from . import dependencies
 
 
-__all__ = ["FastMCP", "Context"]
+__all__ = ["Context", "FastMCP"]

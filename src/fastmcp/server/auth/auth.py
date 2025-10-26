@@ -23,7 +23,7 @@ from mcp.server.auth.settings import (
     ClientRegistrationOptions,
     RevocationOptions,
 )
-from pydantic import AnyHttpUrl
+from pydantic import AnyHttpUrl, Field
 from starlette.middleware import Middleware
 from starlette.middleware.authentication import AuthenticationMiddleware
 from starlette.routing import Route
@@ -32,7 +32,7 @@ from starlette.routing import Route
 class AccessToken(_SDKAccessToken):
     """AccessToken that includes all JWT claims."""
 
-    claims: dict[str, Any] = {}
+    claims: dict[str, Any] = Field(default_factory=dict)
 
 
 class AuthProvider(TokenVerifierProtocol):

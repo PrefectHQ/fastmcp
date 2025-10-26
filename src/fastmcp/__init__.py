@@ -48,9 +48,9 @@ def __getattr__(name: str):
 
 
 __all__ = [
-    "FastMCP",
-    "Context",
-    "client",
     "Client",
+    "Context",
+    "FastMCP",
+    "client",
     "settings",
 ]

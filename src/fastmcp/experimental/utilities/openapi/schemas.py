@@ -585,9 +585,9 @@ def extract_output_schema_from_responses(
 
 # Export public symbols
 __all__ = [
-    "clean_schema_for_display",
     "_combine_schemas",
     "_combine_schemas_and_map_params",
-    "extract_output_schema_from_responses",
     "_make_optional_parameter_nullable",
+    "clean_schema_for_display",
+    "extract_output_schema_from_responses",
 ]

@@ -96,10 +96,10 @@ class InMemoryOAuthProvider(OAuthProvider):
                 # or if params.redirect_uri is None and client has a default.
                 # However, the AuthorizationHandler handles the primary validation.
                 pass  # Let's assume AuthorizationHandler did its job.
-        except Exception:  # Replace with specific validation error if client.validate_redirect_uri existed
+        except Exception as e:  # Replace with specific validation error if client.validate_redirect_uri existed
             raise AuthorizeError(
                 error="invalid_request", error_description="Invalid redirect_uri."
-            )
+            ) from e
 
         auth_code_value = f"test_auth_code_{secrets.token_hex(16)}"
         expires_at = time.time() + DEFAULT_AUTH_CODE_EXPIRY_SECONDS

@@ -27,9 +27,9 @@ if TYPE_CHECKING:
     from fastmcp.server.context import Context
 
 __all__ = [
+    "CallNext",
     "Middleware",
     "MiddlewareContext",
-    "CallNext",
 ]
 
 logger = logging.getLogger(__name__)

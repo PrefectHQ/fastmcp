@@ -63,7 +63,7 @@ class RequestDirector:
 
         # Step 4: Handle request body
         if body is not None:
-            if isinstance(body, dict) or isinstance(body, list):
+            if isinstance(body, dict | list):
                 request_data["json"] = body
             else:
                 request_data["content"] = body

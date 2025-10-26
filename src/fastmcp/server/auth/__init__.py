@@ -10,14 +10,14 @@ from .oauth_proxy import OAuthProxy
 
 
 __all__ = [
-    "AuthProvider",
-    "OAuthProvider",
-    "TokenVerifier",
-    "JWTVerifier",
-    "StaticTokenVerifier",
-    "RemoteAuthProvider",
     "AccessToken",
+    "AuthProvider",
+    "JWTVerifier",
+    "OAuthProvider",
     "OAuthProxy",
+    "RemoteAuthProvider",
+    "StaticTokenVerifier",
+    "TokenVerifier",
 ]
 
 

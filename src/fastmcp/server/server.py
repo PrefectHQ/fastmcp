@@ -15,7 +15,11 @@ from collections.abc import (
     Mapping,
     Sequence,
 )
-from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
+from contextlib import (
+    AbstractAsyncContextManager,
+    AsyncExitStack,
+    asynccontextmanager,
+)
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
@@ -150,7 +154,7 @@ class FastMCP(Generic[LifespanResultT]):
         version: str | None = None,
         website_url: str | None = None,
         icons: list[mcp.types.Icon] | None = None,
-        auth: AuthProvider | None | NotSetT = NotSet,
+        auth: AuthProvider | NotSetT | None = NotSet,
         middleware: Sequence[Middleware] | None = None,
         lifespan: LifespanCallable | None = None,
         dependencies: list[str] | None = None,
@@ -1062,10 +1066,10 @@ class FastMCP(Generic[LifespanResultT]):
             try:
                 result = await self._call_tool_middleware(key, arguments)
                 return result.to_mcp_result()
-            except DisabledError:
-                raise NotFoundError(f"Unknown tool: {key}")
-            except NotFoundError:
-                raise NotFoundError(f"Unknown tool: {key}")
+            except DisabledError as e:
+                raise NotFoundError(f"Unknown tool: {key}") from e
+            except NotFoundError as e:
+                raise NotFoundError(f"Unknown tool: {key}") from e
 
     async def _call_tool_middleware(
         self,
@@ -1142,12 +1146,12 @@ class FastMCP(Generic[LifespanResultT]):
                 return list[ReadResourceContents](
                     await self._read_resource_middleware(uri)
                 )
-            except DisabledError:
+            except DisabledError as e:
                 # convert to NotFoundError to avoid leaking resource presence
-                raise NotFoundError(f"Unknown resource: {str(uri)!r}")
-            except NotFoundError:
+                raise NotFoundError(f"Unknown resource: {str(uri)!r}") from e
+            except NotFoundError as e:
                 # standardize NotFound message
-                raise NotFoundError(f"Unknown resource: {str(uri)!r}")
+                raise NotFoundError(f"Unknown resource: {str(uri)!r}") from e
 
     async def _read_resource_middleware(
         self,
@@ -1158,10 +1162,7 @@ class FastMCP(Generic[LifespanResultT]):
         """
 
         # Convert string URI to AnyUrl if needed
-        if isinstance(uri, str):
-            uri_param = AnyUrl(uri)
-        else:
-            uri_param = uri
+        uri_param = AnyUrl(uri) if isinstance(uri, str) else uri
 
         mw_context = MiddlewareContext(
             message=mcp.types.ReadResourceRequestParams(uri=uri_param),
@@ -1241,12 +1242,12 @@ class FastMCP(Generic[LifespanResultT]):
         async with fastmcp.server.context.Context(fastmcp=self):
             try:
                 return await self._get_prompt_middleware(name, arguments)
-            except DisabledError:
+            except DisabledError as e:
                 # convert to NotFoundError to avoid leaking prompt presence
-                raise NotFoundError(f"Unknown prompt: {name}")
-            except NotFoundError:
+                raise NotFoundError(f"Unknown prompt: {name}") from e
+            except NotFoundError as e:
                 # standardize NotFound message
-                raise NotFoundError(f"Unknown prompt: {name}")
+                raise NotFoundError(f"Unknown prompt: {name}") from e
 
     async def _get_prompt_middleware(
         self, name: str, arguments: dict[str, Any] | None = None
@@ -1369,7 +1370,7 @@ class FastMCP(Generic[LifespanResultT]):
         description: str | None = None,
         icons: list[mcp.types.Icon] | None = None,
         tags: set[str] | None = None,
-        output_schema: dict[str, Any] | None | NotSetT = NotSet,
+        output_schema: dict[str, Any] | NotSetT | None = NotSet,
         annotations: ToolAnnotations | dict[str, Any] | None = None,
         exclude_args: list[str] | None = None,
         meta: dict[str, Any] | None = None,
@@ -1386,7 +1387,7 @@ class FastMCP(Generic[LifespanResultT]):
         description: str | None = None,
         icons: list[mcp.types.Icon] | None = None,
         tags: set[str] | None = None,
-        output_schema: dict[str, Any] | None | NotSetT = NotSet,
+        output_schema: dict[str, Any] | NotSetT | None = NotSet,
         annotations: ToolAnnotations | dict[str, Any] | None = None,
         exclude_args: list[str] | None = None,
         meta: dict[str, Any] | None = None,
@@ -1402,7 +1403,7 @@ class FastMCP(Generic[LifespanResultT]):
         description: str | None = None,
         icons: list[mcp.types.Icon] | None = None,
         tags: set[str] | None = None,
-        output_schema: dict[str, Any] | None | NotSetT = NotSet,
+        output_schema: dict[str, Any] | NotSetT | None = NotSet,
         annotations: ToolAnnotations | dict[str, Any] | None = None,
         exclude_args: list[str] | None = None,
         meta: dict[str, Any] | None = None,
@@ -2029,14 +2030,14 @@ class FastMCP(Generic[LifespanResultT]):
                 port=port,
                 path=server_path,
             )
-        _uvicorn_config_from_user = uvicorn_config or {}
+        uvicorn_config_from_user = uvicorn_config or {}
 
         config_kwargs: dict[str, Any] = {
             "timeout_graceful_shutdown": 0,
             "lifespan": "on",
             "ws": "websockets-sansio",
         }
-        config_kwargs.update(_uvicorn_config_from_user)
+        config_kwargs.update(uvicorn_config_from_user)
 
         if "log_config" not in config_kwargs and "log_level" not in config_kwargs:
             config_kwargs["log_level"] = default_log_level_to_use
@@ -2605,8 +2606,8 @@ class FastMCP(Generic[LifespanResultT]):
             # - Connected clients: reuse existing session for all requests
             # - Disconnected clients: create fresh sessions per request for isolation
             if client.is_connected():
-                _proxy_logger = get_logger(__name__)
-                _proxy_logger.info(
+                proxy_logger = get_logger(__name__)
+                proxy_logger.info(
                     "Proxy detected connected client - reusing existing session for all requests. "
                     "This may cause context mixing in concurrent scenarios."
                 )
@@ -2678,10 +2679,7 @@ class FastMCP(Generic[LifespanResultT]):
                 return False
 
         if self.include_tags is not None:
-            if any(itag in component.tags for itag in self.include_tags):
-                return True
-            else:
-                return False
+            return bool(any(itag in component.tags for itag in self.include_tags))
 
         return True
 

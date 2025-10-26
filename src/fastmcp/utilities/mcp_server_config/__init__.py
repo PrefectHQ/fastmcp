@@ -15,11 +15,11 @@ from fastmcp.utilities.mcp_server_config.v1.sources.base import Source
 from fastmcp.utilities.mcp_server_config.v1.sources.filesystem import FileSystemSource
 
 __all__ = [
-    "Source",
     "Deployment",
     "Environment",
-    "UVEnvironment",
-    "MCPServerConfig",
     "FileSystemSource",
+    "MCPServerConfig",
+    "Source",
+    "UVEnvironment",
     "generate_schema",
 ]

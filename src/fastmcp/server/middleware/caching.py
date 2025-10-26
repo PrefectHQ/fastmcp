@@ -46,7 +46,7 @@ class CachableReadResourceContents(BaseModel):
 
     @classmethod
     def get_sizes(cls, values: Sequence[Self]) -> int:
-        return sum([item.get_size() for item in values])
+        return sum(item.get_size() for item in values)
 
     @classmethod
     def wrap(cls, values: Sequence[ReadResourceContents]) -> list[Self]:

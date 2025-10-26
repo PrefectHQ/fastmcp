@@ -36,8 +36,6 @@ logger = get_logger(__name__)
 class ClientNotFoundError(Exception):
     """Raised when OAuth client credentials are not found on the server."""
 
-    pass
-
 
 async def check_if_auth_required(
     mcp_url: str, httpx_kwargs: dict[str, Any] | None = None
@@ -58,7 +56,7 @@ async def check_if_auth_required(
                 return True
 
             # Check for WWW-Authenticate header
-            if "WWW-Authenticate" in response.headers:
+            if "WWW-Authenticate" in response.headers:  # noqa: SIM103
                 return True
 
             # If we get a successful response, auth may not be required
@@ -195,7 +193,8 @@ class OAuth(OAuthClientProvider):
 
             warn(
                 message="Using in-memory token storage is not recommended for production use -- "
-                + "tokens will be lost on server restart."
+                + "tokens will be lost on server restart.",
+                stacklevel=2,
             )
 
         self.token_storage_adapter: TokenStorageAdapter = TokenStorageAdapter(
@@ -272,8 +271,10 @@ class OAuth(OAuthClientProvider):
                     if result.error:
                         raise result.error
                     return result.code, result.state  # type: ignore
-            except TimeoutError:
-                raise TimeoutError(f"OAuth callback timed out after {TIMEOUT} seconds")
+            except TimeoutError as e:
+                raise TimeoutError(
+                    f"OAuth callback timed out after {TIMEOUT} seconds"
+                ) from e
             finally:
                 server.should_exit = True
                 await anyio.sleep(0.1)  # Allow server to shut down gracefully

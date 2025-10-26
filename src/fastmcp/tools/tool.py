@@ -173,7 +173,7 @@ class Tool(FastMCPComponent):
         tags: set[str] | None = None,
         annotations: ToolAnnotations | None = None,
         exclude_args: list[str] | None = None,
-        output_schema: dict[str, Any] | None | NotSetT | Literal[False] = NotSet,
+        output_schema: dict[str, Any] | Literal[False] | NotSetT | None = NotSet,
         serializer: ToolResultSerializerType | None = None,
         meta: dict[str, Any] | None = None,
         enabled: bool | None = None,
@@ -212,13 +212,13 @@ class Tool(FastMCPComponent):
         tool: Tool,
         *,
         name: str | None = None,
-        title: str | None | NotSetT = NotSet,
-        description: str | None | NotSetT = NotSet,
+        title: str | NotSetT | None = NotSet,
+        description: str | NotSetT | None = NotSet,
         tags: set[str] | None = None,
-        annotations: ToolAnnotations | None | NotSetT = NotSet,
-        output_schema: dict[str, Any] | None | NotSetT | Literal[False] = NotSet,
+        annotations: ToolAnnotations | NotSetT | None = NotSet,
+        output_schema: dict[str, Any] | Literal[False] | NotSetT | None = NotSet,
         serializer: ToolResultSerializerType | None = None,
-        meta: dict[str, Any] | None | NotSetT = NotSet,
+        meta: dict[str, Any] | NotSetT | None = NotSet,
         transform_args: dict[str, ArgTransform] | None = None,
         enabled: bool | None = None,
         transform_fn: Callable[..., Any] | None = None,
@@ -255,7 +255,7 @@ class FunctionTool(Tool):
         tags: set[str] | None = None,
         annotations: ToolAnnotations | None = None,
         exclude_args: list[str] | None = None,
-        output_schema: dict[str, Any] | None | NotSetT | Literal[False] = NotSet,
+        output_schema: dict[str, Any] | Literal[False] | NotSetT | None = NotSet,
         serializer: ToolResultSerializerType | None = None,
         meta: dict[str, Any] | None = None,
         enabled: bool | None = None,
@@ -446,9 +446,8 @@ class ParsedFunction:
             # we ensure that no output schema is automatically generated.
             clean_output_type = replace_type(
                 output_type,
-                {
-                    t: _UnserializableType
-                    for t in (
+                dict.fromkeys(  # type: ignore[arg-type]
+                    (
                         Image,
                         Audio,
                         File,
@@ -458,8 +457,9 @@ class ParsedFunction:
                         mcp.types.AudioContent,
                         mcp.types.ResourceLink,
                         mcp.types.EmbeddedResource,
-                    )
-                },
+                    ),
+                    _UnserializableType,
+                ),
             )
 
             try:

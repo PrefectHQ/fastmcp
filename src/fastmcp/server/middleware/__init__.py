@@ -5,7 +5,7 @@ from .middleware import (
 )
 
 __all__ = [
+    "CallNext",
     "Middleware",
     "MiddlewareContext",
-    "CallNext",
 ]

@@ -21,10 +21,10 @@ try:
         ChatCompletionUserMessageParam,
     )
     from openai.types.shared.chat_model import ChatModel
-except ImportError:
+except ImportError as e:
     raise ImportError(
         "The `openai` package is not installed. Please install `fastmcp[openai]` or add `openai` to your dependencies manually."
-    )
+    ) from e
 
 from typing_extensions import override
 

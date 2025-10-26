@@ -169,7 +169,7 @@ class WorkOSProvider(OAuthProxy):
         base_url: AnyHttpUrl | str | NotSetT = NotSet,
         issuer_url: AnyHttpUrl | str | NotSetT = NotSet,
         redirect_path: str | NotSetT = NotSet,
-        required_scopes: list[str] | None | NotSetT = NotSet,
+        required_scopes: list[str] | NotSetT | None = NotSet,
         timeout_seconds: int | NotSetT = NotSet,
         allowed_client_redirect_uris: list[str] | NotSetT = NotSet,
         client_storage: AsyncKeyValue | None = None,
@@ -338,7 +338,7 @@ class AuthKitProvider(RemoteAuthProvider):
         *,
         authkit_domain: AnyHttpUrl | str | NotSetT = NotSet,
         base_url: AnyHttpUrl | str | NotSetT = NotSet,
-        required_scopes: list[str] | None | NotSetT = NotSet,
+        required_scopes: list[str] | NotSetT | None = NotSet,
         token_verifier: TokenVerifier | None = None,
     ):
         """Initialize AuthKit metadata provider.

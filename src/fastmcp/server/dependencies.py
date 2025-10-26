@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 from typing import TYPE_CHECKING
 
 from mcp.server.auth.middleware.auth_context import (
@@ -16,11 +17,11 @@ if TYPE_CHECKING:
     from fastmcp.server.context import Context
 
 __all__ = [
-    "get_context",
-    "get_http_request",
-    "get_http_headers",
-    "get_access_token",
     "AccessToken",
+    "get_access_token",
+    "get_context",
+    "get_http_headers",
+    "get_http_request",
 ]
 
 
@@ -43,10 +44,8 @@ def get_http_request() -> Request:
     from mcp.server.lowlevel.server import request_ctx
 
     request = None
-    try:
+    with contextlib.suppress(LookupError):
         request = request_ctx.get().request
-    except LookupError:
-        pass
 
     if request is None:
         raise RuntimeError("No active HTTP request found.")

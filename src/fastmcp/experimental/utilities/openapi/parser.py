@@ -178,7 +178,7 @@ class OpenAPIParser(
                         else:
                             # Special handling for components
                             if part == "components" and hasattr(target, "components"):
-                                target = getattr(target, "components")
+                                target = target.components
                             elif hasattr(target, part):  # Fallback check
                                 target = getattr(target, part, None)
                             else:
@@ -554,9 +554,7 @@ class OpenAPIParser(
                 if "$ref" in obj and isinstance(obj["$ref"], str):
                     ref = obj["$ref"]
                     # Handle both converted and unconverted refs
-                    if ref.startswith("#/$defs/"):
-                        schema_name = ref.split("/")[-1]
-                    elif ref.startswith("#/components/schemas/"):
+                    if ref.startswith(("#/$defs/", "#/components/schemas/")):
                         schema_name = ref.split("/")[-1]
                     else:
                         return
@@ -815,6 +813,6 @@ class OpenAPIParser(
 
 # Export public symbols
 __all__ = [
-    "parse_openapi_to_http_routes",
     "OpenAPIParser",
+    "parse_openapi_to_http_routes",
 ]

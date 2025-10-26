@@ -7,14 +7,14 @@ from ._read import fetch_notifications, fetch_timeline, search_for_posts
 from ._social import follow_user_by_handle, like_post_by_uri, repost_by_uri
 
 __all__ = [
-    "get_client",
-    "get_profile_info",
     "create_post",
     "create_thread",
-    "fetch_timeline",
-    "search_for_posts",
     "fetch_notifications",
+    "fetch_timeline",
     "follow_user_by_handle",
+    "get_client",
+    "get_profile_info",
     "like_post_by_uri",
     "repost_by_uri",
+    "search_for_posts",
 ]

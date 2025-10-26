@@ -1,3 +1,9 @@
+# /// script
+# dependencies = ["aiohttp", "fastmcp"]
+# ///
+
+# uv pip install aiohttp fastmcp
+
 import aiohttp
 
 from fastmcp.server import FastMCP
