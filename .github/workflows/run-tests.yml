@@ -59,6 +59,31 @@ jobs:
       - name: Run client process tests separately
         run: uv run pytest --inline-snapshot=disable tests -m "client_process" -x
 
+  run_tests_lowest_direct:
+    name: "Run tests with lowest-direct dependencies"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+          python-version: "3.10"
+
+      - name: Install FastMCP with lowest-direct resolution
+        # run with lowest-direct to test against the minimum allowed dependency versions
+        run: uv sync --resolution lowest-direct
+
+      - name: Run tests (excluding integration and client_process)
+        run: uv run pytest --inline-snapshot=disable tests -m "not integration and not client_process" --numprocesses auto --maxprocesses 4 --dist worksteal
+
+      - name: Run client process tests separately
+        run: uv run pytest --inline-snapshot=disable tests -m "client_process" -x
+
   run_integration_tests:
     name: "Run integration tests"
     runs-on: ubuntu-latest
