@@ -6,7 +6,7 @@ using the OAuth Proxy pattern for non-DCR OAuth flows.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from key_value.aio.protocols import AsyncKeyValue
 from pydantic import SecretStr, field_validator
@@ -202,19 +202,20 @@ class AzureProvider(OAuthProxy):
             )
             raise ValueError(msg)
 
+        # Validate required_scopes has at least one scope
         if not settings.required_scopes:
-            raise ValueError("required_scopes is required")
+            msg = (
+                "required_scopes must include at least one scope - set via parameter or "
+                "FASTMCP_SERVER_AUTH_AZURE_REQUIRED_SCOPES. Azure's OAuth API requires "
+                "the 'scope' parameter in authorization requests. Use the unprefixed scope "
+                "names from your Azure App registration (e.g., ['read', 'write'])"
+            )
+            raise ValueError(msg)
 
         # Apply defaults
         self.identifier_uri = settings.identifier_uri or f"api://{settings.client_id}"
         self.additional_authorize_scopes = settings.additional_authorize_scopes or []
         tenant_id_final = settings.tenant_id
-
-        # Prefix required scopes with identifier_uri for Azure
-        # Azure returns scopes as full URIs (e.g., "api://xxx/read") in tokens
-        prefixed_required_scopes = [
-            f"{self.identifier_uri}/{scope}" for scope in settings.required_scopes
-        ]
 
         # Always validate tokens against the app's API client ID using JWT
         issuer = f"https://login.microsoftonline.com/{tenant_id_final}/v2.0"
@@ -222,12 +223,13 @@ class AzureProvider(OAuthProxy):
             f"https://login.microsoftonline.com/{tenant_id_final}/discovery/v2.0/keys"
         )
 
+        # Azure returns unprefixed scopes in JWT tokens, so validate against unprefixed scopes
         token_verifier = JWTVerifier(
             jwks_uri=jwks_uri,
             issuer=issuer,
             audience=settings.client_id,
             algorithm="RS256",
-            required_scopes=prefixed_required_scopes,
+            required_scopes=settings.required_scopes,  # Unprefixed scopes for validation
         )
 
         # Extract secret string from SecretStr
@@ -298,19 +300,40 @@ class AzureProvider(OAuthProxy):
                         "Filtering out 'resource' parameter '%s' for Azure AD v2.0 (use scopes instead)",
                         original_resource,
                     )
-        # Scopes are already prefixed:
-        # - self.required_scopes was prefixed during __init__
-        # - Client scopes come from PRM which advertises prefixed scopes
-        scopes = params_to_use.scopes or self.required_scopes
-
-        final_scopes = list(scopes)
-        # Add Microsoft Graph scopes separately - these use shorthand format (e.g., "User.Read")
-        # and should not be prefixed with identifier_uri. Azure returns them as-is in tokens.
-        if self.additional_authorize_scopes:
-            final_scopes.extend(self.additional_authorize_scopes)
-
-        modified_params = params_to_use.model_copy(update={"scopes": final_scopes})
-
-        auth_url = await super().authorize(client, modified_params)
+        # Don't modify the scopes in params - they stay unprefixed for MCP clients
+        # We'll prefix them when building the Azure authorization URL (in _build_upstream_authorize_url)
+        auth_url = await super().authorize(client, params_to_use)
         separator = "&" if "?" in auth_url else "?"
         return f"{auth_url}{separator}prompt=select_account"
+
+    def _build_upstream_authorize_url(
+        self, txn_id: str, transaction: dict[str, Any]
+    ) -> str:
+        """Build Azure authorization URL with prefixed scopes.
+
+        Overrides parent to prefix scopes with identifier_uri before sending to Azure,
+        while keeping unprefixed scopes in the transaction for MCP clients.
+        """
+        # Get unprefixed scopes from transaction
+        unprefixed_scopes = transaction.get("scopes") or self.required_scopes or []
+
+        # Prefix scopes for Azure authorization request
+        prefixed_scopes = []
+        for scope in unprefixed_scopes:
+            if "://" in scope or "/" in scope:
+                # Already a full URI or path (e.g., "api://xxx/read" or "User.Read")
+                prefixed_scopes.append(scope)
+            else:
+                # Unprefixed scope name - prefix it with identifier_uri
+                prefixed_scopes.append(f"{self.identifier_uri}/{scope}")
+
+        # Add Microsoft Graph scopes (not validated, not prefixed)
+        if self.additional_authorize_scopes:
+            prefixed_scopes.extend(self.additional_authorize_scopes)
+
+        # Temporarily modify transaction dict for parent's URL building
+        modified_transaction = transaction.copy()
+        modified_transaction["scopes"] = prefixed_scopes
+
+        # Let parent build the URL with prefixed scopes
+        return super()._build_upstream_authorize_url(txn_id, modified_transaction)

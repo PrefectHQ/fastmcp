@@ -122,7 +122,7 @@ auth_provider = AzureProvider(
     client_secret="your-client-secret",                 # Your Azure App Client Secret
     tenant_id="08541b6e-646d-43de-a0eb-834e6713d6d5", # Your Azure Tenant ID (REQUIRED)
     base_url="http://localhost:8000",                   # Must match your App registration
-    required_scopes=["your-scope"],                 # Name of scope created when configuring your App
+    required_scopes=["your-scope"],                 # At least one scope REQUIRED - name of scope from your App
     # identifier_uri defaults to api://{client_id}
     # identifier_uri="api://your-api-id",
     # Optional: request additional upstream scopes in the authorize request
@@ -157,6 +157,10 @@ async def get_user_info() -> dict:
 - **"consumers"**: For personal Microsoft accounts only
 
 Using your specific tenant ID is recommended for better security and control.
+</Note>
+
+<Note>
+**Important**: The `required_scopes` parameter is **REQUIRED** and must include at least one scope. Azure's OAuth API requires the `scope` parameter in all authorization requests - you cannot authenticate without specifying at least one scope. Use the unprefixed scope names from your Azure App registration (e.g., `["read", "write"]`). These scopes must be created under **Expose an API** in your App registration.
 </Note>
 
 ## Testing
@@ -296,8 +300,12 @@ Issuer URL for OAuth metadata (defaults to `BASE_URL`). Set to root-level URL wh
 Redirect path configured in your Azure App registration
 </ParamField>
 
-<ParamField path="FASTMCP_SERVER_AUTH_AZURE_REQUIRED_SCOPES" default="">
-Comma-, space-, or JSON-separated list of required scopes for your API. These are validated on tokens and used as defaults if the client does not request specific scopes.
+<ParamField path="FASTMCP_SERVER_AUTH_AZURE_REQUIRED_SCOPES" required>
+Comma-, space-, or JSON-separated list of required scopes for your API (at least one scope required). These are validated on tokens and used as defaults if the client does not request specific scopes. Use unprefixed scope names from your Azure App registration (e.g., `read,write`).
+
+<Note>
+Azure's OAuth API requires the `scope` parameter - you must provide at least one scope.
+</Note>
 </ParamField>
 
 <ParamField path="FASTMCP_SERVER_AUTH_AZURE_ADDITIONAL_AUTHORIZE_SCOPES" default="">
