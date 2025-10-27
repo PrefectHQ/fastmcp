@@ -83,9 +83,9 @@ Upon approval, the OAuth server redirects the user's browser to the local callba
 </Step>
 <Step title="Token Caching">
 The obtained tokens are saved to the configured `token_storage` backend for future use, eliminating the need for repeated browser interactions.
-</Step> 
+</Step>
 <Step title="Authenticated Requests">
-The access token is automatically included in the `Authorization` header for requests to the MCP server. 
+The access token is automatically included in the `Authorization` header for requests to the MCP server.
 </Step>
 <Step title="Refresh Token">
 If the access token expires, the client will automatically use the refresh token to get a new access token.
@@ -125,4 +125,4 @@ async with Client("https://fastmcp.cloud/mcp", auth=oauth) as client:
     await client.ping()
 ```
 
-You can use any `AsyncKeyValue`-compatible backend from the [key-value library](https://github.com/jlowin/key-value) including Redis, DynamoDB, and more. Wrap your storage in `FernetEncryptionWrapper` for encryption.
+You can use any `AsyncKeyValue`-compatible backend from the [key-value library](https://github.com/strawgate/py-key-value) including Redis, DynamoDB, and more. Wrap your storage in `FernetEncryptionWrapper` for encryption.
