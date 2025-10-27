@@ -375,6 +375,96 @@ def create_consent_html(
     )
 
 
+def create_error_html(
+    error_title: str,
+    error_message: str,
+    error_details: dict[str, str] | None = None,
+    server_name: str | None = None,
+    server_icon_url: str | None = None,
+) -> str:
+    """Create a styled HTML error page for OAuth errors.
+
+    Args:
+        error_title: The error title (e.g., "OAuth Error", "Authorization Failed")
+        error_message: The main error message to display
+        error_details: Optional dictionary of error details to show (e.g., {"Error Code": "invalid_client"})
+        server_name: Optional server name to display
+        server_icon_url: Optional URL to server icon/logo
+
+    Returns:
+        Complete HTML page as a string
+    """
+    import html as html_module
+
+    error_message_escaped = html_module.escape(error_message)
+
+    # Build error message box
+    error_box = f"""
+        <div class="info-box error">
+            <p>{error_message_escaped}</p>
+        </div>
+    """
+
+    # Build error details section if provided
+    details_section = ""
+    if error_details:
+        detail_rows_html = "\n".join(
+            [
+                f"""
+            <div class="detail-row">
+                <div class="detail-label">{html_module.escape(label)}:</div>
+                <div class="detail-value">{html_module.escape(value)}</div>
+            </div>
+            """
+                for label, value in error_details.items()
+            ]
+        )
+
+        details_section = f"""
+            <details>
+                <summary>Error Details</summary>
+                <div class="detail-box">
+                    {detail_rows_html}
+                </div>
+            </details>
+        """
+
+    # Build the page content
+    content = f"""
+        <div class="container">
+            {create_logo(icon_url=server_icon_url, alt_text=server_name or "FastMCP")}
+            <h1>{html_module.escape(error_title)}</h1>
+            {error_box}
+            {details_section}
+        </div>
+    """
+
+    # Additional styles needed for this page
+    # Override .info-box.error to use normal text color instead of red
+    additional_styles = (
+        INFO_BOX_STYLES
+        + DETAILS_STYLES
+        + DETAIL_BOX_STYLES
+        + """
+        .info-box.error {
+            color: #111827;
+        }
+        """
+    )
+
+    # Simple CSP policy for error pages (no forms needed)
+    csp_policy = (
+        "default-src 'none'; style-src 'unsafe-inline'; img-src https:; base-uri 'none'"
+    )
+
+    return create_page(
+        content=content,
+        title=error_title,
+        additional_styles=additional_styles,
+        csp_policy=csp_policy,
+    )
+
+
 # -------------------------------------------------------------------------
 # Handler Classes
 # -------------------------------------------------------------------------
@@ -1569,7 +1659,9 @@ class OAuthProxy(OAuthProvider):
     # IdP Callback Forwarding
     # -------------------------------------------------------------------------
 
-    async def _handle_idp_callback(self, request: Request) -> RedirectResponse:
+    async def _handle_idp_callback(
+        self, request: Request
+    ) -> HTMLResponse | RedirectResponse:
         """Handle callback from upstream IdP and forward to client.
 
         This implements the DCR-compliant callback forwarding:
@@ -1584,32 +1676,37 @@ class OAuthProxy(OAuthProvider):
             error = request.query_params.get("error")
 
             if error:
+                error_description = request.query_params.get("error_description")
                 logger.error(
                     "IdP callback error: %s - %s",
                     error,
-                    request.query_params.get("error_description"),
+                    error_description,
                 )
-                # TODO: Forward error to client callback
-                return RedirectResponse(
-                    url=f"data:text/html,<h1>OAuth Error</h1><p>{error}: {request.query_params.get('error_description', 'Unknown error')}</p>",
-                    status_code=302,
+                # Show error page to user
+                html_content = create_error_html(
+                    error_title="OAuth Error",
+                    error_message=f"Authentication failed: {error_description or 'Unknown error'}",
+                    error_details={"Error Code": error} if error else None,
                 )
+                return HTMLResponse(content=html_content, status_code=400)
 
             if not idp_code or not txn_id:
                 logger.error("IdP callback missing code or transaction ID")
-                return RedirectResponse(
-                    url="data:text/html,<h1>OAuth Error</h1><p>Missing authorization code or transaction ID</p>",
-                    status_code=302,
+                html_content = create_error_html(
+                    error_title="OAuth Error",
+                    error_message="Missing authorization code or transaction ID from the identity provider.",
                 )
+                return HTMLResponse(content=html_content, status_code=400)
 
             # Look up transaction data
             transaction_model = await self._transaction_store.get(key=txn_id)
             if not transaction_model:
                 logger.error("IdP callback with invalid transaction ID: %s", txn_id)
-                return RedirectResponse(
-                    url="data:text/html,<h1>OAuth Error</h1><p>Invalid or expired transaction</p>",
-                    status_code=302,
+                html_content = create_error_html(
+                    error_title="OAuth Error",
+                    error_message="Invalid or expired authorization transaction. Please try authenticating again.",
                 )
+                return HTMLResponse(content=html_content, status_code=400)
             transaction = transaction_model.model_dump()
 
             # Exchange IdP code for tokens (server-side)
@@ -1663,11 +1760,11 @@ class OAuthProxy(OAuthProvider):
 
             except Exception as e:
                 logger.error("IdP token exchange failed: %s", e)
-                # TODO: Forward error to client callback
-                return RedirectResponse(
-                    url=f"data:text/html,<h1>OAuth Error</h1><p>Token exchange failed: {e}</p>",
-                    status_code=302,
+                html_content = create_error_html(
+                    error_title="OAuth Error",
+                    error_message=f"Token exchange with identity provider failed: {e}",
                 )
+                return HTMLResponse(content=html_content, status_code=500)
 
             # Generate our own authorization code for the client
             client_code = secrets.token_urlsafe(32)
@@ -1714,10 +1811,11 @@ class OAuthProxy(OAuthProvider):
 
         except Exception as e:
             logger.error("Error in IdP callback handler: %s", e, exc_info=True)
-            return RedirectResponse(
-                url="data:text/html,<h1>OAuth Error</h1><p>Internal server error during IdP callback</p>",
-                status_code=302,
+            html_content = create_error_html(
+                error_title="OAuth Error",
+                error_message="Internal server error during OAuth callback processing. Please try again.",
             )
+            return HTMLResponse(content=html_content, status_code=500)
 
     # -------------------------------------------------------------------------
     # Consent Interstitial
