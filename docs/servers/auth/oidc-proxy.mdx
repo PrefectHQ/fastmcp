@@ -93,14 +93,22 @@ mcp = FastMCP(name="My Server", auth=auth)
   HTTP request timeout in seconds for fetching OIDC configuration
 </ParamField>
 
+<ParamField body="token_verifier" type="TokenVerifier | None">
+
+<VersionBadge version="2.13.1" />
+  Custom token verifier for validating tokens. When provided, FastMCP uses your custom verifier instead of creating a default `JWTVerifier`.
+
+  Cannot be used with `algorithm` or `required_scopes` parameters - configure these on your verifier instead. The verifier's `required_scopes` are automatically loaded and advertised.
+</ParamField>
+
 <ParamField body="algorithm" type="str | None">
   JWT algorithm to use for token verification (e.g., "RS256"). If not specified,
-  uses the provider's default.
+  uses the provider's default. Only used when `token_verifier` is not provided.
 </ParamField>
 
 <ParamField body="required_scopes" type="list[str] | None">
-  List of OAuth scopes to request from the provider. These are automatically
-  included in authorization requests.
+  List of OAuth scopes for token validation. These are automatically
+  included in authorization requests. Only used when `token_verifier` is not provided.
 </ParamField>
 
 <ParamField body="redirect_path" type="str" default="/auth/callback">

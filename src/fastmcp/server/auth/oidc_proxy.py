@@ -206,6 +206,7 @@ class OIDCProxy(OAuthProxy):
         audience: str | None = None,
         timeout_seconds: int | None = None,
         # Token verifier
+        token_verifier: TokenVerifier | None = None,
         algorithm: str | None = None,
         required_scopes: list[str] | None = None,
         # FastMCP server configuration
@@ -231,8 +232,11 @@ class OIDCProxy(OAuthProxy):
             client_secret: Client secret for upstream server
             audience: Audience for upstream server
             timeout_seconds: HTTP request timeout in seconds
-            algorithm: Token verifier algorithm
-            required_scopes: Required OAuth scopes
+            token_verifier: Optional custom token verifier (e.g., IntrospectionTokenVerifier for opaque tokens).
+                If not provided, a JWTVerifier will be created using the OIDC configuration.
+                Cannot be used with algorithm or required_scopes parameters (configure these on your verifier instead).
+            algorithm: Token verifier algorithm (only used if token_verifier is not provided)
+            required_scopes: Required scopes for token validation (only used if token_verifier is not provided)
             base_url: Public URL where OAuth endpoints will be accessible (includes any mount path)
             issuer_url: Issuer URL for OAuth metadata (defaults to base_url). Use root-level URL
                 to avoid 404s during discovery when mounting under a path.
@@ -268,6 +272,19 @@ class OIDCProxy(OAuthProxy):
         if not base_url:
             raise ValueError("Missing required base URL")
 
+        # Validate that verifier-specific parameters are not used with custom verifier
+        if token_verifier is not None:
+            if algorithm is not None:
+                raise ValueError(
+                    "Cannot specify 'algorithm' when providing a custom token_verifier. "
+                    "Configure the algorithm on your token verifier instead."
+                )
+            if required_scopes is not None:
+                raise ValueError(
+                    "Cannot specify 'required_scopes' when providing a custom token_verifier. "
+                    "Configure required scopes on your token verifier instead."
+                )
+
         if isinstance(config_url, str):
             config_url = AnyHttpUrl(config_url)
 
@@ -287,12 +304,14 @@ class OIDCProxy(OAuthProxy):
             else None
         )
 
-        token_verifier = self.get_token_verifier(
-            algorithm=algorithm,
-            audience=audience,
-            required_scopes=required_scopes,
-            timeout_seconds=timeout_seconds,
-        )
+        # Use custom verifier if provided, otherwise create default JWTVerifier
+        if token_verifier is None:
+            token_verifier = self.get_token_verifier(
+                algorithm=algorithm,
+                audience=audience,
+                required_scopes=required_scopes,
+                timeout_seconds=timeout_seconds,
+            )
 
         init_kwargs = {
             "upstream_authorization_endpoint": str(
