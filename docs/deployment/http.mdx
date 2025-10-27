@@ -45,7 +45,7 @@ Run your server with a simple Python command:
 python server.py
 ```
 
-Your server is now accessible at `http://localhost:8000/mcp/` (or use your server's actual IP address for remote access).
+Your server is now accessible at `http://localhost:8000/mcp` (or use your server's actual IP address for remote access).
 
 This approach is ideal when you want to get online quickly with minimal configuration. It's perfect for internal tools, development environments, or simple deployments where you don't need advanced server features. The built-in server handles all the HTTP details, letting you focus on your MCP implementation.
 
@@ -72,7 +72,7 @@ Run with any ASGI server - here's an example with Uvicorn:
 uvicorn app:app --host 0.0.0.0 --port 8000
 ```
 
-Your server is accessible at the same URL: `http://localhost:8000/mcp/` (or use your server's actual IP address for remote access).
+Your server is accessible at the same URL: `http://localhost:8000/mcp` (or use your server's actual IP address for remote access).
 
 The ASGI approach shines in production environments where you need reliability and performance. You can run multiple worker processes to handle concurrent requests, add custom middleware for logging or monitoring, integrate with existing deployment pipelines, or mount your MCP server as part of a larger application.
 
@@ -293,7 +293,7 @@ api.mount("/mcp", mcp.http_app())
 # Run with: uvicorn app:api --host 0.0.0.0 --port 8000
 ```
 
-Your existing API remains at `http://localhost:8000/api/` while MCP is available at `http://localhost:8000/mcp/`.
+Your existing API remains at `http://localhost:8000/api` while MCP is available at `http://localhost:8000/mcp`.
 
 ## Mounting Authenticated Servers
 

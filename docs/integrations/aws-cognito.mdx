@@ -170,7 +170,7 @@ import asyncio
 
 async def main():
     # The client will automatically handle AWS Cognito OAuth
-    async with Client("http://localhost:8000/mcp/", auth="oauth") as client:
+    async with Client("http://localhost:8000/mcp", auth="oauth") as client:
         # First-time connection will open AWS Cognito login in your browser
         print("✓ Authenticated with AWS Cognito!")
 

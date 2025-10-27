@@ -185,7 +185,7 @@ import asyncio
 
 async def main():
     # The client will automatically handle Azure OAuth
-    async with Client("http://localhost:8000/mcp/", auth="oauth") as client:
+    async with Client("http://localhost:8000/mcp", auth="oauth") as client:
         # First-time connection will open Azure login in your browser
         print("✓ Authenticated with Azure!")
         

@@ -125,7 +125,7 @@ import asyncio
 
 async def main():
     # The client will automatically handle Google OAuth
-    async with Client("http://localhost:8000/mcp/", auth="oauth") as client:
+    async with Client("http://localhost:8000/mcp", auth="oauth") as client:
         # First-time connection will open Google login in your browser
         print("✓ Authenticated with Google!")
         

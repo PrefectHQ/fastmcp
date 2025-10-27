@@ -103,7 +103,7 @@ from fastmcp import Client
 
 async def main():
     # Connect to the MCP server we just created
-    async with Client("http://127.0.0.1:8000/mcp/") as client:
+    async with Client("http://127.0.0.1:8000/mcp") as client:
         
         # List the tools that were automatically generated
         tools = await client.list_tools()
