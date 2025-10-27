@@ -763,6 +763,29 @@ class TestBearerToken:
         access_token3 = await provider.load_access_token(token3)
         assert access_token3 is None
 
+    @pytest.mark.parametrize(
+        ("iss", "expected"),
+        [
+            ("https://test.example.com", True),
+            ("https://other-issuer.example.com", True),
+            ("https://wrong-issuer.example.com", False),
+        ],
+    )
+    async def test_provider_with_multiple_expected_issuers(
+        self, rsa_key_pair: RSAKeyPair, iss: str, expected: bool
+    ):
+        """Provider accepts any issuer from the configured list."""
+        provider = JWTVerifier(
+            public_key=rsa_key_pair.public_key,
+            issuer=["https://test.example.com", "https://other-issuer.example.com"],
+            audience="https://api.example.com",
+        )
+        token = rsa_key_pair.create_token(
+            subject="test-user", issuer=iss, audience="https://api.example.com"
+        )
+        access_token = await provider.load_access_token(token)
+        assert (access_token is not None) is expected
+
     async def test_scope_extraction_string(
         self, rsa_key_pair: RSAKeyPair, bearer_provider: JWTVerifier
     ):
