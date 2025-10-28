@@ -502,7 +502,7 @@ async def run(
             process = subprocess.run(cmd, check=True, env=env)
             sys.exit(process.returncode)
         except subprocess.CalledProcessError as e:
-            logger.error(
+            logger.exception(
                 f"Failed to run: {e}",
                 extra={
                     "server_spec": server_spec,
@@ -526,7 +526,7 @@ async def run(
                 skip_source=skip_source,
             )
         except Exception as e:
-            logger.error(
+            logger.exception(
                 f"Failed to run: {e}",
                 extra={
                     "server_spec": server_spec,
@@ -766,13 +766,12 @@ async def inspect(
             console.print(formatted_json.decode("utf-8"))
 
     except Exception as e:
-        logger.error(
+        logger.exception(
             f"Failed to inspect server: {e}",
             extra={
                 "server_spec": server_spec,
                 "error": str(e),
             },
-            exc_info=True,
         )
         console.print(f"[bold red]✗[/bold red] Failed to inspect server: {e}")
         sys.exit(1)
