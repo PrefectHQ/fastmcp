@@ -16,7 +16,7 @@ dependencies = [
     "pydantic[email]>=2.11.7",
     "pyperclip>=1.9.0",
     "openapi-core>=0.19.5",
-    "py-key-value-aio[disk,keyring,memory]>=0.2.6,<0.3.0",
+    "py-key-value-aio[disk,keyring,memory]>=0.2.8,<0.3.0",
     "websockets>=15.0.1",
 ]
 

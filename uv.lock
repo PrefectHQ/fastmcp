@@ -614,7 +614,7 @@ requires-dist = [
     { name = "openapi-core", specifier = ">=0.19.5" },
     { name = "openapi-pydantic", specifier = ">=0.5.1" },
     { name = "platformdirs", specifier = ">=4.0.0" },
-    { name = "py-key-value-aio", extras = ["disk", "keyring", "memory"], specifier = ">=0.2.6,<0.3.0" },
+    { name = "py-key-value-aio", extras = ["disk", "keyring", "memory"], specifier = ">=0.2.8,<0.3.0" },
     { name = "pydantic", extras = ["email"], specifier = ">=2.11.7" },
     { name = "pyperclip", specifier = ">=1.9.0" },
     { name = "python-dotenv", specifier = ">=1.1.0" },
