@@ -504,6 +504,7 @@ async def run(
         except subprocess.CalledProcessError as e:
             logger.error(
                 f"Failed to run: {e}",
+                exc_info=True,
                 extra={
                     "server_spec": server_spec,
                     "error": str(e),
@@ -528,6 +529,7 @@ async def run(
         except Exception as e:
             logger.error(
                 f"Failed to run: {e}",
+                exc_info=True,
                 extra={
                     "server_spec": server_spec,
                     "error": str(e),
