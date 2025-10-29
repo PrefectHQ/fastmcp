@@ -365,7 +365,19 @@ def create_consent_html(
     )
 
     # Need to allow form-action for form submission
-    csp_policy = "default-src 'none'; style-src 'unsafe-inline'; img-src https:; base-uri 'none'; form-action *"
+    # Chrome requires explicit scheme declarations in CSP form-action when redirect chains
+    # end in custom protocol schemes (e.g., cursor://). Parse redirect_uri to include its scheme.
+    parsed_redirect = urlparse(redirect_uri)
+    redirect_scheme = parsed_redirect.scheme.lower()
+
+    # Build form-action directive with standard schemes plus custom protocol if present
+    form_action_schemes = ["https:", "http:"]
+    if redirect_scheme and redirect_scheme not in ("http", "https"):
+        # Custom protocol scheme (e.g., cursor:, vscode:, etc.)
+        form_action_schemes.append(f"{redirect_scheme}:")
+
+    form_action_directive = " ".join(form_action_schemes)
+    csp_policy = f"default-src 'none'; style-src 'unsafe-inline'; img-src https:; base-uri 'none'; form-action {form_action_directive}"
 
     return create_page(
         content=content,
