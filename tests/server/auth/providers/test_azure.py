@@ -385,3 +385,105 @@ class TestAzureProvider:
         )
         assert "Mail.Read" in upstream_url
         assert "User.Read" in upstream_url
+
+    def test_base_authority_defaults_to_public_cloud(self):
+        """Test that base_authority defaults to login.microsoftonline.com."""
+        provider = AzureProvider(
+            client_id="test_client",
+            client_secret="test_secret",
+            tenant_id="test-tenant",
+            required_scopes=["read"],
+            jwt_signing_key="test-secret",
+        )
+
+        assert (
+            provider._upstream_authorization_endpoint
+            == "https://login.microsoftonline.com/test-tenant/oauth2/v2.0/authorize"
+        )
+        assert (
+            provider._upstream_token_endpoint
+            == "https://login.microsoftonline.com/test-tenant/oauth2/v2.0/token"
+        )
+        assert (
+            provider._token_validator.issuer  # type: ignore[attr-defined]
+            == "https://login.microsoftonline.com/test-tenant/v2.0"
+        )
+        assert (
+            provider._token_validator.jwks_uri  # type: ignore[attr-defined]
+            == "https://login.microsoftonline.com/test-tenant/discovery/v2.0/keys"
+        )
+
+    def test_base_authority_azure_government(self):
+        """Test Azure Government endpoints with login.microsoftonline.us."""
+        provider = AzureProvider(
+            client_id="test_client",
+            client_secret="test_secret",
+            tenant_id="gov-tenant-id",
+            required_scopes=["read"],
+            base_authority="login.microsoftonline.us",
+            jwt_signing_key="test-secret",
+        )
+
+        assert (
+            provider._upstream_authorization_endpoint
+            == "https://login.microsoftonline.us/gov-tenant-id/oauth2/v2.0/authorize"
+        )
+        assert (
+            provider._upstream_token_endpoint
+            == "https://login.microsoftonline.us/gov-tenant-id/oauth2/v2.0/token"
+        )
+        assert (
+            provider._token_validator.issuer  # type: ignore[attr-defined]
+            == "https://login.microsoftonline.us/gov-tenant-id/v2.0"
+        )
+        assert (
+            provider._token_validator.jwks_uri  # type: ignore[attr-defined]
+            == "https://login.microsoftonline.us/gov-tenant-id/discovery/v2.0/keys"
+        )
+
+    def test_base_authority_from_environment_variable(self):
+        """Test that base_authority can be set via environment variable."""
+        with patch.dict(
+            os.environ,
+            {
+                "FASTMCP_SERVER_AUTH_AZURE_CLIENT_ID": "env-client-id",
+                "FASTMCP_SERVER_AUTH_AZURE_CLIENT_SECRET": "env-secret",
+                "FASTMCP_SERVER_AUTH_AZURE_TENANT_ID": "env-tenant-id",
+                "FASTMCP_SERVER_AUTH_AZURE_REQUIRED_SCOPES": "read",
+                "FASTMCP_SERVER_AUTH_AZURE_BASE_AUTHORITY": "login.microsoftonline.us",
+                "FASTMCP_SERVER_AUTH_AZURE_JWT_SIGNING_KEY": "test-secret",
+            },
+        ):
+            provider = AzureProvider()
+
+            assert (
+                provider._upstream_authorization_endpoint
+                == "https://login.microsoftonline.us/env-tenant-id/oauth2/v2.0/authorize"
+            )
+            assert (
+                provider._upstream_token_endpoint
+                == "https://login.microsoftonline.us/env-tenant-id/oauth2/v2.0/token"
+            )
+            assert (
+                provider._token_validator.issuer  # type: ignore[attr-defined]
+                == "https://login.microsoftonline.us/env-tenant-id/v2.0"
+            )
+            assert (
+                provider._token_validator.jwks_uri  # type: ignore[attr-defined]
+                == "https://login.microsoftonline.us/env-tenant-id/discovery/v2.0/keys"
+            )
+
+    def test_base_authority_with_special_tenant_values(self):
+        """Test that base_authority works with special tenant values like 'organizations'."""
+        provider = AzureProvider(
+            client_id="test_client",
+            client_secret="test_secret",
+            tenant_id="organizations",
+            required_scopes=["read"],
+            base_authority="login.microsoftonline.us",
+            jwt_signing_key="test-secret",
+        )
+
+        parsed = urlparse(provider._upstream_authorization_endpoint)
+        assert parsed.netloc == "login.microsoftonline.us"
+        assert "/organizations/" in parsed.path

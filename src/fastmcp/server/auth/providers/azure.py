@@ -46,6 +46,7 @@ class AzureProviderSettings(BaseSettings):
     additional_authorize_scopes: list[str] | None = None
     allowed_client_redirect_uris: list[str] | None = None
     jwt_signing_key: str | None = None
+    base_authority: str = "login.microsoftonline.com"
 
     @field_validator("required_scopes", mode="before")
     @classmethod
@@ -93,6 +94,7 @@ class AzureProvider(OAuthProxy):
         from fastmcp import FastMCP
         from fastmcp.server.auth.providers.azure import AzureProvider
 
+        # Standard Azure (Public Cloud)
         auth = AzureProvider(
             client_id="your-client-id",
             client_secret="your-client-secret",
@@ -101,6 +103,16 @@ class AzureProvider(OAuthProxy):
             additional_authorize_scopes=["User.Read", "Mail.Read"],  # Optional Graph scopes
             base_url="http://localhost:8000",
             # identifier_uri defaults to api://{client_id}
+        )
+
+        # Azure Government
+        auth_gov = AzureProvider(
+            client_id="your-client-id",
+            client_secret="your-client-secret",
+            tenant_id="your-tenant-id",
+            required_scopes=["read", "write"],
+            base_authority="login.microsoftonline.us",  # Override for Azure Gov
+            base_url="http://localhost:8000",
         )
 
         mcp = FastMCP("My App", auth=auth)
@@ -123,6 +135,7 @@ class AzureProvider(OAuthProxy):
         client_storage: AsyncKeyValue | None = None,
         jwt_signing_key: str | bytes | NotSetT = NotSet,
         require_authorization_consent: bool = True,
+        base_authority: str | NotSetT = NotSet,
     ) -> None:
         """Initialize Azure OAuth provider.
 
@@ -138,6 +151,8 @@ class AzureProvider(OAuthProxy):
             issuer_url: Issuer URL for OAuth metadata (defaults to base_url). Use root-level URL
                 to avoid 404s during discovery when mounting under a path.
             redirect_path: Redirect path configured in Azure App registration (defaults to "/auth/callback")
+            base_authority: Azure authority base URL (defaults to "login.microsoftonline.com").
+                For Azure Government, use "login.microsoftonline.us".
             required_scopes: Custom API scope names WITHOUT prefix (e.g., ["read", "write"]).
                 - Automatically prefixed with identifier_uri during initialization
                 - Validated on all tokens
@@ -180,6 +195,7 @@ class AzureProvider(OAuthProxy):
                     "additional_authorize_scopes": additional_authorize_scopes,
                     "allowed_client_redirect_uris": allowed_client_redirect_uris,
                     "jwt_signing_key": jwt_signing_key,
+                    "base_authority": base_authority,
                 }.items()
                 if v is not NotSet
             }
@@ -218,9 +234,10 @@ class AzureProvider(OAuthProxy):
         tenant_id_final = settings.tenant_id
 
         # Always validate tokens against the app's API client ID using JWT
-        issuer = f"https://login.microsoftonline.com/{tenant_id_final}/v2.0"
+        base_authority_final = settings.base_authority
+        issuer = f"https://{base_authority_final}/{tenant_id_final}/v2.0"
         jwks_uri = (
-            f"https://login.microsoftonline.com/{tenant_id_final}/discovery/v2.0/keys"
+            f"https://{base_authority_final}/{tenant_id_final}/discovery/v2.0/keys"
         )
 
         # Azure returns unprefixed scopes in JWT tokens, so validate against unprefixed scopes
@@ -239,10 +256,10 @@ class AzureProvider(OAuthProxy):
 
         # Build Azure OAuth endpoints with tenant
         authorization_endpoint = (
-            f"https://login.microsoftonline.com/{tenant_id_final}/oauth2/v2.0/authorize"
+            f"https://{base_authority_final}/{tenant_id_final}/oauth2/v2.0/authorize"
         )
         token_endpoint = (
-            f"https://login.microsoftonline.com/{tenant_id_final}/oauth2/v2.0/token"
+            f"https://{base_authority_final}/{tenant_id_final}/oauth2/v2.0/token"
         )
 
         # Initialize OAuth proxy with Azure endpoints
@@ -262,11 +279,15 @@ class AzureProvider(OAuthProxy):
             require_authorization_consent=require_authorization_consent,
         )
 
+        authority_info = ""
+        if base_authority_final != "login.microsoftonline.com":
+            authority_info = f" using authority {base_authority_final}"
         logger.info(
-            "Initialized Azure OAuth provider for client %s with tenant %s%s",
+            "Initialized Azure OAuth provider for client %s with tenant %s%s%s",
             settings.client_id,
             tenant_id_final,
             f" and identifier_uri {self.identifier_uri}" if self.identifier_uri else "",
+            authority_info,
         )
 
     async def authorize(
