@@ -593,6 +593,7 @@ dependencies = [
     { name = "pyperclip" },
     { name = "python-dotenv" },
     { name = "rich" },
+    { name = "uvicorn" },
     { name = "websockets" },
 ]
 
@@ -644,6 +645,7 @@ requires-dist = [
     { name = "pyperclip", specifier = ">=1.9.0" },
     { name = "python-dotenv", specifier = ">=1.1.0" },
     { name = "rich", specifier = ">=13.9.4" },
+    { name = "uvicorn", specifier = ">=0.35" },
     { name = "websockets", specifier = ">=15.0.1" },
 ]
 provides-extras = ["openai"]
