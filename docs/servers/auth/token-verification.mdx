@@ -210,6 +210,67 @@ Static token verification stores tokens as plain text and should never be used i
 </Warning>
 
 
+### Debug/Custom Token Verification
+
+The `DebugTokenVerifier` provides maximum flexibility for testing and special cases where standard token verification isn't applicable. It delegates validation to a user-provided callable, making it useful for prototyping, testing scenarios, or handling opaque tokens without introspection endpoints.
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.auth.providers.debug import DebugTokenVerifier
+
+# Accept all tokens (useful for rapid development)
+verifier = DebugTokenVerifier()
+
+mcp = FastMCP(name="Development Server", auth=verifier)
+```
+
+By default, `DebugTokenVerifier` accepts any non-empty token as valid. This eliminates authentication barriers during early development, allowing you to focus on core functionality before adding security.
+
+For more controlled testing, provide custom validation logic:
+
+```python
+from fastmcp.server.auth.providers.debug import DebugTokenVerifier
+
+# Synchronous validation - check token prefix
+verifier = DebugTokenVerifier(
+    validate=lambda token: token.startswith("dev-"),
+    client_id="development-client",
+    scopes=["read", "write"]
+)
+
+mcp = FastMCP(name="Development Server", auth=verifier)
+```
+
+The validation callable can also be async, enabling database lookups or external service calls:
+
+```python
+from fastmcp.server.auth.providers.debug import DebugTokenVerifier
+
+# Asynchronous validation - check against cache
+async def validate_token(token: str) -> bool:
+    # Check if token exists in Redis, database, etc.
+    return await redis.exists(f"valid_tokens:{token}")
+
+verifier = DebugTokenVerifier(
+    validate=validate_token,
+    client_id="api-client",
+    scopes=["api:access"]
+)
+
+mcp = FastMCP(name="Custom API", auth=verifier)
+```
+
+**Use Cases:**
+
+- **Testing**: Accept any token during integration tests without setting up token infrastructure
+- **Prototyping**: Quickly validate concepts without authentication complexity
+- **Opaque tokens without introspection**: When you have tokens from an IDP that provides no introspection endpoint, and you're willing to accept tokens without validation (validation happens later at the upstream service)
+- **Custom token formats**: Implement validation for non-standard token formats or legacy systems
+
+<Warning>
+`DebugTokenVerifier` bypasses standard security checks. Only use in controlled environments (development, testing) or when you fully understand the security implications. For production, use proper JWT or introspection-based verification.
+</Warning>
+
 ### Test Token Generation
 
 Test token generation helps when you need to test JWT verification without setting up complete identity infrastructure. FastMCP includes utilities for generating test key pairs and signed tokens.
