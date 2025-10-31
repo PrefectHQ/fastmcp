@@ -74,5 +74,6 @@ jobs:
               "model": "claude-sonnet-4-5-20250929",
               "env": {
                 "GH_TOKEN": "${{ steps.marvin-token.outputs.token }}"
-              }
+              },
+              "customInstructions": "When you complete work on an issue: (1) You MUST create a pull request using the mcp__github__create_pull_request tool instead of posting a link, and (2) You MUST add the 'marvin-pr' label to the original issue using mcp__github__update_issue. Even if PR creation fails and you post a link instead, you MUST still add the 'marvin-pr' label. Follow the PR message guidelines in CLAUDE.md."
             }
