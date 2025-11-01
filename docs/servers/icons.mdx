@@ -115,6 +115,7 @@ For small icons or when you want to embed the icon directly, use data URIs:
 
 ```python
 from mcp.types import Icon
+from fastmcp.utilities.types import Image
 
 # SVG icon as data URI
 svg_icon = Icon(
@@ -125,5 +126,14 @@ svg_icon = Icon(
 @mcp.tool(icons=[svg_icon])
 def my_tool() -> str:
     """A tool with an embedded SVG icon."""
+    return "result"
+
+# Generating a data URI from a local image file.
+img = Image(path="./assets/brand/favicon.png")
+icon = Icon(src=img.to_data_uri())
+
+@mcp.tool(icons=[icon])
+def file_icon_tool() -> str:
+    """A tool with an icon generated from a local file."""
     return "result"
 ```

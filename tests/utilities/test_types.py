@@ -177,22 +177,23 @@ class TestImage:
         ):
             Image(path="test.png", data=b"test")
 
-    def test_get_mime_type_from_path(self, tmp_path):
+    @pytest.mark.parametrize(
+        "extension,mime_type",
+        [
+            (".png", "image/png"),
+            (".jpg", "image/jpeg"),
+            (".jpeg", "image/jpeg"),
+            (".gif", "image/gif"),
+            (".webp", "image/webp"),
+            (".unknown", "application/octet-stream"),
+        ],
+    )
+    def test_get_mime_type_from_path(self, tmp_path, extension, mime_type):
         """Test MIME type detection from file extension."""
-        extensions = {
-            ".png": "image/png",
-            ".jpg": "image/jpeg",
-            ".jpeg": "image/jpeg",
-            ".gif": "image/gif",
-            ".webp": "image/webp",
-            ".unknown": "application/octet-stream",
-        }
-
-        for ext, mime in extensions.items():
-            path = tmp_path / f"test{ext}"
-            path.write_bytes(b"fake image data")
-            img = Image(path=path)
-            assert img._mime_type == mime
+        path = tmp_path / f"test{extension}"
+        path.write_bytes(b"fake image data")
+        img = Image(path=path)
+        assert img._mime_type == mime_type
 
     def test_to_image_content(self, tmp_path, monkeypatch):
         """Test conversion to ImageContent."""
@@ -226,6 +227,27 @@ class TestImage:
 
         with pytest.raises(ValueError, match="No image data available"):
             img.to_image_content()
+
+    @pytest.mark.parametrize(
+        "mime_type,fname,expected_mime",
+        [
+            (None, "test.png", "image/png"),
+            ("image/jpeg", "test.unknown", "image/jpeg"),
+        ],
+    )
+    def test_to_data_uri(self, tmp_path, mime_type, fname, expected_mime):
+        """Test conversion to data URI."""
+        img_path = tmp_path / fname
+        test_data = b"fake image data"
+        img_path.write_bytes(test_data)
+
+        img = Image(path=img_path)
+        data_uri = img.to_data_uri(mime_type=mime_type)
+
+        expected_data_uri = (
+            f"data:{expected_mime};base64,{base64.b64encode(test_data).decode()}"
+        )
+        assert data_uri == expected_data_uri
 
 
 class TestAudio:
