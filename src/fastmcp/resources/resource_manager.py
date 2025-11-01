@@ -236,7 +236,7 @@ class ResourceManager:
         # Then check templates (local and mounted) only if not found in concrete resources
         templates = await self.get_resource_templates()
         for template_key in templates:
-            if match_uri_template(uri_str, template_key):
+            if match_uri_template(uri_str, template_key) is not None:
                 return True
 
         return False
@@ -262,7 +262,7 @@ class ResourceManager:
         templates = await self.get_resource_templates()
         for storage_key, template in templates.items():
             # Try to match against the storage key (which might be a custom key)
-            if params := match_uri_template(uri_str, storage_key):
+            if (params := match_uri_template(uri_str, storage_key)) is not None:
                 try:
                     return await template.create_resource(
                         uri_str,
@@ -318,7 +318,7 @@ class ResourceManager:
 
         # 1b. Check local templates if not found in concrete resources
         for key, template in self._templates.items():
-            if params := match_uri_template(uri_str, key):
+            if (params := match_uri_template(uri_str, key)) is not None:
                 try:
                     resource = await template.create_resource(uri_str, params=params)
                     return await resource.read()

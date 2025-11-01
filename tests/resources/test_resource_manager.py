@@ -567,6 +567,112 @@ class TestCustomResourceKeys:
             await manager.get_resource("greet://world")
 
 
+class TestQueryOnlyTemplates:
+    """Test resource templates with only query parameters (no path params)."""
+
+    async def test_template_with_only_query_params_no_query_string(self):
+        """Test that templates with only query params work without query string.
+
+        Regression test for bug where empty parameter dict {} was treated as falsy,
+        causing templates with only query parameters to fail when no query string
+        was provided in the URI.
+        """
+        manager = ResourceManager()
+
+        def get_config(format: str = "json") -> str:
+            return f"Config in {format} format"
+
+        template = ResourceTemplate.from_function(
+            fn=get_config,
+            uri_template="data://config{?format}",
+            name="config",
+        )
+        manager.add_template(template)
+
+        # Should work without query param (uses default)
+        resource = await manager.get_resource("data://config")
+        content = await resource.read()
+        assert content == "Config in json format"
+
+        # Should also work via read_resource
+        content = await manager.read_resource("data://config")
+        assert content == "Config in json format"
+
+    async def test_template_with_only_query_params_with_query_string(self):
+        """Test that templates with only query params work with query string."""
+        manager = ResourceManager()
+
+        def get_config(format: str = "json") -> str:
+            return f"Config in {format} format"
+
+        template = ResourceTemplate.from_function(
+            fn=get_config,
+            uri_template="data://config{?format}",
+            name="config",
+        )
+        manager.add_template(template)
+
+        # Should work with query param (overrides default)
+        resource = await manager.get_resource("data://config?format=xml")
+        content = await resource.read()
+        assert content == "Config in xml format"
+
+        # Should also work via read_resource
+        content = await manager.read_resource("data://config?format=xml")
+        assert content == "Config in xml format"
+
+    async def test_template_with_only_multiple_query_params(self):
+        """Test template with only multiple query parameters."""
+        manager = ResourceManager()
+
+        def get_data(format: str = "json", limit: int = 10) -> str:
+            return f"Data in {format} (limit: {limit})"
+
+        template = ResourceTemplate.from_function(
+            fn=get_data,
+            uri_template="data://items{?format,limit}",
+            name="items",
+        )
+        manager.add_template(template)
+
+        # No query params - use all defaults
+        content = await manager.read_resource("data://items")
+        assert content == "Data in json (limit: 10)"
+
+        # Partial query params
+        content = await manager.read_resource("data://items?format=xml")
+        assert content == "Data in xml (limit: 10)"
+
+        # All query params
+        content = await manager.read_resource("data://items?format=xml&limit=20")
+        assert content == "Data in xml (limit: 20)"
+
+    async def test_has_resource_with_query_only_template(self):
+        """Test that has_resource() works with query-only templates.
+
+        Regression test for bug where empty parameter dict {} was treated as falsy,
+        causing has_resource() to return False for query-only templates when no
+        query string was provided.
+        """
+        manager = ResourceManager()
+
+        def get_config(format: str = "json") -> str:
+            return f"Config in {format} format"
+
+        template = ResourceTemplate.from_function(
+            fn=get_config,
+            uri_template="data://config{?format}",
+            name="config",
+        )
+        manager.add_template(template)
+
+        # Should find resource without query param (uses default)
+        assert await manager.has_resource("data://config")
+
+        # Should also find resource with query param
+        assert await manager.has_resource("data://config?format=xml")
+
+
 class TestResourceErrorHandling:
     """Test error handling in the ResourceManager."""
 
