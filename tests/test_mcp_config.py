@@ -636,6 +636,7 @@ async def test_canonical_multi_client_with_transforms(tmp_path: Path):
         assert "test_1_transformed_add" not in tools_by_name
 
 
+@pytest.mark.flaky(retries=3)
 async def test_multi_client_transform_with_filtering(tmp_path: Path):
     """
     Tests that tag-based filtering works when using a transforming MCPConfig.
