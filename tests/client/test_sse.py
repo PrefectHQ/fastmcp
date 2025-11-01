@@ -94,10 +94,13 @@ async def nested_sse_server():
     from starlette.applications import Starlette
     from starlette.routing import Mount
 
+    from fastmcp.server.http import create_sse_app
     from fastmcp.utilities.http import find_available_port
 
     server = create_test_server()
-    sse_app = server.sse_app(path="/mcp/sse/", message_path="/mcp/messages")
+    sse_app = create_sse_app(
+        server=server, message_path="/mcp/messages", sse_path="/mcp/sse/"
+    )
 
     # Nest the app under multiple mounts to test URL resolution
     inner = Starlette(routes=[Mount("/nest-inner", app=sse_app)])

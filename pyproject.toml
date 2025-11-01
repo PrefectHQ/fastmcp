@@ -103,6 +103,11 @@ fallback-version = "0.0.0"
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 # filterwarnings = ["error::DeprecationWarning"]
+filterwarnings = [
+    # Suppress OAuth in-memory token storage warnings in tests
+    # Tests intentionally use ephemeral storage; this warning is for end users
+    "ignore:Using in-memory token storage:UserWarning",
+]
 timeout = 5
 env = [
     "FASTMCP_TEST_MODE=1",
