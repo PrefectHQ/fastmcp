@@ -453,62 +453,89 @@ The 6/18/2025 MCP spec update [introduced](https://modelcontextprotocol.io/speci
 This automatic behavior enables clients to receive machine-readable data alongside human-readable content without requiring explicit output schemas for object-like returns.
 </Note>
 
-#### Object-like Results (Automatic Structured Content)
+#### Dictionaries and Objects
+
+When your tool returns a dictionary, dataclass, or Pydantic model, FastMCP automatically creates structured content from it. The structured content contains the actual object data, making it easy for clients to deserialize back to native objects.
 
 <CodeGroup>
-```python Dict Return (No Schema Needed)
+```python Tool Definition
 @mcp.tool
 def get_user_data(user_id: str) -> dict:
-    """Get user data without type annotation."""
+    """Get user data."""
     return {"name": "Alice", "age": 30, "active": True}
 ```
 
-```json Traditional Content
-"{\n  \"name\": \"Alice\",\n  \"age\": 30,\n  \"active\": true\n}"
-```
-
-```json Structured Content (Automatic)
+```json MCP Result
 {
-  "name": "Alice", 
-  "age": 30,
-  "active": true
+  "content": [
+    {
+      "type": "text",
+      "text": "{\n  \"name\": \"Alice\",\n  \"age\": 30,\n  \"active\": true\n}"
+    }
+  ],
+  "structuredContent": {
+    "name": "Alice",
+    "age": 30,
+    "active": true
+  }
 }
 ```
 </CodeGroup>
 
-#### Non-object Results (Schema Required)
+#### Primitives and Collections
+
+When your tool returns a primitive type (int, str, bool) or a collection (list, set), FastMCP needs a return type annotation to generate structured content. The annotation tells FastMCP how to validate and serialize the result.
+
+Without a type annotation, the tool only produces `content`:
 
 <CodeGroup>
-```python Integer Return (No Schema)
-@mcp.tool  
+```python Tool Definition
+@mcp.tool
 def calculate_sum(a: int, b: int):
     """Calculate sum without return annotation."""
     return a + b  # Returns 8
 ```
 
-```json Traditional Content Only
-"8"
-```
-
-```python Integer Return (With Schema)
-@mcp.tool
-def calculate_sum(a: int, b: int) -> int:
-    """Calculate sum with return annotation."""  
-    return a + b  # Returns 8
-```
-
-```json Traditional Content
-"8"
-```
-
-```json Structured Content (From Schema)
+```json MCP Result
 {
-  "result": 8
+  "content": [
+    {
+      "type": "text",
+      "text": "8"
+    }
+  ]
 }
 ```
 </CodeGroup>
 
-#### Complex Type Example
+When you add a return annotation, such as `-> int`, FastMCP generates `structuredContent` by wrapping the primitive value in a `{"result": ...}` object, since JSON schemas require object-type roots for structured output:
+
+<CodeGroup>
+```python Tool Definition
+@mcp.tool
+def calculate_sum(a: int, b: int) -> int:
+    """Calculate sum with return annotation."""
+    return a + b  # Returns 8
+```
+
+```json MCP Result
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "8"
+    }
+  ],
+  "structuredContent": {
+    "result": 8
+  }
+}
+```
+</CodeGroup>
+
+#### Typed Models
+
+Return type annotations work with any type that can be converted to a JSON schema. Dataclasses and Pydantic models are particularly useful because FastMCP extracts their field definitions to create detailed schemas.
 
 <CodeGroup>
 ```python Tool Definition
@@ -526,14 +553,18 @@ class Person:
 @mcp.tool
 def get_user_profile(user_id: str) -> Person:
     """Get a user's profile information."""
-    return Person(name="Alice", age=30, email="alice@example.com")
+    return Person(
+        name="Alice",
+        age=30,
+        email="alice@example.com",
+    )
 ```
 
 ```json Generated Output Schema
 {
   "properties": {
     "name": {"title": "Name", "type": "string"},
-    "age": {"title": "Age", "type": "integer"}, 
+    "age": {"title": "Age", "type": "integer"},
     "email": {"title": "Email", "type": "string"}
   },
   "required": ["name", "age", "email"],
@@ -542,14 +573,24 @@ def get_user_profile(user_id: str) -> Person:
 }
 ```
 
-```json Structured Output
+```json MCP Result
 {
-  "name": "Alice",
-  "age": 30,
-  "email": "alice@example.com"
+  "content": [
+    {
+      "type": "text",
+      "text": "{\"name\": \"Alice\", \"age\": 30, \"email\": \"alice@example.com\"}"
+    }
+  ],
+  "structuredContent": {
+    "name": "Alice",
+    "age": 30,
+    "email": "alice@example.com"
+  }
 }
 ```
 </CodeGroup>
+
+The `Person` dataclass becomes an output schema (second tab) that describes the expected format. When executed, clients receive the result (third tab) with both `content` and `structuredContent` fields.
 
 ### Output Schemas
 
@@ -614,12 +655,13 @@ Schema generation works for most common types including basic types, collections
 - However, you can provide structured output without an output schema (using `ToolResult`)
 </Warning>
 
-### Full Control with ToolResult
+### ToolResult and Metadata
 
-For complete control over traditional content, structured output, and metadata, return a `ToolResult` object:
+For complete control over tool responses, return a `ToolResult` object. This gives you explicit control over all aspects of the tool's output: traditional content, structured data, and metadata.
 
 ```python
 from fastmcp.tools.tool import ToolResult
+from mcp.types import TextContent
 
 @mcp.tool
 def advanced_tool() -> ToolResult:
@@ -627,18 +669,55 @@ def advanced_tool() -> ToolResult:
     return ToolResult(
         content=[TextContent(type="text", text="Human-readable summary")],
         structured_content={"data": "value", "count": 42},
-        meta={"some": "metadata"}
+        meta={"execution_time_ms": 145}
     )
 ```
 
-When returning `ToolResult`:
-- You control exactly what content, structured data, and metadata is sent
-- Output schemas are optional - structured content can be provided without a schema
-- Clients receive traditional content blocks, structured data, and metadata
+`ToolResult` accepts three fields:
+
+**`content`** - The traditional MCP content blocks that clients display to users. Can be a string (automatically converted to `TextContent`), a list of MCP content blocks, or any serializable value (converted to JSON string). At least one of `content` or `structured_content` must be provided.
+
+```python
+# Simple string
+ToolResult(content="Hello, world!")
+
+# List of content blocks
+ToolResult(content=[
+    TextContent(type="text", text="Result: 42"),
+    ImageContent(type="image", data="base64...", mimeType="image/png")
+])
+```
+
+**`structured_content`** - A dictionary containing structured data that matches your tool's output schema. This enables clients to programmatically process the results. If you provide `structured_content`, it must be a dictionary or `None`. If only `structured_content` is provided, it will also be used as `content` (converted to JSON string).
+
+```python
+ToolResult(
+    content="Found 3 users",
+    structured_content={"users": [{"name": "Alice"}, {"name": "Bob"}]}
+)
+```
+
+**`meta`** 
+<VersionBadge version="2.13.1" />
+Runtime metadata about the tool execution. Use this for performance metrics, debugging information, or any client-specific data that doesn't belong in the content or structured output.
+
+```python
+ToolResult(
+    content="Analysis complete",
+    structured_content={"result": "positive"},
+    meta={
+        "execution_time_ms": 145,
+        "model_version": "2.1",
+        "confidence": 0.95
+    }
+)
+```
 
 <Note>
-If your return type annotation cannot be converted to a JSON schema (e.g., complex custom classes without Pydantic support), the output schema will be omitted but the tool will still function normally with traditional content.
+The `meta` field in `ToolResult` is for runtime metadata about tool execution (e.g., execution time, performance metrics). This is separate from the `meta` parameter in `@mcp.tool(meta={...})`, which provides static metadata about the tool definition itself.
 </Note>
+
+When returning `ToolResult`, you have full control - FastMCP won't automatically wrap or transform your data. `ToolResult` can be returned with or without an output schema.
 
 ## Error Handling
 
