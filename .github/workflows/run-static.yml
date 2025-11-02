@@ -48,7 +48,7 @@ jobs:
             exit 1
           fi
           echo "✅ Lockfile is up to date"
-      - name: Run pre-commit
-        run: uv run pre-commit run --all-files
+      - name: Run prek
+        uses: j178/prek-action@v1
         env:
           SKIP: no-commit-to-branch

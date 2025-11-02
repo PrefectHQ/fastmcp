@@ -49,13 +49,13 @@ cd fastmcp
 # Install all dependencies including dev tools
 uv sync
 
-# Install pre-commit hooks
-uv run pre-commit install
+# Install prek hooks
+uv run prek install
 ```
 
 In addition, some development commands require [just](https://github.com/casey/just) to be installed.
 
-Pre-commit hooks will run automatically on every commit to catch issues before they reach CI. If you see failures, fix them before committing - never commit broken code expecting to fix it later.
+Prek hooks will run automatically on every commit to catch issues before they reach CI. If you see failures, fix them before committing - never commit broken code expecting to fix it later.
 
 ### Development Standards
 
@@ -100,19 +100,19 @@ The focus is on idiomatic, high-quality Python. FastMCP uses patterns like `NotS
 
 **Breaking established patterns** confuses readers. If you must deviate, discuss in the issue first.
 
-### Pre-Commit Checks
+### Prek Checks
 
 ```bash
 # Runs automatically on commit, or manually:
-uv run pre-commit run --all-files
+uv run prek run --all-files
 ```
 
 This runs three critical tools:
 - **Ruff**: Linting and formatting
-- **ty**: Static type checking  
-- **Pytest**: Core test suite
+- **Prettier**: Code formatting
+- **ty**: Static type checking
 
-CI will reject PRs that fail these checks. Always run them locally first.
+Pytest runs separately as a distinct workflow step after prek checks pass. CI will reject PRs that fail these checks. Always run them locally first.
 
 ### Testing
 
@@ -155,7 +155,7 @@ just api-ref-all
 
 #### Before Submitting
 
-1. **Run all checks**: `uv run pre-commit run --all-files && uv run pytest`
+1. **Run all checks**: `uv run prek run --all-files && uv run pytest`
 2. **Keep scope small**: One feature or fix per PR
 3. **Write clear description**: Your PR description becomes permanent documentation
 4. **Update docs**: Include documentation for API changes

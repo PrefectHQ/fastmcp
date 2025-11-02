@@ -10,7 +10,7 @@ FastMCP is a comprehensive Python framework (Python ≥3.10) for building Model 
 
 ```bash
 uv sync                              # Install dependencies
-uv run pre-commit run --all-files    # Ruff + Prettier + ty
+uv run prek run --all-files          # Ruff + Prettier + ty
 uv run pytest                        # Run full test suite
 ```
 
@@ -100,12 +100,12 @@ async with Client(transport=StreamableHttpTransport(server_url)) as client:
 
 ### Git & CI
 
-- Pre-commit hooks are required (run automatically on commits)
-- Never amend commits to fix pre-commit failures
+- Prek hooks are required (run automatically on commits)
+- Never amend commits to fix prek failures
 - Apply PR labels: bugs/breaking/enhancements/features
 - Improvements = enhancements (not features) unless specified
 - **NEVER** force-push on collaborative repos
-- **ALWAYS** run pre-commit before PRs
+- **ALWAYS** run prek before PRs
 
 ### Commit Messages and Agent Attribution
 
@@ -217,7 +217,7 @@ If something needs work, your review should help it get there through specific, 
 
 Before approving, verify:
 
-- [ ] All required development workflow steps completed (uv sync, pre-commit, pytest)
+- [ ] All required development workflow steps completed (uv sync, prek, pytest)
 - [ ] Changes align with repository patterns and conventions
 - [ ] API changes are documented and backwards-compatible where possible
 - [ ] Error handling follows project patterns (specific exception types)
@@ -237,7 +237,7 @@ uv sync                    # Installs all deps including dev tools
 
 - **Linting**: `uv run ruff check` (or with `--fix`)
 - **Type Checking**: `uv run ty check`
-- **All Checks**: `uv run pre-commit run --all-files`
+- **All Checks**: `uv run prek run --all-files`
 
 ### Testing
 
@@ -260,6 +260,6 @@ uv sync                    # Installs all deps including dev tools
 ### Build Issues (Common Solutions)
 
 1. **Dependencies**: Always `uv sync` first
-2. **Pre-commit fails**: Run `uv run pre-commit run --all-files` to see failures
+2. **Prek fails**: Run `uv run prek run --all-files` to see failures
 3. **Type errors**: Use `uv run ty check` directly, check `pyproject.toml` config
 4. **Test timeouts**: Default 5s - optimize or mark as integration tests

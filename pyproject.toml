@@ -57,7 +57,6 @@ dev = [
     "inline-snapshot[dirty-equals]>=0.27.2",
     "ipython>=8.12.3",
     "pdbpp>=0.10.3",
-    "pre-commit",
     "psutil",
     "pyinstrument>=5.0.2",
     "pyperclip>=1.9.0",
@@ -73,6 +72,7 @@ dev = [
     "pytest-xdist>=3.6.1",
     "ruff",
     "ty>=0.0.1a19",
+    "prek>=0.2.12",
 ]
 
 [project.scripts]
