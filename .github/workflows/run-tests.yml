@@ -79,10 +79,10 @@ jobs:
         run: uv sync --resolution lowest-direct
 
       - name: Run tests (excluding integration and client_process)
-        run: uv run pytest --inline-snapshot=disable tests -m "not integration and not client_process" --numprocesses auto --maxprocesses 4 --dist worksteal
+        run: uv run --resolution lowest-direct pytest --inline-snapshot=disable tests -m "not integration and not client_process" --numprocesses auto --maxprocesses 4 --dist worksteal
 
       - name: Run client process tests separately
-        run: uv run pytest --inline-snapshot=disable tests -m "client_process" -x
+        run: uv run --resolution lowest-direct pytest --inline-snapshot=disable tests -m "client_process" -x
 
   run_integration_tests:
     name: "Run integration tests"
