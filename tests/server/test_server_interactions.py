@@ -1179,6 +1179,7 @@ class TestToolOutputSchema:
                             "_meta": None,
                         },
                     ],
+                    meta=None,
                 )
             )
 

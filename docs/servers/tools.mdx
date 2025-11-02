@@ -616,7 +616,7 @@ Schema generation works for most common types including basic types, collections
 
 ### Full Control with ToolResult
 
-For complete control over both traditional content and structured output, return a `ToolResult` object:
+For complete control over traditional content, structured output, and metadata, return a `ToolResult` object:
 
 ```python
 from fastmcp.tools.tool import ToolResult
@@ -626,14 +626,15 @@ def advanced_tool() -> ToolResult:
     """Tool with full control over output."""
     return ToolResult(
         content=[TextContent(type="text", text="Human-readable summary")],
-        structured_content={"data": "value", "count": 42}
+        structured_content={"data": "value", "count": 42},
+        meta={"some": "metadata"}
     )
 ```
 
 When returning `ToolResult`:
-- You control exactly what content and structured data is sent
+- You control exactly what content, structured data, and metadata is sent
 - Output schemas are optional - structured content can be provided without a schema
-- Clients receive both traditional content blocks and structured data
+- Clients receive traditional content blocks, structured data, and metadata
 
 <Note>
 If your return type annotation cannot be converted to a JSON schema (e.g., complex custom classes without Pydantic support), the output schema will be omitted but the tool will still function normally with traditional content.

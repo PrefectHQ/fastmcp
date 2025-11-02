@@ -63,14 +63,21 @@ class CachableReadResourceContents(BaseModel):
 class CachableToolResult(BaseModel):
     content: list[mcp.types.ContentBlock]
     structured_content: dict[str, Any] | None
+    meta: dict[str, Any] | None
 
     @classmethod
     def wrap(cls, value: ToolResult) -> Self:
-        return cls(content=value.content, structured_content=value.structured_content)
+        return cls(
+            content=value.content,
+            structured_content=value.structured_content,
+            meta=value.meta,
+        )
 
     def unwrap(self) -> ToolResult:
         return ToolResult(
-            content=self.content, structured_content=self.structured_content
+            content=self.content,
+            structured_content=self.structured_content,
+            meta=self.meta,
         )
 
 

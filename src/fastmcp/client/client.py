@@ -928,6 +928,7 @@ class Client(Generic[ClientTransportT]):
         return CallToolResult(
             content=result.content,
             structured_content=result.structuredContent,
+            meta=result.meta,
             data=data,
             is_error=result.isError,
         )
@@ -945,5 +946,6 @@ class Client(Generic[ClientTransportT]):
 class CallToolResult:
     content: list[mcp.types.ContentBlock]
     structured_content: dict[str, Any] | None
+    meta: dict[str, Any] | None
     data: Any = None
     is_error: bool = False

@@ -23,6 +23,7 @@ from fastmcp.client.transports import FastMCPTransport
 from fastmcp.prompts.prompt import FunctionPrompt, Prompt
 from fastmcp.resources.resource import Resource
 from fastmcp.server.middleware.caching import (
+    CachableToolResult,
     CallToolSettings,
     ResponseCachingMiddleware,
     ResponseCachingStatistics,
@@ -505,3 +506,18 @@ class TestResponseCachingMiddlewareIntegration:
                     ),
                 )
             )
+
+
+class TestCachableToolResult:
+    def test_wrap_and_unwrap(self):
+        tool_result = ToolResult(
+            "unstructured content",
+            structured_content={"structured": "content"},
+            meta={"meta": "data"},
+        )
+
+        cached_tool_result = CachableToolResult.wrap(tool_result).unwrap()
+
+        assert cached_tool_result.content == tool_result.content
+        assert cached_tool_result.structured_content == tool_result.structured_content
+        assert cached_tool_result.meta == tool_result.meta

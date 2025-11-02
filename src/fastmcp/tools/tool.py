@@ -16,7 +16,7 @@ from typing import (
 
 import mcp.types
 import pydantic_core
-from mcp.types import ContentBlock, Icon, TextContent, ToolAnnotations
+from mcp.types import CallToolResult, ContentBlock, Icon, TextContent, ToolAnnotations
 from mcp.types import Tool as MCPTool
 from pydantic import Field, PydanticSchemaGenerationError
 from typing_extensions import TypeVar
@@ -68,6 +68,7 @@ class ToolResult:
         self,
         content: list[ContentBlock] | Any | None = None,
         structured_content: dict[str, Any] | Any | None = None,
+        meta: dict[str, Any] | None = None,
     ):
         if content is None and structured_content is None:
             raise ValueError("Either content or structured_content must be provided")
@@ -75,6 +76,7 @@ class ToolResult:
             content = structured_content
 
         self.content: list[ContentBlock] = _convert_to_content(result=content)
+        self.meta: dict[str, Any] | None = meta
 
         if structured_content is not None:
             try:
@@ -96,7 +98,15 @@ class ToolResult:
 
     def to_mcp_result(
         self,
-    ) -> list[ContentBlock] | tuple[list[ContentBlock], dict[str, Any]]:
+    ) -> (
+        list[ContentBlock] | tuple[list[ContentBlock], dict[str, Any]] | CallToolResult
+    ):
+        if self.meta is not None:
+            return CallToolResult(
+                structuredContent=self.structured_content,
+                content=self.content,
+                _meta=self.meta,
+            )
         if self.structured_content is None:
             return self.content
         return self.content, self.structured_content

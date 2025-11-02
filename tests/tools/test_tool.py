@@ -1405,6 +1405,70 @@ class TestAutomaticStructuredContent:
             assert result.data.verified is True
 
 
+class TestToolResultCasting:
+    @pytest.fixture
+    async def client(self):
+        from fastmcp import FastMCP
+        from fastmcp.client import Client
+
+        mcp = FastMCP()
+
+        @mcp.tool
+        def test_tool(
+            unstructured: str | None = None,
+            structured: dict[str, Any] | None = None,
+            meta: dict[str, Any] | None = None,
+        ):
+            return ToolResult(
+                content=unstructured,
+                structured_content=structured,
+                meta=meta,
+            )
+
+        async with Client(mcp) as client:
+            yield client
+
+    async def test_only_unstructured_content(self, client):
+        result = await client.call_tool("test_tool", {"unstructured": "test data"})
+
+        assert result.content[0].type == "text"
+        assert result.content[0].text == "test data"
+        assert result.structured_content is None
+        assert result.meta is None
+
+    async def test_neither_unstructured_or_structured_content(self, client):
+        from fastmcp.exceptions import ToolError
+
+        with pytest.raises(ToolError):
+            await client.call_tool("test_tool", {})
+
+    async def test_structured_and_unstructured_content(self, client):
+        result = await client.call_tool(
+            "test_tool",
+            {"unstructured": "test data", "structured": {"data_type": "test"}},
+        )
+
+        assert result.content[0].type == "text"
+        assert result.content[0].text == "test data"
+        assert result.structured_content == {"data_type": "test"}
+        assert result.meta is None
+
+    async def test_structured_unstructured_and_meta_content(self, client):
+        result = await client.call_tool(
+            "test_tool",
+            {
+                "unstructured": "test data",
+                "structured": {"data_type": "test"},
+                "meta": {"some": "metadata"},
+            },
+        )
+
+        assert result.content[0].type == "text"
+        assert result.content[0].text == "test data"
+        assert result.structured_content == {"data_type": "test"}
+        assert result.meta == {"some": "metadata"}
+
+
 class TestUnionReturnTypes:
     """Tests for tools with union return types."""
 
