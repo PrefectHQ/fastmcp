@@ -193,7 +193,7 @@ functions.
 #### `from_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/tools/tool_transform.py#L364" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-from_tool(cls, tool: Tool, name: str | None = None, title: str | None | NotSetT = NotSet, description: str | None | NotSetT = NotSet, tags: set[str] | None = None, transform_fn: Callable[..., Any] | None = None, transform_args: dict[str, ArgTransform] | None = None, annotations: ToolAnnotations | None | NotSetT = NotSet, output_schema: dict[str, Any] | None | NotSetT | Literal[False] = NotSet, serializer: Callable[[Any], str] | None | NotSetT = NotSet, meta: dict[str, Any] | None | NotSetT = NotSet, enabled: bool | None = None) -> TransformedTool
+from_tool(cls, tool: Tool, name: str | None = None, title: str | NotSetT | None = NotSet, description: str | NotSetT | None = NotSet, tags: set[str] | None = None, transform_fn: Callable[..., Any] | None = None, transform_args: dict[str, ArgTransform] | None = None, annotations: ToolAnnotations | NotSetT | None = NotSet, output_schema: dict[str, Any] | Literal[False] | NotSetT | None = NotSet, serializer: Callable[[Any], str] | NotSetT | None = NotSet, meta: dict[str, Any] | NotSetT | None = NotSet, enabled: bool | None = None) -> TransformedTool
 ```
 
 Create a transformed tool from a parent tool.

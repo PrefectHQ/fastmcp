@@ -615,7 +615,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "authlib", specifier = ">=1.6.5" },
-    { name = "cyclopts", specifier = ">=4.0.0,<5.0.0" },
+    { name = "cyclopts", specifier = ">=4.0.0" },
     { name = "exceptiongroup", specifier = ">=1.2.2" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "jsonschema-path", specifier = ">=0.3.4" },

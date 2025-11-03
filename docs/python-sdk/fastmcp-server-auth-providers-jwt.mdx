@@ -94,16 +94,16 @@ Use this when:
 load_access_token(self, token: str) -> AccessToken | None
 ```
 
-Validates the provided JWT bearer token.
+Validate a JWT bearer token and return an AccessToken when the token is valid.
 
 **Args:**
-- `token`: The JWT token string to validate
+- `token`: The JWT bearer token string to validate.
 
 **Returns:**
-- AccessToken object if valid, None if invalid or expired
+- AccessToken | None: An AccessToken populated from token claims if the token is valid; `None` if the token is expired, has an invalid signature or format, fails issuer/audience/scope validation, or any other validation error occurs.
 
 
-#### `verify_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/jwt.py#L474" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `verify_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/jwt.py#L485" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 verify_token(self, token: str) -> AccessToken | None
@@ -121,7 +121,7 @@ to our existing load_access_token method.
 - AccessToken object if valid, None if invalid or expired
 
 
-### `StaticTokenVerifier` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/jwt.py#L490" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `StaticTokenVerifier` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/jwt.py#L501" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Simple static token verifier for testing and development.
@@ -142,7 +142,7 @@ WARNING: Never use this in production - tokens are stored in plain text!
 
 **Methods:**
 
-#### `verify_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/jwt.py#L524" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `verify_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/jwt.py#L535" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 verify_token(self, token: str) -> AccessToken | None

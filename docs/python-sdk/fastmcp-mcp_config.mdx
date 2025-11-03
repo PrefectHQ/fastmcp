@@ -42,7 +42,7 @@ infer_transport_type_from_url(url: str | AnyUrl) -> Literal['http', 'sse']
 Infer the appropriate transport type from the given URL.
 
 
-### `update_config_file` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/mcp_config.py#L313" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `update_config_file` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/mcp_config.py#L312" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 update_config_file(file_path: Path, server_name: str, server_config: CanonicalMCPServerTypes) -> None
@@ -167,7 +167,7 @@ from_file(cls, file_path: Path) -> Self
 Load configuration from JSON file.
 
 
-### `CanonicalMCPConfig` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/mcp_config.py#L298" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `CanonicalMCPConfig` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/mcp_config.py#L297" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Canonical MCP configuration format.
@@ -178,7 +178,7 @@ The format is designed to be client-agnostic and extensible for future use cases
 
 **Methods:**
 
-#### `add_server` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/mcp_config.py#L308" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `add_server` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/mcp_config.py#L307" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 add_server(self, name: str, server: CanonicalMCPServerTypes) -> None

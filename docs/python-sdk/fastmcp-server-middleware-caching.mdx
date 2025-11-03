@@ -46,63 +46,63 @@ unwrap(cls, values: Sequence[Self]) -> list[ReadResourceContents]
 
 **Methods:**
 
-#### `wrap` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/caching.py#L68" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `wrap` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/caching.py#L69" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 wrap(cls, value: ToolResult) -> Self
 ```
 
-#### `unwrap` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/caching.py#L71" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `unwrap` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/caching.py#L76" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 unwrap(self) -> ToolResult
 ```
 
-### `SharedMethodSettings` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/caching.py#L77" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `SharedMethodSettings` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/caching.py#L84" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Shared config for a cache method.
 
 
-### `ListToolsSettings` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/caching.py#L84" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ListToolsSettings` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/caching.py#L91" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Configuration options for Tool-related caching.
 
 
-### `ListResourcesSettings` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/caching.py#L88" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ListResourcesSettings` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/caching.py#L95" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Configuration options for Resource-related caching.
 
 
-### `ListPromptsSettings` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/caching.py#L92" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ListPromptsSettings` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/caching.py#L99" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Configuration options for Prompt-related caching.
 
 
-### `CallToolSettings` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/caching.py#L96" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `CallToolSettings` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/caching.py#L103" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Configuration options for Tool-related caching.
 
 
-### `ReadResourceSettings` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/caching.py#L103" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ReadResourceSettings` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/caching.py#L110" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Configuration options for Resource-related caching.
 
 
-### `GetPromptSettings` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/caching.py#L107" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `GetPromptSettings` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/caching.py#L114" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Configuration options for Prompt-related caching.
 
 
-### `ResponseCachingStatistics` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/caching.py#L111" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ResponseCachingStatistics` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/caching.py#L118" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
-### `ResponseCachingMiddleware` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/caching.py#L120" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ResponseCachingMiddleware` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/caching.py#L127" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 The response caching middleware offers a simple way to cache responses to mcp methods. The Middleware
@@ -119,7 +119,7 @@ Notes:
 
 **Methods:**
 
-#### `on_list_tools` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/caching.py#L226" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `on_list_tools` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/caching.py#L233" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 on_list_tools(self, context: MiddlewareContext[mcp.types.ListToolsRequest], call_next: CallNext[mcp.types.ListToolsRequest, Sequence[Tool]]) -> Sequence[Tool]
@@ -129,7 +129,7 @@ List tools from the cache, if caching is enabled, and the result is in the cache
 otherwise call the next middleware and store the result in the cache if caching is enabled.
 
 
-#### `on_list_resources` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/caching.py#L266" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `on_list_resources` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/caching.py#L273" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 on_list_resources(self, context: MiddlewareContext[mcp.types.ListResourcesRequest], call_next: CallNext[mcp.types.ListResourcesRequest, Sequence[Resource]]) -> Sequence[Resource]
@@ -139,7 +139,7 @@ List resources from the cache, if caching is enabled, and the result is in the c
 otherwise call the next middleware and store the result in the cache if caching is enabled.
 
 
-#### `on_list_prompts` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/caching.py#L306" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `on_list_prompts` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/caching.py#L313" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 on_list_prompts(self, context: MiddlewareContext[mcp.types.ListPromptsRequest], call_next: CallNext[mcp.types.ListPromptsRequest, Sequence[Prompt]]) -> Sequence[Prompt]
@@ -149,7 +149,7 @@ List prompts from the cache, if caching is enabled, and the result is in the cac
 otherwise call the next middleware and store the result in the cache if caching is enabled.
 
 
-#### `on_call_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/caching.py#L344" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `on_call_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/caching.py#L351" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 on_call_tool(self, context: MiddlewareContext[mcp.types.CallToolRequestParams], call_next: CallNext[mcp.types.CallToolRequestParams, ToolResult]) -> ToolResult
@@ -159,7 +159,7 @@ Call a tool from the cache, if caching is enabled, and the result is in the cach
 otherwise call the next middleware and store the result in the cache if caching is enabled.
 
 
-#### `on_read_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/caching.py#L377" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `on_read_resource` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/caching.py#L384" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 on_read_resource(self, context: MiddlewareContext[mcp.types.ReadResourceRequestParams], call_next: CallNext[mcp.types.ReadResourceRequestParams, Sequence[ReadResourceContents]]) -> Sequence[ReadResourceContents]
@@ -169,7 +169,7 @@ Read a resource from the cache, if caching is enabled, and the result is in the 
 otherwise call the next middleware and store the result in the cache if caching is enabled.
 
 
-#### `on_get_prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/caching.py#L407" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `on_get_prompt` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/caching.py#L414" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 on_get_prompt(self, context: MiddlewareContext[mcp.types.GetPromptRequestParams], call_next: CallNext[mcp.types.GetPromptRequestParams, mcp.types.GetPromptResult]) -> mcp.types.GetPromptResult
@@ -179,7 +179,7 @@ Get a prompt from the cache, if caching is enabled, and the result is in the cac
 otherwise call the next middleware and store the result in the cache if caching is enabled.
 
 
-#### `statistics` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/caching.py#L447" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `statistics` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/caching.py#L454" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 statistics(self) -> ResponseCachingStatistics
