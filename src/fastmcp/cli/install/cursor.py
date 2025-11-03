@@ -1,10 +1,12 @@
 """Cursor integration for FastMCP install using Cyclopts."""
 
 import base64
+import os
 import subprocess
 import sys
 from pathlib import Path
 from typing import Annotated
+from urllib.parse import urlparse
 
 import cyclopts
 from rich import print
@@ -51,17 +53,20 @@ def open_deeplink(deeplink: str) -> bool:
     Returns:
         True if the command succeeded, False otherwise
     """
+    parsed = urlparse(deeplink)
+    if parsed.scheme != "cursor":
+        logger.warning(f"Invalid deeplink scheme: {parsed.scheme}")
+        return False
+
     try:
         if sys.platform == "darwin":  # macOS
             subprocess.run(["open", deeplink], check=True, capture_output=True)
         elif sys.platform == "win32":  # Windows
-            subprocess.run(
-                ["cmd", "/c", "start", deeplink], check=True, capture_output=True
-            )
+            os.startfile(deeplink)
         else:  # Linux and others
             subprocess.run(["xdg-open", deeplink], check=True, capture_output=True)
         return True
-    except (subprocess.CalledProcessError, FileNotFoundError):
+    except (subprocess.CalledProcessError, FileNotFoundError, OSError):
         return False
 
 

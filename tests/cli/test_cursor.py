@@ -135,18 +135,16 @@ class TestOpenDeeplink:
                 ["open", "cursor://test"], check=True, capture_output=True
             )
 
-    @patch("subprocess.run")
-    def test_open_deeplink_windows(self, mock_run):
+    def test_open_deeplink_windows(self):
         """Test opening deeplink on Windows."""
         with patch("sys.platform", "win32"):
-            mock_run.return_value = Mock(returncode=0)
+            with patch(
+                "fastmcp.cli.install.cursor.os.startfile", create=True
+            ) as mock_startfile:
+                result = open_deeplink("cursor://test")
 
-            result = open_deeplink("cursor://test")
-
-            assert result is True
-            mock_run.assert_called_once_with(
-                ["cmd", "/c", "start", "cursor://test"], check=True, capture_output=True
-            )
+                assert result is True
+                mock_startfile.assert_called_once_with("cursor://test")
 
     @patch("subprocess.run")
     def test_open_deeplink_linux(self, mock_run):
@@ -166,20 +164,56 @@ class TestOpenDeeplink:
         """Test handling of deeplink opening failure."""
         import subprocess
 
-        mock_run.side_effect = subprocess.CalledProcessError(1, ["open"])
+        with patch("sys.platform", "darwin"):
+            mock_run.side_effect = subprocess.CalledProcessError(1, ["open"])
 
-        result = open_deeplink("cursor://test")
+            result = open_deeplink("cursor://test")
 
-        assert result is False
+            assert result is False
 
     @patch("subprocess.run")
     def test_open_deeplink_command_not_found(self, mock_run):
         """Test handling when open command is not found."""
-        mock_run.side_effect = FileNotFoundError()
+        with patch("sys.platform", "darwin"):
+            mock_run.side_effect = FileNotFoundError()
 
-        result = open_deeplink("cursor://test")
+            result = open_deeplink("cursor://test")
 
+            assert result is False
+
+    def test_open_deeplink_invalid_scheme(self):
+        """Test that non-cursor:// URLs are rejected."""
+        result = open_deeplink("http://malicious.com")
         assert result is False
+
+        result = open_deeplink("https://example.com")
+        assert result is False
+
+        result = open_deeplink("file:///etc/passwd")
+        assert result is False
+
+    def test_open_deeplink_valid_cursor_scheme(self):
+        """Test that cursor:// URLs are accepted."""
+        with patch("sys.platform", "darwin"):
+            with patch("subprocess.run") as mock_run:
+                mock_run.return_value = Mock(returncode=0)
+                result = open_deeplink("cursor://anysphere.cursor-deeplink/mcp/install")
+                assert result is True
+
+    def test_open_deeplink_empty_url(self):
+        """Test handling of empty URL."""
+        result = open_deeplink("")
+        assert result is False
+
+    def test_open_deeplink_windows_oserror(self):
+        """Test handling of OSError on Windows."""
+        with patch("sys.platform", "win32"):
+            with patch(
+                "fastmcp.cli.install.cursor.os.startfile", create=True
+            ) as mock_startfile:
+                mock_startfile.side_effect = OSError("File not found")
+                result = open_deeplink("cursor://test")
+                assert result is False
 
 
 class TestInstallCursor:
