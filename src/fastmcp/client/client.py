@@ -77,6 +77,16 @@ logger = get_logger(__name__)
 T = TypeVar("T", bound="ClientTransport")
 
 
+def _timeout_to_seconds(
+    timeout: datetime.timedelta | float | int | None,
+) -> float | None:
+    if timeout is None:
+        return None
+    if isinstance(timeout, datetime.timedelta):
+        return timeout.total_seconds()
+    return float(timeout)
+
+
 @dataclass
 class ClientSessionState:
     """Holds all session-related state for a Client instance.
@@ -222,6 +232,7 @@ class Client(Generic[ClientTransportT]):
         message_handler: MessageHandlerT | MessageHandler | None = None,
         progress_handler: ProgressHandler | None = None,
         timeout: datetime.timedelta | float | int | None = None,
+        auto_initialize: bool = True,
         init_timeout: datetime.timedelta | float | int | None = None,
         client_info: mcp.types.Implementation | None = None,
         auth: httpx.Auth | Literal["oauth"] | str | None = None,
@@ -247,13 +258,9 @@ class Client(Generic[ClientTransportT]):
         # handle init handshake timeout
         if init_timeout is None:
             init_timeout = fastmcp.settings.client_init_timeout
-        if isinstance(init_timeout, datetime.timedelta):
-            init_timeout = init_timeout.total_seconds()
-        elif not init_timeout:
-            init_timeout = None
-        else:
-            init_timeout = float(init_timeout)
-        self._init_timeout = init_timeout
+        self._init_timeout = _timeout_to_seconds(init_timeout)
+
+        self.auto_initialize = auto_initialize
 
         self._session_kwargs: SessionKwargs = {
             "sampling_callback": None,
@@ -291,12 +298,8 @@ class Client(Generic[ClientTransportT]):
         return self._session_state.session
 
     @property
-    def initialize_result(self) -> mcp.types.InitializeResult:
+    def initialize_result(self) -> mcp.types.InitializeResult | None:
         """Get the result of the initialization request."""
-        if self._session_state.initialize_result is None:
-            raise RuntimeError(
-                "Client is not connected. Use the 'async with client:' context manager first."
-            )
         return self._session_state.initialize_result
 
     def set_roots(self, roots: RootsList | RootsHandler) -> None:
@@ -358,15 +361,11 @@ class Client(Generic[ClientTransportT]):
                 self._session_state.session = session
                 # Initialize the session
                 try:
-                    with anyio.fail_after(self._init_timeout):
-                        self._session_state.initialize_result = (
-                            await self._session_state.session.initialize()
-                        )
+                    if self.auto_initialize:
+                        await self.initialize()
                     yield
                 except anyio.ClosedResourceError as e:
                     raise RuntimeError("Server session was closed unexpectedly") from e
-                except TimeoutError as e:
-                    raise RuntimeError("Failed to initialize server session") from e
                 finally:
                     self._session_state.session = None
                     self._session_state.initialize_result = None
@@ -493,6 +492,55 @@ class Client(Generic[ClientTransportT]):
         await self.transport.close()
 
     # --- MCP Client Methods ---
+
+    async def initialize(
+        self,
+        timeout: datetime.timedelta | float | int | None = None,
+    ) -> mcp.types.InitializeResult:
+        """Send an initialize request to the server.
+
+        This method performs the MCP initialization handshake with the server,
+        exchanging capabilities and server information. It is idempotent - calling
+        it multiple times returns the cached result from the first call.
+
+        The initialization happens automatically when entering the client context
+        manager unless `auto_initialize=False` was set during client construction.
+        Manual calls to this method are only needed when auto-initialization is disabled.
+
+        Args:
+            timeout: Optional timeout for the initialization request (seconds or timedelta).
+                If None, uses the client's init_timeout setting.
+
+        Returns:
+            InitializeResult: The server's initialization response containing server info,
+                capabilities, protocol version, and optional instructions.
+
+        Raises:
+            RuntimeError: If the client is not connected or initialization times out.
+
+        Example:
+            ```python
+            # With auto-initialization disabled
+            client = Client(server, auto_initialize=False)
+            async with client:
+                result = await client.initialize()
+                print(f"Server: {result.serverInfo.name}")
+                print(f"Instructions: {result.instructions}")
+            ```
+        """
+
+        if self.initialize_result is not None:
+            return self.initialize_result
+
+        if timeout is None:
+            timeout = self._init_timeout
+        try:
+            with anyio.fail_after(_timeout_to_seconds(timeout)):
+                initialize_result = await self.session.initialize()
+                self._session_state.initialize_result = initialize_result
+                return initialize_result
+        except TimeoutError as e:
+            raise RuntimeError("Failed to initialize server session") from e
 
     async def ping(self) -> bool:
         """Send a ping request."""

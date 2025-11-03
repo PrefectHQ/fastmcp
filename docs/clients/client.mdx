@@ -223,6 +223,55 @@ async with client:
     print("Server is reachable")
 ```
 
+### Initialization and Server Information
+
+When you enter the client context manager, the client automatically performs an MCP initialization handshake with the server. This handshake exchanges capabilities, server metadata, and instructions. The result is available through the `initialize_result` property.
+
+```python
+from fastmcp import Client, FastMCP
+
+mcp = FastMCP(name="MyServer", instructions="Use the greet tool to say hello!")
+
+@mcp.tool
+def greet(name: str) -> str:
+    """Greet a user by name."""
+    return f"Hello, {name}!"
+
+async with Client(mcp) as client:
+    # Initialization already happened automatically
+    print(f"Server: {client.initialize_result.serverInfo.name}")
+    print(f"Version: {client.initialize_result.serverInfo.version}")
+    print(f"Instructions: {client.initialize_result.instructions}")
+    print(f"Capabilities: {client.initialize_result.capabilities.tools}")
+```
+
+#### Manual Initialization Control
+
+In advanced scenarios, you might want precise control over when initialization happens. For example, you may need custom error handling, want to defer initialization until after other setup, or need to measure initialization timing separately.
+
+Disable automatic initialization and call `initialize()` manually:
+
+```python
+from fastmcp import Client
+
+# Disable automatic initialization
+client = Client("my_mcp_server.py", auto_initialize=False)
+
+async with client:
+    # Connection established, but not initialized yet
+    print(f"Connected: {client.is_connected()}")
+    print(f"Initialized: {client.initialize_result is not None}")  # False
+
+    # Initialize manually with custom timeout
+    result = await client.initialize(timeout=10.0)
+    print(f"Server: {result.serverInfo.name}")
+
+    # Now ready for operations
+    tools = await client.list_tools()
+```
+
+The `initialize()` method is idempotent - calling it multiple times returns the cached result from the first successful call.
+
 ## Client Configuration
 
 Clients can be configured with additional handlers and settings for specialized use cases.
