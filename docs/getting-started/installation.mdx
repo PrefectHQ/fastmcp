@@ -42,6 +42,20 @@ Python version:                            3.12.2
 Platform:            macOS-15.3.1-arm64-arm-64bit
 FastMCP root path:            ~/Developer/fastmcp
 ```
+
+### Dependency Licensing
+
+<Info>
+FastMCP depends on Cyclopts for CLI functionality. Cyclopts v4 includes docutils as a transitive dependency, which has complex licensing that may trigger compliance reviews in some organizations.
+
+If this is a concern, you can install Cyclopts v5 alpha which removes this dependency:
+
+```bash
+pip install "cyclopts>=5.0.0a1"
+```
+
+Alternatively, wait for the stable v5 release. See [this issue](https://github.com/BrianPugh/cyclopts/issues/672) for details.
+</Info>
 ## Upgrading from the Official MCP SDK
 
 Upgrading from the official MCP SDK's FastMCP 1.0 to FastMCP 2.0 is generally straightforward. The core server API is highly compatible, and in many cases, changing your import statement from `from mcp.server.fastmcp import FastMCP` to `from fastmcp import FastMCP` will be sufficient. 
