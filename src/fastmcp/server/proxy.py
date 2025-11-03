@@ -539,7 +539,7 @@ class ProxyClient(Client[ClientTransportT]):
     def __init__(
         self,
         transport: ClientTransportT
-        | FastMCP
+        | FastMCP[Any]
         | FastMCP1Server
         | AnyUrl
         | Path

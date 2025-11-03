@@ -362,7 +362,7 @@ class AuthKitProvider(RemoteAuthProvider):
         )
 
         self.authkit_domain = str(settings.authkit_domain).rstrip("/")
-        self.base_url = str(settings.base_url).rstrip("/")
+        self.base_url = AnyHttpUrl(str(settings.base_url).rstrip("/"))
 
         # Create default JWT verifier if none provided
         if token_verifier is None:

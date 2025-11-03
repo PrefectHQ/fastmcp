@@ -238,7 +238,11 @@ class TestServerSideStorage:
                 test_client.cookies.set(k, v)
             approval_response = test_client.post(
                 "/consent",
-                data={"action": "approve", "txn": txn_id, "csrf_token": csrf_token},
+                data={
+                    "action": "approve",
+                    "txn_id": txn_id,
+                    "csrf_token": csrf_token if csrf_token else "",
+                },
                 follow_redirects=False,
             )
 
@@ -641,7 +645,11 @@ class TestConsentSecurity:
                 c.cookies.set(k, v)
             r = c.post(
                 "/consent/submit",
-                data={"action": "approve", "txn_id": txn_id, "csrf_token": csrf},
+                data={
+                    "action": "approve",
+                    "txn_id": txn_id,
+                    "csrf_token": csrf if csrf else "",
+                },
                 follow_redirects=False,
             )
             # Extract approved cookie value

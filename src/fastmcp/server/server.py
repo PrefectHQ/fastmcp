@@ -79,6 +79,7 @@ from fastmcp.utilities.types import NotSet, NotSetT
 
 if TYPE_CHECKING:
     from fastmcp.client import Client
+    from fastmcp.client.client import FastMCP1Server
     from fastmcp.client.transports import ClientTransport, ClientTransportT
     from fastmcp.experimental.server.openapi import FastMCPOpenAPI as FastMCPOpenAPINew
     from fastmcp.experimental.server.openapi.routing import (
@@ -1045,7 +1046,11 @@ class FastMCP(Generic[LifespanResultT]):
 
     async def _call_tool_mcp(
         self, key: str, arguments: dict[str, Any]
-    ) -> list[ContentBlock] | tuple[list[ContentBlock], dict[str, Any]]:
+    ) -> (
+        list[ContentBlock]
+        | tuple[list[ContentBlock], dict[str, Any]]
+        | mcp.types.CallToolResult
+    ):
         """
         Handle MCP 'callTool' requests.
 
@@ -1488,7 +1493,7 @@ class FastMCP(Generic[LifespanResultT]):
                 icons=icons,
                 tags=tags,
                 output_schema=output_schema,
-                annotations=cast(ToolAnnotations | None, annotations),
+                annotations=annotations,
                 exclude_args=exclude_args,
                 meta=meta,
                 serializer=self._tool_serializer,
@@ -1721,7 +1726,7 @@ class FastMCP(Generic[LifespanResultT]):
                     mime_type=mime_type,
                     tags=tags,
                     enabled=enabled,
-                    annotations=cast(Annotations | None, annotations),
+                    annotations=annotations,
                     meta=meta,
                 )
                 self.add_template(template)
@@ -1737,7 +1742,7 @@ class FastMCP(Generic[LifespanResultT]):
                     mime_type=mime_type,
                     tags=tags,
                     enabled=enabled,
-                    annotations=cast(Annotations | None, annotations),
+                    annotations=annotations,
                     meta=meta,
                 )
                 self.add_resource(resource)
@@ -2582,6 +2587,7 @@ class FastMCP(Generic[LifespanResultT]):
             Client[ClientTransportT]
             | ClientTransport
             | FastMCP[Any]
+            | FastMCP1Server
             | AnyUrl
             | Path
             | MCPConfig
@@ -2624,7 +2630,7 @@ class FastMCP(Generic[LifespanResultT]):
 
                 client_factory = fresh_client_factory
         else:
-            base_client = ProxyClient(backend)
+            base_client = ProxyClient(backend)  # type: ignore
 
             # Fresh client created from transport - use fresh sessions per request
             def proxy_client_factory():

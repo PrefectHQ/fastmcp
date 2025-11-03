@@ -46,7 +46,7 @@ class BaseLoggingMiddleware(Middleware):
 
         return payload
 
-    def _format_message(self, message: dict[str, str | int]) -> str:
+    def _format_message(self, message: dict[str, str | int | float]) -> str:
         """Format a message for logging."""
         if self.structured_logging:
             return json.dumps(message)
@@ -55,7 +55,7 @@ class BaseLoggingMiddleware(Middleware):
 
     def _create_before_message(
         self, context: MiddlewareContext[Any]
-    ) -> dict[str, str | int]:
+    ) -> dict[str, str | int | float]:
         message = {
             "event": context.type + "_start",
             "method": context.method or "unknown",

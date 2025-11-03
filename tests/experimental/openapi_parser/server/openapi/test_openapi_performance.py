@@ -88,7 +88,7 @@ class TestOpenAPIPerformance:
         # Generate multiple paths to create a reasonably sized schema
         for i in range(100):
             path = f"/test/{i}"
-            schema["paths"][path] = {
+            schema["paths"][path] = {  # type: ignore[index]
                 "get": {
                     "operationId": f"test_{i}",
                     "parameters": [

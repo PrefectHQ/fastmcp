@@ -102,7 +102,7 @@ class DescopeProvider(RemoteAuthProvider):
         )
 
         self.project_id = settings.project_id
-        self.base_url = str(settings.base_url).rstrip("/")
+        self.base_url = AnyHttpUrl(str(settings.base_url).rstrip("/"))
         self.descope_base_url = str(settings.descope_base_url).rstrip("/")
 
         # Create default JWT verifier if none provided

@@ -417,9 +417,9 @@ async def test_structured_response_type(
 
         if result.action == "accept":
             if isinstance(result.data, dict):
-                return f"User: {result.data['name']}, age: {result.data['age']}"
+                return f"User: {result.data['name']}, age: {result.data['age']}"  # type: ignore[index]
             else:
-                return f"User: {result.data.name}, age: {result.data.age}"
+                return f"User: {result.data.name}, age: {result.data.age}"  # type: ignore[attr-defined]
         return "No user info provided"
 
     async def elicitation_handler(message, response_type, params, ctx):

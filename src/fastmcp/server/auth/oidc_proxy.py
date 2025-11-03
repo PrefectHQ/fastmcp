@@ -340,7 +340,7 @@ class OIDCProxy(OAuthProxy):
             init_kwargs["extra_authorize_params"] = extra_params
             init_kwargs["extra_token_params"] = extra_params
 
-        super().__init__(**init_kwargs)
+        super().__init__(**init_kwargs)  # ty: ignore[invalid-argument-type]
 
     def get_oidc_configuration(
         self,

@@ -54,28 +54,27 @@ class RequestDirector:
         url = self._build_url(route.path, path_params, base_url)
 
         # Step 3: Prepare request data
-        request_data = {
-            "method": route.method.upper(),
-            "url": url,
-            "params": query_params if query_params else None,
-            "headers": header_params if header_params else None,
-        }
+        method: str = route.method.upper()
+        params = query_params if query_params else None
+        headers = header_params if header_params else None
+        json_body: dict[str, Any] | list[Any] | None = None
+        content: str | bytes | None = None
 
         # Step 4: Handle request body
         if body is not None:
             if isinstance(body, dict | list):
-                request_data["json"] = body
+                json_body = body
             else:
-                request_data["content"] = body
+                content = body
 
         # Step 5: Create httpx.Request
         return httpx.Request(
-            method=request_data["method"],
-            url=request_data["url"],
-            params=request_data.get("params"),
-            headers=request_data.get("headers"),
-            json=request_data.get("json"),
-            content=request_data.get("content"),
+            method=method,
+            url=url,
+            params=params,
+            headers=headers,
+            json=json_body,
+            content=content,
         )
 
     def _unflatten_arguments(

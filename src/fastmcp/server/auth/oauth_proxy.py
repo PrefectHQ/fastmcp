@@ -1605,9 +1605,10 @@ class OAuthProxy(OAuthProvider):
             ):
                 authorize_route_found = True
                 # Replace with our enhanced authorization handler
+                # Note: self.base_url is guaranteed to be set in parent __init__
                 authorize_handler = AuthorizationHandler(
                     provider=self,
-                    base_url=self.base_url,
+                    base_url=self.base_url,  # ty: ignore[invalid-argument-type]
                     server_name=None,  # Could be extended to pass server metadata
                     server_icon_url=None,
                 )

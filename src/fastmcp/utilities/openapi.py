@@ -1371,7 +1371,7 @@ def _combine_schemas(route: HTTPRoute) -> dict[str, Any]:
         if used_refs:
             result["$defs"] = {
                 name: def_schema
-                for name, def_schema in result["$defs"].items()
+                for name, def_schema in result["$defs"].items()  # type: ignore[index]
                 if name in used_refs
             }
         else:
@@ -1556,7 +1556,7 @@ def extract_output_schema_from_responses(
         if used_refs:
             output_schema["$defs"] = {
                 name: def_schema
-                for name, def_schema in output_schema["$defs"].items()
+                for name, def_schema in output_schema["$defs"].items()  # type: ignore[index]
                 if name in used_refs
             }
         else:

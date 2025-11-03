@@ -284,7 +284,7 @@ async def test_multi_client_parallel_calls(tmp_path: Path):
         exceptions = [result for result in results if isinstance(result, Exception)]
         assert len(exceptions) == 0
         assert len(results) == 40
-        assert all(len(result) == 2 for result in results)
+        assert all(len(result) == 2 for result in results)  # type: ignore[arg-type]
 
 
 @pytest.mark.skipif(

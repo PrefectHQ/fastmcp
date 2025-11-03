@@ -13,6 +13,7 @@ The enhancement adds:
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING
 
 from mcp.server.auth.handlers.authorize import (
@@ -211,12 +212,15 @@ class AuthorizationHandler(SDKAuthorizationHandler):
         # Check if this is a client not found error
         if response.status_code == 400:
             # Try to extract client_id from request for enhanced error
-            client_id = None
+            client_id: str | None = None
             if request.method == "GET":
                 client_id = request.query_params.get("client_id")
             else:
                 form = await request.form()
-                client_id = form.get("client_id")
+                client_id_value = form.get("client_id")
+                # Ensure client_id is a string, not UploadFile
+                if isinstance(client_id_value, str):
+                    client_id = client_id_value
 
             # If we have a client_id and the error is about it not being found,
             # enhance the response
@@ -224,9 +228,7 @@ class AuthorizationHandler(SDKAuthorizationHandler):
                 try:
                     # Check if response body contains "not found" error
                     if hasattr(response, "body"):
-                        import json
-
-                        body = json.loads(response.body)
+                        body = json.loads(bytes(response.body))
                         if (
                             body.get("error") == "invalid_request"
                             and "not found" in body.get("error_description", "").lower()

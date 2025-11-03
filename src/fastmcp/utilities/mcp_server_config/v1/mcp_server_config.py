@@ -217,7 +217,7 @@ class MCPServerConfig(BaseModel):
         """
         if isinstance(v, dict):
             return Deployment(**v)  # type: ignore[arg-type]
-        return cast(Deployment, v)
+        return cast(Deployment, v)  # type: ignore[return-value]
 
     @classmethod
     def from_file(cls, file_path: Path) -> MCPServerConfig:

@@ -98,7 +98,7 @@ def _single_pass_optimize(
         if isinstance(node, dict):
             # Collect $ref references for unused definition removal
             if prune_defs:
-                ref = node.get("$ref")
+                ref = node.get("$ref")  # type: ignore
                 if isinstance(ref, str) and ref.startswith("#/$defs/"):
                     referenced_def = ref.split("/")[-1]
                     if current_def_name:
@@ -127,13 +127,13 @@ def _single_pass_optimize(
                         "required",
                     ]
                 ):
-                    node.pop("title")
+                    node.pop("title")  # type: ignore
 
             if (
                 prune_additional_properties
-                and node.get("additionalProperties") is False
+                and node.get("additionalProperties") is False  # type: ignore
             ):
-                node.pop("additionalProperties")
+                node.pop("additionalProperties")  # type: ignore
 
             # Recursive traversal
             for key, value in node.items():

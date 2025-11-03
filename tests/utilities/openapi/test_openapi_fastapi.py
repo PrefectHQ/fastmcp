@@ -100,13 +100,14 @@ def fastapi_app() -> FastAPI:
         ),
     ):
         """Get details about a specific item."""
+        price = float(item_id) * 10.0
         item = {
             "id": item_id,
             "name": f"Item {item_id}",
-            "price": float(item_id) * 10.0,
+            "price": price,
         }
         if include_tax:
-            item["tax"] = item["price"] * 0.2
+            item["tax"] = price * 0.2
         return item
 
     @app.put(

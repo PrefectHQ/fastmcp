@@ -297,7 +297,8 @@ class OAuth(OAuthClientProvider):
             response = None
             while True:
                 try:
-                    yielded_request = await gen.asend(response)
+                    # First iteration sends None, subsequent iterations send response
+                    yielded_request = await gen.asend(response)  # ty: ignore[invalid-argument-type]
                     response = yield yielded_request
                 except StopAsyncIteration:
                     break
@@ -306,16 +307,16 @@ class OAuth(OAuthClientProvider):
             logger.debug(
                 "OAuth client not found on server, clearing cache and retrying..."
             )
-
             # Clear cached state and retry once
             self._initialized = False
             await self.token_storage_adapter.clear()
 
+            # Retry with fresh registration
             gen = super().async_auth_flow(request)
             response = None
             while True:
                 try:
-                    yielded_request = await gen.asend(response)
+                    yielded_request = await gen.asend(response)  # ty: ignore[invalid-argument-type]
                     response = yield yielded_request
                 except StopAsyncIteration:
                     break

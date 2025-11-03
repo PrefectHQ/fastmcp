@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Annotated, Any, TypedDict
+from typing import Annotated, Any, TypedDict, cast
 
 from mcp.types import Icon
 from pydantic import BeforeValidator, Field, PrivateAttr
@@ -117,7 +117,7 @@ class FastMCPComponent(FastMCPBaseModel):
         copy = super().model_copy(update=update, deep=deep)
         if key is not None:
             copy._key = key
-        return copy
+        return cast(Self, copy)
 
     def __eq__(self, other: object) -> bool:
         if type(self) is not type(other):
