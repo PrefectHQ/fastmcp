@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from mcp.server.auth.middleware.auth_context import AuthContextMiddleware
 from mcp.server.auth.middleware.bearer_auth import BearerAuthBackend
@@ -27,6 +27,10 @@ from pydantic import AnyHttpUrl, Field
 from starlette.middleware import Middleware
 from starlette.middleware.authentication import AuthenticationMiddleware
 from starlette.routing import Route
+
+from fastmcp.utilities.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class AccessToken(_SDKAccessToken):
@@ -294,19 +298,26 @@ class OAuthProvider(
             required_scopes: Scopes that are required for all requests.
         """
 
-        # Convert URLs to proper types
-        if isinstance(base_url, str):
-            base_url = AnyHttpUrl(base_url)
-
         super().__init__(base_url=base_url, required_scopes=required_scopes)
-        self.base_url = base_url
 
         if issuer_url is None:
-            self.issuer_url = base_url
+            self.issuer_url = self.base_url
         elif isinstance(issuer_url, str):
             self.issuer_url = AnyHttpUrl(issuer_url)
         else:
             self.issuer_url = issuer_url
+
+        # Log if issuer_url and base_url differ (requires additional setup)
+        if (
+            self.base_url is not None
+            and self.issuer_url is not None
+            and str(self.base_url) != str(self.issuer_url)
+        ):
+            logger.info(
+                f"OAuth endpoints at {self.base_url}, issuer at {self.issuer_url}. "
+                f"Ensure well-known routes are accessible at root ({self.issuer_url}/.well-known/). "
+                f"See: https://gofastmcp.com/deployment/http#mounting-authenticated-servers"
+            )
 
         # Initialize OAuth Authorization Server Provider
         OAuthAuthorizationServerProvider.__init__(self)
@@ -348,9 +359,17 @@ class OAuthProvider(
         """
 
         # Create standard OAuth authorization server routes
+        # Pass base_url as issuer_url to ensure metadata declares endpoints where
+        # they're actually accessible (operational routes are mounted at
+        # base_url)
+        assert self.base_url is not None  # typing check
+        assert (
+            self.issuer_url is not None
+        )  # typing check (issuer_url defaults to base_url)
+
         oauth_routes = create_auth_routes(
             provider=self,
-            issuer_url=self.issuer_url,
+            issuer_url=self.base_url,
             service_documentation_url=self.service_documentation_url,
             client_registration_options=self.client_registration_options,
             revocation_options=self.revocation_options,
@@ -369,7 +388,7 @@ class OAuthProvider(
             )
             protected_routes = create_protected_resource_routes(
                 resource_url=resource_url,
-                authorization_servers=[self.issuer_url],
+                authorization_servers=[cast(AnyHttpUrl, self.issuer_url)],
                 scopes_supported=supported_scopes,
             )
             oauth_routes.extend(protected_routes)

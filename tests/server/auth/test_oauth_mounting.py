@@ -14,6 +14,7 @@ from starlette.routing import Mount
 
 from fastmcp import FastMCP
 from fastmcp.server.auth import RemoteAuthProvider
+from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from fastmcp.server.auth.providers.jwt import StaticTokenVerifier
 
 
@@ -194,3 +195,73 @@ class TestOAuthMounting:
 
             data = response.json()
             assert data["resource"] == "https://api.example.com/outer/inner/mcp"
+
+    async def test_oauth_authorization_server_metadata_with_base_url_and_issuer_url(
+        self, test_tokens
+    ):
+        """Test OAuth authorization server metadata when base_url and issuer_url differ.
+
+        This validates the fix for issue #2287 where operational OAuth endpoints
+        (/authorize, /token) should be declared at base_url in the metadata,
+        not at issuer_url.
+
+        Scenario: FastMCP server mounted at /api prefix
+        - issuer_url: https://api.example.com (root level)
+        - base_url: https://api.example.com/api (includes mount prefix)
+        - Expected: metadata declares endpoints at base_url
+        """
+        # Create OAuth proxy with different base_url and issuer_url
+        token_verifier = StaticTokenVerifier(tokens=test_tokens)
+        auth_provider = OAuthProxy(
+            upstream_authorization_endpoint="https://upstream.example.com/authorize",
+            upstream_token_endpoint="https://upstream.example.com/token",
+            upstream_client_id="test-client-id",
+            upstream_client_secret="test-client-secret",
+            token_verifier=token_verifier,
+            base_url="https://api.example.com/api",  # Includes mount prefix
+            issuer_url="https://api.example.com",  # Root level
+        )
+
+        mcp = FastMCP("test-server", auth=auth_provider)
+        mcp_app = mcp.http_app(path="/mcp")
+
+        # Get well-known routes for mounting at root
+        well_known_routes = auth_provider.get_well_known_routes(mcp_path="/mcp")
+
+        # Mount the app under /api prefix
+        parent_app = Starlette(
+            routes=[
+                *well_known_routes,  # Well-known routes at root level
+                Mount("/api", app=mcp_app),  # MCP app under /api
+            ],
+            lifespan=mcp_app.lifespan,
+        )
+
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=parent_app),
+            base_url="https://api.example.com",
+        ) as client:
+            # Fetch the authorization server metadata
+            response = await client.get("/.well-known/oauth-authorization-server")
+            assert response.status_code == 200
+
+            metadata = response.json()
+
+            # CRITICAL: The metadata should declare endpoints at base_url,
+            # not issuer_url, because that's where they're actually mounted
+            assert (
+                metadata["authorization_endpoint"]
+                == "https://api.example.com/api/authorize"
+            )
+            assert metadata["token_endpoint"] == "https://api.example.com/api/token"
+            assert (
+                metadata["registration_endpoint"]
+                == "https://api.example.com/api/register"
+            )
+
+            # The issuer field should use base_url (where the server is actually running)
+            # Note: MCP SDK may or may not add a trailing slash
+            assert metadata["issuer"] in [
+                "https://api.example.com/api",
+                "https://api.example.com/api/",
+            ]
