@@ -1,8 +1,11 @@
 import socket
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 import pytest
+
+from fastmcp.utilities.tests import temporary_settings
 
 
 def pytest_collection_modifyitems(items):
@@ -19,6 +22,20 @@ def import_rich_rule():
     import rich.rule  # noqa: F401
 
     yield
+
+
+@pytest.fixture(autouse=True)
+def isolate_settings_home(tmp_path: Path):
+    """Ensure each test uses an isolated settings.home directory.
+
+    This prevents SQLite database locking issues on Windows when multiple
+    tests share the same DiskStore directory in settings.home / "oauth-proxy".
+    """
+    test_home = tmp_path / "fastmcp-test-home"
+    test_home.mkdir(exist_ok=True)
+
+    with temporary_settings(home=test_home):
+        yield
 
 
 def get_fn_name(fn: Callable[..., Any]) -> str:
