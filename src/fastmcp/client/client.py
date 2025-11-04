@@ -892,7 +892,10 @@ class Client(Generic[ClientTransportT]):
             arguments (dict[str, Any]): Arguments to pass to the tool.
             timeout (datetime.timedelta | float | int | None, optional): The timeout for the tool call. Defaults to None.
             progress_handler (ProgressHandler | None, optional): The progress handler to use for the tool call. Defaults to None.
-            meta (dict[str, Any] | None, optional): Additional metadata to send with the tool call.
+            meta (dict[str, Any] | None, optional): Additional metadata to include with the request.
+                This is useful for passing contextual information (like user IDs, trace IDs, or preferences)
+                that shouldn't be tool arguments but may influence server-side processing. The server
+                can access this via `context.request_context.meta`. Defaults to None.
 
         Returns:
             mcp.types.CallToolResult: The complete response object from the protocol,
@@ -935,7 +938,10 @@ class Client(Generic[ClientTransportT]):
             timeout (datetime.timedelta | float | int | None, optional): The timeout for the tool call. Defaults to None.
             progress_handler (ProgressHandler | None, optional): The progress handler to use for the tool call. Defaults to None.
             raise_on_error (bool, optional): Whether to raise a ToolError if the tool call results in an error. Defaults to True.
-            meta (dict[str, Any] | None, optional): Additional metadata to send with the tool call.
+            meta (dict[str, Any] | None, optional): Additional metadata to include with the request.
+                This is useful for passing contextual information (like user IDs, trace IDs, or preferences)
+                that shouldn't be tool arguments but may influence server-side processing. The server
+                can access this via `context.request_context.meta`. Defaults to None.
 
         Returns:
             CallToolResult:

@@ -101,6 +101,31 @@ async with client:
 - `arguments`: Dictionary of arguments to pass to the tool (optional)
 - `timeout`: Maximum execution time in seconds (optional, overrides client-level timeout)
 - `progress_handler`: Progress callback function (optional, overrides client-level handler)
+- `meta`: Dictionary of metadata to send with the request (optional, see below)
+
+## Sending Metadata
+
+<VersionBadge version="2.13.1" />
+
+The `meta` parameter sends ancillary information alongside tool calls. This can be used for various purposes like observability, debugging, client identification, or any context the server may need beyond the tool's primary arguments.
+
+```python
+async with client:
+    result = await client.call_tool(
+        name="send_email",
+        arguments={
+            "to": "user@example.com",
+            "subject": "Hello",
+            "body": "Welcome!"
+        },
+        meta={
+            "trace_id": "abc-123",
+            "request_source": "mobile_app"
+        }
+    )
+```
+
+The structure and usage of `meta` is determined by your application. See [Client Metadata](/servers/context#client-metadata) in the server documentation to learn how to access this data in your tool implementations.
 
 ## Handling Results
 

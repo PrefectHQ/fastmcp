@@ -313,6 +313,35 @@ async def request_info(ctx: Context) -> dict:
 - **`ctx.client_id -> str | None`**: Get the ID of the client making the request, if provided during initialization
 - **`ctx.session_id -> str | None`**: Get the MCP session ID for session-based data sharing (HTTP transports only)
 
+#### Client Metadata
+
+<VersionBadge version="2.13.1" />
+
+Clients can send contextual information with their requests using the `meta` parameter. This metadata is accessible through `ctx.request_context.meta` and is available for all MCP operations (tools, resources, prompts).
+
+The `meta` field is `None` when clients don't provide metadata. When provided, metadata is accessible via attribute access (e.g., `meta.user_id`) rather than dictionary access. The structure of metadata is determined by the client making the request.
+
+```python
+@mcp.tool
+def send_email(to: str, subject: str, body: str, ctx: Context) -> str:
+    """Send an email, logging metadata about the request."""
+
+    # Access client-provided metadata
+    meta = ctx.request_context.meta
+
+    if meta:
+        # Meta is accessed as an object with attribute access
+        user_id = meta.user_id if hasattr(meta, 'user_id') else None
+        trace_id = meta.trace_id if hasattr(meta, 'trace_id') else None
+
+        # Use metadata for logging, observability, etc.
+        if trace_id:
+            log_with_trace(f"Sending email for user {user_id}", trace_id)
+
+    # Send the email...
+    return f"Email sent to {to}"
+```
+
 <Warning>
 The MCP request is part of the low-level MCP SDK and intended for advanced use cases. Most users will not need to use it directly.
 </Warning>
