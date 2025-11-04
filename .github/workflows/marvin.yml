@@ -44,11 +44,10 @@ jobs:
       - name: Install dependencies
         run: uv sync --python 3.12
 
-      # Install pre-commit hooks automatically
-      - name: Install pre-commit hooks
-        run: |
-          uv run pre-commit install
-          echo "✅ Pre-commit hooks installed"
+      - name: Run prek
+        uses: j178/prek-action@v1
+        env:
+          SKIP: no-commit-to-branch
 
       - name: Generate Marvin App token
         id: marvin-token
