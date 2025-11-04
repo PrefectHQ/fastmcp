@@ -69,13 +69,13 @@ class TestCursorDeeplinkGeneration:
             args=["run", "--with", "fastmcp", "fastmcp", "run", "server.py"],
         )
 
-        # Test with spaces and special chars in name
+        # Test with spaces and special chars in name - should be URL encoded
         deeplink = generate_cursor_deeplink("my server (test)", server_config)
 
-        assert (
-            "name=my%20server%20%28test%29" in deeplink
-            or "name=my server (test)" in deeplink
-        )
+        # Spaces and parentheses must be URL-encoded
+        assert "name=my%20server%20%28test%29" in deeplink
+        # Ensure no unencoded version appears
+        assert "name=my server (test)" not in deeplink
 
     def test_generate_deeplink_empty_config(self):
         """Test deeplink generation with minimal config."""
@@ -117,6 +117,48 @@ class TestCursorDeeplinkGeneration:
 
         assert "--with-editable" in config_data["args"]
         assert "server.py:CustomServer" in config_data["args"]
+
+    def test_generate_deeplink_url_injection_protection(self):
+        """Test that special characters in server name are properly URL-encoded to prevent injection."""
+        server_config = StdioMCPServer(
+            command="python",
+            args=["server.py"],
+        )
+
+        # Test the PoC case from the security advisory
+        deeplink = generate_cursor_deeplink("test&calc", server_config)
+
+        # The & should be encoded as %26, preventing it from being interpreted as a query parameter separator
+        assert "name=test%26calc" in deeplink
+        assert "name=test&calc" not in deeplink
+
+        # Verify the URL structure is intact
+        assert deeplink.startswith("cursor://anysphere.cursor-deeplink/mcp/install?")
+        assert deeplink.count("&") == 1  # Only one & between name and config parameters
+
+        # Test other potentially dangerous characters
+        dangerous_names = [
+            ("test|calc", "test%7Ccalc"),
+            ("test;calc", "test%3Bcalc"),
+            ("test<calc", "test%3Ccalc"),
+            ("test>calc", "test%3Ecalc"),
+            ("test`calc", "test%60calc"),
+            ("test$calc", "test%24calc"),
+            ("test'calc", "test%27calc"),
+            ('test"calc', "test%22calc"),
+            ("test calc", "test%20calc"),
+            ("test#anchor", "test%23anchor"),
+            ("test?query=val", "test%3Fquery%3Dval"),
+        ]
+
+        for dangerous_name, expected_encoded in dangerous_names:
+            deeplink = generate_cursor_deeplink(dangerous_name, server_config)
+            assert f"name={expected_encoded}" in deeplink, (
+                f"Failed to encode {dangerous_name}"
+            )
+            # Ensure no unencoded special chars that could break URL structure
+            name_part = deeplink.split("name=")[1].split("&")[0]
+            assert name_part == expected_encoded
 
 
 class TestOpenDeeplink:

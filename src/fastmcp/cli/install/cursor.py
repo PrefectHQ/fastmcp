@@ -6,7 +6,7 @@ import subprocess
 import sys
 from pathlib import Path
 from typing import Annotated
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 import cyclopts
 from rich import print
@@ -38,8 +38,9 @@ def generate_cursor_deeplink(
     config_json = server_config.model_dump_json(exclude_none=True)
     config_b64 = base64.urlsafe_b64encode(config_json.encode()).decode()
 
-    # Generate the deeplink URL
-    deeplink = f"cursor://anysphere.cursor-deeplink/mcp/install?name={server_name}&config={config_b64}"
+    # Generate the deeplink URL with properly encoded server name
+    encoded_name = quote(server_name, safe="")
+    deeplink = f"cursor://anysphere.cursor-deeplink/mcp/install?name={encoded_name}&config={config_b64}"
 
     return deeplink
 
