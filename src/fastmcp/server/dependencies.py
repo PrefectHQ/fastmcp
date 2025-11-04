@@ -9,9 +9,11 @@ from mcp.server.auth.middleware.auth_context import (
 from mcp.server.auth.provider import (
     AccessToken as _SDKAccessToken,
 )
+from mcp.server.lowlevel.server import request_ctx
 from starlette.requests import Request
 
 from fastmcp.server.auth import AccessToken
+from fastmcp.server.http import _current_http_request
 
 if TYPE_CHECKING:
     from fastmcp.server.context import Context
@@ -41,11 +43,15 @@ def get_context() -> Context:
 
 
 def get_http_request() -> Request:
-    from mcp.server.lowlevel.server import request_ctx
-
+    # Try MCP SDK's request_ctx first (set during normal MCP request handling)
     request = None
     with contextlib.suppress(LookupError):
         request = request_ctx.get().request
+
+    # Fallback to FastMCP's HTTP context variable
+    # This is needed during `on_initialize` middleware where request_ctx isn't set yet
+    if request is None:
+        request = _current_http_request.get()
 
     if request is None:
         raise RuntimeError("No active HTTP request found.")
