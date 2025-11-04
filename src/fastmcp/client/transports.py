@@ -177,8 +177,8 @@ class SSETransport(ClientTransport):
 
         self.url = url
         self.headers = headers or {}
-        self._set_auth(auth)
         self.httpx_client_factory = httpx_client_factory
+        self._set_auth(auth)
 
         if isinstance(sse_read_timeout, int | float):
             sse_read_timeout = datetime.timedelta(seconds=float(sse_read_timeout))
@@ -186,7 +186,7 @@ class SSETransport(ClientTransport):
 
     def _set_auth(self, auth: httpx.Auth | Literal["oauth"] | str | None):
         if auth == "oauth":
-            auth = OAuth(self.url)
+            auth = OAuth(self.url, httpx_client_factory=self.httpx_client_factory)
         elif isinstance(auth, str):
             auth = BearerAuth(auth)
         self.auth = auth
@@ -247,8 +247,8 @@ class StreamableHttpTransport(ClientTransport):
 
         self.url = url
         self.headers = headers or {}
-        self._set_auth(auth)
         self.httpx_client_factory = httpx_client_factory
+        self._set_auth(auth)
 
         if isinstance(sse_read_timeout, int | float):
             sse_read_timeout = datetime.timedelta(seconds=float(sse_read_timeout))
@@ -256,7 +256,7 @@ class StreamableHttpTransport(ClientTransport):
 
     def _set_auth(self, auth: httpx.Auth | Literal["oauth"] | str | None):
         if auth == "oauth":
-            auth = OAuth(self.url)
+            auth = OAuth(self.url, httpx_client_factory=self.httpx_client_factory)
         elif isinstance(auth, str):
             auth = BearerAuth(auth)
         self.auth = auth
