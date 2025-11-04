@@ -1,6 +1,6 @@
 import asyncio
 import sys
-from typing import cast
+from typing import Any, cast
 from unittest.mock import AsyncMock
 
 import mcp
@@ -146,6 +146,46 @@ async def test_call_tool_mcp(fastmcp_server):
         first_content = content[0]
         content_str = str(first_content)
         assert "Hello, World!" in content_str
+
+
+async def test_call_tool_with_meta():
+    """Test that meta parameter is properly passed from client to server."""
+    server = FastMCP("MetaTestServer")
+
+    # Create a tool that accesses the meta from the request context
+    @server.tool
+    def check_meta() -> dict[str, Any]:
+        """A tool that returns the meta from the request context."""
+        from fastmcp.server.dependencies import get_context
+
+        context = get_context()
+        meta = context.request_context.meta
+
+        # Return the meta data as a dict
+        if meta is not None:
+            return {
+                "has_meta": True,
+                "user_id": getattr(meta, "user_id", None),
+                "trace_id": getattr(meta, "trace_id", None),
+            }
+        return {"has_meta": False}
+
+    client = Client(transport=FastMCPTransport(server))
+
+    async with client:
+        # Test with meta parameter - verify the server receives it
+        test_meta = {"user_id": "test-123", "trace_id": "abc-def"}
+        result = await client.call_tool("check_meta", {}, meta=test_meta)
+
+        assert result.data["has_meta"] is True
+        assert result.data["user_id"] == "test-123"
+        assert result.data["trace_id"] == "abc-def"
+
+        # Test without meta parameter - verify fields are not present
+        result_no_meta = await client.call_tool("check_meta", {})
+        # When meta is not provided, custom fields should not be present
+        assert result_no_meta.data.get("user_id") is None
+        assert result_no_meta.data.get("trace_id") is None
 
 
 async def test_list_resources(fastmcp_server):

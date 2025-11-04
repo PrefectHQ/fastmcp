@@ -178,3 +178,59 @@ class TestContextState:
 
             assert context1.get_state("key1") == "key1-context1"
             assert context1.get_state("key-context3-only") is None
+
+
+class TestContextMeta:
+    """Test suite for Context meta functionality."""
+
+    def test_request_context_meta_access(self, context):
+        """Test that meta can be accessed from request context."""
+        from mcp.server.lowlevel.server import request_ctx
+        from mcp.shared.context import RequestContext
+
+        # Create a mock meta object with attributes
+        class MockMeta:
+            def __init__(self):
+                self.user_id = "user-123"
+                self.trace_id = "trace-456"
+                self.custom_field = "custom-value"
+
+        mock_meta = MockMeta()
+
+        token = request_ctx.set(
+            RequestContext(  # type: ignore[arg-type]
+                request_id=0,
+                meta=mock_meta,  # type: ignore[arg-type]
+                session=MagicMock(wraps={}),
+                lifespan_context=MagicMock(),
+            )
+        )
+
+        # Access meta through context
+        retrieved_meta = context.request_context.meta
+        assert retrieved_meta is not None
+        assert retrieved_meta.user_id == "user-123"
+        assert retrieved_meta.trace_id == "trace-456"
+        assert retrieved_meta.custom_field == "custom-value"
+
+        request_ctx.reset(token)
+
+    def test_request_context_meta_none(self, context):
+        """Test that context handles None meta gracefully."""
+        from mcp.server.lowlevel.server import request_ctx
+        from mcp.shared.context import RequestContext
+
+        token = request_ctx.set(
+            RequestContext(  # type: ignore[arg-type]
+                request_id=0,
+                meta=None,
+                session=MagicMock(wraps={}),
+                lifespan_context=MagicMock(),
+            )
+        )
+
+        # Access meta through context
+        retrieved_meta = context.request_context.meta
+        assert retrieved_meta is None
+
+        request_ctx.reset(token)

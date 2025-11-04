@@ -880,6 +880,7 @@ class Client(Generic[ClientTransportT]):
         arguments: dict[str, Any],
         progress_handler: ProgressHandler | None = None,
         timeout: datetime.timedelta | float | int | None = None,
+        meta: dict[str, Any] | None = None,
     ) -> mcp.types.CallToolResult:
         """Send a tools/call request and return the complete MCP protocol result.
 
@@ -891,6 +892,7 @@ class Client(Generic[ClientTransportT]):
             arguments (dict[str, Any]): Arguments to pass to the tool.
             timeout (datetime.timedelta | float | int | None, optional): The timeout for the tool call. Defaults to None.
             progress_handler (ProgressHandler | None, optional): The progress handler to use for the tool call. Defaults to None.
+            meta (dict[str, Any] | None, optional): Additional metadata to send with the tool call.
 
         Returns:
             mcp.types.CallToolResult: The complete response object from the protocol,
@@ -904,11 +906,13 @@ class Client(Generic[ClientTransportT]):
         # Convert timeout to timedelta if needed
         if isinstance(timeout, int | float):
             timeout = datetime.timedelta(seconds=float(timeout))
+
         result = await self.session.call_tool(
             name=name,
             arguments=arguments,
             read_timeout_seconds=timeout,  # ty: ignore[invalid-argument-type]
             progress_callback=progress_handler or self._progress_handler,
+            meta=meta,
         )
         return result
 
@@ -919,6 +923,7 @@ class Client(Generic[ClientTransportT]):
         timeout: datetime.timedelta | float | int | None = None,
         progress_handler: ProgressHandler | None = None,
         raise_on_error: bool = True,
+        meta: dict[str, Any] | None = None,
     ) -> CallToolResult:
         """Call a tool on the server.
 
@@ -929,6 +934,8 @@ class Client(Generic[ClientTransportT]):
             arguments (dict[str, Any] | None, optional): Arguments to pass to the tool. Defaults to None.
             timeout (datetime.timedelta | float | int | None, optional): The timeout for the tool call. Defaults to None.
             progress_handler (ProgressHandler | None, optional): The progress handler to use for the tool call. Defaults to None.
+            raise_on_error (bool, optional): Whether to raise a ToolError if the tool call results in an error. Defaults to True.
+            meta (dict[str, Any] | None, optional): Additional metadata to send with the tool call.
 
         Returns:
             CallToolResult:
@@ -948,6 +955,7 @@ class Client(Generic[ClientTransportT]):
             arguments=arguments or {},
             timeout=timeout,
             progress_handler=progress_handler,
+            meta=meta,
         )
         data = None
         if result.isError and raise_on_error:
