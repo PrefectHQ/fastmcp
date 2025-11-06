@@ -691,6 +691,7 @@ class TestConsentPageServerIcon:
             upstream_client_secret="upstream-secret",
             token_verifier=verifier,
             base_url="https://proxy.example.com",
+            client_storage=MemoryStore(),
             jwt_signing_key="test-secret",
         )
 
@@ -763,6 +764,7 @@ class TestConsentPageServerIcon:
             upstream_client_secret="upstream-secret",
             token_verifier=verifier,
             base_url="https://proxy.example.com",
+            client_storage=MemoryStore(),
             jwt_signing_key="test-secret",
         )
 
@@ -830,6 +832,7 @@ class TestConsentPageServerIcon:
             upstream_client_secret="upstream-secret",
             token_verifier=verifier,
             base_url="https://proxy.example.com",
+            client_storage=MemoryStore(),
             jwt_signing_key="test-secret",
         )
 

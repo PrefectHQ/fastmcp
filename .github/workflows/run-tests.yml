@@ -48,12 +48,7 @@ jobs:
         run: uv sync --upgrade
 
       - name: Run tests (excluding integration and client_process)
-        run: |
-          if [ "${{ matrix.os }}" = "windows-latest" ]; then
-            uv run pytest --inline-snapshot=disable tests -m "not integration and not client_process"
-          else
-            uv run pytest --inline-snapshot=disable tests -m "not integration and not client_process" --numprocesses auto --maxprocesses 4 --dist worksteal
-          fi
+        run: uv run pytest --inline-snapshot=disable tests -m "not integration and not client_process" --numprocesses auto --maxprocesses 4 --dist worksteal
         shell: bash
 
       - name: Run client process tests separately
