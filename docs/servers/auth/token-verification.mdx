@@ -212,6 +212,8 @@ Static token verification stores tokens as plain text and should never be used i
 
 ### Debug/Custom Token Verification
 
+<VersionBadge version="2.13.1" />
+
 The `DebugTokenVerifier` provides maximum flexibility for testing and special cases where standard token verification isn't applicable. It delegates validation to a user-provided callable, making it useful for prototyping, testing scenarios, or handling opaque tokens without introspection endpoints.
 
 ```python
