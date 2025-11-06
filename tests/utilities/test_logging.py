@@ -1,6 +1,6 @@
 import logging
 
-from fastmcp.utilities.logging import get_logger
+from fastmcp.utilities.logging import configure_logging, get_logger
 
 
 def test_logging_doesnt_affect_other_loggers(caplog):
@@ -28,3 +28,29 @@ def test_logging_doesnt_affect_other_loggers(caplog):
 
     finally:
         logging.getLogger("fastmcp").setLevel(original_level)
+
+
+def test_configure_logging_with_traceback_kwargs():
+    """Test that traceback-related kwargs can be passed without causing duplicate argument errors."""
+    # This should not raise TypeError about duplicate keyword arguments
+    configure_logging(enable_rich_tracebacks=True, tracebacks_max_frames=20)
+
+    # Verify the logger was configured
+    logger = logging.getLogger("fastmcp")
+    assert logger.handlers
+    assert len(logger.handlers) == 2  # One for normal logs, one for tracebacks
+
+
+def test_configure_logging_traceback_defaults_can_be_overridden():
+    """Test that default traceback settings can be overridden by kwargs."""
+    configure_logging(
+        enable_rich_tracebacks=True,
+        tracebacks_max_frames=20,
+        show_path=True,
+        show_level=True,
+    )
+
+    logger = logging.getLogger("fastmcp")
+    assert logger.handlers
+    # The traceback handler should have been created with custom values
+    # We can't directly inspect RichHandler internals easily, but we verified no error was raised

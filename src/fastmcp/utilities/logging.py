@@ -74,15 +74,19 @@ def configure_logging(
     import mcp
     import pydantic
 
-    traceback_handler = RichHandler(
-        console=Console(stderr=True),
-        show_path=False,
-        show_level=False,
-        rich_tracebacks=enable_rich_tracebacks,
-        tracebacks_max_frames=3,
-        tracebacks_suppress=[fastmcp, mcp, pydantic],
-        **rich_kwargs,
-    )
+    # Build traceback kwargs with defaults that can be overridden
+    traceback_kwargs = {
+        "console": Console(stderr=True),
+        "show_path": False,
+        "show_level": False,
+        "rich_tracebacks": enable_rich_tracebacks,
+        "tracebacks_max_frames": 3,
+        "tracebacks_suppress": [fastmcp, mcp, pydantic],
+    }
+    # Override defaults with user-provided values
+    traceback_kwargs.update(rich_kwargs)
+
+    traceback_handler = RichHandler(**traceback_kwargs)  # type: ignore[arg-type]
     traceback_handler.setFormatter(formatter)
 
     traceback_handler.addFilter(lambda record: record.exc_info is not None)
