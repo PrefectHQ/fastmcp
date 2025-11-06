@@ -113,6 +113,43 @@ class TestSupabaseProvider:
             == "https://abc123.supabase.co/auth/v1"
         )
 
+    @pytest.mark.parametrize(
+        "algorithm",
+        ["HS256", "RS256", "ES256"],
+    )
+    def test_algorithm_configuration(self, algorithm):
+        """Test that algorithm can be configured for different JWT signing methods."""
+        provider = SupabaseProvider(
+            project_url="https://abc123.supabase.co",
+            base_url="https://myserver.com",
+            algorithm=algorithm,
+        )
+
+        assert provider.token_verifier.algorithm == algorithm  # type: ignore[attr-defined]
+
+    def test_algorithm_default_es256(self):
+        """Test that algorithm defaults to ES256 when not specified."""
+        provider = SupabaseProvider(
+            project_url="https://abc123.supabase.co",
+            base_url="https://myserver.com",
+        )
+
+        assert provider.token_verifier.algorithm == "ES256"  # type: ignore[attr-defined]
+
+    def test_algorithm_from_env_var(self):
+        """Test that algorithm can be configured via environment variable."""
+        with patch.dict(
+            os.environ,
+            {
+                "FASTMCP_SERVER_AUTH_SUPABASE_PROJECT_URL": "https://env123.supabase.co",
+                "FASTMCP_SERVER_AUTH_SUPABASE_BASE_URL": "https://envserver.com",
+                "FASTMCP_SERVER_AUTH_SUPABASE_ALGORITHM": "RS256",
+            },
+        ):
+            provider = SupabaseProvider()
+
+            assert provider.token_verifier.algorithm == "RS256"  # type: ignore[attr-defined]
+
 
 def run_mcp_server(host: str, port: int) -> None:
     mcp = FastMCP(

@@ -7,6 +7,8 @@ for seamless MCP client authentication.
 
 from __future__ import annotations
 
+from typing import Literal
+
 import httpx
 from pydantic import AnyHttpUrl, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -32,6 +34,7 @@ class SupabaseProviderSettings(BaseSettings):
 
     project_url: AnyHttpUrl
     base_url: AnyHttpUrl
+    algorithm: Literal["HS256", "RS256", "ES256"] = "ES256"
     required_scopes: list[str] | None = None
 
     @field_validator("required_scopes", mode="before")
@@ -52,13 +55,19 @@ class SupabaseProvider(RemoteAuthProvider):
     1. Supabase Project Setup:
        - Create a Supabase project at https://supabase.com
        - Note your project URL (e.g., "https://abc123.supabase.co")
-       - For projects created after May 1st, 2025, asymmetric RS256 keys are used by default
-       - For older projects, consider migrating to asymmetric keys for better security
+       - Configure your JWT algorithm in Supabase Auth settings (HS256, RS256, or ES256)
+       - Asymmetric keys (RS256/ES256) are recommended for production
 
     2. JWT Verification:
        - FastMCP verifies JWTs using the JWKS endpoint at {project_url}/auth/v1/.well-known/jwks.json
        - JWTs are issued by {project_url}/auth/v1
        - Tokens are cached for up to 10 minutes by Supabase's edge servers
+       - Algorithm must match your Supabase Auth configuration
+
+    3. Authorization:
+       - Supabase uses Row Level Security (RLS) policies for database authorization
+       - OAuth-level scopes are an upcoming feature in Supabase Auth
+       - Both approaches will be supported once scope handling is available
 
     For detailed setup instructions, see:
     https://supabase.com/docs/guides/auth/jwts
@@ -71,6 +80,7 @@ class SupabaseProvider(RemoteAuthProvider):
         supabase_auth = SupabaseProvider(
             project_url="https://abc123.supabase.co",
             base_url="https://your-fastmcp-server.com",
+            algorithm="ES256",  # Match your Supabase Auth configuration
         )
 
         # Use with FastMCP
@@ -83,6 +93,7 @@ class SupabaseProvider(RemoteAuthProvider):
         *,
         project_url: AnyHttpUrl | str | NotSetT = NotSet,
         base_url: AnyHttpUrl | str | NotSetT = NotSet,
+        algorithm: Literal["HS256", "RS256", "ES256"] | NotSetT = NotSet,
         required_scopes: list[str] | NotSetT | None = NotSet,
         token_verifier: TokenVerifier | None = None,
     ):
@@ -91,7 +102,11 @@ class SupabaseProvider(RemoteAuthProvider):
         Args:
             project_url: Your Supabase project URL (e.g., "https://abc123.supabase.co")
             base_url: Public URL of this FastMCP server
-            required_scopes: Optional list of scopes to require for all requests
+            algorithm: JWT signing algorithm (HS256, RS256, or ES256). Must match your
+                Supabase Auth configuration. Defaults to ES256.
+            required_scopes: Optional list of scopes to require for all requests.
+                Note: Supabase currently uses RLS policies for authorization. OAuth-level
+                scopes are an upcoming feature.
             token_verifier: Optional token verifier. If None, creates JWT verifier for Supabase
         """
         settings = SupabaseProviderSettings.model_validate(
@@ -100,6 +115,7 @@ class SupabaseProvider(RemoteAuthProvider):
                 for k, v in {
                     "project_url": project_url,
                     "base_url": base_url,
+                    "algorithm": algorithm,
                     "required_scopes": required_scopes,
                 }.items()
                 if v is not NotSet
@@ -114,7 +130,7 @@ class SupabaseProvider(RemoteAuthProvider):
             token_verifier = JWTVerifier(
                 jwks_uri=f"{self.project_url}/auth/v1/.well-known/jwks.json",
                 issuer=f"{self.project_url}/auth/v1",
-                algorithm="ES256",  # Supabase uses ES256 for asymmetric keys
+                algorithm=settings.algorithm,
                 required_scopes=settings.required_scopes,
             )
 
