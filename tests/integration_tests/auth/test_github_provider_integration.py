@@ -284,7 +284,7 @@ async def test_github_oauth_authorization_redirect(github_server: str):
 
         # Step 4: Approve consent
         approve_response = await http_client.post(
-            f"{base_url}/consent/submit",
+            f"{base_url}/consent",
             data={
                 "action": "approve",
                 "txn_id": txn_id,
