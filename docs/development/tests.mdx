@@ -299,17 +299,16 @@ async def test_database_tool():
 
 ### Testing Network Transports
 
-While in-memory testing covers most unit testing needs, you'll occasionally need to test actual network transports like HTTP or SSE. FastMCP provides two approaches: in-process async servers using AnyIO task groups (preferred), and separate subprocess servers (for special cases).
+While in-memory testing covers most unit testing needs, you'll occasionally need to test actual network transports like HTTP or SSE. FastMCP provides two approaches: in-process async servers (preferred), and separate subprocess servers (for special cases).
 
 #### In-Process Network Testing (Preferred)
 
 <VersionBadge version="2.13.0" />
 
-For most network transport tests, use `run_server_async` with AnyIO task groups. This runs the server as a task in the same process, providing fast, deterministic tests with full debugger support:
+For most network transport tests, use `run_server_async` as an async context manager. This runs the server as a task in the same process, providing fast, deterministic tests with full debugger support:
 
 ```python
 import pytest
-from anyio.abc import TaskGroup
 from fastmcp import FastMCP, Client
 from fastmcp.client.transports import StreamableHttpTransport
 from fastmcp.utilities.tests import run_server_async
@@ -317,19 +316,19 @@ from fastmcp.utilities.tests import run_server_async
 def create_test_server() -> FastMCP:
     """Create a test server instance."""
     server = FastMCP("TestServer")
-    
+
     @server.tool
     def greet(name: str) -> str:
         return f"Hello, {name}!"
-    
+
     return server
 
 @pytest.fixture
-async def http_server(task_group: TaskGroup) -> str:
-    """Start server in-process using task group."""
+async def http_server() -> str:
+    """Start server in-process for testing."""
     server = create_test_server()
-    url = await run_server_async(task_group, server, transport="http")
-    return url
+    async with run_server_async(server) as url:
+        yield url
 
 async def test_http_transport(http_server: str):
     """Test actual HTTP transport behavior."""
@@ -338,12 +337,12 @@ async def test_http_transport(http_server: str):
     ) as client:
         result = await client.ping()
         assert result is True
-        
+
         greeting = await client.call_tool("greet", {"name": "World"})
         assert greeting.data == "Hello, World!"
 ```
 
-The `task_group` fixture is provided globally by `conftest.py` and automatically handles server lifecycle and cleanup. This approach is faster than subprocess-based testing and provides better error messages.
+The `run_server_async` context manager automatically handles server lifecycle and cleanup. This approach is faster than subprocess-based testing and provides better error messages.
 
 #### Subprocess Testing (Special Cases)
 
