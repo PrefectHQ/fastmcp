@@ -454,7 +454,7 @@ def create_page(
     content: str,
     title: str = "FastMCP",
     additional_styles: str = "",
-    csp_policy: str = "default-src 'none'; style-src 'unsafe-inline'; img-src https:; base-uri 'none'",
+    csp_policy: str = "default-src 'none'; style-src 'unsafe-inline'; img-src https: data:; base-uri 'none'",
 ) -> str:
     """
     Create a complete HTML page with FastMCP styling.

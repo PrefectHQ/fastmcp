@@ -380,7 +380,7 @@ def create_consent_html(
         form_action_schemes.append(f"{redirect_scheme}:")
 
     form_action_directive = " ".join(form_action_schemes)
-    csp_policy = f"default-src 'none'; style-src 'unsafe-inline'; img-src https:; base-uri 'none'; form-action {form_action_directive}"
+    csp_policy = f"default-src 'none'; style-src 'unsafe-inline'; img-src https: data:; base-uri 'none'; form-action {form_action_directive}"
 
     return create_page(
         content=content,
@@ -468,9 +468,7 @@ def create_error_html(
     )
 
     # Simple CSP policy for error pages (no forms needed)
-    csp_policy = (
-        "default-src 'none'; style-src 'unsafe-inline'; img-src https:; base-uri 'none'"
-    )
+    csp_policy = "default-src 'none'; style-src 'unsafe-inline'; img-src https: data:; base-uri 'none'"
 
     return create_page(
         content=content,
