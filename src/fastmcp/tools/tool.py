@@ -294,10 +294,11 @@ class FunctionTool(Tool):
         # Note: explicit schemas (dict) are used as-is without auto-wrapping
 
         # Validate that explicit schemas are object type for structured content
+        # (resolving $ref references for self-referencing types)
         if final_output_schema is not None and isinstance(final_output_schema, dict):
-            if final_output_schema.get("type") != "object":
+            if not _is_object_schema(final_output_schema):
                 raise ValueError(
-                    f'Output schemas must have "type" set to "object" due to MCP spec limitations. Received: {final_output_schema!r}'
+                    f"Output schemas must represent object types due to MCP spec limitations. Received: {final_output_schema!r}"
                 )
 
         return cls(
@@ -364,6 +365,52 @@ class FunctionTool(Tool):
             content=unstructured_result,
             structured_content={"result": result} if wrap_result else result,
         )
+
+
+def _is_object_schema(schema: dict[str, Any]) -> bool:
+    """Check if a JSON schema represents an object type, resolving $ref references."""
+    # Direct object type
+    if schema.get("type") == "object":
+        return True
+
+    # Schema with properties but no explicit type is treated as object
+    if "properties" in schema:
+        return True
+
+    # Resolve $ref references to check the referenced schema
+    # Self-referencing types (e.g., list["ReturnThing"]) generate schemas with $ref
+    # at the root level instead of "type": "object" directly
+    if "$ref" in schema:
+        ref = schema["$ref"]
+        if ref.startswith("#/$defs/"):
+            # Resolve reference within the same schema document
+            # The schema dict contains both $ref and $defs
+            defs_path = ref.replace("#/$defs/", "").split("/")
+            if "$defs" in schema:
+                defs = schema["$defs"]
+                current = defs
+                # Navigate through the defs path
+                for part in defs_path:
+                    if isinstance(current, dict) and part in current:
+                        current = current[part]
+                    else:
+                        # Can't resolve, assume it might be an object
+                        # (safer to assume object than to wrap incorrectly)
+                        return True
+                # Recursively check the resolved schema
+                if isinstance(current, dict):
+                    return _is_object_schema(current)
+            # If $defs not found but we have a $ref, assume object
+            # (self-referencing types are typically objects)
+            return True
+        elif ref == "#":
+            # Self-reference - treat as object (common for recursive types)
+            return True
+        # For other $ref patterns, assume object to be safe
+        # (most $refs in JSON schemas point to object types)
+        return True
+
+    return False
 
 
 @dataclass
@@ -478,10 +525,9 @@ class ParsedFunction:
 
                 # Generate schema for wrapped type if it's non-object
                 # because MCP requires that output schemas are objects
-                if (
-                    wrap_non_object_output_schema
-                    and base_schema.get("type") != "object"
-                ):
+                # Check if schema is an object type, resolving $ref references
+                # (self-referencing types use $ref at root level)
+                if wrap_non_object_output_schema and not _is_object_schema(base_schema):
                     # Use the wrapped result schema directly
                     wrapped_type = _WrappedResult[clean_output_type]
                     wrapped_adapter = get_cached_typeadapter(wrapped_type)
