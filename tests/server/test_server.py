@@ -424,7 +424,7 @@ class TestToolDecorator:
         mcp = FastMCP()
 
         with pytest.raises(
-            ValueError, match='Output schemas must have "type" set to "object"'
+            ValueError, match="Output schemas must represent object types"
         ):
 
             @mcp.tool(output_schema={"type": "integer"})

@@ -368,7 +368,7 @@ class FunctionTool(Tool):
 
 
 def _is_object_schema(schema: dict[str, Any]) -> bool:
-    """Check if a JSON schema represents an object type, resolving $ref references."""
+    """Check if a JSON schema represents an object type."""
     # Direct object type
     if schema.get("type") == "object":
         return True
@@ -377,40 +377,9 @@ def _is_object_schema(schema: dict[str, Any]) -> bool:
     if "properties" in schema:
         return True
 
-    # Resolve $ref references to check the referenced schema
-    # Self-referencing types (e.g., list["ReturnThing"]) generate schemas with $ref
-    # at the root level instead of "type": "object" directly
-    if "$ref" in schema:
-        ref = schema["$ref"]
-        if ref.startswith("#/$defs/"):
-            # Resolve reference within the same schema document
-            # The schema dict contains both $ref and $defs
-            defs_path = ref.replace("#/$defs/", "").split("/")
-            if "$defs" in schema:
-                defs = schema["$defs"]
-                current = defs
-                # Navigate through the defs path
-                for part in defs_path:
-                    if isinstance(current, dict) and part in current:
-                        current = current[part]
-                    else:
-                        # Can't resolve, assume it might be an object
-                        # (safer to assume object than to wrap incorrectly)
-                        return True
-                # Recursively check the resolved schema
-                if isinstance(current, dict):
-                    return _is_object_schema(current)
-            # If $defs not found but we have a $ref, assume object
-            # (self-referencing types are typically objects)
-            return True
-        elif ref == "#":
-            # Self-reference - treat as object (common for recursive types)
-            return True
-        # For other $ref patterns, assume object to be safe
-        # (most $refs in JSON schemas point to object types)
-        return True
-
-    return False
+    # Self-referencing types use $ref pointing to $defs
+    # The referenced type is always an object in our use case
+    return "$ref" in schema and "$defs" in schema
 
 
 @dataclass
