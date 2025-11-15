@@ -44,6 +44,7 @@ from mcp.server.auth.provider import (
     AccessToken,
     AuthorizationCode,
     AuthorizationParams,
+    AuthorizeError,
     RefreshToken,
     TokenError,
 )
@@ -939,6 +940,8 @@ class OAuthProxy(OAuthProvider):
         """
 
         # Create a ProxyDCRClient with configured redirect URI validation
+        if client_info.client_id is None:
+            raise ValueError("client_id is required for client registration")
         proxy_client: ProxyDCRClient = ProxyDCRClient(
             client_id=client_info.client_id,
             client_secret=client_info.client_secret,
@@ -968,7 +971,7 @@ class OAuthProxy(OAuthProvider):
         logger.debug(
             "Registered client %s with %d redirect URIs",
             client_info.client_id,
-            len(proxy_client.redirect_uris),
+            len(proxy_client.redirect_uris) if proxy_client.redirect_uris else 0,
         )
 
     # -------------------------------------------------------------------------
@@ -1005,6 +1008,10 @@ class OAuthProxy(OAuthProvider):
             )
 
         # Store transaction data for IdP callback processing
+        if client.client_id is None:
+            raise AuthorizeError(
+                error="invalid_client", error_description="Client ID is required"
+            )
         transaction = OAuthTransaction(
             txn_id=txn_id,
             client_id=client.client_id,
@@ -1083,6 +1090,10 @@ class OAuthProxy(OAuthProvider):
             return None
 
         # Create authorization code object with PKCE challenge
+        if client.client_id is None:
+            raise AuthorizeError(
+                error="invalid_client", error_description="Client ID is required"
+            )
         return AuthorizationCode(
             code=authorization_code,
             client_id=client.client_id,
@@ -1168,7 +1179,7 @@ class OAuthProxy(OAuthProvider):
             expires_at=time.time() + expires_in,
             token_type=idp_tokens.get("token_type", "Bearer"),
             scope=" ".join(authorization_code.scopes),
-            client_id=client.client_id,
+            client_id=client.client_id or "",
             created_at=time.time(),
             raw_token_data=idp_tokens,
         )
@@ -1181,6 +1192,8 @@ class OAuthProxy(OAuthProvider):
         logger.debug("Stored encrypted upstream tokens (jti=%s)", access_jti[:8])
 
         # Issue minimal FastMCP access token (just a reference via JTI)
+        if client.client_id is None:
+            raise TokenError("invalid_client", "Client ID is required")
         fastmcp_access_token = self._jwt_issuer.issue_access_token(
             client_id=client.client_id,
             scopes=authorization_code.scopes,
@@ -1382,6 +1395,8 @@ class OAuthProxy(OAuthProvider):
         )
 
         # Issue new minimal FastMCP access token (just a reference via JTI)
+        if client.client_id is None:
+            raise TokenError("invalid_client", "Client ID is required")
         new_access_jti = secrets.token_urlsafe(32)
         new_fastmcp_access = self._jwt_issuer.issue_access_token(
             client_id=client.client_id,

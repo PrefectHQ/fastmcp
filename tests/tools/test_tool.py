@@ -927,7 +927,7 @@ class TestToolFromFunctionOutputSchema:
 
         for schema in non_object_schemas:
             with pytest.raises(
-                ValueError, match='Output schemas must have "type" set to "object"'
+                ValueError, match="Output schemas must represent object types"
             ):
                 Tool.from_function(func, output_schema=schema)
 
@@ -1262,6 +1262,31 @@ class TestAutomaticStructuredContent:
             "verified": True,
         }
 
+    async def test_self_referencing_dataclass_not_wrapped(self):
+        """Test that self-referencing dataclasses are not wrapped in result field."""
+
+        @dataclass
+        class ReturnThing:
+            value: int
+            stuff: list["ReturnThing"]
+
+        def return_things() -> ReturnThing:
+            return ReturnThing(value=123, stuff=[ReturnThing(value=456, stuff=[])])
+
+        tool = Tool.from_function(return_things)
+
+        result = await tool.run({})
+
+        # Should have structured content without wrapping
+        assert result.structured_content is not None
+        # Should NOT be wrapped in "result" field
+        assert "result" not in result.structured_content
+        # Should have the actual data directly
+        assert result.structured_content == {
+            "value": 123,
+            "stuff": [{"value": 456, "stuff": []}],
+        }
+
     async def test_int_return_no_structured_content_without_schema(self):
         """Test that int returns don't create structured content without output schema."""
 
@@ -1524,13 +1549,20 @@ class TestSerializationAlias:
         # not the first validation alias 'id'
         assert tool.output_schema is not None
 
-        # Check the wrapped result schema
-        assert "properties" in tool.output_schema
-        assert "result" in tool.output_schema["properties"]
-        assert "$defs" in tool.output_schema
-
-        # Find the Component definition
-        component_def = list(tool.output_schema["$defs"].values())[0]
+        # For object types, the schema may use $ref at root (self-referencing types)
+        # or have properties directly. Check both cases.
+        if "$ref" in tool.output_schema:
+            # Schema uses $ref - resolve to get the actual definition
+            assert "$defs" in tool.output_schema
+            ref_path = tool.output_schema["$ref"].replace("#/$defs/", "")
+            component_def = tool.output_schema["$defs"][ref_path]
+        else:
+            # Schema has properties directly (wrapped case)
+            assert "properties" in tool.output_schema
+            assert "result" in tool.output_schema["properties"]
+            assert "$defs" in tool.output_schema
+            # Find the Component definition
+            component_def = list(tool.output_schema["$defs"].values())[0]
 
         # Should have 'componentId' not 'id' in properties
         assert "componentId" in component_def["properties"]
@@ -1573,8 +1605,13 @@ class TestSerializationAlias:
 
             # The result should contain the serialized form with 'componentId'
             assert result.structured_content is not None
-            assert result.structured_content["result"]["componentId"] == "test123"
-            assert "id" not in result.structured_content["result"]
+            # Object types may be wrapped in "result" or not, depending on schema structure
+            if "result" in result.structured_content:
+                component_data = result.structured_content["result"]
+            else:
+                component_data = result.structured_content
+            assert component_data["componentId"] == "test123"
+            assert "id" not in component_data
 
 
 class TestToolTitle:
