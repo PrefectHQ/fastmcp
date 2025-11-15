@@ -66,6 +66,20 @@ class InMemoryOAuthProvider(OAuthProvider):
         return self.clients.get(client_id)
 
     async def register_client(self, client_info: OAuthClientInformationFull) -> None:
+        # Validate scopes against valid_scopes if configured (matches MCP SDK behavior)
+        if (
+            client_info.scope is not None
+            and self.client_registration_options is not None
+            and self.client_registration_options.valid_scopes is not None
+        ):
+            requested_scopes = set(client_info.scope.split())
+            valid_scopes = set(self.client_registration_options.valid_scopes)
+            invalid_scopes = requested_scopes - valid_scopes
+            if invalid_scopes:
+                raise ValueError(
+                    f"Requested scopes are not valid: {', '.join(invalid_scopes)}"
+                )
+
         if client_info.client_id in self.clients:
             # As per RFC 7591, if client_id is already known, it's an update.
             # For this simple provider, we'll treat it as re-registration.
