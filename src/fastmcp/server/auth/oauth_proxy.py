@@ -1326,6 +1326,7 @@ class OAuthProxy(OAuthProvider):
                 url=self._upstream_token_endpoint,
                 refresh_token=upstream_token_set.refresh_token,
                 scope=" ".join(scopes) if scopes else None,
+                **self._extra_token_params,
             )
             logger.debug("Successfully refreshed upstream token")
         except Exception as e:
