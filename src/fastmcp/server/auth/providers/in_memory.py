@@ -80,6 +80,8 @@ class InMemoryOAuthProvider(OAuthProvider):
                     f"Requested scopes are not valid: {', '.join(invalid_scopes)}"
                 )
 
+        if client_info.client_id is None:
+            raise ValueError("client_id is required for client registration")
         if client_info.client_id in self.clients:
             # As per RFC 7591, if client_id is already known, it's an update.
             # For this simple provider, we'll treat it as re-registration.
@@ -105,7 +107,7 @@ class InMemoryOAuthProvider(OAuthProvider):
             # OAuthClientInformationFull should have a method like validate_redirect_uri
             # For this test provider, we assume it's valid if it matches one in client_info
             # The AuthorizationHandler already does robust validation using client.validate_redirect_uri
-            if params.redirect_uri not in client.redirect_uris:
+            if client.redirect_uris and params.redirect_uri not in client.redirect_uris:
                 # This check might be too simplistic if redirect_uris can be patterns
                 # or if params.redirect_uri is None and client has a default.
                 # However, the AuthorizationHandler handles the primary validation.
@@ -124,6 +126,10 @@ class InMemoryOAuthProvider(OAuthProvider):
             client_allowed_scopes = set(client.scope.split())
             scopes_list = [s for s in scopes_list if s in client_allowed_scopes]
 
+        if client.client_id is None:
+            raise AuthorizeError(
+                error="invalid_client", error_description="Client ID is required"
+            )
         auth_code = AuthorizationCode(
             code=auth_code_value,
             client_id=client.client_id,
@@ -180,6 +186,8 @@ class InMemoryOAuthProvider(OAuthProvider):
                 time.time() + DEFAULT_REFRESH_TOKEN_EXPIRY_SECONDS
             )
 
+        if client.client_id is None:
+            raise TokenError("invalid_client", "Client ID is required")
         self.access_tokens[access_token_value] = AccessToken(
             token=access_token_value,
             client_id=client.client_id,
@@ -250,6 +258,8 @@ class InMemoryOAuthProvider(OAuthProvider):
                 time.time() + DEFAULT_REFRESH_TOKEN_EXPIRY_SECONDS
             )
 
+        if client.client_id is None:
+            raise TokenError("invalid_client", "Client ID is required")
         self.access_tokens[new_access_token_value] = AccessToken(
             token=new_access_token_value,
             client_id=client.client_id,
