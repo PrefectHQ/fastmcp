@@ -181,15 +181,33 @@ class Context:
             _current_context.reset(token)
 
     @property
-    def request_context(self) -> RequestContext[ServerSession, Any, Request]:
+    def request_context(self) -> RequestContext[ServerSession, Any, Request] | None:
         """Access to the underlying request context.
 
-        If called outside of a request context, this will raise a ValueError.
+        Returns None when the MCP session has not been established yet.
+        Returns the full RequestContext once the MCP session is available.
+
+        For HTTP request access in middleware, use `get_http_request()` from fastmcp.server.dependencies,
+        which works whether or not the MCP session is available.
+
+        Example in middleware:
+        ```python
+        async def on_request(self, context, call_next):
+            ctx = context.fastmcp_context
+            if ctx.request_context:
+                # MCP session available - can access session_id, request_id, etc.
+                session_id = ctx.session_id
+            else:
+                # MCP session not available yet - use HTTP helpers
+                from fastmcp.server.dependencies import get_http_request
+                request = get_http_request()
+            return await call_next(context)
+        ```
         """
         try:
             return request_ctx.get()
-        except LookupError as e:
-            raise ValueError("Context is not available outside of a request") from e
+        except LookupError:
+            return None
 
     async def report_progress(
         self, progress: float, total: float | None = None, message: str | None = None
@@ -203,7 +221,7 @@ class Context:
 
         progress_token = (
             self.request_context.meta.progressToken
-            if self.request_context.meta
+            if self.request_context and self.request_context.meta
             else None
         )
 
@@ -292,13 +310,21 @@ class Context:
         """Get the client ID if available."""
         return (
             getattr(self.request_context.meta, "client_id", None)
-            if self.request_context.meta
+            if self.request_context and self.request_context.meta
             else None
         )
 
     @property
     def request_id(self) -> str:
-        """Get the unique ID for this request."""
+        """Get the unique ID for this request.
+
+        Raises RuntimeError if MCP request context is not available.
+        """
+        if self.request_context is None:
+            raise RuntimeError(
+                "request_id is not available because the MCP session has not been established yet. "
+                "Check `context.request_context` for None before accessing this attribute."
+            )
         return str(self.request_context.request_id)
 
     @property
@@ -313,6 +339,9 @@ class Context:
             The session ID for StreamableHTTP transports, or a generated ID
             for other transports.
 
+        Raises:
+            RuntimeError if MCP request context is not available.
+
         Example:
             ```python
             @server.tool
@@ -323,6 +352,11 @@ class Context:
             ```
         """
         request_ctx = self.request_context
+        if request_ctx is None:
+            raise RuntimeError(
+                "session_id is not available because the MCP session has not been established yet. "
+                "Check `context.request_context` for None before accessing this attribute."
+            )
         session = request_ctx.session
 
         # Try to get the session ID from the session attributes
@@ -347,7 +381,15 @@ class Context:
 
     @property
     def session(self) -> ServerSession:
-        """Access to the underlying session for advanced usage."""
+        """Access to the underlying session for advanced usage.
+
+        Raises RuntimeError if MCP request context is not available.
+        """
+        if self.request_context is None:
+            raise RuntimeError(
+                "session is not available because the MCP session has not been established yet. "
+                "Check `context.request_context` for None before accessing this attribute."
+            )
         return self.request_context.session
 
     # Convenience methods for common log levels

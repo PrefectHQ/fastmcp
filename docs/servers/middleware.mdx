@@ -103,10 +103,44 @@ This hierarchy allows you to target your middleware logic with the right level o
 - `on_list_resource_templates`: Called when listing resource templates
 - `on_list_prompts`: Called when listing available prompts
 <VersionBadge version="2.13.0" />
-- `on_initialize`: Called when a client connects and initializes the session (returns `None`) 
+- `on_initialize`: Called when a client connects and initializes the session (returns `None`)
 <Note>
 The `on_initialize` hook receives the client's initialization request but **returns `None`** rather than a result. The initialization response is handled internally by the MCP protocol and cannot be modified by middleware. This hook is useful for client detection, logging connections, or initializing session state, but not for modifying the initialization handshake itself.
 </Note>
+
+### MCP Session Availability in Middleware
+
+<VersionBadge version="2.13.1" />
+
+The MCP session and request context are not available during certain phases like initialization. When middleware runs during these phases, `context.fastmcp_context.request_context` returns `None` rather than the full MCP request context.
+
+This typically occurs when:
+- The `on_request` hook fires during client initialization
+- The MCP handshake hasn't completed yet
+
+To handle this in middleware, check if the MCP request context is available before accessing MCP-specific attributes. Note that the MCP request context is distinct from the HTTP request - for HTTP transports, you can use HTTP helpers to access request data even when the MCP session is not available:
+
+```python
+from fastmcp.server.middleware import Middleware, MiddlewareContext
+
+class SessionAwareMiddleware(Middleware):
+    async def on_request(self, context: MiddlewareContext, call_next):
+        ctx = context.fastmcp_context
+
+        if ctx.request_context:
+            # MCP session available - can access session-specific attributes
+            session_id = ctx.session_id
+            request_id = ctx.request_id
+        else:
+            # MCP session not available yet - use HTTP helpers for request data (if using HTTP transport)
+            from fastmcp.server.dependencies import get_http_headers
+            headers = get_http_headers()
+            # Access HTTP data for auth, logging, etc.
+
+        return await call_next(context)
+```
+
+For HTTP request data (headers, client IP, etc.) when using HTTP transports, use `get_http_request()` or `get_http_headers()` from `fastmcp.server.dependencies`, which work regardless of MCP session availability. See [HTTP Requests](/servers/context#http-requests) for details.
 
 ## Component Access in Middleware
 

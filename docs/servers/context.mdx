@@ -313,6 +313,48 @@ async def request_info(ctx: Context) -> dict:
 - **`ctx.client_id -> str | None`**: Get the ID of the client making the request, if provided during initialization
 - **`ctx.session_id -> str | None`**: Get the MCP session ID for session-based data sharing (HTTP transports only)
 
+#### Request Context Availability
+
+<VersionBadge version="2.13.1" />
+
+The `ctx.request_context` property provides access to the underlying MCP request context, but returns `None` when the MCP session has not been established yet. This typically occurs:
+
+- During middleware execution in the `on_request` hook before the MCP handshake completes
+- During the initialization phase of client connections
+
+The MCP request context is distinct from the HTTP request. For HTTP transports, HTTP request data may be available even when the MCP session is not yet established.
+
+To safely access the request context in situations where it may not be available:
+
+```python
+from fastmcp import FastMCP, Context
+from fastmcp.server.dependencies import get_http_request
+
+mcp = FastMCP(name="Session Aware Demo")
+
+@mcp.tool
+async def session_info(ctx: Context) -> dict:
+    """Return session information when available."""
+
+    # Check if MCP session is available
+    if ctx.request_context:
+        # MCP session available - can access MCP-specific attributes
+        return {
+            "session_id": ctx.session_id,
+            "request_id": ctx.request_id,
+            "has_meta": ctx.request_context.meta is not None
+        }
+    else:
+        # MCP session not available - use HTTP helpers for request data (if using HTTP transport)
+        request = get_http_request()
+        return {
+            "message": "MCP session not available",
+            "user_agent": request.headers.get("user-agent", "Unknown")
+        }
+```
+
+For HTTP request access that works regardless of MCP session availability (when using HTTP transports), use the [HTTP request helpers](#http-requests) like `get_http_request()` and `get_http_headers()`.
+
 #### Client Metadata
 
 <VersionBadge version="2.13.1" />
