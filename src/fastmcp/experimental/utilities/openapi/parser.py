@@ -630,25 +630,28 @@ class OpenAPIParser(
         Returns:
             Dictionary containing only the schemas needed for outputs
         """
-        needed_schemas = set()
+        if not responses or not all_schemas:
+            return {}
 
-        # Check responses for schema references
+        needed_schemas: set[str] = set()
+
         for response in responses.values():
-            if response.content_schema:
-                for content_schema in response.content_schema.values():
-                    # Check if this schema was originally a top-level $ref
-                    if "x-fastmcp-top-level-schema" in content_schema:
-                        schema_name = content_schema["x-fastmcp-top-level-schema"]
-                        if schema_name in all_schemas:
-                            needed_schemas.add(schema_name)
+            if not response.content_schema:
+                continue
 
-                    # Extract all dependencies (transitive refs within the schema)
-                    deps = self._extract_schema_dependencies(
-                        content_schema, all_schemas
+            for content_schema in response.content_schema.values():
+                deps = self._extract_schema_dependencies(content_schema, all_schemas)
+                needed_schemas.update(deps)
+
+                schema_name = content_schema.get("x-fastmcp-top-level-schema")
+                if isinstance(schema_name, str) and schema_name in all_schemas:
+                    needed_schemas.add(schema_name)
+                    self._extract_schema_dependencies(
+                        all_schemas[schema_name],
+                        all_schemas,
+                        collected=needed_schemas,
                     )
-                    needed_schemas.update(deps)
 
-        # Return only the needed output schemas
         return {
             name: all_schemas[name] for name in needed_schemas if name in all_schemas
         }
