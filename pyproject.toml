@@ -7,7 +7,7 @@ dependencies = [
     "python-dotenv>=1.1.0",
     "exceptiongroup>=1.2.2",
     "httpx>=0.28.1",
-    "mcp>=1.19.0,<2.0.0",
+    "mcp>=1.19.0,<2.0.0,!=1.21.1",
     "openapi-pydantic>=0.5.1",
     "platformdirs>=4.0.0",
     "rich>=13.9.4",

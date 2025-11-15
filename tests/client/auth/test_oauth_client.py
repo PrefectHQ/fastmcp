@@ -18,7 +18,9 @@ def fastmcp_server(issuer_url: str):
         "TestServer",
         auth=InMemoryOAuthProvider(
             base_url=issuer_url,
-            client_registration_options=ClientRegistrationOptions(enabled=True),
+            client_registration_options=ClientRegistrationOptions(
+                enabled=True, valid_scopes=["read", "write"]
+            ),
         ),
     )
 
@@ -54,7 +56,7 @@ def client_with_headless_oauth(streamable_http_server: str) -> Client:
     """Client with headless OAuth that bypasses browser interaction."""
     return Client(
         transport=StreamableHttpTransport(streamable_http_server),
-        auth=HeadlessOAuth(mcp_url=streamable_http_server),
+        auth=HeadlessOAuth(mcp_url=streamable_http_server, scopes=["read", "write"]),
     )
 
 
