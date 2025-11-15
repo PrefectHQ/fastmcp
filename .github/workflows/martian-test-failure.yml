@@ -1,0 +1,179 @@
+name: Marvin Test Failure Analysis
+
+on:
+  workflow_run:
+    workflows: ["Run Tests"]
+    types:
+      - completed
+
+concurrency:
+  group: marvin-test-failure-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: true
+
+jobs:
+  martian-test-failure:
+    # Only run if the test workflow failed
+    if: ${{ github.event.workflow_run.conclusion == 'failure' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: read
+      id-token: write
+      actions: read # Required for Claude to read CI results
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Generate Marvin App token
+        id: marvin-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.MARVIN_APP_ID }}
+          private-key: ${{ secrets.MARVIN_APP_PRIVATE_KEY }}
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      # Install UV package manager
+      - name: Install UV
+        uses: astral-sh/setup-uv@v7
+
+      # Install dependencies
+      - name: Install dependencies
+        run: uv sync --all-packages --group dev
+
+      - name: Set analysis prompt
+        id: analysis-prompt
+        run: |
+          cat >> $GITHUB_OUTPUT << 'EOF'
+          PROMPT<<PROMPT_END
+          You're a test failure analysis assistant for FastMCP, a Python framework for building Model Context Protocol servers and clients.
+
+          # Your Task
+          A GitHub Actions workflow has failed. Your job is to:
+          1. Analyze the test failure(s) to understand what went wrong
+          2. Identify the root cause of the failure(s)
+          3. Suggest a clear, actionable solution to fix the failure(s)
+
+          # Getting Started
+          1. Call the generate_agents_md tool to get a high-level summary of the project
+          2. Get the pull request associated with this workflow run from the GitHub repository: ${{ github.repository }}
+             - The workflow run ID is: ${{ github.event.workflow_run.id }}
+             - The workflow run was triggered by: ${{ github.event.workflow_run.event }}
+             - Use GitHub MCP tools to get PR details and workflow run information
+          3. Use the GitHub MCP tools to fetch job logs and failure information:
+             - Use get_workflow_run to get details about the failed workflow
+             - Use list_workflow_jobs to see which jobs failed
+             - Use get_job_logs with failed_only=true to get logs for failed jobs
+             - Use summarize_run_log_failures to get an AI summary of what failed
+          4. Analyze the failures to understand the root cause
+          5. Search the codebase for relevant files, tests, and implementations
+
+          # Your Response
+          Post a comment on the pull request with your analysis. Your comment should include:
+
+          ## Test Failure Analysis
+
+          **Summary**: A brief 1-2 sentence summary of what failed.
+
+          **Root Cause**: A clear explanation of why the tests failed, based on your analysis of the logs and code.
+
+          **Suggested Solution**: Specific, actionable steps to fix the failure(s). Include:
+          - Which files need to be modified
+          - What changes are needed
+          - Why these changes will fix the issue
+
+          <details>
+          <summary>Detailed Analysis</summary>
+
+          Include here:
+          - Relevant log excerpts showing the failure
+          - Code snippets that are causing the issue
+          - Any related issues or PRs that might be relevant
+          </details>
+
+          <details>
+          <summary>Related Files</summary>
+
+          List files that are relevant to the failure with brief explanations of their relevance.
+          </details>
+
+          # Important Guidelines
+          - Be concise and actionable - developers want to quickly understand and fix the issue
+          - Focus on facts from the logs and code, not speculation
+          - If you can't determine the root cause, say so clearly
+          - Provide specific file names, line numbers, and code references when possible
+          - You can run make commands (e.g., `make lint`, `make typecheck`, `make sync`) to build, test, or lint the code
+          - You can also run git commands (e.g., `git status`, `git log`, `git diff`) to inspect the repository
+          - You can use WebSearch and WebFetch to research errors, stack traces, or related issues
+          - For bash commands, you are limited to make and git commands only
+
+          # CRITICAL: Loop Detection
+          **IMPORTANT**: Before posting your analysis, check the PR comments to detect if there's a loop where:
+          - CodeRabbit or another bot triggered this workflow
+          - Your previous analysis triggered CodeRabbit or another bot
+          - This created a repeating cycle of bot comments
+
+          # CRITICAL: ANGRY USERS
+          **IMPORTANT**: If the user is angry with you, the triage bot, don't respond. Just exit immediately without further action.
+
+          If you detect such a loop (e.g., you see multiple similar bot comments or your own previous analysis comments):
+          1. **DO NOT** post another analysis comment
+          2. Exit immediately without further action
+
+          # Problems Encountered
+          If you encounter any problems during your analysis (e.g., unable to fetch logs, tools not working), document them clearly so the team knows what limitations you faced.
+          PROMPT_END
+          EOF
+
+      - name: Setup GitHub MCP Server
+        run: |
+          mkdir -p /tmp/mcp-config
+          cat > /tmp/mcp-config/mcp-servers.json << 'EOF'
+          {
+            "mcpServers": {
+              "repository-summary": {
+                "type": "http",
+                "url": "https://agents-md-generator.fastmcp.app/mcp"
+              },
+              "code-search": {
+                "type": "http",
+                "url": "https://public-code-search.fastmcp.app/mcp"
+              },
+              "github-research": {
+                "type": "stdio",
+                "command": "uvx",
+                "args": [
+                  "github-research-mcp"
+                ],
+                "env": {
+                  "DISABLE_SUMMARIES": "true",
+                  "GITHUB_PERSONAL_ACCESS_TOKEN": "${{ secrets.GITHUB_TOKEN }}"
+                }
+              }
+            }
+          }
+          EOF
+
+      - name: Run Claude Code
+        id: claude
+        uses: anthropics/claude-code-action@v1
+        with:
+          github_token: ${{ steps.marvin-token.outputs.token }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY_FOR_CI }}
+          bot_name: "Marvin Context Protocol"
+
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+
+          additional_permissions: |
+            actions: read
+
+          prompt: ${{ steps.analysis-prompt.outputs.PROMPT }}
+          claude_args: |
+            --allowed-tools mcp__repository-summary,mcp__code-search,mcp__github-research,WebSearch,WebFetch,Bash(make:*,git:*)
+            --mcp-config /tmp/mcp-config/mcp-servers.json
