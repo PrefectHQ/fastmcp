@@ -307,7 +307,7 @@ class TestOIDCConfiguration:
         with pytest.raises(ValueError, match="Invalid URL for configuration metadata"):
             OIDCConfiguration.model_validate(valid_oidc_configuration_dict)
 
-    def test_explict_strict_with_bad_url_raises_error(
+    def test_explicit_strict_with_bad_url_raises_error(
         self, valid_oidc_configuration_dict
     ):
         """Test default configuration with explicit True strict setting and bad URL setting."""
@@ -359,7 +359,7 @@ class TestOIDCConfiguration:
 
 
 def validate_get_oidc_configuration(oidc_configuration, strict, timeout_seconds):
-    """Validate get_oidc_configuation call."""
+    """Validate get_oidc_configuration call."""
     with patch("httpx.get") as mock_get:
         mock_response = MagicMock(spec=Response)
         mock_response.json.return_value = oidc_configuration

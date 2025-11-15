@@ -360,6 +360,7 @@ async def test_github_oauth_unauthorized_access(github_server: str):
 
 async def test_github_oauth_with_mock(github_client_with_mock: Client):
     """Test complete GitHub OAuth flow with mocked callback."""
+
     async with github_client_with_mock:
         # Test that we can ping the server (requires successful OAuth)
         assert await github_client_with_mock.ping()
