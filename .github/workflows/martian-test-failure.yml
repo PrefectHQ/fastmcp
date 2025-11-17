@@ -23,7 +23,7 @@ jobs:
       actions: read # Required for Claude to read CI results
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 1
 
@@ -35,7 +35,7 @@ jobs:
           private-key: ${{ secrets.MARVIN_APP_PRIVATE_KEY }}
 
       - name: Set up Python 3.10
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.10"
 
