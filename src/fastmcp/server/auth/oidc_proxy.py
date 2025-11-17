@@ -222,6 +222,9 @@ class OIDCProxy(OAuthProxy):
         token_endpoint_auth_method: str | None = None,
         # Consent screen configuration
         require_authorization_consent: bool = True,
+        # Extra parameters
+        extra_authorize_params: dict[str, str] | None = None,
+        extra_token_params: dict[str, str] | None = None,
     ) -> None:
         """Initialize the OIDC proxy provider.
 
@@ -259,6 +262,11 @@ class OIDCProxy(OAuthProxy):
                 When True, users see a consent screen before being redirected to the upstream IdP.
                 When False, authorization proceeds directly without user confirmation.
                 SECURITY WARNING: Only disable for local development or testing environments.
+            extra_authorize_params: Additional parameters to forward to the upstream authorization endpoint.
+                Useful for provider-specific parameters like prompt=consent or access_type=offline.
+                Example: {"prompt": "consent", "access_type": "offline"}
+            extra_token_params: Additional parameters to forward to the upstream token endpoint.
+                Useful for provider-specific parameters during token exchange.
         """
         if not config_url:
             raise ValueError("Missing required config URL")
@@ -335,10 +343,24 @@ class OIDCProxy(OAuthProxy):
         if redirect_path:
             init_kwargs["redirect_path"] = redirect_path
 
+        # Build extra params, merging audience with user-provided params
+        # User params override audience if there's a conflict
+        final_authorize_params: dict[str, str] = {}
+        final_token_params: dict[str, str] = {}
+
         if audience:
-            extra_params = {"audience": audience}
-            init_kwargs["extra_authorize_params"] = extra_params
-            init_kwargs["extra_token_params"] = extra_params
+            final_authorize_params["audience"] = audience
+            final_token_params["audience"] = audience
+
+        if extra_authorize_params:
+            final_authorize_params.update(extra_authorize_params)
+        if extra_token_params:
+            final_token_params.update(extra_token_params)
+
+        if final_authorize_params:
+            init_kwargs["extra_authorize_params"] = final_authorize_params
+        if final_token_params:
+            init_kwargs["extra_token_params"] = final_token_params
 
         super().__init__(**init_kwargs)  # ty: ignore[invalid-argument-type]
 
