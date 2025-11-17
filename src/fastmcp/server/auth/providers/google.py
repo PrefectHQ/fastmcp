@@ -225,6 +225,7 @@ class GoogleProvider(OAuthProxy):
         client_storage: AsyncKeyValue | None = None,
         jwt_signing_key: str | bytes | NotSetT = NotSet,
         require_authorization_consent: bool = True,
+        extra_authorize_params: dict[str, str] | None = None,
     ):
         """Initialize Google OAuth provider.
 
@@ -252,6 +253,10 @@ class GoogleProvider(OAuthProxy):
                 When True, users see a consent screen before being redirected to Google.
                 When False, authorization proceeds directly without user confirmation.
                 SECURITY WARNING: Only disable for local development or testing environments.
+            extra_authorize_params: Additional parameters to forward to Google's authorization endpoint.
+                By default, GoogleProvider sets {"access_type": "offline", "prompt": "consent"} to ensure
+                refresh tokens are returned. You can override these defaults or add additional parameters.
+                Example: {"prompt": "select_account"} to let users choose their Google account.
         """
 
         settings = GoogleProviderSettings.model_validate(
@@ -299,6 +304,18 @@ class GoogleProvider(OAuthProxy):
             settings.client_secret.get_secret_value() if settings.client_secret else ""
         )
 
+        # Set Google-specific defaults for extra authorize params
+        # access_type=offline ensures refresh tokens are returned
+        # prompt=consent forces consent screen to get refresh token (Google only issues on first auth otherwise)
+        google_defaults = {
+            "access_type": "offline",
+            "prompt": "consent",
+        }
+        # User-provided params override defaults
+        if extra_authorize_params:
+            google_defaults.update(extra_authorize_params)
+        extra_authorize_params_final = google_defaults
+
         # Initialize OAuth proxy with Google endpoints
         super().__init__(
             upstream_authorization_endpoint="https://accounts.google.com/o/oauth2/v2/auth",
@@ -314,6 +331,7 @@ class GoogleProvider(OAuthProxy):
             client_storage=client_storage,
             jwt_signing_key=settings.jwt_signing_key,
             require_authorization_consent=require_authorization_consent,
+            extra_authorize_params=extra_authorize_params_final,
         )
 
         logger.debug(

@@ -119,3 +119,46 @@ class TestGoogleProvider:
 
         # Provider should initialize successfully with these scopes
         assert provider is not None
+
+    def test_extra_authorize_params_defaults(self):
+        """Test that Google-specific defaults are set for refresh token support."""
+        provider = GoogleProvider(
+            client_id="123456789.apps.googleusercontent.com",
+            client_secret="GOCSPX-test123",
+            jwt_signing_key="test-secret",
+        )
+
+        # Should have Google-specific defaults for refresh token support
+        assert provider._extra_authorize_params == {
+            "access_type": "offline",
+            "prompt": "consent",
+        }
+
+    def test_extra_authorize_params_override_defaults(self):
+        """Test that user can override default extra authorize params."""
+        provider = GoogleProvider(
+            client_id="123456789.apps.googleusercontent.com",
+            client_secret="GOCSPX-test123",
+            jwt_signing_key="test-secret",
+            extra_authorize_params={"prompt": "select_account"},
+        )
+
+        # User override should replace the default
+        assert provider._extra_authorize_params["prompt"] == "select_account"
+        # But other defaults should remain
+        assert provider._extra_authorize_params["access_type"] == "offline"
+
+    def test_extra_authorize_params_add_new_params(self):
+        """Test that user can add additional authorize params."""
+        provider = GoogleProvider(
+            client_id="123456789.apps.googleusercontent.com",
+            client_secret="GOCSPX-test123",
+            jwt_signing_key="test-secret",
+            extra_authorize_params={"login_hint": "user@example.com"},
+        )
+
+        # New param should be added
+        assert provider._extra_authorize_params["login_hint"] == "user@example.com"
+        # Defaults should still be present
+        assert provider._extra_authorize_params["access_type"] == "offline"
+        assert provider._extra_authorize_params["prompt"] == "consent"
