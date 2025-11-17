@@ -32,6 +32,7 @@ from fastmcp.utilities.types import (
     Image,
     NotSet,
     NotSetT,
+    create_function_without_params,
     find_kwarg_by_type,
     get_cached_typeadapter,
     replace_type,
@@ -271,6 +272,16 @@ class FunctionTool(Tool):
         enabled: bool | None = None,
     ) -> FunctionTool:
         """Create a Tool from a function."""
+        if exclude_args and fastmcp.settings.deprecation_warnings:
+            warnings.warn(
+                "The `exclude_args` parameter will be deprecated in FastMCP 2.14. "
+                "We recommend using dependency injection with `Depends()` instead, which provides "
+                "better lifecycle management and is more explicit. "
+                "`exclude_args` will continue to work until then. "
+                "See https://gofastmcp.com/docs/servers/tools for examples.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
 
         parsed_fn = ParsedFunction.from_function(fn, exclude_args=exclude_args)
 
@@ -442,7 +453,14 @@ class ParsedFunction:
         if exclude_args:
             prune_params.extend(exclude_args)
 
-        input_type_adapter = get_cached_typeadapter(fn)
+        # Create a function without excluded parameters in annotations
+        # This prevents Pydantic from trying to serialize non-serializable types
+        # before we can exclude them in compress_schema
+        fn_for_typeadapter = fn
+        if prune_params:
+            fn_for_typeadapter = create_function_without_params(fn, prune_params)
+
+        input_type_adapter = get_cached_typeadapter(fn_for_typeadapter)
         input_schema = input_type_adapter.json_schema()
         input_schema = compress_schema(
             input_schema, prune_params=prune_params, prune_titles=True
