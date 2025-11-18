@@ -2,7 +2,7 @@ name: Marvin Test Failure Analysis
 
 on:
   workflow_run:
-    workflows: ["Run Tests"]
+    workflows: ["Tests", "Run static analysis"]
     types:
       - completed
 
