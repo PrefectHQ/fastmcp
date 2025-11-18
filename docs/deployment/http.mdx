@@ -510,6 +510,7 @@ When deploying to production, you'll want to optimize your server for performanc
 # Run with basic configuration
 uvicorn app:app --host 0.0.0.0 --port 8000
 
+# Ensure stateless HTTP mode is enabled (stateless_http=True)
 # Run with multiple workers for production
 uvicorn app:app --host 0.0.0.0 --port 8000 --workers 4
 ```
