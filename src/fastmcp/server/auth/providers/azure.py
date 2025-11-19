@@ -6,9 +6,11 @@ using the OAuth Proxy pattern for non-DCR OAuth flows.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from key_value.aio.protocols import AsyncKeyValue
+from mcp.server.auth.provider import AuthorizationParams
+from mcp.shared.auth import OAuthClientInformationFull
 from pydantic import SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -18,10 +20,6 @@ from fastmcp.settings import ENV_FILE
 from fastmcp.utilities.auth import parse_scopes
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import NotSet, NotSetT
-
-if TYPE_CHECKING:
-    from mcp.server.auth.provider import AuthorizationParams
-    from mcp.shared.auth import OAuthClientInformationFull
 
 logger = get_logger(__name__)
 
@@ -358,3 +356,45 @@ class AzureProvider(OAuthProxy):
 
         # Let parent build the URL with prefixed scopes
         return super()._build_upstream_authorize_url(txn_id, modified_transaction)
+
+    def _prepare_scopes_for_upstream_refresh(self, scopes: list[str]) -> list[str]:
+        """Prepare scopes for Azure token refresh.
+
+        Azure requires:
+        1. Fully-qualified custom scopes (e.g., "api://xxx/read" not "read")
+        2. Microsoft Graph scopes (e.g., "User.Read", "openid") sent as-is
+        3. Additional scopes from provider config (additional_authorize_scopes)
+
+        This method transforms base client scopes for Azure while keeping them
+        unprefixed in storage to prevent accumulation.
+
+        Args:
+            scopes: Base scopes from RefreshToken (unprefixed, e.g., ["read"])
+
+        Returns:
+            Scopes formatted for Azure token endpoint
+        """
+        logger.debug(f"Base scopes from storage: {scopes}")
+
+        # Filter out any additional_authorize_scopes that may have been stored
+        # (they shouldn't be in storage, but clean them up if they are)
+        additional_scopes_set = set(self.additional_authorize_scopes or [])
+        base_scopes = [s for s in scopes if s not in additional_scopes_set]
+
+        # Prefix base scopes with identifier_uri for Azure
+        prefixed_scopes = []
+        for scope in base_scopes:
+            if "://" in scope or "/" in scope:
+                # Already fully-qualified (e.g., "api://xxx/read")
+                prefixed_scopes.append(scope)
+            else:
+                # Unprefixed client scope - prefix with identifier_uri
+                prefixed_scopes.append(f"{self.identifier_uri}/{scope}")
+
+        # Add additional scopes (Graph + OIDC) for the Azure request
+        # These are NOT stored in RefreshToken, only sent to Azure
+        if self.additional_authorize_scopes:
+            prefixed_scopes.extend(self.additional_authorize_scopes)
+
+        logger.debug(f"Scopes for Azure token endpoint: {prefixed_scopes}")
+        return prefixed_scopes

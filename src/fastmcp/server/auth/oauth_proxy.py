@@ -1273,6 +1273,23 @@ class OAuthProxy(OAuthProvider):
     # Refresh Token Flow
     # -------------------------------------------------------------------------
 
+    def _prepare_scopes_for_upstream_refresh(self, scopes: list[str]) -> list[str]:
+        """Prepare scopes for upstream token refresh request.
+
+        Override this method to transform scopes before sending to upstream provider.
+        For example, Azure needs to prefix scopes and add additional Graph scopes.
+
+        The scopes parameter represents what should be stored in the RefreshToken.
+        This method returns what should be sent to the upstream provider.
+
+        Args:
+            scopes: Base scopes that will be stored in RefreshToken
+
+        Returns:
+            Scopes to send to upstream provider (may be transformed/augmented)
+        """
+        return scopes
+
     async def load_refresh_token(
         self,
         client: OAuthClientInformationFull,
@@ -1333,12 +1350,17 @@ class OAuthProxy(OAuthProvider):
             timeout=HTTP_TIMEOUT_SECONDS,
         )
 
+        # Allow child classes to transform scopes before sending to upstream
+        # This enables provider-specific scope formatting (e.g., Azure prefixing)
+        # while keeping original scopes in storage
+        upstream_scopes = self._prepare_scopes_for_upstream_refresh(scopes)
+
         try:
             logger.debug("Refreshing upstream token (jti=%s)", refresh_jti[:8])
             token_response: dict[str, Any] = await oauth_client.refresh_token(  # type: ignore[misc]
                 url=self._upstream_token_endpoint,
                 refresh_token=upstream_token_set.refresh_token,
-                scope=" ".join(scopes) if scopes else None,
+                scope=" ".join(upstream_scopes) if upstream_scopes else None,
                 **self._extra_token_params,
             )
             logger.debug("Successfully refreshed upstream token")
