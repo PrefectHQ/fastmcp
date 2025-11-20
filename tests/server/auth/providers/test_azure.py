@@ -660,3 +660,52 @@ class TestAzureProvider:
         assert "api://my-api/read" in result
         assert "api://my-api/write" in result
         assert len(result) == 2
+
+    def test_prepare_scopes_for_upstream_refresh_deduplicates_scopes(self):
+        """Test that duplicate scopes are deduplicated while preserving order."""
+        provider = AzureProvider(
+            client_id="test_client",
+            client_secret="test_secret",
+            tenant_id="test-tenant",
+            identifier_uri="api://my-api",
+            required_scopes=["read"],
+            additional_authorize_scopes=["User.Read", "openid"],
+            jwt_signing_key="test-secret",
+        )
+
+        # Test with duplicate base scopes and duplicate additional scopes
+        result = provider._prepare_scopes_for_upstream_refresh(
+            ["read", "write", "read", "User.Read", "openid"]
+        )
+
+        # Should have deduplicated results in order
+        assert result == [
+            "api://my-api/read",
+            "api://my-api/write",
+            "User.Read",
+            "openid",
+        ]
+        assert len(result) == 4
+
+    def test_prepare_scopes_for_upstream_refresh_deduplicates_prefixed_variants(self):
+        """Test that both prefixed and unprefixed variants are deduplicated."""
+        provider = AzureProvider(
+            client_id="test_client",
+            client_secret="test_secret",
+            tenant_id="test-tenant",
+            identifier_uri="api://my-api",
+            required_scopes=["read"],
+            jwt_signing_key="test-secret",
+        )
+
+        # Test with both prefixed and unprefixed variants of same scope
+        result = provider._prepare_scopes_for_upstream_refresh(
+            ["read", "api://my-api/read", "write"]
+        )
+
+        # Should deduplicate - first occurrence wins (api://my-api/read from "read")
+        assert "api://my-api/read" in result
+        assert "api://my-api/write" in result
+        # Should only have 2 items (read processed twice, but deduplicated)
+        assert len(result) == 2
+        assert result.count("api://my-api/read") == 1
