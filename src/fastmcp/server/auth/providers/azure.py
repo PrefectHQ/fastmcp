@@ -391,7 +391,7 @@ class AzureProvider(OAuthProxy):
         Returns:
             Deduplicated list of scopes formatted for Azure token endpoint
         """
-        logger.debug(f"Base scopes from storage: {scopes}")
+        logger.debug("Base scopes from storage: %s", scopes)
 
         # Filter out any additional_authorize_scopes that may have been stored
         # (they shouldn't be in storage, but clean them up if they are)
@@ -410,5 +410,5 @@ class AzureProvider(OAuthProxy):
         # Use dict.fromkeys() for O(n) deduplication with order preservation
         deduplicated_scopes = list(dict.fromkeys(prefixed_scopes))
 
-        logger.debug(f"Scopes for Azure token endpoint: {deduplicated_scopes}")
+        logger.debug("Scopes for Azure token endpoint: %s", deduplicated_scopes)
         return deduplicated_scopes
