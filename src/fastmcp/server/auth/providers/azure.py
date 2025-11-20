@@ -6,11 +6,9 @@ using the OAuth Proxy pattern for non-DCR OAuth flows.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from key_value.aio.protocols import AsyncKeyValue
-from mcp.server.auth.provider import AuthorizationParams
-from mcp.shared.auth import OAuthClientInformationFull
 from pydantic import SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -20,6 +18,10 @@ from fastmcp.settings import ENV_FILE
 from fastmcp.utilities.auth import parse_scopes
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import NotSet, NotSetT
+
+if TYPE_CHECKING:
+    from mcp.server.auth.provider import AuthorizationParams
+    from mcp.shared.auth import OAuthClientInformationFull
 
 logger = get_logger(__name__)
 
