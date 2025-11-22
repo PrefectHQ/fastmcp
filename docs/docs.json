@@ -363,6 +363,7 @@
                           "python-sdk/fastmcp-server-auth-providers-in_memory",
                           "python-sdk/fastmcp-server-auth-providers-introspection",
                           "python-sdk/fastmcp-server-auth-providers-jwt",
+                          "python-sdk/fastmcp-server-auth-providers-oci",
                           "python-sdk/fastmcp-server-auth-providers-scalekit",
                           "python-sdk/fastmcp-server-auth-providers-supabase",
                           "python-sdk/fastmcp-server-auth-providers-workos"

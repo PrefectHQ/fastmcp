@@ -15,9 +15,9 @@ authentication for seamless MCP client authentication.
 
 ## Classes
 
-### `ScalekitProviderSettings` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/scalekit.py#L25" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ScalekitProviderSettings` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/scalekit.py#L26" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
-### `ScalekitProvider` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/scalekit.py#L38" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ScalekitProvider` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/scalekit.py#L55" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Scalekit resource server provider for OAuth 2.1 authentication.
@@ -39,7 +39,6 @@ IMPORTANT SETUP REQUIREMENTS:
    - Set SCALEKIT_ENVIRONMENT_URL (e.g., https://your-env.scalekit.com)
    - Set SCALEKIT_RESOURCE_ID from your created resource
    - Set BASE_URL to your FastMCP server's public URL
-   - (Optional) Set SCALEKIT_REQUIRED_SCOPES to enforce token scopes
 
 For detailed setup instructions, see:
 https://docs.scalekit.com/mcp/overview/
@@ -47,7 +46,7 @@ https://docs.scalekit.com/mcp/overview/
 
 **Methods:**
 
-#### `get_routes` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/scalekit.py#L134" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_routes` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/scalekit.py#L182" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_routes(self, mcp_path: str | None = None) -> list[Route]
@@ -61,3 +60,4 @@ metadata endpoint that forwards Scalekit's OAuth metadata to clients.
 **Args:**
 - `mcp_path`: The path where the MCP endpoint is mounted (e.g., "/mcp")
 This is used to advertise the resource URL in metadata.
+

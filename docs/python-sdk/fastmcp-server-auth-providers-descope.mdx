@@ -5,17 +5,20 @@ sidebarTitle: descope
 
 # `fastmcp.server.auth.providers.descope`
 
+
 Descope authentication provider for FastMCP.
 
 This module provides DescopeProvider - a complete authentication solution that integrates
 with Descope's OAuth 2.1 and OpenID Connect services, supporting Dynamic Client Registration (DCR)
 for seamless MCP client authentication.
 
+
 ## Classes
 
-### `DescopeProviderSettings` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/descope.py#L25" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `DescopeProviderSettings` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/descope.py#L28" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
-### `DescopeProvider` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/descope.py#L37" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `DescopeProvider` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/descope.py#L47" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
 
 Descope metadata provider for DCR (Dynamic Client Registration).
 
@@ -27,7 +30,6 @@ as a resource server.
 IMPORTANT SETUP REQUIREMENTS:
 
 1. Create an MCP Server in Descope Console:
-
    - Go to the [MCP Servers page](https://app.descope.com/mcp-servers) of the Descope Console
    - Create a new MCP Server
    - Ensure that **Dynamic Client Registration (DCR)** is enabled
@@ -35,14 +37,15 @@ IMPORTANT SETUP REQUIREMENTS:
 
 2. Note your Well-Known URL:
    - Save your Well-Known URL from [MCP Server Settings](https://app.descope.com/mcp-servers)
-   - Format: `https://.../v1/apps/agentic/P.../M.../.well-known/openid-configuration`
+   - Format: ``https://.../v1/apps/agentic/P.../M.../.well-known/openid-configuration``
 
 For detailed setup instructions, see:
 https://docs.descope.com/identity-federation/inbound-apps/creating-inbound-apps#method-2-dynamic-client-registration-dcr
 
+
 **Methods:**
 
-#### `get_routes` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/descope.py#L126" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_routes` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/descope.py#L185" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_routes(self, mcp_path: str | None = None) -> list[Route]
@@ -54,6 +57,6 @@ This returns the standard protected resource routes plus an authorization server
 metadata endpoint that forwards Descope's OAuth metadata to clients.
 
 **Args:**
-
 - `mcp_path`: The path where the MCP endpoint is mounted (e.g., "/mcp")
-  This is used to advertise the resource URL in metadata.
+This is used to advertise the resource URL in metadata.
+

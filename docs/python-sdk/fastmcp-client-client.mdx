@@ -476,7 +476,7 @@ Retrieve a list of tools available on the server.
 #### `call_tool_mcp` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L877" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-call_tool_mcp(self, name: str, arguments: dict[str, Any], progress_handler: ProgressHandler | None = None, timeout: datetime.timedelta | float | int | None = None) -> mcp.types.CallToolResult
+call_tool_mcp(self, name: str, arguments: dict[str, Any], progress_handler: ProgressHandler | None = None, timeout: datetime.timedelta | float | int | None = None, meta: dict[str, Any] | None = None) -> mcp.types.CallToolResult
 ```
 
 Send a tools/call request and return the complete MCP protocol result.
@@ -489,6 +489,10 @@ and other metadata. It does not raise an exception if the tool call results in a
 - `arguments`: Arguments to pass to the tool.
 - `timeout`: The timeout for the tool call. Defaults to None.
 - `progress_handler`: The progress handler to use for the tool call. Defaults to None.
+- `meta`: Additional metadata to include with the request.
+This is useful for passing contextual information (like user IDs, trace IDs, or preferences)
+that shouldn't be tool arguments but may influence server-side processing. The server
+can access this via `context.request_context.meta`. Defaults to None.
 
 **Returns:**
 - mcp.types.CallToolResult: The complete response object from the protocol,
@@ -498,10 +502,10 @@ containing the tool result and any additional metadata.
 - `RuntimeError`: If called while the client is not connected.
 
 
-#### `call_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L915" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `call_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L922" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-call_tool(self, name: str, arguments: dict[str, Any] | None = None, timeout: datetime.timedelta | float | int | None = None, progress_handler: ProgressHandler | None = None, raise_on_error: bool = True) -> CallToolResult
+call_tool(self, name: str, arguments: dict[str, Any] | None = None, timeout: datetime.timedelta | float | int | None = None, progress_handler: ProgressHandler | None = None, raise_on_error: bool = True, meta: dict[str, Any] | None = None) -> CallToolResult
 ```
 
 Call a tool on the server.
@@ -513,6 +517,11 @@ Unlike call_tool_mcp, this method raises a ToolError if the tool call results in
 - `arguments`: Arguments to pass to the tool. Defaults to None.
 - `timeout`: The timeout for the tool call. Defaults to None.
 - `progress_handler`: The progress handler to use for the tool call. Defaults to None.
+- `raise_on_error`: Whether to raise a ToolError if the tool call results in an error. Defaults to True.
+- `meta`: Additional metadata to include with the request.
+This is useful for passing contextual information (like user IDs, trace IDs, or preferences)
+that shouldn't be tool arguments but may influence server-side processing. The server
+can access this via `context.request_context.meta`. Defaults to None.
 
 **Returns:**
 - 
@@ -528,10 +537,10 @@ raw result object.
 - `RuntimeError`: If called while the client is not connected.
 
 
-#### `generate_name` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L987" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `generate_name` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L1001" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 generate_name(cls, name: str | None = None) -> str
 ```
 
-### `CallToolResult` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L996" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `CallToolResult` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/client.py#L1010" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>

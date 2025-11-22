@@ -15,9 +15,9 @@ for seamless MCP client authentication.
 
 ## Classes
 
-### `SupabaseProviderSettings` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/supabase.py#L26" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `SupabaseProviderSettings` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/supabase.py#L28" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
-### `SupabaseProvider` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/supabase.py#L43" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `SupabaseProvider` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/supabase.py#L46" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Supabase metadata provider for DCR (Dynamic Client Registration).
@@ -31,13 +31,19 @@ IMPORTANT SETUP REQUIREMENTS:
 1. Supabase Project Setup:
    - Create a Supabase project at https://supabase.com
    - Note your project URL (e.g., "https://abc123.supabase.co")
-   - For projects created after May 1st, 2025, asymmetric RS256 keys are used by default
-   - For older projects, consider migrating to asymmetric keys for better security
+   - Configure your JWT algorithm in Supabase Auth settings (HS256, RS256, or ES256)
+   - Asymmetric keys (RS256/ES256) are recommended for production
 
 2. JWT Verification:
    - FastMCP verifies JWTs using the JWKS endpoint at {project_url}/auth/v1/.well-known/jwks.json
    - JWTs are issued by {project_url}/auth/v1
    - Tokens are cached for up to 10 minutes by Supabase's edge servers
+   - Algorithm must match your Supabase Auth configuration
+
+3. Authorization:
+   - Supabase uses Row Level Security (RLS) policies for database authorization
+   - OAuth-level scopes are an upcoming feature in Supabase Auth
+   - Both approaches will be supported once scope handling is available
 
 For detailed setup instructions, see:
 https://supabase.com/docs/guides/auth/jwts
@@ -45,7 +51,7 @@ https://supabase.com/docs/guides/auth/jwts
 
 **Methods:**
 
-#### `get_routes` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/supabase.py#L128" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_routes` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/supabase.py#L144" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_routes(self, mcp_path: str | None = None) -> list[Route]

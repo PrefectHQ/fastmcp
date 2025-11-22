@@ -1,0 +1,103 @@
+---
+title: oci
+sidebarTitle: oci
+---
+
+# `fastmcp.server.auth.providers.oci`
+
+
+OCI OIDC provider for FastMCP.
+
+The pull request for the provider is submitted to fastmcp.
+
+This module provides OIDC Implementation to integrate MCP servers with OCI.
+You only need OCI Identity Domain's discovery URL, client ID, client secret, and base URL.
+
+Post Authentication, you get OCI IAM domain access token. That is not authorized to invoke OCI control plane.
+You need to exchange the IAM domain access token for OCI UPST token to invoke OCI control plane APIs.
+The sample code below has get_oci_signer function that returns OCI TokenExchangeSigner object.
+You can use the signer object to create OCI service object.
+
+Example:
+    ```python
+    from fastmcp import FastMCP
+    from fastmcp.server.auth.providers.oci import OCIProvider
+    from fastmcp.server.dependencies import get_access_token
+    from fastmcp.utilities.logging import get_logger
+
+    import os
+
+    # Load configuration from environment
+    FASTMCP_SERVER_AUTH_OCI_CONFIG_URL = os.environ["FASTMCP_SERVER_AUTH_OCI_CONFIG_URL"]
+    FASTMCP_SERVER_AUTH_OCI_CLIENT_ID = os.environ["FASTMCP_SERVER_AUTH_OCI_CLIENT_ID"]
+    FASTMCP_SERVER_AUTH_OCI_CLIENT_SECRET = os.environ["FASTMCP_SERVER_AUTH_OCI_CLIENT_SECRET"]
+    FASTMCP_SERVER_AUTH_OCI_IAM_GUID = os.environ["FASTMCP_SERVER_AUTH_OCI_IAM_GUID"]
+
+    import oci
+    from oci.auth.signers import TokenExchangeSigner
+
+    logger = get_logger(__name__)
+
+    # Simple OCI OIDC protection
+    auth = OCIProvider(
+        config_url=FASTMCP_SERVER_AUTH_OCI_CONFIG_URL, #config URL is the OCI IAM Domain OIDC discovery URL.
+        client_id=FASTMCP_SERVER_AUTH_OCI_CLIENT_ID, #This is same as the client ID configured for the OCI IAM Domain Integrated Application
+        client_secret=FASTMCP_SERVER_AUTH_OCI_CLIENT_SECRET, #This is same as the client secret configured for the OCI IAM Domain Integrated Application
+        required_scopes=["openid", "profile", "email"],
+        redirect_path="/auth/callback",
+        base_url="http://localhost:8000",
+    )
+
+    # NOTE: For production use, replace this with a thread-safe cache implementation
+    # such as threading.Lock-protected dict or a proper caching library
+    _global_token_cache = {} #In memory cache for OCI session token signer
+
+    def get_oci_signer() -> TokenExchangeSigner:
+
+        authntoken = get_access_token()
+        tokenID = authntoken.claims.get("jti")
+        token = authntoken.token
+
+        #Check if the signer exists for the token ID in memory cache
+        cached_signer = _global_token_cache.get(tokenID)
+        logger.debug(f"Global cached signer: {cached_signer}")
+        if cached_signer:
+            logger.debug(f"Using globally cached signer for token ID: {tokenID}")
+            return cached_signer
+
+        #If the signer is not yet created for the token then create new OCI signer object
+        logger.debug(f"Creating new signer for token ID: {tokenID}")
+        signer = TokenExchangeSigner(
+            jwt_or_func=token,
+            oci_domain_id=FASTMCP_SERVER_AUTH_OCI_IAM_GUID.split(".")[0],   #This is same as IAM GUID configured for the OCI IAM Domain
+            client_id=FASTMCP_SERVER_AUTH_OCI_CLIENT_ID, #This is same as the client ID configured for the OCI IAM Domain Integrated Application
+            client_secret=FASTMCP_SERVER_AUTH_OCI_CLIENT_SECRET #This is same as the client secret configured for the OCI IAM Domain Integrated Application
+        )
+        logger.debug(f"Signer {signer} created for token ID: {tokenID}")
+
+        #Cache the signer object in memory cache
+        _global_token_cache[tokenID] = signer
+        logger.debug(f"Signer cached for token ID: {tokenID}")
+
+        return signer
+
+    mcp = FastMCP("My Protected Server", auth=auth)
+    ```
+
+
+## Classes
+
+### `OCIProviderSettings` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/oci.py#L93" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Settings for OCI IAM domain OIDC provider.
+
+
+### `OCIProvider` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/oci.py#L119" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+An OCI IAM Domain provider implementation for FastMCP.
+
+This provider is a complete OCI integration that's ready to use with
+just the configuration URL, client ID, client secret, and base URL.
+
