@@ -289,8 +289,8 @@ class TestResponseCachingMiddlewareIntegration:
         """Create a FastMCP server for caching tests."""
         mcp = FastMCP("CachingTestServer")
 
-        with tempfile.TemporaryDirectory() as temp_dir:
-            disk_store = DiskStore(directory=temp_dir)
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
+            disk_store: DiskStore = DiskStore(directory=temp_dir)
             response_caching_middleware = ResponseCachingMiddleware(
                 cache_storage=disk_store if request.param == "disk" else MemoryStore(),
             )
