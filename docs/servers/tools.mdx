@@ -354,7 +354,9 @@ Field provides several validation and documentation features:
 
 You can exclude certain arguments from the tool schema shown to the LLM. This is useful for arguments that are injected at runtime (such as `state`, `user_id`, or credentials) and should not be exposed to the LLM or client. Only arguments with default values can be excluded; attempting to exclude a required argument will raise an error.
 
-Example:
+**Note:** `exclude_args` will be deprecated in FastMCP 2.14 in favor of dependency injection with `Depends()` for better lifecycle management and more explicit dependency handling. `exclude_args` will continue to work until then.
+
+Example with `exclude_args`:
 
 ```python
 @mcp.tool(

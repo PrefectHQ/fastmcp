@@ -175,6 +175,55 @@ def find_kwarg_by_type(fn: Callable, kwarg_type: type) -> str | None:
     return None
 
 
+def create_function_without_params(
+    fn: Callable[..., Any], exclude_params: list[str]
+) -> Callable[..., Any]:
+    """
+    Create a new function with the same code but without the specified parameters in annotations.
+
+    This is used to exclude parameters from type adapter processing when they can't be serialized.
+    The excluded parameters are removed from the function's __annotations__ dictionary.
+    """
+    import types
+
+    if inspect.ismethod(fn):
+        actual_func = fn.__func__
+        code = actual_func.__code__  # ty: ignore[unresolved-attribute]
+        globals_dict = actual_func.__globals__  # ty: ignore[unresolved-attribute]
+        name = actual_func.__name__  # ty: ignore[unresolved-attribute]
+        defaults = actual_func.__defaults__  # ty: ignore[unresolved-attribute]
+        closure = actual_func.__closure__  # ty: ignore[unresolved-attribute]
+    else:
+        code = fn.__code__  # ty: ignore[unresolved-attribute]
+        globals_dict = fn.__globals__  # ty: ignore[unresolved-attribute]
+        name = fn.__name__  # ty: ignore[unresolved-attribute]
+        defaults = fn.__defaults__  # ty: ignore[unresolved-attribute]
+        closure = fn.__closure__  # ty: ignore[unresolved-attribute]
+
+    # Create a copy of annotations without the excluded parameters
+    original_annotations = getattr(fn, "__annotations__", {})
+    new_annotations = {
+        k: v for k, v in original_annotations.items() if k not in exclude_params
+    }
+
+    new_func = types.FunctionType(
+        code,
+        globals_dict,
+        name,
+        defaults,
+        closure,
+    )
+    new_func.__dict__.update(fn.__dict__)
+    new_func.__module__ = fn.__module__
+    new_func.__qualname__ = getattr(fn, "__qualname__", fn.__name__)  # ty: ignore[unresolved-attribute]
+    new_func.__annotations__ = new_annotations
+
+    if inspect.ismethod(fn):
+        return types.MethodType(new_func, fn.__self__)
+    else:
+        return new_func
+
+
 class Image:
     """Helper class for returning images from tools."""
 

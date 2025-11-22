@@ -487,3 +487,225 @@ class TestAzureProvider:
         parsed = urlparse(provider._upstream_authorization_endpoint)
         assert parsed.netloc == "login.microsoftonline.us"
         assert "/organizations/" in parsed.path
+
+    def test_prepare_scopes_for_upstream_refresh_basic_prefixing(self):
+        """Test that unprefixed scopes are correctly prefixed for Azure token refresh."""
+        provider = AzureProvider(
+            client_id="test_client",
+            client_secret="test_secret",
+            tenant_id="test-tenant",
+            identifier_uri="api://my-api",
+            required_scopes=["read", "write"],
+            jwt_signing_key="test-secret",
+        )
+
+        # Unprefixed scopes from storage should be prefixed
+        result = provider._prepare_scopes_for_upstream_refresh(["read", "write"])
+
+        assert "api://my-api/read" in result
+        assert "api://my-api/write" in result
+        assert len(result) == 2
+
+    def test_prepare_scopes_for_upstream_refresh_already_prefixed(self):
+        """Test that already-prefixed scopes remain unchanged."""
+        provider = AzureProvider(
+            client_id="test_client",
+            client_secret="test_secret",
+            tenant_id="test-tenant",
+            identifier_uri="api://my-api",
+            required_scopes=["read"],
+            jwt_signing_key="test-secret",
+        )
+
+        # Already prefixed scopes should pass through unchanged
+        result = provider._prepare_scopes_for_upstream_refresh(
+            ["api://my-api/read", "api://other-api/admin"]
+        )
+
+        assert "api://my-api/read" in result
+        assert "api://other-api/admin" in result
+        assert len(result) == 2
+
+    def test_prepare_scopes_for_upstream_refresh_with_additional_scopes(self):
+        """Test that additional_authorize_scopes are added during token refresh."""
+        provider = AzureProvider(
+            client_id="test_client",
+            client_secret="test_secret",
+            tenant_id="test-tenant",
+            identifier_uri="api://my-api",
+            required_scopes=["read"],
+            additional_authorize_scopes=[
+                "User.Read",
+                "openid",
+                "profile",
+                "offline_access",
+            ],
+            jwt_signing_key="test-secret",
+        )
+
+        # Base scopes should be prefixed, additional scopes appended
+        result = provider._prepare_scopes_for_upstream_refresh(["read", "write"])
+
+        assert "api://my-api/read" in result
+        assert "api://my-api/write" in result
+        assert "User.Read" in result
+        assert "openid" in result
+        assert "profile" in result
+        assert "offline_access" in result
+        assert len(result) == 6
+
+    def test_prepare_scopes_for_upstream_refresh_filters_duplicate_additional_scopes(
+        self,
+    ):
+        """Test that accidentally stored additional_authorize_scopes are filtered out."""
+        provider = AzureProvider(
+            client_id="test_client",
+            client_secret="test_secret",
+            tenant_id="test-tenant",
+            identifier_uri="api://my-api",
+            required_scopes=["read"],
+            additional_authorize_scopes=["User.Read", "openid"],
+            jwt_signing_key="test-secret",
+        )
+
+        # If additional scopes were accidentally stored, they should be filtered
+        # to prevent accumulation
+        result = provider._prepare_scopes_for_upstream_refresh(
+            ["read", "User.Read", "openid"]
+        )
+
+        # Should have: api://my-api/read (prefixed) + User.Read + openid (added once)
+        assert "api://my-api/read" in result
+        assert result.count("User.Read") == 1
+        assert result.count("openid") == 1
+        assert len(result) == 3
+
+    def test_prepare_scopes_for_upstream_refresh_mixed_scopes(self):
+        """Test mixed scenario with both prefixed and unprefixed scopes."""
+        provider = AzureProvider(
+            client_id="test_client",
+            client_secret="test_secret",
+            tenant_id="test-tenant",
+            identifier_uri="api://my-api",
+            required_scopes=["read"],
+            additional_authorize_scopes=["User.Read"],
+            jwt_signing_key="test-secret",
+        )
+
+        # Mix of prefixed and unprefixed scopes
+        result = provider._prepare_scopes_for_upstream_refresh(
+            ["read", "api://other-api/admin", "write"]
+        )
+
+        assert "api://my-api/read" in result
+        assert "api://other-api/admin" in result  # Already prefixed, unchanged
+        assert "api://my-api/write" in result
+        assert "User.Read" in result
+        assert len(result) == 4
+
+    def test_prepare_scopes_for_upstream_refresh_scope_with_slash(self):
+        """Test that scopes containing '/' are not prefixed."""
+        provider = AzureProvider(
+            client_id="test_client",
+            client_secret="test_secret",
+            tenant_id="test-tenant",
+            identifier_uri="api://my-api",
+            required_scopes=["read"],
+            jwt_signing_key="test-secret",
+        )
+
+        # Scopes with "/" should not be prefixed (already fully qualified)
+        result = provider._prepare_scopes_for_upstream_refresh(
+            ["read", "https://graph.microsoft.com/.default"]
+        )
+
+        assert "api://my-api/read" in result
+        assert (
+            "https://graph.microsoft.com/.default" in result
+        )  # Not prefixed (contains ://)
+
+    def test_prepare_scopes_for_upstream_refresh_empty_scopes(self):
+        """Test behavior with empty scopes list."""
+        provider = AzureProvider(
+            client_id="test_client",
+            client_secret="test_secret",
+            tenant_id="test-tenant",
+            identifier_uri="api://my-api",
+            required_scopes=["read"],
+            additional_authorize_scopes=["User.Read", "openid"],
+            jwt_signing_key="test-secret",
+        )
+
+        # Empty scopes should still add additional_authorize_scopes
+        result = provider._prepare_scopes_for_upstream_refresh([])
+
+        assert "User.Read" in result
+        assert "openid" in result
+        assert len(result) == 2
+
+    def test_prepare_scopes_for_upstream_refresh_no_additional_scopes(self):
+        """Test behavior when no additional_authorize_scopes are configured."""
+        provider = AzureProvider(
+            client_id="test_client",
+            client_secret="test_secret",
+            tenant_id="test-tenant",
+            identifier_uri="api://my-api",
+            required_scopes=["read"],
+            jwt_signing_key="test-secret",
+        )
+
+        # Should only prefix base scopes, no additional scopes added
+        result = provider._prepare_scopes_for_upstream_refresh(["read", "write"])
+
+        assert "api://my-api/read" in result
+        assert "api://my-api/write" in result
+        assert len(result) == 2
+
+    def test_prepare_scopes_for_upstream_refresh_deduplicates_scopes(self):
+        """Test that duplicate scopes are deduplicated while preserving order."""
+        provider = AzureProvider(
+            client_id="test_client",
+            client_secret="test_secret",
+            tenant_id="test-tenant",
+            identifier_uri="api://my-api",
+            required_scopes=["read"],
+            additional_authorize_scopes=["User.Read", "openid"],
+            jwt_signing_key="test-secret",
+        )
+
+        # Test with duplicate base scopes and duplicate additional scopes
+        result = provider._prepare_scopes_for_upstream_refresh(
+            ["read", "write", "read", "User.Read", "openid"]
+        )
+
+        # Should have deduplicated results in order
+        assert result == [
+            "api://my-api/read",
+            "api://my-api/write",
+            "User.Read",
+            "openid",
+        ]
+        assert len(result) == 4
+
+    def test_prepare_scopes_for_upstream_refresh_deduplicates_prefixed_variants(self):
+        """Test that both prefixed and unprefixed variants are deduplicated."""
+        provider = AzureProvider(
+            client_id="test_client",
+            client_secret="test_secret",
+            tenant_id="test-tenant",
+            identifier_uri="api://my-api",
+            required_scopes=["read"],
+            jwt_signing_key="test-secret",
+        )
+
+        # Test with both prefixed and unprefixed variants of same scope
+        result = provider._prepare_scopes_for_upstream_refresh(
+            ["read", "api://my-api/read", "write"]
+        )
+
+        # Should deduplicate - first occurrence wins (api://my-api/read from "read")
+        assert "api://my-api/read" in result
+        assert "api://my-api/write" in result
+        # Should only have 2 items (read processed twice, but deduplicated)
+        assert len(result) == 2
+        assert result.count("api://my-api/read") == 1
