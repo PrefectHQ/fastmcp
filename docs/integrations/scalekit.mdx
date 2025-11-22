@@ -8,19 +8,16 @@ tag: NEW
 
 import { VersionBadge } from "/snippets/version-badge.mdx"
 
-<VersionBadge version="2.12.5" />
-
+<VersionBadge version="2.13.0" />
 
 Install auth stack to your FastMCP server with [Scalekit](https://scalekit.com) using the [Remote OAuth](/servers/auth/remote-oauth) pattern: Scalekit handles user authentication, and the MCP server validates issued tokens.
-
-## Configuration
 
 ### Prerequisites
 
 Before you begin
 
-1. Get a [Scalekit account](https://app.scalekit.com/) and grab API credentials such as **Client ID**, **Client Secret** and **Environment URL** from _Dashboard > Developers > Settings_.
-2. Have your FastMCP server's endpoint ready (can be localhost for development, e.g., `http://localhost:8000/mcp`)
+1. Get a [Scalekit account](https://app.scalekit.com/) and grab your **Environment URL** from _Dashboard > Settings_ .
+2. Have your FastMCP server's base URL ready (can be localhost for development, e.g., `http://localhost:8000/`)
 
 ### Step 1: Configure MCP server in Scalekit environment
 
@@ -36,9 +33,10 @@ In your FastMCP project's `.env`:
 
 ```sh
 SCALEKIT_ENVIRONMENT_URL=<YOUR_APP_ENVIRONMENT_URL>
-SCALEKIT_CLIENT_ID=<YOUR_APP_CLIENT_ID> # skc_7008EXAMPLE46
 SCALEKIT_RESOURCE_ID=<YOUR_APP_RESOURCE_ID> # res_926EXAMPLE5878
-MCP_URL=http://localhost:8000/mcp
+BASE_URL=http://localhost:8000/
+# Optional: additional scopes tokens must have
+# SCALEKIT_REQUIRED_SCOPES=read,write
 ```
 
 </Step>
@@ -48,6 +46,8 @@ MCP_URL=http://localhost:8000/mcp
 
 Create your FastMCP server file and use the ScalekitProvider to handle all the OAuth integration automatically:
 
+> **Warning:** The legacy `mcp_url` and `client_id` parameters are deprecated and will be removed in a future release. Use `base_url` instead of `mcp_url` and remove `client_id` from your configuration.
+
 ```python server.py
 from fastmcp import FastMCP
 from fastmcp.server.auth.providers.scalekit import ScalekitProvider
@@ -55,9 +55,9 @@ from fastmcp.server.auth.providers.scalekit import ScalekitProvider
 # Discovers Scalekit endpoints and set up JWT token validation
 auth_provider = ScalekitProvider(
     environment_url=SCALEKIT_ENVIRONMENT_URL,    # Scalekit environment URL
-    client_id=SCALEKIT_CLIENT_ID,                # OAuth client ID
     resource_id=SCALEKIT_RESOURCE_ID,            # Resource server ID
-    mcp_url=SERVER_URL,                          # Is also aud claim
+    base_url=SERVER_URL,                         # Public MCP endpoint
+    required_scopes=["read"],                    # Optional scope enforcement
 )
 
 # Create FastMCP server with auth
@@ -74,6 +74,10 @@ def auth_status() -> dict:
     }
 
 ```
+
+<Tip>
+Set `required_scopes` when you need tokens to carry specific permissions. Leave it unset to allow any token issued for the resource.
+</Tip>
 
 ## Testing
 
@@ -104,16 +108,18 @@ These environment variables provide default values for the Scalekit provider, wh
 Your Scalekit environment URL from the Admin Portal (e.g., `https://your-env.scalekit.com`)
 </ParamField>
 
-<ParamField path="FASTMCP_SERVER_AUTH_SCALEKITPROVIDER_CLIENT_ID" required>
-Your Scalekit OAuth application client ID from the Applications section
-</ParamField>
-
 <ParamField path="FASTMCP_SERVER_AUTH_SCALEKITPROVIDER_RESOURCE_ID" required>
-Your Scalekit resource server ID from the Resources section
+Your Scalekit resource server ID from the MCP Servers section
 </ParamField>
 
-<ParamField path="FASTMCP_SERVER_AUTH_SCALEKITPROVIDER_MCP_URL" required>
-Public URL of your FastMCP server (e.g., `https://your-server.com` or `http://localhost:8000/mcp` for development)
+<ParamField path="FASTMCP_SERVER_AUTH_SCALEKITPROVIDER_BASE_URL" required>
+Public URL of your FastMCP server (e.g., `https://your-server.com` or `http://localhost:8000/` for development)
+</ParamField>
+
+Legacy `FASTMCP_SERVER_AUTH_SCALEKITPROVIDER_MCP_URL` is still recognized for backward compatibility but will be removed soon-rename it to `...BASE_URL`.
+
+<ParamField path="FASTMCP_SERVER_AUTH_SCALEKITPROVIDER_REQUIRED_SCOPES" default="[]">
+Comma-, space-, or JSON-separated list of scopes that tokens must include to access your server
 </ParamField>
 </Card>
 
@@ -125,9 +131,10 @@ FASTMCP_SERVER_AUTH=fastmcp.server.auth.providers.scalekit.ScalekitProvider
 
 # Scalekit configuration
 FASTMCP_SERVER_AUTH_SCALEKITPROVIDER_ENVIRONMENT_URL=https://your-env.scalekit.com
-FASTMCP_SERVER_AUTH_SCALEKITPROVIDER_CLIENT_ID=skc_123
 FASTMCP_SERVER_AUTH_SCALEKITPROVIDER_RESOURCE_ID=res_456
-FASTMCP_SERVER_AUTH_SCALEKITPROVIDER_MCP_URL=https://your-server.com/mcp
+FASTMCP_SERVER_AUTH_SCALEKITPROVIDER_BASE_URL=https://your-server.com/
+# FASTMCP_SERVER_AUTH_SCALEKITPROVIDER_REQUIRED_SCOPES=read,write
+# FASTMCP_SERVER_AUTH_SCALEKITPROVIDER_MCP_URL=https://your-server.com/  # Deprecated
 ```
 
 With environment variables set, your server code simplifies to:

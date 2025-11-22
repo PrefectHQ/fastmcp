@@ -37,9 +37,9 @@ IMPORTANT SETUP REQUIREMENTS:
 
 2. Environment Configuration:
    - Set SCALEKIT_ENVIRONMENT_URL (e.g., https://your-env.scalekit.com)
-   - Set SCALEKIT_CLIENT_ID from your OAuth application
    - Set SCALEKIT_RESOURCE_ID from your created resource
-   - Set MCP_URL to your FastMCP server's public URL
+   - Set BASE_URL to your FastMCP server's public URL
+   - (Optional) Set SCALEKIT_REQUIRED_SCOPES to enforce token scopes
 
 For detailed setup instructions, see:
 https://docs.scalekit.com/mcp/overview/
@@ -61,4 +61,3 @@ metadata endpoint that forwards Scalekit's OAuth metadata to clients.
 **Args:**
 - `mcp_path`: The path where the MCP endpoint is mounted (e.g., "/mcp")
 This is used to advertise the resource URL in metadata.
-
