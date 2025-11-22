@@ -1434,7 +1434,9 @@ class FastMCP(Generic[LifespanResultT]):
             tags: Optional set of tags for categorizing the tool
             output_schema: Optional JSON schema for the tool's output
             annotations: Optional annotations about the tool's behavior
-            exclude_args: Optional list of argument names to exclude from the tool schema
+            exclude_args: Optional list of argument names to exclude from the tool schema.
+                Note: `exclude_args` will be deprecated in FastMCP 2.14 in favor of dependency
+                injection with `Depends()` for better lifecycle management.
             meta: Optional meta information about the tool
             enabled: Optional boolean to enable or disable the tool
 
@@ -1485,6 +1487,7 @@ class FastMCP(Generic[LifespanResultT]):
             tool_name = name  # Use keyword name if provided, otherwise None
 
             # Register the tool immediately and return the tool object
+            # Note: Deprecation warning for exclude_args is handled in Tool.from_function
             tool = Tool.from_function(
                 fn,
                 name=tool_name,
