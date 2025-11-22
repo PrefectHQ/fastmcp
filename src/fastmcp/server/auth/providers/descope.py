@@ -7,8 +7,10 @@ for seamless MCP client authentication.
 
 from __future__ import annotations
 
+from urllib.parse import urlparse
+
 import httpx
-from pydantic import AnyHttpUrl
+from pydantic import AnyHttpUrl, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from starlette.responses import JSONResponse
 from starlette.routing import Route
@@ -16,6 +18,7 @@ from starlette.routing import Route
 from fastmcp.server.auth import RemoteAuthProvider, TokenVerifier
 from fastmcp.server.auth.providers.jwt import JWTVerifier
 from fastmcp.settings import ENV_FILE
+from fastmcp.utilities.auth import parse_scopes
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import NotSet, NotSetT
 
@@ -29,9 +32,16 @@ class DescopeProviderSettings(BaseSettings):
         extra="ignore",
     )
 
-    project_id: str
+    config_url: AnyHttpUrl | None = None
+    project_id: str | None = None
+    descope_base_url: AnyHttpUrl | str | None = None
     base_url: AnyHttpUrl
-    descope_base_url: AnyHttpUrl = AnyHttpUrl("https://api.descope.com")
+    required_scopes: list[str] | None = None
+
+    @field_validator("required_scopes", mode="before")
+    @classmethod
+    def _parse_scopes(cls, v):
+        return parse_scopes(v)
 
 
 class DescopeProvider(RemoteAuthProvider):
@@ -44,15 +54,15 @@ class DescopeProvider(RemoteAuthProvider):
 
     IMPORTANT SETUP REQUIREMENTS:
 
-    1. Enable Dynamic Client Registration in Descope Console:
-       - Go to the [Inbound Apps page](https://app.descope.com/apps/inbound) of the Descope Console
-       - Click **DCR Settings**
-       - Enable **Dynamic Client Registration (DCR)**
-       - Define allowed scopes
+    1. Create an MCP Server in Descope Console:
+       - Go to the [MCP Servers page](https://app.descope.com/mcp-servers) of the Descope Console
+       - Create a new MCP Server
+       - Ensure that **Dynamic Client Registration (DCR)** is enabled
+       - Note your Well-Known URL
 
-    2. Note your Project ID:
-       - Save your Project ID from [Project Settings](https://app.descope.com/settings/project)
-       - Example: P2abc...123
+    2. Note your Well-Known URL:
+       - Save your Well-Known URL from [MCP Server Settings](https://app.descope.com/mcp-servers)
+       - Format: ``https://.../v1/apps/agentic/P.../M.../.well-known/openid-configuration``
 
     For detailed setup instructions, see:
     https://docs.descope.com/identity-federation/inbound-apps/creating-inbound-apps#method-2-dynamic-client-registration-dcr
@@ -63,9 +73,8 @@ class DescopeProvider(RemoteAuthProvider):
 
         # Create Descope metadata provider (JWT verifier created automatically)
         descope_auth = DescopeProvider(
-            project_id="P2abc...123",
+            config_url="https://.../v1/apps/agentic/P.../M.../.well-known/openid-configuration",
             base_url="https://your-fastmcp-server.com",
-            descope_base_url="https://api.descope.com",
         )
 
         # Use with FastMCP
@@ -76,50 +85,100 @@ class DescopeProvider(RemoteAuthProvider):
     def __init__(
         self,
         *,
+        config_url: AnyHttpUrl | str | NotSetT = NotSet,
         project_id: str | NotSetT = NotSet,
-        base_url: AnyHttpUrl | str | NotSetT = NotSet,
         descope_base_url: AnyHttpUrl | str | NotSetT = NotSet,
+        base_url: AnyHttpUrl | str | NotSetT = NotSet,
+        required_scopes: list[str] | NotSetT | None = NotSet,
         token_verifier: TokenVerifier | None = None,
     ):
         """Initialize Descope metadata provider.
 
         Args:
-            project_id: Your Descope Project ID (e.g., "P2abc...123")
+            config_url: Your Descope Well-Known URL (e.g., "https://.../v1/apps/agentic/P.../M.../.well-known/openid-configuration")
+                This is the new recommended way. If provided, project_id and descope_base_url are ignored.
+            project_id: Your Descope Project ID (e.g., "P2abc123"). Used with descope_base_url for backwards compatibility.
+            descope_base_url: Your Descope base URL (e.g., "https://api.descope.com"). Used with project_id for backwards compatibility.
             base_url: Public URL of this FastMCP server
-            descope_base_url: Descope API base URL (defaults to https://api.descope.com)
+            required_scopes: Optional list of scopes that must be present in validated tokens.
+                These scopes will be included in the protected resource metadata.
             token_verifier: Optional token verifier. If None, creates JWT verifier for Descope
         """
         settings = DescopeProviderSettings.model_validate(
             {
                 k: v
                 for k, v in {
+                    "config_url": config_url,
                     "project_id": project_id,
-                    "base_url": base_url,
                     "descope_base_url": descope_base_url,
+                    "base_url": base_url,
+                    "required_scopes": required_scopes,
                 }.items()
                 if v is not NotSet
             }
         )
 
-        self.project_id = settings.project_id
         self.base_url = AnyHttpUrl(str(settings.base_url).rstrip("/"))
-        self.descope_base_url = str(settings.descope_base_url).rstrip("/")
+
+        # Determine which API is being used
+        if settings.config_url is not None:
+            # New API: use config_url
+            # Strip /.well-known/openid-configuration from config_url if present
+            issuer_url = str(settings.config_url)
+            if issuer_url.endswith("/.well-known/openid-configuration"):
+                issuer_url = issuer_url[: -len("/.well-known/openid-configuration")]
+
+            # Parse the issuer URL to extract descope_base_url and project_id for other uses
+            parsed_url = urlparse(issuer_url)
+            path_parts = parsed_url.path.strip("/").split("/")
+
+            # Extract project_id from path (format: /v1/apps/agentic/P.../M...)
+            if "agentic" in path_parts:
+                agentic_index = path_parts.index("agentic")
+                if agentic_index + 1 < len(path_parts):
+                    self.project_id = path_parts[agentic_index + 1]
+                else:
+                    raise ValueError(
+                        f"Could not extract project_id from config_url: {issuer_url}"
+                    )
+            else:
+                raise ValueError(
+                    f"Could not find 'agentic' in config_url path: {issuer_url}"
+                )
+
+            # Extract descope_base_url (scheme + netloc)
+            self.descope_base_url = f"{parsed_url.scheme}://{parsed_url.netloc}".rstrip(
+                "/"
+            )
+        elif settings.project_id is not None and settings.descope_base_url is not None:
+            # Old API: use project_id and descope_base_url
+            self.project_id = settings.project_id
+            descope_base_url_str = str(settings.descope_base_url).rstrip("/")
+            # Ensure descope_base_url has a scheme
+            if not descope_base_url_str.startswith(("http://", "https://")):
+                descope_base_url_str = f"https://{descope_base_url_str}"
+            self.descope_base_url = descope_base_url_str
+            # Old issuer format
+            issuer_url = f"{self.descope_base_url}/v1/apps/{self.project_id}"
+        else:
+            raise ValueError(
+                "Either config_url (new API) or both project_id and descope_base_url (old API) must be provided"
+            )
 
         # Create default JWT verifier if none provided
         if token_verifier is None:
             token_verifier = JWTVerifier(
                 jwks_uri=f"{self.descope_base_url}/{self.project_id}/.well-known/jwks.json",
-                issuer=f"{self.descope_base_url}/v1/apps/{self.project_id}",
+                issuer=issuer_url,
                 algorithm="RS256",
                 audience=self.project_id,
+                required_scopes=settings.required_scopes,
             )
 
         # Initialize RemoteAuthProvider with Descope as the authorization server
         super().__init__(
             token_verifier=token_verifier,
-            authorization_servers=[
-                AnyHttpUrl(f"{self.descope_base_url}/v1/apps/{self.project_id}")
-            ],
+            authorization_servers=[AnyHttpUrl(issuer_url)],
             base_url=self.base_url,
         )
 
