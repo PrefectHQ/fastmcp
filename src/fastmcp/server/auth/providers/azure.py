@@ -327,6 +327,28 @@ class AzureProvider(OAuthProxy):
         separator = "&" if "?" in auth_url else "?"
         return f"{auth_url}{separator}prompt=select_account"
 
+    def _prefix_scopes_for_azure(self, scopes: list[str]) -> list[str]:
+        """Prefix unprefixed scopes with identifier_uri for Azure.
+
+        This helper centralizes the scope prefixing logic used in both
+        authorization and token refresh flows.
+
+        Args:
+            scopes: List of scopes, may be prefixed or unprefixed
+
+        Returns:
+            List of scopes with identifier_uri prefix applied where needed
+        """
+        prefixed = []
+        for scope in scopes:
+            if "://" in scope or "/" in scope:
+                # Already fully-qualified (e.g., "api://xxx/read" or "User.Read")
+                prefixed.append(scope)
+            else:
+                # Unprefixed client scope - prefix with identifier_uri
+                prefixed.append(f"{self.identifier_uri}/{scope}")
+        return prefixed
+
     def _build_upstream_authorize_url(
         self, txn_id: str, transaction: dict[str, Any]
     ) -> str:
@@ -339,14 +361,7 @@ class AzureProvider(OAuthProxy):
         unprefixed_scopes = transaction.get("scopes") or self.required_scopes or []
 
         # Prefix scopes for Azure authorization request
-        prefixed_scopes = []
-        for scope in unprefixed_scopes:
-            if "://" in scope or "/" in scope:
-                # Already a full URI or path (e.g., "api://xxx/read" or "User.Read")
-                prefixed_scopes.append(scope)
-            else:
-                # Unprefixed scope name - prefix it with identifier_uri
-                prefixed_scopes.append(f"{self.identifier_uri}/{scope}")
+        prefixed_scopes = self._prefix_scopes_for_azure(unprefixed_scopes)
 
         # Add Microsoft Graph scopes (not validated, not prefixed)
         if self.additional_authorize_scopes:
@@ -358,3 +373,42 @@ class AzureProvider(OAuthProxy):
 
         # Let parent build the URL with prefixed scopes
         return super()._build_upstream_authorize_url(txn_id, modified_transaction)
+
+    def _prepare_scopes_for_upstream_refresh(self, scopes: list[str]) -> list[str]:
+        """Prepare scopes for Azure token refresh.
+
+        Azure requires:
+        1. Fully-qualified custom scopes (e.g., "api://xxx/read" not "read")
+        2. Microsoft Graph scopes (e.g., "User.Read", "openid") sent as-is
+        3. Additional scopes from provider config (additional_authorize_scopes)
+
+        This method transforms base client scopes for Azure while keeping them
+        unprefixed in storage to prevent accumulation.
+
+        Args:
+            scopes: Base scopes from RefreshToken (unprefixed, e.g., ["read"])
+
+        Returns:
+            Deduplicated list of scopes formatted for Azure token endpoint
+        """
+        logger.debug("Base scopes from storage: %s", scopes)
+
+        # Filter out any additional_authorize_scopes that may have been stored
+        # (they shouldn't be in storage, but clean them up if they are)
+        additional_scopes_set = set(self.additional_authorize_scopes or [])
+        base_scopes = [s for s in scopes if s not in additional_scopes_set]
+
+        # Prefix base scopes with identifier_uri for Azure using shared helper
+        prefixed_scopes = self._prefix_scopes_for_azure(base_scopes)
+
+        # Add additional scopes (Graph + OIDC) for the Azure request
+        # These are NOT stored in RefreshToken, only sent to Azure
+        if self.additional_authorize_scopes:
+            prefixed_scopes.extend(self.additional_authorize_scopes)
+
+        # Deduplicate while preserving order (in case older tokens have duplicates)
+        # Use dict.fromkeys() for O(n) deduplication with order preservation
+        deduplicated_scopes = list(dict.fromkeys(prefixed_scopes))
+
+        logger.debug("Scopes for Azure token endpoint: %s", deduplicated_scopes)
+        return deduplicated_scopes
