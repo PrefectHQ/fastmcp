@@ -4,6 +4,7 @@ import inspect
 import warnings
 from collections.abc import Callable
 from contextvars import ContextVar
+from copy import deepcopy
 from dataclasses import dataclass
 from typing import Annotated, Any, Literal, cast
 
@@ -620,7 +621,8 @@ class TransformedTool(Tool):
         """
 
         # Build transformed schema and mapping
-        parent_defs = parent_tool.parameters.get("$defs", {})
+        # Deep copy to prevent compress_schema from mutating parent tool's $defs
+        parent_defs = deepcopy(parent_tool.parameters.get("$defs", {}))
         parent_props = parent_tool.parameters.get("properties", {}).copy()
         parent_required = set(parent_tool.parameters.get("required", []))
 
