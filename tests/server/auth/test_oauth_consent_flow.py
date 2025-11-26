@@ -884,3 +884,179 @@ class TestConsentPageServerIcon:
                 'alt="&lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt;Server"'
                 in response.text
             )
+
+
+class TestConsentCSPPolicy:
+    """Tests for Content Security Policy customization on consent page."""
+
+    async def test_default_csp_includes_form_action(self):
+        """Test that default CSP includes form-action directive."""
+        from unittest.mock import Mock
+
+        from fastmcp import FastMCP
+
+        verifier = Mock(spec=TokenVerifier)
+        verifier.required_scopes = ["read"]
+        verifier.verify_token = Mock(return_value=None)
+
+        # Create OAuthProxy with default CSP (no custom CSP)
+        proxy = OAuthProxy(
+            upstream_authorization_endpoint="https://oauth.example.com/authorize",
+            upstream_token_endpoint="https://oauth.example.com/token",
+            upstream_client_id="upstream-client",
+            upstream_client_secret="upstream-secret",
+            token_verifier=verifier,
+            base_url="https://proxy.example.com",
+            client_storage=MemoryStore(),
+            jwt_signing_key="test-secret",
+        )
+
+        server = FastMCP(name="Test Server", auth=proxy)
+        app = server.http_app()
+
+        client_info = OAuthClientInformationFull(
+            client_id="test-client",
+            client_secret="test-secret",
+            redirect_uris=[AnyUrl("http://localhost:12345/callback")],
+        )
+        await proxy.register_client(client_info)
+
+        from fastmcp.server.auth.oauth_proxy import OAuthTransaction
+
+        txn_id = "test-txn-id"
+        transaction = OAuthTransaction(
+            txn_id=txn_id,
+            client_id="test-client",
+            client_redirect_uri="http://localhost:12345/callback",
+            client_state="client-state",
+            code_challenge="challenge",
+            code_challenge_method="S256",
+            scopes=["read"],
+            created_at=time.time(),
+        )
+        await proxy._transaction_store.put(key=txn_id, value=transaction)
+
+        with TestClient(app) as client:
+            response = client.get(f"/consent?txn_id={txn_id}")
+
+            assert response.status_code == 200
+            # Default CSP should be present with form-action
+            assert 'http-equiv="Content-Security-Policy"' in response.text
+            assert "form-action" in response.text
+
+    async def test_empty_csp_disables_csp_meta_tag(self):
+        """Test that empty string CSP disables CSP meta tag entirely."""
+        from unittest.mock import Mock
+
+        from fastmcp import FastMCP
+
+        verifier = Mock(spec=TokenVerifier)
+        verifier.required_scopes = ["read"]
+        verifier.verify_token = Mock(return_value=None)
+
+        # Create OAuthProxy with empty CSP to disable it
+        proxy = OAuthProxy(
+            upstream_authorization_endpoint="https://oauth.example.com/authorize",
+            upstream_token_endpoint="https://oauth.example.com/token",
+            upstream_client_id="upstream-client",
+            upstream_client_secret="upstream-secret",
+            token_verifier=verifier,
+            base_url="https://proxy.example.com",
+            client_storage=MemoryStore(),
+            jwt_signing_key="test-secret",
+            consent_csp_policy="",  # Empty string disables CSP
+        )
+
+        server = FastMCP(name="Test Server", auth=proxy)
+        app = server.http_app()
+
+        client_info = OAuthClientInformationFull(
+            client_id="test-client",
+            client_secret="test-secret",
+            redirect_uris=[AnyUrl("http://localhost:12345/callback")],
+        )
+        await proxy.register_client(client_info)
+
+        from fastmcp.server.auth.oauth_proxy import OAuthTransaction
+
+        txn_id = "test-txn-id"
+        transaction = OAuthTransaction(
+            txn_id=txn_id,
+            client_id="test-client",
+            client_redirect_uri="http://localhost:12345/callback",
+            client_state="client-state",
+            code_challenge="challenge",
+            code_challenge_method="S256",
+            scopes=["read"],
+            created_at=time.time(),
+        )
+        await proxy._transaction_store.put(key=txn_id, value=transaction)
+
+        with TestClient(app) as client:
+            response = client.get(f"/consent?txn_id={txn_id}")
+
+            assert response.status_code == 200
+            # CSP meta tag should NOT be present
+            assert 'http-equiv="Content-Security-Policy"' not in response.text
+
+    async def test_custom_csp_policy_is_used(self):
+        """Test that custom CSP policy is applied to consent page."""
+        from unittest.mock import Mock
+
+        from fastmcp import FastMCP
+
+        verifier = Mock(spec=TokenVerifier)
+        verifier.required_scopes = ["read"]
+        verifier.verify_token = Mock(return_value=None)
+
+        # Create OAuthProxy with custom CSP policy
+        custom_csp = "default-src 'self'; script-src 'none'"
+        proxy = OAuthProxy(
+            upstream_authorization_endpoint="https://oauth.example.com/authorize",
+            upstream_token_endpoint="https://oauth.example.com/token",
+            upstream_client_id="upstream-client",
+            upstream_client_secret="upstream-secret",
+            token_verifier=verifier,
+            base_url="https://proxy.example.com",
+            client_storage=MemoryStore(),
+            jwt_signing_key="test-secret",
+            consent_csp_policy=custom_csp,
+        )
+
+        server = FastMCP(name="Test Server", auth=proxy)
+        app = server.http_app()
+
+        client_info = OAuthClientInformationFull(
+            client_id="test-client",
+            client_secret="test-secret",
+            redirect_uris=[AnyUrl("http://localhost:12345/callback")],
+        )
+        await proxy.register_client(client_info)
+
+        from fastmcp.server.auth.oauth_proxy import OAuthTransaction
+
+        txn_id = "test-txn-id"
+        transaction = OAuthTransaction(
+            txn_id=txn_id,
+            client_id="test-client",
+            client_redirect_uri="http://localhost:12345/callback",
+            client_state="client-state",
+            code_challenge="challenge",
+            code_challenge_method="S256",
+            scopes=["read"],
+            created_at=time.time(),
+        )
+        await proxy._transaction_store.put(key=txn_id, value=transaction)
+
+        with TestClient(app) as client:
+            response = client.get(f"/consent?txn_id={txn_id}")
+
+            assert response.status_code == 200
+            # Custom CSP should be present (HTML-escaped)
+            assert 'http-equiv="Content-Security-Policy"' in response.text
+            # Check for the HTML-escaped version (single quotes become &#x27;)
+            import html
+
+            assert html.escape(custom_csp, quote=True) in response.text
+            # Default form-action should NOT be present (we're using custom)
+            assert "form-action" not in response.text

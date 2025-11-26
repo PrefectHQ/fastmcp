@@ -222,6 +222,7 @@ class OIDCProxy(OAuthProxy):
         token_endpoint_auth_method: str | None = None,
         # Consent screen configuration
         require_authorization_consent: bool = True,
+        consent_csp_policy: str | None = None,
         # Extra parameters
         extra_authorize_params: dict[str, str] | None = None,
         extra_token_params: dict[str, str] | None = None,
@@ -262,6 +263,10 @@ class OIDCProxy(OAuthProxy):
                 When True, users see a consent screen before being redirected to the upstream IdP.
                 When False, authorization proceeds directly without user confirmation.
                 SECURITY WARNING: Only disable for local development or testing environments.
+            consent_csp_policy: Content Security Policy for the consent page.
+                If None (default), uses the built-in CSP policy with appropriate directives.
+                If empty string "", disables CSP entirely (no meta tag is rendered).
+                If a non-empty string, uses that as the CSP policy value.
             extra_authorize_params: Additional parameters to forward to the upstream authorization endpoint.
                 Useful for provider-specific parameters like prompt=consent or access_type=offline.
                 Example: {"prompt": "consent", "access_type": "offline"}
@@ -338,6 +343,7 @@ class OIDCProxy(OAuthProxy):
             "jwt_signing_key": jwt_signing_key,
             "token_endpoint_auth_method": token_endpoint_auth_method,
             "require_authorization_consent": require_authorization_consent,
+            "consent_csp_policy": consent_csp_policy,
         }
 
         if redirect_path:

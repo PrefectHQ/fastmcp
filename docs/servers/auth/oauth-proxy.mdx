@@ -299,6 +299,24 @@ auth = OAuthProxy(..., client_storage=MemoryStore())
     Disabling consent removes an important security layer. Only disable for local development or testing environments where you fully control all connecting clients.
   </Warning>
 </ParamField>
+
+<ParamField body="consent_csp_policy" type="str | None" default="None">
+  Content Security Policy for the consent page.
+
+  - `None` (default): Uses the built-in CSP policy with appropriate directives for form submission
+  - Empty string `""`: Disables CSP entirely (no meta tag rendered)
+  - Custom string: Uses the provided value as the CSP policy
+
+  This is useful for organizations that have their own CSP policies and need to override or disable FastMCP's built-in CSP directives.
+
+  ```python
+  # Disable CSP entirely (let org CSP policies apply)
+  auth = OAuthProxy(..., consent_csp_policy="")
+
+  # Use custom CSP policy
+  auth = OAuthProxy(..., consent_csp_policy="default-src 'self'; style-src 'unsafe-inline'")
+  ```
+</ParamField>
 </Card>
 
 ### Using Built-in Providers

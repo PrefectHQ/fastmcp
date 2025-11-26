@@ -191,6 +191,20 @@ auth = OIDCProxy(
 ```
 
 </ParamField>
+
+<ParamField body="require_authorization_consent" type="bool" default="True">
+  Whether to require user consent before authorizing MCP clients. When enabled (default), users see a consent screen that displays which client is requesting access. See [OAuthProxy documentation](/servers/auth/oauth-proxy#confused-deputy-attacks) for details on confused deputy attack protection.
+</ParamField>
+
+<ParamField body="consent_csp_policy" type="str | None" default="None">
+  Content Security Policy for the consent page.
+
+  - `None` (default): Uses the built-in CSP policy with appropriate directives for form submission
+  - Empty string `""`: Disables CSP entirely (no meta tag rendered)
+  - Custom string: Uses the provided value as the CSP policy
+
+  This is useful for organizations that have their own CSP policies and need to override or disable FastMCP's built-in CSP directives.
+</ParamField>
 </Card>
 
 ### Using Built-in Providers

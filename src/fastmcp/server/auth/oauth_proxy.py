@@ -246,8 +246,16 @@ def create_consent_html(
     server_icon_url: str | None = None,
     server_website_url: str | None = None,
     client_website_url: str | None = None,
+    csp_policy: str | None = None,
 ) -> str:
-    """Create a styled HTML consent page for OAuth authorization requests."""
+    """Create a styled HTML consent page for OAuth authorization requests.
+
+    Args:
+        csp_policy: Content Security Policy override.
+            If None, uses the built-in CSP policy with appropriate directives.
+            If empty string "", disables CSP entirely (no meta tag is rendered).
+            If a non-empty string, uses that as the CSP policy value.
+    """
     import html as html_module
 
     client_display = html_module.escape(client_name or client_id)
@@ -368,20 +376,25 @@ def create_consent_html(
         + TOOLTIP_STYLES
     )
 
-    # Need to allow form-action for form submission
-    # Chrome requires explicit scheme declarations in CSP form-action when redirect chains
-    # end in custom protocol schemes (e.g., cursor://). Parse redirect_uri to include its scheme.
-    parsed_redirect = urlparse(redirect_uri)
-    redirect_scheme = parsed_redirect.scheme.lower()
+    # Determine CSP policy to use
+    # If csp_policy is None, build the default CSP policy
+    # If csp_policy is empty string, CSP will be disabled entirely in create_page
+    # If csp_policy is a non-empty string, use it as-is
+    if csp_policy is None:
+        # Need to allow form-action for form submission
+        # Chrome requires explicit scheme declarations in CSP form-action when redirect chains
+        # end in custom protocol schemes (e.g., cursor://). Parse redirect_uri to include its scheme.
+        parsed_redirect = urlparse(redirect_uri)
+        redirect_scheme = parsed_redirect.scheme.lower()
 
-    # Build form-action directive with standard schemes plus custom protocol if present
-    form_action_schemes = ["https:", "http:"]
-    if redirect_scheme and redirect_scheme not in ("http", "https"):
-        # Custom protocol scheme (e.g., cursor:, vscode:, etc.)
-        form_action_schemes.append(f"{redirect_scheme}:")
+        # Build form-action directive with standard schemes plus custom protocol if present
+        form_action_schemes = ["https:", "http:"]
+        if redirect_scheme and redirect_scheme not in ("http", "https"):
+            # Custom protocol scheme (e.g., cursor:, vscode:, etc.)
+            form_action_schemes.append(f"{redirect_scheme}:")
 
-    form_action_directive = " ".join(form_action_schemes)
-    csp_policy = f"default-src 'none'; style-src 'unsafe-inline'; img-src https: data:; base-uri 'none'; form-action {form_action_directive}"
+        form_action_directive = " ".join(form_action_schemes)
+        csp_policy = f"default-src 'none'; style-src 'unsafe-inline'; img-src https: data:; base-uri 'none'; form-action {form_action_directive}"
 
     return create_page(
         content=content,
@@ -672,6 +685,7 @@ class OAuthProxy(OAuthProvider):
         jwt_signing_key: str | bytes | None = None,
         # Consent screen configuration
         require_authorization_consent: bool = True,
+        consent_csp_policy: str | None = None,
     ):
         """Initialize the OAuth proxy provider.
 
@@ -715,6 +729,12 @@ class OAuthProxy(OAuthProvider):
                 When True, users see a consent screen before being redirected to the upstream IdP.
                 When False, authorization proceeds directly without user confirmation.
                 SECURITY WARNING: Only disable for local development or testing environments.
+            consent_csp_policy: Content Security Policy for the consent page.
+                If None (default), uses the built-in CSP policy with appropriate directives.
+                If empty string "", disables CSP entirely (no meta tag is rendered).
+                If a non-empty string, uses that as the CSP policy value.
+                This allows organizations with their own CSP policies to override or disable
+                the built-in CSP directives.
         """
 
         # Always enable DCR since we implement it locally for MCP clients
@@ -775,6 +795,7 @@ class OAuthProxy(OAuthProvider):
 
         # Consent screen configuration
         self._require_authorization_consent: bool = require_authorization_consent
+        self._consent_csp_policy: str | None = consent_csp_policy
         if not require_authorization_consent:
             logger.warning(
                 "Authorization consent screen disabled - only use for local development or testing. "
@@ -2106,6 +2127,7 @@ class OAuthProxy(OAuthProvider):
             server_name=server_name,
             server_icon_url=server_icon_url,
             server_website_url=server_website_url,
+            csp_policy=self._consent_csp_policy,
         )
         response = create_secure_html_response(html)
         # Store CSRF in cookie with short lifetime

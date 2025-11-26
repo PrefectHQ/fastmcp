@@ -463,12 +463,21 @@ def create_page(
         content: HTML content to place inside the page
         title: Page title
         additional_styles: Extra CSS to include
-        csp_policy: Content Security Policy header value
+        csp_policy: Content Security Policy header value.
+            If empty string "", the CSP meta tag is omitted entirely.
 
     Returns:
         Complete HTML page as string
     """
     title = html.escape(title)
+
+    # Only include CSP meta tag if policy is non-empty
+    csp_meta = (
+        f'<meta http-equiv="Content-Security-Policy" content="{html.escape(csp_policy, quote=True)}" />'
+        if csp_policy
+        else ""
+    )
+
     return f"""
     <!DOCTYPE html>
     <html lang="en">
@@ -480,7 +489,7 @@ def create_page(
             {BASE_STYLES}
             {additional_styles}
         </style>
-        <meta http-equiv="Content-Security-Policy" content="{csp_policy}" />
+        {csp_meta}
     </head>
     <body>
         {content}
