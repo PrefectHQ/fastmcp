@@ -316,6 +316,7 @@ FastMCP provides comprehensive authentication support that sets it apart from ba
 - **Auth0**
 - **WorkOS**
 - **Descope**
+- **Discord**
 - **JWT/Custom**
 - **API Keys**
 
