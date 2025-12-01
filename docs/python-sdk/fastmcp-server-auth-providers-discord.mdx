@@ -1,0 +1,72 @@
+---
+title: discord
+sidebarTitle: discord
+---
+
+# `fastmcp.server.auth.providers.discord`
+
+
+Discord OAuth provider for FastMCP.
+
+This module provides a complete Discord OAuth integration that's ready to use
+with just a client ID and client secret. It handles all the complexity of
+Discord's OAuth flow, token validation, and user management.
+
+Example:
+    ```python
+    from fastmcp import FastMCP
+    from fastmcp.server.auth.providers.discord import DiscordProvider
+
+    # Simple Discord OAuth protection
+    auth = DiscordProvider(
+        client_id="your-discord-client-id",
+        client_secret="your-discord-client-secret"
+    )
+
+    mcp = FastMCP("My Protected Server", auth=auth)
+    ```
+
+
+## Classes
+
+### `DiscordProviderSettings` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/discord.py#L43" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Settings for Discord OAuth provider.
+
+
+### `DiscordTokenVerifier` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/discord.py#L68" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Token verifier for Discord OAuth tokens.
+
+Discord OAuth tokens are opaque (not JWTs), so we verify them
+by calling Discord's tokeninfo API to check if they're valid and get user info.
+
+
+**Methods:**
+
+#### `verify_token` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/discord.py#L90" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+verify_token(self, token: str) -> AccessToken | None
+```
+
+Verify Discord OAuth token by calling Discord's tokeninfo API.
+
+
+### `DiscordProvider` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/auth/providers/discord.py#L172" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Complete Discord OAuth provider for FastMCP.
+
+This provider makes it trivial to add Discord OAuth protection to any
+FastMCP server. Just provide your Discord OAuth app credentials and
+a base URL, and you're ready to go.
+
+Features:
+- Transparent OAuth proxy to Discord
+- Automatic token validation via Discord's API
+- User information extraction from Discord APIs
+- Minimal configuration required
+

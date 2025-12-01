@@ -28,13 +28,14 @@ Create a complete HTML page with FastMCP styling.
 - `content`: HTML content to place inside the page
 - `title`: Page title
 - `additional_styles`: Extra CSS to include
-- `csp_policy`: Content Security Policy header value
+- `csp_policy`: Content Security Policy header value.
+If empty string "", the CSP meta tag is omitted entirely.
 
 **Returns:**
 - Complete HTML page as string
 
 
-### `create_logo` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/ui.py#L492" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `create_logo` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/ui.py#L501" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 create_logo(icon_url: str | None = None, alt_text: str = 'FastMCP') -> str
@@ -51,7 +52,7 @@ Create logo HTML.
 - HTML for logo image tag.
 
 
-### `create_status_message` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/ui.py#L507" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `create_status_message` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/ui.py#L516" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 create_status_message(message: str, is_success: bool = True) -> str
@@ -68,7 +69,7 @@ Create a status message with icon.
 - HTML for status message
 
 
-### `create_info_box` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/ui.py#L530" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `create_info_box` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/ui.py#L539" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 create_info_box(content: str, is_error: bool = False, centered: bool = False, monospace: bool = False) -> str
@@ -87,7 +88,7 @@ Create an info box.
 - HTML for info box
 
 
-### `create_detail_box` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/ui.py#L559" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `create_detail_box` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/ui.py#L568" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 create_detail_box(rows: list[tuple[str, str]]) -> str
@@ -103,7 +104,7 @@ Create a detail box with key-value pairs.
 - HTML for detail box
 
 
-### `create_button_group` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/ui.py#L582" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `create_button_group` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/ui.py#L591" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 create_button_group(buttons: list[tuple[str, str, str]]) -> str
@@ -119,7 +120,7 @@ Create a group of buttons.
 - HTML for button group
 
 
-### `create_secure_html_response` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/ui.py#L600" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `create_secure_html_response` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/utilities/ui.py#L609" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 create_secure_html_response(html: str, status_code: int = 200) -> HTMLResponse

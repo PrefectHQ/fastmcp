@@ -359,6 +359,7 @@
                           "python-sdk/fastmcp-server-auth-providers-bearer",
                           "python-sdk/fastmcp-server-auth-providers-debug",
                           "python-sdk/fastmcp-server-auth-providers-descope",
+                          "python-sdk/fastmcp-server-auth-providers-discord",
                           "python-sdk/fastmcp-server-auth-providers-github",
                           "python-sdk/fastmcp-server-auth-providers-google",
                           "python-sdk/fastmcp-server-auth-providers-in_memory",
