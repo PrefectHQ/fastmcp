@@ -197,6 +197,7 @@
                   "integrations/aws-cognito",
                   "integrations/azure",
                   "integrations/descope",
+                  "integrations/discord",
                   "integrations/github",
                   "integrations/scalekit",
                   "integrations/google",
