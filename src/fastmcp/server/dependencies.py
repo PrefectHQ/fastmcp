@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 from mcp.server.auth.middleware.auth_context import (
     get_access_token as _sdk_get_access_token,
 )
+from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
 from mcp.server.auth.provider import (
     AccessToken as _SDKAccessToken,
 )
@@ -111,17 +112,38 @@ def get_access_token() -> AccessToken | None:
     """
     Get the FastMCP access token from the current context.
 
+    This function first tries to get the token from the current HTTP request's scope,
+    which is more reliable for long-lived connections where the SDK's auth_context_var
+    may become stale after token refresh. Falls back to the SDK's context var if no
+    request is available.
+
     Returns:
         The access token if an authenticated user is available, None otherwise.
     """
-    #
-    access_token: _SDKAccessToken | None = _sdk_get_access_token()
+    access_token: _SDKAccessToken | None = None
+
+    # First, try to get from current HTTP request's scope (issue #1863)
+    # This is more reliable than auth_context_var for Streamable HTTP sessions
+    # where tokens may be refreshed between MCP messages
+    try:
+        request = get_http_request()
+        user = request.scope.get("user")
+        if isinstance(user, AuthenticatedUser):
+            access_token = user.access_token
+    except RuntimeError:
+        # No HTTP request available, fall back to context var
+        pass
+
+    # Fall back to SDK's context var if we didn't get a token from the request
+    if access_token is None:
+        access_token = _sdk_get_access_token()
 
     if access_token is None or isinstance(access_token, AccessToken):
         return access_token
 
-    # If the object is not a FastMCP AccessToken, convert it to one if the fields are compatible
-    # This is a workaround for the case where the SDK returns a different type
+    # If the object is not a FastMCP AccessToken, convert it to one if the
+    # fields are compatible (e.g. `claims` is not present in the SDK's AccessToken).
+    # This is a workaround for the case where the SDK or auth provider returns a different type
     # If it fails, it will raise a TypeError
     try:
         access_token_as_dict = access_token.model_dump()
