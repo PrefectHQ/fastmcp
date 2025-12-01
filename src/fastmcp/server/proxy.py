@@ -270,6 +270,7 @@ class ProxyTool(Tool, MirroredComponent):
         return cls(
             client=client,
             name=mcp_tool.name,
+            title=mcp_tool.title,
             description=mcp_tool.description,
             parameters=mcp_tool.inputSchema,
             annotations=mcp_tool.annotations,
@@ -329,6 +330,7 @@ class ProxyResource(Resource, MirroredComponent):
             client=client,
             uri=mcp_resource.uri,
             name=mcp_resource.name,
+            title=mcp_resource.title,
             description=mcp_resource.description,
             mime_type=mcp_resource.mimeType or "text/plain",
             meta=mcp_resource.meta,
@@ -369,6 +371,7 @@ class ProxyTemplate(ResourceTemplate, MirroredComponent):
             client=client,
             uri_template=mcp_template.uriTemplate,
             name=mcp_template.name,
+            title=mcp_template.title,
             description=mcp_template.description,
             mime_type=mcp_template.mimeType or "text/plain",
             parameters={},  # Remote templates don't have local parameters
@@ -404,6 +407,7 @@ class ProxyTemplate(ResourceTemplate, MirroredComponent):
             client=self._client,
             uri=parameterized_uri,
             name=self.name,
+            title=self.title,
             description=self.description,
             mime_type=result[0].mimeType,
             meta=self.meta,
@@ -439,6 +443,7 @@ class ProxyPrompt(Prompt, MirroredComponent):
         return cls(
             client=client,
             name=mcp_prompt.name,
+            title=mcp_prompt.title,
             description=mcp_prompt.description,
             arguments=arguments,
             meta=mcp_prompt.meta,

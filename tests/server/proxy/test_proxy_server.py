@@ -30,7 +30,7 @@ def fastmcp_server():
 
     # --- Tools ---
 
-    @server.tool(tags={"greet"})
+    @server.tool(tags={"greet"}, title="Greet")
     def greet(name: str) -> str:
         """Greet someone by name."""
         return f"Hello, {name}!"
@@ -51,7 +51,7 @@ def fastmcp_server():
 
     # --- Resources ---
 
-    @server.resource(uri="resource://wave", tags={"wave"})
+    @server.resource(uri="resource://wave", tags={"wave"}, title="Wave")
     def wave() -> str:
         return "👋"
 
@@ -59,13 +59,13 @@ def fastmcp_server():
     async def get_users() -> list[dict[str, Any]]:
         return USERS
 
-    @server.resource(uri="data://user/{user_id}", tags={"users"})
+    @server.resource(uri="data://user/{user_id}", tags={"users"}, title="User Template")
     async def get_user(user_id: str) -> dict[str, Any] | None:
         return next((user for user in USERS if user["id"] == user_id), None)
 
     # --- Prompts ---
 
-    @server.prompt(tags={"welcome"})
+    @server.prompt(tags={"welcome"}, title="Welcome")
     def welcome(name: str) -> str:
         return f"Welcome to FastMCP, {name}!"
 
@@ -141,6 +141,7 @@ class TestTools:
     async def test_get_tools_meta(self, proxy_server):
         tools = await proxy_server.get_tools()
         greet_tool = tools["greet"]
+        assert greet_tool.title == "Greet"
         assert greet_tool.meta == {"_fastmcp": {"tags": ["greet"]}}
 
     async def test_get_transformed_tools(
@@ -263,6 +264,7 @@ class TestResources:
     async def test_get_resources_meta(self, proxy_server):
         resources = await proxy_server.get_resources()
         wave_resource = resources["resource://wave"]
+        assert wave_resource.title == "Wave"
         assert wave_resource.meta == {"_fastmcp": {"tags": ["wave"]}}
 
     async def test_list_resources_same_as_original(self, fastmcp_server, proxy_server):
@@ -362,6 +364,7 @@ class TestResourceTemplates:
     async def test_get_resource_templates_meta(self, proxy_server):
         templates = await proxy_server.get_resource_templates()
         get_user_template = templates["data://user/{user_id}"]
+        assert get_user_template.title == "User Template"
         assert get_user_template.meta == {"_fastmcp": {"tags": ["users"]}}
 
     async def test_list_resource_templates_same_as_original(
@@ -466,6 +469,7 @@ class TestPrompts:
     async def test_get_prompts_meta(self, proxy_server):
         prompts = await proxy_server.get_prompts()
         welcome_prompt = prompts["welcome"]
+        assert welcome_prompt.title == "Welcome"
         assert welcome_prompt.meta == {"_fastmcp": {"tags": ["welcome"]}}
 
     async def test_list_prompts_same_as_original(self, fastmcp_server, proxy_server):
