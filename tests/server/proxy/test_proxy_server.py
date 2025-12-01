@@ -6,6 +6,7 @@ import pytest
 from anyio import create_task_group
 from dirty_equals import Contains
 from mcp import McpError
+from mcp.types import Icon
 from pydantic import AnyUrl
 
 from fastmcp import FastMCP
@@ -30,7 +31,11 @@ def fastmcp_server():
 
     # --- Tools ---
 
-    @server.tool(tags={"greet"}, title="Greet")
+    @server.tool(
+        tags={"greet"},
+        title="Greet",
+        icons=[Icon(src="https://example.com/greet-icon.png")],
+    )
     def greet(name: str) -> str:
         """Greet someone by name."""
         return f"Hello, {name}!"
@@ -51,7 +56,12 @@ def fastmcp_server():
 
     # --- Resources ---
 
-    @server.resource(uri="resource://wave", tags={"wave"}, title="Wave")
+    @server.resource(
+        uri="resource://wave",
+        tags={"wave"},
+        title="Wave",
+        icons=[Icon(src="https://example.com/wave-icon.png")],
+    )
     def wave() -> str:
         return "👋"
 
@@ -59,13 +69,22 @@ def fastmcp_server():
     async def get_users() -> list[dict[str, Any]]:
         return USERS
 
-    @server.resource(uri="data://user/{user_id}", tags={"users"}, title="User Template")
+    @server.resource(
+        uri="data://user/{user_id}",
+        tags={"users"},
+        title="User Template",
+        icons=[Icon(src="https://example.com/user-icon.png")],
+    )
     async def get_user(user_id: str) -> dict[str, Any] | None:
         return next((user for user in USERS if user["id"] == user_id), None)
 
     # --- Prompts ---
 
-    @server.prompt(tags={"welcome"}, title="Welcome")
+    @server.prompt(
+        tags={"welcome"},
+        title="Welcome",
+        icons=[Icon(src="https://example.com/welcome-icon.png")],
+    )
     def welcome(name: str) -> str:
         return f"Welcome to FastMCP, {name}!"
 
@@ -143,6 +162,7 @@ class TestTools:
         greet_tool = tools["greet"]
         assert greet_tool.title == "Greet"
         assert greet_tool.meta == {"_fastmcp": {"tags": ["greet"]}}
+        assert greet_tool.icons == [Icon(src="https://example.com/greet-icon.png")]
 
     async def test_get_transformed_tools(
         self, fastmcp_server: FastMCP, proxy_server: FastMCPProxy
@@ -266,6 +286,7 @@ class TestResources:
         wave_resource = resources["resource://wave"]
         assert wave_resource.title == "Wave"
         assert wave_resource.meta == {"_fastmcp": {"tags": ["wave"]}}
+        assert wave_resource.icons == [Icon(src="https://example.com/wave-icon.png")]
 
     async def test_list_resources_same_as_original(self, fastmcp_server, proxy_server):
         assert (
@@ -366,6 +387,9 @@ class TestResourceTemplates:
         get_user_template = templates["data://user/{user_id}"]
         assert get_user_template.title == "User Template"
         assert get_user_template.meta == {"_fastmcp": {"tags": ["users"]}}
+        assert get_user_template.icons == [
+            Icon(src="https://example.com/user-icon.png")
+        ]
 
     async def test_list_resource_templates_same_as_original(
         self, fastmcp_server, proxy_server
@@ -471,6 +495,9 @@ class TestPrompts:
         welcome_prompt = prompts["welcome"]
         assert welcome_prompt.title == "Welcome"
         assert welcome_prompt.meta == {"_fastmcp": {"tags": ["welcome"]}}
+        assert welcome_prompt.icons == [
+            Icon(src="https://example.com/welcome-icon.png")
+        ]
 
     async def test_list_prompts_same_as_original(self, fastmcp_server, proxy_server):
         async with Client(fastmcp_server) as client:
