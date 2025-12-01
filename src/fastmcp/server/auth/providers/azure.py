@@ -25,6 +25,11 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
+# Standard OIDC scopes that should never be prefixed with identifier_uri.
+# Per Microsoft docs: https://learn.microsoft.com/en-us/entra/identity-platform/scopes-oidc
+# "OIDC scopes are requested as simple string identifiers without resource prefixes"
+OIDC_SCOPES = frozenset({"openid", "profile", "email", "offline_access"})
+
 
 class AzureProviderSettings(BaseSettings):
     """Settings for Azure OAuth provider."""
@@ -240,13 +245,25 @@ class AzureProvider(OAuthProxy):
             f"https://{base_authority_final}/{tenant_id_final}/discovery/v2.0/keys"
         )
 
-        # Azure returns unprefixed scopes in JWT tokens, so validate against unprefixed scopes
+        # Azure access tokens only include custom API scopes in the `scp` claim,
+        # NOT standard OIDC scopes (openid, profile, email, offline_access).
+        # Filter out OIDC scopes from validation - they'll still be sent to Azure
+        # during authorization (handled by _prefix_scopes_for_azure).
+        validation_scopes = None
+        if settings.required_scopes:
+            validation_scopes = [
+                s for s in settings.required_scopes if s not in OIDC_SCOPES
+            ]
+            # If all scopes were OIDC scopes, use None (no scope validation)
+            if not validation_scopes:
+                validation_scopes = None
+
         token_verifier = JWTVerifier(
             jwks_uri=jwks_uri,
             issuer=issuer,
             audience=settings.client_id,
             algorithm="RS256",
-            required_scopes=settings.required_scopes,  # Unprefixed scopes for validation
+            required_scopes=validation_scopes,  # Only validate non-OIDC scopes
         )
 
         # Extract secret string from SecretStr
@@ -277,6 +294,8 @@ class AzureProvider(OAuthProxy):
             client_storage=client_storage,
             jwt_signing_key=settings.jwt_signing_key,
             require_authorization_consent=require_authorization_consent,
+            # Advertise full scopes including OIDC (even though we only validate non-OIDC)
+            valid_scopes=settings.required_scopes,
         )
 
         authority_info = ""
@@ -328,10 +347,19 @@ class AzureProvider(OAuthProxy):
         return f"{auth_url}{separator}prompt=select_account"
 
     def _prefix_scopes_for_azure(self, scopes: list[str]) -> list[str]:
-        """Prefix unprefixed scopes with identifier_uri for Azure.
+        """Prefix unprefixed custom API scopes with identifier_uri for Azure.
 
         This helper centralizes the scope prefixing logic used in both
         authorization and token refresh flows.
+
+        Scopes that are NOT prefixed:
+        - Standard OIDC scopes (openid, profile, email, offline_access)
+        - Fully-qualified URIs (contain "://")
+        - Scopes with path component (contain "/")
+
+        Note: Microsoft Graph scopes (e.g., User.Read) should be passed via
+        `additional_authorize_scopes` or use fully-qualified format
+        (e.g., https://graph.microsoft.com/User.Read).
 
         Args:
             scopes: List of scopes, may be prefixed or unprefixed
@@ -341,11 +369,15 @@ class AzureProvider(OAuthProxy):
         """
         prefixed = []
         for scope in scopes:
-            if "://" in scope or "/" in scope:
-                # Already fully-qualified (e.g., "api://xxx/read" or "User.Read")
+            if scope in OIDC_SCOPES:
+                # Standard OIDC scopes - never prefix
+                prefixed.append(scope)
+            elif "://" in scope or "/" in scope:
+                # Already fully-qualified (e.g., "api://xxx/read" or
+                # "https://graph.microsoft.com/User.Read")
                 prefixed.append(scope)
             else:
-                # Unprefixed client scope - prefix with identifier_uri
+                # Unprefixed custom API scope - prefix with identifier_uri
                 prefixed.append(f"{self.identifier_uri}/{scope}")
         return prefixed
 
