@@ -9,7 +9,6 @@ from typing import (
     Annotated,
     Any,
     Generic,
-    Literal,
     TypeAlias,
     get_type_hints,
 )
@@ -184,7 +183,7 @@ class Tool(FastMCPComponent):
         tags: set[str] | None = None,
         annotations: ToolAnnotations | None = None,
         exclude_args: list[str] | None = None,
-        output_schema: dict[str, Any] | Literal[False] | NotSetT | None = NotSet,
+        output_schema: dict[str, Any] | NotSetT | None = NotSet,
         serializer: ToolResultSerializerType | None = None,
         meta: dict[str, Any] | None = None,
         enabled: bool | None = None,
@@ -227,7 +226,7 @@ class Tool(FastMCPComponent):
         description: str | NotSetT | None = NotSet,
         tags: set[str] | None = None,
         annotations: ToolAnnotations | NotSetT | None = NotSet,
-        output_schema: dict[str, Any] | Literal[False] | NotSetT | None = NotSet,
+        output_schema: dict[str, Any] | NotSetT | None = NotSet,
         serializer: ToolResultSerializerType | None = None,
         meta: dict[str, Any] | NotSetT | None = NotSet,
         transform_args: dict[str, ArgTransform] | None = None,
@@ -266,7 +265,7 @@ class FunctionTool(Tool):
         tags: set[str] | None = None,
         annotations: ToolAnnotations | None = None,
         exclude_args: list[str] | None = None,
-        output_schema: dict[str, Any] | Literal[False] | NotSetT | None = NotSet,
+        output_schema: dict[str, Any] | NotSetT | None = NotSet,
         serializer: ToolResultSerializerType | None = None,
         meta: dict[str, Any] | None = None,
         enabled: bool | None = None,
@@ -290,17 +289,8 @@ class FunctionTool(Tool):
 
         if isinstance(output_schema, NotSetT):
             final_output_schema = parsed_fn.output_schema
-        elif output_schema is False:
-            # Handle False as deprecated synonym for None (deprecated in 2.11.4)
-            if fastmcp.settings.deprecation_warnings:
-                warnings.warn(
-                    "Passing output_schema=False is deprecated. Use output_schema=None instead.",
-                    DeprecationWarning,
-                    stacklevel=2,
-                )
-            final_output_schema = None
         else:
-            # At this point output_schema is not NotSetT and not False, so it must be dict | None
+            # At this point output_schema is not NotSetT, so it must be dict | None
             final_output_schema = output_schema
         # Note: explicit schemas (dict) are used as-is without auto-wrapping
 

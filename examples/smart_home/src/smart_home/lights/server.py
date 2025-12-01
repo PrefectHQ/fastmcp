@@ -1,3 +1,10 @@
+# /// script
+# dependencies = [
+#     "smart_home@git+https://github.com/jlowin/fastmcp.git#subdirectory=examples/smart_home",
+#     "fastmcp",
+# ]
+# ///
+
 from typing import Annotated, Any, Literal, TypedDict
 
 from phue2.exceptions import PhueException
@@ -35,12 +42,8 @@ class HueAttributes(TypedDict, total=False):
     transitiontime: NotRequired[Annotated[int, Field(description="deciseconds")]]
 
 
-lights_mcp = FastMCP(
-    "Hue Lights Service (phue2)",
-    dependencies=[
-        "smart_home@git+https://github.com/jlowin/fastmcp.git#subdirectory=examples/smart_home",
-    ],
-)
+# Dependencies are configured in lights.fastmcp.json
+lights_mcp = FastMCP("Hue Lights Service (phue2)")
 
 
 @lights_mcp.tool

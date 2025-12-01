@@ -3,7 +3,6 @@ from __future__ import annotations
 import copy
 import inspect
 import logging
-import warnings
 import weakref
 from collections.abc import Generator, Mapping, Sequence
 from contextlib import contextmanager
@@ -39,8 +38,6 @@ from pydantic.networks import AnyUrl
 from starlette.requests import Request
 from typing_extensions import TypeVar
 
-import fastmcp.server.dependencies
-from fastmcp import settings
 from fastmcp.server.elicitation import (
     AcceptedElicitation,
     CancelledElicitation,
@@ -679,21 +676,6 @@ class Context:
         else:
             # This should never happen, but handle it just in case
             raise ValueError(f"Unexpected elicitation action: {result.action}")
-
-    def get_http_request(self) -> Request:
-        """Get the active starlette request."""
-
-        # Deprecated in 2.2.11
-        if settings.deprecation_warnings:
-            warnings.warn(
-                "Context.get_http_request() is deprecated and will be removed in a future version. "
-                "Use get_http_request() from fastmcp.server.dependencies instead. "
-                "See https://gofastmcp.com/servers/context#http-requests for more details.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-
-        return fastmcp.server.dependencies.get_http_request()
 
     def set_state(self, key: str, value: Any) -> None:
         """Set a value in the context state."""

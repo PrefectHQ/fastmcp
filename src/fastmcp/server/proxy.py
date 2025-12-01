@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import inspect
-import warnings
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
@@ -20,7 +19,6 @@ from mcp.types import (
 )
 from pydantic.networks import AnyUrl
 
-import fastmcp
 from fastmcp.client.client import Client, FastMCP1Server
 from fastmcp.client.elicitation import ElicitResult
 from fastmcp.client.logging import LogMessage
@@ -471,9 +469,8 @@ class FastMCPProxy(FastMCP):
 
     def __init__(
         self,
-        client: Client | None = None,
         *,
-        client_factory: ClientFactoryT | None = None,
+        client_factory: ClientFactoryT,
         **kwargs,
     ):
         """
@@ -483,9 +480,6 @@ class FastMCPProxy(FastMCP):
         Use FastMCP.as_proxy() for convenience with automatic session strategy.
 
         Args:
-            client: [DEPRECATED] A Client instance. Use client_factory instead for explicit
-                   session management. When provided, a client_factory will be automatically
-                   created that provides session isolation for backwards compatibility.
             client_factory: A callable that returns a Client instance when called.
                            This gives you full control over session creation and reuse.
                            Can be either a synchronous or asynchronous function.
@@ -494,29 +488,7 @@ class FastMCPProxy(FastMCP):
 
         super().__init__(**kwargs)
 
-        # Handle client and client_factory parameters
-        if client is not None and client_factory is not None:
-            raise ValueError("Cannot specify both 'client' and 'client_factory'")
-
-        if client is not None:
-            # Deprecated in 2.10.3
-            if fastmcp.settings.deprecation_warnings:
-                warnings.warn(
-                    "Passing 'client' to FastMCPProxy is deprecated. Use 'client_factory' instead for explicit session management. "
-                    "For automatic session strategy, use FastMCP.as_proxy().",
-                    DeprecationWarning,
-                    stacklevel=2,
-                )
-
-            # Create a factory that provides session isolation for backwards compatibility
-            def deprecated_client_factory():
-                return client.new()
-
-            self.client_factory = deprecated_client_factory
-        elif client_factory is not None:
-            self.client_factory = client_factory
-        else:
-            raise ValueError("Must specify 'client_factory'")
+        self.client_factory = client_factory
 
         # Replace the default managers with our specialized proxy managers.
         self._tool_manager = ProxyToolManager(

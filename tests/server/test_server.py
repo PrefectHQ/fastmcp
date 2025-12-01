@@ -1287,20 +1287,11 @@ class TestResourcePrefixMounting:
         """Test that resource prefix utility functions correctly match and strip resource prefixes."""
         from fastmcp.server.server import has_resource_prefix, remove_resource_prefix
 
-        # Create a basic server to get the default resource prefix format
-        server = FastMCP()
-
         # Test matching
-        assert (
-            has_resource_prefix(uri, prefix, server.resource_prefix_format)
-            == expected_match
-        )
+        assert has_resource_prefix(uri, prefix) == expected_match
 
         # Test stripping
-        assert (
-            remove_resource_prefix(uri, prefix, server.resource_prefix_format)
-            == expected_strip
-        )
+        assert remove_resource_prefix(uri, prefix) == expected_strip
 
     async def test_import_server_with_new_prefix_format(self):
         """Test that import_server correctly uses the new prefix format."""

@@ -357,7 +357,6 @@ import fastmcp
 # Access global settings
 print(fastmcp.settings.log_level)        # Default: "INFO"
 print(fastmcp.settings.mask_error_details)  # Default: False
-print(fastmcp.settings.resource_prefix_format)  # Default: "path"
 print(fastmcp.settings.strict_input_validation)  # Default: False
 print(fastmcp.settings.include_fastmcp_meta)   # Default: True
 ```
@@ -365,7 +364,6 @@ print(fastmcp.settings.include_fastmcp_meta)   # Default: True
 Common global settings include:
 - **`log_level`**: Logging level ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"), set with `FASTMCP_LOG_LEVEL`
 - **`mask_error_details`**: Whether to hide detailed error information from clients, set with `FASTMCP_MASK_ERROR_DETAILS`
-- **`resource_prefix_format`**: How to format resource prefixes ("path" or "protocol"), set with `FASTMCP_RESOURCE_PREFIX_FORMAT`
 - **`strict_input_validation`**: Controls tool input validation mode (default: False for flexible coercion), set with `FASTMCP_STRICT_INPUT_VALIDATION`. See [Input Validation Modes](/servers/tools#input-validation-modes)
 - **`include_fastmcp_meta`**: Whether to include FastMCP metadata in component responses (default: True), set with `FASTMCP_INCLUDE_FASTMCP_META`
 - **`env_file`**: Path to the environment file to load settings from (default: ".env"), set with `FASTMCP_ENV_FILE`. Useful when your project uses a `.env` file with syntax incompatible with python-dotenv
@@ -399,7 +397,6 @@ Global FastMCP settings can be configured via environment variables (prefixed wi
 # Configure global FastMCP behavior
 export FASTMCP_LOG_LEVEL=DEBUG
 export FASTMCP_MASK_ERROR_DETAILS=True
-export FASTMCP_RESOURCE_PREFIX_FORMAT=protocol
 export FASTMCP_STRICT_INPUT_VALIDATION=False
 export FASTMCP_INCLUDE_FASTMCP_META=False
 ```

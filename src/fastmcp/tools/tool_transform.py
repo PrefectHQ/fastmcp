@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import inspect
-import warnings
 from collections.abc import Callable
 from contextvars import ContextVar
 from copy import deepcopy
@@ -14,7 +13,6 @@ from pydantic import ConfigDict
 from pydantic.fields import Field
 from pydantic.functional_validators import BeforeValidator
 
-import fastmcp
 from fastmcp.tools.tool import ParsedFunction, Tool, ToolResult, _convert_to_content
 from fastmcp.utilities.components import _convert_set_default_none
 from fastmcp.utilities.json_schema import compress_schema
@@ -372,7 +370,7 @@ class TransformedTool(Tool):
         transform_fn: Callable[..., Any] | None = None,
         transform_args: dict[str, ArgTransform] | None = None,
         annotations: ToolAnnotations | NotSetT | None = NotSet,
-        output_schema: dict[str, Any] | Literal[False] | NotSetT | None = NotSet,
+        output_schema: dict[str, Any] | NotSetT | None = NotSet,
         serializer: Callable[[Any], str] | NotSetT | None = NotSet,
         meta: dict[str, Any] | NotSetT | None = NotSet,
         enabled: bool | None = None,
@@ -487,15 +485,6 @@ class TransformedTool(Tool):
                         final_output_schema = tool.output_schema
             else:
                 final_output_schema = tool.output_schema
-        elif output_schema is False:
-            # Handle False as deprecated synonym for None (deprecated in 2.11.4)
-            if fastmcp.settings.deprecation_warnings:
-                warnings.warn(
-                    "Passing output_schema=False is deprecated. Use output_schema=None instead.",
-                    DeprecationWarning,
-                    stacklevel=2,
-                )
-            final_output_schema = None
         else:
             final_output_schema = cast(dict | None, output_schema)
 

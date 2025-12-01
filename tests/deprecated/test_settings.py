@@ -1,4 +1,3 @@
-import os
 import warnings
 from unittest.mock import patch
 
@@ -179,7 +178,6 @@ class TestDeprecatedServerInitKwargs:
                 on_duplicate_tools="warn",
                 on_duplicate_resources="error",
                 on_duplicate_prompts="replace",
-                resource_prefix_format="path",
                 mask_error_details=True,
             )
 
@@ -302,39 +300,6 @@ class TestDeprecatedServerInitKwargs:
         # This verifies the stacklevel is working as intended (pointing to constructor)
         warning = deprecation_warnings[0]
         assert "server.py" in warning.filename
-
-
-class TestDeprecatedEnvironmentVariables:
-    """Test deprecated environment variable prefixes."""
-
-    def test_fastmcp_server_env_var_deprecation_warning(self, caplog):
-        """Test that FASTMCP_SERVER_ environment variables emit deprecation warnings."""
-        env_var_name = "FASTMCP_SERVER_HOST"
-        original_value = os.environ.get(env_var_name)
-
-        try:
-            os.environ[env_var_name] = "192.168.1.1"
-
-            with caplog_for_fastmcp(caplog):
-                settings = Settings()
-
-            # Check that a warning was logged
-            assert any(
-                "Using `FASTMCP_SERVER_` environment variables is deprecated. Use `FASTMCP_` instead."
-                in record.message
-                for record in caplog.records
-                if record.levelname == "WARNING"
-            )
-
-            # Verify the setting is still applied
-            assert settings.host == "192.168.1.1"
-
-        finally:
-            # Clean up environment variable
-            if original_value is not None:
-                os.environ[env_var_name] = original_value
-            else:
-                os.environ.pop(env_var_name, None)
 
 
 class TestDeprecatedSettingsProperty:

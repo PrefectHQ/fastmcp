@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import inspect
-import json
 import re
 import secrets
 import warnings
@@ -158,8 +157,6 @@ class FastMCP(Generic[LifespanResultT]):
         auth: AuthProvider | NotSetT | None = NotSet,
         middleware: Sequence[Middleware] | None = None,
         lifespan: LifespanCallable | None = None,
-        dependencies: list[str] | None = None,
-        resource_prefix_format: Literal["protocol", "path"] | None = None,
         mask_error_details: bool | None = None,
         tools: Sequence[Tool | Callable[..., Any]] | None = None,
         tool_transformations: Mapping[str, ToolTransformConfig] | None = None,
@@ -188,10 +185,6 @@ class FastMCP(Generic[LifespanResultT]):
         sampling_handler: ServerSamplingHandler[LifespanResultT] | None = None,
         sampling_handler_behavior: Literal["always", "fallback"] | None = None,
     ):
-        self.resource_prefix_format: Literal["protocol", "path"] = (
-            resource_prefix_format or fastmcp.settings.resource_prefix_format
-        )
-
         self._additional_http_routes: list[BaseRoute] = []
         self._mounted_servers: list[MountedServer] = []
         self._tool_manager: ToolManager = ToolManager(
@@ -258,24 +251,6 @@ class FastMCP(Generic[LifespanResultT]):
 
         # Set up MCP protocol handlers
         self._setup_handlers()
-
-        # Handle dependencies with deprecation warning
-        # TODO: Remove dependencies parameter (deprecated in v2.11.4)
-        if dependencies is not None:
-            import warnings
-
-            warnings.warn(
-                "The 'dependencies' parameter is deprecated as of FastMCP 2.11.4 and will be removed in a future version. "
-                "Please specify dependencies in a fastmcp.json configuration file instead:\n"
-                '{\n  "entrypoint": "your_server.py",\n  "environment": {\n    "dependencies": '
-                f"{json.dumps(dependencies)}\n  }}\n}}\n"
-                "See https://gofastmcp.com/docs/deployment/server-configuration for more information.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-        self.dependencies: list[str] = (
-            dependencies or fastmcp.settings.server_dependencies
-        )  # TODO: Remove (deprecated in v2.11.4)
 
         self.sampling_handler: ServerSamplingHandler[LifespanResultT] | None = (
             sampling_handler
@@ -516,9 +491,7 @@ class FastMCP(Generic[LifespanResultT]):
                 child_resources = await mounted.server.get_resources()
                 for key, resource in child_resources.items():
                     new_key = (
-                        add_resource_prefix(
-                            key, mounted.prefix, mounted.resource_prefix_format
-                        )
+                        add_resource_prefix(key, mounted.prefix)
                         if mounted.prefix
                         else key
                     )
@@ -555,9 +528,7 @@ class FastMCP(Generic[LifespanResultT]):
                 child_templates = await mounted.server.get_resource_templates()
                 for key, template in child_templates.items():
                     new_key = (
-                        add_resource_prefix(
-                            key, mounted.prefix, mounted.resource_prefix_format
-                        )
+                        add_resource_prefix(key, mounted.prefix)
                         if mounted.prefix
                         else key
                     )
@@ -835,11 +806,7 @@ class FastMCP(Generic[LifespanResultT]):
 
                     key = resource.key
                     if mounted.prefix:
-                        key = add_resource_prefix(
-                            resource.key,
-                            mounted.prefix,
-                            mounted.resource_prefix_format,
-                        )
+                        key = add_resource_prefix(resource.key, mounted.prefix)
                         resource = resource.model_copy(
                             key=key,
                             update={"name": f"{mounted.prefix}_{resource.name}"},
@@ -931,11 +898,7 @@ class FastMCP(Generic[LifespanResultT]):
 
                     key = template.key
                     if mounted.prefix:
-                        key = add_resource_prefix(
-                            template.key,
-                            mounted.prefix,
-                            mounted.resource_prefix_format,
-                        )
+                        key = add_resource_prefix(template.key, mounted.prefix)
                         template = template.model_copy(
                             key=key,
                             update={"name": f"{mounted.prefix}_{template.name}"},
@@ -1195,13 +1158,9 @@ class FastMCP(Generic[LifespanResultT]):
         for mounted in reversed(self._mounted_servers):
             key = uri_str
             if mounted.prefix:
-                if not has_resource_prefix(
-                    key, mounted.prefix, mounted.resource_prefix_format
-                ):
+                if not has_resource_prefix(key, mounted.prefix):
                     continue
-                key = remove_resource_prefix(
-                    key, mounted.prefix, mounted.resource_prefix_format
-                )
+                key = remove_resource_prefix(key, mounted.prefix)
 
             try:
                 # First, get the resource to check if parent's filter allows it
@@ -1579,44 +1538,6 @@ class FastMCP(Generic[LifespanResultT]):
             pass  # No context available
 
         return template
-
-    def add_resource_fn(
-        self,
-        fn: AnyFunction,
-        uri: str,
-        name: str | None = None,
-        description: str | None = None,
-        mime_type: str | None = None,
-        tags: set[str] | None = None,
-    ) -> None:
-        """Add a resource or template to the server from a function.
-
-        If the URI contains parameters (e.g. "resource://{param}") or the function
-        has parameters, it will be registered as a template resource.
-
-        Args:
-            fn: The function to register as a resource
-            uri: The URI for the resource
-            name: Optional name for the resource
-            description: Optional description of the resource
-            mime_type: Optional MIME type for the resource
-            tags: Optional set of tags for categorizing the resource
-        """
-        # deprecated since 2.7.0
-        if fastmcp.settings.deprecation_warnings:
-            warnings.warn(
-                "The add_resource_fn method is deprecated. Use the resource decorator instead.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-        self._resource_manager.add_resource_or_template_from_fn(
-            fn=fn,
-            uri=uri,
-            name=name,
-            description=description,
-            mime_type=mime_type,
-            tags=tags,
-        )
 
     def resource(
         self,
@@ -2061,86 +1982,6 @@ class FastMCP(Generic[LifespanResultT]):
 
                 await server.serve()
 
-    async def run_sse_async(
-        self,
-        host: str | None = None,
-        port: int | None = None,
-        log_level: str | None = None,
-        path: str | None = None,
-        uvicorn_config: dict[str, Any] | None = None,
-    ) -> None:
-        """Run the server using SSE transport."""
-
-        # Deprecated since 2.3.2
-        if fastmcp.settings.deprecation_warnings:
-            warnings.warn(
-                "The run_sse_async method is deprecated (as of 2.3.2). Use run_http_async for a "
-                "modern (non-SSE) alternative, or create an SSE app with "
-                "`fastmcp.server.http.create_sse_app` and run it directly.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-        await self.run_http_async(
-            transport="sse",
-            host=host,
-            port=port,
-            log_level=log_level,
-            path=path,
-            uvicorn_config=uvicorn_config,
-        )
-
-    def sse_app(
-        self,
-        path: str | None = None,
-        message_path: str | None = None,
-        middleware: list[ASGIMiddleware] | None = None,
-    ) -> StarletteWithLifespan:
-        """
-        Create a Starlette app for the SSE server.
-
-        Args:
-            path: The path to the SSE endpoint
-            message_path: The path to the message endpoint
-            middleware: A list of middleware to apply to the app
-        """
-        # Deprecated since 2.3.2
-        if fastmcp.settings.deprecation_warnings:
-            warnings.warn(
-                "The sse_app method is deprecated (as of 2.3.2). Use http_app as a modern (non-SSE) "
-                "alternative, or call `fastmcp.server.http.create_sse_app` directly.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-        return create_sse_app(
-            server=self,
-            message_path=message_path or self._deprecated_settings.message_path,
-            sse_path=path or self._deprecated_settings.sse_path,
-            auth=self.auth,
-            debug=self._deprecated_settings.debug,
-            middleware=middleware,
-        )
-
-    def streamable_http_app(
-        self,
-        path: str | None = None,
-        middleware: list[ASGIMiddleware] | None = None,
-    ) -> StarletteWithLifespan:
-        """
-        Create a Starlette app for the StreamableHTTP server.
-
-        Args:
-            path: The path to the StreamableHTTP endpoint
-            middleware: A list of middleware to apply to the app
-        """
-        # Deprecated since 2.3.2
-        if fastmcp.settings.deprecation_warnings:
-            warnings.warn(
-                "The streamable_http_app method is deprecated (as of 2.3.2). Use http_app() instead.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-        return self.http_app(path=path, middleware=middleware)
-
     def http_app(
         self,
         path: str | None = None,
@@ -2189,31 +2030,6 @@ class FastMCP(Generic[LifespanResultT]):
                 debug=self._deprecated_settings.debug,
                 middleware=middleware,
             )
-
-    async def run_streamable_http_async(
-        self,
-        host: str | None = None,
-        port: int | None = None,
-        log_level: str | None = None,
-        path: str | None = None,
-        uvicorn_config: dict[str, Any] | None = None,
-    ) -> None:
-        # Deprecated since 2.3.2
-        if fastmcp.settings.deprecation_warnings:
-            warnings.warn(
-                "The run_streamable_http_async method is deprecated (as of 2.3.2). "
-                "Use run_http_async instead.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-        await self.run_http_async(
-            transport="http",
-            host=host,
-            port=port,
-            log_level=log_level,
-            path=path,
-            uvicorn_config=uvicorn_config,
-        )
 
     def mount(
         self,
@@ -2330,7 +2146,6 @@ class FastMCP(Generic[LifespanResultT]):
         mounted_server = MountedServer(
             prefix=prefix,
             server=server,
-            resource_prefix_format=self.resource_prefix_format,
         )
         self._mounted_servers.append(mounted_server)
 
@@ -2431,9 +2246,7 @@ class FastMCP(Generic[LifespanResultT]):
         # Import resources and templates from the server
         for key, resource in (await server.get_resources()).items():
             if prefix:
-                resource_key = add_resource_prefix(
-                    key, prefix, self.resource_prefix_format
-                )
+                resource_key = add_resource_prefix(key, prefix)
                 resource = resource.model_copy(
                     update={"name": f"{prefix}_{resource.name}"}, key=resource_key
                 )
@@ -2441,9 +2254,7 @@ class FastMCP(Generic[LifespanResultT]):
 
         for key, template in (await server.get_resource_templates()).items():
             if prefix:
-                template_key = add_resource_prefix(
-                    key, prefix, self.resource_prefix_format
-                )
+                template_key = add_resource_prefix(key, prefix)
                 template = template.model_copy(
                     update={"name": f"{prefix}_{template.name}"}, key=template_key
                 )
@@ -2643,23 +2454,6 @@ class FastMCP(Generic[LifespanResultT]):
 
         return FastMCPProxy(client_factory=client_factory, **settings)
 
-    @classmethod
-    def from_client(
-        cls, client: Client[ClientTransportT], **settings: Any
-    ) -> FastMCPProxy:
-        """
-        Create a FastMCP proxy server from a FastMCP client.
-        """
-        # Deprecated since 2.3.5
-        if fastmcp.settings.deprecation_warnings:
-            warnings.warn(
-                "FastMCP.from_client() is deprecated; use FastMCP.as_proxy() instead.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-
-        return cls.as_proxy(client, **settings)
-
     def _should_enable_component(
         self,
         component: FastMCPComponent,
@@ -2706,13 +2500,10 @@ class FastMCP(Generic[LifespanResultT]):
 class MountedServer:
     prefix: str | None
     server: FastMCP[Any]
-    resource_prefix_format: Literal["protocol", "path"] | None = None
 
 
-def add_resource_prefix(
-    uri: str, prefix: str, prefix_format: Literal["protocol", "path"] | None = None
-) -> str:
-    """Add a prefix to a resource URI.
+def add_resource_prefix(uri: str, prefix: str) -> str:
+    """Add a prefix to a resource URI using path formatting (resource://prefix/path).
 
     Args:
         uri: The original resource URI
@@ -2722,15 +2513,9 @@ def add_resource_prefix(
         The resource URI with the prefix added
 
     Examples:
-        With new style:
         ```python
         add_resource_prefix("resource://path/to/resource", "prefix")
         "resource://prefix/path/to/resource"
-        ```
-        With legacy style:
-        ```python
-        add_resource_prefix("resource://path/to/resource", "prefix")
-        "prefix+resource://path/to/resource"
         ```
         With absolute path:
         ```python
@@ -2744,52 +2529,30 @@ def add_resource_prefix(
     if not prefix:
         return uri
 
-    # Get the server settings to check for legacy format preference
+    # Split the URI into protocol and path
+    match = URI_PATTERN.match(uri)
+    if not match:
+        raise ValueError(f"Invalid URI format: {uri}. Expected protocol://path format.")
 
-    if prefix_format is None:
-        prefix_format = fastmcp.settings.resource_prefix_format
+    protocol, path = match.groups()
 
-    if prefix_format == "protocol":
-        # Legacy style: prefix+protocol://path
-        return f"{prefix}+{uri}"
-    elif prefix_format == "path":
-        # New style: protocol://prefix/path
-        # Split the URI into protocol and path
-        match = URI_PATTERN.match(uri)
-        if not match:
-            raise ValueError(
-                f"Invalid URI format: {uri}. Expected protocol://path format."
-            )
-
-        protocol, path = match.groups()
-
-        # Add the prefix to the path
-        return f"{protocol}{prefix}/{path}"
-    else:
-        raise ValueError(f"Invalid prefix format: {prefix_format}")
+    # Add the prefix to the path
+    return f"{protocol}{prefix}/{path}"
 
 
-def remove_resource_prefix(
-    uri: str, prefix: str, prefix_format: Literal["protocol", "path"] | None = None
-) -> str:
+def remove_resource_prefix(uri: str, prefix: str) -> str:
     """Remove a prefix from a resource URI.
 
     Args:
         uri: The resource URI with a prefix
         prefix: The prefix to remove
-        prefix_format: The format of the prefix to remove
+
     Returns:
         The resource URI with the prefix removed
 
     Examples:
-        With new style:
         ```python
         remove_resource_prefix("resource://prefix/path/to/resource", "prefix")
-        "resource://path/to/resource"
-        ```
-        With legacy style:
-        ```python
-        remove_resource_prefix("prefix+resource://path/to/resource", "prefix")
         "resource://path/to/resource"
         ```
         With absolute path:
@@ -2804,41 +2567,24 @@ def remove_resource_prefix(
     if not prefix:
         return uri
 
-    if prefix_format is None:
-        prefix_format = fastmcp.settings.resource_prefix_format
+    # Split the URI into protocol and path
+    match = URI_PATTERN.match(uri)
+    if not match:
+        raise ValueError(f"Invalid URI format: {uri}. Expected protocol://path format.")
 
-    if prefix_format == "protocol":
-        # Legacy style: prefix+protocol://path
-        legacy_prefix = f"{prefix}+"
-        if uri.startswith(legacy_prefix):
-            return uri[len(legacy_prefix) :]
+    protocol, path = match.groups()
+
+    # Check if the path starts with the prefix followed by a /
+    prefix_pattern = f"^{re.escape(prefix)}/(.*?)$"
+    path_match = re.match(prefix_pattern, path)
+    if not path_match:
         return uri
-    elif prefix_format == "path":
-        # New style: protocol://prefix/path
-        # Split the URI into protocol and path
-        match = URI_PATTERN.match(uri)
-        if not match:
-            raise ValueError(
-                f"Invalid URI format: {uri}. Expected protocol://path format."
-            )
 
-        protocol, path = match.groups()
-
-        # Check if the path starts with the prefix followed by a /
-        prefix_pattern = f"^{re.escape(prefix)}/(.*?)$"
-        path_match = re.match(prefix_pattern, path)
-        if not path_match:
-            return uri
-
-        # Return the URI without the prefix
-        return f"{protocol}{path_match.group(1)}"
-    else:
-        raise ValueError(f"Invalid prefix format: {prefix_format}")
+    # Return the URI without the prefix
+    return f"{protocol}{path_match.group(1)}"
 
 
-def has_resource_prefix(
-    uri: str, prefix: str, prefix_format: Literal["protocol", "path"] | None = None
-) -> bool:
+def has_resource_prefix(uri: str, prefix: str) -> bool:
     """Check if a resource URI has a specific prefix.
 
     Args:
@@ -2849,14 +2595,8 @@ def has_resource_prefix(
         True if the URI has the specified prefix, False otherwise
 
     Examples:
-        With new style:
         ```python
         has_resource_prefix("resource://prefix/path/to/resource", "prefix")
-        True
-        ```
-        With legacy style:
-        ```python
-        has_resource_prefix("prefix+resource://path/to/resource", "prefix")
         True
         ```
         With other path:
@@ -2871,28 +2611,13 @@ def has_resource_prefix(
     if not prefix:
         return False
 
-    # Get the server settings to check for legacy format preference
+    # Split the URI into protocol and path
+    match = URI_PATTERN.match(uri)
+    if not match:
+        raise ValueError(f"Invalid URI format: {uri}. Expected protocol://path format.")
 
-    if prefix_format is None:
-        prefix_format = fastmcp.settings.resource_prefix_format
+    _, path = match.groups()
 
-    if prefix_format == "protocol":
-        # Legacy style: prefix+protocol://path
-        legacy_prefix = f"{prefix}+"
-        return uri.startswith(legacy_prefix)
-    elif prefix_format == "path":
-        # New style: protocol://prefix/path
-        # Split the URI into protocol and path
-        match = URI_PATTERN.match(uri)
-        if not match:
-            raise ValueError(
-                f"Invalid URI format: {uri}. Expected protocol://path format."
-            )
-
-        _, path = match.groups()
-
-        # Check if the path starts with the prefix followed by a /
-        prefix_pattern = f"^{re.escape(prefix)}/"
-        return bool(re.match(prefix_pattern, path))
-    else:
-        raise ValueError(f"Invalid prefix format: {prefix_format}")
+    # Check if the path starts with the prefix followed by a /
+    prefix_pattern = f"^{re.escape(prefix)}/"
+    return bool(re.match(prefix_pattern, path))

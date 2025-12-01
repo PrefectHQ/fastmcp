@@ -391,25 +391,6 @@ async def test_import_with_proxy_resource_templates():
         assert content["email"] == "john@example.com"
 
 
-async def test_import_invalid_resource_prefix():
-    main_app = FastMCP("MainApp")
-    api_app = FastMCP("APIApp")
-
-    # This test doesn't apply anymore with the new prefix format since we're not validating
-    # the protocol://prefix/path format
-    # Just import the server to maintain test coverage without deprecated parameters
-    await main_app.import_server(api_app, "api")
-
-
-async def test_import_invalid_resource_separator():
-    main_app = FastMCP("MainApp")
-    api_app = FastMCP("APIApp")
-
-    # This test is for maintaining coverage for importing with prefixes
-    # We no longer pass the deprecated resource_separator parameter
-    await main_app.import_server(api_app, "api")
-
-
 async def test_import_with_no_prefix():
     """Test importing a server without providing a prefix."""
     main_app = FastMCP("MainApp")

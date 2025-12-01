@@ -8,6 +8,7 @@ from mcp import McpError
 from fastmcp.client import Client
 from fastmcp.client.transports import SSETransport
 from fastmcp.server.dependencies import get_http_request
+from fastmcp.server.http import create_sse_app
 from fastmcp.server.server import FastMCP
 from fastmcp.utilities.tests import run_server_async
 
@@ -94,7 +95,6 @@ async def nested_sse_server():
     from starlette.applications import Starlette
     from starlette.routing import Mount
 
-    from fastmcp.server.http import create_sse_app
     from fastmcp.utilities.http import find_available_port
 
     server = create_test_server()

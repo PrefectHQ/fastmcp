@@ -105,16 +105,8 @@ class ComponentService:
         # 2. Check mounted servers using the filtered protocol path.
         for mounted in reversed(self._server._mounted_servers):
             if mounted.prefix:
-                if has_resource_prefix(
-                    key,
-                    mounted.prefix,
-                    mounted.resource_prefix_format,
-                ):
-                    key = remove_resource_prefix(
-                        key,
-                        mounted.prefix,
-                        mounted.resource_prefix_format,
-                    )
+                if has_resource_prefix(key, mounted.prefix):
+                    key = remove_resource_prefix(key, mounted.prefix)
                     mounted_service = ComponentService(mounted.server)
                     mounted_resource: (
                         Resource | ResourceTemplate
@@ -148,16 +140,8 @@ class ComponentService:
         # 2. Check mounted servers using the filtered protocol path.
         for mounted in reversed(self._server._mounted_servers):
             if mounted.prefix:
-                if has_resource_prefix(
-                    key,
-                    mounted.prefix,
-                    mounted.resource_prefix_format,
-                ):
-                    key = remove_resource_prefix(
-                        key,
-                        mounted.prefix,
-                        mounted.resource_prefix_format,
-                    )
+                if has_resource_prefix(key, mounted.prefix):
+                    key = remove_resource_prefix(key, mounted.prefix)
                     mounted_service = ComponentService(mounted.server)
                     mounted_resource: (
                         Resource | ResourceTemplate

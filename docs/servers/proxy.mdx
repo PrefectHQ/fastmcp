@@ -266,8 +266,6 @@ These rules apply uniformly whether you:
 - Create a multi-server proxy from an `MCPConfig`
 - Use `FastMCP.as_proxy()` directly
 
-For resource URI prefix formats (path vs legacy protocol style) and configuration options, see Server Composition → Resource Prefix Formats.
-
 ## Mirrored Components
 
 <VersionBadge version="2.10.5" />
@@ -317,7 +315,6 @@ proxy = FastMCPProxy(client_factory=create_client)
 
 ### Parameters
 
-- **`client`**: **[DEPRECATED]** A `Client` instance. Use `client_factory` instead for explicit session management.
 - **`client_factory`**: A callable that returns a `Client` instance when called. This gives you full control over session creation and reuse strategies.
 
 ### Explicit Session Management

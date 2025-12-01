@@ -27,26 +27,6 @@ if settings.deprecation_warnings:
     warnings.simplefilter("default", DeprecationWarning)
 
 
-def __getattr__(name: str):
-    """
-    Used to deprecate the module-level Image class; can be removed once it is no longer imported to root.
-    """
-    if name == "Image":
-        # Deprecated in 2.8.1
-        if settings.deprecation_warnings:
-            warnings.warn(
-                "The top-level `fastmcp.Image` import is deprecated "
-                "and will be removed in a future version. "
-                "Please use `fastmcp.utilities.types.Image` instead.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-        from fastmcp.utilities.types import Image
-
-        return Image
-    raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
-
-
 __all__ = [
     "Client",
     "Context",

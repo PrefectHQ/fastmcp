@@ -34,15 +34,8 @@ REINFORCEMENT_FACTOR = 1.1
 DEFAULT_LLM_MODEL = "openai:gpt-4o"
 DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small"
 
-mcp = FastMCP(
-    "memory",
-    dependencies=[
-        "pydantic-ai-slim[openai]",
-        "asyncpg",
-        "numpy",
-        "pgvector",
-    ],
-)
+# Dependencies are configured in memory.fastmcp.json
+mcp = FastMCP("memory")
 
 DB_DSN = "postgresql://postgres:postgres@localhost:54320/memory_db"
 # reset memory by deleting the profile directory

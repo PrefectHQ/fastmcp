@@ -1,3 +1,7 @@
+# /// script
+# dependencies = ["pyautogui", "Pillow", "fastmcp"]
+# ///
+
 """
 FastMCP Screenshot Example
 
@@ -10,7 +14,8 @@ from fastmcp import FastMCP
 from fastmcp.utilities.types import Image
 
 # Create server
-mcp = FastMCP("Screenshot Demo", dependencies=["pyautogui", "Pillow"])
+# Dependencies are configured in screenshot.fastmcp.json
+mcp = FastMCP("Screenshot Demo")
 
 
 @mcp.tool

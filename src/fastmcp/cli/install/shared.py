@@ -105,21 +105,6 @@ async def process_common_args(
             )
             name = file.stem
 
-    # Get server dependencies if available
-    # TODO: Remove dependencies handling (deprecated in v2.11.4)
-    server_dependencies = getattr(server, "dependencies", []) if server else []
-    if server_dependencies:
-        import warnings
-
-        warnings.warn(
-            "Server uses deprecated 'dependencies' parameter (deprecated in FastMCP 2.11.4). "
-            "Please migrate to fastmcp.json configuration file. "
-            "See https://gofastmcp.com/docs/deployment/server-configuration for details.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        with_packages = list(set(with_packages + server_dependencies))
-
     # Process environment variables if provided
     env_dict: dict[str, str] | None = None
     if env_file or env_vars:
