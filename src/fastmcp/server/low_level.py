@@ -59,13 +59,37 @@ class MiddlewareServerSession(ServerSession):
         from fastmcp.server.middleware.middleware import MiddlewareContext
 
         if isinstance(responder.request.root, mcp.types.InitializeRequest):
+            # The MCP SDK's ServerSession._received_request() handles the
+            # initialize request internally by calling responder.respond()
+            # to send the InitializeResult directly to the write stream, then
+            # returning None. This bypasses the middleware return path entirely,
+            # so middleware would only see the request, never the response.
+            #
+            # To expose the response to middleware (e.g., for logging server
+            # capabilities), we wrap responder.respond() to capture the
+            # InitializeResult before it's sent, then return it from
+            # call_original_handler so it flows back through the middleware chain.
+            captured_response: mcp.types.ServerResult | None = None
+            original_respond = responder.respond
+
+            async def capturing_respond(
+                response: mcp.types.ServerResult,
+            ) -> None:
+                nonlocal captured_response
+                captured_response = response
+                return await original_respond(response)
+
+            responder.respond = capturing_respond  # type: ignore[method-assign]
 
             async def call_original_handler(
                 ctx: MiddlewareContext,
-            ) -> None:
-                return await super(MiddlewareServerSession, self)._received_request(
-                    responder
-                )
+            ) -> mcp.types.InitializeResult | None:
+                await super(MiddlewareServerSession, self)._received_request(responder)
+                if captured_response is not None and isinstance(
+                    captured_response.root, mcp.types.InitializeResult
+                ):
+                    return captured_response.root
+                return None
 
             async with fastmcp.server.context.Context(
                 fastmcp=self.fastmcp

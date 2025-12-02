@@ -150,8 +150,8 @@ class Middleware:
     async def on_initialize(
         self,
         context: MiddlewareContext[mt.InitializeRequest],
-        call_next: CallNext[mt.InitializeRequest, None],
-    ) -> None:
+        call_next: CallNext[mt.InitializeRequest, mt.InitializeResult | None],
+    ) -> mt.InitializeResult | None:
         return await call_next(context)
 
     async def on_call_tool(

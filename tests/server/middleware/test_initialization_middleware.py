@@ -249,3 +249,40 @@ async def test_initialization_middleware_with_state_sharing():
         # This test shows the pattern, but actual cross-request state would need
         # external storage (Redis, DB, etc.)
         # The middleware.tool_state might be None if state doesn't persist
+
+
+async def test_middleware_can_access_initialize_result():
+    """Test that middleware can access the InitializeResult from call_next().
+
+    This verifies that the initialize response is returned through the middleware
+    chain, not just sent directly via the responder (fixes #2504).
+    """
+    server = FastMCP("TestServer")
+
+    class ResponseCapturingMiddleware(Middleware):
+        def __init__(self):
+            super().__init__()
+            self.initialize_result: mt.InitializeResult | None = None
+
+        async def on_initialize(
+            self,
+            context: MiddlewareContext[mt.InitializeRequest],
+            call_next: CallNext[mt.InitializeRequest, mt.InitializeResult | None],
+        ) -> mt.InitializeResult | None:
+            # Call next and capture the result
+            result = await call_next(context)
+            self.initialize_result = result
+            return result
+
+    middleware = ResponseCapturingMiddleware()
+    server.add_middleware(middleware)
+
+    async with Client(server):
+        # Middleware should have captured the InitializeResult
+        assert middleware.initialize_result is not None
+        assert isinstance(middleware.initialize_result, mt.InitializeResult)
+
+        # Verify the result contains expected server info
+        assert middleware.initialize_result.serverInfo.name == "TestServer"
+        assert middleware.initialize_result.protocolVersion is not None
+        assert middleware.initialize_result.capabilities is not None
