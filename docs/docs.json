@@ -199,8 +199,9 @@
                   "integrations/descope",
                   "integrations/discord",
                   "integrations/github",
-                  "integrations/scalekit",
                   "integrations/google",
+                  "integrations/oci",
+                  "integrations/scalekit",
                   "integrations/workos"
                 ]
               },
