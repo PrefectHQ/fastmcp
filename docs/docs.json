@@ -391,7 +391,15 @@
                       "python-sdk/fastmcp-server-middleware-tool_injection"
                     ]
                   },
-                  "python-sdk/fastmcp-server-openapi",
+                  {
+                    "group": "openapi",
+                    "pages": [
+                      "python-sdk/fastmcp-server-openapi-__init__",
+                      "python-sdk/fastmcp-server-openapi-components",
+                      "python-sdk/fastmcp-server-openapi-routing",
+                      "python-sdk/fastmcp-server-openapi-server"
+                    ]
+                  },
                   "python-sdk/fastmcp-server-proxy",
                   "python-sdk/fastmcp-server-server"
                 ]
@@ -448,7 +456,18 @@
                       }
                     ]
                   },
-                  "python-sdk/fastmcp-utilities-openapi",
+                  {
+                    "group": "openapi",
+                    "pages": [
+                      "python-sdk/fastmcp-utilities-openapi-__init__",
+                      "python-sdk/fastmcp-utilities-openapi-director",
+                      "python-sdk/fastmcp-utilities-openapi-formatters",
+                      "python-sdk/fastmcp-utilities-openapi-json_schema_converter",
+                      "python-sdk/fastmcp-utilities-openapi-models",
+                      "python-sdk/fastmcp-utilities-openapi-parser",
+                      "python-sdk/fastmcp-utilities-openapi-schemas"
+                    ]
+                  },
                   "python-sdk/fastmcp-utilities-tests",
                   "python-sdk/fastmcp-utilities-types",
                   "python-sdk/fastmcp-utilities-ui"

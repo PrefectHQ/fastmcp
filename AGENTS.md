@@ -33,7 +33,7 @@ uv run pytest                        # Run full test suite
 | `├─prompts/`       | Prompt templates + `PromptManager`                  |
 | `├─cli/`           | FastMCP CLI commands (`run`, `dev`, `install`)      |
 | `├─contrib/`       | Community contributions (bulk caller, mixins)       |
-| `├─experimental/`  | Experimental features (new OpenAPI parser)          |
+| `├─experimental/`  | Experimental features (sampling handlers)           |
 | `└─utilities/`     | Shared utilities (logging, JSON schema, HTTP)       |
 | `tests/`           | Comprehensive pytest suite with markers             |
 | `docs/`            | Mintlify documentation (published to gofastmcp.com) |

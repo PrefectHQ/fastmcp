@@ -80,14 +80,6 @@ if TYPE_CHECKING:
     from fastmcp.client import Client
     from fastmcp.client.client import FastMCP1Server
     from fastmcp.client.transports import ClientTransport, ClientTransportT
-    from fastmcp.experimental.server.openapi import FastMCPOpenAPI as FastMCPOpenAPINew
-    from fastmcp.experimental.server.openapi.routing import (
-        ComponentFn as OpenAPIComponentFnNew,
-    )
-    from fastmcp.experimental.server.openapi.routing import RouteMap as RouteMapNew
-    from fastmcp.experimental.server.openapi.routing import (
-        RouteMapFn as OpenAPIRouteMapFnNew,
-    )
     from fastmcp.server.openapi import ComponentFn as OpenAPIComponentFn
     from fastmcp.server.openapi import FastMCPOpenAPI, RouteMap
     from fastmcp.server.openapi import RouteMapFn as OpenAPIRouteMapFn
@@ -2287,66 +2279,46 @@ class FastMCP(Generic[LifespanResultT]):
         cls,
         openapi_spec: dict[str, Any],
         client: httpx.AsyncClient,
-        route_maps: list[RouteMap] | list[RouteMapNew] | None = None,
-        route_map_fn: OpenAPIRouteMapFn | OpenAPIRouteMapFnNew | None = None,
-        mcp_component_fn: OpenAPIComponentFn | OpenAPIComponentFnNew | None = None,
+        route_maps: list[RouteMap] | None = None,
+        route_map_fn: OpenAPIRouteMapFn | None = None,
+        mcp_component_fn: OpenAPIComponentFn | None = None,
         mcp_names: dict[str, str] | None = None,
         tags: set[str] | None = None,
         **settings: Any,
-    ) -> FastMCPOpenAPI | FastMCPOpenAPINew:
+    ) -> FastMCPOpenAPI:
         """
         Create a FastMCP server from an OpenAPI specification.
         """
+        from .openapi import FastMCPOpenAPI
 
-        # Check if experimental parser is enabled
-        if fastmcp.settings.experimental.enable_new_openapi_parser:
-            from fastmcp.experimental.server.openapi import FastMCPOpenAPI
-
-            return FastMCPOpenAPI(
-                openapi_spec=openapi_spec,
-                client=client,
-                route_maps=cast(Any, route_maps),
-                route_map_fn=cast(Any, route_map_fn),
-                mcp_component_fn=cast(Any, mcp_component_fn),
-                mcp_names=mcp_names,
-                tags=tags,
-                **settings,
-            )
-        else:
-            logger.info(
-                "Using legacy OpenAPI parser. To use the new parser, set "
-                "FASTMCP_EXPERIMENTAL_ENABLE_NEW_OPENAPI_PARSER=true. The new parser "
-                "was introduced for testing in 2.11 and will become the default soon."
-            )
-            from .openapi import FastMCPOpenAPI
-
-            return FastMCPOpenAPI(
-                openapi_spec=openapi_spec,
-                client=client,
-                route_maps=cast(Any, route_maps),
-                route_map_fn=cast(Any, route_map_fn),
-                mcp_component_fn=cast(Any, mcp_component_fn),
-                mcp_names=mcp_names,
-                tags=tags,
-                **settings,
-            )
+        return FastMCPOpenAPI(
+            openapi_spec=openapi_spec,
+            client=client,
+            route_maps=route_maps,
+            route_map_fn=route_map_fn,
+            mcp_component_fn=mcp_component_fn,
+            mcp_names=mcp_names,
+            tags=tags,
+            **settings,
+        )
 
     @classmethod
     def from_fastapi(
         cls,
         app: Any,
         name: str | None = None,
-        route_maps: list[RouteMap] | list[RouteMapNew] | None = None,
-        route_map_fn: OpenAPIRouteMapFn | OpenAPIRouteMapFnNew | None = None,
-        mcp_component_fn: OpenAPIComponentFn | OpenAPIComponentFnNew | None = None,
+        route_maps: list[RouteMap] | None = None,
+        route_map_fn: OpenAPIRouteMapFn | None = None,
+        mcp_component_fn: OpenAPIComponentFn | None = None,
         mcp_names: dict[str, str] | None = None,
         httpx_client_kwargs: dict[str, Any] | None = None,
         tags: set[str] | None = None,
         **settings: Any,
-    ) -> FastMCPOpenAPI | FastMCPOpenAPINew:
+    ) -> FastMCPOpenAPI:
         """
         Create a FastMCP server from a FastAPI application.
         """
+        from .openapi import FastMCPOpenAPI
 
         if httpx_client_kwargs is None:
             httpx_client_kwargs = {}
@@ -2359,40 +2331,17 @@ class FastMCP(Generic[LifespanResultT]):
 
         name = name or app.title
 
-        # Check if experimental parser is enabled
-        if fastmcp.settings.experimental.enable_new_openapi_parser:
-            from fastmcp.experimental.server.openapi import FastMCPOpenAPI
-
-            return FastMCPOpenAPI(
-                openapi_spec=app.openapi(),
-                client=client,
-                name=name,
-                route_maps=cast(Any, route_maps),
-                route_map_fn=cast(Any, route_map_fn),
-                mcp_component_fn=cast(Any, mcp_component_fn),
-                mcp_names=mcp_names,
-                tags=tags,
-                **settings,
-            )
-        else:
-            logger.info(
-                "Using legacy OpenAPI parser. To use the new parser, set "
-                "FASTMCP_EXPERIMENTAL_ENABLE_NEW_OPENAPI_PARSER=true. The new parser "
-                "was introduced for testing in 2.11 and will become the default soon."
-            )
-            from .openapi import FastMCPOpenAPI
-
-            return FastMCPOpenAPI(
-                openapi_spec=app.openapi(),
-                client=client,
-                name=name,
-                route_maps=cast(Any, route_maps),
-                route_map_fn=cast(Any, route_map_fn),
-                mcp_component_fn=cast(Any, mcp_component_fn),
-                mcp_names=mcp_names,
-                tags=tags,
-                **settings,
-            )
+        return FastMCPOpenAPI(
+            openapi_spec=app.openapi(),
+            client=client,
+            name=name,
+            route_maps=route_maps,
+            route_map_fn=route_map_fn,
+            mcp_component_fn=mcp_component_fn,
+            mcp_names=mcp_names,
+            tags=tags,
+            **settings,
+        )
 
     @classmethod
     def as_proxy(

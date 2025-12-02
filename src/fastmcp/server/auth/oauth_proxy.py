@@ -438,7 +438,7 @@ def create_error_html(
     Args:
         error_title: The error title (e.g., "OAuth Error", "Authorization Failed")
         error_message: The main error message to display
-        error_details: Optional dictionary of error details to show (e.g., {"Error Code": "invalid_client"})
+        error_details: Optional dictionary of error details to show (e.g., `{"Error Code": "invalid_client"}`)
         server_name: Optional server name to display
         server_icon_url: Optional URL to server icon/logo
 

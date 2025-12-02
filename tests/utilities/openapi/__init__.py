@@ -1,1 +1,1 @@
-"""Tests for the OpenAPI utilities."""
+"""Tests for openapi_new utilities."""

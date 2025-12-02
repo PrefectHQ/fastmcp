@@ -9,12 +9,6 @@ import { VersionBadge } from '/snippets/version-badge.mdx'
 
 <VersionBadge version="2.0.0" />
 
-<Tip>
-**New in 2.11**: FastMCP is introducing a next-generation OpenAPI parser. The new parser has greatly improved performance and compatibility, and is also easier to maintain. To enable it, set the environment variable `FASTMCP_EXPERIMENTAL_ENABLE_NEW_OPENAPI_PARSER=true`. 
-
-The new parser is largely API-compatible with the existing implementation and will become the default in a future version. We encourage all users to test it and report any issues before it becomes the default.
-</Tip>
-
 FastMCP can automatically generate an MCP server from any OpenAPI specification, allowing AI models to interact with existing APIs through the MCP protocol. Instead of manually creating tools and resources, you provide an OpenAPI spec and FastMCP intelligently converts API endpoints into the appropriate MCP components.
 
 <Tip>
@@ -94,14 +88,6 @@ DEFAULT_ROUTE_MAPPINGS = [
     RouteMap(mcp_type=MCPType.TOOL),
 ]
 ```
-
-<Tip>
-**Experimental Parser**: If you're using the new parser (enabled via `FASTMCP_EXPERIMENTAL_ENABLE_NEW_OPENAPI_PARSER=true`), import from the experimental module instead:
-```python
-from fastmcp.experimental.server.openapi import RouteMap, MCPType
-```
-The API is identical, but the implementation provides better performance and serverless compatibility.
-</Tip>
 
 ### Custom Route Maps
 
@@ -379,19 +365,11 @@ Your `mcp_component_fn` is expected to modify the component in-place, not to ret
 
 ```python
 from fastmcp.server.openapi import (
-    HTTPRoute, 
-    OpenAPITool, 
-    OpenAPIResource, 
+    HTTPRoute,
+    OpenAPITool,
+    OpenAPIResource,
     OpenAPIResourceTemplate,
 )
-
-# If using experimental parser, import from experimental module:
-# from fastmcp.experimental.server.openapi import (
-#     HTTPRoute,
-#     OpenAPITool,
-#     OpenAPIResource,
-#     OpenAPIResourceTemplate,
-# )
 
 def customize_components(
     route: HTTPRoute, 
