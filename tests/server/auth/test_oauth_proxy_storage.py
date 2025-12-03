@@ -75,7 +75,8 @@ class TestOAuthProxyStorage:
         client = await proxy.get_client("test-client-123")
         assert client is not None
         assert client.client_id == "test-client-123"
-        assert client.client_secret == "secret-456"
+        # Proxy uses token_endpoint_auth_method="none", so client_secret is not stored
+        assert client.client_secret is None
         assert client.scope == "read write"
 
     async def test_client_persists_across_proxy_instances(
@@ -96,7 +97,8 @@ class TestOAuthProxyStorage:
         proxy2 = self.create_proxy(jwt_verifier, storage=temp_storage)
         client = await proxy2.get_client("persistent-client")
         assert client is not None
-        assert client.client_secret == "persistent-secret"
+        # Proxy uses token_endpoint_auth_method="none", so client_secret is not stored
+        assert client.client_secret is None
         assert client.scope == "openid profile"
 
     async def test_nonexistent_client_returns_none(
@@ -199,7 +201,7 @@ class TestOAuthProxyStorage:
                 "software_id": None,
                 "software_version": None,
                 "client_id": "structured-client",
-                "client_secret": "secret",
+                "client_secret": None,
                 "client_id_issued_at": None,
                 "client_secret_expires_at": None,
                 "allowed_redirect_uri_patterns": None,

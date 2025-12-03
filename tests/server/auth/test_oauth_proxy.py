@@ -420,7 +420,8 @@ class TestOAuthProxyClientRegistration:
         stored = await oauth_proxy.get_client("original-client")
         assert stored is not None
         assert stored.client_id == "original-client"
-        assert stored.client_secret == "original-secret"
+        # Proxy uses token_endpoint_auth_method="none", so client_secret is not stored
+        assert stored.client_secret is None
 
     async def test_get_registered_client(self, oauth_proxy):
         """Test retrieving a registered client."""
