@@ -420,7 +420,8 @@ class TestOAuthProxyClientRegistration:
         stored = await oauth_proxy.get_client("original-client")
         assert stored is not None
         assert stored.client_id == "original-client"
-        assert stored.client_secret == "original-secret"
+        # Proxy uses token_endpoint_auth_method="none", so client_secret is not stored
+        assert stored.client_secret is None
 
     async def test_get_registered_client(self, oauth_proxy):
         """Test retrieving a registered client."""
@@ -1247,29 +1248,36 @@ class TestParameterForwarding:
 class TestTokenHandlerErrorTransformation:
     """Tests for TokenHandler's OAuth 2.1 compliant error transformation."""
 
-    def test_transforms_client_auth_failure_to_invalid_client_401(self):
+    async def test_transforms_client_auth_failure_to_invalid_client_401(self):
         """Test that client authentication failures return invalid_client with 401."""
-        from mcp.server.auth.handlers.token import TokenErrorResponse
+        from unittest.mock import AsyncMock, patch
+
+        from mcp.server.auth.handlers.token import TokenHandler as SDKTokenHandler
 
         from fastmcp.server.auth.oauth_proxy import TokenHandler
 
         handler = TokenHandler(provider=Mock(), client_authenticator=Mock())
 
-        # Simulate error from ClientAuthenticator.authenticate() failure
-        error_response = TokenErrorResponse(
-            error="unauthorized_client",
-            error_description="Invalid client_id 'test-client-id'",
+        # Create a mock 401 response like the SDK returns for auth failures
+        mock_response = Mock()
+        mock_response.status_code = 401
+        mock_response.body = (
+            b'{"error":"unauthorized_client","error_description":"Invalid client_id"}'
         )
 
-        response = handler.response(error_response)
+        # Patch the parent class's handle() to return our mock response
+        with patch.object(
+            SDKTokenHandler,
+            "handle",
+            new_callable=AsyncMock,
+            return_value=mock_response,
+        ):
+            response = await handler.handle(Mock())
 
         # Should transform to OAuth 2.1 compliant response
         assert response.status_code == 401
         assert b'"error":"invalid_client"' in response.body
-        assert (
-            b'"error_description":"Invalid client_id \'test-client-id\'"'
-            in response.body
-        )
+        assert b'"error_description":"Invalid client_id"' in response.body
 
     def test_does_not_transform_grant_type_unauthorized_to_invalid_client(self):
         """Test that grant type authorization errors stay as unauthorized_client with 400."""

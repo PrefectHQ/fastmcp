@@ -36,7 +36,7 @@ from key_value.aio.adapters.pydantic import PydanticAdapter
 from key_value.aio.protocols import AsyncKeyValue
 from key_value.aio.stores.disk import DiskStore
 from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
-from mcp.server.auth.handlers.token import TokenErrorResponse, TokenSuccessResponse
+from mcp.server.auth.handlers.token import TokenErrorResponse
 from mcp.server.auth.handlers.token import TokenHandler as _SDKTokenHandler
 from mcp.server.auth.json_response import PydanticJSONResponse
 from mcp.server.auth.middleware.client_auth import ClientAuthenticator
@@ -522,50 +522,43 @@ def create_error_html(
 class TokenHandler(_SDKTokenHandler):
     """TokenHandler that returns OAuth 2.1 compliant error responses.
 
-    The MCP SDK always returns HTTP 400 for all client authentication issues.
-    However, OAuth 2.1 Section 5.3 and the MCP specification require that
-    invalid or expired tokens MUST receive a HTTP 401 response.
+    The MCP SDK returns `unauthorized_client` for client authentication failures.
+    However, per RFC 6749 Section 5.2, authentication failures should return
+    `invalid_client` with HTTP 401, not `unauthorized_client`.
 
-    This handler extends the base MCP SDK TokenHandler to transform client
-    authentication failures into OAuth 2.1 compliant responses:
-    - Changes 'unauthorized_client' to 'invalid_client' error code
-    - Returns HTTP 401 status code instead of 400 for client auth failures
+    This distinction matters: `unauthorized_client` means "client exists but
+    can't do this", while `invalid_client` means "client doesn't exist or
+    credentials are wrong". Claude's OAuth client uses this to decide whether
+    to re-register.
 
-    Per OAuth 2.1 Section 5.3: "The authorization server MAY return an HTTP 401
-    (Unauthorized) status code to indicate which HTTP authentication schemes
-    are supported."
-
-    Per MCP spec: "Invalid or expired tokens MUST receive a HTTP 401 response."
+    This handler transforms 401 responses with `unauthorized_client` to use
+    `invalid_client` instead, making the error semantics correct per OAuth spec.
     """
 
-    def response(self, obj: TokenSuccessResponse | TokenErrorResponse):
-        """Override response method to provide OAuth 2.1 compliant error handling."""
-        # Check if this is a client authentication failure (not just unauthorized for grant type)
-        # unauthorized_client can mean two things:
-        # 1. Client authentication failed (client_id not found or wrong credentials) -> invalid_client 401
-        # 2. Client not authorized for this grant type -> unauthorized_client 400 (correct per spec)
-        if (
-            isinstance(obj, TokenErrorResponse)
-            and obj.error == "unauthorized_client"
-            and obj.error_description
-            and "Invalid client_id" in obj.error_description
-        ):
-            # Transform client auth failure to OAuth 2.1 compliant response
-            return PydanticJSONResponse(
-                content=TokenErrorResponse(
-                    error="invalid_client",
-                    error_description=obj.error_description,
-                    error_uri=obj.error_uri,
-                ),
-                status_code=401,
-                headers={
-                    "Cache-Control": "no-store",
-                    "Pragma": "no-cache",
-                },
-            )
+    async def handle(self, request: Any):
+        """Wrap SDK handle() and transform auth error responses."""
+        response = await super().handle(request)
 
-        # Otherwise use default behavior from parent class
-        return super().response(obj)
+        # Transform 401 unauthorized_client -> invalid_client
+        if response.status_code == 401:
+            try:
+                body = json.loads(response.body)
+                if body.get("error") == "unauthorized_client":
+                    return PydanticJSONResponse(
+                        content=TokenErrorResponse(
+                            error="invalid_client",
+                            error_description=body.get("error_description"),
+                        ),
+                        status_code=401,
+                        headers={
+                            "Cache-Control": "no-store",
+                            "Pragma": "no-cache",
+                        },
+                    )
+            except (json.JSONDecodeError, AttributeError):
+                pass  # Not JSON or unexpected format, return as-is
+
+        return response
 
 
 class OAuthProxy(OAuthProvider):
@@ -993,9 +986,13 @@ class OAuthProxy(OAuthProvider):
         # Create a ProxyDCRClient with configured redirect URI validation
         if client_info.client_id is None:
             raise ValueError("client_id is required for client registration")
+        # We use token_endpoint_auth_method="none" because the proxy handles
+        # all upstream authentication. The client_secret must also be None
+        # because the SDK requires secrets to be provided if they're set,
+        # regardless of auth method.
         proxy_client: ProxyDCRClient = ProxyDCRClient(
             client_id=client_info.client_id,
-            client_secret=client_info.client_secret,
+            client_secret=None,
             redirect_uris=client_info.redirect_uris or [AnyUrl("http://localhost")],
             grant_types=client_info.grant_types
             or ["authorization_code", "refresh_token"],
