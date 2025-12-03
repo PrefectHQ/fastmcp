@@ -1021,9 +1021,13 @@ class OAuthProxy(OAuthProvider):
         # Create a ProxyDCRClient with configured redirect URI validation
         if client_info.client_id is None:
             raise ValueError("client_id is required for client registration")
+        # We use token_endpoint_auth_method="none" because the proxy handles
+        # all upstream authentication. The client_secret must also be None
+        # because the SDK requires secrets to be provided if they're set,
+        # regardless of auth method.
         proxy_client: ProxyDCRClient = ProxyDCRClient(
             client_id=client_info.client_id,
-            client_secret=client_info.client_secret,
+            client_secret=None,
             redirect_uris=client_info.redirect_uris or [AnyUrl("http://localhost")],
             grant_types=client_info.grant_types
             or ["authorization_code", "refresh_token"],
