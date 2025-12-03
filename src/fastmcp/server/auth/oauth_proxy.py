@@ -36,7 +36,7 @@ from key_value.aio.adapters.pydantic import PydanticAdapter
 from key_value.aio.protocols import AsyncKeyValue
 from key_value.aio.stores.disk import DiskStore
 from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
-from mcp.server.auth.handlers.token import TokenErrorResponse, TokenSuccessResponse
+from mcp.server.auth.handlers.token import TokenErrorResponse
 from mcp.server.auth.handlers.token import TokenHandler as _SDKTokenHandler
 from mcp.server.auth.json_response import PydanticJSONResponse
 from mcp.server.auth.middleware.client_auth import ClientAuthenticator
@@ -533,12 +533,6 @@ class TokenHandler(_SDKTokenHandler):
 
     This handler transforms 401 responses with `unauthorized_client` to use
     `invalid_client` instead, making the error semantics correct per OAuth spec.
-
-    Per OAuth 2.1 Section 5.3: "The authorization server MAY return an HTTP 401
-    (Unauthorized) status code to indicate which HTTP authentication schemes
-    are supported."
-
-    Per MCP spec: "Invalid or expired tokens MUST receive a HTTP 401 response."
     """
 
     async def handle(self, request: Any):
@@ -565,35 +559,6 @@ class TokenHandler(_SDKTokenHandler):
                 pass  # Not JSON or unexpected format, return as-is
 
         return response
-
-    def response(self, obj: TokenSuccessResponse | TokenErrorResponse):
-        """Override response method to provide OAuth 2.1 compliant error handling."""
-        # Check if this is a client authentication failure (not just unauthorized for grant type)
-        # unauthorized_client can mean two things:
-        # 1. Client authentication failed (client_id not found or wrong credentials) -> invalid_client 401
-        # 2. Client not authorized for this grant type -> unauthorized_client 400 (correct per spec)
-        if (
-            isinstance(obj, TokenErrorResponse)
-            and obj.error == "unauthorized_client"
-            and obj.error_description
-            and "Invalid client_id" in obj.error_description
-        ):
-            # Transform client auth failure to OAuth 2.1 compliant response
-            return PydanticJSONResponse(
-                content=TokenErrorResponse(
-                    error="invalid_client",
-                    error_description=obj.error_description,
-                    error_uri=obj.error_uri,
-                ),
-                status_code=401,
-                headers={
-                    "Cache-Control": "no-store",
-                    "Pragma": "no-cache",
-                },
-            )
-
-        # Otherwise use default behavior from parent class
-        return super().response(obj)
 
 
 class OAuthProxy(OAuthProvider):
