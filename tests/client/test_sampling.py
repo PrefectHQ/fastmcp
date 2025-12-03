@@ -149,6 +149,7 @@ async def test_sampling_with_image(fastmcp_server: FastMCP):
                     "annotations": None,
                     "_meta": None,
                 },
+                "_meta": None,
             },
             {
                 "role": "user",
@@ -159,5 +160,6 @@ async def test_sampling_with_image(fastmcp_server: FastMCP):
                     "annotations": None,
                     "_meta": None,
                 },
+                "_meta": None,
             },
         ]

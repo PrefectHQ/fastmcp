@@ -522,14 +522,17 @@ def create_error_html(
 class TokenHandler(_SDKTokenHandler):
     """TokenHandler that returns OAuth 2.1 compliant error responses.
 
-    The MCP SDK always returns HTTP 400 for all client authentication issues.
-    However, OAuth 2.1 Section 5.3 and the MCP specification require that
-    invalid or expired tokens MUST receive a HTTP 401 response.
+    The MCP SDK returns `unauthorized_client` for client authentication failures.
+    However, per RFC 6749 Section 5.2, authentication failures should return
+    `invalid_client` with HTTP 401, not `unauthorized_client`.
 
-    This handler extends the base MCP SDK TokenHandler to transform client
-    authentication failures into OAuth 2.1 compliant responses:
-    - Changes 'unauthorized_client' to 'invalid_client' error code
-    - Returns HTTP 401 status code instead of 400 for client auth failures
+    This distinction matters: `unauthorized_client` means "client exists but
+    can't do this", while `invalid_client` means "client doesn't exist or
+    credentials are wrong". Claude's OAuth client uses this to decide whether
+    to re-register.
+
+    This handler transforms 401 responses with `unauthorized_client` to use
+    `invalid_client` instead, making the error semantics correct per OAuth spec.
 
     Per OAuth 2.1 Section 5.3: "The authorization server MAY return an HTTP 401
     (Unauthorized) status code to indicate which HTTP authentication schemes
@@ -537,6 +540,31 @@ class TokenHandler(_SDKTokenHandler):
 
     Per MCP spec: "Invalid or expired tokens MUST receive a HTTP 401 response."
     """
+
+    async def handle(self, request: Any):
+        """Wrap SDK handle() and transform auth error responses."""
+        response = await super().handle(request)
+
+        # Transform 401 unauthorized_client -> invalid_client
+        if response.status_code == 401:
+            try:
+                body = json.loads(response.body)
+                if body.get("error") == "unauthorized_client":
+                    return PydanticJSONResponse(
+                        content=TokenErrorResponse(
+                            error="invalid_client",
+                            error_description=body.get("error_description"),
+                        ),
+                        status_code=401,
+                        headers={
+                            "Cache-Control": "no-store",
+                            "Pragma": "no-cache",
+                        },
+                    )
+            except (json.JSONDecodeError, AttributeError):
+                pass  # Not JSON or unexpected format, return as-is
+
+        return response
 
     def response(self, obj: TokenSuccessResponse | TokenErrorResponse):
         """Override response method to provide OAuth 2.1 compliant error handling."""
