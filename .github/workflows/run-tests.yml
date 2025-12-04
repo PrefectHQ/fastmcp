@@ -99,8 +99,8 @@ jobs:
         run: uv sync --upgrade
 
       - name: Run integration tests
-        # use longer per-test timeout than the default 3s
-        run: uv run pytest tests -m "integration" --timeout=15 --numprocesses auto --maxprocesses 2 --dist worksteal
+        # use longer per-test timeout for remote API calls (default is 5s)
+        run: uv run pytest tests -m "integration" --timeout=30 --numprocesses auto --maxprocesses 2 --dist worksteal
         env:
           FASTMCP_GITHUB_TOKEN: ${{ secrets.FASTMCP_GITHUB_TOKEN }}
           FASTMCP_TEST_AUTH_GITHUB_CLIENT_ID: ${{ secrets.FASTMCP_TEST_AUTH_GITHUB_CLIENT_ID }}
