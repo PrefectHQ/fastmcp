@@ -124,7 +124,7 @@ jobs:
           If you detect such a loop (e.g., you see multiple similar bot comments or your own previous analysis comments):
           1. **DO NOT** post another analysis comment
           2. Exit immediately without further action
-          
+
           # CRITICAL: ANGRY USERS
           **IMPORTANT**: If the user is angry with you, the triage bot, don't respond. Just exit immediately without further action.
             If at any point in the conversation the user has asked you to stop replying to the thread, just exit immediately.
