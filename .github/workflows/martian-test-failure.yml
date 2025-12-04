@@ -104,7 +104,9 @@ jobs:
           </details>
 
           # Important Guidelines
-          - Be concise and actionable - developers want to quickly understand and fix the issue
+          - Be concise and actionable - developers want to quickly understand and fix the issue. Provide
+            additional context, references, etc in collapsible details blocks to ensure that the comment you're adding
+            is short and easy to read but additional information is a click away.
           - Focus on facts from the logs and code, not speculation
           - If you can't determine the root cause, say so clearly
           - Provide specific file names, line numbers, and code references when possible
@@ -119,12 +121,19 @@ jobs:
           - Your previous analysis triggered CodeRabbit or another bot
           - This created a repeating cycle of bot comments
 
-          # CRITICAL: ANGRY USERS
-          **IMPORTANT**: If the user is angry with you, the triage bot, don't respond. Just exit immediately without further action.
-
           If you detect such a loop (e.g., you see multiple similar bot comments or your own previous analysis comments):
           1. **DO NOT** post another analysis comment
           2. Exit immediately without further action
+          
+          # CRITICAL: ANGRY USERS
+          **IMPORTANT**: If the user is angry with you, the triage bot, don't respond. Just exit immediately without further action.
+            If at any point in the conversation the user has asked you to stop replying to the thread, just exit immediately.
+
+          If you are posting the same suggestion as you have previously made, do not post the suggestion again.
+
+          # IMPORTANT: EDIT YOUR COMMENT
+          Do not post a new comment every time you triage a failing workflow. If a previous comment has been posted by you (marvin)
+          in a previous triage, edit that comment do not add a new comment for each failure.
 
           # Problems Encountered
           If you encounter any problems during your analysis (e.g., unable to fetch logs, tools not working), document them clearly so the team knows what limitations you faced.
