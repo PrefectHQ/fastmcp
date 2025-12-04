@@ -202,6 +202,7 @@
                   "integrations/google",
                   "integrations/oci",
                   "integrations/scalekit",
+                  "integrations/supabase",
                   "integrations/workos"
                 ]
               },

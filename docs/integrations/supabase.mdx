@@ -1,0 +1,143 @@
+---
+title: Supabase 🤝 FastMCP
+sidebarTitle: Supabase
+description: Secure your FastMCP server with Supabase Auth
+icon: shield-check
+tag: NEW
+---
+
+import { VersionBadge } from "/snippets/version-badge.mdx"
+
+<VersionBadge version="2.13.0" />
+
+This guide shows you how to secure your FastMCP server using **Supabase Auth**. This integration uses the [**Remote OAuth**](/servers/auth/remote-oauth) pattern, where Supabase handles user authentication and your FastMCP server validates the tokens.
+
+## Configuration
+
+### Prerequisites
+
+Before you begin, you will need:
+1. A **[Supabase Account](https://supabase.com/)** with a project
+2. Your FastMCP server's URL (can be localhost for development, e.g., `http://localhost:8000`)
+
+### Step 1: Get Supabase Project URL
+
+In your Supabase Dashboard:
+1. Go to **Project Settings**
+2. Copy your **Project URL** (e.g., `https://abc123.supabase.co`)
+
+### Step 2: FastMCP Configuration
+
+Create your FastMCP server using the `SupabaseProvider`:
+
+```python server.py
+from fastmcp import FastMCP
+from fastmcp.server.auth.providers.supabase import SupabaseProvider
+
+# Configure Supabase Auth
+auth = SupabaseProvider(
+    project_url="https://abc123.supabase.co",
+    base_url="http://localhost:8000"
+)
+
+mcp = FastMCP("Supabase Protected Server", auth=auth)
+
+@mcp.tool
+def protected_tool(message: str) -> str:
+    """This tool requires authentication."""
+    return f"Authenticated user says: {message}"
+
+if __name__ == "__main__":
+    mcp.run(transport="http", port=8000)
+```
+
+## Testing
+
+### Running the Server
+
+Start your FastMCP server with HTTP transport to enable OAuth flows:
+
+```bash
+fastmcp run server.py --transport http --port 8000
+```
+
+Your server is now running and protected by Supabase authentication.
+
+### Testing with a Client
+
+Create a test client that authenticates with your Supabase-protected server:
+
+```python client.py
+from fastmcp import Client
+import asyncio
+
+async def main():
+    # The client will automatically handle Supabase OAuth
+    async with Client("http://localhost:8000/mcp", auth="oauth") as client:
+        # First-time connection will open Supabase login in your browser
+        print("✓ Authenticated with Supabase!")
+
+        # Test the protected tool
+        result = await client.call_tool("protected_tool", {"message": "Hello!"})
+        print(result)
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+When you run the client for the first time:
+1. Your browser will open to Supabase's authorization page
+2. After you authorize, you'll be redirected back
+3. The client receives the token and can make authenticated requests
+
+## Environment Variables
+
+For production deployments, use environment variables instead of hardcoding credentials.
+
+### Provider Selection
+
+Setting this environment variable allows the Supabase provider to be used automatically without explicitly instantiating it in code.
+
+<Card>
+<ParamField path="FASTMCP_SERVER_AUTH" default="Not set">
+Set to `fastmcp.server.auth.providers.supabase.SupabaseProvider` to use Supabase authentication.
+</ParamField>
+</Card>
+
+### Supabase-Specific Configuration
+
+These environment variables provide default values for the Supabase provider, whether it's instantiated manually or configured via `FASTMCP_SERVER_AUTH`.
+
+<Card>
+<ParamField path="FASTMCP_SERVER_AUTH_SUPABASE_PROJECT_URL" required>
+Your Supabase project URL (e.g., `https://abc123.supabase.co`)
+</ParamField>
+
+<ParamField path="FASTMCP_SERVER_AUTH_SUPABASE_BASE_URL" required>
+Public URL of your FastMCP server (e.g., `https://your-server.com` or `http://localhost:8000` for development)
+</ParamField>
+
+<ParamField path="FASTMCP_SERVER_AUTH_SUPABASE_REQUIRED_SCOPES" default="[]">
+Comma-, space-, or JSON-separated list of required OAuth scopes (e.g., `openid email` or `["openid", "email"]`)
+</ParamField>
+</Card>
+
+Example `.env` file:
+```bash
+# Use the Supabase provider
+FASTMCP_SERVER_AUTH=fastmcp.server.auth.providers.supabase.SupabaseProvider
+
+# Supabase configuration
+FASTMCP_SERVER_AUTH_SUPABASE_PROJECT_URL=https://abc123.supabase.co
+FASTMCP_SERVER_AUTH_SUPABASE_BASE_URL=https://your-server.com
+FASTMCP_SERVER_AUTH_SUPABASE_REQUIRED_SCOPES=openid,email
+```
+
+With environment variables set, your server code simplifies to:
+
+```python server.py
+from fastmcp import FastMCP
+
+# Authentication is automatically configured from environment
+mcp = FastMCP(name="Supabase Protected Server")
+```
