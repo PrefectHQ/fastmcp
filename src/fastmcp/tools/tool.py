@@ -15,9 +15,10 @@ from typing import (
 
 import mcp.types
 import pydantic_core
+from mcp.shared.tool_name_validation import validate_and_warn_tool_name
 from mcp.types import CallToolResult, ContentBlock, Icon, TextContent, ToolAnnotations
 from mcp.types import Tool as MCPTool
-from pydantic import Field, PydanticSchemaGenerationError
+from pydantic import Field, PydanticSchemaGenerationError, model_validator
 from typing_extensions import TypeVar
 
 import fastmcp
@@ -129,6 +130,12 @@ class Tool(FastMCPComponent):
         ToolResultSerializerType | None,
         Field(description="Optional custom serializer for tool results"),
     ] = None
+
+    @model_validator(mode="after")
+    def _validate_tool_name(self) -> Tool:
+        """Validate tool name according to MCP specification (SEP-986)."""
+        validate_and_warn_tool_name(self.name)
+        return self
 
     def enable(self) -> None:
         super().enable()

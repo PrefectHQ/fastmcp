@@ -1706,3 +1706,102 @@ class TestToolTitle:
         # Should fall back to annotations.title
         mcp_tool = tool.to_mcp_tool()
         assert mcp_tool.title == "Annotation Title"
+
+
+class TestToolNameValidation:
+    """Tests for tool name validation per MCP specification (SEP-986)."""
+
+    @pytest.fixture
+    def caplog_for_mcp_validation(self, caplog):
+        """Capture logs from the MCP SDK's tool name validation logger."""
+        import logging
+
+        caplog.set_level(logging.WARNING)
+        logger = logging.getLogger("mcp.shared.tool_name_validation")
+        original_level = logger.level
+        logger.setLevel(logging.WARNING)
+        logger.addHandler(caplog.handler)
+        try:
+            yield caplog
+        finally:
+            logger.removeHandler(caplog.handler)
+            logger.setLevel(original_level)
+
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "valid_tool",
+            "valid-tool",
+            "valid.tool",
+            "ValidTool",
+            "tool123",
+            "a",
+            "a" * 128,
+        ],
+    )
+    def test_valid_tool_names_no_warnings(self, name, caplog_for_mcp_validation):
+        """Valid tool names should not produce warnings."""
+
+        def fn() -> str:
+            return "test"
+
+        tool = Tool.from_function(fn, name=name)
+        assert tool.name == name
+        assert "Tool name validation warning" not in caplog_for_mcp_validation.text
+
+    def test_tool_name_with_spaces_warns(self, caplog_for_mcp_validation):
+        """Tool names with spaces should produce a warning."""
+
+        def fn() -> str:
+            return "test"
+
+        tool = Tool.from_function(fn, name="my tool")
+        assert tool.name == "my tool"
+        assert "Tool name validation warning" in caplog_for_mcp_validation.text
+        assert "contains spaces" in caplog_for_mcp_validation.text
+
+    def test_tool_name_with_invalid_chars_warns(self, caplog_for_mcp_validation):
+        """Tool names with invalid characters should produce a warning."""
+
+        def fn() -> str:
+            return "test"
+
+        tool = Tool.from_function(fn, name="tool@name!")
+        assert tool.name == "tool@name!"
+        assert "Tool name validation warning" in caplog_for_mcp_validation.text
+        assert "invalid characters" in caplog_for_mcp_validation.text
+
+    def test_tool_name_too_long_warns(self, caplog_for_mcp_validation):
+        """Tool names exceeding 128 characters should produce a warning."""
+
+        def fn() -> str:
+            return "test"
+
+        long_name = "a" * 129
+        tool = Tool.from_function(fn, name=long_name)
+        assert tool.name == long_name
+        assert "Tool name validation warning" in caplog_for_mcp_validation.text
+        assert "exceeds maximum length" in caplog_for_mcp_validation.text
+
+    def test_tool_name_with_leading_dash_warns(self, caplog_for_mcp_validation):
+        """Tool names starting with dash should produce a warning."""
+
+        def fn() -> str:
+            return "test"
+
+        tool = Tool.from_function(fn, name="-tool")
+        assert tool.name == "-tool"
+        assert "Tool name validation warning" in caplog_for_mcp_validation.text
+        assert "starts or ends with a dash" in caplog_for_mcp_validation.text
+
+    def test_tool_still_created_despite_warnings(self, caplog_for_mcp_validation):
+        """Tools with invalid names should still be created (SHOULD not MUST)."""
+
+        def add(a: int, b: int) -> int:
+            return a + b
+
+        tool = Tool.from_function(add, name="invalid tool name!")
+        assert tool.name == "invalid tool name!"
+        assert tool.parameters is not None
+        assert "a" in tool.parameters["properties"]
+        assert "b" in tool.parameters["properties"]
