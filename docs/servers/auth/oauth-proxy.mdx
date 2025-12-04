@@ -127,21 +127,24 @@ mcp = FastMCP(name="My Server", auth=auth)
 <ParamField body="issuer_url" type="AnyHttpUrl | str | None">
   Issuer URL for OAuth authorization server metadata (defaults to `base_url`).
 
-  When mounting your MCP server under a path prefix (e.g., `/api`), set this to your root-level URL to avoid 404 logs during OAuth discovery. MCP clients try path-scoped discovery first per RFC 8414, which will fail if your auth server metadata is at the root level.
+  When `issuer_url` has a path component (either explicitly or by defaulting from `base_url`), FastMCP creates path-aware discovery routes per RFC 8414. For example, if `base_url` is `http://localhost:8000/api`, the authorization server metadata will be at `/.well-known/oauth-authorization-server/api`.
 
-  **Example with mounting:**
+  **Default behavior (recommended for most cases):**
   ```python
   auth = GitHubProvider(
       base_url="http://localhost:8000/api",  # OAuth endpoints under /api
-      issuer_url="http://localhost:8000"     # Auth server metadata at root
+      # issuer_url defaults to base_url - path-aware discovery works automatically
   )
   ```
 
-  Without `issuer_url`, clients will attempt `/.well-known/oauth-authorization-server/api` (404) before falling back to `/.well-known/oauth-authorization-server` (success). Setting `issuer_url` to the root eliminates the 404 attempt.
-
-  **When to use:**
-  - **Default (`None`)**: Use `base_url` as issuer - simple deployments at root path
-  - **Root-level URL**: Mounting under a path prefix - avoids 404 logs
+  **When to set explicitly:**
+  Set `issuer_url` to root level only if you want multiple MCP servers to share a single discovery endpoint:
+  ```python
+  auth = GitHubProvider(
+      base_url="http://localhost:8000/api",
+      issuer_url="http://localhost:8000"  # Shared root-level discovery
+  )
+  ```
 
   See the [HTTP Deployment guide](/deployment/http#mounting-authenticated-servers) for complete mounting examples.
 </ParamField>

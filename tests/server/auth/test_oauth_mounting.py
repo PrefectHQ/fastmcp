@@ -265,3 +265,116 @@ class TestOAuthMounting:
                 "https://api.example.com/api",
                 "https://api.example.com/api/",
             ]
+
+    async def test_oauth_authorization_server_metadata_path_aware_discovery(
+        self, test_tokens
+    ):
+        """Test RFC 8414 path-aware discovery when issuer_url has a path.
+
+        This validates the fix for issue #2527 where authorization server metadata
+        should be exposed at a path-aware URL when issuer_url has a path component.
+
+        When issuer_url defaults to base_url (e.g., http://example.com/api), the
+        authorization server metadata should be at:
+        /.well-known/oauth-authorization-server/api
+
+        This is consistent with how protected resource metadata already works
+        (RFC 9728) and complies with RFC 8414 path-aware discovery.
+        """
+        # Create OAuth proxy where issuer_url defaults to base_url (which has a path)
+        token_verifier = StaticTokenVerifier(tokens=test_tokens)
+        auth_provider = OAuthProxy(
+            upstream_authorization_endpoint="https://upstream.example.com/authorize",
+            upstream_token_endpoint="https://upstream.example.com/token",
+            upstream_client_id="test-client-id",
+            upstream_client_secret="test-client-secret",
+            token_verifier=token_verifier,
+            base_url="https://api.example.com/api",  # Has path, no explicit issuer_url
+        )
+
+        mcp = FastMCP("test-server", auth=auth_provider)
+        mcp_app = mcp.http_app(path="/mcp")
+
+        # Get well-known routes - should include path-aware authorization server metadata
+        well_known_routes = auth_provider.get_well_known_routes(mcp_path="/mcp")
+
+        # Find the authorization server metadata route
+        auth_server_routes = [
+            r for r in well_known_routes if "oauth-authorization-server" in r.path
+        ]
+        assert len(auth_server_routes) == 1
+
+        # The route should be path-aware (RFC 8414)
+        assert (
+            auth_server_routes[0].path == "/.well-known/oauth-authorization-server/api"
+        )
+
+        # Find the protected resource metadata route for comparison
+        protected_resource_routes = [
+            r for r in well_known_routes if "oauth-protected-resource" in r.path
+        ]
+        assert len(protected_resource_routes) == 1
+        # Protected resource should also be path-aware (RFC 9728)
+        assert (
+            protected_resource_routes[0].path
+            == "/.well-known/oauth-protected-resource/api/mcp"
+        )
+
+        # Mount the app and verify the routes are accessible
+        parent_app = Starlette(
+            routes=[
+                *well_known_routes,
+                Mount("/api", app=mcp_app),
+            ],
+            lifespan=mcp_app.lifespan,
+        )
+
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=parent_app),
+            base_url="https://api.example.com",
+        ) as client:
+            # Path-aware authorization server metadata should be accessible
+            response = await client.get("/.well-known/oauth-authorization-server/api")
+            assert response.status_code == 200
+
+            metadata = response.json()
+            assert (
+                metadata["authorization_endpoint"]
+                == "https://api.example.com/api/authorize"
+            )
+            assert metadata["token_endpoint"] == "https://api.example.com/api/token"
+
+            # Path-aware protected resource metadata should also work
+            response = await client.get("/.well-known/oauth-protected-resource/api/mcp")
+            assert response.status_code == 200
+
+    async def test_oauth_authorization_server_metadata_root_issuer(self, test_tokens):
+        """Test that root-level issuer_url still uses root discovery path.
+
+        When issuer_url is explicitly set to root (no path), the authorization
+        server metadata should remain at the root path:
+        /.well-known/oauth-authorization-server
+
+        This maintains backwards compatibility with the documented mounting pattern.
+        """
+        token_verifier = StaticTokenVerifier(tokens=test_tokens)
+        auth_provider = OAuthProxy(
+            upstream_authorization_endpoint="https://upstream.example.com/authorize",
+            upstream_token_endpoint="https://upstream.example.com/token",
+            upstream_client_id="test-client-id",
+            upstream_client_secret="test-client-secret",
+            token_verifier=token_verifier,
+            base_url="https://api.example.com/api",
+            issuer_url="https://api.example.com",  # Explicitly root
+        )
+
+        well_known_routes = auth_provider.get_well_known_routes(mcp_path="/mcp")
+
+        # Find the authorization server metadata route
+        auth_server_routes = [
+            r for r in well_known_routes if "oauth-authorization-server" in r.path
+        ]
+        assert len(auth_server_routes) == 1
+
+        # Should be at root (no path suffix) when issuer_url is root
+        assert auth_server_routes[0].path == "/.well-known/oauth-authorization-server"

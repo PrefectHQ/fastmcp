@@ -328,8 +328,6 @@ OAuth specifications (RFC 8414 and RFC 9728) require discovery metadata to be ac
    # Result: /api/api/mcp (double prefix!)
    ```
 
-3. **Not setting issuer_url when mounting** - Without `issuer_url` set to root level, OAuth discovery will attempt path-scoped discovery first (which will 404), adding unnecessary error logs.
-
 Follow the configuration instructions below to set up mounting correctly.
 </Warning>
 
@@ -373,11 +371,14 @@ base_url="http://localhost:8000/api"  # Includes mount prefix
 mcp_path="/mcp"  # Internal MCP path, NOT the mount prefix
 ```
 
-**`issuer_url`** tells clients where to find discovery metadata. This should point to the root level of your server where well-known routes are mounted:
+**`issuer_url`** (optional) controls the authorization server identity for OAuth discovery. Defaults to `base_url`.
 
 ```python
-issuer_url="http://localhost:8000"  # Root level, no prefix
+# Usually not needed - just set base_url and it works
+issuer_url="http://localhost:8000"  # Only if you want root-level discovery
 ```
+
+When `issuer_url` has a path (either explicitly or by defaulting from `base_url`), FastMCP creates path-aware discovery routes per RFC 8414. For example, if `base_url` is `http://localhost:8000/api`, the authorization server metadata will be at `/.well-known/oauth-authorization-server/api`.
 
 **Key Invariant:** `base_url + mcp_path = actual externally-accessible MCP URL`
 
@@ -404,14 +405,14 @@ MOUNT_PREFIX = "/api"
 MCP_PATH = "/mcp"
 ```
 
-Create the auth provider with both `issuer_url` and `base_url`:
+Create the auth provider with `base_url`:
 
 ```python
 auth = GitHubProvider(
     client_id="your-client-id",
     client_secret="your-client-secret",
-    issuer_url=ROOT_URL,  # Discovery metadata at root
     base_url=f"{ROOT_URL}{MOUNT_PREFIX}",  # Operational endpoints under prefix
+    # issuer_url defaults to base_url - path-aware discovery works automatically
 )
 ```
 
@@ -445,8 +446,10 @@ This configuration produces the following URL structure:
 - MCP endpoint: `http://localhost:8000/api/mcp`
 - OAuth authorization: `http://localhost:8000/api/authorize`
 - OAuth callback: `http://localhost:8000/api/auth/callback`
-- Authorization server metadata: `http://localhost:8000/.well-known/oauth-authorization-server`
+- Authorization server metadata: `http://localhost:8000/.well-known/oauth-authorization-server/api`
 - Protected resource metadata: `http://localhost:8000/.well-known/oauth-protected-resource/api/mcp`
+
+Both discovery endpoints use path-aware URLs per RFC 8414 and RFC 9728, matching the `base_url` path.
 
 ### Complete Example
 
@@ -468,8 +471,8 @@ MCP_PATH = "/mcp"
 auth = GitHubProvider(
     client_id="your-client-id",
     client_secret="your-client-secret",
-    issuer_url=ROOT_URL,
     base_url=f"{ROOT_URL}{MOUNT_PREFIX}",
+    # issuer_url defaults to base_url - path-aware discovery works automatically
 )
 
 # Create MCP server
