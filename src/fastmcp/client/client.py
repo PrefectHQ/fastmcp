@@ -374,7 +374,11 @@ class Client(Generic[ClientTransportT]):
         return await self._connect()
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        await self._disconnect()
+        # Use a timeout to prevent hanging during cleanup if the connection is in a bad
+        # state (e.g., rate-limited). The MCP SDK's transport may try to terminate the
+        # session which can hang if the server is unresponsive.
+        with anyio.move_on_after(5):
+            await self._disconnect()
 
     async def _connect(self):
         """
