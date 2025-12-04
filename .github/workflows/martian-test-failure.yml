@@ -114,7 +114,7 @@ jobs:
           - You can also run git commands (e.g., `git status`, `git log`, `git diff`) to inspect the repository
           - You can use WebSearch and WebFetch to research errors, stack traces, or related issues
           - For bash commands, you are limited to make and git commands only
-
+          
           # CRITICAL: Loop Detection
           **IMPORTANT**: Before posting your analysis, check the PR comments to detect if there's a loop where:
           - CodeRabbit or another bot triggered this workflow
