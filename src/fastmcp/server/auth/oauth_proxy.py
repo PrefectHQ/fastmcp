@@ -36,10 +36,6 @@ from key_value.aio.adapters.pydantic import PydanticAdapter
 from key_value.aio.protocols import AsyncKeyValue
 from key_value.aio.stores.disk import DiskStore
 from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
-from mcp.server.auth.handlers.token import TokenErrorResponse
-from mcp.server.auth.handlers.token import TokenHandler as _SDKTokenHandler
-from mcp.server.auth.json_response import PydanticJSONResponse
-from mcp.server.auth.middleware.client_auth import ClientAuthenticator
 from mcp.server.auth.provider import (
     AccessToken,
     AuthorizationCode,
@@ -48,7 +44,6 @@ from mcp.server.auth.provider import (
     RefreshToken,
     TokenError,
 )
-from mcp.server.auth.routes import cors_middleware
 from mcp.server.auth.settings import (
     ClientRegistrationOptions,
     RevocationOptions,
@@ -512,53 +507,6 @@ def create_error_html(
         additional_styles=additional_styles,
         csp_policy=csp_policy,
     )
-
-
-# -------------------------------------------------------------------------
-# Handler Classes
-# -------------------------------------------------------------------------
-
-
-class TokenHandler(_SDKTokenHandler):
-    """TokenHandler that returns OAuth 2.1 compliant error responses.
-
-    The MCP SDK returns `unauthorized_client` for client authentication failures.
-    However, per RFC 6749 Section 5.2, authentication failures should return
-    `invalid_client` with HTTP 401, not `unauthorized_client`.
-
-    This distinction matters: `unauthorized_client` means "client exists but
-    can't do this", while `invalid_client` means "client doesn't exist or
-    credentials are wrong". Claude's OAuth client uses this to decide whether
-    to re-register.
-
-    This handler transforms 401 responses with `unauthorized_client` to use
-    `invalid_client` instead, making the error semantics correct per OAuth spec.
-    """
-
-    async def handle(self, request: Any):
-        """Wrap SDK handle() and transform auth error responses."""
-        response = await super().handle(request)
-
-        # Transform 401 unauthorized_client -> invalid_client
-        if response.status_code == 401:
-            try:
-                body = json.loads(response.body)
-                if body.get("error") == "unauthorized_client":
-                    return PydanticJSONResponse(
-                        content=TokenErrorResponse(
-                            error="invalid_client",
-                            error_description=body.get("error_description"),
-                        ),
-                        status_code=401,
-                        headers={
-                            "Cache-Control": "no-store",
-                            "Pragma": "no-cache",
-                        },
-                    )
-            except (json.JSONDecodeError, AttributeError):
-                pass  # Not JSON or unexpected format, return as-is
-
-        return response
 
 
 class OAuthProxy(OAuthProvider):
@@ -1668,10 +1616,9 @@ class OAuthProxy(OAuthProvider):
                 This is used to advertise the resource URL in metadata.
         """
         # Get standard OAuth routes from parent class
+        # Note: parent already replaces /token with TokenHandler for proper error codes
         routes = super().get_routes(mcp_path)
         custom_routes = []
-        token_route_found = False
-        authorize_route_found = False
 
         logger.debug(
             f"get_routes called - configuring OAuth routes in {len(routes)} routes"
@@ -1689,7 +1636,6 @@ class OAuthProxy(OAuthProvider):
                 and route.methods is not None
                 and ("GET" in route.methods or "POST" in route.methods)
             ):
-                authorize_route_found = True
                 # Replace with our enhanced authorization handler
                 # Note: self.base_url is guaranteed to be set in parent __init__
                 authorize_handler = AuthorizationHandler(
@@ -1703,27 +1649,6 @@ class OAuthProxy(OAuthProvider):
                         path="/authorize",
                         endpoint=authorize_handler.handle,
                         methods=["GET", "POST"],
-                    )
-                )
-            # Replace the token endpoint with our custom handler that returns proper OAuth 2.1 error codes
-            elif (
-                isinstance(route, Route)
-                and route.path == "/token"
-                and route.methods is not None
-                and "POST" in route.methods
-            ):
-                token_route_found = True
-                # Replace with our OAuth 2.1 compliant token handler
-                token_handler = TokenHandler(
-                    provider=self, client_authenticator=ClientAuthenticator(self)
-                )
-                custom_routes.append(
-                    Route(
-                        path="/token",
-                        endpoint=cors_middleware(
-                            token_handler.handle, ["POST", "OPTIONS"]
-                        ),
-                        methods=["POST", "OPTIONS"],
                     )
                 )
             else:
@@ -1747,9 +1672,6 @@ class OAuthProxy(OAuthProvider):
             )
         )
 
-        logger.debug(
-            f"✅ OAuth routes configured: authorize_endpoint={authorize_route_found}, token_endpoint={token_route_found}, total routes={len(custom_routes)} (includes OAuth callback + consent)"
-        )
         return custom_routes
 
     # -------------------------------------------------------------------------

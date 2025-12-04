@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import json
 from typing import Any, cast
 from urllib.parse import urlparse
 
+from mcp.server.auth.handlers.token import TokenErrorResponse
+from mcp.server.auth.handlers.token import TokenHandler as _SDKTokenHandler
+from mcp.server.auth.json_response import PydanticJSONResponse
 from mcp.server.auth.middleware.auth_context import AuthContextMiddleware
 from mcp.server.auth.middleware.bearer_auth import BearerAuthBackend
+from mcp.server.auth.middleware.client_auth import ClientAuthenticator
 from mcp.server.auth.provider import (
     AccessToken as _SDKAccessToken,
 )
@@ -17,6 +22,7 @@ from mcp.server.auth.provider import (
     TokenVerifier as TokenVerifierProtocol,
 )
 from mcp.server.auth.routes import (
+    cors_middleware,
     create_auth_routes,
     create_protected_resource_routes,
 )
@@ -38,6 +44,48 @@ class AccessToken(_SDKAccessToken):
     """AccessToken that includes all JWT claims."""
 
     claims: dict[str, Any] = Field(default_factory=dict)
+
+
+class TokenHandler(_SDKTokenHandler):
+    """TokenHandler that returns OAuth 2.1 compliant error responses.
+
+    The MCP SDK returns `unauthorized_client` for client authentication failures.
+    However, per RFC 6749 Section 5.2, authentication failures should return
+    `invalid_client` with HTTP 401, not `unauthorized_client`.
+
+    This distinction matters: `unauthorized_client` means "client exists but
+    can't do this", while `invalid_client` means "client doesn't exist or
+    credentials are wrong". Claude's OAuth client uses this to decide whether
+    to re-register.
+
+    This handler transforms 401 responses with `unauthorized_client` to use
+    `invalid_client` instead, making the error semantics correct per OAuth spec.
+    """
+
+    async def handle(self, request: Any):
+        """Wrap SDK handle() and transform auth error responses."""
+        response = await super().handle(request)
+
+        # Transform 401 unauthorized_client -> invalid_client
+        if response.status_code == 401:
+            try:
+                body = json.loads(response.body)
+                if body.get("error") == "unauthorized_client":
+                    return PydanticJSONResponse(
+                        content=TokenErrorResponse(
+                            error="invalid_client",
+                            error_description=body.get("error_description"),
+                        ),
+                        status_code=401,
+                        headers={
+                            "Cache-Control": "no-store",
+                            "Pragma": "no-cache",
+                        },
+                    )
+            except (json.JSONDecodeError, AttributeError):
+                pass  # Not JSON or unexpected format, return as-is
+
+        return response
 
 
 class AuthProvider(TokenVerifierProtocol):
@@ -368,13 +416,39 @@ class OAuthProvider(
             self.issuer_url is not None
         )  # typing check (issuer_url defaults to base_url)
 
-        oauth_routes = create_auth_routes(
+        sdk_routes = create_auth_routes(
             provider=self,
             issuer_url=self.base_url,
             service_documentation_url=self.service_documentation_url,
             client_registration_options=self.client_registration_options,
             revocation_options=self.revocation_options,
         )
+
+        # Replace the token endpoint with our custom handler that returns
+        # proper OAuth 2.1 error codes (invalid_client instead of unauthorized_client)
+        oauth_routes: list[Route] = []
+        for route in sdk_routes:
+            if (
+                isinstance(route, Route)
+                and route.path == "/token"
+                and route.methods is not None
+                and "POST" in route.methods
+            ):
+                # Replace with our OAuth 2.1 compliant token handler
+                token_handler = TokenHandler(
+                    provider=self, client_authenticator=ClientAuthenticator(self)
+                )
+                oauth_routes.append(
+                    Route(
+                        path="/token",
+                        endpoint=cors_middleware(
+                            token_handler.handle, ["POST", "OPTIONS"]
+                        ),
+                        methods=["POST", "OPTIONS"],
+                    )
+                )
+            else:
+                oauth_routes.append(route)
 
         # Get the resource URL based on the MCP path
         resource_url = self._get_resource_url(mcp_path)

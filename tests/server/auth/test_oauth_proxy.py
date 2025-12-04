@@ -1254,7 +1254,7 @@ class TestTokenHandlerErrorTransformation:
 
         from mcp.server.auth.handlers.token import TokenHandler as SDKTokenHandler
 
-        from fastmcp.server.auth.oauth_proxy import TokenHandler
+        from fastmcp.server.auth.auth import TokenHandler
 
         handler = TokenHandler(provider=Mock(), client_authenticator=Mock())
 
@@ -1283,7 +1283,7 @@ class TestTokenHandlerErrorTransformation:
         """Test that grant type authorization errors stay as unauthorized_client with 400."""
         from mcp.server.auth.handlers.token import TokenErrorResponse
 
-        from fastmcp.server.auth.oauth_proxy import TokenHandler
+        from fastmcp.server.auth.auth import TokenHandler
 
         handler = TokenHandler(provider=Mock(), client_authenticator=Mock())
 
@@ -1303,7 +1303,7 @@ class TestTokenHandlerErrorTransformation:
         """Test that other error types pass through unchanged."""
         from mcp.server.auth.handlers.token import TokenErrorResponse
 
-        from fastmcp.server.auth.oauth_proxy import TokenHandler
+        from fastmcp.server.auth.auth import TokenHandler
 
         handler = TokenHandler(provider=Mock(), client_authenticator=Mock())
 
