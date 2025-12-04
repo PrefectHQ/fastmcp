@@ -53,6 +53,7 @@ dmypy.json
 # Local development
 .python-version
 .envrc
+.envrc.private
 .direnv/
 
 # Logs and databases

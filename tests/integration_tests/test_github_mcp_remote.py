@@ -34,7 +34,6 @@ def fixture_streamable_http_client() -> Client[StreamableHttpTransport]:
     )
 
 
-@pytest.mark.flaky(retries=2, delay=1)
 class TestGithubMCPRemote:
     async def test_connect_disconnect(
         self,
@@ -94,7 +93,7 @@ class TestGithubMCPRemote:
         """Test calling a non-existing tool"""
         async with streamable_http_client:
             assert streamable_http_client.is_connected()
-            with pytest.raises(McpError, match="tool not found"):
+            with pytest.raises(McpError, match=r"unknown tool|tool not found"):
                 await streamable_http_client.call_tool("foo")
 
     async def test_call_tool_list_commits(
