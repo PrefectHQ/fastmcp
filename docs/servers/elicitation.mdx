@@ -280,6 +280,41 @@ async def create_task(ctx: Context) -> str:
     return "Task creation cancelled"
 ```
 
+### Default Values
+
+You can provide default values for elicitation fields using Pydantic's `Field(default=...)`. Clients will pre-populate form fields with these defaults, making it easier for users to provide input.
+
+Default values are supported for all primitive types:
+- Strings: `Field(default="[email protected]")`
+- Integers: `Field(default=50)`
+- Numbers: `Field(default=3.14)`
+- Booleans: `Field(default=False)`
+- Enums: `Field(default=EnumValue.A)`
+
+Fields with default values are automatically marked as optional (not included in the `required` list), so users can accept the default or provide their own value.
+
+```python
+from pydantic import BaseModel, Field
+from enum import Enum
+
+class Priority(Enum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+class TaskDetails(BaseModel):
+    title: str = Field(description="Task title")
+    description: str = Field(default="", description="Task description")
+    priority: Priority = Field(default=Priority.MEDIUM, description="Task priority")
+
+@mcp.tool
+async def create_task(ctx: Context) -> str:
+    result = await ctx.elicit("Please provide task details", response_type=TaskDetails)
+    if result.action == "accept":
+        return f"Created: {result.data.title}"
+    return "Task creation cancelled"
+```
+
 ## Multi-Turn Elicitation
 
 Tools can make multiple elicitation calls to gather information progressively:

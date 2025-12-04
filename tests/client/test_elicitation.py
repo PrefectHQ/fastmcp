@@ -4,7 +4,7 @@ from typing import Literal
 
 import pytest
 from mcp.types import ElicitRequestParams
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
 
 from fastmcp import Context, FastMCP
@@ -729,3 +729,134 @@ def test_enum_elicitation_schema_with_enum_names():
         "Completed",
         "On Hold",
     ]
+
+
+class TestElicitationDefaults:
+    """Test suite for default values in elicitation schemas."""
+
+    def test_string_default_preserved(self):
+        """Test that string defaults are preserved in the schema."""
+
+        class Model(BaseModel):
+            email: str = Field(default="[email protected]")
+
+        schema = get_elicitation_schema(Model)
+        props = schema.get("properties", {})
+
+        assert "email" in props
+        assert "default" in props["email"]
+        assert props["email"]["default"] == "[email protected]"
+        assert props["email"]["type"] == "string"
+
+    def test_integer_default_preserved(self):
+        """Test that integer defaults are preserved in the schema."""
+
+        class Model(BaseModel):
+            count: int = Field(default=50)
+
+        schema = get_elicitation_schema(Model)
+        props = schema.get("properties", {})
+
+        assert "count" in props
+        assert "default" in props["count"]
+        assert props["count"]["default"] == 50
+        assert props["count"]["type"] == "integer"
+
+    def test_number_default_preserved(self):
+        """Test that number defaults are preserved in the schema."""
+
+        class Model(BaseModel):
+            price: float = Field(default=3.14)
+
+        schema = get_elicitation_schema(Model)
+        props = schema.get("properties", {})
+
+        assert "price" in props
+        assert "default" in props["price"]
+        assert props["price"]["default"] == 3.14
+        assert props["price"]["type"] == "number"
+
+    def test_boolean_default_preserved(self):
+        """Test that boolean defaults are preserved in the schema."""
+
+        class Model(BaseModel):
+            enabled: bool = Field(default=False)
+
+        schema = get_elicitation_schema(Model)
+        props = schema.get("properties", {})
+
+        assert "enabled" in props
+        assert "default" in props["enabled"]
+        assert props["enabled"]["default"] is False
+        assert props["enabled"]["type"] == "boolean"
+
+    def test_enum_default_preserved(self):
+        """Test that enum defaults are preserved in the schema."""
+
+        class Priority(Enum):
+            LOW = "low"
+            MEDIUM = "medium"
+            HIGH = "high"
+
+        class Model(BaseModel):
+            choice: Priority = Field(default=Priority.MEDIUM)
+
+        schema = get_elicitation_schema(Model)
+        props = schema.get("properties", {})
+
+        assert "choice" in props
+        assert "default" in props["choice"]
+        assert props["choice"]["default"] == "medium"
+        assert "enum" in props["choice"]
+        assert props["choice"]["type"] == "string"
+
+    def test_all_defaults_preserved_together(self):
+        """Test that all default types are preserved when used together."""
+
+        class Priority(Enum):
+            A = "A"
+            B = "B"
+
+        class Model(BaseModel):
+            string_field: str = Field(default="[email protected]")
+            integer_field: int = Field(default=50)
+            number_field: float = Field(default=3.14)
+            boolean_field: bool = Field(default=False)
+            enum_field: Priority = Field(default=Priority.A)
+
+        schema = get_elicitation_schema(Model)
+        props = schema.get("properties", {})
+
+        assert props["string_field"]["default"] == "[email protected]"
+        assert props["integer_field"]["default"] == 50
+        assert props["number_field"]["default"] == 3.14
+        assert props["boolean_field"]["default"] is False
+        assert props["enum_field"]["default"] == "A"
+
+    def test_mixed_defaults_and_required(self):
+        """Test that fields with defaults are not in required list."""
+
+        class Model(BaseModel):
+            required_field: str = Field(description="Required field")
+            optional_with_default: int = Field(default=42)
+
+        schema = get_elicitation_schema(Model)
+        props = schema.get("properties", {})
+        required = schema.get("required", [])
+
+        assert "required_field" in required
+        assert "optional_with_default" not in required
+        assert props["optional_with_default"]["default"] == 42
+
+    def test_compress_schema_preserves_defaults(self):
+        """Test that compress_schema() doesn't strip default values."""
+
+        class Model(BaseModel):
+            string_field: str = Field(default="test")
+            integer_field: int = Field(default=42)
+
+        schema = get_elicitation_schema(Model)
+        props = schema.get("properties", {})
+
+        assert "default" in props["string_field"]
+        assert "default" in props["integer_field"]
