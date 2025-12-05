@@ -25,6 +25,27 @@ _monitor_strikes_patch = patch(
 _monitor_strikes_patch.start()
 
 
+@pytest.fixture(autouse=True)
+def fresh_fakeredis_server():
+    """Give each test a fresh FakeServer instead of sharing one.
+
+    Docket stores a shared FakeServer as a class attribute (_memory_server).
+    This can cause issues when many tests run in parallel on Windows.
+    Reset it before each test to ensure isolation.
+    """
+    from docket import Docket
+
+    # Clear the shared server so each test gets a fresh one
+    if hasattr(Docket, "_memory_server"):
+        delattr(Docket, "_memory_server")
+
+    yield
+
+    # Clean up after test
+    if hasattr(Docket, "_memory_server"):
+        delattr(Docket, "_memory_server")
+
+
 def pytest_collection_modifyitems(items):
     """Automatically mark tests in integration_tests folder with 'integration' marker."""
     for item in items:
