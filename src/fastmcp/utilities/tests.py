@@ -212,8 +212,15 @@ async def run_server_async(
     # Wait for server lifespan to be ready
     await server._started.wait()
 
-    # Give uvicorn a moment to bind the port after lifespan is ready
-    await asyncio.sleep(0.1)
+    # Wait for HTTP server to be ready by making a request
+    url = f"http://{host}:{port}{path}"
+    async with httpx.AsyncClient() as client:
+        for _ in range(50):  # 50 * 0.1s = 5s timeout
+            try:
+                await client.get(url, timeout=0.1)
+                break
+            except (httpx.ConnectError, httpx.TimeoutException):
+                await asyncio.sleep(0.1)
 
     try:
         yield f"http://{host}:{port}{path}"
