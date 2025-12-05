@@ -34,6 +34,7 @@ async def _wait_for_port(
         interval: Time between connection attempts
     """
     import asyncio
+    import sys
 
     start = asyncio.get_running_loop().time()
     while True:
@@ -42,7 +43,10 @@ async def _wait_for_port(
                 asyncio.open_connection(host, port), timeout=interval
             )
             writer.close()
-            await writer.wait_closed()
+            # On Windows, wait_closed() can hang due to ProactorEventLoop socket
+            # shutdown issues. Skip it - the socket will be cleaned up eventually.
+            if sys.platform != "win32":
+                await writer.wait_closed()
             return
         except (OSError, asyncio.TimeoutError):
             if asyncio.get_running_loop().time() - start > timeout:
