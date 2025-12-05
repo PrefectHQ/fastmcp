@@ -160,7 +160,7 @@ from fastmcp import FastMCP
 mcp = FastMCP(name="MyAssistantServer")
 ```
 
-Learn more in the [**FastMCP Server Documentation**](https://gofastmcp.com/servers/fastmcp).
+Learn more in the [**FastMCP Server Documentation**](https://gofastmcp.com/servers/server).
 
 ### Tools
 
