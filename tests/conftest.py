@@ -1,18 +1,28 @@
 import asyncio
 import socket
-import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 
 from fastmcp.utilities.tests import temporary_settings
 
-# Use SelectorEventLoop on Windows to avoid ProactorEventLoop crashes
-# See: https://github.com/python/cpython/issues/116773
-if sys.platform == "win32":
-    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
+# Fakeredis doesn't properly implement blocking xread - it returns immediately
+# instead of waiting. This causes Docket._monitor_strikes to busy-loop, which
+# overwhelms pytest-xdist workers on Windows. Replace with a simple sleep loop.
+# See: https://github.com/cunla/fakeredis-py/issues/274
+async def _mock_monitor_strikes(self):
+    while True:
+        await asyncio.sleep(60)
+
+
+_monitor_strikes_patch = patch(
+    "docket.docket.Docket._monitor_strikes", _mock_monitor_strikes
+)
+_monitor_strikes_patch.start()
 
 
 def pytest_collection_modifyitems(items):
