@@ -314,6 +314,20 @@ class FunctionTool(Tool):
                 stacklevel=2,
             )
 
+        # Validate that task=True requires async functions
+        # Handle callable classes and staticmethods before checking
+        fn_to_check = fn
+        if not inspect.isroutine(fn) and callable(fn):
+            fn_to_check = fn.__call__
+        if isinstance(fn_to_check, staticmethod):
+            fn_to_check = fn_to_check.__func__
+        if task and not inspect.iscoroutinefunction(fn_to_check):
+            fn_name = name or getattr(fn, "__name__", repr(fn))
+            raise ValueError(
+                f"Tool '{fn_name}' uses a sync function but has task=True. "
+                "Background tasks require async functions. Set task=False to disable."
+            )
+
         parsed_fn = ParsedFunction.from_function(fn, exclude_args=exclude_args)
 
         if name is None and parsed_fn.name == "<lambda>":

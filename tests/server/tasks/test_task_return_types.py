@@ -186,12 +186,12 @@ async def resource_return_server():
     mcp = FastMCP("resource-return-test")
 
     @mcp.resource("text://simple", task=True)
-    def simple_text() -> str:
+    async def simple_text() -> str:
         """Return simple text content."""
         return "Simple text resource"
 
     @mcp.resource("data://json", task=True)
-    def json_data() -> dict[str, Any]:
+    async def json_data() -> dict[str, Any]:
         """Return JSON-like data."""
         return {"key": "value", "count": 123}
 

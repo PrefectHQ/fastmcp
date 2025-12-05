@@ -369,6 +369,13 @@ class FunctionResourceTemplate(ResourceTemplate):
         if isinstance(fn, staticmethod):
             fn = fn.__func__
 
+        # Validate that task=True requires async functions (after unwrapping)
+        if task and not inspect.iscoroutinefunction(fn):
+            raise ValueError(
+                f"Resource template '{func_name}' uses a sync function but has task=True. "
+                "Background tasks require async functions. Set task=False to disable."
+            )
+
         wrapper_fn = without_injected_parameters(fn)
         type_adapter = get_cached_typeadapter(wrapper_fn)
         parameters = type_adapter.json_schema()

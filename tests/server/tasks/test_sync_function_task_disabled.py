@@ -1,228 +1,85 @@
 """
 Tests that synchronous functions cannot be used as background tasks.
 
-Docket requires async functions for background execution. FastMCP automatically
-disables task support for sync functions, with warnings for explicit task=True.
+Docket requires async functions for background execution. FastMCP raises
+ValueError when task=True is used with a sync function.
 """
 
-from pytest import LogCaptureFixture
+import pytest
 
 from fastmcp import FastMCP
-from fastmcp.client import Client
-from fastmcp.utilities.tests import caplog_for_fastmcp
 
 
-async def test_sync_tool_with_explicit_task_true_warns_and_disables(
-    caplog: LogCaptureFixture,
-):
-    """Sync tool with task=True logs warning and disables task support."""
-    import logging
+async def test_sync_tool_with_explicit_task_true_raises():
+    """Sync tool with task=True raises ValueError."""
+    mcp = FastMCP("test")
 
-    with caplog_for_fastmcp(caplog):
-        caplog.set_level(logging.INFO)
-
-        mcp = FastMCP("test")
+    with pytest.raises(ValueError, match="uses a sync function but has task=True"):
 
         @mcp.tool(task=True)
         def sync_tool(x: int) -> int:
             """A synchronous tool."""
-            logging.getLogger("fastmcp.myserver").info("I came from the tool!")
             return x * 2
 
-        # Should have logged a warning during decoration
-        assert "task=True but is synchronous" in caplog.text
-        assert "Disabling task support" in caplog.text
 
-        # Tool should have task=False after being disabled
-        tool = await mcp.get_tool("sync_tool")
-        assert tool.task is False
+async def test_sync_tool_with_inherited_task_true_raises():
+    """Sync tool inheriting task=True from server raises ValueError."""
+    mcp = FastMCP("test", tasks=True)
 
-        # Verify execution: even if client requests task=True, should execute immediately
-        async with Client(mcp) as client:
-            task = await client.call_tool("sync_tool", {"x": 5}, task=True)
-            assert task.returned_immediately
-            result = await task.result()
-            assert result.data == 10
-
-        # Should have seen the log from inside the function
-        assert "I came from the tool!" in caplog.text
-
-
-async def test_sync_tool_with_inherited_task_true_quietly_disables(
-    caplog: LogCaptureFixture,
-):
-    """Sync tool inheriting task=True from server disables quietly (no warning)."""
-    import logging
-
-    with caplog_for_fastmcp(caplog):
-        caplog.set_level(logging.INFO)
-
-        mcp = FastMCP("test", tasks=True)
+    with pytest.raises(ValueError, match="uses a sync function but has task=True"):
 
         @mcp.tool()  # Inherits task=True from server
         def sync_tool(x: int) -> int:
             """A synchronous tool."""
-            logging.getLogger("fastmcp.myserver").info("I came from the tool!")
             return x * 2
 
-        # Should NOT have logged a warning (quietly disabled)
-        assert "task=True but is synchronous" not in caplog.text
 
-        # Tool should have task=False after being disabled
-        tool = await mcp.get_tool("sync_tool")
-        assert tool.task is False
+async def test_sync_prompt_with_explicit_task_true_raises():
+    """Sync prompt with task=True raises ValueError."""
+    mcp = FastMCP("test")
 
-        # Verify execution: should execute immediately
-        async with Client(mcp) as client:
-            task = await client.call_tool("sync_tool", {"x": 3}, task=True)
-            assert task.returned_immediately
-            result = await task.result()
-            assert result.data == 6
-
-        # Should have seen the log from inside the function
-        assert "I came from the tool!" in caplog.text
-
-
-async def test_sync_prompt_with_explicit_task_true_warns_and_disables(
-    caplog: LogCaptureFixture,
-):
-    """Sync prompt with task=True logs warning and disables task support."""
-    import logging
-
-    with caplog_for_fastmcp(caplog):
-        caplog.set_level(logging.INFO)
-
-        mcp = FastMCP("test")
+    with pytest.raises(ValueError, match="uses a sync function but has task=True"):
 
         @mcp.prompt(task=True)
         def sync_prompt() -> str:
             """A synchronous prompt."""
-            logging.getLogger("fastmcp.myserver").info("I came from the prompt!")
             return "Hello"
 
-        # Should have logged a warning during decoration
-        assert "task=True but is synchronous" in caplog.text
-        assert "Disabling task support" in caplog.text
 
-        # Prompt should have task=False
-        prompt = await mcp.get_prompt("sync_prompt")
-        assert prompt.task is False
+async def test_sync_prompt_with_inherited_task_true_raises():
+    """Sync prompt inheriting task=True from server raises ValueError."""
+    mcp = FastMCP("test", tasks=True)
 
-        # Verify execution: should execute immediately
-        async with Client(mcp) as client:
-            task = await client.get_prompt("sync_prompt", task=True)
-            assert task.returned_immediately
-            result = await task.result()
-            assert "Hello" in str(result)
-
-        # Should have seen the log from inside the function
-        assert "I came from the prompt!" in caplog.text
-
-
-async def test_sync_prompt_with_inherited_task_true_quietly_disables(
-    caplog: LogCaptureFixture,
-):
-    """Sync prompt inheriting task=True disables quietly."""
-    import logging
-
-    with caplog_for_fastmcp(caplog):
-        caplog.set_level(logging.INFO)
-
-        mcp = FastMCP("test", tasks=True)
+    with pytest.raises(ValueError, match="uses a sync function but has task=True"):
 
         @mcp.prompt()  # Inherits task=True from server
         def sync_prompt() -> str:
             """A synchronous prompt."""
-            logging.getLogger("fastmcp.myserver").info("I came from the prompt!")
             return "Hello"
 
-        # Should NOT have logged a warning (quietly disabled)
-        assert "task=True but is synchronous" not in caplog.text
 
-        # Prompt should have task=False
-        prompt = await mcp.get_prompt("sync_prompt")
-        assert prompt.task is False
+async def test_sync_resource_with_explicit_task_true_raises():
+    """Sync resource with task=True raises ValueError."""
+    mcp = FastMCP("test")
 
-        # Verify execution: should execute immediately
-        async with Client(mcp) as client:
-            task = await client.get_prompt("sync_prompt", task=True)
-            assert task.returned_immediately
-            result = await task.result()
-            assert "Hello" in str(result)
-
-        # Should have seen the log from inside the function
-        assert "I came from the prompt!" in caplog.text
-
-
-async def test_sync_resource_with_explicit_task_true_warns_and_disables(
-    caplog: LogCaptureFixture,
-):
-    """Sync resource with task=True logs warning and disables task support."""
-    import logging
-
-    with caplog_for_fastmcp(caplog):
-        caplog.set_level(logging.INFO)
-
-        mcp = FastMCP("test")
+    with pytest.raises(ValueError, match="uses a sync function but has task=True"):
 
         @mcp.resource("test://sync", task=True)
         def sync_resource() -> str:
             """A synchronous resource."""
-            logging.getLogger("fastmcp.myserver").info("I came from the resource!")
             return "data"
 
-        # Should have logged a warning during decoration
-        assert "task=True but is synchronous" in caplog.text
-        assert "Disabling task support" in caplog.text
 
-        # Resource should have task=False
-        resource = await mcp._resource_manager.get_resource("test://sync")
-        assert resource.task is False
+async def test_sync_resource_with_inherited_task_true_raises():
+    """Sync resource inheriting task=True from server raises ValueError."""
+    mcp = FastMCP("test", tasks=True)
 
-        # Verify execution: should execute immediately
-        async with Client(mcp) as client:
-            task = await client.read_resource("test://sync", task=True)
-            assert task.returned_immediately
-            result = await task.result()
-            assert "data" in str(result)
-
-        # Should have seen the log from inside the function
-        assert "I came from the resource!" in caplog.text
-
-
-async def test_sync_resource_with_inherited_task_true_quietly_disables(
-    caplog: LogCaptureFixture,
-):
-    """Sync resource inheriting task=True disables quietly."""
-    import logging
-
-    with caplog_for_fastmcp(caplog):
-        caplog.set_level(logging.INFO)
-
-        mcp = FastMCP("test", tasks=True)
+    with pytest.raises(ValueError, match="uses a sync function but has task=True"):
 
         @mcp.resource("test://sync")  # Inherits task=True from server
         def sync_resource() -> str:
             """A synchronous resource."""
-            logging.getLogger("fastmcp.myserver").info("I came from the resource!")
             return "data"
-
-        # Should NOT have logged a warning (quietly disabled)
-        assert "task=True but is synchronous" not in caplog.text
-
-        # Resource should have task=False
-        resource = await mcp._resource_manager.get_resource("test://sync")
-        assert resource.task is False
-
-        # Verify execution: should execute immediately
-        async with Client(mcp) as client:
-            task = await client.read_resource("test://sync", task=True)
-            assert task.returned_immediately
-            result = await task.result()
-            assert "data" in str(result)
-
-        # Should have seen the log from inside the function
-        assert "I came from the resource!" in caplog.text
 
 
 async def test_async_tool_with_task_true_remains_enabled():
@@ -265,3 +122,85 @@ async def test_async_resource_with_task_true_remains_enabled():
     # Resource should have task=True
     resource = await mcp._resource_manager.get_resource("test://async")
     assert resource.task is True
+
+
+async def test_sync_tool_with_task_false_works():
+    """Sync tool with explicit task=False works (no error)."""
+    mcp = FastMCP("test", tasks=True)
+
+    @mcp.tool(task=False)  # Explicitly disable
+    def sync_tool(x: int) -> int:
+        """A synchronous tool."""
+        return x * 2
+
+    tool = await mcp.get_tool("sync_tool")
+    assert tool.task is False
+
+
+async def test_sync_prompt_with_task_false_works():
+    """Sync prompt with explicit task=False works (no error)."""
+    mcp = FastMCP("test", tasks=True)
+
+    @mcp.prompt(task=False)  # Explicitly disable
+    def sync_prompt() -> str:
+        """A synchronous prompt."""
+        return "Hello"
+
+    prompt = await mcp.get_prompt("sync_prompt")
+    assert prompt.task is False
+
+
+async def test_sync_resource_with_task_false_works():
+    """Sync resource with explicit task=False works (no error)."""
+    mcp = FastMCP("test", tasks=True)
+
+    @mcp.resource("test://sync", task=False)  # Explicitly disable
+    def sync_resource() -> str:
+        """A synchronous resource."""
+        return "data"
+
+    resource = await mcp._resource_manager.get_resource("test://sync")
+    assert resource.task is False
+
+
+# =============================================================================
+# Callable classes and staticmethods with async __call__
+# =============================================================================
+
+
+async def test_async_callable_class_tool_with_task_true_works():
+    """Callable class with async __call__ and task=True should work."""
+    from fastmcp.tools import Tool
+
+    class AsyncCallableTool:
+        async def __call__(self, x: int) -> int:
+            return x * 2
+
+    # Callable classes use Tool.from_function() directly
+    tool = Tool.from_function(AsyncCallableTool(), task=True)
+    assert tool.task is True
+
+
+async def test_async_callable_class_prompt_with_task_true_works():
+    """Callable class with async __call__ and task=True should work."""
+    from fastmcp.prompts import Prompt
+
+    class AsyncCallablePrompt:
+        async def __call__(self) -> str:
+            return "Hello"
+
+    # Callable classes use Prompt.from_function() directly
+    prompt = Prompt.from_function(AsyncCallablePrompt(), task=True)
+    assert prompt.task is True
+
+
+async def test_sync_callable_class_tool_with_task_true_raises():
+    """Callable class with sync __call__ and task=True should raise."""
+    from fastmcp.tools import Tool
+
+    class SyncCallableTool:
+        def __call__(self, x: int) -> int:
+            return x * 2
+
+    with pytest.raises(ValueError, match="uses a sync function but has task=True"):
+        Tool.from_function(SyncCallableTool(), task=True)

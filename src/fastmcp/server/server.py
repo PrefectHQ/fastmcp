@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import inspect
 import re
 import secrets
@@ -1787,16 +1786,6 @@ class FastMCP(Generic[LifespanResultT]):
                 task if task is not None else self._support_tasks_by_default
             )
 
-            # Disable task support for sync functions (Docket requires async)
-            if supports_task and not asyncio.iscoroutinefunction(fn):
-                if task is True:
-                    # User explicitly requested task=True for sync function
-                    logger.warning(
-                        f"Tool '{tool_name or fn.__name__}' has task=True but is synchronous. "
-                        "Background task support requires async functions. Disabling task support."
-                    )
-                supports_task = False
-
             # Register the tool immediately and return the tool object
             # Note: Deprecation warning for exclude_args is handled in Tool.from_function
             tool = Tool.from_function(
@@ -1987,16 +1976,6 @@ class FastMCP(Generic[LifespanResultT]):
             supports_task: bool = (
                 task if task is not None else self._support_tasks_by_default
             )
-
-            # Disable task support for sync functions (Docket requires async)
-            if supports_task and not asyncio.iscoroutinefunction(fn):
-                if task is True:
-                    # User explicitly requested task=True for sync function
-                    logger.warning(
-                        f"Resource '{uri}' has task=True but is synchronous. "
-                        "Background task support requires async functions. Disabling task support."
-                    )
-                supports_task = False
 
             # Check if this should be a template
             has_uri_params = "{" in uri and "}" in uri
@@ -2206,16 +2185,6 @@ class FastMCP(Generic[LifespanResultT]):
             supports_task: bool = (
                 task if task is not None else self._support_tasks_by_default
             )
-
-            # Disable task support for sync functions (Docket requires async)
-            if supports_task and not asyncio.iscoroutinefunction(fn):
-                if task is True:
-                    # User explicitly requested task=True for sync function
-                    logger.warning(
-                        f"Prompt '{prompt_name or fn.__name__}' has task=True but is synchronous. "
-                        "Background task support requires async functions. Disabling task support."
-                    )
-                supports_task = False
 
             # Register the prompt immediately
             prompt = Prompt.from_function(

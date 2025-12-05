@@ -197,6 +197,19 @@ class FunctionResource(Resource):
         if isinstance(uri, str):
             uri = AnyUrl(uri)
 
+        # Validate that task=True requires async functions
+        # Handle callable classes and staticmethods before checking
+        fn_to_check = fn
+        if not inspect.isroutine(fn) and callable(fn):
+            fn_to_check = fn.__call__
+        if isinstance(fn_to_check, staticmethod):
+            fn_to_check = fn_to_check.__func__
+        if task and not inspect.iscoroutinefunction(fn_to_check):
+            raise ValueError(
+                f"Resource '{name or get_fn_name(fn)}' uses a sync function but has task=True. "
+                "Background tasks require async functions. Set task=False to disable."
+            )
+
         # Wrap fn to handle dependency resolution internally
         wrapped_fn = without_injected_parameters(fn)
 

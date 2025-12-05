@@ -20,7 +20,7 @@ async def test_capabilities_include_tasks_when_enabled():
         mcp = FastMCP("capability-test")
 
         @mcp.tool()
-        def test_tool() -> str:
+        async def test_tool() -> str:
             return "test"
 
         async with Client(mcp) as client:
@@ -89,7 +89,7 @@ async def test_enable_tasks_requires_enable_docket():
         mcp = FastMCP("config-test")
 
         @mcp.tool()
-        def test_tool() -> str:
+        async def test_tool() -> str:
             return "test"
 
         # Should fail when trying to start server (during lifespan)
@@ -107,7 +107,7 @@ async def test_client_advertises_task_capability_when_enabled():
         mcp = FastMCP("client-cap-test")
 
         @mcp.tool()
-        def test_tool() -> str:
+        async def test_tool() -> str:
             return "test"
 
         async with Client(mcp) as client:
