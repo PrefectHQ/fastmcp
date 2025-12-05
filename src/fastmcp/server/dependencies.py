@@ -297,21 +297,12 @@ class _CurrentDocket(Dependency):
     """Internal dependency class for CurrentDocket."""
 
     async def __aenter__(self) -> Docket:
-        import fastmcp
-
-        # Check if flag is enabled
-        if not fastmcp.settings.enable_docket:
-            raise RuntimeError(
-                "Docket support is not enabled. "
-                "Set FASTMCP_ENABLE_DOCKET=true to enable Docket support."
-            )
-
         # Get Docket from ContextVar (set by _docket_lifespan)
         docket = _current_docket.get()
         if docket is None:
             raise RuntimeError(
-                "No Docket instance found. This should not happen when "
-                "FASTMCP_ENABLE_DOCKET is enabled."
+                "No Docket instance found. Docket is only available within "
+                "a running FastMCP server context."
             )
 
         return docket
@@ -321,16 +312,13 @@ def CurrentDocket() -> Docket:
     """Get the current Docket instance managed by FastMCP.
 
     This dependency provides access to the Docket instance that FastMCP
-    automatically creates when Docket support is enabled.
-
-    Requires:
-        - FASTMCP_ENABLE_DOCKET=true
+    automatically creates for background task scheduling.
 
     Returns:
         A dependency that resolves to the active Docket instance
 
     Raises:
-        RuntimeError: If flag not enabled (during resolution)
+        RuntimeError: If not within a FastMCP server context
 
     Example:
         ```python
@@ -349,19 +337,11 @@ class _CurrentWorker(Dependency):
     """Internal dependency class for CurrentWorker."""
 
     async def __aenter__(self) -> Worker:
-        import fastmcp
-
-        if not fastmcp.settings.enable_docket:
-            raise RuntimeError(
-                "Docket support is not enabled. "
-                "Set FASTMCP_ENABLE_DOCKET=true to enable Docket support."
-            )
-
         worker = _current_worker.get()
         if worker is None:
             raise RuntimeError(
-                "No Worker instance found. This should not happen when "
-                "FASTMCP_ENABLE_DOCKET is enabled."
+                "No Worker instance found. Worker is only available within "
+                "a running FastMCP server context."
             )
 
         return worker
@@ -371,16 +351,13 @@ def CurrentWorker() -> Worker:
     """Get the current Docket Worker instance managed by FastMCP.
 
     This dependency provides access to the Worker instance that FastMCP
-    automatically creates when Docket support is enabled.
-
-    Requires:
-        - FASTMCP_ENABLE_DOCKET=true
+    automatically creates for background task processing.
 
     Returns:
         A dependency that resolves to the active Worker instance
 
     Raises:
-        RuntimeError: If flag not enabled (during resolution)
+        RuntimeError: If not within a FastMCP server context
 
     Example:
         ```python
@@ -463,8 +440,7 @@ class Progress(DocketProgress):
             docket = _current_docket.get()
             if docket is None:
                 raise RuntimeError(
-                    "Progress dependency requires Docket to be enabled. "
-                    "Set FASTMCP_ENABLE_DOCKET=true"
+                    "Progress dependency requires a FastMCP server context."
                 ) from None
 
             # Return in-memory progress for immediate execution

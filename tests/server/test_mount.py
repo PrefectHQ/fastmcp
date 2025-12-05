@@ -950,10 +950,8 @@ class TestAsProxyKwarg:
         async with Client(mcp) as client:
             await client.call_tool("hello", {})
 
-        assert len(lifespan_check) > 0
-        # in the present implementation the sub server will be invoked 3 times
-        # to call its tool
-        assert lifespan_check.count("start") >= 2
+        # Lifespan is entered exactly once and kept alive by Docket worker
+        assert lifespan_check == ["start"]
 
 
 class TestResourceNamePrefixing:

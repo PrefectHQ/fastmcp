@@ -81,10 +81,7 @@ async def test_server_tasks_false_defaults_all_components():
 async def test_server_tasks_none_uses_settings():
     """Server with tasks=None (or omitted) uses global settings."""
     # Test with enable_tasks=True in settings
-    with temporary_settings(
-        enable_docket=True,
-        enable_tasks=True,
-    ):
+    with temporary_settings(enable_tasks=True):
         mcp = FastMCP("test")  # tasks=None, should use settings
 
         @mcp.tool()
@@ -97,10 +94,7 @@ async def test_server_tasks_none_uses_settings():
             assert not tool_task.returned_immediately
 
     # Test with enable_tasks=False in settings
-    with temporary_settings(
-        enable_docket=True,
-        enable_tasks=False,
-    ):
+    with temporary_settings(enable_tasks=False):
         mcp2 = FastMCP("test2")  # tasks=None, should use settings
 
         @mcp2.tool()
@@ -249,10 +243,7 @@ async def test_mixed_explicit_and_inherited():
 async def test_server_tasks_parameter_sets_component_defaults():
     """Server tasks parameter sets component defaults but global settings gate protocol."""
     # Server tasks=True sets component defaults, but enable_tasks must be True
-    with temporary_settings(
-        enable_docket=True,
-        enable_tasks=True,
-    ):
+    with temporary_settings(enable_tasks=True):
         mcp = FastMCP("test", tasks=True)
 
         @mcp.tool()
@@ -265,10 +256,7 @@ async def test_server_tasks_parameter_sets_component_defaults():
             assert not tool_task.returned_immediately
 
     # Server tasks=False sets component defaults
-    with temporary_settings(
-        enable_docket=True,
-        enable_tasks=True,
-    ):
+    with temporary_settings(enable_tasks=True):
         mcp2 = FastMCP("test2", tasks=False)
 
         @mcp2.tool()

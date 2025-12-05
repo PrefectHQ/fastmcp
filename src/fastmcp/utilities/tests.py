@@ -209,16 +209,19 @@ async def run_server_async(
         )
     )
 
-    # Give the server a moment to start
+    # Wait for server lifespan to be ready
+    await server._started.wait()
+
+    # Give uvicorn a moment to bind the port after lifespan is ready
     await asyncio.sleep(0.1)
 
     try:
         yield f"http://{host}:{port}{path}"
     finally:
-        # Cleanup: cancel the task
+        # Cleanup: cancel the task with timeout to avoid hanging on Windows
         server_task.cancel()
-        with suppress(asyncio.CancelledError):
-            await server_task
+        with suppress(asyncio.CancelledError, asyncio.TimeoutError):
+            await asyncio.wait_for(server_task, timeout=2.0)
 
 
 @contextmanager

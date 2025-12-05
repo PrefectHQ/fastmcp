@@ -3,43 +3,19 @@
 import asyncio
 from contextlib import asynccontextmanager
 
-import pytest
 from docket import Docket
 from docket.worker import Worker
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.dependencies import CurrentDocket, CurrentWorker
-from fastmcp.exceptions import ToolError
 from fastmcp.server.dependencies import get_context
-from fastmcp.utilities.tests import temporary_settings
 
 HUZZAH = "huzzah!"
 
 
-@pytest.fixture(autouse=True)
-def enable_docket():
-    """Enable Docket support for all tests in this suite."""
-    with temporary_settings(enable_docket=True):
-        yield
-
-
-async def test_docket_disabled():
-    """Verify that Docket errors when flag is disabled."""
-    with temporary_settings(enable_docket=False):
-        mcp = FastMCP("test-server")
-
-        @mcp.tool()
-        def needs_docket(docket: Docket = CurrentDocket()) -> str:
-            return f"Got docket: {type(docket).__name__}"
-
-        async with Client(mcp) as client:
-            with pytest.raises(ToolError, match="Failed to resolve dependency"):
-                await client.call_tool("needs_docket", {})
-
-
-async def test_current_docket_with_flag_enabled():
-    """CurrentDocket dependency works when experimental flag is enabled."""
+async def test_current_docket():
+    """CurrentDocket dependency provides access to Docket instance."""
     mcp = FastMCP("test-server")
 
     @mcp.tool()
@@ -52,8 +28,8 @@ async def test_current_docket_with_flag_enabled():
         assert HUZZAH in str(result)
 
 
-async def test_current_worker_with_flag_enabled():
-    """CurrentWorker dependency works when experimental flag is enabled."""
+async def test_current_worker():
+    """CurrentWorker dependency provides access to Worker instance."""
     mcp = FastMCP("test-server")
 
     @mcp.tool()
@@ -100,7 +76,7 @@ async def test_worker_executes_background_tasks():
 
 
 async def test_current_docket_in_resource():
-    """CurrentDocket works in resources when flag is enabled."""
+    """CurrentDocket works in resources."""
     mcp = FastMCP("test-server")
 
     @mcp.resource("docket://info")
@@ -114,7 +90,7 @@ async def test_current_docket_in_resource():
 
 
 async def test_current_docket_in_prompt():
-    """CurrentDocket works in prompts when flag is enabled."""
+    """CurrentDocket works in prompts."""
     mcp = FastMCP("test-server")
 
     @mcp.prompt()
@@ -128,7 +104,7 @@ async def test_current_docket_in_prompt():
 
 
 async def test_current_docket_in_resource_template():
-    """CurrentDocket works in resource templates when flag is enabled."""
+    """CurrentDocket works in resource templates."""
     mcp = FastMCP("test-server")
 
     @mcp.resource("docket://tasks/{task_id}")

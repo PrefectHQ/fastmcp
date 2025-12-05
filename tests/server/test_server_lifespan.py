@@ -17,9 +17,11 @@ class TestServerLifespan:
 
         @asynccontextmanager
         async def server_lifespan(mcp: FastMCP) -> AsyncIterator[dict[str, Any]]:
-            _ = lifespan_events.append("enter")
-            yield {"initialized": True}
-            _ = lifespan_events.append("exit")
+            lifespan_events.append("enter")
+            try:
+                yield {"initialized": True}
+            finally:
+                lifespan_events.append("exit")
 
         mcp = FastMCP("TestServer", lifespan=server_lifespan)
 
