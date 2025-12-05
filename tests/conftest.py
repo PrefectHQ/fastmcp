@@ -2,10 +2,24 @@ import socket
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 
 from fastmcp.utilities.tests import temporary_settings
+
+
+# Fakeredis connection pool disconnect can hang on Windows due to ProactorEventLoop
+# socket shutdown issues. Since fakeredis uses in-memory connections that don't need
+# proper network cleanup, we skip the disconnect entirely in tests.
+async def _fast_disconnect(self):
+    pass
+
+
+_disconnect_patch = patch(
+    "redis.asyncio.connection.ConnectionPool.disconnect", _fast_disconnect
+)
+_disconnect_patch.start()
 
 
 def pytest_collection_modifyitems(items):
