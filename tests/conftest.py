@@ -1,49 +1,11 @@
-import asyncio
 import socket
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
-from unittest.mock import patch
 
 import pytest
 
 from fastmcp.utilities.tests import temporary_settings
-
-
-# Fakeredis doesn't properly implement blocking xread - it returns immediately
-# instead of waiting. This causes Docket._monitor_strikes to busy-loop, which
-# overwhelms pytest-xdist workers on Windows. Replace with a simple sleep loop.
-# See: https://github.com/cunla/fakeredis-py/issues/274
-async def _mock_monitor_strikes(self):
-    while True:
-        await asyncio.sleep(60)
-
-
-_monitor_strikes_patch = patch(
-    "docket.docket.Docket._monitor_strikes", _mock_monitor_strikes
-)
-_monitor_strikes_patch.start()
-
-
-@pytest.fixture(autouse=True)
-def fresh_fakeredis_server():
-    """Give each test a fresh FakeServer instead of sharing one.
-
-    Docket stores a shared FakeServer as a class attribute (_memory_server).
-    This can cause issues when many tests run in parallel on Windows.
-    Reset it before each test to ensure isolation.
-    """
-    from docket import Docket
-
-    # Clear the shared server so each test gets a fresh one
-    if hasattr(Docket, "_memory_server"):
-        delattr(Docket, "_memory_server")
-
-    yield
-
-    # Clean up after test
-    if hasattr(Docket, "_memory_server"):
-        delattr(Docket, "_memory_server")
 
 
 def pytest_collection_modifyitems(items):
