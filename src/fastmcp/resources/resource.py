@@ -19,10 +19,9 @@ from pydantic import (
 )
 from typing_extensions import Self
 
-from fastmcp.server.dependencies import get_context
+from fastmcp.server.dependencies import get_context, without_injected_parameters
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.types import (
-    find_kwarg_by_type,
     get_fn_name,
 )
 
@@ -48,6 +47,12 @@ class Resource(FastMCPComponent):
         Annotations | None,
         Field(description="Optional annotations about the resource's behavior"),
     ] = None
+    task: Annotated[
+        bool,
+        Field(
+            description="Whether this resource supports background task execution (SEP-1686)"
+        ),
+    ] = False
 
     def enable(self) -> None:
         super().enable()
@@ -78,6 +83,7 @@ class Resource(FastMCPComponent):
         enabled: bool | None = None,
         annotations: Annotations | None = None,
         meta: dict[str, Any] | None = None,
+        task: bool | None = None,
     ) -> FunctionResource:
         return FunctionResource.from_function(
             fn=fn,
@@ -91,6 +97,7 @@ class Resource(FastMCPComponent):
             enabled=enabled,
             annotations=annotations,
             meta=meta,
+            task=task,
         )
 
     @field_validator("mime_type", mode="before")
@@ -184,12 +191,17 @@ class FunctionResource(Resource):
         enabled: bool | None = None,
         annotations: Annotations | None = None,
         meta: dict[str, Any] | None = None,
+        task: bool | None = None,
     ) -> FunctionResource:
         """Create a FunctionResource from a function."""
         if isinstance(uri, str):
             uri = AnyUrl(uri)
+
+        # Wrap fn to handle dependency resolution internally
+        wrapped_fn = without_injected_parameters(fn)
+
         return cls(
-            fn=fn,
+            fn=wrapped_fn,
             uri=uri,
             name=name or get_fn_name(fn),
             title=title,
@@ -200,18 +212,14 @@ class FunctionResource(Resource):
             enabled=enabled if enabled is not None else True,
             annotations=annotations,
             meta=meta,
+            task=task if task is not None else False,
         )
 
     async def read(self) -> str | bytes:
         """Read the resource by calling the wrapped function."""
-        from fastmcp.server.context import Context
-
-        kwargs = {}
-        context_kwarg = find_kwarg_by_type(self.fn, kwarg_type=Context)
-        if context_kwarg is not None:
-            kwargs[context_kwarg] = get_context()
-
-        result = self.fn(**kwargs)
+        # self.fn is wrapped by without_injected_parameters which handles
+        # dependency resolution internally
+        result = self.fn()
         if inspect.isawaitable(result):
             result = await result
 

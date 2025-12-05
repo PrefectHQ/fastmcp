@@ -5,7 +5,7 @@ from __future__ import annotations as _annotations
 import inspect
 import json
 from collections.abc import Awaitable, Callable, Sequence
-from typing import Any
+from typing import Annotated, Any
 
 import pydantic_core
 from mcp.types import ContentBlock, Icon, PromptMessage, Role, TextContent
@@ -14,13 +14,12 @@ from mcp.types import PromptArgument as MCPPromptArgument
 from pydantic import Field, TypeAdapter
 
 from fastmcp.exceptions import PromptError
-from fastmcp.server.dependencies import get_context
+from fastmcp.server.dependencies import get_context, without_injected_parameters
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import (
     FastMCPBaseModel,
-    find_kwarg_by_type,
     get_cached_typeadapter,
 )
 
@@ -67,6 +66,12 @@ class Prompt(FastMCPComponent):
     arguments: list[PromptArgument] | None = Field(
         default=None, description="Arguments that can be passed to the prompt"
     )
+    task: Annotated[
+        bool,
+        Field(
+            description="Whether this prompt supports background task execution (SEP-1686)"
+        ),
+    ] = False
 
     def enable(self) -> None:
         super().enable()
@@ -121,6 +126,7 @@ class Prompt(FastMCPComponent):
         tags: set[str] | None = None,
         enabled: bool | None = None,
         meta: dict[str, Any] | None = None,
+        task: bool | None = None,
     ) -> FunctionPrompt:
         """Create a Prompt from a function.
 
@@ -139,6 +145,7 @@ class Prompt(FastMCPComponent):
             tags=tags,
             enabled=enabled,
             meta=meta,
+            task=task,
         )
 
     async def render(
@@ -169,6 +176,7 @@ class FunctionPrompt(Prompt):
         tags: set[str] | None = None,
         enabled: bool | None = None,
         meta: dict[str, Any] | None = None,
+        task: bool | None = None,
     ) -> FunctionPrompt:
         """Create a Prompt from a function.
 
@@ -178,7 +186,6 @@ class FunctionPrompt(Prompt):
         - A dict (converted to a message)
         - A sequence of any of the above
         """
-        from fastmcp.server.context import Context
 
         func_name = name or getattr(fn, "__name__", None) or fn.__class__.__name__
 
@@ -201,15 +208,11 @@ class FunctionPrompt(Prompt):
         if isinstance(fn, staticmethod):
             fn = fn.__func__
 
-        type_adapter = get_cached_typeadapter(fn)
+        # Wrap fn to handle dependency resolution internally
+        wrapped_fn = without_injected_parameters(fn)
+        type_adapter = get_cached_typeadapter(wrapped_fn)
         parameters = type_adapter.json_schema()
-
-        # Auto-detect context parameter if not provided
-
-        context_kwarg = find_kwarg_by_type(fn, kwarg_type=Context)
-        prune_params = [context_kwarg] if context_kwarg else None
-
-        parameters = compress_schema(parameters, prune_params=prune_params)
+        parameters = compress_schema(parameters, prune_titles=True)
 
         # Convert parameters to PromptArguments
         arguments: list[PromptArgument] = []
@@ -224,7 +227,6 @@ class FunctionPrompt(Prompt):
                     if (
                         sig_param.annotation != inspect.Parameter.empty
                         and sig_param.annotation is not str
-                        and param_name != context_kwarg
                     ):
                         # Get the JSON schema for this specific parameter type
                         try:
@@ -260,28 +262,22 @@ class FunctionPrompt(Prompt):
             arguments=arguments,
             tags=tags or set(),
             enabled=enabled if enabled is not None else True,
-            fn=fn,
+            fn=wrapped_fn,
             meta=meta,
+            task=task if task is not None else False,
         )
 
     def _convert_string_arguments(self, kwargs: dict[str, Any]) -> dict[str, Any]:
         """Convert string arguments to expected types based on function signature."""
-        from fastmcp.server.context import Context
+        from fastmcp.server.dependencies import without_injected_parameters
 
-        sig = inspect.signature(self.fn)
+        wrapper_fn = without_injected_parameters(self.fn)
+        sig = inspect.signature(wrapper_fn)
         converted_kwargs = {}
-
-        # Find context parameter name if any
-        context_param_name = find_kwarg_by_type(self.fn, kwarg_type=Context)
 
         for param_name, param_value in kwargs.items():
             if param_name in sig.parameters:
                 param = sig.parameters[param_name]
-
-                # Skip Context parameters - they're handled separately
-                if param_name == context_param_name:
-                    converted_kwargs[param_name] = param_value
-                    continue
 
                 # If parameter has no annotation or annotation is str, pass as-is
                 if (
@@ -320,8 +316,6 @@ class FunctionPrompt(Prompt):
         arguments: dict[str, Any] | None = None,
     ) -> list[PromptMessage]:
         """Render the prompt with arguments."""
-        from fastmcp.server.context import Context
-
         # Validate required arguments
         if self.arguments:
             required = {arg.name for arg in self.arguments if arg.required}
@@ -331,16 +325,14 @@ class FunctionPrompt(Prompt):
                 raise ValueError(f"Missing required arguments: {missing}")
 
         try:
-            # Prepare arguments with context
+            # Prepare arguments
             kwargs = arguments.copy() if arguments else {}
-            context_kwarg = find_kwarg_by_type(self.fn, kwarg_type=Context)
-            if context_kwarg and context_kwarg not in kwargs:
-                kwargs[context_kwarg] = get_context()
 
-            # Convert string arguments to expected types when needed
+            # Convert string arguments to expected types BEFORE validation
             kwargs = self._convert_string_arguments(kwargs)
 
-            # Call function and check if result is a coroutine
+            # self.fn is wrapped by without_injected_parameters which handles
+            # dependency resolution internally
             result = self.fn(**kwargs)
             if inspect.isawaitable(result):
                 result = await result

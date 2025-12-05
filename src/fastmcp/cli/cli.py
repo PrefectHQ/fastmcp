@@ -19,6 +19,7 @@ from rich.table import Table
 import fastmcp
 from fastmcp.cli import run as run_module
 from fastmcp.cli.install import install_app
+from fastmcp.cli.tasks import tasks_app
 from fastmcp.utilities.cli import is_already_in_uv_subprocess, load_and_merge_config
 from fastmcp.utilities.inspect import (
     InspectFormat,
@@ -852,6 +853,9 @@ app.command(project_app)
 
 # Add install subcommands using proper Cyclopts pattern
 app.command(install_app)
+
+# Add tasks subcommand group
+app.command(tasks_app)
 
 
 if __name__ == "__main__":

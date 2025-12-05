@@ -52,6 +52,7 @@ class TestToolFromFunction:
                     "type": "object",
                     "x-fastmcp-wrap-result": True,
                 },
+                "task": False,
                 "fn": HasName("add"),
             }
         )
@@ -99,6 +100,7 @@ class TestToolFromFunction:
                     "type": "object",
                     "x-fastmcp-wrap-result": True,
                 },
+                "task": False,
                 "fn": HasName("fetch_data"),
             }
         )
@@ -133,6 +135,7 @@ class TestToolFromFunction:
                     "type": "object",
                     "x-fastmcp-wrap-result": True,
                 },
+                "task": False,
             }
         )
 
@@ -166,6 +169,7 @@ class TestToolFromFunction:
                     "type": "object",
                     "x-fastmcp-wrap-result": True,
                 },
+                "task": False,
             }
         )
 
@@ -207,6 +211,7 @@ class TestToolFromFunction:
                     "type": "object",
                 },
                 "output_schema": {"additionalProperties": True, "type": "object"},
+                "task": False,
                 "fn": HasName("create_user"),
             }
         )
@@ -269,6 +274,7 @@ class TestToolFromFunction:
                     "required": ["x"],
                     "type": "object",
                 },
+                "task": False,
             }
         )
 
@@ -301,6 +307,7 @@ class TestToolFromFunction:
                     "required": ["_a", "_b"],
                     "type": "object",
                 },
+                "task": False,
             }
         )
 
@@ -355,6 +362,7 @@ class TestToolFromFunction:
                     "type": "object",
                     "x-fastmcp-wrap-result": True,
                 },
+                "task": False,
             }
         )
 

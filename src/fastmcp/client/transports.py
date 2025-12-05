@@ -854,11 +854,25 @@ class FastMCPTransport(ClientTransport):
                 anyio.create_task_group() as tg,
                 _enter_server_lifespan(server=self.server),
             ):
+                # Build experimental capabilities
+                import fastmcp
+
+                experimental_capabilities = {}
+                if fastmcp.settings.enable_tasks:
+                    # Declare SEP-1686 task support (enable_tasks requires enable_docket via validator)
+                    experimental_capabilities["tasks"] = {
+                        "tools": True,
+                        "prompts": True,
+                        "resources": True,
+                    }
+
                 tg.start_soon(
                     lambda: self.server._mcp_server.run(
                         server_read,
                         server_write,
-                        self.server._mcp_server.create_initialization_options(),
+                        self.server._mcp_server.create_initialization_options(
+                            experimental_capabilities=experimental_capabilities
+                        ),
                         raise_exceptions=self.raise_exceptions,
                     )
                 )

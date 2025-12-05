@@ -219,3 +219,37 @@ async def test_tool_functionality_with_annotations():
             "create_item", {"name": "test_item", "value": 42}
         )
         assert result.data == {"name": "test_item", "value": 42}
+
+
+async def test_task_execution_auto_populated_for_task_enabled_tool():
+    """Test that execution.task is automatically set when tool has task=True."""
+    mcp = FastMCP("Test Server")
+
+    @mcp.tool(task=True)
+    async def background_tool(data: str) -> str:
+        """A tool that runs in background."""
+        return f"Processed: {data}"
+
+    async with Client(mcp) as client:
+        tools_result = await client.list_tools()
+        assert len(tools_result) == 1
+        assert tools_result[0].name == "background_tool"
+        assert tools_result[0].execution is not None
+        assert tools_result[0].execution.task == "optional"
+
+
+async def test_task_execution_omitted_for_task_disabled_tool():
+    """Test that execution is not set when tool has task=False or default."""
+    mcp = FastMCP("Test Server")
+
+    @mcp.tool(task=False)
+    def sync_tool(data: str) -> str:
+        """A synchronous tool."""
+        return f"Processed: {data}"
+
+    async with Client(mcp) as client:
+        tools_result = await client.list_tools()
+        assert len(tools_result) == 1
+        assert tools_result[0].name == "sync_tool"
+        # execution should be None for non-task tools (default is False, omitted)
+        assert tools_result[0].execution is None

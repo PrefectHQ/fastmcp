@@ -8,6 +8,10 @@ import { VersionBadge } from '/snippets/version-badge.mdx'
 
 When defining FastMCP [tools](/servers/tools), [resources](/servers/resources), resource templates, or [prompts](/servers/prompts), your functions might need to interact with the underlying MCP session or access advanced server capabilities. FastMCP provides the `Context` object for this purpose.
 
+<Note>
+FastMCP uses [Docket](https://github.com/chrisguidry/docket)'s dependency injection system for managing runtime dependencies. This page covers Context and the built-in dependencies; see [Custom Dependencies](#custom-dependencies) for creating your own.
+</Note>
+
 ## What Is Context?
 
 The `Context` object provides a clean interface to access MCP features within your functions, including:
@@ -24,21 +28,53 @@ The `Context` object provides a clean interface to access MCP features within yo
 
 ## Accessing the Context
 
-### Via Dependency Injection
+<VersionBadge version="2.14" />
 
-To use the context object within any of your functions, simply add a parameter to your function signature and type-hint it as `Context`. FastMCP will automatically inject the context instance when your function is called.
+The preferred way to access context is using the `CurrentContext()` dependency:
+
+```python {1, 6}
+from fastmcp import FastMCP
+from fastmcp.dependencies import CurrentContext
+from fastmcp.server.context import Context
+
+mcp = FastMCP(name="Context Demo")
+
+@mcp.tool
+async def process_file(file_uri: str, ctx: Context = CurrentContext()) -> str:
+    """Processes a file, using context for logging and resource access."""
+    await ctx.info(f"Processing {file_uri}")
+    return "Processed file"
+```
+
+This works with tools, resources, and prompts:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.dependencies import CurrentContext
+from fastmcp.server.context import Context
+
+mcp = FastMCP(name="Context Demo")
+
+@mcp.resource("resource://user-data")
+async def get_user_data(ctx: Context = CurrentContext()) -> dict:
+    await ctx.debug("Fetching user data")
+    return {"user_id": "example"}
+
+@mcp.prompt
+async def data_analysis_request(dataset: str, ctx: Context = CurrentContext()) -> str:
+    return f"Please analyze the following dataset: {dataset}"
+```
 
 **Key Points:**
 
-- The parameter name (e.g., `ctx`, `context`) doesn't matter, only the type hint `Context` is important.
-- The context parameter can be placed anywhere in your function's signature; it will not be exposed to MCP clients as a valid parameter.
-- The context is optional - functions that don't need it can omit the parameter entirely.
+- Dependency parameters are automatically excluded from the MCP schema—clients never see them.
 - Context methods are async, so your function usually needs to be async as well.
-- The type hint can be a union (`Context | None`) or use `Annotated[]` and it will still work properly.
 - **Each MCP request receives a new context object.** Context is scoped to a single request; state or data set in one request will not be available in subsequent requests.
-- Context is only available during a request; attempting to use context methods outside a request will raise errors. If you need to debug or call your context methods outside of a request, you can type your variable as `Context | None=None` to avoid missing argument errors.
+- Context is only available during a request; attempting to use context methods outside a request will raise errors.
 
-#### Tools
+### Legacy Type-Hint Injection
+
+For backwards compatibility, you can still access context by simply adding a parameter with the `Context` type hint. FastMCP will automatically inject the context instance:
 
 ```python {1, 6}
 from fastmcp import FastMCP, Context
@@ -48,56 +84,17 @@ mcp = FastMCP(name="Context Demo")
 @mcp.tool
 async def process_file(file_uri: str, ctx: Context) -> str:
     """Processes a file, using context for logging and resource access."""
-    # Context is available as the ctx parameter
+    # Context is injected automatically based on the type hint
     return "Processed file"
 ```
 
-#### Resources and Templates
+This approach still works for tools, resources, and prompts. The parameter name doesn't matter—only the `Context` type hint is important. The type hint can also be a union (`Context | None`) or use `Annotated[]`.
 
-<VersionBadge version="2.2.5" />
-
-```python {1, 6, 12}
-from fastmcp import FastMCP, Context
-
-mcp = FastMCP(name="Context Demo")
-
-@mcp.resource("resource://user-data")
-async def get_user_data(ctx: Context) -> dict:
-    """Fetch personalized user data based on the request context."""
-    # Context is available as the ctx parameter
-    return {"user_id": "example"}
-
-@mcp.resource("resource://users/{user_id}/profile")
-async def get_user_profile(user_id: str, ctx: Context) -> dict:
-    """Fetch user profile with context-aware logging."""
-    # Context is available as the ctx parameter
-    return {"id": user_id}
-```
-
-#### Prompts
-
-<VersionBadge version="2.2.5" />
-
-```python {1, 6}
-from fastmcp import FastMCP, Context
-
-mcp = FastMCP(name="Context Demo")
-
-@mcp.prompt
-async def data_analysis_request(dataset: str, ctx: Context) -> str:
-    """Generate a request to analyze data with contextual information."""
-    # Context is available as the ctx parameter
-    return f"Please analyze the following dataset: {dataset}"
-```
-
-
-### Via Runtime Dependency Function
+### Via `get_context()` Function
 
 <VersionBadge version="2.2.11" />
 
-While the simplest way to access context is through function parameter injection as shown above, there are cases where you need to access the context in code that may not be easy to modify to accept a context parameter, or that is nested deeper within your function calls.
-
-FastMCP provides dependency functions that allow you to retrieve the active context from anywhere within a server request's execution flow:
+For code nested deeper within your function calls where passing context through parameters is inconvenient, use `get_context()` to retrieve the active context from anywhere within a request's execution flow:
 
 ```python {2,9}
 from fastmcp import FastMCP
@@ -108,9 +105,9 @@ mcp = FastMCP(name="Dependency Demo")
 # Utility function that needs context but doesn't receive it as a parameter
 async def process_data(data: list[float]) -> dict:
     # Get the active context - only works when called within a request
-    ctx = get_context()    
+    ctx = get_context()
     await ctx.info(f"Processing {len(data)} data points")
-    
+
 @mcp.tool
 async def analyze_dataset(dataset_name: str) -> dict:
     # Call utility function that uses context internally
@@ -120,8 +117,8 @@ async def analyze_dataset(dataset_name: str) -> dict:
 
 **Important Notes:**
 
-- The `get_context` function should only be used within the context of a server request. Calling it outside of a request will raise a `RuntimeError`.
-- The `get_context` function is server-only and should not be used in client code.
+- The `get_context()` function should only be used within the context of a server request. Calling it outside of a request will raise a `RuntimeError`.
+- The `get_context()` function is server-only and should not be used in client code.
 
 ## Context Capabilities
 
@@ -527,3 +524,90 @@ async def get_tenant_data(resource_id: str) -> dict:
         "data": f"Tenant-specific data for {tenant_id}",
     }
 ```
+
+## Custom Dependencies
+
+<VersionBadge version="2.14" />
+
+FastMCP's dependency injection is powered by [Docket](https://github.com/chrisguidry/docket), which provides a flexible system for injecting values into your functions. Beyond the built-in dependencies like `CurrentContext()`, you can create your own.
+
+### Using `Depends()`
+
+The simplest way to create a custom dependency is with `Depends()`. Pass any callable (sync or async function, or async context manager) and its return value will be injected:
+
+```python
+from contextlib import asynccontextmanager
+from fastmcp import FastMCP
+from fastmcp.dependencies import Depends
+
+mcp = FastMCP(name="Custom Deps Demo")
+
+# Simple function dependency
+def get_config() -> dict:
+    return {"api_url": "https://api.example.com", "timeout": 30}
+
+# Async function dependency
+async def get_user_id() -> int:
+    return 42
+
+@mcp.tool
+async def fetch_data(
+    query: str,
+    config: dict = Depends(get_config),
+    user_id: int = Depends(get_user_id),
+) -> str:
+    return f"User {user_id} fetching '{query}' from {config['api_url']}"
+```
+
+Dependencies using `Depends()` are automatically excluded from the MCP schema—clients never see them as parameters.
+
+### Resource Management with Context Managers
+
+For dependencies that need cleanup (database connections, file handles, etc.), use an async context manager:
+
+```python
+from contextlib import asynccontextmanager
+from fastmcp import FastMCP
+from fastmcp.dependencies import Depends
+
+mcp = FastMCP(name="Resource Demo")
+
+@asynccontextmanager
+async def get_database():
+    db = await connect_to_database()
+    try:
+        yield db
+    finally:
+        await db.close()
+
+@mcp.tool
+async def query_users(sql: str, db = Depends(get_database)) -> list:
+    return await db.execute(sql)
+```
+
+The context manager's cleanup code runs after your function completes, even if an error occurs.
+
+### Nested Dependencies
+
+Dependencies can depend on other dependencies:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.dependencies import Depends
+
+mcp = FastMCP(name="Nested Demo")
+
+def get_base_url() -> str:
+    return "https://api.example.com"
+
+def get_api_client(base_url: str = Depends(get_base_url)) -> dict:
+    return {"base_url": base_url, "version": "v1"}
+
+@mcp.tool
+async def call_api(endpoint: str, client: dict = Depends(get_api_client)) -> str:
+    return f"Calling {client['base_url']}/{client['version']}/{endpoint}"
+```
+
+### Advanced: Subclassing `Dependency`
+
+For more complex dependency patterns—like dependencies that need access to Docket's execution context or require custom lifecycle management—you can subclass Docket's `Dependency` class. See the [Docket documentation on dependencies](https://chrisguidry.github.io/docket/dependencies/) for details.

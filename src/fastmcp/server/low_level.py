@@ -35,6 +35,8 @@ class MiddlewareServerSession(ServerSession):
     def __init__(self, fastmcp: FastMCP, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._fastmcp_ref: weakref.ref[FastMCP] = weakref.ref(fastmcp)
+        # Task group for subscription tasks (set during session run)
+        self._subscription_task_group: anyio.TaskGroup | None = None  # type: ignore[valid-type]
 
     @property
     def fastmcp(self) -> FastMCP:
@@ -49,11 +51,10 @@ class MiddlewareServerSession(ServerSession):
         responder: RequestResponder[mcp.types.ClientRequest, mcp.types.ServerResult],
     ):
         """
-        Override the _received_request method to route initialization requests
+        Override the _received_request method to route special requests
         through FastMCP middleware.
 
-        These are not handled by routes that FastMCP typically overrides and
-        require special handling.
+        Handles initialization requests and SEP-1686 task methods.
         """
         import fastmcp.server.context
         from fastmcp.server.middleware.middleware import MiddlewareContext
@@ -106,8 +107,9 @@ class MiddlewareServerSession(ServerSession):
                 return await self.fastmcp._apply_middleware(
                     mw_context, call_original_handler
                 )
-        else:
-            return await super()._received_request(responder)
+
+        # Fall through to default handling (task methods now handled via registered handlers)
+        return await super()._received_request(responder)
 
 
 class LowLevelServer(_Server[LifespanResultT, RequestT]):
@@ -170,6 +172,9 @@ class LowLevelServer(_Server[LifespanResultT, RequestT]):
             )
 
             async with anyio.create_task_group() as tg:
+                # Store task group on session for subscription tasks (SEP-1686)
+                session._subscription_task_group = tg
+
                 async for message in session.incoming_messages:
                     tg.start_soon(
                         self._handle_message,

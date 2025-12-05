@@ -1,0 +1,130 @@
+---
+title: Background Tasks
+sidebarTitle: Background Tasks
+description: Run long-running operations asynchronously with progress tracking
+icon: clock
+tag: "NEW"
+---
+
+import { VersionBadge } from "/snippets/version-badge.mdx"
+
+<VersionBadge version="2.14" />
+
+Background tasks allow tools, resources, and prompts to execute asynchronously, returning immediately while work continues in the background. Clients can track progress, cancel operations, and retrieve results when ready.
+
+This implements the [MCP task protocol](https://modelcontextprotocol.io/specification/2025-11-25/basic/utilities/tasks) from the MCP specification, powered by [Docket](https://github.com/chrisguidry/docket) for task queue management.
+
+## Requirements
+
+For **single-process** deployments, everything works out of the box using an in-memory backend.
+
+For **multi-process** deployments (multiple workers, distributed systems), you'll need Redis or Valkey. See the [Docket documentation](https://chrisguidry.github.io/docket/) for backend configuration details.
+
+## Enabling Background Tasks
+
+Add `task=True` to any tool, resource, or prompt decorator:
+
+```python
+import asyncio
+from fastmcp import FastMCP
+from fastmcp.dependencies import Progress
+
+mcp = FastMCP("MyServer")
+
+@mcp.tool(task=True)
+async def slow_computation(duration: int, progress: Progress = Progress()) -> str:
+    """A long-running operation with progress tracking."""
+    await progress.set_total(duration)
+
+    for i in range(duration):
+        await asyncio.sleep(1)
+        await progress.increment()
+        await progress.set_message(f"Step {i + 1} of {duration}")
+
+    return f"Completed in {duration} seconds"
+```
+
+<Note>
+Background tasks require async functions. Sync functions will log a warning and execute immediately instead.
+</Note>
+
+## Configuration
+
+Background tasks require explicit opt-in:
+
+| Environment Variable | Default | Description |
+|---------------------|---------|-------------|
+| `FASTMCP_ENABLE_TASKS` | `false` | Enable the MCP task protocol |
+| `FASTMCP_ENABLE_DOCKET` | `false` | Enable the Docket task system |
+| `FASTMCP_DOCKET_URL` | `memory://` | Backend URL (`memory://` or `redis://host:port/db`) |
+
+Both `ENABLE_TASKS` and `ENABLE_DOCKET` must be `true` for background tasks to work.
+
+You can also set a server-wide default in the constructor:
+
+```python
+mcp = FastMCP("MyServer", tasks=True)
+```
+
+## Progress Reporting
+
+The `Progress` dependency lets you report progress back to clients:
+
+```python
+from fastmcp.dependencies import Progress
+
+@mcp.tool(task=True)
+async def process_files(files: list[str], progress: Progress = Progress()) -> str:
+    await progress.set_total(len(files))
+
+    for file in files:
+        await progress.set_message(f"Processing {file}")
+        # ... do work ...
+        await progress.increment()
+
+    return f"Processed {len(files)} files"
+```
+
+The progress API:
+- `await progress.set_total(n)` - Set the total number of steps
+- `await progress.increment(amount=1)` - Increment progress
+- `await progress.set_message(text)` - Update the status message
+
+Progress works in both immediate and background execution modes.
+
+## Additional Dependencies
+
+FastMCP provides several Docket-style dependencies you can inject into your functions:
+
+```python
+from fastmcp.dependencies import Progress, CurrentDocket, CurrentWorker
+
+@mcp.tool(task=True)
+async def my_task(
+    progress: Progress = Progress(),
+    # docket: Docket = CurrentDocket(),  # Access the Docket instance
+    # worker: Worker = CurrentWorker(),   # Access worker info
+) -> str:
+    ...
+```
+
+By injecting `CurrentDocket()`, you gain access to the full Docket API. This lets you schedule additional background tasks from within your tool, chain tasks together, or use any of Docket's advanced features like task priorities and retries. See the [Docket documentation](https://chrisguidry.github.io/docket/) for the complete API.
+
+## Running Additional Workers
+
+For distributed task processing, start additional workers:
+
+```bash
+fastmcp tasks worker server.py
+```
+
+Configure worker concurrency via environment:
+
+```bash
+export FASTMCP_DOCKET_CONCURRENCY=20
+fastmcp tasks worker server.py
+```
+
+<Tip>
+Workers only work with Redis/Valkey backends. The `memory://` backend is single-process only.
+</Tip>

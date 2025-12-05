@@ -166,6 +166,12 @@ class Context:
         # Always set this context and save the token
         token = _current_context.set(self)
         self._tokens.append(token)
+
+        # Set current server for dependency injection (use weakref to avoid reference cycles)
+        from fastmcp.server.dependencies import _current_server
+
+        self._server_token = _current_server.set(weakref.ref(self.fastmcp))
+
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
@@ -173,6 +179,14 @@ class Context:
         # Flush any remaining notifications before exiting
         await self._flush_notifications()
 
+        # Reset server token
+        if hasattr(self, "_server_token"):
+            from fastmcp.server.dependencies import _current_server
+
+            _current_server.reset(self._server_token)
+            delattr(self, "_server_token")
+
+        # Reset context token
         if self._tokens:
             token = self._tokens.pop()
             _current_context.reset(token)
@@ -272,7 +286,8 @@ class Context:
         Returns:
             The resource content as either text or bytes
         """
-        return await self.fastmcp._read_resource_mcp(uri)
+        # Context calls don't have task metadata, so always returns list
+        return await self.fastmcp._read_resource_mcp(uri)  # type: ignore[return-value]
 
     async def log(
         self,

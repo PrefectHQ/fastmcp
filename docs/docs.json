@@ -116,7 +116,8 @@
                   "servers/progress",
                   "servers/proxy",
                   "servers/sampling",
-                  "servers/storage-backends"
+                  "servers/storage-backends",
+                  "servers/tasks"
                 ]
               },
               {
@@ -171,6 +172,7 @@
                   "clients/logging",
                   "clients/progress",
                   "clients/sampling",
+                  "clients/tasks",
                   "clients/messages",
                   "clients/roots"
                 ]
