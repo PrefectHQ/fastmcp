@@ -22,6 +22,36 @@ if TYPE_CHECKING:
     from fastmcp.server.server import FastMCP
 
 
+async def _wait_for_port(
+    host: str, port: int, timeout: float = 5.0, interval: float = 0.01
+) -> None:
+    """Wait for a port to accept connections.
+
+    Args:
+        host: Host to connect to
+        port: Port to probe
+        timeout: Maximum time to wait in seconds
+        interval: Time between connection attempts
+    """
+    import asyncio
+
+    start = asyncio.get_running_loop().time()
+    while True:
+        try:
+            _, writer = await asyncio.wait_for(
+                asyncio.open_connection(host, port), timeout=interval
+            )
+            writer.close()
+            await writer.wait_closed()
+            return
+        except (OSError, asyncio.TimeoutError):
+            if asyncio.get_running_loop().time() - start > timeout:
+                raise TimeoutError(
+                    f"Port {port} on {host} not available after {timeout}s"
+                ) from None
+            await asyncio.sleep(interval)
+
+
 @contextmanager
 def temporary_settings(**kwargs: Any):
     """
@@ -209,16 +239,20 @@ async def run_server_async(
         )
     )
 
-    # Give the server a moment to start
-    await asyncio.sleep(0.1)
+    # Wait for server lifespan to be ready
+    await server._started.wait()
+
+    # Wait for HTTP port to be listening (lifespan is ready but uvicorn
+    # may not have bound yet)
+    await _wait_for_port(host, port)
 
     try:
         yield f"http://{host}:{port}{path}"
     finally:
-        # Cleanup: cancel the task
+        # Cleanup: cancel the task with timeout to avoid hanging on Windows
         server_task.cancel()
-        with suppress(asyncio.CancelledError):
-            await server_task
+        with suppress(asyncio.CancelledError, asyncio.TimeoutError):
+            await asyncio.wait_for(server_task, timeout=2.0)
 
 
 @contextmanager

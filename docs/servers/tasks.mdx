@@ -55,10 +55,7 @@ Background tasks require explicit opt-in:
 | Environment Variable | Default | Description |
 |---------------------|---------|-------------|
 | `FASTMCP_ENABLE_TASKS` | `false` | Enable the MCP task protocol |
-| `FASTMCP_ENABLE_DOCKET` | `false` | Enable the Docket task system |
 | `FASTMCP_DOCKET_URL` | `memory://` | Backend URL (`memory://` or `redis://host:port/db`) |
-
-Both `ENABLE_TASKS` and `ENABLE_DOCKET` must be `true` for background tasks to work.
 
 You can also set a server-wide default in the constructor:
 

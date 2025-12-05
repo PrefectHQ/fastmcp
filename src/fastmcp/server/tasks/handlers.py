@@ -61,7 +61,7 @@ async def handle_tool_as_task(
         raise McpError(
             ErrorData(
                 code=INTERNAL_ERROR,
-                message="Background tasks require Docket. Set FASTMCP_ENABLE_DOCKET=true",
+                message="Background tasks require a running FastMCP server context",
             )
         )
 
@@ -169,7 +169,7 @@ async def handle_prompt_as_task(
         raise McpError(
             ErrorData(
                 code=INTERNAL_ERROR,
-                message="Background tasks require Docket. Set FASTMCP_ENABLE_DOCKET=true",
+                message="Background tasks require a running FastMCP server context",
             )
         )
 

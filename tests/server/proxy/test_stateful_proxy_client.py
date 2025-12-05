@@ -58,8 +58,7 @@ async def stateless_server(stateful_proxy_server: FastMCP):
             host="127.0.0.1", port=port, stateless_http=True
         )
     )
-    async with Client(transport=url) as client:
-        assert await client.ping()
+    await stateful_proxy_server._started.wait()
     yield url
     task.cancel()
     try:

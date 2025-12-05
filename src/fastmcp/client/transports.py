@@ -859,7 +859,7 @@ class FastMCPTransport(ClientTransport):
 
                 experimental_capabilities = {}
                 if fastmcp.settings.enable_tasks:
-                    # Declare SEP-1686 task support (enable_tasks requires enable_docket via validator)
+                    # Declare SEP-1686 task support
                     experimental_capabilities["tasks"] = {
                         "tools": True,
                         "prompts": True,

@@ -51,7 +51,6 @@ fastmcp tasks worker server.py
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `FASTMCP_ENABLE_DOCKET` | `false` | Enable Docket task system |
 | `FASTMCP_ENABLE_TASKS` | `false` | Enable MCP task protocol (SEP-1686) |
 | `FASTMCP_DOCKET_URL` | `memory://` | Docket backend URL |
 

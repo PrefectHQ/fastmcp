@@ -36,7 +36,7 @@ async def test_uvicorn_logging_default_level(
     server_task = asyncio.create_task(
         mcp_server.run_http_async(log_level=test_log_level, port=8003)
     )
-    await asyncio.sleep(0.01)
+    await mcp_server._started.wait()
 
     mock_uvicorn_config_constructor.assert_called_once()
     _, kwargs_config = mock_uvicorn_config_constructor.call_args
@@ -96,7 +96,7 @@ async def test_uvicorn_logging_with_custom_log_config(
             uvicorn_config={"log_config": sample_log_config}, port=8004
         )
     )
-    await asyncio.sleep(0.01)
+    await mcp_server._started.wait()
 
     mock_uvicorn_config_constructor.assert_called_once()
     _, kwargs_config = mock_uvicorn_config_constructor.call_args
@@ -159,7 +159,7 @@ async def test_uvicorn_logging_custom_log_config_overrides_log_level_param(
             port=8005,
         )
     )
-    await asyncio.sleep(0.01)
+    await mcp_server._started.wait()
 
     mock_uvicorn_config_constructor.assert_called_once()
     _, kwargs_config = mock_uvicorn_config_constructor.call_args

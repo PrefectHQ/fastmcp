@@ -1,11 +1,8 @@
 """Tests for FastMCP Progress dependency."""
 
-import pytest
-
 from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.dependencies import Progress
-from fastmcp.utilities.tests import temporary_settings
 
 
 async def test_progress_in_immediate_execution():
@@ -109,24 +106,6 @@ async def test_progress_status_message_in_background_task():
 
         assert isinstance(result.content[0], TextContent)
         assert result.content[0].text == "done"
-
-
-async def test_progress_fails_without_docket():
-    """Test Progress dependency fails when Docket is not enabled."""
-    with temporary_settings(enable_docket=False, enable_tasks=False):
-        mcp = FastMCP("test")
-
-        @mcp.tool()
-        async def test_tool(progress: Progress = Progress()) -> str:
-            return "done"
-
-        async with Client(mcp) as client:
-            with pytest.raises(Exception) as exc_info:
-                await client.call_tool("test_tool", {})
-
-            error_str = str(exc_info.value)
-            assert "Failed to resolve dependency" in error_str
-            assert "progress" in error_str
 
 
 async def test_inmemory_progress_state():

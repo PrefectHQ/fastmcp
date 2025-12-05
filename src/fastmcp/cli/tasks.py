@@ -19,24 +19,16 @@ tasks_app = cyclopts.App(
 )
 
 
-def check_docket_enabled() -> None:
-    """Check if Docket is enabled with a distributed backend.
+def check_distributed_backend() -> None:
+    """Check if Docket is configured with a distributed backend.
+
+    The CLI worker runs as a separate process, so it needs Redis/Valkey
+    to coordinate with the main server process.
 
     Raises:
-        SystemExit: If Docket isn't enabled or using memory:// URL
+        SystemExit: If using memory:// URL
     """
     import fastmcp
-
-    # Check if Docket is enabled
-    if not fastmcp.settings.enable_docket:
-        console.print(
-            "[bold red]✗ Docket not enabled[/bold red]\n\n"
-            "Docket task support is not enabled.\n\n"
-            "To enable Docket, set the environment variable:\n"
-            "  [cyan]export FASTMCP_ENABLE_DOCKET=true[/cyan]\n\n"
-            "Then try again."
-        )
-        sys.exit(1)
 
     docket_url = fastmcp.settings.docket.url
 
@@ -86,7 +78,7 @@ def worker(
     """
     import fastmcp
 
-    check_docket_enabled()
+    check_distributed_backend()
 
     # Load server to get task functions
     try:
