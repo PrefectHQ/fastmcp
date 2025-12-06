@@ -43,8 +43,7 @@ def mcp_server_type_to_servers_and_transports(
 
     if isinstance(mcp_server, TransformingRemoteMCPServer | TransformingStdioMCPServer):
         server, transport = mcp_server._to_server_and_underlying_transport(
-            server_name=server_name,
-            client_name=client_name,
+            server_name=server_name, client_name=client_name
         )
     else:
         transport = mcp_server.to_transport()
