@@ -10,6 +10,7 @@ from fastmcp.utilities.types import (
     Audio,
     File,
     Image,
+    create_function_without_params,
     get_cached_typeadapter,
     is_class_member_of_type,
     issubclass_safe,
@@ -516,6 +517,87 @@ class TestReplaceType:
     def test_replace_type(self, input, type_map, expected):
         """Test replacing a type with another type."""
         assert replace_type(input, type_map) == expected
+
+
+class TestCreateFunctionWithoutParams:
+    """Test create_function_without_params properly removes parameters from both annotations and signature."""
+
+    def test_removes_params_from_both_annotations_and_signature(self):
+        """Test that excluded parameters are removed from __annotations__ AND __signature__."""
+        import inspect
+
+        def original_func(ctx: str, query: str, limit: int = 10) -> list[str]:
+            return []
+
+        new_func = create_function_without_params(original_func, ["ctx"])
+
+        # Verify removal from annotations
+        assert "ctx" not in new_func.__annotations__
+        assert "query" in new_func.__annotations__
+        assert "limit" in new_func.__annotations__
+
+        # Verify removal from signature (regression test for #2562)
+        sig = inspect.signature(new_func)
+        assert "ctx" not in sig.parameters
+        assert "query" in sig.parameters
+        assert "limit" in sig.parameters
+
+    def test_preserves_return_annotation_in_signature(self):
+        """Test that return annotation is preserved in both annotations and signature."""
+        import inspect
+
+        def original_func(ctx: str, value: int) -> dict[str, int]:
+            return {}
+
+        new_func = create_function_without_params(original_func, ["ctx"])
+
+        sig = inspect.signature(new_func)
+        assert sig.return_annotation == dict[str, int]
+        assert new_func.__annotations__["return"] == dict[str, int]
+
+    def test_pydantic_typeadapter_compatibility(self):
+        """Test that modified function works with Pydantic TypeAdapter (regression test for #2562)."""
+        from pydantic import BaseModel
+
+        class Result(BaseModel):
+            name: str
+
+        def tool_function(ctx: str, search_query: str, limit: int = 10) -> list[Result]:
+            return []
+
+        # Remove context parameter (what FastMCP does internally)
+        new_func = create_function_without_params(tool_function, ["ctx"])
+
+        # This raised KeyError: 'ctx' before the fix
+        adapter = get_cached_typeadapter(new_func)
+        schema = adapter.json_schema()
+
+        # Verify schema excludes the removed parameter
+        assert "properties" in schema
+        assert "ctx" not in schema["properties"]
+        assert "search_query" in schema["properties"]
+        assert "limit" in schema["properties"]
+
+    def test_multiple_excluded_parameters(self):
+        """Test excluding multiple parameters simultaneously."""
+        import inspect
+
+        def func(ctx: str, session: int, query: str, limit: int = 5) -> str:
+            return ""
+
+        new_func = create_function_without_params(func, ["ctx", "session"])
+
+        sig = inspect.signature(new_func)
+
+        # Both excluded params should be removed
+        assert "ctx" not in sig.parameters
+        assert "session" not in sig.parameters
+        assert "ctx" not in new_func.__annotations__
+        assert "session" not in new_func.__annotations__
+
+        # Non-excluded params should remain
+        assert "query" in sig.parameters
+        assert "limit" in sig.parameters
 
 
 class TestAnnotationStringDescriptions:

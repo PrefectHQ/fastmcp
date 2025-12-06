@@ -206,6 +206,13 @@ def create_function_without_params(
         k: v for k, v in original_annotations.items() if k not in exclude_params
     }
 
+    # Create new signature without the excluded parameters
+    sig = inspect.signature(fn)
+    new_params = [
+        param for name, param in sig.parameters.items() if name not in exclude_params
+    ]
+    new_sig = inspect.Signature(new_params, return_annotation=sig.return_annotation)
+
     new_func = types.FunctionType(
         code,
         globals_dict,
@@ -217,6 +224,7 @@ def create_function_without_params(
     new_func.__module__ = fn.__module__
     new_func.__qualname__ = getattr(fn, "__qualname__", fn.__name__)  # ty: ignore[unresolved-attribute]
     new_func.__annotations__ = new_annotations
+    new_func.__signature__ = new_sig  # type: ignore[attr-defined]
 
     if inspect.ismethod(fn):
         return types.MethodType(new_func, fn.__self__)
