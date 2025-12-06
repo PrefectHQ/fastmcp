@@ -513,9 +513,64 @@ When deploying to production, you'll want to optimize your server for performanc
 # Run with basic configuration
 uvicorn app:app --host 0.0.0.0 --port 8000
 
-# Ensure stateless HTTP mode is enabled (stateless_http=True)
-# Run with multiple workers for production
+# Run with multiple workers for production (requires stateless mode - see below)
 uvicorn app:app --host 0.0.0.0 --port 8000 --workers 4
+```
+
+### Horizontal Scaling
+
+<VersionBadge version="2.10.2" />
+
+When deploying FastMCP behind a load balancer or running multiple server instances, you need to understand how the HTTP transport handles sessions and configure your server appropriately.
+
+#### Understanding Sessions
+
+By default, FastMCP's Streamable HTTP transport maintains server-side sessions. Sessions enable stateful MCP features like [elicitation](/servers/elicitation) and [sampling](/servers/sampling), where the server needs to maintain context across multiple requests from the same client.
+
+This works perfectly for single-instance deployments. However, sessions are stored in memory on each server instance, which creates challenges when scaling horizontally.
+
+#### Without Stateless Mode
+
+When running multiple server instances behind a load balancer (Traefik, nginx, HAProxy, Kubernetes, etc.), requests from the same client may be routed to different instances:
+
+1. Client connects to Instance A → session created on Instance A
+2. Next request routes to Instance B → session doesn't exist → **request fails**
+
+You might expect sticky sessions (session affinity) to solve this, but they don't work reliably with MCP clients.
+
+<Warning>
+**Why sticky sessions don't work:** Most MCP clients—including Cursor and Claude Code—use `fetch()` internally and don't properly forward `Set-Cookie` headers. Without cookies, load balancers can't identify which instance should handle subsequent requests. This is a limitation in how these clients implement HTTP, not something you can fix with load balancer configuration.
+</Warning>
+
+#### Enabling Stateless Mode
+
+For horizontally scaled deployments, enable stateless HTTP mode. In stateless mode, each request creates a fresh transport context, eliminating the need for session affinity entirely.
+
+**Option 1: Via constructor**
+
+```python
+from fastmcp import FastMCP
+
+mcp = FastMCP("My Server", stateless_http=True)
+
+@mcp.tool
+def process(data: str) -> str:
+    return f"Processed: {data}"
+
+app = mcp.http_app()
+```
+
+**Option 2: Via `run()`**
+
+```python
+if __name__ == "__main__":
+    mcp.run(transport="http", stateless_http=True)
+```
+
+**Option 3: Via environment variable**
+
+```bash
+FASTMCP_STATELESS_HTTP=true uvicorn app:app --host 0.0.0.0 --port 8000 --workers 4
 ```
 
 ### Environment Variables
