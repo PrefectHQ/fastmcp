@@ -1,10 +1,11 @@
+import functools
 import json
 from urllib.parse import quote
 
 import pytest
 from pydantic import BaseModel
 
-from fastmcp import Context
+from fastmcp import Context, FastMCP
 from fastmcp.resources import ResourceTemplate
 from fastmcp.resources.resource import FunctionResource
 from fastmcp.resources.template import match_uri_template
@@ -693,8 +694,6 @@ class TestContextHandling:
         )
 
         # Even for optional context, we need to provide a context
-        from fastmcp import FastMCP
-
         mcp = FastMCP()
         context = Context(fastmcp=mcp)
 
@@ -707,6 +706,35 @@ class TestContextHandling:
             assert isinstance(resource, FunctionResource)
             content = await resource.read()
             assert content == "42"
+
+    async def test_context_with_functools_wraps_decorator(self):
+        """Regression test for #2524: decorated templates with Context should work."""
+
+        def custom_decorator(func):
+            @functools.wraps(func)
+            async def wrapper(*args, **kwargs):
+                return await func(*args, **kwargs)
+
+            return wrapper
+
+        @custom_decorator
+        async def decorated_template(ctx: Context, item_id: int) -> str:
+            assert isinstance(ctx, Context)
+            return f"item: {item_id}"
+
+        template = ResourceTemplate.from_function(
+            fn=decorated_template,
+            uri_template="test://{item_id}",
+            name="test",
+        )
+
+        mcp = FastMCP()
+        context = Context(fastmcp=mcp)
+
+        async with context:
+            resource = await template.create_resource("test://42", {"item_id": 42})
+            content = await resource.read()
+            assert content == "item: 42"
 
 
 class TestQueryParameterExtraction:

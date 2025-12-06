@@ -1,5 +1,6 @@
 import base64
 import datetime
+import functools
 import json
 import uuid
 from dataclasses import dataclass
@@ -1309,6 +1310,34 @@ class TestToolContextInjection:
         async with Client(mcp) as client:
             result = await client.call_tool("MyTool", {"x": 2})
             assert result.data == 3
+
+    async def test_decorated_tool_with_functools_wraps(self):
+        """Regression test for #2524: @mcp.tool with functools.wraps decorator."""
+
+        def custom_decorator(func):
+            @functools.wraps(func)
+            async def wrapper(*args, **kwargs):
+                return await func(*args, **kwargs)
+
+            return wrapper
+
+        mcp = FastMCP()
+
+        @mcp.tool
+        @custom_decorator
+        async def decorated_tool(ctx: Context, query: str) -> str:
+            assert isinstance(ctx, Context)
+            return f"query: {query}"
+
+        async with Client(mcp) as client:
+            # Verify ctx is not in the schema
+            tools = await client.list_tools()
+            tool = next(t for t in tools if t.name == "decorated_tool")
+            assert "ctx" not in tool.inputSchema.get("properties", {})
+
+            # Verify the tool works
+            result = await client.call_tool("decorated_tool", {"query": "test"})
+            assert result.data == "query: test"
 
 
 class TestToolEnabled:

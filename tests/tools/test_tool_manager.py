@@ -1,3 +1,4 @@
+import functools
 import json
 import logging
 import uuid
@@ -815,6 +816,35 @@ class TestContextHandling:
                 ToolError, match="Error calling tool 'tool_with_context'"
             ):
                 await manager.call_tool("tool_with_context", {"x": 42})
+
+    async def test_context_with_functools_wraps_decorator(self):
+        """Regression test for #2524: decorated tools with Context should work."""
+
+        def custom_decorator(func):
+            @functools.wraps(func)
+            async def wrapper(*args, **kwargs):
+                return await func(*args, **kwargs)
+
+            return wrapper
+
+        @custom_decorator
+        async def decorated_tool(ctx: Context, query: str) -> str:
+            assert isinstance(ctx, Context)
+            return f"query: {query}"
+
+        manager = ToolManager()
+        tool = Tool.from_function(decorated_tool)
+        manager.add_tool(tool)
+
+        # Verify ctx is excluded from schema
+        assert "ctx" not in json.dumps(tool.parameters)
+
+        mcp = FastMCP()
+        context = Context(fastmcp=mcp)
+
+        async with context:
+            result = await manager.call_tool("decorated_tool", {"query": "test"})
+            assert result.structured_content == {"result": "query: test"}
 
 
 class TestCustomToolNames:

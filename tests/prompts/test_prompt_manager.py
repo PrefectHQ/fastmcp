@@ -1,8 +1,9 @@
+import functools
 from typing import Annotated
 
 import pytest
 
-from fastmcp import Context
+from fastmcp import Context, FastMCP
 from fastmcp.exceptions import NotFoundError, PromptError
 from fastmcp.prompts import Prompt
 from fastmcp.prompts.prompt import FunctionPrompt, PromptMessage, TextContent
@@ -434,3 +435,30 @@ class TestContextHandling:
             return str(x)
 
         Prompt.from_function(prompt_with_context)
+
+    async def test_context_with_functools_wraps_decorator(self):
+        """Regression test for #2524: decorated prompts with Context should work."""
+
+        def custom_decorator(func):
+            @functools.wraps(func)
+            async def wrapper(*args, **kwargs):
+                return await func(*args, **kwargs)
+
+            return wrapper
+
+        @custom_decorator
+        async def decorated_prompt(ctx: Context, topic: str) -> str:
+            assert isinstance(ctx, Context)
+            return f"Write about {topic}"
+
+        prompt = Prompt.from_function(decorated_prompt)
+
+        # Verify ctx is excluded from arguments
+        assert "ctx" not in [arg.name for arg in prompt.arguments or []]
+
+        mcp = FastMCP()
+        context = Context(fastmcp=mcp)
+
+        async with context:
+            messages = await prompt.render(arguments={"topic": "cats"})
+            assert messages[0].content.text == "Write about cats"  # type: ignore[attr-defined]
