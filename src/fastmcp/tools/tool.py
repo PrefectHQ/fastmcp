@@ -136,12 +136,6 @@ class Tool(FastMCPComponent):
         ToolResultSerializerType | None,
         Field(description="Optional custom serializer for tool results"),
     ] = None
-    task: Annotated[
-        bool,
-        Field(
-            description="Whether this tool supports background task execution (SEP-1686)"
-        ),
-    ] = False
 
     @model_validator(mode="after")
     def _validate_tool_name(self) -> Tool:
@@ -179,15 +173,6 @@ class Tool(FastMCPComponent):
         elif self.annotations and self.annotations.title:
             title = self.annotations.title
 
-        # Auto-populate task execution mode based on tool.task flag if not explicitly set
-        # Per SEP-1686: tools declare task support via execution.task
-        # task values: "never" (no task support), "optional" (supports both), "always" (requires task)
-        annotations = self.annotations
-        execution = None
-        if self.task:
-            # Tool supports background execution - use "optional" to allow both immediate and task execution
-            execution = ToolExecution(task="optional")
-
         return MCPTool(
             name=overrides.get("name", self.name),
             title=overrides.get("title", title),
@@ -195,8 +180,8 @@ class Tool(FastMCPComponent):
             inputSchema=overrides.get("inputSchema", self.parameters),
             outputSchema=overrides.get("outputSchema", self.output_schema),
             icons=overrides.get("icons", self.icons),
-            annotations=overrides.get("annotations", annotations),
-            execution=overrides.get("execution", execution),
+            annotations=overrides.get("annotations", self.annotations),
+            execution=overrides.get("execution"),
             _meta=overrides.get(
                 "_meta", self.get_meta(include_fastmcp_meta=include_fastmcp_meta)
             ),
@@ -284,6 +269,35 @@ class Tool(FastMCPComponent):
 
 class FunctionTool(Tool):
     fn: Callable[..., Any]
+    task: Annotated[
+        bool,
+        Field(
+            description="Whether this tool supports background task execution (SEP-1686)"
+        ),
+    ] = False
+
+    def to_mcp_tool(
+        self,
+        *,
+        include_fastmcp_meta: bool | None = None,
+        **overrides: Any,
+    ) -> MCPTool:
+        """Convert the FastMCP tool to an MCP tool.
+
+        Extends the base implementation to add task execution mode if enabled.
+        """
+        # Get base MCP tool from parent
+        mcp_tool = super().to_mcp_tool(
+            include_fastmcp_meta=include_fastmcp_meta, **overrides
+        )
+
+        # Add task execution mode if this tool supports background tasks
+        # Per SEP-1686: tools declare task support via execution.task
+        # task values: "never" (no task support), "optional" (supports both), "always" (requires task)
+        if self.task and "execution" not in overrides:
+            mcp_tool.execution = ToolExecution(task="optional")
+
+        return mcp_tool
 
     @classmethod
     def from_function(

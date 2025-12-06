@@ -47,12 +47,6 @@ class Resource(FastMCPComponent):
         Annotations | None,
         Field(description="Optional annotations about the resource's behavior"),
     ] = None
-    task: Annotated[
-        bool,
-        Field(
-            description="Whether this resource supports background task execution (SEP-1686)"
-        ),
-    ] = False
 
     def enable(self) -> None:
         super().enable()
@@ -176,6 +170,12 @@ class FunctionResource(Resource):
     """
 
     fn: Callable[..., Any]
+    task: Annotated[
+        bool,
+        Field(
+            description="Whether this resource supports background task execution (SEP-1686)"
+        ),
+    ] = False
 
     @classmethod
     def from_function(

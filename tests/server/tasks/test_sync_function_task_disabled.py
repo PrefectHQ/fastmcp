@@ -8,6 +8,9 @@ ValueError when task=True is used with a sync function.
 import pytest
 
 from fastmcp import FastMCP
+from fastmcp.prompts.prompt import FunctionPrompt
+from fastmcp.resources.resource import FunctionResource
+from fastmcp.tools.tool import FunctionTool
 
 
 async def test_sync_tool_with_explicit_task_true_raises():
@@ -91,8 +94,9 @@ async def test_async_tool_with_task_true_remains_enabled():
         """An async tool."""
         return x * 2
 
-    # Tool should have task=True
+    # Tool should have task=True and be a FunctionTool
     tool = await mcp.get_tool("async_tool")
+    assert isinstance(tool, FunctionTool)
     assert tool.task is True
 
 
@@ -105,8 +109,9 @@ async def test_async_prompt_with_task_true_remains_enabled():
         """An async prompt."""
         return "Hello"
 
-    # Prompt should have task=True
+    # Prompt should have task=True and be a FunctionPrompt
     prompt = await mcp.get_prompt("async_prompt")
+    assert isinstance(prompt, FunctionPrompt)
     assert prompt.task is True
 
 
@@ -119,8 +124,9 @@ async def test_async_resource_with_task_true_remains_enabled():
         """An async resource."""
         return "data"
 
-    # Resource should have task=True
+    # Resource should have task=True and be a FunctionResource
     resource = await mcp._resource_manager.get_resource("test://async")
+    assert isinstance(resource, FunctionResource)
     assert resource.task is True
 
 
@@ -134,6 +140,7 @@ async def test_sync_tool_with_task_false_works():
         return x * 2
 
     tool = await mcp.get_tool("sync_tool")
+    assert isinstance(tool, FunctionTool)
     assert tool.task is False
 
 
@@ -147,6 +154,7 @@ async def test_sync_prompt_with_task_false_works():
         return "Hello"
 
     prompt = await mcp.get_prompt("sync_prompt")
+    assert isinstance(prompt, FunctionPrompt)
     assert prompt.task is False
 
 
@@ -160,6 +168,7 @@ async def test_sync_resource_with_task_false_works():
         return "data"
 
     resource = await mcp._resource_manager.get_resource("test://sync")
+    assert isinstance(resource, FunctionResource)
     assert resource.task is False
 
 

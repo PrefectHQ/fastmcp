@@ -66,12 +66,6 @@ class Prompt(FastMCPComponent):
     arguments: list[PromptArgument] | None = Field(
         default=None, description="Arguments that can be passed to the prompt"
     )
-    task: Annotated[
-        bool,
-        Field(
-            description="Whether this prompt supports background task execution (SEP-1686)"
-        ),
-    ] = False
 
     def enable(self) -> None:
         super().enable()
@@ -164,6 +158,12 @@ class FunctionPrompt(Prompt):
     """A prompt that is a function."""
 
     fn: Callable[..., PromptResult | Awaitable[PromptResult]]
+    task: Annotated[
+        bool,
+        Field(
+            description="Whether this prompt supports background task execution (SEP-1686)"
+        ),
+    ] = False
 
     @classmethod
     def from_function(

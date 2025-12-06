@@ -60,9 +60,9 @@ from fastmcp.mcp_config import MCPConfig
 from fastmcp.prompts import Prompt
 from fastmcp.prompts.prompt import FunctionPrompt
 from fastmcp.prompts.prompt_manager import PromptManager
-from fastmcp.resources.resource import Resource
+from fastmcp.resources.resource import FunctionResource, Resource
 from fastmcp.resources.resource_manager import ResourceManager
-from fastmcp.resources.template import ResourceTemplate
+from fastmcp.resources.template import FunctionResourceTemplate, ResourceTemplate
 from fastmcp.server.auth import AuthProvider
 from fastmcp.server.http import (
     StarletteWithLifespan,
@@ -400,48 +400,21 @@ class FastMCP(Generic[LifespanResultT]):
                 self._docket = docket
 
                 # Register local task-enabled tools/prompts/resources with Docket
+                # Only function-based variants support background tasks
                 for tool in self._tool_manager._tools.values():
-                    if not hasattr(tool, "fn"):
-                        continue
-                    supports_task = (
-                        tool.task
-                        if tool.task is not None
-                        else self._support_tasks_by_default
-                    )
-                    if supports_task:
+                    if isinstance(tool, FunctionTool) and tool.task:
                         docket.register(tool.fn)
 
                 for prompt in self._prompt_manager._prompts.values():
-                    if not hasattr(prompt, "fn"):
-                        continue
-                    supports_task = (
-                        prompt.task
-                        if prompt.task is not None
-                        else self._support_tasks_by_default
-                    )
-                    if supports_task:
+                    if isinstance(prompt, FunctionPrompt) and prompt.task:
                         docket.register(prompt.fn)
 
                 for resource in self._resource_manager._resources.values():
-                    if not hasattr(resource, "fn"):
-                        continue
-                    supports_task = (
-                        resource.task
-                        if resource.task is not None
-                        else self._support_tasks_by_default
-                    )
-                    if supports_task:
+                    if isinstance(resource, FunctionResource) and resource.task:
                         docket.register(resource.fn)
 
                 for template in self._resource_manager._templates.values():
-                    if not hasattr(template, "fn"):
-                        continue
-                    supports_task = (
-                        template.task
-                        if template.task is not None
-                        else self._support_tasks_by_default
-                    )
-                    if supports_task:
+                    if isinstance(template, FunctionResourceTemplate) and template.task:
                         docket.register(template.fn)
 
                 # Set Docket in ContextVar so CurrentDocket can access it
@@ -602,7 +575,11 @@ class FastMCP(Generic[LifespanResultT]):
                 async with fastmcp.server.context.Context(fastmcp=self):
                     try:
                         resource = await self._resource_manager.get_resource(uri)
-                        if resource and resource.task:
+                        if (
+                            resource
+                            and isinstance(resource, FunctionResource)
+                            and resource.task
+                        ):
                             # Convert TaskMetadata to dict for handler
                             task_meta_dict = task_meta.model_dump(exclude_none=True)
                             return await handle_resource_as_task(
@@ -671,7 +648,7 @@ class FastMCP(Generic[LifespanResultT]):
                 async with fastmcp.server.context.Context(fastmcp=self):
                     prompts = await self.get_prompts()
                     prompt = prompts.get(name)
-                    if prompt and prompt.task:
+                    if prompt and isinstance(prompt, FunctionPrompt) and prompt.task:
                         # Convert TaskMetadata to dict for handler
                         task_meta_dict = task_meta.model_dump(exclude_none=True)
                         result = await handle_prompt_as_task(
@@ -1349,7 +1326,7 @@ class FastMCP(Generic[LifespanResultT]):
                 if task_meta and fastmcp.settings.enable_tasks:
                     # Task metadata present - check if tool supports background execution
                     tool = self._tool_manager._tools.get(key)
-                    if tool and tool.task:
+                    if tool and isinstance(tool, FunctionTool) and tool.task:
                         # Route to background execution
                         # Convert TaskMetadata to dict for handler
                         task_meta_dict = task_meta.model_dump(exclude_none=True)

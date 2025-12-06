@@ -332,7 +332,7 @@ class TestLoggingMiddleware:
 
         assert get_log_lines(caplog) == snapshot(
             [
-                '{"event": "request_start", "method": "test_method", "source": "client", "payload": "{\\"name\\":\\"tmpl\\",\\"title\\":null,\\"description\\":null,\\"icons\\":null,\\"tags\\":[],\\"meta\\":null,\\"enabled\\":true,\\"uri_template\\":\\"tmpl://{id}\\",\\"mime_type\\":\\"text/plain\\",\\"parameters\\":{\\"id\\":{\\"type\\":\\"string\\"}},\\"annotations\\":null,\\"task\\":false}", "payload_type": "ResourceTemplate"}',
+                '{"event": "request_start", "method": "test_method", "source": "client", "payload": "{\\"name\\":\\"tmpl\\",\\"title\\":null,\\"description\\":null,\\"icons\\":null,\\"tags\\":[],\\"meta\\":null,\\"enabled\\":true,\\"uri_template\\":\\"tmpl://{id}\\",\\"mime_type\\":\\"text/plain\\",\\"parameters\\":{\\"id\\":{\\"type\\":\\"string\\"}},\\"annotations\\":null}", "payload_type": "ResourceTemplate"}',
                 '{"event": "request_success", "method": "test_method", "source": "client", "duration_ms": 0.02}',
             ]
         )
