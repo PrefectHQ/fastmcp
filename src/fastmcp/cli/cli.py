@@ -103,7 +103,7 @@ def version(
         "MCP version": importlib.metadata.version("mcp"),
         "Python version": platform.python_version(),
         "Platform": platform.platform(),
-        "FastMCP root path": Path(fastmcp.__file__).resolve().parents[1],
+        "FastMCP root path": Path(fastmcp.__file__ or ".").resolve().parents[1],
     }
 
     g = Table.grid(padding=(0, 1))
@@ -819,11 +819,13 @@ async def prepare(
             )
             sys.exit(1)
 
+    assert config_path is not None
     config_file = Path(config_path)
     if not config_file.exists():
         logger.error(f"Configuration file not found: {config_path}")
         sys.exit(1)
 
+    assert output_dir is not None
     output_path = Path(output_dir)
 
     try:

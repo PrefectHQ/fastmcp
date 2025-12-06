@@ -388,7 +388,7 @@ class Context:
             session_id = str(uuid4())
 
         # Save the session id to the session attributes
-        session._fastmcp_id = session_id
+        session._fastmcp_id = session_id  # type: ignore[attr-defined]
         return session_id
 
     @property
@@ -540,7 +540,7 @@ class Context:
                     maxTokens=max_tokens,
                     modelPreferences=_parse_model_preferences(model_preferences),
                 ),
-                self.request_context,
+                self.request_context,  # type: ignore[arg-type]
             )
 
             if inspect.isawaitable(create_message_result):

@@ -37,13 +37,13 @@ class ElicitationJsonSchema(GenerateJsonSchema):
     Optionally adds enumNames for better UI display when available.
     """
 
-    def generate_inner(self, schema: core_schema.CoreSchema) -> JsonSchemaValue:
+    def generate_inner(self, schema: core_schema.CoreSchema) -> JsonSchemaValue:  # type: ignore[override]
         """Override to prevent ref generation for enums."""
         # For enum schemas, bypass the ref mechanism entirely
         if schema["type"] == "enum":
             # Directly call our custom enum_schema without going through handler
             # This prevents the ref/defs mechanism from being invoked
-            return self.enum_schema(schema)
+            return self.enum_schema(schema)  # type: ignore[arg-type]
         # For all other types, use the default implementation
         return super().generate_inner(schema)
 

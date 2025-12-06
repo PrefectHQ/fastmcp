@@ -206,7 +206,7 @@ class FunctionPrompt(Prompt):
             fn = fn.__call__
         # if the fn is a staticmethod, we need to work with the underlying function
         if isinstance(fn, staticmethod):
-            fn = fn.__func__
+            fn = fn.__func__  # type: ignore[assignment]
 
         # Validate that task=True requires async functions (after unwrapping)
         if task and not inspect.iscoroutinefunction(fn):

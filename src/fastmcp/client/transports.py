@@ -375,7 +375,8 @@ class StdioTransport(ClientTransport):
                 env=self.env,
                 cwd=self.cwd,
                 log_file=self.log_file,
-                session_kwargs=session_kwargs,
+                # TODO(ty): remove when ty supports Unpack[TypedDict] inference
+                session_kwargs=session_kwargs,  # type: ignore[arg-type]
                 ready_event=self._ready_event,
                 stop_event=self._stop_event,
                 session_future=session_future,

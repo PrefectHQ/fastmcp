@@ -35,16 +35,18 @@ class MessageHandler:
             # requests
             case RequestResponder():
                 # handle all requests
-                await self.on_request(message)
+                # TODO(ty): remove when ty supports match statement narrowing
+                await self.on_request(message)  # type: ignore[arg-type]
 
                 # handle specific requests
-                match message.request.root:
+                # TODO(ty): remove type ignores when ty supports match statement narrowing
+                match message.request.root:  # type: ignore[union-attr]
                     case mcp.types.PingRequest():
-                        await self.on_ping(message.request.root)
+                        await self.on_ping(message.request.root)  # type: ignore[union-attr]
                     case mcp.types.ListRootsRequest():
-                        await self.on_list_roots(message.request.root)
+                        await self.on_list_roots(message.request.root)  # type: ignore[union-attr]
                     case mcp.types.CreateMessageRequest():
-                        await self.on_create_message(message.request.root)
+                        await self.on_create_message(message.request.root)  # type: ignore[union-attr]
 
             # notifications
             case mcp.types.ServerNotification():

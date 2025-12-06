@@ -159,6 +159,7 @@ async def test_call_tool_with_meta():
         from fastmcp.server.dependencies import get_context
 
         context = get_context()
+        assert context.request_context is not None
         meta = context.request_context.meta
 
         # Return the meta data as a dict

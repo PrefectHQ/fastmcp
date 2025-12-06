@@ -248,7 +248,7 @@ def _create_numeric_type(
         if v is not None
     }
 
-    return Annotated[base, Field(**constraints)] if constraints else base
+    return Annotated[base, Field(**constraints)] if constraints else base  # type: ignore[return-value]
 
 
 def _create_enum(name: str, values: list[Any]) -> type:
@@ -265,8 +265,8 @@ def _create_array_type(
     if isinstance(items, list):
         # Handle positional item schemas
         item_types = [_schema_to_type(s, schemas) for s in items]
-        combined = Union[tuple(item_types)]  # type: ignore # noqa: UP007
-        base = list[combined]
+        combined = Union[tuple(item_types)]  # type: ignore[arg-type] # noqa: UP007
+        base = list[combined]  # type: ignore[valid-type]
     else:
         # Handle single item schema
         item_type = _schema_to_type(items, schemas)
@@ -282,7 +282,7 @@ def _create_array_type(
         if v is not None
     }
 
-    return Annotated[base, Field(**constraints)] if constraints else base
+    return Annotated[base, Field(**constraints)] if constraints else base  # type: ignore[return-value]
 
 
 def _return_Any() -> Any:

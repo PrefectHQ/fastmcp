@@ -164,7 +164,7 @@ class OpenAISamplingHandler(BaseLLMSamplingHandler):
     ) -> ChatModel:
         for model_option in self._iter_models_from_preferences(model_preferences):
             if model_option in get_args(ChatModel):
-                chosen_model: ChatModel = model_option  # pyright: ignore[reportAssignmentType]
+                chosen_model: ChatModel = model_option  # type: ignore[assignment]
                 return chosen_model
 
         return self.default_model

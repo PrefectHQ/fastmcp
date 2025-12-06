@@ -96,7 +96,7 @@ class FastMCPComponent(FastMCPBaseModel):
 
         return meta or None
 
-    def model_copy(
+    def model_copy(  # type: ignore[override]
         self,
         *,
         update: dict[str, Any] | None = None,
@@ -137,7 +137,7 @@ class FastMCPComponent(FastMCPBaseModel):
         """Disable the component."""
         self.enabled = False
 
-    def copy(self) -> Self:
+    def copy(self) -> Self:  # type: ignore[override]
         """Create a copy of the component."""
         return self.model_copy()
 
@@ -173,7 +173,7 @@ class MirroredComponent(FastMCPComponent):
             )
         super().disable()
 
-    def copy(self) -> Self:
+    def copy(self) -> Self:  # type: ignore[override]
         """Create a copy of the component that can be modified."""
         # Create a copy and mark it as not mirrored
         copied = self.model_copy()

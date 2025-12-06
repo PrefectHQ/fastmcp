@@ -62,6 +62,7 @@ class TestServerLifespan:
         @mcp.tool
         def get_db_info(ctx: Context) -> str:
             # Access the server lifespan context
+            assert ctx.request_context is not None
             lifespan_context = ctx.request_context.lifespan_context
             return lifespan_context.get("db_connection", "no_db")
 

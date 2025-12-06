@@ -14,7 +14,7 @@ class MockTokenVerifier(TokenVerifier):
     def __init__(self):
         self.required_scopes = []
 
-    async def verify_token(self, token: str) -> dict | None:
+    async def verify_token(self, token: str) -> dict | None:  # type: ignore[override]
         return {"sub": "test-user"}
 
 

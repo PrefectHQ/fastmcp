@@ -15,8 +15,9 @@ async def test_oauth_uses_same_client_as_transport_streamable_http():
     )
 
     async with transport.auth.httpx_client_factory() as httpx_client:  # type: ignore[attr-defined]
+        assert httpx_client._transport is not None
         assert (
-            httpx_client._transport._pool._ssl_context.verify_mode
+            httpx_client._transport._pool._ssl_context.verify_mode  # type: ignore[attr-defined]
             == VerifyMode.CERT_NONE
         )
 
@@ -31,7 +32,8 @@ async def test_oauth_uses_same_client_as_transport_sse():
     )
 
     async with transport.auth.httpx_client_factory() as httpx_client:  # type: ignore[attr-defined]
+        assert httpx_client._transport is not None
         assert (
-            httpx_client._transport._pool._ssl_context.verify_mode
+            httpx_client._transport._pool._ssl_context.verify_mode  # type: ignore[attr-defined]
             == VerifyMode.CERT_NONE
         )

@@ -851,6 +851,7 @@ class TestOIDCScopeHandling:
         # required_scopes (used for validation) excludes OIDC scopes
         assert provider.required_scopes == ["read"]
         # But valid_scopes (advertised to clients) includes all scopes
+        assert provider.client_registration_options is not None
         assert provider.client_registration_options.valid_scopes == [
             "read",
             "openid",

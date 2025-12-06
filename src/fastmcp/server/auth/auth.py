@@ -189,12 +189,13 @@ class AuthProvider(TokenVerifierProtocol):
         Returns:
             List of Starlette Middleware instances to apply to the HTTP app
         """
+        # TODO(ty): remove type ignores when ty supports Starlette Middleware typing
         return [
             Middleware(
-                AuthenticationMiddleware,
+                AuthenticationMiddleware,  # type: ignore[arg-type]
                 backend=BearerAuthBackend(self),
             ),
-            Middleware(AuthContextMiddleware),
+            Middleware(AuthContextMiddleware),  # type: ignore[arg-type]
         ]
 
     def _get_resource_url(self, path: str | None = None) -> AnyHttpUrl | None:

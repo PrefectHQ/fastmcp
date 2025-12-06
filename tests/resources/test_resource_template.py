@@ -779,8 +779,9 @@ class TestQueryParameterTypeCoercion:
         )
 
         content = await resource.read()
-        assert '"page":5' in content
-        assert '"type":"int"' in content
+        # TODO(ty): remove when ty supports `in` on str | bytes
+        assert '"page":5' in content  # type: ignore[operator]
+        assert '"type":"int"' in content  # type: ignore[operator]
 
     async def test_bool_coercion(self):
         """Test boolean type coercion for query parameters."""
@@ -800,7 +801,8 @@ class TestQueryParameterTypeCoercion:
             {"name": "feature", "enabled": "true"},
         )
         content = await resource.read()
-        assert '"enabled":true' in content
+        # TODO(ty): remove when ty supports `in` on str | bytes
+        assert '"enabled":true' in content  # type: ignore[operator]
 
         # Test false value
         resource = await template.create_resource(
@@ -808,7 +810,8 @@ class TestQueryParameterTypeCoercion:
             {"name": "feature", "enabled": "false"},
         )
         content = await resource.read()
-        assert '"enabled":false' in content
+        # TODO(ty): remove when ty supports `in` on str | bytes
+        assert '"enabled":false' in content  # type: ignore[operator]
 
     async def test_float_coercion(self):
         """Test float type coercion for query parameters."""
@@ -832,8 +835,9 @@ class TestQueryParameterTypeCoercion:
         )
 
         content = await resource.read()
-        assert '"threshold":0.95' in content
-        assert '"type":"float"' in content
+        # TODO(ty): remove when ty supports `in` on str | bytes
+        assert '"threshold":0.95' in content  # type: ignore[operator]
+        assert '"type":"float"' in content  # type: ignore[operator]
 
 
 class TestQueryParameterValidation:
@@ -892,8 +896,9 @@ class TestQueryParameterWithDefaults:
         )
 
         content = await resource.read()
-        assert '"format":"json"' in content
-        assert '"verbose":false' in content
+        # TODO(ty): remove when ty supports `in` on str | bytes
+        assert '"format":"json"' in content  # type: ignore[operator]
+        assert '"verbose":false' in content  # type: ignore[operator]
 
     async def test_partial_query_params(self):
         """Test providing only some query parameters."""
@@ -916,9 +921,10 @@ class TestQueryParameterWithDefaults:
         )
 
         content = await resource.read()
-        assert '"format":"json"' in content  # default
-        assert '"limit":20' in content  # provided
-        assert '"offset":0' in content  # default
+        # TODO(ty): remove when ty supports `in` on str | bytes
+        assert '"format":"json"' in content  # type: ignore[operator]  # default
+        assert '"limit":20' in content  # type: ignore[operator]  # provided
+        assert '"offset":0' in content  # type: ignore[operator]  # default
 
 
 class TestQueryParameterWithWildcards:
@@ -951,6 +957,7 @@ class TestQueryParameterWithWildcards:
         )
 
         content = await resource.read()
-        assert '"path":"src/test/data.txt"' in content
-        assert '"encoding":"utf-8"' in content  # default
-        assert '"lines":50' in content  # provided
+        # TODO(ty): remove when ty supports `in` on str | bytes
+        assert '"path":"src/test/data.txt"' in content  # type: ignore[operator]
+        assert '"encoding":"utf-8"' in content  # type: ignore[operator]  # default
+        assert '"lines":50' in content  # type: ignore[operator]  # provided

@@ -407,7 +407,8 @@ class FastMCP(Generic[LifespanResultT]):
 
                 for prompt in self._prompt_manager._prompts.values():
                     if isinstance(prompt, FunctionPrompt) and prompt.task:
-                        docket.register(prompt.fn)
+                        # task=True requires async fn (validated at creation time)
+                        docket.register(cast(Callable[..., Awaitable[Any]], prompt.fn))
 
                 for resource in self._resource_manager._resources.values():
                     if isinstance(resource, FunctionResource) and resource.task:

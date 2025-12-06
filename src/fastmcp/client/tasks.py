@@ -201,7 +201,7 @@ class Task(abc.ABC, Generic[TaskResultT]):
                 result = callback(status)
                 if inspect.isawaitable(result):
                     # Fire and forget async callbacks
-                    asyncio.create_task(result)  # noqa: RUF006
+                    asyncio.create_task(result)  # type: ignore[arg-type] # noqa: RUF006
             except Exception as e:
                 logger.warning(f"Task callback error: {e}", exc_info=True)
 

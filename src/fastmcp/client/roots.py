@@ -34,7 +34,8 @@ def create_roots_callback(
     handler: RootsList | RootsHandler,
 ) -> ListRootsFnT:
     if isinstance(handler, list):
-        return _create_roots_callback_from_roots(handler)
+        # TODO(ty): remove when ty supports isinstance union narrowing
+        return _create_roots_callback_from_roots(handler)  # type: ignore[arg-type]
     elif inspect.isfunction(handler):
         return _create_roots_callback_from_fn(handler)
     else:

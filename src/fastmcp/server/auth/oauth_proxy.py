@@ -1006,7 +1006,8 @@ class OAuthProxy(OAuthProvider):
         # Store transaction data for IdP callback processing
         if client.client_id is None:
             raise AuthorizeError(
-                error="invalid_client", error_description="Client ID is required"
+                error="invalid_client",  # type: ignore[arg-type]
+                error_description="Client ID is required",
             )
         transaction = OAuthTransaction(
             txn_id=txn_id,
@@ -1088,7 +1089,8 @@ class OAuthProxy(OAuthProvider):
         # Create authorization code object with PKCE challenge
         if client.client_id is None:
             raise AuthorizeError(
-                error="invalid_client", error_description="Client ID is required"
+                error="invalid_client",  # type: ignore[arg-type]
+                error_description="Client ID is required",
             )
         return AuthorizationCode(
             code=authorization_code,
@@ -1512,7 +1514,7 @@ class OAuthProxy(OAuthProvider):
     # Token Validation
     # -------------------------------------------------------------------------
 
-    async def load_access_token(self, token: str) -> AccessToken | None:
+    async def load_access_token(self, token: str) -> AccessToken | None:  # type: ignore[override]
         """Validate FastMCP JWT by swapping for upstream token.
 
         This implements the token swap pattern:

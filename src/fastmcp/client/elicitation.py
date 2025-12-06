@@ -7,7 +7,7 @@ import mcp.types
 from mcp import ClientSession
 from mcp.client.session import ElicitationFnT
 from mcp.shared.context import LifespanContextT, RequestContext
-from mcp.types import ElicitRequestParams
+from mcp.types import ElicitRequestFormParams, ElicitRequestParams
 from mcp.types import ElicitResult as MCPElicitResult
 from pydantic_core import to_jsonable_python
 from typing_extensions import TypeVar
@@ -26,7 +26,8 @@ class ElicitResult(MCPElicitResult, Generic[T]):
 ElicitationHandler: TypeAlias = Callable[
     [
         str,  # message
-        type[T],  # a class for creating a structured response
+        type[T]
+        | None,  # a class for creating a structured response (None for URL elicitation)
         ElicitRequestParams,
         RequestContext[ClientSession, LifespanContextT],
     ],
@@ -42,10 +43,15 @@ def create_elicitation_callback(
         params: ElicitRequestParams,
     ) -> MCPElicitResult | mcp.types.ErrorData:
         try:
-            if params.requestedSchema == {"type": "object", "properties": {}}:
-                response_type = None
+            # requestedSchema only exists on ElicitRequestFormParams, not ElicitRequestURLParams
+            if isinstance(params, ElicitRequestFormParams):
+                if params.requestedSchema == {"type": "object", "properties": {}}:
+                    response_type = None
+                else:
+                    response_type = json_schema_to_type(params.requestedSchema)
             else:
-                response_type = json_schema_to_type(params.requestedSchema)
+                # URL-based elicitation doesn't have a schema
+                response_type = None
 
             result = await elicitation_handler(
                 params.message, response_type, params, context

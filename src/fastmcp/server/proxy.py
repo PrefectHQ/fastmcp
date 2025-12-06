@@ -14,6 +14,7 @@ from mcp.shared.exceptions import McpError
 from mcp.types import (
     METHOD_NOT_FOUND,
     BlobResourceContents,
+    ElicitRequestFormParams,
     GetPromptResult,
     TextResourceContents,
 )
@@ -363,7 +364,7 @@ class ProxyTemplate(ResourceTemplate, MirroredComponent):
         self._client = client
 
     @classmethod
-    def from_mcp_template(
+    def from_mcp_template(  # type: ignore[override]
         cls, client: Client, mcp_template: mcp.types.ResourceTemplate
     ) -> ProxyTemplate:
         """Factory method to create a ProxyTemplate from a raw MCP template schema."""
@@ -454,7 +455,7 @@ class ProxyPrompt(Prompt, MirroredComponent):
             _mirrored=True,
         )
 
-    async def render(self, arguments: dict[str, Any]) -> list[PromptMessage]:
+    async def render(self, arguments: dict[str, Any]) -> list[PromptMessage]:  # type: ignore[override]
         """Render the prompt by making a call through the client."""
         async with self._client:
             result = await self._client.get_prompt(self.name, arguments)
@@ -567,7 +568,8 @@ class ProxyClient(Client[ClientTransportT]):
         return mcp.types.CreateMessageResult(
             role="assistant",
             model="fastmcp-client",
-            content=content,
+            # TODO(ty): remove when ty supports isinstance exclusion narrowing
+            content=content,  # type: ignore[arg-type]
         )
 
     @classmethod
@@ -582,9 +584,15 @@ class ProxyClient(Client[ClientTransportT]):
         A handler that forwards the elicitation request from the remote server to the proxy's connected clients and relays the response back to the remote server.
         """
         ctx = get_context()
+        # requestedSchema only exists on ElicitRequestFormParams, not ElicitRequestURLParams
+        requested_schema = (
+            params.requestedSchema
+            if isinstance(params, ElicitRequestFormParams)
+            else {"type": "object", "properties": {}}
+        )
         result = await ctx.session.elicit(
             message=message,
-            requestedSchema=params.requestedSchema,
+            requestedSchema=requested_schema,
             related_request_id=ctx.request_id,
         )
         return ElicitResult(action=result.action, content=result.content)
@@ -628,7 +636,7 @@ class StatefulProxyClient(ProxyClient[ClientTransportT]):
         super().__init__(*args, **kwargs)
         self._caches: dict[ServerSession, Client[ClientTransportT]] = {}
 
-    async def __aexit__(self, exc_type, exc_value, traceback) -> None:
+    async def __aexit__(self, exc_type, exc_value, traceback) -> None:  # type: ignore[override]
         """
         The stateful proxy client will be forced disconnected when the session is exited.
         So we do nothing here.

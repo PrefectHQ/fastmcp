@@ -192,7 +192,7 @@ class MCPServerConfig(BaseModel):
         """
         if isinstance(v, dict):
             return FileSystemSource(**v)
-        return v
+        return v  # type: ignore[return-value]
 
     @field_validator("environment", mode="before")
     @classmethod

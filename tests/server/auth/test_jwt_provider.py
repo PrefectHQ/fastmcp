@@ -550,7 +550,7 @@ class TestBearerTokenJWKS:
         mock_jwks_data: JWKSData,
         httpx_mock: HTTPXMock,
     ):
-        mock_jwks_data["keys"] = [
+        mock_jwks_data["keys"] = [  # type: ignore[typeddict-item]
             {
                 "kid": "test-key-1",
                 "alg": "RS256",

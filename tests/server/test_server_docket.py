@@ -159,6 +159,7 @@ async def test_user_lifespan_still_works_with_docket():
     def check_both(docket: Docket = CurrentDocket()) -> str:
         assert isinstance(docket, Docket)
         ctx = get_context()
+        assert ctx.request_context is not None
         lifespan_data = ctx.request_context.lifespan_context
         assert lifespan_data.get("custom_data") == "test_value"
         return HUZZAH

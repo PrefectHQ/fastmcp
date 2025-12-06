@@ -3,7 +3,7 @@ from enum import Enum
 from typing import Literal
 
 import pytest
-from mcp.types import ElicitRequestParams
+from mcp.types import ElicitRequestFormParams, ElicitRequestParams
 from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
 
@@ -153,6 +153,7 @@ class TestScalarResponseTypes:
         async def elicitation_handler(
             message, response_type, params: ElicitRequestParams, ctx
         ):
+            assert isinstance(params, ElicitRequestFormParams)
             assert params.requestedSchema == {"type": "object", "properties": {}}
             assert response_type is None
             return ElicitResult(action="accept")

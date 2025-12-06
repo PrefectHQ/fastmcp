@@ -171,7 +171,7 @@ class OCIProvider(OIDCProxy):
             allowed_client_redirect_uris: List of allowed redirect URI patterns for MCP clients.
         """
 
-        overrides = {
+        overrides: dict[str, object] = {
             k: v
             for k, v in {
                 "config_url": config_url,
@@ -187,7 +187,7 @@ class OCIProvider(OIDCProxy):
             }.items()
             if v is not NotSet
         }
-        settings = OCIProviderSettings(**overrides)
+        settings = OCIProviderSettings(**overrides)  # type: ignore[arg-type]
 
         if not settings.config_url:
             raise ValueError(
