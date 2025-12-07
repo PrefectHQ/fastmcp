@@ -49,7 +49,10 @@ async def test_server_tasks_true_defaults_all_components():
 
 
 async def test_server_tasks_false_defaults_all_components():
-    """Server with tasks=False makes all components default to NOT supporting tasks."""
+    """Server with tasks=False makes all components default to mode=forbidden."""
+    import pytest
+    from mcp.shared.exceptions import McpError
+
     mcp = FastMCP("test", tasks=False)
 
     @mcp.tool()
@@ -65,17 +68,20 @@ async def test_server_tasks_false_defaults_all_components():
         return "resource result"
 
     async with Client(mcp) as client:
-        # Tool should execute immediately (graceful degradation)
+        # Tool with mode="forbidden" returns error when called with task=True
         tool_task = await client.call_tool("my_tool", task=True)
         assert tool_task.returned_immediately
+        result = await tool_task.result()
+        assert result.is_error
+        assert "does not support task-augmented execution" in str(result)
 
-        # Prompt should execute immediately (graceful degradation)
-        prompt_task = await client.get_prompt("my_prompt", task=True)
-        assert prompt_task.returned_immediately
+        # Prompt with mode="forbidden" raises McpError when called with task=True
+        with pytest.raises(McpError):
+            await client.get_prompt("my_prompt", task=True)
 
-        # Resource should execute immediately (graceful degradation)
-        resource_task = await client.read_resource("test://resource", task=True)
-        assert resource_task.returned_immediately
+        # Resource with mode="forbidden" raises McpError when called with task=True
+        with pytest.raises(McpError):
+            await client.read_resource("test://resource", task=True)
 
 
 async def test_server_tasks_none_uses_settings():
@@ -102,9 +108,14 @@ async def test_server_tasks_none_uses_settings():
             return "tool result"
 
         async with Client(mcp2) as client:
-            # Tool should execute immediately (from settings)
+            # When enable_tasks=False, server doesn't advertise task capabilities.
+            # Client's task=True is ignored because server doesn't support tasks.
+            # Tool executes synchronously and succeeds.
             tool_task = await client.call_tool("my_tool2", task=True)
             assert tool_task.returned_immediately
+            result = await tool_task.result()
+            # Tool should execute successfully (synchronously)
+            assert "tool result" in str(result)
 
 
 async def test_component_explicit_false_overrides_server_true():
@@ -126,9 +137,12 @@ async def test_component_explicit_false_overrides_server_true():
         assert "no_task_tool" not in docket.tasks  # task=False means not registered
         assert "default_tool" in docket.tasks  # Inherits tasks=True
 
-        # Explicit False should execute immediately despite server default
+        # Explicit False (mode="forbidden") returns error when called with task=True
         no_task = await client.call_tool("no_task_tool", task=True)
         assert no_task.returned_immediately
+        result = await no_task.result()
+        assert result.is_error
+        assert "does not support task-augmented execution" in str(result)
 
         # Default should support background execution
         default_task = await client.call_tool("default_tool", task=True)
@@ -158,13 +172,18 @@ async def test_component_explicit_true_overrides_server_false():
         task = await client.call_tool("task_tool", task=True)
         assert not task.returned_immediately
 
-        # Default should execute immediately
+        # Default (mode="forbidden") returns error when called with task=True
         default = await client.call_tool("default_tool", task=True)
         assert default.returned_immediately
+        result = await default.result()
+        assert result.is_error
 
 
 async def test_mixed_explicit_and_inherited():
     """Mix of explicit True/False/None on different components."""
+    import pytest
+    from mcp.shared.exceptions import McpError
+
     mcp = FastMCP("test", tasks=True)  # Server default is True
 
     @mcp.tool()
@@ -216,17 +235,19 @@ async def test_mixed_explicit_and_inherited():
         explicit_true = await client.call_tool("explicit_true_tool", task=True)
         assert not explicit_true.returned_immediately
 
+        # Explicit False (mode="forbidden") returns error
         explicit_false = await client.call_tool("explicit_false_tool", task=True)
         assert explicit_false.returned_immediately
+        result = await explicit_false.result()
+        assert result.is_error
 
         # Prompts
         inherited_prompt_task = await client.get_prompt("inherited_prompt", task=True)
         assert not inherited_prompt_task.returned_immediately
 
-        explicit_false_prompt_task = await client.get_prompt(
-            "explicit_false_prompt", task=True
-        )
-        assert explicit_false_prompt_task.returned_immediately
+        # Explicit False prompt (mode="forbidden") raises McpError
+        with pytest.raises(McpError):
+            await client.get_prompt("explicit_false_prompt", task=True)
 
         # Resources
         inherited_resource_task = await client.read_resource(
@@ -234,10 +255,9 @@ async def test_mixed_explicit_and_inherited():
         )
         assert not inherited_resource_task.returned_immediately
 
-        explicit_false_resource_task = await client.read_resource(
-            "test://explicit_false", task=True
-        )
-        assert explicit_false_resource_task.returned_immediately
+        # Explicit False resource (mode="forbidden") raises McpError
+        with pytest.raises(McpError):
+            await client.read_resource("test://explicit_false", task=True)
 
 
 async def test_server_tasks_parameter_sets_component_defaults():
@@ -264,9 +284,11 @@ async def test_server_tasks_parameter_sets_component_defaults():
             return "tool result"
 
         async with Client(mcp2) as client:
-            # Tool inherits tasks=False from server (graceful degradation)
+            # Tool inherits tasks=False (mode="forbidden") - returns error
             tool_task = await client.call_tool("tool_inherits_false", task=True)
             assert tool_task.returned_immediately
+            result = await tool_task.result()
+            assert result.is_error
 
 
 async def test_resource_template_inherits_server_tasks_default():
@@ -285,6 +307,9 @@ async def test_resource_template_inherits_server_tasks_default():
 
 async def test_multiple_components_same_name_different_tasks():
     """Different component types with same name can have different task settings."""
+    import pytest
+    from mcp.shared.exceptions import McpError
+
     mcp = FastMCP("test", tasks=False)
 
     @mcp.tool(task=True)
@@ -300,6 +325,6 @@ async def test_multiple_components_same_name_different_tasks():
         tool_task = await client.call_tool("shared_name", task=True)
         assert not tool_task.returned_immediately
 
-        # Prompt inheriting False should execute immediately
-        prompt_task = await client.get_prompt("shared_name_prompt", task=True)
-        assert prompt_task.returned_immediately
+        # Prompt inheriting False (mode="forbidden") raises McpError
+        with pytest.raises(McpError):
+            await client.get_prompt("shared_name_prompt", task=True)

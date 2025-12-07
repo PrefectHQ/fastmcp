@@ -132,25 +132,84 @@ async def test_result_and_await_share_cache():
         assert id(result_via_method) == id(result_via_await)
 
 
-async def test_immediate_task_caches_result():
-    """Immediate tasks (graceful degradation) also cache results."""
-    call_count = 0
+async def test_forbidden_mode_tool_caches_error_result():
+    """Tools with task=False (mode=forbidden) cache error results."""
     mcp = FastMCP("test")
 
-    # Tool with task=False - will execute immediately
     @mcp.tool(task=False)
     async def non_task_tool() -> int:
+        return 1
+
+    async with Client(mcp) as client:
+        # Request as task, but mode="forbidden" will reject with error
+        task = await client.call_tool("non_task_tool", task=True)
+
+        # Should be immediate (error returned immediately)
+        assert task.returned_immediately
+
+        result1 = await task.result()
+        result2 = await task.result()
+        result3 = await task.result()
+
+        # All should return cached error
+        assert result1.is_error
+        assert "does not support task-augmented execution" in str(result1)
+
+        # Verify they're the same object (cached)
+        assert result1 is result2 is result3
+
+
+async def test_forbidden_mode_prompt_raises_error():
+    """Prompts with task=False (mode=forbidden) raise error."""
+    import pytest
+    from mcp.shared.exceptions import McpError
+
+    mcp = FastMCP("test")
+
+    @mcp.prompt(task=False)
+    async def non_task_prompt() -> str:
+        return "Immediate"
+
+    async with Client(mcp) as client:
+        # Prompts with mode="forbidden" raise McpError when called with task=True
+        with pytest.raises(McpError):
+            await client.get_prompt("non_task_prompt", task=True)
+
+
+async def test_forbidden_mode_resource_raises_error():
+    """Resources with task=False (mode=forbidden) raise error."""
+    import pytest
+    from mcp.shared.exceptions import McpError
+
+    mcp = FastMCP("test")
+
+    @mcp.resource("file://immediate.txt", task=False)
+    async def non_task_resource() -> str:
+        return "Immediate"
+
+    async with Client(mcp) as client:
+        # Resources with mode="forbidden" raise McpError when called with task=True
+        with pytest.raises(McpError):
+            await client.read_resource("file://immediate.txt", task=True)
+
+
+async def test_immediate_task_caches_result():
+    """Immediate tasks (optional mode called without background) cache results."""
+    call_count = 0
+    mcp = FastMCP("test", tasks=True)
+
+    # Tool with task=True (optional mode) - but without docket will execute immediately
+    @mcp.tool(task=True)
+    async def task_tool() -> int:
         nonlocal call_count
         call_count += 1
         return call_count
 
     async with Client(mcp) as client:
-        # Request as task, but server will execute immediately
-        task = await client.call_tool("non_task_tool", task=True)
+        # Call with task=True
+        task = await client.call_tool("task_tool", task=True)
 
-        # Should be immediate (graceful degradation)
-        assert task.returned_immediately
-
+        # Get result multiple times
         result1 = await task.result()
         result2 = await task.result()
         result3 = await task.result()
@@ -162,56 +221,6 @@ async def test_immediate_task_caches_result():
 
         # Verify they're the same object (cached)
         assert result1 is result2 is result3
-
-
-async def test_immediate_prompt_task_caches_result():
-    """Immediate prompt tasks cache results."""
-    call_count = 0
-    mcp = FastMCP("test")
-
-    @mcp.prompt(task=False)
-    async def non_task_prompt() -> str:
-        nonlocal call_count
-        call_count += 1
-        return f"Immediate: {call_count}"
-
-    async with Client(mcp) as client:
-        task = await client.get_prompt("non_task_prompt", task=True)
-
-        # Should be immediate
-        assert task.returned_immediately
-
-        result1 = await task.result()
-        result2 = await task.result()
-
-        # Verify caching
-        assert result1 is result2
-        assert result1.messages[0].content.text == "Immediate: 1"
-
-
-async def test_immediate_resource_task_caches_result():
-    """Immediate resource tasks cache results."""
-    call_count = 0
-    mcp = FastMCP("test")
-
-    @mcp.resource("file://immediate.txt", task=False)
-    async def non_task_resource() -> str:
-        nonlocal call_count
-        call_count += 1
-        return f"Immediate: {call_count}"
-
-    async with Client(mcp) as client:
-        task = await client.read_resource("file://immediate.txt", task=True)
-
-        # Should be immediate
-        assert task.returned_immediately
-
-        result1 = await task.result()
-        result2 = await task.result()
-
-        # Verify caching
-        assert result1 is result2
-        assert result1[0].text == "Immediate: 1"
 
 
 async def test_cache_persists_across_mixed_access_patterns():

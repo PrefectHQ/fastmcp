@@ -52,7 +52,7 @@ class TestToolFromFunction:
                     "type": "object",
                     "x-fastmcp-wrap-result": True,
                 },
-                "task": False,
+                "task": {"mode": "forbidden"},
                 "fn": HasName("add"),
             }
         )
@@ -100,7 +100,7 @@ class TestToolFromFunction:
                     "type": "object",
                     "x-fastmcp-wrap-result": True,
                 },
-                "task": False,
+                "task": {"mode": "forbidden"},
                 "fn": HasName("fetch_data"),
             }
         )
@@ -135,7 +135,7 @@ class TestToolFromFunction:
                     "type": "object",
                     "x-fastmcp-wrap-result": True,
                 },
-                "task": False,
+                "task": {"mode": "forbidden"},
             }
         )
 
@@ -169,7 +169,7 @@ class TestToolFromFunction:
                     "type": "object",
                     "x-fastmcp-wrap-result": True,
                 },
-                "task": False,
+                "task": {"mode": "forbidden"},
             }
         )
 
@@ -211,7 +211,7 @@ class TestToolFromFunction:
                     "type": "object",
                 },
                 "output_schema": {"additionalProperties": True, "type": "object"},
-                "task": False,
+                "task": {"mode": "forbidden"},
                 "fn": HasName("create_user"),
             }
         )
@@ -274,7 +274,7 @@ class TestToolFromFunction:
                     "required": ["x"],
                     "type": "object",
                 },
-                "task": False,
+                "task": {"mode": "forbidden"},
             }
         )
 
@@ -307,7 +307,7 @@ class TestToolFromFunction:
                     "required": ["_a", "_b"],
                     "type": "object",
                 },
-                "task": False,
+                "task": {"mode": "forbidden"},
             }
         )
 
@@ -362,7 +362,7 @@ class TestToolFromFunction:
                     "type": "object",
                     "x-fastmcp-wrap-result": True,
                 },
-                "task": False,
+                "task": {"mode": "forbidden"},
             }
         )
 

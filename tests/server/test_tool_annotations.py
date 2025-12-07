@@ -222,7 +222,7 @@ async def test_tool_functionality_with_annotations():
 
 
 async def test_task_execution_auto_populated_for_task_enabled_tool():
-    """Test that execution.task is automatically set when tool has task=True."""
+    """Test that execution.taskSupport is automatically set when tool has task=True."""
     mcp = FastMCP("Test Server")
 
     @mcp.tool(task=True)
@@ -235,7 +235,7 @@ async def test_task_execution_auto_populated_for_task_enabled_tool():
         assert len(tools_result) == 1
         assert tools_result[0].name == "background_tool"
         assert tools_result[0].execution is not None
-        assert tools_result[0].execution.task == "optional"
+        assert tools_result[0].execution.taskSupport == "optional"  # type: ignore[attr-defined]
 
 
 async def test_task_execution_omitted_for_task_disabled_tool():

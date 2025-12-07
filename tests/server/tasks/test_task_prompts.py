@@ -69,20 +69,24 @@ async def test_prompt_task_executes_in_background(prompt_server):
         assert "comprehensive" in result.messages[0].content.text.lower()
 
 
-async def test_graceful_degradation_prompt_without_task_flag(prompt_server):
-    """Prompts with task=False execute synchronously even with task metadata."""
+async def test_forbidden_mode_prompt_rejects_task_calls(prompt_server):
+    """Prompts with task=False (mode=forbidden) reject task-augmented calls."""
+    from mcp.shared.exceptions import McpError
+    from mcp.types import METHOD_NOT_FOUND
 
     @prompt_server.prompt(task=False)  # Explicitly disable task support
     async def sync_only_prompt(topic: str) -> str:
         return f"Sync prompt: {topic}"
 
     async with Client(prompt_server) as client:
-        # Try to call with task metadata - should execute synchronously
-        task = await client.get_prompt("sync_only_prompt", {"topic": "test"}, task=True)
+        # Calling with task=True when task=False should raise McpError
+        import pytest
 
-        # Should have executed immediately (graceful degradation)
-        assert task.returned_immediately
+        with pytest.raises(McpError) as exc_info:
+            await client.get_prompt("sync_only_prompt", {"topic": "test"}, task=True)
 
-        # Can get result without waiting
-        result = await task.result()
-        assert "Sync prompt: test" in result.messages[0].content.text
+        # New behavior: mode="forbidden" returns METHOD_NOT_FOUND error
+        assert exc_info.value.error.code == METHOD_NOT_FOUND
+        assert (
+            "does not support task-augmented execution" in exc_info.value.error.message
+        )

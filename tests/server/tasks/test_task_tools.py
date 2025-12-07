@@ -88,16 +88,15 @@ async def test_tool_task_executes_in_background(tool_server):
         assert result.data == "completed"
 
 
-async def test_graceful_degradation_tool_without_task_flag(tool_server):
-    """Tools with task=False execute synchronously even with task metadata."""
+async def test_forbidden_mode_tool_rejects_task_calls(tool_server):
+    """Tools with task=False (mode=forbidden) reject task-augmented calls."""
     async with Client(tool_server) as client:
-        # Try to call with task metadata - server should execute synchronously
+        # Calling with task=True when task=False should return error
         task = await client.call_tool("sync_only_tool", {"message": "test"}, task=True)
         assert task
         assert task.returned_immediately
 
         result = await task.result()
-        assert "Sync: test" in str(result)
-
-        status = await task.status()
-        assert status.status == "completed"
+        # New behavior: mode="forbidden" returns an error
+        assert result.is_error
+        assert "does not support task-augmented execution" in str(result)

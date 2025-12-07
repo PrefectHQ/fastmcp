@@ -3,6 +3,7 @@
 This module implements protocol-level background task execution for MCP servers.
 """
 
+from fastmcp.server.tasks.config import TaskConfig, TaskMode
 from fastmcp.server.tasks.converters import (
     convert_prompt_result,
     convert_resource_result,
@@ -26,6 +27,8 @@ from fastmcp.server.tasks.protocol import (
 )
 
 __all__ = [
+    "TaskConfig",
+    "TaskMode",
     "build_task_key",
     "convert_prompt_result",
     "convert_resource_result",
