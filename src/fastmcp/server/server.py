@@ -201,6 +201,9 @@ class FastMCP(Generic[LifespanResultT]):
 
         self._additional_http_routes: list[BaseRoute] = []
         self._mounted_servers: list[MountedServer] = []
+        self._is_mounted: bool = (
+            False  # Set to True when this server is mounted on another
+        )
         self._tool_manager: ToolManager = ToolManager(
             duplicate_behavior=on_duplicate_tools,
             mask_error_details=mask_error_details,
@@ -395,6 +398,13 @@ class FastMCP(Generic[LifespanResultT]):
         server_token = _current_server.set(weakref.ref(self))
 
         try:
+            # For directly mounted servers, the parent's Docket/Worker handles all
+            # task execution. Skip creating our own to avoid race conditions with
+            # multiple workers competing for tasks from the same queue.
+            if self._is_mounted:
+                yield
+                return
+
             # Create Docket instance using configured name and URL
             async with Docket(
                 name=settings.docket.name,
@@ -2695,6 +2705,11 @@ class FastMCP(Generic[LifespanResultT]):
 
         if as_proxy and not isinstance(server, FastMCPProxy):
             server = FastMCP.as_proxy(server)
+
+        # Mark the server as mounted so it skips creating its own Docket/Worker.
+        # The parent's Docket handles task execution, avoiding race conditions
+        # with multiple workers competing for tasks from the same queue.
+        server._is_mounted = True
 
         # Delegate mounting to all three managers
         mounted_server = MountedServer(
