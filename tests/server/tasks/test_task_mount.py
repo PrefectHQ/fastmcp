@@ -368,6 +368,80 @@ class TestMultipleMounts:
             assert result2.data == 5
 
 
+class TestMountedFunctionNameCollisions:
+    """Test task execution when mounted servers have identically-named functions."""
+
+    async def test_multiple_mounts_with_same_function_names(self):
+        """Two mounted servers with identically-named functions don't collide."""
+        child1 = FastMCP("child1")
+        child2 = FastMCP("child2")
+
+        @child1.tool(task=True)
+        async def process(value: int) -> int:
+            return value * 2  # Double
+
+        @child2.tool(task=True)
+        async def process(value: int) -> int:  # noqa: F811
+            return value * 3  # Triple
+
+        parent = FastMCP("parent")
+        parent.mount(child1, prefix="c1")
+        parent.mount(child2, prefix="c2")
+
+        async with Client(parent) as client:
+            # Both should execute their own implementation
+            task1 = await client.call_tool("c1_process", {"value": 10}, task=True)
+            task2 = await client.call_tool("c2_process", {"value": 10}, task=True)
+
+            result1 = await task1.result()
+            result2 = await task2.result()
+
+            assert result1.data == 20  # child1's process (doubles)
+            assert result2.data == 30  # child2's process (triples)
+
+    async def test_no_prefix_mount_collision(self):
+        """No-prefix mounts with same tool name - last mount wins."""
+        child1 = FastMCP("child1")
+        child2 = FastMCP("child2")
+
+        @child1.tool(task=True)
+        async def process(value: int) -> int:
+            return value * 2
+
+        @child2.tool(task=True)
+        async def process(value: int) -> int:  # noqa: F811
+            return value * 3
+
+        parent = FastMCP("parent")
+        parent.mount(child1)  # No prefix
+        parent.mount(child2)  # No prefix - overwrites child1's "process"
+
+        async with Client(parent) as client:
+            # Last mount wins - child2's process should execute
+            task = await client.call_tool("process", {"value": 10}, task=True)
+            result = await task.result()
+            assert result.data == 30  # child2's process (triples)
+
+    async def test_nested_mount_prefix_accumulation(self):
+        """Nested mounts accumulate prefixes correctly for tasks."""
+        grandchild = FastMCP("gc")
+        child = FastMCP("child")
+        parent = FastMCP("parent")
+
+        @grandchild.tool(task=True)
+        async def deep_tool() -> str:
+            return "deep"
+
+        child.mount(grandchild, prefix="gc")
+        parent.mount(child, prefix="child")
+
+        async with Client(parent) as client:
+            # Tool should be accessible and execute correctly
+            task = await client.call_tool("child_gc_deep_tool", {}, task=True)
+            result = await task.result()
+            assert result.data == "deep"
+
+
 class TestMountedTaskList:
     """Test task listing with mounted servers."""
 
