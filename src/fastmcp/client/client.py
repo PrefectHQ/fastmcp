@@ -849,9 +849,12 @@ class Client(Generic[ClientTransportT]):
         )
 
         # Check if server accepted background execution
-        if result.meta and "modelcontextprotocol.io/task" in result.meta:
+        # If response includes task metadata with taskId, server accepted background mode
+        # If response includes returned_immediately=True, server declined and executed sync
+        task_meta = (result.meta or {}).get("modelcontextprotocol.io/task", {})
+        if task_meta.get("taskId"):
             # Background execution accepted - extract server-generated taskId
-            server_task_id = result.meta["modelcontextprotocol.io/task"]["taskId"]
+            server_task_id = task_meta["taskId"]
             # Track this task ID for list_tasks()
             self._submitted_task_ids.add(server_task_id)
 
@@ -1055,9 +1058,12 @@ class Client(Generic[ClientTransportT]):
         )
 
         # Check if server accepted background execution
-        if result.meta and "modelcontextprotocol.io/task" in result.meta:
+        # If response includes task metadata with taskId, server accepted background mode
+        # If response includes returned_immediately=True, server declined and executed sync
+        task_meta = (result.meta or {}).get("modelcontextprotocol.io/task", {})
+        if task_meta.get("taskId"):
             # Background execution accepted - extract server-generated taskId
-            server_task_id = result.meta["modelcontextprotocol.io/task"]["taskId"]
+            server_task_id = task_meta["taskId"]
             # Track this task ID for list_tasks()
             self._submitted_task_ids.add(server_task_id)
 
@@ -1397,10 +1403,12 @@ class Client(Generic[ClientTransportT]):
         )
 
         # Check if server accepted background execution
-        # If response includes task metadata, server accepted background mode
-        if result.meta and "modelcontextprotocol.io/task" in result.meta:
+        # If response includes task metadata with taskId, server accepted background mode
+        # If response includes returned_immediately=True, server declined and executed sync
+        task_meta = (result.meta or {}).get("modelcontextprotocol.io/task", {})
+        if task_meta.get("taskId"):
             # Background execution accepted - extract server-generated taskId
-            server_task_id = result.meta["modelcontextprotocol.io/task"]["taskId"]
+            server_task_id = task_meta["taskId"]
             # Track this task ID for list_tasks()
             self._submitted_task_ids.add(server_task_id)
 
@@ -1415,8 +1423,8 @@ class Client(Generic[ClientTransportT]):
             return task_obj
         else:
             # Server declined background execution (graceful degradation)
-            # Executed synchronously - wrap the immediate result
-            # Need to convert mcp.types.CallToolResult to our CallToolResult
+            # or returned_immediately=True - executed synchronously
+            # Wrap the immediate result
             parsed_result = await self._parse_call_tool_result(name, result)
             # Use a synthetic task ID for the immediate result
             synthetic_task_id = task_id or str(uuid.uuid4())

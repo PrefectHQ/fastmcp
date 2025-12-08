@@ -201,6 +201,9 @@ class FastMCP(Generic[LifespanResultT]):
 
         self._additional_http_routes: list[BaseRoute] = []
         self._mounted_servers: list[MountedServer] = []
+        self._is_mounted: bool = (
+            False  # Set to True when this server is mounted on another
+        )
         self._tool_manager: ToolManager = ToolManager(
             duplicate_behavior=on_duplicate_tools,
             mask_error_details=mask_error_details,
@@ -395,6 +398,13 @@ class FastMCP(Generic[LifespanResultT]):
         server_token = _current_server.set(weakref.ref(self))
 
         try:
+            # For directly mounted servers, the parent's Docket/Worker handles all
+            # task execution. Skip creating our own to avoid race conditions with
+            # multiple workers competing for tasks from the same queue.
+            if self._is_mounted:
+                yield
+                return
+
             # Create Docket instance using configured name and URL
             async with Docket(
                 name=settings.docket.name,
@@ -435,6 +445,13 @@ class FastMCP(Generic[LifespanResultT]):
                     ):
                         docket.register(template.fn)
 
+                # Also register functions from mounted servers so tasks can
+                # execute in the parent's Docket context
+                for mounted in self._mounted_servers:
+                    await self._register_mounted_server_functions(
+                        mounted.server, docket
+                    )
+
                 # Set Docket in ContextVar so CurrentDocket can access it
                 docket_token = _current_docket.set(docket)
                 try:
@@ -472,6 +489,47 @@ class FastMCP(Generic[LifespanResultT]):
         finally:
             # Reset server ContextVar
             _current_server.reset(server_token)
+
+    async def _register_mounted_server_functions(
+        self, server: FastMCP, docket: Docket
+    ) -> None:
+        """Register task-enabled functions from a mounted server with Docket.
+
+        This enables background task execution for mounted server components
+        through the parent server's Docket context.
+        """
+        # Register tools
+        for tool in server._tool_manager._tools.values():
+            if isinstance(tool, FunctionTool) and tool.task_config.mode != "forbidden":
+                docket.register(tool.fn)
+
+        # Register prompts
+        for prompt in server._prompt_manager._prompts.values():
+            if (
+                isinstance(prompt, FunctionPrompt)
+                and prompt.task_config.mode != "forbidden"
+            ):
+                docket.register(cast(Callable[..., Awaitable[Any]], prompt.fn))
+
+        # Register resources
+        for resource in server._resource_manager._resources.values():
+            if (
+                isinstance(resource, FunctionResource)
+                and resource.task_config.mode != "forbidden"
+            ):
+                docket.register(resource.fn)
+
+        # Register resource templates
+        for template in server._resource_manager._templates.values():
+            if (
+                isinstance(template, FunctionResourceTemplate)
+                and template.task_config.mode != "forbidden"
+            ):
+                docket.register(template.fn)
+
+        # Recursively register from nested mounted servers
+        for nested in server._mounted_servers:
+            await self._register_mounted_server_functions(nested.server, docket)
 
     @asynccontextmanager
     async def _lifespan_manager(self) -> AsyncIterator[None]:
@@ -591,40 +649,78 @@ class FastMCP(Generic[LifespanResultT]):
             # Check for task metadata and route appropriately
             if fastmcp.settings.enable_tasks:
                 async with fastmcp.server.context.Context(fastmcp=self):
-                    try:
-                        resource = await self._resource_manager.get_resource(uri)
-                        if resource and isinstance(resource, FunctionResource):
-                            task_mode = resource.task_config.mode
+                    # Get resource including from mounted servers
+                    resource = await self._get_resource_with_task_config(str(uri))
+                    if resource and hasattr(resource, "task_config"):
+                        task_mode = resource.task_config.mode  # type: ignore[union-attr]
 
-                            # Enforce mode="required" - must have task metadata
-                            if task_mode == "required" and not task_meta:
-                                raise McpError(
-                                    ErrorData(
-                                        code=METHOD_NOT_FOUND,
-                                        message=f"Resource '{uri}' requires task-augmented execution",
-                                    )
+                        # Enforce mode="required" - must have task metadata
+                        if task_mode == "required" and not task_meta:
+                            raise McpError(
+                                ErrorData(
+                                    code=METHOD_NOT_FOUND,
+                                    message=f"Resource '{uri}' requires task-augmented execution",
                                 )
+                            )
 
-                            # Enforce mode="forbidden" - must not have task metadata
-                            if task_mode == "forbidden" and task_meta:
-                                raise McpError(
-                                    ErrorData(
-                                        code=METHOD_NOT_FOUND,
-                                        message=f"Resource '{uri}' does not support task-augmented execution",
-                                    )
-                                )
-
-                            # Route to background if task metadata present and mode allows
-                            if task_meta and task_mode != "forbidden":
+                        # Route to background if task metadata present and mode allows
+                        if task_meta and task_mode != "forbidden":
+                            # For FunctionResource/FunctionResourceTemplate, use Docket
+                            if isinstance(
+                                resource,
+                                FunctionResource | FunctionResourceTemplate,
+                            ):
                                 task_meta_dict = task_meta.model_dump(exclude_none=True)
                                 return await handle_resource_as_task(
                                     self, str(uri), resource, task_meta_dict
                                 )
-                    except NotFoundError:
-                        pass
+
+                        # Forbidden mode: task requested but mode="forbidden"
+                        # Raise error since resources don't have isError field
+                        if task_meta and task_mode == "forbidden":
+                            raise McpError(
+                                ErrorData(
+                                    code=METHOD_NOT_FOUND,
+                                    message=f"Resource '{uri}' does not support task-augmented execution",
+                                )
+                            )
 
             # Synchronous execution
             result = await self._read_resource_mcp(uri)
+
+            # Graceful degradation: if we got here with task_meta, something went wrong
+            # (This should be unreachable now that forbidden raises)
+            if task_meta:
+                mcp_contents = []
+                for item in result:
+                    if isinstance(item.content, str):
+                        mcp_contents.append(
+                            mcp.types.TextResourceContents(
+                                uri=uri,
+                                text=item.content,
+                                mimeType=item.mime_type or "text/plain",
+                            )
+                        )
+                    elif isinstance(item.content, bytes):
+                        import base64
+
+                        mcp_contents.append(
+                            mcp.types.BlobResourceContents(
+                                uri=uri,
+                                blob=base64.b64encode(item.content).decode(),
+                                mimeType=item.mime_type or "application/octet-stream",
+                            )
+                        )
+                return mcp.types.ServerResult(
+                    mcp.types.ReadResourceResult(
+                        contents=mcp_contents,
+                        _meta={
+                            "modelcontextprotocol.io/task": {
+                                "returned_immediately": True
+                            }
+                        },
+                    )
+                )
 
             # Convert to proper ServerResult
             if isinstance(result, mcp.types.ServerResult):
@@ -683,8 +779,8 @@ class FastMCP(Generic[LifespanResultT]):
                 async with fastmcp.server.context.Context(fastmcp=self):
                     prompts = await self.get_prompts()
                     prompt = prompts.get(name)
-                    if prompt and isinstance(prompt, FunctionPrompt):
-                        task_mode = prompt.task_config.mode
+                    if prompt and hasattr(prompt, "task_config") and prompt.task_config:
+                        task_mode = prompt.task_config.mode  # type: ignore[union-attr]
 
                         # Enforce mode="required" - must have task metadata
                         if task_mode == "required" and not task_meta:
@@ -695,15 +791,6 @@ class FastMCP(Generic[LifespanResultT]):
                                 )
                             )
 
-                        # Enforce mode="forbidden" - must not have task metadata
-                        if task_mode == "forbidden" and task_meta:
-                            raise McpError(
-                                ErrorData(
-                                    code=METHOD_NOT_FOUND,
-                                    message=f"Prompt '{name}' does not support task-augmented execution",
-                                )
-                            )
-
                         # Route to background if task metadata present and mode allows
                         if task_meta and task_mode != "forbidden":
                             task_meta_dict = task_meta.model_dump(exclude_none=True)
@@ -711,6 +798,16 @@ class FastMCP(Generic[LifespanResultT]):
                                 self, name, arguments, task_meta_dict
                             )
                             return mcp.types.ServerResult(result)
+
+                        # Forbidden mode: task requested but mode="forbidden"
+                        # Raise error since prompts don't have isError field
+                        if task_meta and task_mode == "forbidden":
+                            raise McpError(
+                                ErrorData(
+                                    code=METHOD_NOT_FOUND,
+                                    message=f"Prompt '{name}' does not support task-augmented execution",
+                                )
+                            )
 
             # Synchronous execution
             result = await self._get_prompt_mcp(name, arguments)
@@ -813,6 +910,39 @@ class FastMCP(Generic[LifespanResultT]):
             raise NotFoundError(f"Unknown tool: {key}")
         return tools[key]
 
+    async def _get_tool_with_task_config(self, key: str) -> Tool | None:
+        """Get a tool by key, returning None if not found.
+
+        Used for task config checking where we need the actual tool object
+        (including from mounted servers and proxies) but don't want to raise.
+        """
+        try:
+            return await self.get_tool(key)
+        except NotFoundError:
+            return None
+
+    async def _get_resource_with_task_config(
+        self, uri: str
+    ) -> Resource | ResourceTemplate | None:
+        """Get a resource or template by URI, returning None if not found.
+
+        Used for task config checking where we need the actual resource object
+        (including from mounted servers) but don't want to raise.
+        """
+        # Try exact resource match first
+        try:
+            return await self.get_resource(uri)
+        except NotFoundError:
+            pass
+
+        # Try resource templates for URI pattern matching
+        templates = await self.get_resource_templates()
+        for template in templates.values():
+            if template.matches(uri):
+                return template
+
+        return None
+
     async def get_resources(self) -> dict[str, Resource]:
         """Get all resources (unfiltered), including mounted servers, indexed by key."""
         all_resources = dict(await self._resource_manager.get_resources())
@@ -863,11 +993,12 @@ class FastMCP(Generic[LifespanResultT]):
                         if mounted.prefix
                         else key
                     )
-                    update = (
-                        {"name": f"{mounted.prefix}_{template.name}"}
-                        if mounted.prefix and template.name
-                        else {}
-                    )
+                    update: dict[str, Any] = {}
+                    if mounted.prefix:
+                        if template.name:
+                            update["name"] = f"{mounted.prefix}_{template.name}"
+                        # Update uri_template so matches() works with prefixed URIs
+                        update["uri_template"] = new_key
                     all_templates[new_key] = template.model_copy(
                         key=new_key, update=update
                     )
@@ -1375,9 +1506,10 @@ class FastMCP(Generic[LifespanResultT]):
                     pass
 
                 if fastmcp.settings.enable_tasks:
-                    tool = self._tool_manager._tools.get(key)
-                    if tool and isinstance(tool, FunctionTool):
-                        task_mode = tool.task_config.mode
+                    # Get tool from local manager, mounted servers, or proxy
+                    tool = await self._get_tool_with_task_config(key)
+                    if tool and hasattr(tool, "task_config"):
+                        task_mode = tool.task_config.mode  # type: ignore[union-attr]
 
                         # Enforce mode="required" - must have task metadata
                         if task_mode == "required" and not task_meta:
@@ -1388,20 +1520,33 @@ class FastMCP(Generic[LifespanResultT]):
                                 )
                             )
 
-                        # Enforce mode="forbidden" - must not have task metadata
-                        if task_mode == "forbidden" and task_meta:
-                            raise McpError(
-                                ErrorData(
-                                    code=METHOD_NOT_FOUND,
-                                    message=f"Tool '{key}' does not support task-augmented execution",
-                                )
-                            )
-
                         # Route to background if task metadata present and mode allows
                         if task_meta and task_mode != "forbidden":
-                            task_meta_dict = task_meta.model_dump(exclude_none=True)
-                            return await handle_tool_as_task(
-                                self, key, arguments, task_meta_dict
+                            # For FunctionTool, use Docket for background execution
+                            if isinstance(tool, FunctionTool):
+                                task_meta_dict = task_meta.model_dump(exclude_none=True)
+                                return await handle_tool_as_task(
+                                    self, key, arguments, task_meta_dict
+                                )
+                            # For ProxyTool/mounted tools, proceed with normal execution
+                            # They will forward task metadata to their backend
+
+                        # Forbidden mode: task requested but mode="forbidden"
+                        # Return error result with returned_immediately=True
+                        if task_meta and task_mode == "forbidden":
+                            return mcp.types.CallToolResult(
+                                content=[
+                                    mcp.types.TextContent(
+                                        type="text",
+                                        text=f"Tool '{key}' does not support task-augmented execution",
+                                    )
+                                ],
+                                isError=True,
+                                _meta={
+                                    "modelcontextprotocol.io/task": {
+                                        "returned_immediately": True
+                                    }
+                                },
                             )
 
                 # Synchronous execution (normal path)
@@ -2560,6 +2705,11 @@ class FastMCP(Generic[LifespanResultT]):
 
         if as_proxy and not isinstance(server, FastMCPProxy):
             server = FastMCP.as_proxy(server)
+
+        # Mark the server as mounted so it skips creating its own Docket/Worker.
+        # The parent's Docket handles task execution, avoiding race conditions
+        # with multiple workers competing for tasks from the same queue.
+        server._is_mounted = True
 
         # Delegate mounting to all three managers
         mounted_server = MountedServer(
