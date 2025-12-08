@@ -82,7 +82,7 @@ def worker(
 
     # Load server to get task functions
     try:
-        config, resolved_spec = load_and_merge_config(server_spec)
+        config, _resolved_spec = load_and_merge_config(server_spec)
     except FileNotFoundError:
         sys.exit(1)
 

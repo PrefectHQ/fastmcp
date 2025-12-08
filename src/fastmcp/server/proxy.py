@@ -35,6 +35,7 @@ from fastmcp.resources.resource_manager import ResourceManager
 from fastmcp.server.context import Context
 from fastmcp.server.dependencies import get_context
 from fastmcp.server.server import FastMCP
+from fastmcp.server.tasks.config import TaskConfig
 from fastmcp.tools.tool import Tool, ToolResult
 from fastmcp.tools.tool_manager import ToolManager
 from fastmcp.tools.tool_transform import (
@@ -259,6 +260,8 @@ class ProxyTool(Tool, MirroredComponent):
     A Tool that represents and executes a tool on a remote server.
     """
 
+    task_config: TaskConfig = TaskConfig(mode="forbidden")
+
     def __init__(self, client: Client, **kwargs: Any):
         super().__init__(**kwargs)
         self._client = client
@@ -288,21 +291,36 @@ class ProxyTool(Tool, MirroredComponent):
         """Executes the tool by making a call through the client."""
         async with self._client:
             context = get_context()
-            # try to get request context meta
-            meta = (
-                dict(context.request_context.meta)
-                if hasattr(context, "request_context")
-                and hasattr(context.request_context, "meta")
-                else None
-            )
+            # Build meta dict from request context
+            meta: dict[str, Any] | None = None
+            if hasattr(context, "request_context"):
+                req_ctx = context.request_context
+                # Start with existing meta if present
+                if hasattr(req_ctx, "meta") and req_ctx.meta:
+                    meta = dict(req_ctx.meta)
+                # Add task metadata if this is a task request
+                if (
+                    hasattr(req_ctx, "experimental")
+                    and hasattr(req_ctx.experimental, "is_task")
+                    and req_ctx.experimental.is_task
+                ):
+                    task_metadata = req_ctx.experimental.task_metadata
+                    if task_metadata:
+                        meta = meta or {}
+                        meta["modelcontextprotocol.io/task"] = task_metadata.model_dump(
+                            exclude_none=True
+                        )
+
             result = await self._client.call_tool_mcp(
                 name=self.name, arguments=arguments, meta=meta
             )
         if result.isError:
             raise ToolError(cast(mcp.types.TextContent, result.content[0]).text)
+        # Preserve backend's meta (includes task metadata for background tasks)
         return ToolResult(
             content=result.content,
             structured_content=result.structuredContent,
+            meta=result.meta,
         )
 
 
@@ -311,6 +329,7 @@ class ProxyResource(Resource, MirroredComponent):
     A Resource that represents and reads a resource from a remote server.
     """
 
+    task_config: TaskConfig = TaskConfig(mode="forbidden")
     _client: Client
     _value: str | bytes | None = None
 
@@ -343,6 +362,7 @@ class ProxyResource(Resource, MirroredComponent):
             icons=mcp_resource.icons,
             meta=mcp_resource.meta,
             tags=(mcp_resource.meta or {}).get("_fastmcp", {}).get("tags", []),
+            task_config=TaskConfig(mode="forbidden"),
             _mirrored=True,
         )
 
@@ -366,6 +386,8 @@ class ProxyTemplate(ResourceTemplate, MirroredComponent):
     A ResourceTemplate that represents and creates resources from a remote server template.
     """
 
+    task_config: TaskConfig = TaskConfig(mode="forbidden")
+
     def __init__(self, client: Client, **kwargs: Any):
         super().__init__(**kwargs)
         self._client = client
@@ -386,6 +408,7 @@ class ProxyTemplate(ResourceTemplate, MirroredComponent):
             parameters={},  # Remote templates don't have local parameters
             meta=mcp_template.meta,
             tags=(mcp_template.meta or {}).get("_fastmcp", {}).get("tags", []),
+            task_config=TaskConfig(mode="forbidden"),
             _mirrored=True,
         )
 
@@ -431,6 +454,7 @@ class ProxyPrompt(Prompt, MirroredComponent):
     A Prompt that represents and renders a prompt from a remote server.
     """
 
+    task_config: TaskConfig = TaskConfig(mode="forbidden")
     _client: Client
 
     def __init__(self, client: Client, **kwargs):
@@ -459,6 +483,7 @@ class ProxyPrompt(Prompt, MirroredComponent):
             icons=mcp_prompt.icons,
             meta=mcp_prompt.meta,
             tags=(mcp_prompt.meta or {}).get("_fastmcp", {}).get("tags", []),
+            task_config=TaskConfig(mode="forbidden"),
             _mirrored=True,
         )
 

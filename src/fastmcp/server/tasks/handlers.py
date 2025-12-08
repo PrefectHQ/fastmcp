@@ -308,10 +308,20 @@ async def handle_resource_as_task(
         await ctx.session.send_notification(notification)  # type: ignore[arg-type]
 
     # Queue function to Docket (result storage via execution_ttl)
-    await docket.add(
-        resource.fn,  # type: ignore[attr-defined]
-        key=task_key,
-    )()
+    # For templates, extract URI params and pass them to the function
+    from fastmcp.resources.template import FunctionResourceTemplate, match_uri_template
+
+    if isinstance(resource, FunctionResourceTemplate):
+        params = match_uri_template(uri, resource.uri_template) or {}
+        await docket.add(
+            resource.fn,  # type: ignore[attr-defined]
+            key=task_key,
+        )(**params)
+    else:
+        await docket.add(
+            resource.fn,  # type: ignore[attr-defined]
+            key=task_key,
+        )()
 
     # Spawn subscription task to send status notifications (SEP-1686 optional feature)
     from fastmcp.server.tasks.subscriptions import subscribe_to_task_updates
