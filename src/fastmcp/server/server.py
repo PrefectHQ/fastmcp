@@ -35,11 +35,14 @@ from docket import Docket, Worker
 from mcp.server.lowlevel.helper_types import ReadResourceContents
 from mcp.server.lowlevel.server import LifespanResultT, NotificationOptions
 from mcp.server.stdio import stdio_server
+from mcp.shared.exceptions import McpError
 from mcp.types import (
+    METHOD_NOT_FOUND,
     Annotations,
     AnyFunction,
     CallToolRequestParams,
     ContentBlock,
+    ErrorData,
     GetPromptResult,
     ToolAnnotations,
 )
@@ -71,6 +74,7 @@ from fastmcp.server.http import (
 )
 from fastmcp.server.low_level import LowLevelServer
 from fastmcp.server.middleware import Middleware, MiddlewareContext
+from fastmcp.server.tasks.config import TaskConfig
 from fastmcp.server.tasks.handlers import (
     handle_prompt_as_task,
     handle_resource_as_task,
@@ -401,21 +405,34 @@ class FastMCP(Generic[LifespanResultT]):
 
                 # Register local task-enabled tools/prompts/resources with Docket
                 # Only function-based variants support background tasks
+                # Register components where task execution is not "forbidden"
                 for tool in self._tool_manager._tools.values():
-                    if isinstance(tool, FunctionTool) and tool.task:
+                    if (
+                        isinstance(tool, FunctionTool)
+                        and tool.task_config.mode != "forbidden"
+                    ):
                         docket.register(tool.fn)
 
                 for prompt in self._prompt_manager._prompts.values():
-                    if isinstance(prompt, FunctionPrompt) and prompt.task:
-                        # task=True requires async fn (validated at creation time)
+                    if (
+                        isinstance(prompt, FunctionPrompt)
+                        and prompt.task_config.mode != "forbidden"
+                    ):
+                        # task execution requires async fn (validated at creation time)
                         docket.register(cast(Callable[..., Awaitable[Any]], prompt.fn))
 
                 for resource in self._resource_manager._resources.values():
-                    if isinstance(resource, FunctionResource) and resource.task:
+                    if (
+                        isinstance(resource, FunctionResource)
+                        and resource.task_config.mode != "forbidden"
+                    ):
                         docket.register(resource.fn)
 
                 for template in self._resource_manager._templates.values():
-                    if isinstance(template, FunctionResourceTemplate) and template.task:
+                    if (
+                        isinstance(template, FunctionResourceTemplate)
+                        and template.task_config.mode != "forbidden"
+                    ):
                         docket.register(template.fn)
 
                 # Set Docket in ContextVar so CurrentDocket can access it
@@ -572,20 +589,37 @@ class FastMCP(Generic[LifespanResultT]):
                 pass
 
             # Check for task metadata and route appropriately
-            if task_meta and fastmcp.settings.enable_tasks:
+            if fastmcp.settings.enable_tasks:
                 async with fastmcp.server.context.Context(fastmcp=self):
                     try:
                         resource = await self._resource_manager.get_resource(uri)
-                        if (
-                            resource
-                            and isinstance(resource, FunctionResource)
-                            and resource.task
-                        ):
-                            # Convert TaskMetadata to dict for handler
-                            task_meta_dict = task_meta.model_dump(exclude_none=True)
-                            return await handle_resource_as_task(
-                                self, str(uri), resource, task_meta_dict
-                            )
+                        if resource and isinstance(resource, FunctionResource):
+                            task_mode = resource.task_config.mode
+
+                            # Enforce mode="required" - must have task metadata
+                            if task_mode == "required" and not task_meta:
+                                raise McpError(
+                                    ErrorData(
+                                        code=METHOD_NOT_FOUND,
+                                        message=f"Resource '{uri}' requires task-augmented execution",
+                                    )
+                                )
+
+                            # Enforce mode="forbidden" - must not have task metadata
+                            if task_mode == "forbidden" and task_meta:
+                                raise McpError(
+                                    ErrorData(
+                                        code=METHOD_NOT_FOUND,
+                                        message=f"Resource '{uri}' does not support task-augmented execution",
+                                    )
+                                )
+
+                            # Route to background if task metadata present and mode allows
+                            if task_meta and task_mode != "forbidden":
+                                task_meta_dict = task_meta.model_dump(exclude_none=True)
+                                return await handle_resource_as_task(
+                                    self, str(uri), resource, task_meta_dict
+                                )
                     except NotFoundError:
                         pass
 
@@ -645,22 +679,38 @@ class FastMCP(Generic[LifespanResultT]):
                 pass
 
             # Check for task metadata and route appropriately
-            if task_meta and fastmcp.settings.enable_tasks:
+            if fastmcp.settings.enable_tasks:
                 async with fastmcp.server.context.Context(fastmcp=self):
                     prompts = await self.get_prompts()
                     prompt = prompts.get(name)
-                    if prompt and isinstance(prompt, FunctionPrompt) and prompt.task:
-                        # Convert TaskMetadata to dict for handler
-                        task_meta_dict = task_meta.model_dump(exclude_none=True)
-                        result = await handle_prompt_as_task(
-                            self, name, arguments, task_meta_dict
-                        )
-                        return mcp.types.ServerResult(result)
-                    else:
-                        logger.debug(
-                            f"[{self.name}] Prompt {name} does not support background execution, "
-                            "ignoring task metadata and executing synchronously"
-                        )
+                    if prompt and isinstance(prompt, FunctionPrompt):
+                        task_mode = prompt.task_config.mode
+
+                        # Enforce mode="required" - must have task metadata
+                        if task_mode == "required" and not task_meta:
+                            raise McpError(
+                                ErrorData(
+                                    code=METHOD_NOT_FOUND,
+                                    message=f"Prompt '{name}' requires task-augmented execution",
+                                )
+                            )
+
+                        # Enforce mode="forbidden" - must not have task metadata
+                        if task_mode == "forbidden" and task_meta:
+                            raise McpError(
+                                ErrorData(
+                                    code=METHOD_NOT_FOUND,
+                                    message=f"Prompt '{name}' does not support task-augmented execution",
+                                )
+                            )
+
+                        # Route to background if task metadata present and mode allows
+                        if task_meta and task_mode != "forbidden":
+                            task_meta_dict = task_meta.model_dump(exclude_none=True)
+                            result = await handle_prompt_as_task(
+                                self, name, arguments, task_meta_dict
+                            )
+                            return mcp.types.ServerResult(result)
 
             # Synchronous execution
             result = await self._get_prompt_mcp(name, arguments)
@@ -1324,23 +1374,35 @@ class FastMCP(Generic[LifespanResultT]):
                     # No request context available - proceed without task metadata
                     pass
 
-                if task_meta and fastmcp.settings.enable_tasks:
-                    # Task metadata present - check if tool supports background execution
+                if fastmcp.settings.enable_tasks:
                     tool = self._tool_manager._tools.get(key)
-                    if tool and isinstance(tool, FunctionTool) and tool.task:
-                        # Route to background execution
-                        # Convert TaskMetadata to dict for handler
-                        task_meta_dict = task_meta.model_dump(exclude_none=True)
-                        return await handle_tool_as_task(
-                            self, key, arguments, task_meta_dict
-                        )
-                    else:
-                        # Graceful degradation per SEP-1686 spec
-                        logger.debug(
-                            f"[{self.name}] Tool {key} does not support background execution, "
-                            "ignoring task metadata and executing synchronously"
-                        )
-                        # Fall through to synchronous execution
+                    if tool and isinstance(tool, FunctionTool):
+                        task_mode = tool.task_config.mode
+
+                        # Enforce mode="required" - must have task metadata
+                        if task_mode == "required" and not task_meta:
+                            raise McpError(
+                                ErrorData(
+                                    code=METHOD_NOT_FOUND,
+                                    message=f"Tool '{key}' requires task-augmented execution",
+                                )
+                            )
+
+                        # Enforce mode="forbidden" - must not have task metadata
+                        if task_mode == "forbidden" and task_meta:
+                            raise McpError(
+                                ErrorData(
+                                    code=METHOD_NOT_FOUND,
+                                    message=f"Tool '{key}' does not support task-augmented execution",
+                                )
+                            )
+
+                        # Route to background if task metadata present and mode allows
+                        if task_meta and task_mode != "forbidden":
+                            task_meta_dict = task_meta.model_dump(exclude_none=True)
+                            return await handle_tool_as_task(
+                                self, key, arguments, task_meta_dict
+                            )
 
                 # Synchronous execution (normal path)
                 result = await self._call_tool_middleware(key, arguments)
@@ -1652,7 +1714,7 @@ class FastMCP(Generic[LifespanResultT]):
         exclude_args: list[str] | None = None,
         meta: dict[str, Any] | None = None,
         enabled: bool | None = None,
-        task: bool | None = None,
+        task: bool | TaskConfig | None = None,
     ) -> FunctionTool: ...
 
     @overload
@@ -1670,7 +1732,7 @@ class FastMCP(Generic[LifespanResultT]):
         exclude_args: list[str] | None = None,
         meta: dict[str, Any] | None = None,
         enabled: bool | None = None,
-        task: bool | None = None,
+        task: bool | TaskConfig | None = None,
     ) -> Callable[[AnyFunction], FunctionTool]: ...
 
     def tool(
@@ -1687,7 +1749,7 @@ class FastMCP(Generic[LifespanResultT]):
         exclude_args: list[str] | None = None,
         meta: dict[str, Any] | None = None,
         enabled: bool | None = None,
-        task: bool | None = None,
+        task: bool | TaskConfig | None = None,
     ) -> Callable[[AnyFunction], FunctionTool] | FunctionTool:
         """Decorator to register a tool.
 
@@ -1761,8 +1823,8 @@ class FastMCP(Generic[LifespanResultT]):
             fn = name_or_fn
             tool_name = name  # Use keyword name if provided, otherwise None
 
-            # Resolve task parameter to concrete boolean
-            supports_task: bool = (
+            # Resolve task parameter
+            supports_task: bool | TaskConfig = (
                 task if task is not None else self._support_tasks_by_default
             )
 
@@ -1875,7 +1937,7 @@ class FastMCP(Generic[LifespanResultT]):
         enabled: bool | None = None,
         annotations: Annotations | dict[str, Any] | None = None,
         meta: dict[str, Any] | None = None,
-        task: bool | None = None,
+        task: bool | TaskConfig | None = None,
     ) -> Callable[[AnyFunction], Resource | ResourceTemplate]:
         """Decorator to register a function as a resource.
 
@@ -1952,8 +2014,8 @@ class FastMCP(Generic[LifespanResultT]):
                     )
                 )
 
-            # Resolve task parameter to concrete boolean
-            supports_task: bool = (
+            # Resolve task parameter
+            supports_task: bool | TaskConfig = (
                 task if task is not None else self._support_tasks_by_default
             )
 
@@ -2041,7 +2103,7 @@ class FastMCP(Generic[LifespanResultT]):
         tags: set[str] | None = None,
         enabled: bool | None = None,
         meta: dict[str, Any] | None = None,
-        task: bool | None = None,
+        task: bool | TaskConfig | None = None,
     ) -> FunctionPrompt: ...
 
     @overload
@@ -2056,7 +2118,7 @@ class FastMCP(Generic[LifespanResultT]):
         tags: set[str] | None = None,
         enabled: bool | None = None,
         meta: dict[str, Any] | None = None,
-        task: bool | None = None,
+        task: bool | TaskConfig | None = None,
     ) -> Callable[[AnyFunction], FunctionPrompt]: ...
 
     def prompt(
@@ -2070,7 +2132,7 @@ class FastMCP(Generic[LifespanResultT]):
         tags: set[str] | None = None,
         enabled: bool | None = None,
         meta: dict[str, Any] | None = None,
-        task: bool | None = None,
+        task: bool | TaskConfig | None = None,
     ) -> Callable[[AnyFunction], FunctionPrompt] | FunctionPrompt:
         """Decorator to register a prompt.
 
@@ -2161,8 +2223,8 @@ class FastMCP(Generic[LifespanResultT]):
             fn = name_or_fn
             prompt_name = name  # Use keyword name if provided, otherwise None
 
-            # Resolve task parameter to concrete boolean
-            supports_task: bool = (
+            # Resolve task parameter
+            supports_task: bool | TaskConfig = (
                 task if task is not None else self._support_tasks_by_default
             )
 

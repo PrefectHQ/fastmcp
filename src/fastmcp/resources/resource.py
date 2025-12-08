@@ -20,6 +20,7 @@ from pydantic import (
 from typing_extensions import Self
 
 from fastmcp.server.dependencies import get_context, without_injected_parameters
+from fastmcp.server.tasks.config import TaskConfig
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.types import (
     get_fn_name,
@@ -77,7 +78,7 @@ class Resource(FastMCPComponent):
         enabled: bool | None = None,
         annotations: Annotations | None = None,
         meta: dict[str, Any] | None = None,
-        task: bool | None = None,
+        task: bool | TaskConfig | None = None,
     ) -> FunctionResource:
         return FunctionResource.from_function(
             fn=fn,
@@ -170,12 +171,10 @@ class FunctionResource(Resource):
     """
 
     fn: Callable[..., Any]
-    task: Annotated[
-        bool,
-        Field(
-            description="Whether this resource supports background task execution (SEP-1686)"
-        ),
-    ] = False
+    task_config: Annotated[
+        TaskConfig,
+        Field(description="Background task execution configuration (SEP-1686)."),
+    ] = Field(default_factory=lambda: TaskConfig(mode="forbidden"))
 
     @classmethod
     def from_function(
@@ -191,24 +190,22 @@ class FunctionResource(Resource):
         enabled: bool | None = None,
         annotations: Annotations | None = None,
         meta: dict[str, Any] | None = None,
-        task: bool | None = None,
+        task: bool | TaskConfig | None = None,
     ) -> FunctionResource:
         """Create a FunctionResource from a function."""
         if isinstance(uri, str):
             uri = AnyUrl(uri)
 
-        # Validate that task=True requires async functions
-        # Handle callable classes and staticmethods before checking
-        fn_to_check = fn
-        if not inspect.isroutine(fn) and callable(fn):
-            fn_to_check = fn.__call__
-        if isinstance(fn_to_check, staticmethod):
-            fn_to_check = fn_to_check.__func__
-        if task and not inspect.iscoroutinefunction(fn_to_check):
-            raise ValueError(
-                f"Resource '{name or get_fn_name(fn)}' uses a sync function but has task=True. "
-                "Background tasks require async functions. Set task=False to disable."
-            )
+        func_name = name or get_fn_name(fn)
+
+        # Normalize task to TaskConfig and validate
+        if task is None:
+            task_config = TaskConfig(mode="forbidden")
+        elif isinstance(task, bool):
+            task_config = TaskConfig.from_bool(task)
+        else:
+            task_config = task
+        task_config.validate_function(fn, func_name)
 
         # Wrap fn to handle dependency resolution internally
         wrapped_fn = without_injected_parameters(fn)
@@ -225,7 +222,7 @@ class FunctionResource(Resource):
             enabled=enabled if enabled is not None else True,
             annotations=annotations,
             meta=meta,
-            task=task if task is not None else False,
+            task_config=task_config,
         )
 
     async def read(self) -> str | bytes:

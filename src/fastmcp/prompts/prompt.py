@@ -15,6 +15,7 @@ from pydantic import Field, TypeAdapter
 
 from fastmcp.exceptions import PromptError
 from fastmcp.server.dependencies import get_context, without_injected_parameters
+from fastmcp.server.tasks.config import TaskConfig
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.logging import get_logger
@@ -120,7 +121,7 @@ class Prompt(FastMCPComponent):
         tags: set[str] | None = None,
         enabled: bool | None = None,
         meta: dict[str, Any] | None = None,
-        task: bool | None = None,
+        task: bool | TaskConfig | None = None,
     ) -> FunctionPrompt:
         """Create a Prompt from a function.
 
@@ -158,12 +159,10 @@ class FunctionPrompt(Prompt):
     """A prompt that is a function."""
 
     fn: Callable[..., PromptResult | Awaitable[PromptResult]]
-    task: Annotated[
-        bool,
-        Field(
-            description="Whether this prompt supports background task execution (SEP-1686)"
-        ),
-    ] = False
+    task_config: Annotated[
+        TaskConfig,
+        Field(description="Background task execution configuration (SEP-1686)."),
+    ] = Field(default_factory=lambda: TaskConfig(mode="forbidden"))
 
     @classmethod
     def from_function(
@@ -176,7 +175,7 @@ class FunctionPrompt(Prompt):
         tags: set[str] | None = None,
         enabled: bool | None = None,
         meta: dict[str, Any] | None = None,
-        task: bool | None = None,
+        task: bool | TaskConfig | None = None,
     ) -> FunctionPrompt:
         """Create a Prompt from a function.
 
@@ -201,19 +200,21 @@ class FunctionPrompt(Prompt):
 
         description = description or inspect.getdoc(fn)
 
+        # Normalize task to TaskConfig and validate
+        if task is None:
+            task_config = TaskConfig(mode="forbidden")
+        elif isinstance(task, bool):
+            task_config = TaskConfig.from_bool(task)
+        else:
+            task_config = task
+        task_config.validate_function(fn, func_name)
+
         # if the fn is a callable class, we need to get the __call__ method from here out
         if not inspect.isroutine(fn):
             fn = fn.__call__
         # if the fn is a staticmethod, we need to work with the underlying function
         if isinstance(fn, staticmethod):
             fn = fn.__func__  # type: ignore[assignment]
-
-        # Validate that task=True requires async functions (after unwrapping)
-        if task and not inspect.iscoroutinefunction(fn):
-            raise ValueError(
-                f"Prompt '{func_name}' uses a sync function but has task=True. "
-                "Background tasks require async functions. Set task=False to disable."
-            )
 
         # Wrap fn to handle dependency resolution internally
         wrapped_fn = without_injected_parameters(fn)
@@ -271,7 +272,7 @@ class FunctionPrompt(Prompt):
             enabled=enabled if enabled is not None else True,
             fn=wrapped_fn,
             meta=meta,
-            task=task if task is not None else False,
+            task_config=task_config,
         )
 
     def _convert_string_arguments(self, kwargs: dict[str, Any]) -> dict[str, Any]:

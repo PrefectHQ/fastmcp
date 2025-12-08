@@ -30,6 +30,7 @@ from typing_extensions import TypeVar
 
 import fastmcp
 from fastmcp.server.dependencies import get_context, without_injected_parameters
+from fastmcp.server.tasks.config import TaskConfig
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.logging import get_logger
@@ -201,7 +202,7 @@ class Tool(FastMCPComponent):
         serializer: ToolResultSerializerType | None = None,
         meta: dict[str, Any] | None = None,
         enabled: bool | None = None,
-        task: bool | None = None,
+        task: bool | TaskConfig | None = None,
     ) -> FunctionTool:
         """Create a Tool from a function."""
         return FunctionTool.from_function(
@@ -269,12 +270,10 @@ class Tool(FastMCPComponent):
 
 class FunctionTool(Tool):
     fn: Callable[..., Any]
-    task: Annotated[
-        bool,
-        Field(
-            description="Whether this tool supports background task execution (SEP-1686)"
-        ),
-    ] = False
+    task_config: Annotated[
+        TaskConfig,
+        Field(description="Background task execution configuration (SEP-1686)."),
+    ] = Field(default_factory=lambda: TaskConfig(mode="forbidden"))
 
     def to_mcp_tool(
         self,
@@ -291,11 +290,10 @@ class FunctionTool(Tool):
             include_fastmcp_meta=include_fastmcp_meta, **overrides
         )
 
-        # Add task execution mode if this tool supports background tasks
-        # Per SEP-1686: tools declare task support via execution.task
-        # task values: "never" (no task support), "optional" (supports both), "always" (requires task)
-        if self.task and "execution" not in overrides:
-            mcp_tool.execution = ToolExecution(task="optional")
+        # Add task execution mode per SEP-1686
+        # Only set execution if not overridden and mode is not "forbidden"
+        if self.task_config.mode != "forbidden" and "execution" not in overrides:
+            mcp_tool.execution = ToolExecution(taskSupport=self.task_config.mode)
 
         return mcp_tool
 
@@ -314,7 +312,7 @@ class FunctionTool(Tool):
         serializer: ToolResultSerializerType | None = None,
         meta: dict[str, Any] | None = None,
         enabled: bool | None = None,
-        task: bool | None = None,
+        task: bool | TaskConfig | None = None,
     ) -> FunctionTool:
         """Create a Tool from a function."""
         if exclude_args and fastmcp.settings.deprecation_warnings:
@@ -328,24 +326,20 @@ class FunctionTool(Tool):
                 stacklevel=2,
             )
 
-        # Validate that task=True requires async functions
-        # Handle callable classes and staticmethods before checking
-        fn_to_check = fn
-        if not inspect.isroutine(fn) and callable(fn):
-            fn_to_check = fn.__call__
-        if isinstance(fn_to_check, staticmethod):
-            fn_to_check = fn_to_check.__func__
-        if task and not inspect.iscoroutinefunction(fn_to_check):
-            fn_name = name or getattr(fn, "__name__", repr(fn))
-            raise ValueError(
-                f"Tool '{fn_name}' uses a sync function but has task=True. "
-                "Background tasks require async functions. Set task=False to disable."
-            )
-
         parsed_fn = ParsedFunction.from_function(fn, exclude_args=exclude_args)
+        func_name = name or parsed_fn.name
 
-        if name is None and parsed_fn.name == "<lambda>":
+        if func_name == "<lambda>":
             raise ValueError("You must provide a name for lambda functions")
+
+        # Normalize task to TaskConfig and validate
+        if task is None:
+            task_config = TaskConfig(mode="forbidden")
+        elif isinstance(task, bool):
+            task_config = TaskConfig.from_bool(task)
+        else:
+            task_config = task
+        task_config.validate_function(fn, func_name)
 
         if isinstance(output_schema, NotSetT):
             final_output_schema = parsed_fn.output_schema
@@ -375,7 +369,7 @@ class FunctionTool(Tool):
             serializer=serializer,
             meta=meta,
             enabled=enabled if enabled is not None else True,
-            task=task if task is not None else False,
+            task_config=task_config,
         )
 
     async def run(self, arguments: dict[str, Any]) -> ToolResult:

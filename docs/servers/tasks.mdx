@@ -61,6 +61,41 @@ When a client requests background execution, the call returns immediately with a
 Background tasks require async functions. Attempting to use `task=True` with a sync function raises a `ValueError` at registration time.
 </Warning>
 
+## Execution Modes
+
+For fine-grained control over task execution behavior, use `TaskConfig` instead of the boolean shorthand. The MCP task protocol defines three execution modes:
+
+| Mode | Client calls without task | Client calls with task |
+|------|--------------------------|------------------------|
+| `"forbidden"` | Executes synchronously | Error: task not supported |
+| `"optional"` | Executes synchronously | Executes as background task |
+| `"required"` | Error: task required | Executes as background task |
+
+```python
+from fastmcp import FastMCP, TaskConfig
+
+mcp = FastMCP("MyServer")
+
+# Supports both sync and background execution (default when task=True)
+@mcp.tool(task=TaskConfig(mode="optional"))
+async def flexible_task() -> str:
+    return "Works either way"
+
+# Requires background execution - errors if client doesn't request task
+@mcp.tool(task=TaskConfig(mode="required"))
+async def must_be_background() -> str:
+    return "Only runs as a background task"
+
+# No task support (default when task=False or omitted)
+@mcp.tool(task=TaskConfig(mode="forbidden"))
+async def sync_only() -> str:
+    return "Never runs as background task"
+```
+
+The boolean shortcuts map to these modes:
+- `task=True` → `TaskConfig(mode="optional")`
+- `task=False` → `TaskConfig(mode="forbidden")`
+
 ### Server-Wide Default
 
 To enable background task support for all components by default, pass `tasks=True` to the constructor. Individual decorators can still override this with `task=False`.
@@ -75,7 +110,9 @@ If your server defines any synchronous tools, resources, or prompts, you will ne
 
 ### Graceful Degradation
 
-When a client requests background execution (`task=True` in the request) but the component doesn't support it (`task=False` on the decorator), FastMCP executes synchronously and returns the result inline. This follows the SEP-1686 specification for graceful degradation—clients can always request background execution without worrying about server capabilities.
+When a client requests background execution but the component has `mode="forbidden"`, FastMCP executes synchronously and returns the result inline. This follows the SEP-1686 specification for graceful degradation—clients can always request background execution without worrying about server capabilities.
+
+Conversely, when a component has `mode="required"` but the client doesn't request background execution, FastMCP returns an error indicating that task execution is required.
 
 ### Configuration
 

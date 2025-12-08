@@ -17,7 +17,9 @@ async def test_sync_tool_with_explicit_task_true_raises():
     """Sync tool with task=True raises ValueError."""
     mcp = FastMCP("test")
 
-    with pytest.raises(ValueError, match="uses a sync function but has task=True"):
+    with pytest.raises(
+        ValueError, match="uses a sync function but has task execution enabled"
+    ):
 
         @mcp.tool(task=True)
         def sync_tool(x: int) -> int:
@@ -29,7 +31,9 @@ async def test_sync_tool_with_inherited_task_true_raises():
     """Sync tool inheriting task=True from server raises ValueError."""
     mcp = FastMCP("test", tasks=True)
 
-    with pytest.raises(ValueError, match="uses a sync function but has task=True"):
+    with pytest.raises(
+        ValueError, match="uses a sync function but has task execution enabled"
+    ):
 
         @mcp.tool()  # Inherits task=True from server
         def sync_tool(x: int) -> int:
@@ -41,7 +45,9 @@ async def test_sync_prompt_with_explicit_task_true_raises():
     """Sync prompt with task=True raises ValueError."""
     mcp = FastMCP("test")
 
-    with pytest.raises(ValueError, match="uses a sync function but has task=True"):
+    with pytest.raises(
+        ValueError, match="uses a sync function but has task execution enabled"
+    ):
 
         @mcp.prompt(task=True)
         def sync_prompt() -> str:
@@ -53,7 +59,9 @@ async def test_sync_prompt_with_inherited_task_true_raises():
     """Sync prompt inheriting task=True from server raises ValueError."""
     mcp = FastMCP("test", tasks=True)
 
-    with pytest.raises(ValueError, match="uses a sync function but has task=True"):
+    with pytest.raises(
+        ValueError, match="uses a sync function but has task execution enabled"
+    ):
 
         @mcp.prompt()  # Inherits task=True from server
         def sync_prompt() -> str:
@@ -65,7 +73,9 @@ async def test_sync_resource_with_explicit_task_true_raises():
     """Sync resource with task=True raises ValueError."""
     mcp = FastMCP("test")
 
-    with pytest.raises(ValueError, match="uses a sync function but has task=True"):
+    with pytest.raises(
+        ValueError, match="uses a sync function but has task execution enabled"
+    ):
 
         @mcp.resource("test://sync", task=True)
         def sync_resource() -> str:
@@ -77,7 +87,9 @@ async def test_sync_resource_with_inherited_task_true_raises():
     """Sync resource inheriting task=True from server raises ValueError."""
     mcp = FastMCP("test", tasks=True)
 
-    with pytest.raises(ValueError, match="uses a sync function but has task=True"):
+    with pytest.raises(
+        ValueError, match="uses a sync function but has task execution enabled"
+    ):
 
         @mcp.resource("test://sync")  # Inherits task=True from server
         def sync_resource() -> str:
@@ -94,10 +106,10 @@ async def test_async_tool_with_task_true_remains_enabled():
         """An async tool."""
         return x * 2
 
-    # Tool should have task=True and be a FunctionTool
+    # Tool should have task mode="optional" and be a FunctionTool
     tool = await mcp.get_tool("async_tool")
     assert isinstance(tool, FunctionTool)
-    assert tool.task is True
+    assert tool.task_config.mode == "optional"
 
 
 async def test_async_prompt_with_task_true_remains_enabled():
@@ -109,10 +121,10 @@ async def test_async_prompt_with_task_true_remains_enabled():
         """An async prompt."""
         return "Hello"
 
-    # Prompt should have task=True and be a FunctionPrompt
+    # Prompt should have task mode="optional" and be a FunctionPrompt
     prompt = await mcp.get_prompt("async_prompt")
     assert isinstance(prompt, FunctionPrompt)
-    assert prompt.task is True
+    assert prompt.task_config.mode == "optional"
 
 
 async def test_async_resource_with_task_true_remains_enabled():
@@ -124,10 +136,10 @@ async def test_async_resource_with_task_true_remains_enabled():
         """An async resource."""
         return "data"
 
-    # Resource should have task=True and be a FunctionResource
+    # Resource should have task mode="optional" and be a FunctionResource
     resource = await mcp._resource_manager.get_resource("test://async")
     assert isinstance(resource, FunctionResource)
-    assert resource.task is True
+    assert resource.task_config.mode == "optional"
 
 
 async def test_sync_tool_with_task_false_works():
@@ -141,7 +153,7 @@ async def test_sync_tool_with_task_false_works():
 
     tool = await mcp.get_tool("sync_tool")
     assert isinstance(tool, FunctionTool)
-    assert tool.task is False
+    assert tool.task_config.mode == "forbidden"
 
 
 async def test_sync_prompt_with_task_false_works():
@@ -155,7 +167,7 @@ async def test_sync_prompt_with_task_false_works():
 
     prompt = await mcp.get_prompt("sync_prompt")
     assert isinstance(prompt, FunctionPrompt)
-    assert prompt.task is False
+    assert prompt.task_config.mode == "forbidden"
 
 
 async def test_sync_resource_with_task_false_works():
@@ -169,7 +181,7 @@ async def test_sync_resource_with_task_false_works():
 
     resource = await mcp._resource_manager.get_resource("test://sync")
     assert isinstance(resource, FunctionResource)
-    assert resource.task is False
+    assert resource.task_config.mode == "forbidden"
 
 
 # =============================================================================
@@ -187,7 +199,7 @@ async def test_async_callable_class_tool_with_task_true_works():
 
     # Callable classes use Tool.from_function() directly
     tool = Tool.from_function(AsyncCallableTool(), task=True)
-    assert tool.task is True
+    assert tool.task_config.mode == "optional"
 
 
 async def test_async_callable_class_prompt_with_task_true_works():
@@ -200,7 +212,7 @@ async def test_async_callable_class_prompt_with_task_true_works():
 
     # Callable classes use Prompt.from_function() directly
     prompt = Prompt.from_function(AsyncCallablePrompt(), task=True)
-    assert prompt.task is True
+    assert prompt.task_config.mode == "optional"
 
 
 async def test_sync_callable_class_tool_with_task_true_raises():
@@ -211,5 +223,7 @@ async def test_sync_callable_class_tool_with_task_true_raises():
         def __call__(self, x: int) -> int:
             return x * 2
 
-    with pytest.raises(ValueError, match="uses a sync function but has task=True"):
+    with pytest.raises(
+        ValueError, match="uses a sync function but has task execution enabled"
+    ):
         Tool.from_function(SyncCallableTool(), task=True)

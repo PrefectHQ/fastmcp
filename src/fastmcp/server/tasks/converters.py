@@ -12,8 +12,6 @@ from typing import TYPE_CHECKING, Any
 import mcp.types
 import pydantic_core
 
-from fastmcp.tools.tool import ToolResult, _convert_to_content
-
 if TYPE_CHECKING:
     from fastmcp.server.server import FastMCP
 
@@ -35,6 +33,10 @@ async def convert_tool_result(
     Returns:
         CallToolResult with properly formatted content and structured content
     """
+    # Import here to avoid circular import:
+    # tools/tool.py -> tasks/config.py -> tasks/__init__.py -> converters.py -> tools/tool.py
+    from fastmcp.tools.tool import ToolResult, _convert_to_content
+
     # Get the tool to access its configuration
     tool = await server.get_tool(tool_name)
 

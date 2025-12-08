@@ -18,6 +18,7 @@ from pydantic import (
 
 from fastmcp.resources.resource import Resource
 from fastmcp.server.dependencies import get_context, without_injected_parameters
+from fastmcp.server.tasks.config import TaskConfig
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.types import get_cached_typeadapter
@@ -136,7 +137,7 @@ class ResourceTemplate(FastMCPComponent):
         enabled: bool | None = None,
         annotations: Annotations | None = None,
         meta: dict[str, Any] | None = None,
-        task: bool | None = None,
+        task: bool | TaskConfig | None = None,
     ) -> FunctionResourceTemplate:
         return FunctionResourceTemplate.from_function(
             fn=fn,
@@ -231,12 +232,10 @@ class FunctionResourceTemplate(ResourceTemplate):
     """A template for dynamically creating resources."""
 
     fn: Callable[..., Any]
-    task: Annotated[
-        bool,
-        Field(
-            description="Whether this resource template supports background task execution (SEP-1686)"
-        ),
-    ] = False
+    task_config: Annotated[
+        TaskConfig,
+        Field(description="Background task execution configuration (SEP-1686)."),
+    ] = Field(default_factory=lambda: TaskConfig(mode="forbidden"))
 
     async def create_resource(self, uri: str, params: dict[str, Any]) -> Resource:
         """Create a resource from the template with the given parameters."""
@@ -254,7 +253,7 @@ class FunctionResourceTemplate(ResourceTemplate):
             mime_type=self.mime_type,
             tags=self.tags,
             enabled=self.enabled,
-            task=self.task,
+            task=self.task_config,
         )
 
     async def read(self, arguments: dict[str, Any]) -> str | bytes:
@@ -302,7 +301,7 @@ class FunctionResourceTemplate(ResourceTemplate):
         enabled: bool | None = None,
         annotations: Annotations | None = None,
         meta: dict[str, Any] | None = None,
-        task: bool | None = None,
+        task: bool | TaskConfig | None = None,
     ) -> FunctionResourceTemplate:
         """Create a template from a function."""
 
@@ -373,19 +372,21 @@ class FunctionResourceTemplate(ResourceTemplate):
 
         description = description or inspect.getdoc(fn)
 
+        # Normalize task to TaskConfig and validate
+        if task is None:
+            task_config = TaskConfig(mode="forbidden")
+        elif isinstance(task, bool):
+            task_config = TaskConfig.from_bool(task)
+        else:
+            task_config = task
+        task_config.validate_function(fn, func_name)
+
         # if the fn is a callable class, we need to get the __call__ method from here out
         if not inspect.isroutine(fn):
             fn = fn.__call__
         # if the fn is a staticmethod, we need to work with the underlying function
         if isinstance(fn, staticmethod):
             fn = fn.__func__
-
-        # Validate that task=True requires async functions (after unwrapping)
-        if task and not inspect.iscoroutinefunction(fn):
-            raise ValueError(
-                f"Resource template '{func_name}' uses a sync function but has task=True. "
-                "Background tasks require async functions. Set task=False to disable."
-            )
 
         wrapper_fn = without_injected_parameters(fn)
         type_adapter = get_cached_typeadapter(wrapper_fn)
@@ -408,5 +409,5 @@ class FunctionResourceTemplate(ResourceTemplate):
             enabled=enabled if enabled is not None else True,
             annotations=annotations,
             meta=meta,
-            task=task if task is not None else False,
+            task_config=task_config,
         )

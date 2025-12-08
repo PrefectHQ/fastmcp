@@ -84,22 +84,25 @@ async def test_resource_template_with_task(resource_server):
         assert '"userId": "123"' in result[0].text
 
 
-async def test_graceful_degradation_resource_without_task_flag(resource_server):
-    """Resources with task=False execute synchronously even with task metadata."""
+async def test_forbidden_mode_resource_rejects_task_calls(resource_server):
+    """Resources with task=False (mode=forbidden) reject task-augmented calls."""
+    import pytest
+    from mcp.shared.exceptions import McpError
+    from mcp.types import METHOD_NOT_FOUND
 
     @resource_server.resource(
-        "file://sync.txt", task=False
+        "file://sync.txt/", task=False
     )  # Explicitly disable task support
     async def sync_only_resource() -> str:
         return "Sync content"
 
     async with Client(resource_server) as client:
-        # Try to call with task metadata - should execute synchronously
-        task = await client.read_resource("file://sync.txt", task=True)
+        # Calling with task=True when task=False should raise McpError
+        with pytest.raises(McpError) as exc_info:
+            await client.read_resource("file://sync.txt", task=True)
 
-        # Should have executed immediately (graceful degradation)
-        assert task.returned_immediately
-
-        # Can get result without waiting
-        result = await task.result()
-        assert "Sync content" in result[0].text
+        # New behavior: mode="forbidden" returns METHOD_NOT_FOUND error
+        assert exc_info.value.error.code == METHOD_NOT_FOUND
+        assert (
+            "does not support task-augmented execution" in exc_info.value.error.message
+        )

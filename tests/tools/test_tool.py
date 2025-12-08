@@ -52,8 +52,8 @@ class TestToolFromFunction:
                     "type": "object",
                     "x-fastmcp-wrap-result": True,
                 },
-                "task": False,
                 "fn": HasName("add"),
+                "task_config": {"mode": "forbidden"},
             }
         )
 
@@ -100,8 +100,8 @@ class TestToolFromFunction:
                     "type": "object",
                     "x-fastmcp-wrap-result": True,
                 },
-                "task": False,
                 "fn": HasName("fetch_data"),
+                "task_config": {"mode": "forbidden"},
             }
         )
 
@@ -135,7 +135,7 @@ class TestToolFromFunction:
                     "type": "object",
                     "x-fastmcp-wrap-result": True,
                 },
-                "task": False,
+                "task_config": {"mode": "forbidden"},
             }
         )
 
@@ -169,7 +169,7 @@ class TestToolFromFunction:
                     "type": "object",
                     "x-fastmcp-wrap-result": True,
                 },
-                "task": False,
+                "task_config": {"mode": "forbidden"},
             }
         )
 
@@ -211,8 +211,8 @@ class TestToolFromFunction:
                     "type": "object",
                 },
                 "output_schema": {"additionalProperties": True, "type": "object"},
-                "task": False,
                 "fn": HasName("create_user"),
+                "task_config": {"mode": "forbidden"},
             }
         )
 
@@ -274,7 +274,7 @@ class TestToolFromFunction:
                     "required": ["x"],
                     "type": "object",
                 },
-                "task": False,
+                "task_config": {"mode": "forbidden"},
             }
         )
 
@@ -307,7 +307,7 @@ class TestToolFromFunction:
                     "required": ["_a", "_b"],
                     "type": "object",
                 },
-                "task": False,
+                "task_config": {"mode": "forbidden"},
             }
         )
 
@@ -362,7 +362,7 @@ class TestToolFromFunction:
                     "type": "object",
                     "x-fastmcp-wrap-result": True,
                 },
-                "task": False,
+                "task_config": {"mode": "forbidden"},
             }
         )
 
