@@ -657,7 +657,8 @@ class FastMCP(Generic[LifespanResultT]):
                         if task_meta and task_mode != "forbidden":
                             # For FunctionResource/FunctionResourceTemplate, use Docket
                             if isinstance(
-                                resource, (FunctionResource, FunctionResourceTemplate)
+                                resource,
+                                FunctionResource | FunctionResourceTemplate,
                             ):
                                 task_meta_dict = task_meta.model_dump(exclude_none=True)
                                 return await handle_resource_as_task(
