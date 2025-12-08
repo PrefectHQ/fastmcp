@@ -1,12 +1,7 @@
 export const VersionBadge = ({ version }) => {
     return (
-        <code className="version-badge-container">
-            <p className="version-badge">
-                <span className="version-badge-label">New in version:</span>&nbsp;
-                <code className="version-badge-version">{version}</code>
-            </p>
-        </code>
-
-
+        <Badge stroke size='lg' icon='gift' iconType='regular' className="version-badge">
+            New in version <code>{version}</code>
+        </Badge>
     );
 };

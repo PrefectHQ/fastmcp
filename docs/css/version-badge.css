@@ -1,29 +1,11 @@
 /* Version badge -- display a badge with the current version of the documentation */
 .version-badge {
-  display: inline-block;
-  align-items: center;
-  gap: 0.3em;
-  font-size: 1em;
-  margin-top: 0px;
-  margin-bottom: 0px;
-  padding-top: 6px;
-  padding-bottom: 6px;
-  padding-left: 20px;
-  padding-right: 20px;
-  font-family: "Inter", sans-serif;
-  color: #ff5400;
-  background: #fef2f2;
-  border: 1px solid rgba(220, 38, 38, 0.3);
-  border-radius: 12px;
-  box-shadow: none;
-  vertical-align: middle;
-  position: relative;
+  --color-text: #ff5400 !important;
+  --color-bg: #fef2f2 !important;
+  color: #ff5400 !important;
+  background: #fef2f2 !important;
+  border: 1px solid rgba(220, 38, 38, 0.3) !important;
   transition: box-shadow 0.2s, transform 0.15s;
-}
-
-.version-badge-container {
-  margin: 0;
-  padding: 0;
 }
 
 .version-badge:hover {
@@ -32,8 +14,10 @@
 }
 
 .dark .version-badge {
-  color: #f1f5f9;
-  background: #334155;
-  border: 1px solid #64748b;
+  --color-text: #f1f5f9 !important;
+  --color-bg: #334155 !important;
+  color: #f1f5f9 !important;
+  background: #334155 !important;
+  border: 1px solid #64748b !important;
 }
 
