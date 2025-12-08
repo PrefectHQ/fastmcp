@@ -133,6 +133,10 @@ class Tool(FastMCPComponent):
         ToolAnnotations | None,
         Field(description="Additional annotations about the tool"),
     ] = None
+    execution: Annotated[
+        ToolExecution | None,
+        Field(description="Task execution configuration (SEP-1686)"),
+    ] = None
     serializer: Annotated[
         ToolResultSerializerType | None,
         Field(description="Optional custom serializer for tool results"),
@@ -182,7 +186,7 @@ class Tool(FastMCPComponent):
             outputSchema=overrides.get("outputSchema", self.output_schema),
             icons=overrides.get("icons", self.icons),
             annotations=overrides.get("annotations", self.annotations),
-            execution=overrides.get("execution"),
+            execution=overrides.get("execution", self.execution),
             _meta=overrides.get(
                 "_meta", self.get_meta(include_fastmcp_meta=include_fastmcp_meta)
             ),
