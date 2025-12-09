@@ -486,6 +486,45 @@ class Context:
         """Send a prompt list changed notification to the client."""
         await self.session.send_prompt_list_changed()
 
+    async def close_sse_stream(self) -> None:
+        """Close the current response stream to trigger client reconnection.
+
+        When using StreamableHTTP transport with an EventStore configured, this
+        method gracefully closes the HTTP connection for the current request.
+        The client will automatically reconnect (after `retry_interval` milliseconds)
+        and resume receiving events from where it left off via the EventStore.
+
+        This is useful for long-running operations to avoid load balancer timeouts.
+        Instead of holding a connection open for minutes, you can periodically close
+        and let the client reconnect.
+
+        Example:
+            ```python
+            @mcp.tool
+            async def long_running_task(ctx: Context) -> str:
+                for i in range(100):
+                    await ctx.report_progress(i, 100)
+
+                    # Close connection every 30 iterations to avoid LB timeouts
+                    if i % 30 == 0 and i > 0:
+                        await ctx.close_sse_stream()
+
+                    await do_work()
+                return "Done"
+            ```
+
+        Note:
+            This is a no-op (with a debug log) if not using StreamableHTTP
+            transport with an EventStore configured.
+        """
+        if not self.request_context or not self.request_context.close_sse_stream:
+            logger.debug(
+                "close_sse_stream() called but not applicable "
+                "(requires StreamableHTTP transport with event_store)"
+            )
+            return
+        await self.request_context.close_sse_stream()
+
     async def sample(
         self,
         messages: str | Sequence[str | SamplingMessage],

@@ -198,6 +198,79 @@ Without `expose_headers=["mcp-session-id"]`, browsers will receive the session I
 **Production Security**: Never use `allow_origins=["*"]` in production. Specify the exact origins of your browser-based clients. Using wildcards exposes your server to unauthorized access from any website.
 </Warning>
 
+### SSE Polling for Long-Running Operations
+
+<VersionBadge version="2.14.0" />
+
+<Note>
+This feature only applies to the **StreamableHTTP transport** (the default for `http_app()`). It does not apply to the legacy SSE transport (`transport="sse"`).
+</Note>
+
+When running tools that take a long time to complete, you may encounter issues with load balancers or proxies terminating connections that stay idle too long. [SEP-1699](https://github.com/modelcontextprotocol/modelcontextprotocol/issues/1699) introduces SSE polling to solve this by allowing the server to gracefully close connections and have clients automatically reconnect.
+
+To enable SSE polling, configure an `EventStore` when creating your HTTP application:
+
+```python
+from fastmcp import FastMCP, Context
+from fastmcp.server.event_store import EventStore
+
+mcp = FastMCP("My Server")
+
+@mcp.tool
+async def long_running_task(ctx: Context) -> str:
+    """A task that takes several minutes to complete."""
+    for i in range(100):
+        await ctx.report_progress(i, 100)
+
+        # Periodically close the connection to avoid load balancer timeouts
+        # Client will automatically reconnect and resume receiving progress
+        if i % 30 == 0 and i > 0:
+            await ctx.close_sse_stream()
+
+        await do_expensive_work()
+
+    return "Done!"
+
+# Configure with EventStore for resumability
+event_store = EventStore()
+app = mcp.http_app(
+    event_store=event_store,
+    retry_interval=2000,  # Client reconnects after 2 seconds
+)
+```
+
+**How it works:**
+
+1. When `event_store` is configured, the server stores all events (progress updates, results) with unique IDs
+2. Calling `ctx.close_sse_stream()` gracefully closes the HTTP connection
+3. The client automatically reconnects with a `Last-Event-ID` header
+4. The server replays any events the client missed during the disconnection
+
+The `retry_interval` parameter (in milliseconds) controls how long clients wait before reconnecting. Choose a value that balances responsiveness with server load.
+
+<Note>
+`close_sse_stream()` is a no-op if called without an `EventStore` configured, so you can safely include it in tools that may run in different deployment configurations.
+</Note>
+
+#### Custom Storage Backends
+
+By default, `EventStore` uses in-memory storage. For production deployments with multiple server instances, you can provide a custom storage backend using the `key_value` package:
+
+```python
+from fastmcp.server.event_store import EventStore
+from key_value.aio.stores.redis import RedisStore
+
+# Use Redis for distributed deployments
+redis_store = RedisStore(url="redis://localhost:6379")
+event_store = EventStore(
+    storage=redis_store,
+    max_events_per_stream=100,  # Keep last 100 events per stream
+    ttl=3600,  # Events expire after 1 hour
+)
+
+app = mcp.http_app(event_store=event_store)
+```
+
 ## Integration with Web Frameworks
 
 If you already have a web application running, you can add MCP capabilities by mounting a FastMCP server as a sub-application. This allows you to expose MCP tools alongside your existing API endpoints, sharing the same domain and infrastructure. The MCP server becomes just another route in your application, making it easy to manage and deploy.
