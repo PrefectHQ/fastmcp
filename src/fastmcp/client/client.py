@@ -458,14 +458,9 @@ class Client(Generic[ClientTransportT]):
 
         try:
             with anyio.fail_after(timeout):
-                if fastmcp.settings.enable_tasks:
-                    self._session_state.initialize_result = (
-                        await _task_capable_initialize(self.session)
-                    )
-                else:
-                    self._session_state.initialize_result = (
-                        await self.session.initialize()
-                    )
+                self._session_state.initialize_result = await _task_capable_initialize(
+                    self.session
+                )
 
                 return self._session_state.initialize_result
         except TimeoutError as e:

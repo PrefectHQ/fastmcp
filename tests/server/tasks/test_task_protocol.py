@@ -26,8 +26,6 @@ async def task_enabled_server():
         """A tool that always fails."""
         raise ValueError("This tool always fails")
 
-    assert mcp._support_tasks_by_default
-
     return mcp
 
 

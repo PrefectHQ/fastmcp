@@ -210,9 +210,7 @@ class FastMCP(Generic[LifespanResultT]):
         sampling_handler_behavior: Literal["always", "fallback"] | None = None,
     ):
         # Resolve server default for background task support
-        self._support_tasks_by_default: bool = (
-            tasks if tasks is not None else fastmcp.settings.enable_tasks
-        )
+        self._support_tasks_by_default: bool = tasks if tasks is not None else False
 
         # Docket instance (set during lifespan for cross-task access)
         self._docket = None
@@ -689,43 +687,42 @@ class FastMCP(Generic[LifespanResultT]):
                 pass
 
             # Check for task metadata and route appropriately
-            if fastmcp.settings.enable_tasks:
-                async with fastmcp.server.context.Context(fastmcp=self):
-                    # Get resource including from mounted servers
-                    resource = await self._get_resource_with_task_config(str(uri))
-                    if resource and hasattr(resource, "task_config"):
-                        task_mode = resource.task_config.mode  # type: ignore[union-attr]
+            async with fastmcp.server.context.Context(fastmcp=self):
+                # Get resource including from mounted servers
+                resource = await self._get_resource_with_task_config(str(uri))
+                if resource and hasattr(resource, "task_config"):
+                    task_mode = resource.task_config.mode  # type: ignore[union-attr]
 
-                        # Enforce mode="required" - must have task metadata
-                        if task_mode == "required" and not task_meta:
-                            raise McpError(
-                                ErrorData(
-                                    code=METHOD_NOT_FOUND,
-                                    message=f"Resource '{uri}' requires task-augmented execution",
-                                )
+                    # Enforce mode="required" - must have task metadata
+                    if task_mode == "required" and not task_meta:
+                        raise McpError(
+                            ErrorData(
+                                code=METHOD_NOT_FOUND,
+                                message=f"Resource '{uri}' requires task-augmented execution",
+                            )
+                        )
+
+                    # Route to background if task metadata present and mode allows
+                    if task_meta and task_mode != "forbidden":
+                        # For FunctionResource/FunctionResourceTemplate, use Docket
+                        if isinstance(
+                            resource,
+                            FunctionResource | FunctionResourceTemplate,
+                        ):
+                            task_meta_dict = task_meta.model_dump(exclude_none=True)
+                            return await handle_resource_as_task(
+                                self, str(uri), resource, task_meta_dict
                             )
 
-                        # Route to background if task metadata present and mode allows
-                        if task_meta and task_mode != "forbidden":
-                            # For FunctionResource/FunctionResourceTemplate, use Docket
-                            if isinstance(
-                                resource,
-                                FunctionResource | FunctionResourceTemplate,
-                            ):
-                                task_meta_dict = task_meta.model_dump(exclude_none=True)
-                                return await handle_resource_as_task(
-                                    self, str(uri), resource, task_meta_dict
-                                )
-
-                        # Forbidden mode: task requested but mode="forbidden"
-                        # Raise error since resources don't have isError field
-                        if task_meta and task_mode == "forbidden":
-                            raise McpError(
-                                ErrorData(
-                                    code=METHOD_NOT_FOUND,
-                                    message=f"Resource '{uri}' does not support task-augmented execution",
-                                )
+                    # Forbidden mode: task requested but mode="forbidden"
+                    # Raise error since resources don't have isError field
+                    if task_meta and task_mode == "forbidden":
+                        raise McpError(
+                            ErrorData(
+                                code=METHOD_NOT_FOUND,
+                                message=f"Resource '{uri}' does not support task-augmented execution",
                             )
+                        )
 
             # Synchronous execution
             result = await self._read_resource_mcp(uri)
@@ -817,39 +814,38 @@ class FastMCP(Generic[LifespanResultT]):
                 pass
 
             # Check for task metadata and route appropriately
-            if fastmcp.settings.enable_tasks:
-                async with fastmcp.server.context.Context(fastmcp=self):
-                    prompts = await self.get_prompts()
-                    prompt = prompts.get(name)
-                    if prompt and hasattr(prompt, "task_config") and prompt.task_config:
-                        task_mode = prompt.task_config.mode  # type: ignore[union-attr]
+            async with fastmcp.server.context.Context(fastmcp=self):
+                prompts = await self.get_prompts()
+                prompt = prompts.get(name)
+                if prompt and hasattr(prompt, "task_config") and prompt.task_config:
+                    task_mode = prompt.task_config.mode  # type: ignore[union-attr]
 
-                        # Enforce mode="required" - must have task metadata
-                        if task_mode == "required" and not task_meta:
-                            raise McpError(
-                                ErrorData(
-                                    code=METHOD_NOT_FOUND,
-                                    message=f"Prompt '{name}' requires task-augmented execution",
-                                )
+                    # Enforce mode="required" - must have task metadata
+                    if task_mode == "required" and not task_meta:
+                        raise McpError(
+                            ErrorData(
+                                code=METHOD_NOT_FOUND,
+                                message=f"Prompt '{name}' requires task-augmented execution",
                             )
+                        )
 
-                        # Route to background if task metadata present and mode allows
-                        if task_meta and task_mode != "forbidden":
-                            task_meta_dict = task_meta.model_dump(exclude_none=True)
-                            result = await handle_prompt_as_task(
-                                self, name, arguments, task_meta_dict
-                            )
-                            return mcp.types.ServerResult(result)
+                    # Route to background if task metadata present and mode allows
+                    if task_meta and task_mode != "forbidden":
+                        task_meta_dict = task_meta.model_dump(exclude_none=True)
+                        result = await handle_prompt_as_task(
+                            self, name, arguments, task_meta_dict
+                        )
+                        return mcp.types.ServerResult(result)
 
-                        # Forbidden mode: task requested but mode="forbidden"
-                        # Raise error since prompts don't have isError field
-                        if task_meta and task_mode == "forbidden":
-                            raise McpError(
-                                ErrorData(
-                                    code=METHOD_NOT_FOUND,
-                                    message=f"Prompt '{name}' does not support task-augmented execution",
-                                )
+                    # Forbidden mode: task requested but mode="forbidden"
+                    # Raise error since prompts don't have isError field
+                    if task_meta and task_mode == "forbidden":
+                        raise McpError(
+                            ErrorData(
+                                code=METHOD_NOT_FOUND,
+                                message=f"Prompt '{name}' does not support task-augmented execution",
                             )
+                        )
 
             # Synchronous execution
             result = await self._get_prompt_mcp(name, arguments)
@@ -859,9 +855,6 @@ class FastMCP(Generic[LifespanResultT]):
 
     def _setup_task_protocol_handlers(self) -> None:
         """Register SEP-1686 task protocol handlers with SDK."""
-        if not fastmcp.settings.enable_tasks:
-            return
-
         from mcp.types import (
             CancelTaskRequest,
             GetTaskPayloadRequest,
@@ -1547,49 +1540,48 @@ class FastMCP(Generic[LifespanResultT]):
                     # No request context available - proceed without task metadata
                     pass
 
-                if fastmcp.settings.enable_tasks:
-                    # Get tool from local manager, mounted servers, or proxy
-                    tool = await self._get_tool_with_task_config(key)
-                    if tool and hasattr(tool, "task_config"):
-                        task_mode = tool.task_config.mode  # type: ignore[union-attr]
+                # Get tool from local manager, mounted servers, or proxy
+                tool = await self._get_tool_with_task_config(key)
+                if tool and hasattr(tool, "task_config"):
+                    task_mode = tool.task_config.mode  # type: ignore[union-attr]
 
-                        # Enforce mode="required" - must have task metadata
-                        if task_mode == "required" and not task_meta:
-                            raise McpError(
-                                ErrorData(
-                                    code=METHOD_NOT_FOUND,
-                                    message=f"Tool '{key}' requires task-augmented execution",
-                                )
+                    # Enforce mode="required" - must have task metadata
+                    if task_mode == "required" and not task_meta:
+                        raise McpError(
+                            ErrorData(
+                                code=METHOD_NOT_FOUND,
+                                message=f"Tool '{key}' requires task-augmented execution",
                             )
+                        )
 
-                        # Route to background if task metadata present and mode allows
-                        if task_meta and task_mode != "forbidden":
-                            # For FunctionTool, use Docket for background execution
-                            if isinstance(tool, FunctionTool):
-                                task_meta_dict = task_meta.model_dump(exclude_none=True)
-                                return await handle_tool_as_task(
-                                    self, key, arguments, task_meta_dict
-                                )
-                            # For ProxyTool/mounted tools, proceed with normal execution
-                            # They will forward task metadata to their backend
-
-                        # Forbidden mode: task requested but mode="forbidden"
-                        # Return error result with returned_immediately=True
-                        if task_meta and task_mode == "forbidden":
-                            return mcp.types.CallToolResult(
-                                content=[
-                                    mcp.types.TextContent(
-                                        type="text",
-                                        text=f"Tool '{key}' does not support task-augmented execution",
-                                    )
-                                ],
-                                isError=True,
-                                _meta={
-                                    "modelcontextprotocol.io/task": {
-                                        "returned_immediately": True
-                                    }
-                                },
+                    # Route to background if task metadata present and mode allows
+                    if task_meta and task_mode != "forbidden":
+                        # For FunctionTool, use Docket for background execution
+                        if isinstance(tool, FunctionTool):
+                            task_meta_dict = task_meta.model_dump(exclude_none=True)
+                            return await handle_tool_as_task(
+                                self, key, arguments, task_meta_dict
                             )
+                        # For ProxyTool/mounted tools, proceed with normal execution
+                        # They will forward task metadata to their backend
+
+                    # Forbidden mode: task requested but mode="forbidden"
+                    # Return error result with returned_immediately=True
+                    if task_meta and task_mode == "forbidden":
+                        return mcp.types.CallToolResult(
+                            content=[
+                                mcp.types.TextContent(
+                                    type="text",
+                                    text=f"Tool '{key}' does not support task-augmented execution",
+                                )
+                            ],
+                            isError=True,
+                            _meta={
+                                "modelcontextprotocol.io/task": {
+                                    "returned_immediately": True
+                                }
+                            },
+                        )
 
                 # Synchronous execution (normal path)
                 result = await self._call_tool_middleware(key, arguments)
@@ -2484,11 +2476,10 @@ class FastMCP(Generic[LifespanResultT]):
                     )
 
                     # Build experimental capabilities
-                    experimental_capabilities = {}
-                    if fastmcp.settings.enable_tasks:
-                        # Declare SEP-1686 task support per final spec (lines 49-63)
-                        # Nested structure: {list: {}, cancel: {}, requests: {tools: {call: {}}}}
-                        experimental_capabilities["tasks"] = {
+                    # Declare SEP-1686 task support per final spec (lines 49-63)
+                    # Nested structure: {list: {}, cancel: {}, requests: {tools: {call: {}}}}
+                    experimental_capabilities = {
+                        "tasks": {
                             "list": {},
                             "cancel": {},
                             "requests": {
@@ -2497,6 +2488,7 @@ class FastMCP(Generic[LifespanResultT]):
                                 "resources": {"read": {}},
                             },
                         }
+                    }
 
                     await self._mcp_server.run(
                         read_stream,

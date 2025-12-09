@@ -209,24 +209,6 @@ class Settings(BaseSettings):
 
     experimental: ExperimentalSettings = ExperimentalSettings()
 
-    # Tasks settings
-    enable_tasks: Annotated[
-        bool,
-        Field(
-            description=inspect.cleandoc(
-                """
-                Enable MCP SEP-1686 task protocol support for background execution.
-
-                Server-side: Advertises task capabilities and handles task/* protocol
-                methods. Tools, prompts, and resources marked with task=True will
-                execute in the background via Docket.
-
-                Client-side: Advertises task capability to servers.
-                """
-            ),
-        ),
-    ] = False
-
     docket: DocketSettings = DocketSettings()
 
     enable_rich_tracebacks: Annotated[
