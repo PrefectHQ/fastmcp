@@ -8,9 +8,10 @@ Tests that the server correctly enforces task execution modes:
 
 import pytest
 
-from fastmcp import FastMCP, TaskConfig
+from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.exceptions import ToolError
+from fastmcp.server.tasks import TaskConfig
 
 
 class TestTaskConfigNormalization:

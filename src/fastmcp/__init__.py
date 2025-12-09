@@ -14,7 +14,6 @@ if settings.log_enabled:
 
 from fastmcp.server.server import FastMCP
 from fastmcp.server.context import Context
-from fastmcp.server.tasks.config import TaskConfig
 import fastmcp.server
 
 from fastmcp.client import Client
@@ -32,7 +31,5 @@ __all__ = [
     "Client",
     "Context",
     "FastMCP",
-    "TaskConfig",
-    "client",
     "settings",
 ]

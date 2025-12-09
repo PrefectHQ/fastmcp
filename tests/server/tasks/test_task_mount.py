@@ -10,9 +10,10 @@ import asyncio
 import pytest
 from docket import Docket
 
-from fastmcp import FastMCP, TaskConfig
+from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.server.dependencies import CurrentDocket, CurrentFastMCP
+from fastmcp.server.tasks import TaskConfig
 
 
 @pytest.fixture(autouse=True)

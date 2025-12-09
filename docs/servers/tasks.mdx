@@ -69,7 +69,8 @@ For fine-grained control over task execution behavior, use `TaskConfig` instead 
 | `"required"` | Error: task required | Executes as background task |
 
 ```python
-from fastmcp import FastMCP, TaskConfig
+from fastmcp import FastMCP
+from fastmcp.server.tasks import TaskConfig
 
 mcp = FastMCP("MyServer")
 
