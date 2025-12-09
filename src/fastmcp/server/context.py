@@ -8,9 +8,8 @@ from collections.abc import Generator, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar, Token
 from dataclasses import dataclass
-from enum import Enum
 from logging import Logger
-from typing import Any, Literal, cast, get_origin, overload
+from typing import Any, overload
 
 import anyio
 from mcp import LoggingLevel, ServerSession
@@ -41,12 +40,11 @@ from fastmcp.server.elicitation import (
     AcceptedElicitation,
     CancelledElicitation,
     DeclinedElicitation,
-    ScalarElicitationType,
-    get_elicitation_schema,
+    handle_elicit_accept,
+    parse_elicit_response_type,
 )
 from fastmcp.server.server import FastMCP
 from fastmcp.utilities.logging import _clamp_logger, get_logger
-from fastmcp.utilities.types import get_cached_typeadapter
 
 logger: Logger = get_logger(name=__name__)
 to_client_logger: Logger = logger.getChild(suffix="to_client")
@@ -674,61 +672,21 @@ class Context:
                 type or dataclass or BaseModel. If it is a primitive type, an
                 object schema with a single "value" field will be generated.
         """
-        if response_type is None:
-            schema = {"type": "object", "properties": {}}
-        else:
-            # if the user provided a list of strings, treat it as a Literal
-            if isinstance(response_type, list):
-                if not all(isinstance(item, str) for item in response_type):
-                    raise ValueError(
-                        "List of options must be a list of strings. Received: "
-                        f"{response_type}"
-                    )
-                # Convert list of options to Literal type and wrap
-                choice_literal = Literal[tuple(response_type)]  # type: ignore
-                response_type = ScalarElicitationType[choice_literal]  # type: ignore
-            # if the user provided a primitive scalar, wrap it in an object schema
-            elif (
-                response_type in {bool, int, float, str}
-                or get_origin(response_type) is Literal
-                or (isinstance(response_type, type) and issubclass(response_type, Enum))
-            ):
-                response_type = ScalarElicitationType[response_type]  # type: ignore
-
-            response_type = cast(type[T], response_type)
-
-            schema = get_elicitation_schema(response_type)
+        config = parse_elicit_response_type(response_type)
 
         result = await self.session.elicit(
             message=message,
-            requestedSchema=schema,
+            requestedSchema=config.schema,
             related_request_id=self.request_id,
         )
 
         if result.action == "accept":
-            if response_type is not None:
-                type_adapter = get_cached_typeadapter(response_type)
-                validated_data = cast(
-                    T | ScalarElicitationType[T],
-                    type_adapter.validate_python(result.content),
-                )
-                if isinstance(validated_data, ScalarElicitationType):
-                    return AcceptedElicitation[T](data=validated_data.value)
-                else:
-                    return AcceptedElicitation[T](data=cast(T, validated_data))
-            elif result.content:
-                raise ValueError(
-                    "Elicitation expected an empty response, but received: "
-                    f"{result.content}"
-                )
-            else:
-                return AcceptedElicitation[dict[str, Any]](data={})
+            return handle_elicit_accept(config, result.content)
         elif result.action == "decline":
             return DeclinedElicitation()
         elif result.action == "cancel":
             return CancelledElicitation()
         else:
-            # This should never happen, but handle it just in case
             raise ValueError(f"Unexpected elicitation action: {result.action}")
 
     def set_state(self, key: str, value: Any) -> None:
