@@ -16,9 +16,6 @@ FastMCP implements the MCP background task protocol ([SEP-1686](https://modelcon
 **What is Docket?** FastMCP's task system is powered by [Docket](https://github.com/chrisguidry/docket), originally built by [Prefect](https://prefect.io) to power [Prefect Cloud](https://www.prefect.io/prefect/cloud)'s managed task scheduling and execution service. Docket is the beating heart of Prefect's enterprise task infrastructure, processing millions of tasks daily across their multi-tenant SaaS platform. It's now open-sourced for the community.
 </Tip>
 
-<Note>
-Background tasks are disabled by default in v2.14.0. Enable them with `FASTMCP_ENABLE_TASKS=true` or by passing `tasks=True` to the FastMCP constructor. This default will change in a future release.
-</Note>
 
 ## What Are MCP Background Tasks?
 
@@ -116,11 +113,8 @@ Conversely, when a component has `mode="required"` but the client doesn't reques
 
 ### Configuration
 
-Background tasks require explicit opt-in via environment variable:
-
 | Environment Variable | Default | Description |
 |---------------------|---------|-------------|
-| `FASTMCP_ENABLE_TASKS` | `false` | Enable the MCP task protocol |
 | `FASTMCP_DOCKET_URL` | `memory://` | Backend URL (`memory://` or `redis://host:port/db`) |
 
 ## Backends

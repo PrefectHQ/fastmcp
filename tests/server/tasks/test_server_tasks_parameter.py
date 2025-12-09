@@ -8,7 +8,6 @@ settings properly override the server default.
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
-from fastmcp.utilities.tests import temporary_settings
 
 
 async def test_server_tasks_true_defaults_all_components():
@@ -84,38 +83,21 @@ async def test_server_tasks_false_defaults_all_components():
             await client.read_resource("test://resource", task=True)
 
 
-async def test_server_tasks_none_uses_settings():
-    """Server with tasks=None (or omitted) uses global settings."""
-    # Test with enable_tasks=True in settings
-    with temporary_settings(enable_tasks=True):
-        mcp = FastMCP("test")  # tasks=None, should use settings
+async def test_server_tasks_none_defaults_to_false():
+    """Server with tasks=None (or omitted) defaults to False."""
+    mcp = FastMCP("test")  # tasks=None, defaults to False
 
-        @mcp.tool()
-        async def my_tool() -> str:
-            return "tool result"
+    @mcp.tool()
+    async def my_tool() -> str:
+        return "tool result"
 
-        async with Client(mcp) as client:
-            # Tool should support background execution (from settings)
-            tool_task = await client.call_tool("my_tool", task=True)
-            assert not tool_task.returned_immediately
-
-    # Test with enable_tasks=False in settings
-    with temporary_settings(enable_tasks=False):
-        mcp2 = FastMCP("test2")  # tasks=None, should use settings
-
-        @mcp2.tool()
-        async def my_tool2() -> str:
-            return "tool result"
-
-        async with Client(mcp2) as client:
-            # When enable_tasks=False, server doesn't advertise task capabilities.
-            # Client's task=True is ignored because server doesn't support tasks.
-            # Tool executes synchronously and succeeds.
-            tool_task = await client.call_tool("my_tool2", task=True)
-            assert tool_task.returned_immediately
-            result = await tool_task.result()
-            # Tool should execute successfully (synchronously)
-            assert "tool result" in str(result)
+    async with Client(mcp) as client:
+        # Tool should NOT support background execution (mode="forbidden" from default)
+        tool_task = await client.call_tool("my_tool", task=True)
+        assert tool_task.returned_immediately
+        result = await tool_task.result()
+        assert result.is_error
+        assert "does not support task-augmented execution" in str(result)
 
 
 async def test_component_explicit_false_overrides_server_true():
@@ -261,34 +243,32 @@ async def test_mixed_explicit_and_inherited():
 
 
 async def test_server_tasks_parameter_sets_component_defaults():
-    """Server tasks parameter sets component defaults but global settings gate protocol."""
-    # Server tasks=True sets component defaults, but enable_tasks must be True
-    with temporary_settings(enable_tasks=True):
-        mcp = FastMCP("test", tasks=True)
+    """Server tasks parameter sets component defaults."""
+    # Server tasks=True sets component defaults
+    mcp = FastMCP("test", tasks=True)
 
-        @mcp.tool()
-        async def tool_inherits_true() -> str:
-            return "tool result"
+    @mcp.tool()
+    async def tool_inherits_true() -> str:
+        return "tool result"
 
-        async with Client(mcp) as client:
-            # Tool inherits tasks=True from server
-            tool_task = await client.call_tool("tool_inherits_true", task=True)
-            assert not tool_task.returned_immediately
+    async with Client(mcp) as client:
+        # Tool inherits tasks=True from server
+        tool_task = await client.call_tool("tool_inherits_true", task=True)
+        assert not tool_task.returned_immediately
 
     # Server tasks=False sets component defaults
-    with temporary_settings(enable_tasks=True):
-        mcp2 = FastMCP("test2", tasks=False)
+    mcp2 = FastMCP("test2", tasks=False)
 
-        @mcp2.tool()
-        async def tool_inherits_false() -> str:
-            return "tool result"
+    @mcp2.tool()
+    async def tool_inherits_false() -> str:
+        return "tool result"
 
-        async with Client(mcp2) as client:
-            # Tool inherits tasks=False (mode="forbidden") - returns error
-            tool_task = await client.call_tool("tool_inherits_false", task=True)
-            assert tool_task.returned_immediately
-            result = await tool_task.result()
-            assert result.is_error
+    async with Client(mcp2) as client:
+        # Tool inherits tasks=False (mode="forbidden") - returns error
+        tool_task = await client.call_tool("tool_inherits_false", task=True)
+        assert tool_task.returned_immediately
+        result = await tool_task.result()
+        assert result.is_error
 
 
 async def test_resource_template_inherits_server_tasks_default():

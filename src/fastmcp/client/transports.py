@@ -36,6 +36,7 @@ from fastmcp.client.auth.oauth import OAuth
 from fastmcp.mcp_config import MCPConfig, infer_transport_type_from_url
 from fastmcp.server.dependencies import get_http_headers
 from fastmcp.server.server import FastMCP
+from fastmcp.server.tasks.capabilities import get_task_capabilities
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.mcp_server_config.v1.environments.uv import UVEnvironment
 
@@ -856,16 +857,7 @@ class FastMCPTransport(ClientTransport):
                 _enter_server_lifespan(server=self.server),
             ):
                 # Build experimental capabilities
-                import fastmcp
-
-                experimental_capabilities = {}
-                if fastmcp.settings.enable_tasks:
-                    # Declare SEP-1686 task support
-                    experimental_capabilities["tasks"] = {
-                        "tools": True,
-                        "prompts": True,
-                        "resources": True,
-                    }
+                experimental_capabilities = get_task_capabilities()
 
                 tg.start_soon(
                     lambda: self.server._mcp_server.run(

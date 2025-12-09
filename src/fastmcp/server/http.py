@@ -19,9 +19,9 @@ from starlette.responses import Response
 from starlette.routing import BaseRoute, Mount, Route
 from starlette.types import Lifespan, Receive, Scope, Send
 
-import fastmcp
 from fastmcp.server.auth import AuthProvider
 from fastmcp.server.auth.middleware import RequireAuthMiddleware
+from fastmcp.server.tasks.capabilities import get_task_capabilities
 from fastmcp.utilities.logging import get_logger
 
 if TYPE_CHECKING:
@@ -161,19 +161,7 @@ def create_sse_app(
     async def handle_sse(scope: Scope, receive: Receive, send: Send) -> Response:
         async with sse.connect_sse(scope, receive, send) as streams:
             # Build experimental capabilities
-            experimental_capabilities = {}
-            if fastmcp.settings.enable_tasks:
-                # Declare SEP-1686 task support per final spec (lines 49-63)
-                # Nested structure: {list: {}, cancel: {}, requests: {tools: {call: {}}}}
-                experimental_capabilities["tasks"] = {
-                    "list": {},
-                    "cancel": {},
-                    "requests": {
-                        "tools": {"call": {}},
-                        "prompts": {"get": {}},
-                        "resources": {"read": {}},
-                    },
-                }
+            experimental_capabilities = get_task_capabilities()
 
             await server._mcp_server.run(
                 streams[0],
