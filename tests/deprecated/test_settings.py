@@ -4,8 +4,6 @@ from unittest.mock import patch
 import pytest
 
 from fastmcp import FastMCP
-from fastmcp.settings import Settings
-from fastmcp.utilities.tests import caplog_for_fastmcp
 
 # reset deprecation warnings for this module
 pytestmark = pytest.mark.filterwarnings("default::DeprecationWarning")
@@ -300,27 +298,3 @@ class TestDeprecatedServerInitKwargs:
         # This verifies the stacklevel is working as intended (pointing to constructor)
         warning = deprecation_warnings[0]
         assert "server.py" in warning.filename
-
-
-class TestDeprecatedSettingsProperty:
-    """Test deprecated settings property access."""
-
-    def test_settings_property_deprecation_warning(self, caplog):
-        """Test that accessing fastmcp.settings.settings logs a deprecation warning."""
-        from fastmcp import settings
-
-        with caplog_for_fastmcp(caplog):
-            # Access the deprecated property
-            deprecated_settings = settings.settings
-
-        # Check that a warning was logged
-        assert any(
-            "Using fastmcp.settings.settings is deprecated. Use fastmcp.settings instead."
-            in record.message
-            for record in caplog.records
-            if record.levelname == "WARNING"
-        )
-
-        # Verify it still returns the same settings object
-        assert deprecated_settings is settings
-        assert isinstance(deprecated_settings, Settings)

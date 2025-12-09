@@ -13,7 +13,6 @@ from pydantic_settings import (
     BaseSettings,
     SettingsConfigDict,
 )
-from typing_extensions import Self
 
 from fastmcp.utilities.logging import get_logger
 
@@ -180,18 +179,6 @@ class Settings(BaseSettings):
                 raise AttributeError(f"Setting {parent_attr} does not exist.")
             settings = getattr(settings, parent_attr)
         setattr(settings, attr, value)
-
-    @property
-    def settings(self) -> Self:
-        """
-        This property is for backwards compatibility with FastMCP < 2.8.0,
-        which accessed fastmcp.settings.settings
-        """
-        # Deprecated in 2.8.0
-        logger.warning(
-            "Using fastmcp.settings.settings is deprecated. Use fastmcp.settings instead.",
-        )
-        return self
 
     home: Path = Path(user_data_dir("fastmcp", appauthor=False))
 
@@ -423,23 +410,3 @@ class Settings(BaseSettings):
         auth_class = type_adapter.validate_python(self.server_auth)
 
         return auth_class
-
-
-def __getattr__(name: str):
-    """
-    Used to deprecate the module-level Image class; can be removed once it is no longer imported to root.
-    """
-    if name == "settings":
-        import fastmcp
-
-        settings = fastmcp.settings
-        # Deprecated in 2.10.2
-        if settings.deprecation_warnings:
-            warnings.warn(
-                "`from fastmcp.settings import settings` is deprecated. use `fastmcp.settings` instead.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-        return settings
-
-    raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
