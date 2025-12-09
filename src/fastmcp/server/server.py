@@ -2649,10 +2649,6 @@ class FastMCP(Generic[LifespanResultT]):
         server: FastMCP[LifespanResultT],
         prefix: str | None = None,
         as_proxy: bool | None = None,
-        *,
-        tool_separator: str | None = None,
-        resource_separator: str | None = None,
-        prompt_separator: str | None = None,
     ) -> None:
         """Mount another FastMCP server on this server with an optional prefix.
 
@@ -2697,55 +2693,8 @@ class FastMCP(Generic[LifespanResultT]):
             as_proxy: Whether to treat the mounted server as a proxy. If None (default),
                 automatically determined based on whether the server has a custom lifespan
                 (True if it has a custom lifespan, False otherwise).
-            tool_separator: Deprecated. Separator character for tool names.
-            resource_separator: Deprecated. Separator character for resource URIs.
-            prompt_separator: Deprecated. Separator character for prompt names.
         """
         from fastmcp.server.proxy import FastMCPProxy
-
-        # Deprecated since 2.9.0
-        # Prior to 2.9.0, the first positional argument was the prefix and the
-        # second was the server. Here we swap them if needed now that the prefix
-        # is optional.
-        if isinstance(server, str):
-            if fastmcp.settings.deprecation_warnings:
-                warnings.warn(
-                    "Mount prefixes are now optional and the first positional argument "
-                    "should be the server you want to mount.",
-                    DeprecationWarning,
-                    stacklevel=2,
-                )
-            server, prefix = cast(FastMCP[Any], prefix), server
-
-        if tool_separator is not None:
-            # Deprecated since 2.4.0
-            if fastmcp.settings.deprecation_warnings:
-                warnings.warn(
-                    "The tool_separator parameter is deprecated and will be removed in a future version. "
-                    "Tools are now prefixed using 'prefix_toolname' format.",
-                    DeprecationWarning,
-                    stacklevel=2,
-                )
-
-        if resource_separator is not None:
-            # Deprecated since 2.4.0
-            if fastmcp.settings.deprecation_warnings:
-                warnings.warn(
-                    "The resource_separator parameter is deprecated and ignored. "
-                    "Resource prefixes are now added using the protocol://prefix/path format.",
-                    DeprecationWarning,
-                    stacklevel=2,
-                )
-
-        if prompt_separator is not None:
-            # Deprecated since 2.4.0
-            if fastmcp.settings.deprecation_warnings:
-                warnings.warn(
-                    "The prompt_separator parameter is deprecated and will be removed in a future version. "
-                    "Prompts are now prefixed using 'prefix_promptname' format.",
-                    DeprecationWarning,
-                    stacklevel=2,
-                )
 
         # if as_proxy is not specified and the server has a custom lifespan,
         # we should treat it as a proxy
@@ -2771,9 +2720,6 @@ class FastMCP(Generic[LifespanResultT]):
         self,
         server: FastMCP[LifespanResultT],
         prefix: str | None = None,
-        tool_separator: str | None = None,
-        resource_separator: str | None = None,
-        prompt_separator: str | None = None,
     ) -> None:
         """
         Import the MCP objects from another FastMCP server into this one,
@@ -2805,56 +2751,7 @@ class FastMCP(Generic[LifespanResultT]):
             server: The FastMCP server to import
             prefix: Optional prefix to use for the imported server's objects. If None,
                 objects are imported with their original names.
-            tool_separator: Deprecated. Separator for tool names.
-            resource_separator: Deprecated and ignored. Prefix is now
-              applied using the protocol://prefix/path format
-            prompt_separator: Deprecated. Separator for prompt names.
         """
-
-        # Deprecated since 2.9.0
-        # Prior to 2.9.0, the first positional argument was the prefix and the
-        # second was the server. Here we swap them if needed now that the prefix
-        # is optional.
-        if isinstance(server, str):
-            if fastmcp.settings.deprecation_warnings:
-                warnings.warn(
-                    "Import prefixes are now optional and the first positional argument "
-                    "should be the server you want to import.",
-                    DeprecationWarning,
-                    stacklevel=2,
-                )
-            server, prefix = cast(FastMCP[Any], prefix), server
-
-        if tool_separator is not None:
-            # Deprecated since 2.4.0
-            if fastmcp.settings.deprecation_warnings:
-                warnings.warn(
-                    "The tool_separator parameter is deprecated and will be removed in a future version. "
-                    "Tools are now prefixed using 'prefix_toolname' format.",
-                    DeprecationWarning,
-                    stacklevel=2,
-                )
-
-        if resource_separator is not None:
-            # Deprecated since 2.4.0
-            if fastmcp.settings.deprecation_warnings:
-                warnings.warn(
-                    "The resource_separator parameter is deprecated and ignored. "
-                    "Resource prefixes are now added using the protocol://prefix/path format.",
-                    DeprecationWarning,
-                    stacklevel=2,
-                )
-
-        if prompt_separator is not None:
-            # Deprecated since 2.4.0
-            if fastmcp.settings.deprecation_warnings:
-                warnings.warn(
-                    "The prompt_separator parameter is deprecated and will be removed in a future version. "
-                    "Prompts are now prefixed using 'prefix_promptname' format.",
-                    DeprecationWarning,
-                    stacklevel=2,
-                )
-
         # Import tools from the server
         for key, tool in (await server.get_tools()).items():
             if prefix:
