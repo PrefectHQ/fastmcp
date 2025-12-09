@@ -67,6 +67,7 @@ from fastmcp.resources.resource import FunctionResource, Resource
 from fastmcp.resources.resource_manager import ResourceManager
 from fastmcp.resources.template import FunctionResourceTemplate, ResourceTemplate
 from fastmcp.server.auth import AuthProvider
+from fastmcp.server.event_store import EventStore
 from fastmcp.server.http import (
     StarletteWithLifespan,
     create_sse_app,
@@ -2589,13 +2590,24 @@ class FastMCP(Generic[LifespanResultT]):
         json_response: bool | None = None,
         stateless_http: bool | None = None,
         transport: Literal["http", "streamable-http", "sse"] = "http",
+        event_store: EventStore | None = None,
+        retry_interval: int | None = None,
     ) -> StarletteWithLifespan:
         """Create a Starlette app using the specified HTTP transport.
 
         Args:
             path: The path for the HTTP endpoint
             middleware: A list of middleware to apply to the app
-            transport: Transport protocol to use - either "streamable-http" (default) or "sse"
+            json_response: Whether to use JSON response format
+            stateless_http: Whether to use stateless mode (new transport per request)
+            transport: Transport protocol to use - "http", "streamable-http", or "sse"
+            event_store: Optional event store for SSE polling/resumability. When set,
+                enables clients to reconnect and resume receiving events after
+                server-initiated disconnections. Only used with streamable-http transport.
+            retry_interval: Optional retry interval in milliseconds for SSE polling.
+                Controls how quickly clients should reconnect after server-initiated
+                disconnections. Requires event_store to be set. Only used with
+                streamable-http transport.
 
         Returns:
             A Starlette application configured with the specified transport
@@ -2606,7 +2618,8 @@ class FastMCP(Generic[LifespanResultT]):
                 server=self,
                 streamable_http_path=path
                 or self._deprecated_settings.streamable_http_path,
-                event_store=None,
+                event_store=event_store,
+                retry_interval=retry_interval,
                 auth=self.auth,
                 json_response=(
                     json_response

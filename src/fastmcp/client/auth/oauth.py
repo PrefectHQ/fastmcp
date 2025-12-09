@@ -4,7 +4,6 @@ import time
 import webbrowser
 from collections.abc import AsyncGenerator
 from typing import Any
-from urllib.parse import urlparse
 
 import anyio
 import httpx
@@ -162,8 +161,8 @@ class OAuth(OAuthClientProvider):
             additional_client_metadata: Extra fields for OAuthClientMetadata
             callback_port: Fixed port for OAuth callback (default: random available port)
         """
-        parsed_url = urlparse(mcp_url)
-        server_base_url = f"{parsed_url.scheme}://{parsed_url.netloc}"
+        # Normalize the MCP URL (strip trailing slashes for consistency)
+        mcp_url = mcp_url.rstrip("/")
 
         # Setup OAuth client
         self.httpx_client_factory = httpx_client_factory or httpx.AsyncClient
@@ -201,16 +200,17 @@ class OAuth(OAuthClientProvider):
                 stacklevel=2,
             )
 
+        # Use full URL for token storage to properly separate tokens per MCP endpoint
         self.token_storage_adapter: TokenStorageAdapter = TokenStorageAdapter(
-            async_key_value=token_storage, server_url=server_base_url
+            async_key_value=token_storage, server_url=mcp_url
         )
 
-        # Store server_base_url for use in callback_handler
-        self.server_base_url = server_base_url
+        # Store full MCP URL for use in callback_handler display
+        self.mcp_url = mcp_url
 
-        # Initialize parent class
+        # Initialize parent class with full URL for proper OAuth metadata discovery
         super().__init__(
-            server_url=server_base_url,
+            server_url=mcp_url,
             client_metadata=client_metadata,
             storage=self.token_storage_adapter,
             redirect_handler=self.redirect_handler,
@@ -256,7 +256,7 @@ class OAuth(OAuthClientProvider):
         # Create server with result tracking
         server: Server = create_oauth_callback_server(
             port=self.redirect_port,
-            server_url=self.server_base_url,
+            server_url=self.mcp_url,
             result_container=result,
             result_ready=result_ready,
         )
