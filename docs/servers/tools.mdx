@@ -824,6 +824,57 @@ FastMCP supports these standard annotations:
 
 Remember that annotations help make better user experiences but should be treated as advisory hints. They help client applications present appropriate UI elements and safety controls, but won't enforce security boundaries on their own. Always focus on making your annotations accurately represent what your tool actually does.
 
+### Using Annotation Hints
+
+MCP clients like Claude and ChatGPT use annotation hints to determine when to skip confirmation prompts and how to present tools to users. The most commonly used hint is `readOnlyHint`, which signals that a tool only reads data without making changes.
+
+**Read-only tools** improve user experience by:
+- Skipping confirmation prompts for safe operations
+- Allowing broader access without security concerns
+- Enabling more aggressive batching and caching
+
+Mark a tool as read-only when it retrieves data, performs calculations, or checks status without modifying state:
+
+```python
+from fastmcp import FastMCP
+from mcp.types import ToolAnnotations
+
+mcp = FastMCP("Data Server")
+
+@mcp.tool(annotations={"readOnlyHint": True})
+def get_user(user_id: str) -> dict:
+    """Retrieve user information by ID."""
+    return {"id": user_id, "name": "Alice"}
+
+@mcp.tool(
+    annotations=ToolAnnotations(
+        readOnlyHint=True,
+        idempotentHint=True,  # Same result for repeated calls
+        openWorldHint=False   # Only internal data
+    )
+)
+def search_products(query: str) -> list[dict]:
+    """Search the product catalog."""
+    return [{"id": 1, "name": "Widget", "price": 29.99}]
+
+# Write operations - no readOnlyHint
+@mcp.tool()
+def update_user(user_id: str, name: str) -> dict:
+    """Update user information."""
+    return {"id": user_id, "name": name, "updated": True}
+
+@mcp.tool(annotations={"destructiveHint": True})
+def delete_user(user_id: str) -> dict:
+    """Permanently delete a user account."""
+    return {"deleted": user_id}
+```
+
+For tools that write to databases, send notifications, create/update/delete resources, or trigger workflows, omit `readOnlyHint` or set it to `False`. Use `destructiveHint=True` for operations that cannot be undone.
+
+Client-specific behavior:
+- **ChatGPT**: Skips confirmation prompts for read-only tools in Chat mode (see [ChatGPT integration](/integrations/chatgpt))
+- **Claude**: Uses hints to understand tool safety profiles and make better execution decisions
+
 ## Notifications
 
 <VersionBadge version="2.9.1" />
