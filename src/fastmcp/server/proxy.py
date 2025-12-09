@@ -117,6 +117,7 @@ class ProxyToolManager(ToolManager, ProxyManagerMixin):
                 return ToolResult(
                     content=result.content,
                     structured_content=result.structured_content,
+                    meta=result.meta,
                 )
 
 
