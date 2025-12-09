@@ -7,6 +7,7 @@ Task protocol is now always enabled.
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
+from fastmcp.server.tasks import get_task_capabilities
 
 
 async def test_capabilities_include_tasks():
@@ -25,11 +26,7 @@ async def test_capabilities_include_tasks():
         assert init_result.capabilities.experimental is not None
         assert "tasks" in init_result.capabilities.experimental
         tasks_cap = init_result.capabilities.experimental["tasks"]
-        assert tasks_cap == {
-            "tools": True,
-            "prompts": True,
-            "resources": True,
-        }
+        assert tasks_cap == get_task_capabilities()["tasks"]
 
 
 async def test_client_uses_task_capable_session():

@@ -74,6 +74,7 @@ from fastmcp.server.http import (
 )
 from fastmcp.server.low_level import LowLevelServer
 from fastmcp.server.middleware import Middleware, MiddlewareContext
+from fastmcp.server.tasks.capabilities import get_task_capabilities
 from fastmcp.server.tasks.config import TaskConfig
 from fastmcp.server.tasks.handlers import (
     handle_prompt_as_task,
@@ -690,7 +691,11 @@ class FastMCP(Generic[LifespanResultT]):
             async with fastmcp.server.context.Context(fastmcp=self):
                 # Get resource including from mounted servers
                 resource = await self._get_resource_with_task_config(str(uri))
-                if resource and hasattr(resource, "task_config"):
+                if (
+                    resource
+                    and self._should_enable_component(resource)
+                    and hasattr(resource, "task_config")
+                ):
                     task_mode = resource.task_config.mode  # type: ignore[union-attr]
 
                     # Enforce mode="required" - must have task metadata
@@ -817,7 +822,12 @@ class FastMCP(Generic[LifespanResultT]):
             async with fastmcp.server.context.Context(fastmcp=self):
                 prompts = await self.get_prompts()
                 prompt = prompts.get(name)
-                if prompt and hasattr(prompt, "task_config") and prompt.task_config:
+                if (
+                    prompt
+                    and self._should_enable_component(prompt)
+                    and hasattr(prompt, "task_config")
+                    and prompt.task_config
+                ):
                     task_mode = prompt.task_config.mode  # type: ignore[union-attr]
 
                     # Enforce mode="required" - must have task metadata
@@ -1542,7 +1552,11 @@ class FastMCP(Generic[LifespanResultT]):
 
                 # Get tool from local manager, mounted servers, or proxy
                 tool = await self._get_tool_with_task_config(key)
-                if tool and hasattr(tool, "task_config"):
+                if (
+                    tool
+                    and self._should_enable_component(tool)
+                    and hasattr(tool, "task_config")
+                ):
                     task_mode = tool.task_config.mode  # type: ignore[union-attr]
 
                     # Enforce mode="required" - must have task metadata
@@ -2476,19 +2490,7 @@ class FastMCP(Generic[LifespanResultT]):
                     )
 
                     # Build experimental capabilities
-                    # Declare SEP-1686 task support per final spec (lines 49-63)
-                    # Nested structure: {list: {}, cancel: {}, requests: {tools: {call: {}}}}
-                    experimental_capabilities = {
-                        "tasks": {
-                            "list": {},
-                            "cancel": {},
-                            "requests": {
-                                "tools": {"call": {}},
-                                "prompts": {"get": {}},
-                                "resources": {"read": {}},
-                            },
-                        }
-                    }
+                    experimental_capabilities = get_task_capabilities()
 
                     await self._mcp_server.run(
                         read_stream,
