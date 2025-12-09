@@ -175,6 +175,15 @@ async def test_http_headers(streamable_http_server: str):
         assert json_result["x-demo-header"] == "ABC"
 
 
+async def test_session_id_callback(streamable_http_server: str):
+    """Test getting mcp-session-id from the transport."""
+    transport = StreamableHttpTransport(streamable_http_server)
+    assert transport.get_session_id() is None
+    async with Client(transport=transport):
+        session_id = transport.get_session_id()
+        assert session_id is not None
+
+
 @pytest.mark.parametrize("streamable_http_server", [True, False], indirect=True)
 async def test_greet_with_progress_tool(streamable_http_server: str):
     """Test calling the greet tool."""
