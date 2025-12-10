@@ -90,6 +90,9 @@ logger = get_logger(__name__)
 
 # Default token expiration times
 DEFAULT_ACCESS_TOKEN_EXPIRY_SECONDS: Final[int] = 60 * 60  # 1 hour
+DEFAULT_ACCESS_TOKEN_EXPIRY_NO_REFRESH_SECONDS: Final[int] = (
+    60 * 60 * 24 * 365
+)  # 1 year
 DEFAULT_AUTH_CODE_EXPIRY_SECONDS: Final[int] = 5 * 60  # 5 minutes
 
 # HTTP client timeout
@@ -653,6 +656,8 @@ class OAuthProxy(OAuthProvider):
         # Consent screen configuration
         require_authorization_consent: bool = True,
         consent_csp_policy: str | None = None,
+        # Token expiry fallback
+        fallback_access_token_expiry_seconds: int | None = None,
     ):
         """Initialize the OAuth proxy provider.
 
@@ -702,6 +707,11 @@ class OAuthProxy(OAuthProvider):
                 If a non-empty string, uses that as the CSP policy value.
                 This allows organizations with their own CSP policies to override or disable
                 the built-in CSP directives.
+            fallback_access_token_expiry_seconds: Expiry time to use when upstream provider
+                doesn't return `expires_in` in the token response. If not set, uses smart
+                defaults: 1 hour if a refresh token is available (since we can refresh),
+                or 1 year if no refresh token (for API-key-style tokens like GitHub OAuth Apps).
+                Set explicitly to override these defaults.
         """
 
         # Always enable DCR since we implement it locally for MCP clients
@@ -772,6 +782,11 @@ class OAuthProxy(OAuthProvider):
         # Extra parameters for authorization and token endpoints
         self._extra_authorize_params: dict[str, str] = extra_authorize_params or {}
         self._extra_token_params: dict[str, str] = extra_token_params or {}
+
+        # Token expiry fallback (None means use smart default based on refresh token)
+        self._fallback_access_token_expiry_seconds: int | None = (
+            fallback_access_token_expiry_seconds
+        )
 
         if jwt_signing_key is None:
             jwt_signing_key = derive_jwt_key(
@@ -1142,9 +1157,18 @@ class OAuthProxy(OAuthProvider):
         )
 
         # Calculate token expiry times
-        expires_in = int(
-            idp_tokens.get("expires_in", DEFAULT_ACCESS_TOKEN_EXPIRY_SECONDS)
-        )
+        # If upstream provides expires_in, use it. Otherwise use fallback based on:
+        # - User-provided fallback if set
+        # - 1 hour if refresh token available (can refresh when expired)
+        # - 1 year if no refresh token (likely API-key-style token like GitHub OAuth Apps)
+        if "expires_in" in idp_tokens:
+            expires_in = int(idp_tokens["expires_in"])
+        elif self._fallback_access_token_expiry_seconds is not None:
+            expires_in = self._fallback_access_token_expiry_seconds
+        elif idp_tokens.get("refresh_token"):
+            expires_in = DEFAULT_ACCESS_TOKEN_EXPIRY_SECONDS
+        else:
+            expires_in = DEFAULT_ACCESS_TOKEN_EXPIRY_NO_REFRESH_SECONDS
 
         # Calculate refresh token expiry if provided by upstream
         # Some providers include refresh_expires_in, some don't
@@ -1381,9 +1405,14 @@ class OAuthProxy(OAuthProvider):
             raise TokenError("invalid_grant", f"Upstream refresh failed: {e}") from e
 
         # Update stored upstream token
-        new_expires_in = int(
-            token_response.get("expires_in", DEFAULT_ACCESS_TOKEN_EXPIRY_SECONDS)
-        )
+        # In refresh flow, we know there's a refresh token, so default to 1 hour
+        # (user override still applies if set)
+        if "expires_in" in token_response:
+            new_expires_in = int(token_response["expires_in"])
+        elif self._fallback_access_token_expiry_seconds is not None:
+            new_expires_in = self._fallback_access_token_expiry_seconds
+        else:
+            new_expires_in = DEFAULT_ACCESS_TOKEN_EXPIRY_SECONDS
         upstream_token_set.access_token = token_response["access_token"]
         upstream_token_set.expires_at = time.time() + new_expires_in
 

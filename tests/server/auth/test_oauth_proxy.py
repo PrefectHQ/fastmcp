@@ -1417,3 +1417,54 @@ class TestErrorPageRendering:
         assert b"invalid_scope" in response.body
         assert b"doesn&#x27;t exist" in response.body  # HTML-escaped apostrophe
         assert b"OAuth Error" in response.body
+
+
+class TestFallbackAccessTokenExpiry:
+    """Test fallback access token expiry constants and configuration."""
+
+    def test_default_constants(self):
+        """Verify the default expiry constants are set correctly."""
+        from fastmcp.server.auth.oauth_proxy import (
+            DEFAULT_ACCESS_TOKEN_EXPIRY_NO_REFRESH_SECONDS,
+            DEFAULT_ACCESS_TOKEN_EXPIRY_SECONDS,
+        )
+
+        assert DEFAULT_ACCESS_TOKEN_EXPIRY_SECONDS == 60 * 60  # 1 hour
+        assert (
+            DEFAULT_ACCESS_TOKEN_EXPIRY_NO_REFRESH_SECONDS == 60 * 60 * 24 * 365
+        )  # 1 year
+
+    def test_fallback_parameter_stored(self):
+        """Verify fallback_access_token_expiry_seconds is stored on provider."""
+        provider = OAuthProxy(
+            upstream_authorization_endpoint="https://idp.example.com/authorize",
+            upstream_token_endpoint="https://idp.example.com/token",
+            upstream_client_id="test-client",
+            upstream_client_secret="test-secret",
+            token_verifier=JWTVerifier(
+                jwks_uri="https://idp.example.com/.well-known/jwks.json",
+                issuer="https://idp.example.com",
+            ),
+            base_url="http://localhost:8000",
+            jwt_signing_key="test-signing-key",
+            fallback_access_token_expiry_seconds=86400,
+        )
+
+        assert provider._fallback_access_token_expiry_seconds == 86400
+
+    def test_fallback_parameter_defaults_to_none(self):
+        """Verify fallback defaults to None (enabling smart defaults)."""
+        provider = OAuthProxy(
+            upstream_authorization_endpoint="https://idp.example.com/authorize",
+            upstream_token_endpoint="https://idp.example.com/token",
+            upstream_client_id="test-client",
+            upstream_client_secret="test-secret",
+            token_verifier=JWTVerifier(
+                jwks_uri="https://idp.example.com/.well-known/jwks.json",
+                issuer="https://idp.example.com",
+            ),
+            base_url="http://localhost:8000",
+            jwt_signing_key="test-signing-key",
+        )
+
+        assert provider._fallback_access_token_expiry_seconds is None
