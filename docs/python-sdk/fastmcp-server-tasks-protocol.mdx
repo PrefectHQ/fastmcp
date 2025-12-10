@@ -1,0 +1,88 @@
+---
+title: protocol
+sidebarTitle: protocol
+---
+
+# `fastmcp.server.tasks.protocol`
+
+
+SEP-1686 task protocol handlers.
+
+Implements MCP task protocol methods: tasks/get, tasks/result, tasks/list, tasks/cancel, tasks/delete.
+
+
+## Functions
+
+### `tasks_get_handler` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/tasks/protocol.py#L45" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+tasks_get_handler(server: FastMCP, params: dict[str, Any]) -> GetTaskResult
+```
+
+
+Handle MCP 'tasks/get' request (SEP-1686).
+
+**Args:**
+- `server`: FastMCP server instance
+- `params`: Request params containing taskId
+
+**Returns:**
+- Task status response with spec-compliant fields
+
+
+### `tasks_result_handler` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/tasks/protocol.py#L142" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+tasks_result_handler(server: FastMCP, params: dict[str, Any]) -> Any
+```
+
+
+Handle MCP 'tasks/result' request (SEP-1686).
+
+Converts raw task return values to MCP types based on task type.
+
+**Args:**
+- `server`: FastMCP server instance
+- `params`: Request params containing taskId
+
+**Returns:**
+- MCP result (CallToolResult, GetPromptResult, or ReadResourceResult)
+
+
+### `tasks_list_handler` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/tasks/protocol.py#L256" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+tasks_list_handler(server: FastMCP, params: dict[str, Any]) -> ListTasksResult
+```
+
+
+Handle MCP 'tasks/list' request (SEP-1686).
+
+Note: With client-side tracking, this returns minimal info.
+
+**Args:**
+- `server`: FastMCP server instance
+- `params`: Request params (cursor, limit)
+
+**Returns:**
+- Response with tasks list and pagination
+
+
+### `tasks_cancel_handler` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/tasks/protocol.py#L274" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+tasks_cancel_handler(server: FastMCP, params: dict[str, Any]) -> CancelTaskResult
+```
+
+
+Handle MCP 'tasks/cancel' request (SEP-1686).
+
+Cancels a running task, transitioning it to cancelled state.
+
+**Args:**
+- `server`: FastMCP server instance
+- `params`: Request params containing taskId
+
+**Returns:**
+- Task status response showing cancelled state
+

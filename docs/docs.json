@@ -276,6 +276,7 @@
             "anchor": "Python SDK",
             "icon": "python",
             "pages": [
+              "python-sdk/fastmcp-dependencies",
               "python-sdk/fastmcp-exceptions",
               "python-sdk/fastmcp-mcp_config",
               "python-sdk/fastmcp-settings",
@@ -296,7 +297,8 @@
                       "python-sdk/fastmcp-cli-install-shared"
                     ]
                   },
-                  "python-sdk/fastmcp-cli-run"
+                  "python-sdk/fastmcp-cli-run",
+                  "python-sdk/fastmcp-cli-tasks"
                 ]
               },
               {
@@ -319,6 +321,7 @@
                   "python-sdk/fastmcp-client-progress",
                   "python-sdk/fastmcp-client-roots",
                   "python-sdk/fastmcp-client-sampling",
+                  "python-sdk/fastmcp-client-tasks",
                   "python-sdk/fastmcp-client-transports"
                 ]
               },
@@ -380,6 +383,7 @@
                   "python-sdk/fastmcp-server-context",
                   "python-sdk/fastmcp-server-dependencies",
                   "python-sdk/fastmcp-server-elicitation",
+                  "python-sdk/fastmcp-server-event_store",
                   "python-sdk/fastmcp-server-http",
                   "python-sdk/fastmcp-server-low_level",
                   {
@@ -405,7 +409,20 @@
                     ]
                   },
                   "python-sdk/fastmcp-server-proxy",
-                  "python-sdk/fastmcp-server-server"
+                  "python-sdk/fastmcp-server-server",
+                  {
+                    "group": "tasks",
+                    "pages": [
+                      "python-sdk/fastmcp-server-tasks-__init__",
+                      "python-sdk/fastmcp-server-tasks-capabilities",
+                      "python-sdk/fastmcp-server-tasks-config",
+                      "python-sdk/fastmcp-server-tasks-converters",
+                      "python-sdk/fastmcp-server-tasks-handlers",
+                      "python-sdk/fastmcp-server-tasks-keys",
+                      "python-sdk/fastmcp-server-tasks-protocol",
+                      "python-sdk/fastmcp-server-tasks-subscriptions"
+                    ]
+                  }
                 ]
               },
               {

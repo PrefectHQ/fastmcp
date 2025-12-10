@@ -66,7 +66,7 @@ on_notification(self, context: MiddlewareContext[mt.Notification[Any, Any]], cal
 #### `on_initialize` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/middleware.py#L150" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-on_initialize(self, context: MiddlewareContext[mt.InitializeRequest], call_next: CallNext[mt.InitializeRequest, None]) -> None
+on_initialize(self, context: MiddlewareContext[mt.InitializeRequest], call_next: CallNext[mt.InitializeRequest, mt.InitializeResult | None]) -> mt.InitializeResult | None
 ```
 
 #### `on_call_tool` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/middleware/middleware.py#L157" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>

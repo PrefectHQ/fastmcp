@@ -1,0 +1,35 @@
+---
+title: subscriptions
+sidebarTitle: subscriptions
+---
+
+# `fastmcp.server.tasks.subscriptions`
+
+
+Task subscription helpers for sending MCP notifications (SEP-1686).
+
+Subscribes to Docket execution state changes and sends notifications/tasks/status
+to clients when their tasks change state.
+
+
+## Functions
+
+### `subscribe_to_task_updates` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/tasks/subscriptions.py#L27" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+subscribe_to_task_updates(task_id: str, task_key: str, session: ServerSession, docket: Docket) -> None
+```
+
+
+Subscribe to Docket execution events and send MCP notifications.
+
+Per SEP-1686 lines 436-444, servers MAY send notifications/tasks/status
+when task state changes. This is an optional optimization that reduces
+client polling frequency.
+
+**Args:**
+- `task_id`: Client-visible task ID (server-generated UUID)
+- `task_key`: Internal Docket execution key (includes session, type, component)
+- `session`: MCP ServerSession for sending notifications
+- `docket`: Docket instance for subscribing to execution events
+

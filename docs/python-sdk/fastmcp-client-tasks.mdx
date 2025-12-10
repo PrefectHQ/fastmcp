@@ -1,0 +1,219 @@
+---
+title: tasks
+sidebarTitle: tasks
+---
+
+# `fastmcp.client.tasks`
+
+
+SEP-1686 client Task classes.
+
+## Classes
+
+### `TaskNotificationHandler` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/tasks.py#L89" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+MessageHandler that routes task status notifications to Task objects.
+
+
+**Methods:**
+
+#### `dispatch` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/tasks.py#L96" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+dispatch(self, message: Message) -> None
+```
+
+Dispatch messages, including task status notifications.
+
+
+### `Task` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/tasks.py#L110" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Abstract base class for MCP background tasks (SEP-1686).
+
+Provides a uniform API whether the server accepts background execution
+or executes synchronously (graceful degradation per SEP-1686).
+
+
+**Methods:**
+
+#### `task_id` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/tasks.py#L168" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+task_id(self) -> str
+```
+
+Get the task ID.
+
+
+#### `returned_immediately` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/tasks.py#L173" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+returned_immediately(self) -> bool
+```
+
+Check if server executed the task immediately.
+
+**Returns:**
+- True if server executed synchronously (graceful degradation or no task support)
+- False if server accepted background execution
+
+
+#### `on_status_change` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/tasks.py#L208" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+on_status_change(self, callback: Callable[[GetTaskResult], None | Awaitable[None]]) -> None
+```
+
+Register callback for status change notifications.
+
+The callback will be invoked when a notifications/tasks/status is received
+for this task (optional server feature per SEP-1686 lines 436-444).
+
+Supports both sync and async callbacks (auto-detected).
+
+**Args:**
+- `callback`: Function to call with GetTaskResult when status changes.
+     Can return None (sync) or Awaitable[None] (async).
+
+
+#### `status` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/tasks.py#L234" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+status(self) -> GetTaskResult
+```
+
+Get current task status.
+
+If server executed immediately, returns synthetic completed status.
+Otherwise queries the server for current status.
+
+
+#### `result` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/tasks.py#L265" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+result(self) -> TaskResultT
+```
+
+Wait for and return the task result.
+
+Must be implemented by subclasses to return the appropriate result type.
+
+
+#### `wait` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/tasks.py#L272" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+wait(self) -> GetTaskResult
+```
+
+Wait for task to reach a specific state or complete.
+
+Uses event-based waiting when notifications are available (fast),
+with fallback to polling (reliable). Optimally wakes up immediately
+on status changes when server sends notifications/tasks/status.
+
+**Args:**
+- `state`: Desired state ('submitted', 'working', 'completed', 'failed').
+   If None, waits for any terminal state (completed/failed)
+- `timeout`: Maximum time to wait in seconds
+
+**Returns:**
+- Final task status
+
+**Raises:**
+- `TimeoutError`: If desired state not reached within timeout
+
+
+#### `cancel` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/tasks.py#L335" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+cancel(self) -> None
+```
+
+Cancel this task, transitioning it to cancelled state.
+
+Sends a tasks/cancel protocol request. The server will attempt to halt
+execution and move the task to cancelled state.
+
+Note: If server executed immediately (graceful degradation), this is a no-op
+as there's no server-side task to cancel.
+
+
+### `ToolTask` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/tasks.py#L357" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Represents a tool call that may execute in background or immediately.
+
+Provides a uniform API whether the server accepts background execution
+or executes synchronously (graceful degradation per SEP-1686).
+
+
+**Methods:**
+
+#### `result` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/tasks.py#L399" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+result(self) -> CallToolResult
+```
+
+Wait for and return the tool result.
+
+If server executed immediately, returns the immediate result.
+Otherwise waits for background task to complete and retrieves result.
+
+**Returns:**
+- The parsed tool result (same as call_tool returns)
+
+
+### `PromptTask` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/tasks.py#L459" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Represents a prompt call that may execute in background or immediately.
+
+Provides a uniform API whether the server accepts background execution
+or executes synchronously (graceful degradation per SEP-1686).
+
+
+**Methods:**
+
+#### `result` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/tasks.py#L490" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+result(self) -> mcp.types.GetPromptResult
+```
+
+Wait for and return the prompt result.
+
+If server executed immediately, returns the immediate result.
+Otherwise waits for background task to complete and retrieves result.
+
+**Returns:**
+- The prompt result with messages and description
+
+
+### `ResourceTask` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/tasks.py#L524" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Represents a resource read that may execute in background or immediately.
+
+Provides a uniform API whether the server accepts background execution
+or executes synchronously (graceful degradation per SEP-1686).
+
+
+**Methods:**
+
+#### `result` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/tasks.py#L560" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+result(self) -> list[mcp.types.TextResourceContents | mcp.types.BlobResourceContents]
+```
+
+Wait for and return the resource contents.
+
+If server executed immediately, returns the immediate result.
+Otherwise waits for background task to complete and retrieves result.
+
+**Returns:**
+- list\[ReadResourceContents]: The resource contents
+

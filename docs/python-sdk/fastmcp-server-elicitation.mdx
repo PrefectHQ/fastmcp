@@ -7,7 +7,45 @@ sidebarTitle: elicitation
 
 ## Functions
 
-### `get_elicitation_schema` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/elicitation.py#L99" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `parse_elicit_response_type` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/elicitation.py#L132" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+parse_elicit_response_type(response_type: Any) -> ElicitConfig
+```
+
+
+Parse response_type into schema and handling configuration.
+
+Supports multiple syntaxes:
+- None: Empty object schema, expect empty response
+- dict: {"low": {"title": "..."}} -> single-select titled enum
+- list patterns:
+    - [["a", "b"]] -> multi-select untitled
+    - [{"low": {...}}] -> multi-select titled
+    - ["a", "b"] -> single-select untitled
+- list\[X] type annotation: multi-select with type
+- Scalar types (bool, int, float, str, Literal, Enum): single value
+- Other types (dataclass, BaseModel): use directly
+
+
+### `handle_elicit_accept` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/elicitation.py#L263" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+handle_elicit_accept(config: ElicitConfig, content: Any) -> AcceptedElicitation[Any]
+```
+
+
+Handle an accepted elicitation response.
+
+**Args:**
+- `config`: The elicitation configuration from parse_elicit_response_type
+- `content`: The response content from the client
+
+**Returns:**
+- AcceptedElicitation with the extracted/validated data
+
+
+### `get_elicitation_schema` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/elicitation.py#L318" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_elicitation_schema(response_type: type[T]) -> dict[str, Any]
@@ -20,7 +58,7 @@ Get the schema for an elicitation response.
 - `response_type`: The type of the response
 
 
-### `validate_elicitation_json_schema` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/elicitation.py#L118" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `validate_elicitation_json_schema` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/elicitation.py#L337" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 validate_elicitation_json_schema(schema: dict[str, Any]) -> None
@@ -45,7 +83,7 @@ This ensures the schema is compatible with MCP elicitation requirements:
 
 ## Classes
 
-### `ElicitationJsonSchema` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/elicitation.py#L32" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ElicitationJsonSchema` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/elicitation.py#L36" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Custom JSON schema generator for MCP elicitation that always inlines enums.
@@ -57,31 +95,46 @@ Optionally adds enumNames for better UI display when available.
 
 **Methods:**
 
-#### `generate_inner` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/elicitation.py#L40" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `generate_inner` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/elicitation.py#L44" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 generate_inner(self, schema: core_schema.CoreSchema) -> JsonSchemaValue
 ```
 
-Override to prevent ref generation for enums.
+Override to prevent ref generation for enums and handle list schemas.
 
 
-#### `enum_schema` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/elicitation.py#L50" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_schema` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/elicitation.py#L57" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+list_schema(self, schema: core_schema.ListSchema) -> JsonSchemaValue
+```
+
+Generate schema for list types, detecting enum items for multi-select.
+
+
+#### `enum_schema` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/elicitation.py#L94" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 enum_schema(self, schema: core_schema.EnumSchema) -> JsonSchemaValue
 ```
 
-Generate inline enum schema with optional enumNames for better UI.
+Generate inline enum schema.
 
-If enum members have a _display_name_ attribute or custom __str__,
-we'll include enumNames for better UI representation.
+Always generates enum pattern: {"enum": [value, ...]}
+Titled enums are handled separately via dict-based syntax in ctx.elicit().
 
 
-### `AcceptedElicitation` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/elicitation.py#L87" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `AcceptedElicitation` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/elicitation.py#L105" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Result when user accepts the elicitation.
 
 
-### `ScalarElicitationType` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/elicitation.py#L95" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ScalarElicitationType` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/elicitation.py#L113" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+### `ElicitConfig` <sup><a href="https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/server/elicitation.py#L118" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Configuration for an elicitation request.
+
