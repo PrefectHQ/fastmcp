@@ -1221,3 +1221,143 @@ class TestCustomRouteForwarding:
         route_paths = [route.path for route in routes]  # type: ignore[attr-defined]
         assert "/route1" in route_paths
         assert "/route2" in route_paths
+
+
+class TestDeeplyNestedMount:
+    """Test deeply nested mount scenarios (3+ levels deep).
+
+    This tests the fix for https://github.com/jlowin/fastmcp/issues/2583
+    where tools/resources/prompts mounted more than 2 levels deep would fail
+    to invoke even though they were correctly listed.
+    """
+
+    async def test_three_level_nested_tool_invocation(self):
+        """Test invoking tools from servers mounted 3 levels deep."""
+        root = FastMCP("root")
+        middle = FastMCP("middle")
+        leaf = FastMCP("leaf")
+
+        @leaf.tool
+        def add(a: int, b: int) -> int:
+            return a + b
+
+        @middle.tool
+        def multiply(a: int, b: int) -> int:
+            return a * b
+
+        middle.mount(leaf, prefix="leaf")
+        root.mount(middle, prefix="middle")
+
+        async with Client(root) as client:
+            # Tool at level 2 should work
+            result = await client.call_tool("middle_multiply", {"a": 3, "b": 4})
+            assert result.data == 12
+
+            # Tool at level 3 should also work (this was the bug)
+            result = await client.call_tool("middle_leaf_add", {"a": 5, "b": 7})
+            assert result.data == 12
+
+    async def test_three_level_nested_resource_invocation(self):
+        """Test reading resources from servers mounted 3 levels deep."""
+        root = FastMCP("root")
+        middle = FastMCP("middle")
+        leaf = FastMCP("leaf")
+
+        @leaf.resource("leaf://data")
+        def leaf_data() -> str:
+            return "leaf data"
+
+        @middle.resource("middle://data")
+        def middle_data() -> str:
+            return "middle data"
+
+        middle.mount(leaf, prefix="leaf")
+        root.mount(middle, prefix="middle")
+
+        async with Client(root) as client:
+            # Resource at level 2 should work
+            result = await client.read_resource("middle://middle/data")
+            assert result[0].text == "middle data"
+
+            # Resource at level 3 should also work
+            result = await client.read_resource("leaf://middle/leaf/data")
+            assert result[0].text == "leaf data"
+
+    async def test_three_level_nested_resource_template_invocation(self):
+        """Test reading resource templates from servers mounted 3 levels deep."""
+        root = FastMCP("root")
+        middle = FastMCP("middle")
+        leaf = FastMCP("leaf")
+
+        @leaf.resource("leaf://item/{id}")
+        def leaf_item(id: str) -> str:
+            return f"leaf item {id}"
+
+        @middle.resource("middle://item/{id}")
+        def middle_item(id: str) -> str:
+            return f"middle item {id}"
+
+        middle.mount(leaf, prefix="leaf")
+        root.mount(middle, prefix="middle")
+
+        async with Client(root) as client:
+            # Resource template at level 2 should work
+            result = await client.read_resource("middle://middle/item/42")
+            assert result[0].text == "middle item 42"
+
+            # Resource template at level 3 should also work
+            result = await client.read_resource("leaf://middle/leaf/item/99")
+            assert result[0].text == "leaf item 99"
+
+    async def test_three_level_nested_prompt_invocation(self):
+        """Test getting prompts from servers mounted 3 levels deep."""
+        root = FastMCP("root")
+        middle = FastMCP("middle")
+        leaf = FastMCP("leaf")
+
+        @leaf.prompt
+        def leaf_prompt(name: str) -> str:
+            return f"Hello from leaf: {name}"
+
+        @middle.prompt
+        def middle_prompt(name: str) -> str:
+            return f"Hello from middle: {name}"
+
+        middle.mount(leaf, prefix="leaf")
+        root.mount(middle, prefix="middle")
+
+        async with Client(root) as client:
+            # Prompt at level 2 should work
+            result = await client.get_prompt("middle_middle_prompt", {"name": "World"})
+            assert "Hello from middle: World" in result.messages[0].content.text  # type: ignore[union-attr]
+
+            # Prompt at level 3 should also work
+            result = await client.get_prompt(
+                "middle_leaf_leaf_prompt", {"name": "Test"}
+            )
+            assert "Hello from leaf: Test" in result.messages[0].content.text  # type: ignore[union-attr]
+
+    async def test_four_level_nested_tool_invocation(self):
+        """Test invoking tools from servers mounted 4 levels deep."""
+        root = FastMCP("root")
+        level1 = FastMCP("level1")
+        level2 = FastMCP("level2")
+        level3 = FastMCP("level3")
+
+        @level3.tool
+        def deep_tool() -> str:
+            return "very deep"
+
+        level2.mount(level3, prefix="l3")
+        level1.mount(level2, prefix="l2")
+        root.mount(level1, prefix="l1")
+
+        async with Client(root) as client:
+            # Verify tool is listed
+            tools = await client.list_tools()
+            tool_names = [t.name for t in tools]
+            assert "l1_l2_l3_deep_tool" in tool_names
+
+            # Tool at level 4 should work
+            result = await client.call_tool("l1_l2_l3_deep_tool", {})
+            assert result.data == "very deep"

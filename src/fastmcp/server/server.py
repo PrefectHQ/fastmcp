@@ -691,7 +691,7 @@ class FastMCP(Generic[LifespanResultT]):
             # Check for task metadata and route appropriately
             async with fastmcp.server.context.Context(fastmcp=self):
                 # Get resource including from mounted servers
-                resource = await self._get_resource_with_task_config(str(uri))
+                resource = await self._get_resource_or_template_or_none(str(uri))
                 if (
                     resource
                     and self._should_enable_component(resource)
@@ -967,21 +967,15 @@ class FastMCP(Generic[LifespanResultT]):
         except NotFoundError:
             return None
 
-    async def _get_resource_with_task_config(
+    async def _get_resource_or_template_or_none(
         self, uri: str
     ) -> Resource | ResourceTemplate | None:
-        """Get a resource or template by URI, returning None if not found.
-
-        Used for task config checking where we need the actual resource object
-        (including from mounted servers) but don't want to raise.
-        """
-        # Try exact resource match first
+        """Get a resource or template by URI, searching recursively. Returns None if not found."""
         try:
             return await self.get_resource(uri)
         except NotFoundError:
             pass
 
-        # Try resource templates for URI pattern matching
         templates = await self.get_resource_templates()
         for template in templates.values():
             if template.matches(uri):
@@ -1645,7 +1639,9 @@ class FastMCP(Generic[LifespanResultT]):
 
             try:
                 # First, get the tool to check if parent's filter allows it
-                tool = await mounted.server._tool_manager.get_tool(try_name)
+                # Use get_tool() instead of _tool_manager.get_tool() to support
+                # nested mounted servers (tools mounted more than 2 levels deep)
+                tool = await mounted.server.get_tool(try_name)
                 if not self._should_enable_component(tool):
                     # Parent filter blocks this tool, continue searching
                     continue
@@ -1730,12 +1726,16 @@ class FastMCP(Generic[LifespanResultT]):
                     continue
                 key = remove_resource_prefix(key, mounted.prefix)
 
+            # First, get the resource/template to check if parent's filter allows it
+            # Use get_resource_or_template to support nested mounted servers
+            # (resources/templates mounted more than 2 levels deep)
+            resource = await mounted.server._get_resource_or_template_or_none(key)
+            if resource is None:
+                continue
+            if not self._should_enable_component(resource):
+                # Parent filter blocks this resource, continue searching
+                continue
             try:
-                # First, get the resource to check if parent's filter allows it
-                resource = await mounted.server._resource_manager.get_resource(key)
-                if not self._should_enable_component(resource):
-                    # Parent filter blocks this resource, continue searching
-                    continue
                 result = list(await mounted.server._read_resource_middleware(key))
                 return result
             except NotFoundError:
@@ -1816,7 +1816,9 @@ class FastMCP(Generic[LifespanResultT]):
 
             try:
                 # First, get the prompt to check if parent's filter allows it
-                prompt = await mounted.server._prompt_manager.get_prompt(try_name)
+                # Use get_prompt() instead of _prompt_manager.get_prompt() to support
+                # nested mounted servers (prompts mounted more than 2 levels deep)
+                prompt = await mounted.server.get_prompt(try_name)
                 if not self._should_enable_component(prompt):
                     # Parent filter blocks this prompt, continue searching
                     continue
