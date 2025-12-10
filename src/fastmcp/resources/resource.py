@@ -42,7 +42,6 @@ class Resource(FastMCPComponent):
     mime_type: str = Field(
         default="text/plain",
         description="MIME type of the resource content",
-        pattern=r"^[a-zA-Z0-9]+/[a-zA-Z0-9\-+.]+$",
     )
     annotations: Annotated[
         Annotations | None,
