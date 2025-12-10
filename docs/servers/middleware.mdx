@@ -108,6 +108,32 @@ This hierarchy allows you to target your middleware logic with the right level o
 The `on_initialize` hook receives the client's initialization request but **returns `None`** rather than a result. The initialization response is handled internally by the MCP protocol and cannot be modified by middleware. This hook is useful for client detection, logging connections, or initializing session state, but not for modifying the initialization handshake itself.
 </Note>
 
+**Example:**
+
+```python
+from fastmcp.server.middleware import Middleware, MiddlewareContext
+from mcp import McpError
+from mcp.types import ErrorData
+
+class InitializationMiddleware(Middleware):
+    async def on_initialize(self, context: MiddlewareContext, call_next):
+        # Check client capabilities before initialization
+        client_info = context.message.params.get("clientInfo", {})
+        client_name = client_info.get("name", "unknown")
+
+        # Reject unsupported clients BEFORE call_next
+        if client_name == "unsupported-client":
+            raise McpError(ErrorData(code=-32000, message="This client is not supported"))
+
+        # Log successful initialization
+        await call_next(context)
+        print(f"Client {client_name} initialized successfully")
+```
+
+<Warning>
+If you raise `McpError` in `on_initialize` **after** calling `call_next()`, the error will only be logged and will not be sent to the client. The initialization response has already been sent at that point. Always raise `McpError` **before** `call_next()` if you want to reject the initialization.
+</Warning>
+
 ### MCP Session Availability in Middleware
 
 <VersionBadge version="2.13.1" />
