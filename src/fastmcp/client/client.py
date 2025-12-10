@@ -16,7 +16,7 @@ import httpx
 import mcp.types
 import pydantic_core
 from exceptiongroup import catch
-from mcp import ClientSession
+from mcp import ClientSession, McpError
 from mcp.types import (
     CancelTaskRequest,
     CancelTaskRequestParams,
@@ -514,7 +514,8 @@ class Client(Generic[ClientTransportT]):
                         raise RuntimeError(
                             "Session task completed without exception but connection failed"
                         )
-                    if isinstance(exception, httpx.HTTPStatusError):
+                    # Preserve specific exception types that clients may want to handle
+                    if isinstance(exception, httpx.HTTPStatusError | McpError):
                         raise exception
                     raise RuntimeError(
                         f"Client failed to connect: {exception}"

@@ -866,7 +866,11 @@ class FastMCPTransport(ClientTransport):
             client_read, client_write = client_streams
             server_read, server_write = server_streams
 
-            # Create a cancel scope for the server task
+            # Capture exceptions to re-raise after task group cleanup.
+            # anyio task groups can suppress exceptions when cancel_scope.cancel()
+            # is called during cleanup, so we capture and re-raise manually.
+            exception_to_raise: BaseException | None = None
+
             async with (
                 anyio.create_task_group() as tg,
                 _enter_server_lifespan(server=self.server),
@@ -892,8 +896,14 @@ class FastMCPTransport(ClientTransport):
                         **session_kwargs,
                     ) as client_session:
                         yield client_session
+                except BaseException as e:
+                    exception_to_raise = e
                 finally:
                     tg.cancel_scope.cancel()
+
+            # Re-raise after task group has exited cleanly
+            if exception_to_raise is not None:
+                raise exception_to_raise
 
     def __repr__(self) -> str:
         return f"<FastMCPTransport(server='{self.server.name}')>"
