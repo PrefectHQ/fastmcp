@@ -123,7 +123,8 @@ async def convert_prompt_result(
     messages: list[mcp.types.PromptMessage] = []
     for msg in raw_value:
         if isinstance(msg, PromptMessage):
-            messages.append(msg.to_mcp())
+            # PromptMessage is imported from mcp.types - use directly
+            messages.append(msg)
         elif isinstance(msg, str):
             messages.append(
                 mcp.types.PromptMessage(
