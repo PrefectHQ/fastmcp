@@ -14,11 +14,12 @@ from key_value.aio.wrappers.statistics import StatisticsWrapper
 from key_value.aio.wrappers.statistics.wrapper import (
     KVStoreCollectionStatistics,
 )
+from mcp.server.lowlevel.helper_types import ReadResourceContents
 from pydantic import BaseModel, Field
 from typing_extensions import NotRequired, Self, override
 
 from fastmcp.prompts.prompt import Prompt
-from fastmcp.resources.resource import Resource, ResourceContent
+from fastmcp.resources.resource import Resource
 from fastmcp.server.middleware.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.tools.tool import Tool, ToolResult
 from fastmcp.utilities.logging import get_logger
@@ -35,11 +36,10 @@ GLOBAL_KEY = "__global__"
 
 
 class CachableReadResourceContents(BaseModel):
-    """A wrapper for ResourceContent that can be cached."""
+    """A wrapper for ReadResourceContents that can be cached."""
 
     content: str | bytes
     mime_type: str | None = None
-    meta: dict[str, Any] | None = None
 
     def get_size(self) -> int:
         return len(self.model_dump_json())
@@ -49,18 +49,13 @@ class CachableReadResourceContents(BaseModel):
         return sum(item.get_size() for item in values)
 
     @classmethod
-    def wrap(cls, values: Sequence[ResourceContent]) -> list[Self]:
-        return [
-            cls(content=item.content, mime_type=item.mime_type, meta=item.meta)
-            for item in values
-        ]
+    def wrap(cls, values: Sequence[ReadResourceContents]) -> list[Self]:
+        return [cls(content=item.content, mime_type=item.mime_type) for item in values]
 
     @classmethod
-    def unwrap(cls, values: Sequence[Self]) -> list[ResourceContent]:
+    def unwrap(cls, values: Sequence[Self]) -> list[ReadResourceContents]:
         return [
-            ResourceContent(
-                content=item.content, mime_type=item.mime_type, meta=item.meta
-            )
+            ReadResourceContents(content=item.content, mime_type=item.mime_type)
             for item in values
         ]
 
@@ -390,9 +385,9 @@ class ResponseCachingMiddleware(Middleware):
         self,
         context: MiddlewareContext[mcp.types.ReadResourceRequestParams],
         call_next: CallNext[
-            mcp.types.ReadResourceRequestParams, Sequence[ResourceContent]
+            mcp.types.ReadResourceRequestParams, Sequence[ReadResourceContents]
         ],
-    ) -> Sequence[ResourceContent]:
+    ) -> Sequence[ReadResourceContents]:
         """Read a resource from the cache, if caching is enabled, and the result is in the cache. Otherwise,
         otherwise call the next middleware and store the result in the cache if caching is enabled."""
         if self._read_resource_settings.get("enabled") is False:
@@ -404,7 +399,7 @@ class ResponseCachingMiddleware(Middleware):
         if cached_value := await self._read_resource_cache.get(key=cache_key):
             return CachableReadResourceContents.unwrap(values=cached_value)
 
-        value: Sequence[ResourceContent] = await call_next(context=context)
+        value: Sequence[ReadResourceContents] = await call_next(context=context)
         cached_value = CachableReadResourceContents.wrap(values=value)
 
         await self._read_resource_cache.put(

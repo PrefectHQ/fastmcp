@@ -9,7 +9,7 @@ import httpx
 from mcp.types import ToolAnnotations
 from pydantic.networks import AnyUrl
 
-from fastmcp.resources import Resource, ResourceContent, ResourceTemplate
+from fastmcp.resources import Resource, ResourceTemplate
 from fastmcp.server.dependencies import get_http_headers
 from fastmcp.tools.tool import Tool, ToolResult
 from fastmcp.utilities.logging import get_logger
@@ -187,7 +187,7 @@ class OpenAPIResource(Resource):
         """Custom representation to prevent recursion errors when printing."""
         return f"OpenAPIResource(name={self.name!r}, uri={self.uri!r}, path={self._route.path})"
 
-    async def read(self) -> ResourceContent:
+    async def read(self) -> str | bytes:
         """Fetch the resource data by making an HTTP request."""
         try:
             # Extract path parameters from the URI if present
@@ -261,15 +261,11 @@ class OpenAPIResource(Resource):
 
             if "application/json" in content_type:
                 result = response.json()
-                return ResourceContent(
-                    content=json.dumps(result), mime_type="application/json"
-                )
+                return json.dumps(result)
             elif any(ct in content_type for ct in ["text/", "application/xml"]):
-                return ResourceContent(content=response.text, mime_type=self.mime_type)
+                return response.text
             else:
-                return ResourceContent(
-                    content=response.content, mime_type=self.mime_type
-                )
+                return response.content
 
         except httpx.HTTPStatusError as e:
             # Handle HTTP errors (4xx, 5xx)

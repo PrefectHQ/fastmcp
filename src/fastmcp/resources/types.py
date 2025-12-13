@@ -12,7 +12,7 @@ from pydantic import Field, ValidationInfo
 from typing_extensions import override
 
 from fastmcp.exceptions import ResourceError
-from fastmcp.resources.resource import Resource, ResourceContent
+from fastmcp.resources.resource import Resource
 from fastmcp.utilities.logging import get_logger
 
 logger = get_logger(__name__)
@@ -23,9 +23,9 @@ class TextResource(Resource):
 
     text: str = Field(description="Text content of the resource")
 
-    async def read(self) -> ResourceContent:
+    async def read(self) -> str:
         """Read the text content."""
-        return ResourceContent(content=self.text, mime_type=self.mime_type)
+        return self.text
 
 
 class BinaryResource(Resource):
@@ -33,9 +33,9 @@ class BinaryResource(Resource):
 
     data: bytes = Field(description="Binary content of the resource")
 
-    async def read(self) -> ResourceContent:
+    async def read(self) -> bytes:
         """Read the binary content."""
-        return ResourceContent(content=self.data, mime_type=self.mime_type)
+        return self.data
 
 
 class FileResource(Resource):
@@ -76,14 +76,12 @@ class FileResource(Resource):
         return not mime_type.startswith("text/")
 
     @override
-    async def read(self) -> ResourceContent:
+    async def read(self) -> str | bytes:
         """Read the file content."""
         try:
             if self.is_binary:
-                content: str | bytes = await self._async_path.read_bytes()
-            else:
-                content = await self._async_path.read_text()
-            return ResourceContent(content=content, mime_type=self.mime_type)
+                return await self._async_path.read_bytes()
+            return await self._async_path.read_text()
         except Exception as e:
             raise ResourceError(f"Error reading file {self.path}") from e
 
@@ -97,12 +95,12 @@ class HttpResource(Resource):
     )
 
     @override
-    async def read(self) -> ResourceContent:
+    async def read(self) -> str | bytes:
         """Read the HTTP content."""
         async with httpx.AsyncClient() as client:
             response = await client.get(self.url)
             _ = response.raise_for_status()
-            return ResourceContent(content=response.text, mime_type=self.mime_type)
+            return response.text
 
 
 class DirectoryResource(Resource):
@@ -147,14 +145,13 @@ class DirectoryResource(Resource):
             raise ResourceError(f"Error listing directory {self.path}") from e
 
     @override
-    async def read(self) -> ResourceContent:
+    async def read(self) -> str:  # Always returns JSON string
         """Read the directory listing."""
         try:
             files: list[Path] = await self.list_files()
 
             file_list = [str(f.relative_to(self.path)) for f in files]
 
-            content = json.dumps({"files": file_list}, indent=2)
-            return ResourceContent(content=content, mime_type=self.mime_type)
+            return json.dumps({"files": file_list}, indent=2)
         except Exception as e:
             raise ResourceError(f"Error reading directory {self.path}") from e

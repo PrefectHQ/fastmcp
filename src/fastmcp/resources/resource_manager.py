@@ -11,7 +11,7 @@ from pydantic import AnyUrl
 
 from fastmcp import settings
 from fastmcp.exceptions import NotFoundError, ResourceError
-from fastmcp.resources.resource import Resource, ResourceContent
+from fastmcp.resources.resource import Resource
 from fastmcp.resources.template import (
     ResourceTemplate,
     match_uri_template,
@@ -286,14 +286,10 @@ class ResourceManager:
 
         raise NotFoundError(f"Unknown resource: {uri_str}")
 
-    async def read_resource(self, uri: AnyUrl | str) -> ResourceContent:
+    async def read_resource(self, uri: AnyUrl | str) -> str | bytes:
         """
         Internal API for servers: Finds and reads a resource, respecting the
         filtered protocol path.
-
-        Returns:
-            ResourceContent: The canonical content wrapper. All Resource.read()
-            implementations now return ResourceContent.
         """
         uri_str = str(uri)
 
@@ -301,7 +297,7 @@ class ResourceManager:
         if uri_str in self._resources:
             resource = await self.get_resource(uri_str)
             try:
-                return await resource._read()
+                return await resource.read()
 
             # raise ResourceErrors as-is
             except ResourceError as e:
@@ -325,7 +321,7 @@ class ResourceManager:
             if (params := match_uri_template(uri_str, key)) is not None:
                 try:
                     resource = await template.create_resource(uri_str, params=params)
-                    return await resource._read()
+                    return await resource.read()
                 except ResourceError as e:
                     logger.exception(
                         f"Error reading resource from template {uri_str!r}"

@@ -6,12 +6,11 @@ Converts raw task return values to MCP result types.
 from __future__ import annotations
 
 import base64
+import json
 from typing import TYPE_CHECKING, Any
 
 import mcp.types
 import pydantic_core
-
-from fastmcp.resources.resource import ResourceContent
 
 if TYPE_CHECKING:
     from fastmcp.server.server import FastMCP
@@ -150,16 +149,13 @@ async def convert_prompt_result(
 
 
 async def convert_resource_result(
-    server: FastMCP,
-    raw_value: str | bytes | ResourceContent,
-    uri: str,
-    client_task_id: str,
+    server: FastMCP, raw_value: Any, uri: str, client_task_id: str
 ) -> dict[str, Any]:
-    """Convert resource result to MCP resource contents dict.
+    """Convert raw resource return value to MCP resource contents dict.
 
     Args:
         server: FastMCP server instance
-        raw_value: Result from the resource function (str, bytes, or ResourceContent)
+        raw_value: The raw return value from user's resource function (str or bytes)
         uri: Resource URI (for the contents response)
         client_task_id: Client task ID for related-task metadata
 
@@ -173,32 +169,38 @@ async def convert_resource_result(
         }
     }
 
-    # Convert to ResourceContent if needed (handles str, bytes)
-    if not isinstance(raw_value, ResourceContent):
-        raw_value = ResourceContent.from_value(raw_value)
-
-    # Extract content from ResourceContent
-    content = raw_value.content
-    mime_type = raw_value.mime_type
-    content_meta = raw_value.meta
-
-    if isinstance(content, str):
-        content_dict: dict[str, Any] = {
-            "uri": uri,
-            "text": content,
-            "mimeType": mime_type or "text/plain",
+    # Resources return str or bytes directly
+    if isinstance(raw_value, str):
+        return {
+            "contents": [
+                {
+                    "uri": uri,
+                    "text": raw_value,
+                    "mimeType": "text/plain",
+                }
+            ],
+            "_meta": related_task_meta,
+        }
+    elif isinstance(raw_value, bytes):
+        return {
+            "contents": [
+                {
+                    "uri": uri,
+                    "blob": base64.b64encode(raw_value).decode(),
+                    "mimeType": "application/octet-stream",
+                }
+            ],
+            "_meta": related_task_meta,
         }
     else:
-        content_dict = {
-            "uri": uri,
-            "blob": base64.b64encode(content).decode(),
-            "mimeType": mime_type or "application/octet-stream",
+        # Fallback: convert to JSON string
+        return {
+            "contents": [
+                {
+                    "uri": uri,
+                    "text": json.dumps(raw_value),
+                    "mimeType": "application/json",
+                }
+            ],
+            "_meta": related_task_meta,
         }
-
-    if content_meta:
-        content_dict["_meta"] = content_meta
-
-    return {
-        "contents": [content_dict],
-        "_meta": related_task_meta,
-    }

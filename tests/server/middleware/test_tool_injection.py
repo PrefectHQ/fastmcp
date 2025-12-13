@@ -489,14 +489,10 @@ class TestResourceToolMiddleware:
             [
                 TextContent(
                     type="text",
-                    text='[{"content":"debug=true","mime_type":"text/plain","meta":null}]',
+                    text='[{"content":"debug=true","mime_type":"text/plain"}]',
                 )
             ]
         )
         assert result.structured_content == snapshot(
-            {
-                "result": [
-                    {"content": "debug=true", "mime_type": "text/plain", "meta": None}
-                ]
-            }
+            {"result": [{"content": "debug=true", "mime_type": "text/plain"}]}
         )
