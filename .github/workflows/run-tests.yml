@@ -30,6 +30,9 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
         python-version: ["3.10"]
+        include:
+          - os: ubuntu-latest
+            python-version: "3.13"
       fail-fast: false
     timeout-minutes: 10
 
