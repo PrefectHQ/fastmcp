@@ -10,7 +10,7 @@ from pydantic import Field
 from fastmcp import Client, FastMCP
 from fastmcp.exceptions import NotFoundError
 from fastmcp.prompts.prompt import FunctionPrompt, Prompt
-from fastmcp.resources import Resource, ResourceTemplate
+from fastmcp.resources import Resource, ResourceContent, ResourceTemplate
 from fastmcp.server.server import (
     add_resource_prefix,
     has_resource_prefix,
@@ -615,6 +615,59 @@ class TestResourceDecorator:
         resource = resources_dict["resource://data"]
 
         assert resource.meta == meta_data
+
+    async def test_resource_content_with_meta_in_response(self):
+        """Test that ResourceContent meta is passed through to MCP response."""
+        mcp = FastMCP()
+
+        @mcp.resource("resource://widget")
+        def get_widget() -> ResourceContent:
+            return ResourceContent(
+                content="<widget>content</widget>",
+                mime_type="text/html",
+                meta={"csp": "script-src 'self'", "version": "1.0"},
+            )
+
+        async with Client(mcp) as client:
+            result = await client.read_resource("resource://widget")
+            assert len(result) == 1
+            assert result[0].text == "<widget>content</widget>"  # type: ignore[attr-defined]
+            assert result[0].mimeType == "text/html"  # type: ignore[attr-defined]
+            # Meta should be in the response
+            assert result[0].meta == {"csp": "script-src 'self'", "version": "1.0"}  # type: ignore[attr-defined]
+
+    async def test_resource_content_binary_with_meta(self):
+        """Test that ResourceContent with binary content and meta works."""
+        mcp = FastMCP()
+
+        @mcp.resource("resource://binary")
+        def get_binary() -> ResourceContent:
+            return ResourceContent(
+                content=b"\x00\x01\x02",
+                meta={"encoding": "raw"},
+            )
+
+        async with Client(mcp) as client:
+            result = await client.read_resource("resource://binary")
+            assert len(result) == 1
+            # Binary content comes back as blob
+            assert hasattr(result[0], "blob")
+            assert result[0].meta == {"encoding": "raw"}  # type: ignore[attr-defined]
+
+    async def test_resource_content_without_meta(self):
+        """Test that ResourceContent without meta works (meta is None)."""
+        mcp = FastMCP()
+
+        @mcp.resource("resource://plain")
+        def get_plain() -> ResourceContent:
+            return ResourceContent(content="plain content")
+
+        async with Client(mcp) as client:
+            result = await client.read_resource("resource://plain")
+            assert len(result) == 1
+            assert result[0].text == "plain content"  # type: ignore[attr-defined]
+            # Meta should be None
+            assert result[0].meta is None  # type: ignore[attr-defined]
 
 
 class TestTemplateDecorator:

@@ -10,7 +10,7 @@ from fastmcp.resources import (
     ResourceManager,
     ResourceTemplate,
 )
-from fastmcp.resources.resource import FunctionResource
+from fastmcp.resources.resource import FunctionResource, ResourceContent
 from fastmcp.utilities.tests import caplog_for_fastmcp
 
 
@@ -303,8 +303,8 @@ class TestResourceManager:
 
         resource = await manager.get_resource(AnyUrl("greet://world"))
         assert isinstance(resource, FunctionResource)
-        content = await resource.read()
-        assert content == "Hello, world!"
+        result = await resource.read()
+        assert result.content == "Hello, world!"
 
     async def test_get_unknown_resource(self):
         """Test getting a non-existent resource."""
@@ -559,8 +559,8 @@ class TestCustomResourceKeys:
         # Using a URI that matches the custom key pattern
         resource = await manager.get_resource("custom://greet/world")
         assert isinstance(resource, FunctionResource)
-        content = await resource.read()
-        assert content == "Hello, world!"
+        result = await resource.read()
+        assert result.content == "Hello, world!"
 
         # Shouldn't work with the original template pattern
         with pytest.raises(NotFoundError, match="Unknown resource"):
@@ -591,12 +591,14 @@ class TestQueryOnlyTemplates:
 
         # Should work without query param (uses default)
         resource = await manager.get_resource("data://config")
-        content = await resource.read()
-        assert content == "Config in json format"
+        result = await resource.read()
+        assert isinstance(result, ResourceContent)
+        assert isinstance(result.content, str)
+        assert result.content == "Config in json format"
 
         # Should also work via read_resource
-        content = await manager.read_resource("data://config")
-        assert content == "Config in json format"
+        result = await manager.read_resource("data://config")
+        assert result.content == "Config in json format"
 
     async def test_template_with_only_query_params_with_query_string(self):
         """Test that templates with only query params work with query string."""
@@ -614,12 +616,14 @@ class TestQueryOnlyTemplates:
 
         # Should work with query param (overrides default)
         resource = await manager.get_resource("data://config?format=xml")
-        content = await resource.read()
-        assert content == "Config in xml format"
+        result = await resource.read()
+        assert isinstance(result, ResourceContent)
+        assert isinstance(result.content, str)
+        assert result.content == "Config in xml format"
 
         # Should also work via read_resource
-        content = await manager.read_resource("data://config?format=xml")
-        assert content == "Config in xml format"
+        result = await manager.read_resource("data://config?format=xml")
+        assert result.content == "Config in xml format"
 
     async def test_template_with_only_multiple_query_params(self):
         """Test template with only multiple query parameters."""
@@ -636,16 +640,16 @@ class TestQueryOnlyTemplates:
         manager.add_template(template)
 
         # No query params - use all defaults
-        content = await manager.read_resource("data://items")
-        assert content == "Data in json (limit: 10)"
+        result = await manager.read_resource("data://items")
+        assert result.content == "Data in json (limit: 10)"
 
         # Partial query params
-        content = await manager.read_resource("data://items?format=xml")
-        assert content == "Data in xml (limit: 10)"
+        result = await manager.read_resource("data://items?format=xml")
+        assert result.content == "Data in xml (limit: 10)"
 
         # All query params
-        content = await manager.read_resource("data://items?format=xml&limit=20")
-        assert content == "Data in xml (limit: 20)"
+        result = await manager.read_resource("data://items?format=xml&limit=20")
+        assert result.content == "Data in xml (limit: 20)"
 
     async def test_has_resource_with_query_only_template(self):
         """Test that has_resource() works with query-only templates.

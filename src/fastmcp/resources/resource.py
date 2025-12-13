@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import base64
 import inspect
+import warnings
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Annotated, Any
+from typing import Annotated, Any
 
+import mcp.types
+import pydantic
 import pydantic_core
 from mcp.types import Annotations, Icon
 from mcp.types import Resource as MCPResource
@@ -19,6 +23,7 @@ from pydantic import (
 )
 from typing_extensions import Self
 
+from fastmcp import settings
 from fastmcp.server.dependencies import get_context, without_injected_parameters
 from fastmcp.server.tasks.config import TaskConfig
 from fastmcp.utilities.components import FastMCPComponent
@@ -26,8 +31,103 @@ from fastmcp.utilities.types import (
     get_fn_name,
 )
 
-if TYPE_CHECKING:
-    pass
+
+class ResourceContent(pydantic.BaseModel):
+    """Canonical wrapper for resource content.
+
+    This is the internal representation for all resource reads. Users can
+    return ResourceContent directly for full control, or return simpler types
+    (str, bytes, dict) which will be automatically converted.
+
+    Example:
+        ```python
+        from fastmcp import FastMCP
+        from fastmcp.resources import ResourceContent
+
+        mcp = FastMCP()
+
+        @mcp.resource("widget://my-widget")
+        def my_widget() -> ResourceContent:
+            return ResourceContent(
+                content="<widget html>",
+                meta={"csp": "script-src 'self'"}
+            )
+        ```
+    """
+
+    model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
+
+    content: str | bytes
+    mime_type: str | None = None
+    meta: dict[str, Any] | None = None
+
+    @classmethod
+    def from_value(
+        cls,
+        value: Any,
+        mime_type: str | None = None,
+        meta: dict[str, Any] | None = None,
+    ) -> ResourceContent:
+        """Convert any value to ResourceContent, handling serialization.
+
+        Args:
+            value: The value to convert. Can be:
+                - ResourceContent: returned as-is (meta param ignored)
+                - str: text content
+                - bytes: binary content
+                - other: serialized to JSON string
+
+            mime_type: Optional MIME type override. If not provided:
+                - str → "text/plain"
+                - bytes → "application/octet-stream"
+                - other → "application/json"
+
+            meta: Optional metadata (ignored if value is already ResourceContent)
+
+        Returns:
+            ResourceContent instance
+        """
+        if isinstance(value, ResourceContent):
+            return value
+        if isinstance(value, str):
+            return cls(content=value, mime_type=mime_type or "text/plain", meta=meta)
+        if isinstance(value, bytes):
+            return cls(
+                content=value,
+                mime_type=mime_type or "application/octet-stream",
+                meta=meta,
+            )
+        # dict, list, BaseModel, etc → JSON
+        json_str = pydantic_core.to_json(value, fallback=str).decode()
+        return cls(
+            content=json_str, mime_type=mime_type or "application/json", meta=meta
+        )
+
+    def to_mcp_resource_contents(
+        self, uri: AnyUrl | str
+    ) -> mcp.types.TextResourceContents | mcp.types.BlobResourceContents:
+        """Convert to MCP resource contents type.
+
+        Args:
+            uri: The URI of the resource (required by MCP types)
+
+        Returns:
+            TextResourceContents for str content, BlobResourceContents for bytes
+        """
+        if isinstance(self.content, str):
+            return mcp.types.TextResourceContents(
+                uri=AnyUrl(uri) if isinstance(uri, str) else uri,
+                text=self.content,
+                mimeType=self.mime_type or "text/plain",
+                _meta=self.meta,
+            )
+        else:
+            return mcp.types.BlobResourceContents(
+                uri=AnyUrl(uri) if isinstance(uri, str) else uri,
+                blob=base64.b64encode(self.content).decode(),
+                mimeType=self.mime_type or "application/octet-stream",
+                _meta=self.meta,
+            )
 
 
 class Resource(FastMCPComponent):
@@ -113,13 +213,40 @@ class Resource(FastMCPComponent):
             raise ValueError("Either name or uri must be provided")
         return self
 
-    async def read(self) -> str | bytes:
+    async def read(self) -> str | bytes | ResourceContent:
         """Read the resource content.
 
-        This method is not implemented in the base Resource class and must be
-        implemented by subclasses.
+        This method must be implemented by subclasses. For backwards compatibility,
+        subclasses can return str, bytes, or ResourceContent. However, returning
+        str or bytes is deprecated - new code should return ResourceContent.
+
+        Returns:
+            str | bytes | ResourceContent: The resource content. Returning str
+            or bytes is deprecated; prefer ResourceContent for full control
+            over MIME type and metadata.
         """
         raise NotImplementedError("Subclasses must implement read()")
+
+    async def _read(self) -> ResourceContent:
+        """Internal API that always returns ResourceContent.
+
+        This method calls read() and wraps str/bytes results in ResourceContent.
+        ResourceManager and other internal code should call this method instead
+        of read() directly.
+        """
+        result = await self.read()
+        if isinstance(result, ResourceContent):
+            return result
+        # Deprecated in 2.14.1: returning str/bytes from read()
+        if settings.deprecation_warnings:
+            warnings.warn(
+                f"Resource.read() returning str or bytes is deprecated (since 2.14.1). "
+                f"Return ResourceContent instead. "
+                f"(Resource: {self.__class__.__name__}, URI: {self.uri})",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        return ResourceContent.from_value(result, mime_type=self.mime_type)
 
     def to_mcp_resource(
         self,
@@ -224,17 +351,23 @@ class FunctionResource(Resource):
             task_config=task_config,
         )
 
-    async def read(self) -> str | bytes:
-        """Read the resource by calling the wrapped function."""
+    async def read(self) -> str | bytes | ResourceContent:
+        """Read the resource by calling the wrapped function.
+
+        Returns:
+            str | bytes | ResourceContent: The resource content. If the user's
+            function returns str, bytes, dict, etc., it will be wrapped
+            in ResourceContent. Nested Resource reads may return raw types.
+        """
         # self.fn is wrapped by without_injected_parameters which handles
         # dependency resolution internally
         result = self.fn()
         if inspect.isawaitable(result):
             result = await result
 
+        # If user returned another Resource, read it recursively
         if isinstance(result, Resource):
             return await result.read()
-        elif isinstance(result, bytes | str):
-            return result
-        else:
-            return pydantic_core.to_json(result, fallback=str).decode()
+
+        # Convert any value to ResourceContent
+        return ResourceContent.from_value(result, mime_type=self.mime_type)

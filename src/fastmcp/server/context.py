@@ -13,7 +13,6 @@ from typing import Any, overload
 
 import anyio
 from mcp import LoggingLevel, ServerSession
-from mcp.server.lowlevel.helper_types import ReadResourceContents
 from mcp.server.lowlevel.server import request_ctx
 from mcp.shared.context import RequestContext
 from mcp.types import (
@@ -36,6 +35,7 @@ from pydantic.networks import AnyUrl
 from starlette.requests import Request
 from typing_extensions import TypeVar
 
+from fastmcp.resources.resource import ResourceContent
 from fastmcp.server.elicitation import (
     AcceptedElicitation,
     CancelledElicitation,
@@ -275,17 +275,17 @@ class Context:
         """
         return await self.fastmcp._get_prompt_mcp(name, arguments)
 
-    async def read_resource(self, uri: str | AnyUrl) -> list[ReadResourceContents]:
+    async def read_resource(self, uri: str | AnyUrl) -> list[ResourceContent]:
         """Read a resource by URI.
 
         Args:
             uri: Resource URI to read
 
         Returns:
-            The resource content as either text or bytes
+            List of ResourceContent objects
         """
         # Context calls don't have task metadata, so always returns list
-        return await self.fastmcp._read_resource_mcp(uri)  # type: ignore[return-value]
+        return await self.fastmcp._read_resource_mcp(uri)
 
     async def log(
         self,
