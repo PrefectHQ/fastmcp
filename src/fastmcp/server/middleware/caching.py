@@ -17,7 +17,7 @@ from key_value.aio.wrappers.statistics.wrapper import (
 from pydantic import BaseModel, Field
 from typing_extensions import NotRequired, Self, override
 
-from fastmcp.prompts.prompt import Prompt, PromptResult
+from fastmcp.prompts.prompt import Prompt
 from fastmcp.resources.resource import Resource, ResourceContent
 from fastmcp.server.middleware.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.tools.tool import Tool, ToolResult
@@ -220,10 +220,12 @@ class ResponseCachingMiddleware(Middleware):
             default_collection="resources/read",
         )
 
-        self._get_prompt_cache: PydanticAdapter[PromptResult] = PydanticAdapter(
-            key_value=self._stats,
-            pydantic_model=PromptResult,
-            default_collection="prompts/get",
+        self._get_prompt_cache: PydanticAdapter[mcp.types.GetPromptResult] = (
+            PydanticAdapter(
+                key_value=self._stats,
+                pydantic_model=mcp.types.GetPromptResult,
+                default_collection="prompts/get",
+            )
         )
 
         self._call_tool_cache: PydanticAdapter[CachableToolResult] = PydanticAdapter(
@@ -417,8 +419,10 @@ class ResponseCachingMiddleware(Middleware):
     async def on_get_prompt(
         self,
         context: MiddlewareContext[mcp.types.GetPromptRequestParams],
-        call_next: CallNext[mcp.types.GetPromptRequestParams, PromptResult],
-    ) -> PromptResult:
+        call_next: CallNext[
+            mcp.types.GetPromptRequestParams, mcp.types.GetPromptResult
+        ],
+    ) -> mcp.types.GetPromptResult:
         """Get a prompt from the cache, if caching is enabled, and the result is in the cache. Otherwise,
         otherwise call the next middleware and store the result in the cache if caching is enabled."""
         if self._get_prompt_settings.get("enabled") is False:
@@ -429,7 +433,7 @@ class ResponseCachingMiddleware(Middleware):
         if cached_value := await self._get_prompt_cache.get(key=cache_key):
             return cached_value
 
-        value: PromptResult = await call_next(context=context)
+        value: mcp.types.GetPromptResult = await call_next(context=context)
 
         await self._get_prompt_cache.put(
             key=cache_key,

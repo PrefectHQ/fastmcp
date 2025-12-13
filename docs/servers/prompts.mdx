@@ -195,14 +195,13 @@ FastMCP intelligently handles different return types from your prompt function:
 -   **`str`**: Automatically converted to a single `PromptMessage`.
 -   **`PromptMessage`**: Used directly as provided. (Note a more user-friendly `Message` constructor is available that can accept raw strings instead of `TextContent` objects.)
 -   **`list[PromptMessage | str]`**: Used as a sequence of messages (a conversation).
--   **`PromptResult`**: Full control over messages, description, and metadata. See [PromptResult](#promptresult) below.
 -   **`Any`**: If the return type is not one of the above, the return value is attempted to be converted to a string and used as a `PromptMessage`.
 
 ```python
-from fastmcp.prompts.prompt import Message
+from fastmcp.prompts.prompt import Message, PromptResult
 
 @mcp.prompt
-def roleplay_scenario(character: str, situation: str) -> list[Message]:
+def roleplay_scenario(character: str, situation: str) -> PromptResult:
     """Sets up a roleplaying scenario with initial messages."""
     return [
         Message(f"Let's roleplay. You are {character}. The situation is: {situation}"),
@@ -210,43 +209,6 @@ def roleplay_scenario(character: str, situation: str) -> list[Message]:
     ]
 ```
 
-#### PromptResult
-
-<VersionBadge version="2.14.1" />
-
-For complete control over prompt responses, return a `PromptResult` object. This lets you include metadata alongside your prompt messages, which is useful for passing runtime information to clients.
-
-```python
-from fastmcp import FastMCP
-from fastmcp.prompts import PromptResult, Message
-
-mcp = FastMCP(name="PromptServer")
-
-@mcp.prompt
-def code_review(code: str) -> PromptResult:
-    """Returns a code review prompt with metadata."""
-    return PromptResult(
-        messages=[
-            Message(f"Please review this code:\n\n```\n{code}\n```"),
-        ],
-        description="Code review prompt",
-        meta={"review_type": "security", "priority": "high"}
-    )
-```
-
-`PromptResult` accepts three fields:
-
-**`messages`** - A list of `PromptMessage` or `Message` objects representing the conversation to send to the LLM.
-
-**`description`** - Optional description of the prompt result. If not provided, defaults to the prompt's docstring.
-
-**`meta`** - Optional metadata dictionary that will be included in the MCP response's `_meta` field. Use this for runtime metadata like categorization, priority, or other client-specific data.
-
-<Note>
-The `meta` field in `PromptResult` is for runtime metadata specific to this render response. This is separate from the `meta` parameter in `@mcp.prompt(meta={...})`, which provides static metadata about the prompt definition itself (returned when listing prompts).
-</Note>
-
-You can still return plain `str`, `PromptMessage`, or lists from your prompt functions—`PromptResult` is opt-in for when you need to include metadata.
 
 ### Required vs. Optional Parameters
 

@@ -4,14 +4,11 @@ import warnings
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from mcp import GetPromptResult
+
 from fastmcp import settings
 from fastmcp.exceptions import NotFoundError, PromptError
-from fastmcp.prompts.prompt import (
-    FunctionPrompt,
-    Prompt,
-    PromptResult,
-    _PromptFnReturn,
-)
+from fastmcp.prompts.prompt import FunctionPrompt, Prompt, PromptResult
 from fastmcp.settings import DuplicateBehavior
 from fastmcp.utilities.logging import get_logger
 
@@ -27,11 +24,7 @@ class PromptManager:
         mask_error_details: bool | None = None,
     ):
         self._prompts: dict[str, Prompt] = {}
-        self.mask_error_details = (
-            settings.mask_error_details
-            if mask_error_details is None
-            else mask_error_details
-        )
+        self.mask_error_details = mask_error_details or settings.mask_error_details
 
         # Default to "warn" if None is provided
         if duplicate_behavior is None:
@@ -65,7 +58,7 @@ class PromptManager:
 
     def add_prompt_from_fn(
         self,
-        fn: Callable[..., _PromptFnReturn | Awaitable[_PromptFnReturn]],
+        fn: Callable[..., PromptResult | Awaitable[PromptResult]],
         name: str | None = None,
         description: str | None = None,
         tags: set[str] | None = None,
@@ -105,17 +98,18 @@ class PromptManager:
         self,
         name: str,
         arguments: dict[str, Any] | None = None,
-    ) -> PromptResult:
+    ) -> GetPromptResult:
         """
         Internal API for servers: Finds and renders a prompt, respecting the
         filtered protocol path.
         """
         prompt = await self.get_prompt(name)
         try:
-            return await prompt._render(arguments)
-        except PromptError:
+            messages = await prompt.render(arguments)
+            return GetPromptResult(description=prompt.description, messages=messages)
+        except PromptError as e:
             logger.exception(f"Error rendering prompt {name!r}")
-            raise
+            raise e
         except Exception as e:
             logger.exception(f"Error rendering prompt {name!r}")
             if self.mask_error_details:

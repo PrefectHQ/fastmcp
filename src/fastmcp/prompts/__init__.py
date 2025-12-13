@@ -1,4 +1,4 @@
-from .prompt import Message, Prompt, PromptResult, PromptMessage
+from .prompt import Prompt, PromptMessage, Message
 from .prompt_manager import PromptManager
 
 __all__ = [
@@ -6,5 +6,4 @@ __all__ = [
     "Prompt",
     "PromptManager",
     "PromptMessage",
-    "PromptResult",
 ]

@@ -17,7 +17,7 @@ from typing import (
 import mcp.types as mt
 from typing_extensions import TypeVar
 
-from fastmcp.prompts.prompt import Prompt, PromptResult
+from fastmcp.prompts.prompt import Prompt
 from fastmcp.resources.resource import Resource, ResourceContent
 from fastmcp.resources.template import ResourceTemplate
 from fastmcp.tools.tool import Tool, ToolResult
@@ -170,8 +170,8 @@ class Middleware:
     async def on_get_prompt(
         self,
         context: MiddlewareContext[mt.GetPromptRequestParams],
-        call_next: CallNext[mt.GetPromptRequestParams, PromptResult],
-    ) -> PromptResult:
+        call_next: CallNext[mt.GetPromptRequestParams, mt.GetPromptResult],
+    ) -> mt.GetPromptResult:
         return await call_next(context)
 
     async def on_list_tools(
