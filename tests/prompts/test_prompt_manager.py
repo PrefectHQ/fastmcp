@@ -400,10 +400,10 @@ class TestContextHandling:
         context = Context(fastmcp=mcp)
 
         async with context:
-            messages = await prompt.render(arguments={"x": 42})
+            result = await prompt.render(arguments={"x": 42})
 
-        assert len(messages) == 1
-        assert messages[0].content.text == "42"  # type: ignore[attr-defined]
+        assert len(result.messages) == 1
+        assert result.messages[0].content.text == "42"  # type: ignore[attr-defined]
 
     async def test_context_optional(self):
         """Test that context is optional when rendering prompts."""
@@ -420,12 +420,12 @@ class TestContextHandling:
         context = Context(fastmcp=mcp)
 
         async with context:
-            messages = await prompt.render(
+            result = await prompt.render(
                 arguments={"x": 42},
             )
 
-        assert len(messages) == 1
-        assert messages[0].content.text == "42"  # type: ignore[attr-defined]
+        assert len(result.messages) == 1
+        assert result.messages[0].content.text == "42"  # type: ignore[attr-defined]
 
     async def test_annotated_context_parameter_detection(self):
         """Test that annotated context parameters are properly detected in
@@ -460,5 +460,5 @@ class TestContextHandling:
         context = Context(fastmcp=mcp)
 
         async with context:
-            messages = await prompt.render(arguments={"topic": "cats"})
-            assert messages[0].content.text == "Write about cats"  # type: ignore[attr-defined]
+            result = await prompt.render(arguments={"topic": "cats"})
+            assert result.messages[0].content.text == "Write about cats"  # type: ignore[attr-defined]

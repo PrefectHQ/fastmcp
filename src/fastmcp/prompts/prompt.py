@@ -4,15 +4,18 @@ from __future__ import annotations as _annotations
 
 import inspect
 import json
+import warnings
 from collections.abc import Awaitable, Callable, Sequence
 from typing import Annotated, Any
 
 import pydantic_core
+from mcp import GetPromptResult
 from mcp.types import ContentBlock, Icon, PromptMessage, Role, TextContent
 from mcp.types import Prompt as MCPPrompt
 from mcp.types import PromptArgument as MCPPromptArgument
 from pydantic import Field, TypeAdapter
 
+from fastmcp import settings
 from fastmcp.exceptions import PromptError
 from fastmcp.server.dependencies import get_context, without_injected_parameters
 from fastmcp.server.tasks.config import TaskConfig
@@ -40,13 +43,14 @@ def Message(
 
 message_validator = TypeAdapter[PromptMessage](PromptMessage)
 
-SyncPromptResult = (
+# Type aliases for what prompt functions can return (before conversion to PromptResult)
+_SyncPromptFnReturn = (
     str
     | PromptMessage
     | dict[str, Any]
     | Sequence[str | PromptMessage | dict[str, Any]]
 )
-PromptResult = SyncPromptResult | Awaitable[SyncPromptResult]
+_PromptFnReturn = _SyncPromptFnReturn | Awaitable[_SyncPromptFnReturn]
 
 
 class PromptArgument(FastMCPBaseModel):
@@ -59,6 +63,51 @@ class PromptArgument(FastMCPBaseModel):
     required: bool = Field(
         default=False, description="Whether the argument is required"
     )
+
+
+class PromptResult(FastMCPBaseModel):
+    """Canonical result type for prompt rendering.
+
+    This is the internal type that all prompt renders return. It wraps the
+    messages with optional description and metadata.
+    """
+
+    messages: list[PromptMessage] = Field(description="The prompt messages to return")
+    description: str | None = Field(
+        default=None, description="Optional description of the prompt result"
+    )
+    meta: dict[str, Any] | None = Field(
+        default=None, description="Optional metadata about the prompt result"
+    )
+
+    @classmethod
+    def from_value(
+        cls,
+        value: list[PromptMessage] | PromptResult,
+        description: str | None = None,
+        meta: dict[str, Any] | None = None,
+    ) -> PromptResult:
+        """Convert various types to PromptResult."""
+        if isinstance(value, PromptResult):
+            # Merge meta if provided
+            if meta and value.meta:
+                merged_meta = {**value.meta, **meta}
+            else:
+                merged_meta = meta or value.meta
+            return cls(
+                messages=value.messages,
+                description=description or value.description,
+                meta=merged_meta,
+            )
+        return cls(messages=value, description=description, meta=meta)
+
+    def to_mcp_prompt_result(self) -> GetPromptResult:
+        """Convert to MCP GetPromptResult."""
+        return GetPromptResult(
+            description=self.description,
+            messages=self.messages,
+            _meta=self.meta,
+        )
 
 
 class Prompt(FastMCPComponent):
@@ -113,7 +162,7 @@ class Prompt(FastMCPComponent):
 
     @staticmethod
     def from_function(
-        fn: Callable[..., PromptResult | Awaitable[PromptResult]],
+        fn: Callable[..., _PromptFnReturn | Awaitable[_PromptFnReturn]],
         name: str | None = None,
         title: str | None = None,
         description: str | None = None,
@@ -146,19 +195,45 @@ class Prompt(FastMCPComponent):
     async def render(
         self,
         arguments: dict[str, Any] | None = None,
-    ) -> list[PromptMessage]:
+    ) -> list[PromptMessage] | PromptResult:
         """Render the prompt with arguments.
 
         This method is not implemented in the base Prompt class and must be
-        implemented by subclasses.
+        implemented by subclasses. The preferred return type is PromptResult,
+        but list[PromptMessage] is still supported for backwards compatibility.
         """
         raise NotImplementedError("Subclasses must implement render()")
+
+    async def _render(
+        self,
+        arguments: dict[str, Any] | None = None,
+    ) -> PromptResult:
+        """Internal API that always returns PromptResult.
+
+        Calls render() and wraps list[PromptMessage] in PromptResult.
+        This is what PromptManager calls internally.
+        """
+        result = await self.render(arguments)
+        if isinstance(result, PromptResult):
+            return result
+        # Deprecated in 2.14.1: returning list[PromptMessage] from render()
+        if settings.deprecation_warnings:
+            warnings.warn(
+                f"Prompt.render() returning list[PromptMessage] is deprecated (since 2.14.1). "
+                f"Return PromptResult instead. "
+                f"(Prompt: {self.__class__.__name__}, Name: {self.name})",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        return PromptResult.from_value(
+            result, description=self.description, meta=self.meta
+        )
 
 
 class FunctionPrompt(Prompt):
     """A prompt that is a function."""
 
-    fn: Callable[..., PromptResult | Awaitable[PromptResult]]
+    fn: Callable[..., _PromptFnReturn | Awaitable[_PromptFnReturn]]
     task_config: Annotated[
         TaskConfig,
         Field(description="Background task execution configuration (SEP-1686)."),
@@ -167,7 +242,7 @@ class FunctionPrompt(Prompt):
     @classmethod
     def from_function(
         cls,
-        fn: Callable[..., PromptResult | Awaitable[PromptResult]],
+        fn: Callable[..., _PromptFnReturn | Awaitable[_PromptFnReturn]],
         name: str | None = None,
         title: str | None = None,
         description: str | None = None,
@@ -322,7 +397,7 @@ class FunctionPrompt(Prompt):
     async def render(
         self,
         arguments: dict[str, Any] | None = None,
-    ) -> list[PromptMessage]:
+    ) -> PromptResult:
         """Render the prompt with arguments."""
         # Validate required arguments
         if self.arguments:
@@ -375,7 +450,11 @@ class FunctionPrompt(Prompt):
                         "Could not convert prompt result to message."
                     ) from e
 
-            return messages
+            return PromptResult(
+                messages=messages,
+                description=self.description,
+                meta=self.meta,
+            )
         except Exception as e:
             logger.exception(f"Error rendering prompt {self.name}")
             raise PromptError(f"Error rendering prompt {self.name}.") from e

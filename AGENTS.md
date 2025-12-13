@@ -11,7 +11,7 @@ FastMCP is a comprehensive Python framework (Python ≥3.10) for building Model 
 ```bash
 uv sync                              # Install dependencies
 uv run prek run --all-files          # Ruff + Prettier + ty
-uv run pytest                        # Run full test suite
+uv run pytest -n auto                # Run full test suite
 ```
 
 **All three must pass** - this is enforced by CI. Alternative: `just build && just typecheck && just test`
@@ -242,9 +242,9 @@ uv sync                    # Installs all deps including dev tools
 
 ### Testing
 
-- **Standard**: `uv run pytest`
-- **Integration**: `uv run pytest -m "integration"`
-- **Excluding markers**: `uv run pytest -m "not integration and not client_process"`
+- **Standard**: `uv run pytest -n auto`
+- **Integration**: `uv run pytest -n auto -m "integration"`
+- **Excluding markers**: `uv run pytest -n auto -m "not integration and not client_process"`
 
 ### CLI Usage
 

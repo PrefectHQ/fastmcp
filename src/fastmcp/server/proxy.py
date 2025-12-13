@@ -16,7 +16,6 @@ from mcp.types import (
     METHOD_NOT_FOUND,
     BlobResourceContents,
     ElicitRequestFormParams,
-    GetPromptResult,
     TextResourceContents,
 )
 from pydantic.networks import AnyUrl
@@ -28,7 +27,7 @@ from fastmcp.client.roots import RootsList
 from fastmcp.client.transports import ClientTransportT
 from fastmcp.exceptions import NotFoundError, ResourceError, ToolError
 from fastmcp.mcp_config import MCPConfig
-from fastmcp.prompts import Prompt, PromptMessage
+from fastmcp.prompts import Prompt, PromptResult
 from fastmcp.prompts.prompt import PromptArgument
 from fastmcp.prompts.prompt_manager import PromptManager
 from fastmcp.resources import Resource, ResourceTemplate
@@ -257,7 +256,7 @@ class ProxyPromptManager(PromptManager, ProxyManagerMixin):
         self,
         name: str,
         arguments: dict[str, Any] | None = None,
-    ) -> GetPromptResult:
+    ) -> PromptResult:
         """Renders a prompt, trying local/mounted first, then proxy if not found."""
         try:
             # First try local and mounted prompts
@@ -267,7 +266,12 @@ class ProxyPromptManager(PromptManager, ProxyManagerMixin):
             client = await self._get_client()
             async with client:
                 result = await client.get_prompt(name, arguments)
-                return result
+                # Convert MCP GetPromptResult to PromptResult
+                return PromptResult(
+                    messages=result.messages,
+                    description=result.description,
+                    meta=result.meta,
+                )
 
 
 class ProxyTool(Tool, MirroredComponent):
@@ -524,11 +528,17 @@ class ProxyPrompt(Prompt, MirroredComponent):
             _mirrored=True,
         )
 
-    async def render(self, arguments: dict[str, Any]) -> list[PromptMessage]:  # type: ignore[override]
+    async def render(self, arguments: dict[str, Any]) -> PromptResult:  # type: ignore[override]
         """Render the prompt by making a call through the client."""
         async with self._client:
             result = await self._client.get_prompt(self.name, arguments)
-        return result.messages
+        # Convert GetPromptResult to PromptResult, preserving runtime meta from the result
+        # (not the static prompt meta which includes fastmcp tags)
+        return PromptResult(
+            messages=result.messages,
+            description=result.description,
+            meta=result.meta,
+        )
 
 
 class FastMCPProxy(FastMCP):
