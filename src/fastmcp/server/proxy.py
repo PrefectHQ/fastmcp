@@ -589,15 +589,15 @@ class ProxyClient(Client[ClientTransportT]):
         A handler that forwards the sampling request from the remote server to the proxy's connected clients and relays the response back to the remote server.
         """
         ctx = get_context()
-        content = await ctx.sample(
+        result = await ctx.sample(
             list(messages),
             system_prompt=params.systemPrompt,
             temperature=params.temperature,
             max_tokens=params.maxTokens,
             model_preferences=params.modelPreferences,
         )
-        if isinstance(content, mcp.types.ResourceLink | mcp.types.EmbeddedResource):
-            raise RuntimeError("Content is not supported")
+        # Create TextContent from the result text
+        content = mcp.types.TextContent(type="text", text=result.text or "")
         return mcp.types.CreateMessageResult(
             role="assistant",
             model="fastmcp-client",

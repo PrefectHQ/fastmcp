@@ -17,16 +17,16 @@ def context():
 
 class TestParseModelPreferences:
     def test_parse_model_preferences_string(self, context):
-        mp = _parse_model_preferences("claude-3-sonnet")
+        mp = _parse_model_preferences("claude-haiku-4-5")
         assert isinstance(mp, ModelPreferences)
         assert mp.hints is not None
-        assert mp.hints[0].name == "claude-3-sonnet"
+        assert mp.hints[0].name == "claude-haiku-4-5"
 
     def test_parse_model_preferences_list(self, context):
-        mp = _parse_model_preferences(["claude-3-sonnet", "claude"])
+        mp = _parse_model_preferences(["claude-haiku-4-5", "claude"])
         assert isinstance(mp, ModelPreferences)
         assert mp.hints is not None
-        assert [h.name for h in mp.hints] == ["claude-3-sonnet", "claude"]
+        assert [h.name for h in mp.hints] == ["claude-haiku-4-5", "claude"]
 
     def test_parse_model_preferences_object(self, context):
         obj = ModelPreferences(hints=[])

@@ -9,8 +9,8 @@ from typing import Annotated, Any
 
 import pydantic_core
 from mcp.types import ContentBlock, Icon, PromptMessage, Role, TextContent
-from mcp.types import Prompt as MCPPrompt
-from mcp.types import PromptArgument as MCPPromptArgument
+from mcp.types import Prompt as SDKPrompt
+from mcp.types import PromptArgument as SDKPromptArgument
 from pydantic import Field, TypeAdapter
 
 from fastmcp.exceptions import PromptError
@@ -89,10 +89,10 @@ class Prompt(FastMCPComponent):
         *,
         include_fastmcp_meta: bool | None = None,
         **overrides: Any,
-    ) -> MCPPrompt:
+    ) -> SDKPrompt:
         """Convert the prompt to an MCP prompt."""
         arguments = [
-            MCPPromptArgument(
+            SDKPromptArgument(
                 name=arg.name,
                 description=arg.description,
                 required=arg.required,
@@ -100,7 +100,7 @@ class Prompt(FastMCPComponent):
             for arg in self.arguments or []
         ]
 
-        return MCPPrompt(
+        return SDKPrompt(
             name=overrides.get("name", self.name),
             description=overrides.get("description", self.description),
             arguments=arguments,

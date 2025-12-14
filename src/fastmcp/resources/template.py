@@ -9,7 +9,7 @@ from typing import Annotated, Any
 from urllib.parse import parse_qs, unquote
 
 from mcp.types import Annotations, Icon
-from mcp.types import ResourceTemplate as MCPResourceTemplate
+from mcp.types import ResourceTemplate as SDKResourceTemplate
 from pydantic import (
     Field,
     field_validator,
@@ -188,10 +188,10 @@ class ResourceTemplate(FastMCPComponent):
         *,
         include_fastmcp_meta: bool | None = None,
         **overrides: Any,
-    ) -> MCPResourceTemplate:
-        """Convert the resource template to an MCPResourceTemplate."""
+    ) -> SDKResourceTemplate:
+        """Convert the resource template to an SDKResourceTemplate."""
 
-        return MCPResourceTemplate(
+        return SDKResourceTemplate(
             name=overrides.get("name", self.name),
             uriTemplate=overrides.get("uriTemplate", self.uri_template),
             description=overrides.get("description", self.description),
@@ -205,7 +205,7 @@ class ResourceTemplate(FastMCPComponent):
         )
 
     @classmethod
-    def from_mcp_template(cls, mcp_template: MCPResourceTemplate) -> ResourceTemplate:
+    def from_mcp_template(cls, mcp_template: SDKResourceTemplate) -> ResourceTemplate:
         """Creates a FastMCP ResourceTemplate from a raw MCP ResourceTemplate object."""
         # Note: This creates a simple ResourceTemplate instance. For function-based templates,
         # the original function is lost, which is expected for remote templates.

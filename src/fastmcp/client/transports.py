@@ -66,6 +66,7 @@ class SessionKwargs(TypedDict, total=False):
 
     read_timeout_seconds: datetime.timedelta | None
     sampling_callback: SamplingFnT | None
+    sampling_capabilities: mcp.types.SamplingCapability | None
     list_roots_callback: ListRootsFnT | None
     logging_callback: LoggingFnT | None
     elicitation_callback: ElicitationFnT | None

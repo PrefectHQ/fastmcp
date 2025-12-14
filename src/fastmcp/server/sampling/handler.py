@@ -5,8 +5,11 @@ from mcp import CreateMessageResult
 from mcp.server.session import ServerSession
 from mcp.shared.context import LifespanContextT, RequestContext
 from mcp.types import CreateMessageRequestParams as SamplingParams
-from mcp.types import (
-    SamplingMessage,
+from mcp.types import CreateMessageResultWithTools, SamplingMessage
+
+# Result type that handlers can return
+SamplingHandlerResult: TypeAlias = (
+    str | CreateMessageResult | CreateMessageResultWithTools
 )
 
 ServerSamplingHandler: TypeAlias = Callable[
@@ -15,5 +18,5 @@ ServerSamplingHandler: TypeAlias = Callable[
         SamplingParams,
         RequestContext[ServerSession, LifespanContextT],
     ],
-    str | CreateMessageResult | Awaitable[str | CreateMessageResult],
+    SamplingHandlerResult | Awaitable[SamplingHandlerResult],
 ]

@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from typing import cast
 
 import pytest
 from anyio import create_task_group
@@ -40,12 +39,11 @@ def fastmcp_server():
         result = await context.sample(
             "Hello, world!",
             system_prompt="You love FastMCP",
-            include_context="thisServer",
             temperature=0.5,
             max_tokens=100,
             model_preferences="gpt-4o",
         )
-        return cast(TextContent, result).text
+        return result.text or ""
 
     @dataclass
     class Person:

@@ -249,6 +249,7 @@ class Client(Generic[ClientTransportT]):
         name: str | None = None,
         roots: RootsList | RootsHandler | None = None,
         sampling_handler: ClientSamplingHandler | None = None,
+        sampling_capabilities: mcp.types.SamplingCapability | None = None,
         elicitation_handler: ElicitationHandler | None = None,
         log_handler: LogHandler | None = None,
         message_handler: MessageHandlerT | MessageHandler | None = None,
@@ -306,6 +307,14 @@ class Client(Generic[ClientTransportT]):
             self._session_kwargs["sampling_callback"] = create_sampling_callback(
                 sampling_handler
             )
+            # Default to tools-enabled capabilities unless explicitly overridden
+            self._session_kwargs["sampling_capabilities"] = (
+                sampling_capabilities
+                if sampling_capabilities is not None
+                else mcp.types.SamplingCapability(
+                    tools=mcp.types.SamplingToolsCapability()
+                )
+            )
 
         if elicitation_handler is not None:
             self._session_kwargs["elicitation_callback"] = create_elicitation_callback(
@@ -357,10 +366,20 @@ class Client(Generic[ClientTransportT]):
         """Set the roots for the client. This does not automatically call `send_roots_list_changed`."""
         self._session_kwargs["list_roots_callback"] = create_roots_callback(roots)
 
-    def set_sampling_callback(self, sampling_callback: ClientSamplingHandler) -> None:
+    def set_sampling_callback(
+        self,
+        sampling_callback: ClientSamplingHandler,
+        sampling_capabilities: mcp.types.SamplingCapability | None = None,
+    ) -> None:
         """Set the sampling callback for the client."""
         self._session_kwargs["sampling_callback"] = create_sampling_callback(
             sampling_callback
+        )
+        # Default to tools-enabled capabilities unless explicitly overridden
+        self._session_kwargs["sampling_capabilities"] = (
+            sampling_capabilities
+            if sampling_capabilities is not None
+            else mcp.types.SamplingCapability(tools=mcp.types.SamplingToolsCapability())
         )
 
     def set_elicitation_callback(

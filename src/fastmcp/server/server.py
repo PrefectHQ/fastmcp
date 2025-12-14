@@ -46,10 +46,10 @@ from mcp.types import (
     GetPromptResult,
     ToolAnnotations,
 )
-from mcp.types import Prompt as MCPPrompt
-from mcp.types import Resource as MCPResource
-from mcp.types import ResourceTemplate as MCPResourceTemplate
-from mcp.types import Tool as MCPTool
+from mcp.types import Prompt as SDKPrompt
+from mcp.types import Resource as SDKResource
+from mcp.types import ResourceTemplate as SDKResourceTemplate
+from mcp.types import Tool as SDKTool
 from pydantic import AnyUrl
 from starlette.middleware import Middleware as ASGIMiddleware
 from starlette.requests import Request
@@ -1153,7 +1153,7 @@ class FastMCP(Generic[LifespanResultT]):
 
         return routes
 
-    async def _list_tools_mcp(self) -> list[MCPTool]:
+    async def _list_tools_mcp(self) -> list[SDKTool]:
         """
         List all available tools, in the format expected by the low-level MCP
         server.
@@ -1237,7 +1237,7 @@ class FastMCP(Generic[LifespanResultT]):
 
         return list(all_tools.values())
 
-    async def _list_resources_mcp(self) -> list[MCPResource]:
+    async def _list_resources_mcp(self) -> list[SDKResource]:
         """
         List all available resources, in the format expected by the low-level MCP
         server.
@@ -1326,7 +1326,7 @@ class FastMCP(Generic[LifespanResultT]):
 
         return list(all_resources.values())
 
-    async def _list_resource_templates_mcp(self) -> list[MCPResourceTemplate]:
+    async def _list_resource_templates_mcp(self) -> list[SDKResourceTemplate]:
         """
         List all available resource templates, in the format expected by the low-level MCP
         server.
@@ -1420,7 +1420,7 @@ class FastMCP(Generic[LifespanResultT]):
 
         return list(all_templates.values())
 
-    async def _list_prompts_mcp(self) -> list[MCPPrompt]:
+    async def _list_prompts_mcp(self) -> list[SDKPrompt]:
         """
         List all available prompts, in the format expected by the low-level MCP
         server.

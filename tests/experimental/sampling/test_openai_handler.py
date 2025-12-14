@@ -8,7 +8,7 @@ from mcp.types import (
     SamplingMessage,
     TextContent,
 )
-from openai import OpenAI
+from openai import AsyncOpenAI
 from openai.types.chat import (
     ChatCompletion,
     ChatCompletionAssistantMessageParam,
@@ -67,13 +67,13 @@ def test_convert_to_openai_messages_raises_on_non_text():
     ],
 )
 def test_select_model_from_preferences(prefs, expected):
-    mock_client = MagicMock(spec=OpenAI)
+    mock_client = MagicMock(spec=AsyncOpenAI)
     handler = OpenAISamplingHandler(default_model="fallback-model", client=mock_client)  # type: ignore[arg-type]
     assert handler._select_model_from_preferences(prefs) == expected
 
 
 async def test_chat_completion_to_create_message_result():
-    mock_client = MagicMock(spec=OpenAI)
+    mock_client = MagicMock(spec=AsyncOpenAI)
     handler = OpenAISamplingHandler(default_model="fallback-model", client=mock_client)  # type: ignore[arg-type]
     mock_client.chat.completions.create.return_value = ChatCompletion(
         id="123",

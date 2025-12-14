@@ -5,7 +5,7 @@ import math
 import pytest
 from inline_snapshot import snapshot
 from mcp.types import TextContent
-from mcp.types import Tool as MCPTool
+from mcp.types import Tool as SDKTool
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
@@ -68,7 +68,7 @@ class TestToolInjectionMiddleware:
         base_server.add_middleware(middleware)
 
         async with Client[FastMCPTransport](base_server) as client:
-            tools: list[MCPTool] = await client.list_tools()
+            tools: list[SDKTool] = await client.list_tools()
 
         # Should have all tools: multiply, divide, add, subtract
         assert len(tools) == 4
@@ -249,7 +249,7 @@ class TestToolInjectionMiddleware:
         base_server.exclude_tags = {"math"}
 
         async with Client[FastMCPTransport](base_server) as client:
-            tools: list[MCPTool] = await client.list_tools()
+            tools: list[SDKTool] = await client.list_tools()
             tool_names: list[str] = [tool.name for tool in tools]
             assert "multiply" in tool_names
 
@@ -259,7 +259,7 @@ class TestToolInjectionMiddleware:
         base_server.add_middleware(middleware)
 
         async with Client[FastMCPTransport](base_server) as client:
-            tools: list[MCPTool] = await client.list_tools()
+            tools: list[SDKTool] = await client.list_tools()
             result: CallToolResult = await client.call_tool(
                 name="add", arguments={"a": 3, "b": 4}
             )
@@ -304,7 +304,7 @@ class TestPromptToolMiddleware:
         server_with_prompts.add_middleware(middleware)
 
         async with Client[FastMCPTransport](server_with_prompts) as client:
-            tools: list[MCPTool] = await client.list_tools()
+            tools: list[SDKTool] = await client.list_tools()
 
         tool_names: list[str] = [tool.name for tool in tools]
         # Should have: add, list_prompts, get_prompt
@@ -428,7 +428,7 @@ class TestResourceToolMiddleware:
         server_with_resources.add_middleware(middleware)
 
         async with Client[FastMCPTransport](server_with_resources) as client:
-            tools: list[MCPTool] = await client.list_tools()
+            tools: list[SDKTool] = await client.list_tools()
 
         tool_names: list[str] = [tool.name for tool in tools]
         # Should have: add, list_resources, read_resource

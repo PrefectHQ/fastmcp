@@ -109,6 +109,14 @@ The sampling handler receives three parameters:
     <ResponseField name="metadata" type="dict[str, Any] | None">
       Optional metadata to pass through to the LLM provider.
     </ResponseField>
+
+    <ResponseField name="tools" type="list[Tool] | None">
+      Optional list of tools the LLM can use during sampling. See [Using the OpenAI Handler](#using-the-openai-handler).
+    </ResponseField>
+
+    <ResponseField name="toolChoice" type="ToolChoice | None">
+      Optional control over tool usage behavior (`auto`, `required`, or `none`).
+    </ResponseField>
     </Expandable>
 
 </ResponseField>
@@ -154,3 +162,55 @@ client = Client(
 <Note>
 If the client doesn't provide a sampling handler, servers can optionally configure a fallback handler. See [Server Sampling](/servers/sampling#sampling-fallback-handler) for details.
 </Note>
+
+## Sampling Capabilities
+
+When you provide a `sampling_handler`, FastMCP automatically advertises full sampling capabilities to the server, including tool support. To disable tool support (for simpler handlers that don't support tools), pass `sampling_capabilities` explicitly:
+
+```python
+from mcp.types import SamplingCapability
+
+client = Client(
+    "my_mcp_server.py",
+    sampling_handler=basic_handler,
+    sampling_capabilities=SamplingCapability(),  # No tool support
+)
+```
+
+## Using the OpenAI Handler
+
+<VersionBadge version="2.14.0" />
+
+For full-featured sampling with tool support, use the built-in OpenAI handler. It handles message conversion, tool calls, and response formatting automatically:
+
+```python
+from fastmcp import Client
+from fastmcp.experimental.sampling.handlers.openai import OpenAISamplingHandler
+
+client = Client(
+    "my_mcp_server.py",
+    sampling_handler=OpenAISamplingHandler(default_model="gpt-4o"),
+)
+```
+
+The handler works with any OpenAI-compatible API by passing a custom client:
+
+```python
+from openai import AsyncOpenAI
+
+client = Client(
+    "my_mcp_server.py",
+    sampling_handler=OpenAISamplingHandler(
+        default_model="llama-3.1-70b",
+        client=AsyncOpenAI(base_url="http://localhost:8000/v1"),
+    ),
+)
+```
+
+<Note>
+Tool execution happens on the server side. The client's role is to pass tools to the LLM and return the LLM's response (which may include tool use requests). The server then executes the tools and may send follow-up sampling requests with tool results.
+</Note>
+
+<Tip>
+To implement a custom sampling handler, see the [OpenAISamplingHandler source code](https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/experimental/sampling/handlers/openai.py) as a reference.
+</Tip>

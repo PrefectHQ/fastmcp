@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Annotated, Any
 
 import pydantic_core
 from mcp.types import Annotations, Icon
-from mcp.types import Resource as MCPResource
+from mcp.types import Resource as SDKResource
 from pydantic import (
     AnyUrl,
     ConfigDict,
@@ -126,10 +126,10 @@ class Resource(FastMCPComponent):
         *,
         include_fastmcp_meta: bool | None = None,
         **overrides: Any,
-    ) -> MCPResource:
-        """Convert the resource to an MCPResource."""
+    ) -> SDKResource:
+        """Convert the resource to an SDKResource."""
 
-        return MCPResource(
+        return SDKResource(
             name=overrides.get("name", self.name),
             uri=overrides.get("uri", self.uri),
             description=overrides.get("description", self.description),
