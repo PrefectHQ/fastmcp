@@ -18,7 +18,7 @@ from openai.types.chat import (
 )
 from openai.types.chat.chat_completion import Choice
 
-from fastmcp.experimental.sampling.handlers.openai import OpenAISamplingHandler
+from fastmcp.client.sampling.handlers.openai import OpenAISamplingHandler
 
 
 def test_convert_sampling_messages_to_openai_messages():

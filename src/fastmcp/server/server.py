@@ -94,12 +94,12 @@ from fastmcp.utilities.types import NotSet, NotSetT
 if TYPE_CHECKING:
     from fastmcp.client import Client
     from fastmcp.client.client import FastMCP1Server
+    from fastmcp.client.sampling import SamplingHandler
     from fastmcp.client.transports import ClientTransport, ClientTransportT
     from fastmcp.server.openapi import ComponentFn as OpenAPIComponentFn
     from fastmcp.server.openapi import FastMCPOpenAPI, RouteMap
     from fastmcp.server.openapi import RouteMapFn as OpenAPIRouteMapFn
     from fastmcp.server.proxy import FastMCPProxy
-    from fastmcp.server.sampling.handler import ServerSamplingHandler
     from fastmcp.tools.tool import ToolResultSerializerType
 
 logger = get_logger(__name__)
@@ -208,7 +208,7 @@ class FastMCP(Generic[LifespanResultT]):
         streamable_http_path: str | None = None,
         json_response: bool | None = None,
         stateless_http: bool | None = None,
-        sampling_handler: ServerSamplingHandler[LifespanResultT] | None = None,
+        sampling_handler: SamplingHandler | None = None,
         sampling_handler_behavior: Literal["always", "fallback"] | None = None,
     ):
         # Resolve server default for background task support
@@ -288,9 +288,7 @@ class FastMCP(Generic[LifespanResultT]):
         # Set up MCP protocol handlers
         self._setup_handlers()
 
-        self.sampling_handler: ServerSamplingHandler[LifespanResultT] | None = (
-            sampling_handler
-        )
+        self.sampling_handler: SamplingHandler | None = sampling_handler
         self.sampling_handler_behavior: Literal["always", "fallback"] = (
             sampling_handler_behavior or "fallback"
         )

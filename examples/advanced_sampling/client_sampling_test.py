@@ -21,7 +21,7 @@ import asyncio
 from pydantic import BaseModel
 
 from fastmcp import Client, Context, FastMCP
-from fastmcp.experimental.sampling.handlers.openai import OpenAISamplingHandler
+from fastmcp.client.sampling.handlers.openai import OpenAISamplingHandler
 
 # Create the MCP server
 mcp = FastMCP("Sampling Test Server")

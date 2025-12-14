@@ -461,9 +461,7 @@ FastMCP provides an OpenAI-compatible handler that works with OpenAI's API and c
 import os
 from openai import OpenAI
 from fastmcp import FastMCP
-from fastmcp.experimental.sampling.handlers.openai import (
-    OpenAISamplingHandler,
-)
+from fastmcp.client.sampling.handlers.openai import OpenAISamplingHandler
 
 server = FastMCP(
     name="My Server",

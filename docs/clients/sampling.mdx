@@ -185,7 +185,7 @@ For full-featured sampling with tool support, use the built-in OpenAI handler. I
 
 ```python
 from fastmcp import Client
-from fastmcp.experimental.sampling.handlers.openai import OpenAISamplingHandler
+from fastmcp.client.sampling.handlers.openai import OpenAISamplingHandler
 
 client = Client(
     "my_mcp_server.py",
@@ -212,5 +212,5 @@ Tool execution happens on the server side. The client's role is to pass tools to
 </Note>
 
 <Tip>
-To implement a custom sampling handler, see the [OpenAISamplingHandler source code](https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/experimental/sampling/handlers/openai.py) as a reference.
+To implement a custom sampling handler, see the [OpenAISamplingHandler source code](https://github.com/jlowin/fastmcp/blob/main/src/fastmcp/client/sampling/handlers/openai.py) as a reference.
 </Tip>

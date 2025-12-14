@@ -47,7 +47,6 @@ from fastmcp.client.roots import (
     create_roots_callback,
 )
 from fastmcp.client.sampling import (
-    ClientSamplingHandler,
     SamplingHandler,
     create_sampling_callback,
 )
@@ -82,7 +81,6 @@ from .transports import (
 
 __all__ = [
     "Client",
-    "ClientSamplingHandler",
     "ElicitationHandler",
     "LogHandler",
     "MessageHandler",
@@ -248,7 +246,7 @@ class Client(Generic[ClientTransportT]):
         ),
         name: str | None = None,
         roots: RootsList | RootsHandler | None = None,
-        sampling_handler: ClientSamplingHandler | None = None,
+        sampling_handler: SamplingHandler | None = None,
         sampling_capabilities: mcp.types.SamplingCapability | None = None,
         elicitation_handler: ElicitationHandler | None = None,
         log_handler: LogHandler | None = None,
@@ -368,7 +366,7 @@ class Client(Generic[ClientTransportT]):
 
     def set_sampling_callback(
         self,
-        sampling_callback: ClientSamplingHandler,
+        sampling_callback: SamplingHandler,
         sampling_capabilities: mcp.types.SamplingCapability | None = None,
     ) -> None:
         """Set the sampling callback for the client."""

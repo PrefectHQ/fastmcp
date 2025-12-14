@@ -9,7 +9,7 @@ from mcp.types import ContentBlock
 from openai import OpenAI
 
 from fastmcp import FastMCP
-from fastmcp.experimental.sampling.handlers.openai import OpenAISamplingHandler
+from fastmcp.client.sampling.handlers.openai import OpenAISamplingHandler
 from fastmcp.server.context import Context
 
 
