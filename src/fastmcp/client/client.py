@@ -56,7 +56,6 @@ from fastmcp.client.tasks import (
     ResourceTask,
     TaskNotificationHandler,
     ToolTask,
-    _task_capable_initialize,
 )
 from fastmcp.exceptions import ToolError
 from fastmcp.mcp_config import MCPConfig
@@ -458,10 +457,7 @@ class Client(Generic[ClientTransportT]):
 
         try:
             with anyio.fail_after(timeout):
-                self._session_state.initialize_result = await _task_capable_initialize(
-                    self.session
-                )
-
+                self._session_state.initialize_result = await self.session.initialize()
                 return self._session_state.initialize_result
         except TimeoutError as e:
             raise RuntimeError("Failed to initialize server session") from e
