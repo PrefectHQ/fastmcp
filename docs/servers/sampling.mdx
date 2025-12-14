@@ -443,32 +443,32 @@ tool_result = ToolResultContent(
 
 Client support for sampling is optional—some clients may not implement it. To ensure your tools work regardless of client capabilities, configure a `sampling_handler` that sends requests directly to an LLM provider.
 
-### OpenAI Handler
-
-FastMCP provides an OpenAI-compatible handler that works with OpenAI's API and compatible providers. It supports the full sampling API including tools, automatically converting your Python functions to OpenAI's function calling format.
+FastMCP provides built-in handlers for [OpenAI and Anthropic APIs](/clients/sampling#built-in-handlers). These handlers support the full sampling API including tools, automatically converting your Python functions to each provider's format.
 
 <Note>
-  The OpenAI handler requires the `openai` package. Install it with:
-  ```bash
-  pip install fastmcp[openai]
-  # or
-  pip install openai
-  ```
-  You'll also need to set the `OPENAI_API_KEY` environment variable or pass it directly to the client.
+Install handlers with `pip install fastmcp[openai]` or `pip install fastmcp[anthropic]`.
 </Note>
 
 ```python
-import os
-from openai import OpenAI
 from fastmcp import FastMCP
 from fastmcp.client.sampling.handlers.openai import OpenAISamplingHandler
 
 server = FastMCP(
     name="My Server",
-    sampling_handler=OpenAISamplingHandler(
-        default_model="gpt-4o-mini",
-        client=OpenAI(api_key=os.getenv("OPENAI_API_KEY")),
-    ),
+    sampling_handler=OpenAISamplingHandler(default_model="gpt-4o-mini"),
+    sampling_handler_behavior="fallback",
+)
+```
+
+Or with Anthropic:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.client.sampling.handlers.anthropic import AnthropicSamplingHandler
+
+server = FastMCP(
+    name="My Server",
+    sampling_handler=AnthropicSamplingHandler(default_model="claude-sonnet-4-5"),
     sampling_handler_behavior="fallback",
 )
 ```
