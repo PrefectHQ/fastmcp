@@ -6,7 +6,7 @@ import datetime
 import secrets
 import uuid
 import weakref
-from contextlib import AsyncExitStack, asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager, suppress
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Generic, Literal, TypeVar, cast, overload
@@ -502,7 +502,35 @@ class Client(Generic[ClientTransportT]):
                 self._session_state.session_task = asyncio.create_task(
                     self._session_runner()
                 )
-                await self._session_state.ready_event.wait()
+                try:
+                    await self._session_state.ready_event.wait()
+                except asyncio.CancelledError:
+                    # Cancellation during initial connection startup can leave the
+                    # background session task running because __aexit__ is never invoked
+                    # when __aenter__ is cancelled. Since we hold the session lock here
+                    # and we know we started the session task, it's safe to tear it down
+                    # without impacting other active contexts.
+                    session_task = self._session_state.session_task
+                    if session_task is not None:
+                        # Request a graceful stop if the runner has already reached
+                        # its stop_event wait.
+                        self._session_state.stop_event.set()
+                        session_task.cancel()
+                        # Preserve the original cancellation.
+                        with suppress(asyncio.CancelledError, Exception):
+                            await asyncio.shield(session_task)
+
+                    # Reset session state so future callers can reconnect cleanly.
+                    self._session_state.session_task = None
+                    self._session_state.session = None
+                    self._session_state.initialize_result = None
+                    self._session_state.nesting_counter = 0
+
+                    # Preserve the original cancellation.
+                    with suppress(asyncio.CancelledError, Exception):
+                        await asyncio.shield(self.transport.close())
+
+                    raise
 
                 if self._session_state.session_task.done():
                     exception = self._session_state.session_task.exception()

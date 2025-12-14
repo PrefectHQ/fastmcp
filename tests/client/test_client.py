@@ -1,9 +1,12 @@
 import asyncio
+import contextlib
 import sys
+from collections.abc import AsyncIterator
 from typing import Any, cast
 
+import anyio
 import pytest
-from mcp import McpError
+from mcp import ClientSession, McpError
 from mcp.client.auth import OAuthClientProvider
 from pydantic import AnyUrl
 
@@ -11,6 +14,7 @@ import fastmcp
 from fastmcp.client import Client
 from fastmcp.client.auth.bearer import BearerAuth
 from fastmcp.client.transports import (
+    ClientTransport,
     FastMCPTransport,
     MCPConfigTransport,
     SSETransport,
@@ -479,6 +483,30 @@ async def test_server_info_custom_version():
         assert result.serverInfo.version == fastmcp.__version__
 
 
+class _DelayedConnectTransport(ClientTransport):
+    def __init__(
+        self,
+        inner: ClientTransport,
+        connect_started: anyio.Event,
+        allow_connect: anyio.Event,
+    ) -> None:
+        self._inner = inner
+        self._connect_started = connect_started
+        self._allow_connect = allow_connect
+
+    @contextlib.asynccontextmanager
+    async def connect_session(
+        self, **session_kwargs: Any
+    ) -> AsyncIterator[ClientSession]:
+        self._connect_started.set()
+        await self._allow_connect.wait()
+        async with self._inner.connect_session(**session_kwargs) as session:
+            yield session
+
+    async def close(self) -> None:
+        await self._inner.close()
+
+
 async def test_client_nested_context_manager(fastmcp_server):
     """Test that the client connects and disconnects once in nested context manager."""
 
@@ -507,6 +535,89 @@ async def test_client_nested_context_manager(fastmcp_server):
     # After connection
     assert not client.is_connected()
     assert client._session_state.session is None
+
+
+async def test_client_context_entry_cancelled_starter_cleans_up(fastmcp_server):
+    connect_started = anyio.Event()
+    allow_connect = anyio.Event()
+
+    client = Client(
+        transport=_DelayedConnectTransport(
+            FastMCPTransport(fastmcp_server),
+            connect_started=connect_started,
+            allow_connect=allow_connect,
+        )
+    )
+
+    async def enter_and_never_reach_body() -> None:
+        async with client:
+            pytest.fail(
+                "Context body should not be reached when __aenter__ is cancelled"
+            )
+
+    task = asyncio.create_task(enter_and_never_reach_body())
+    await connect_started.wait()
+
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    # Connection startup was cancelled; session state should be fully reset.
+    assert client._session_state.session_task is None
+    assert client._session_state.session is None
+    assert client._session_state.nesting_counter == 0
+
+    # A future connection attempt should work normally.
+    allow_connect.set()
+    async with client:
+        tools = await client.list_tools()
+        assert len(tools) == 3
+
+
+async def test_cancelled_context_entry_waiter_does_not_close_active_session(
+    fastmcp_server,
+):
+    connect_started = anyio.Event()
+    allow_connect = anyio.Event()
+
+    client = Client(
+        transport=_DelayedConnectTransport(
+            FastMCPTransport(fastmcp_server),
+            connect_started=connect_started,
+            allow_connect=allow_connect,
+        )
+    )
+
+    b_done = asyncio.Event()
+    b_started = asyncio.Event()
+
+    async def task_a() -> int:
+        async with client:
+            await b_done.wait()
+            tools = await client.list_tools()
+            return len(tools)
+
+    async def task_b() -> None:
+        b_started.set()
+        async with client:
+            pytest.fail("This context should never be entered due to cancellation")
+
+    a = asyncio.create_task(task_a())
+    await connect_started.wait()
+
+    b = asyncio.create_task(task_b())
+    await b_started.wait()
+    await asyncio.sleep(0)  # let task_b attempt to acquire the client lock
+
+    b.cancel()
+    allow_connect.set()
+
+    with pytest.raises(asyncio.CancelledError):
+        await b
+
+    # task_b is fully cancelled; allow task_a to exercise the connected session.
+    b_done.set()
+    assert await a == 3
 
 
 async def test_concurrent_client_context_managers():
