@@ -1,4 +1,6 @@
+import asyncio
 import socket
+import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -6,6 +8,11 @@ from typing import Any
 import pytest
 
 from fastmcp.utilities.tests import temporary_settings
+
+# Use SelectorEventLoop on Windows to avoid ProactorEventLoop crashes
+# See: https://github.com/python/cpython/issues/116773
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 
 def pytest_collection_modifyitems(items):
