@@ -465,7 +465,7 @@ class FastMCP(Generic[LifespanResultT]):
                 # execute in the parent's Docket context
                 for mounted in self._mounted_servers:
                     await self._register_mounted_server_functions(
-                        mounted.server, docket, mounted.prefix
+                        mounted.server, docket, mounted.prefix, mounted.tool_names
                     )
 
                 # Set Docket in ContextVar so CurrentDocket can access it
@@ -507,7 +507,11 @@ class FastMCP(Generic[LifespanResultT]):
             _current_server.reset(server_token)
 
     async def _register_mounted_server_functions(
-        self, server: FastMCP, docket: Docket, prefix: str | None
+        self,
+        server: FastMCP,
+        docket: Docket,
+        prefix: str | None,
+        tool_names: dict[str, str] | None = None,
     ) -> None:
         """Register task-enabled functions from a mounted server with Docket.
 
@@ -519,12 +523,18 @@ class FastMCP(Generic[LifespanResultT]):
             docket: The Docket instance to register with
             prefix: The mount prefix to prepend to function names (matches
                     client-facing tool/prompt names)
+            tool_names: Optional mapping of original tool names to custom names
         """
         # Register tools with prefixed names to avoid collisions
         for tool in server._tool_manager._tools.values():
             if isinstance(tool, FunctionTool) and tool.task_config.mode != "forbidden":
-                # Use same naming as client-facing tool keys
-                fn_name = f"{prefix}_{tool.key}" if prefix else tool.key
+                # Apply tool_names override first, then prefix (matches get_tools logic)
+                if tool_names and tool.key in tool_names:
+                    fn_name = tool_names[tool.key]
+                elif prefix:
+                    fn_name = f"{prefix}_{tool.key}"
+                else:
+                    fn_name = tool.key
                 named_fn = _create_named_fn_wrapper(tool.fn, fn_name)
                 docket.register(named_fn)
 
@@ -568,7 +578,7 @@ class FastMCP(Generic[LifespanResultT]):
                 else (prefix or nested.prefix)
             )
             await self._register_mounted_server_functions(
-                nested.server, docket, nested_prefix
+                nested.server, docket, nested_prefix, nested.tool_names
             )
 
     @asynccontextmanager
@@ -936,7 +946,13 @@ class FastMCP(Generic[LifespanResultT]):
             try:
                 child_tools = await mounted.server.get_tools()
                 for key, tool in child_tools.items():
-                    new_key = f"{mounted.prefix}_{key}" if mounted.prefix else key
+                    # Check for manual override first, then apply prefix
+                    if mounted.tool_names and key in mounted.tool_names:
+                        new_key = mounted.tool_names[key]
+                    elif mounted.prefix:
+                        new_key = f"{mounted.prefix}_{key}"
+                    else:
+                        new_key = key
                     all_tools[new_key] = tool.model_copy(key=new_key)
             except Exception as e:
                 logger.warning(
@@ -1216,9 +1232,15 @@ class FastMCP(Generic[LifespanResultT]):
                     if not self._should_enable_component(tool):
                         continue
 
-                    key = tool.key
-                    if mounted.prefix:
+                    # Check for manual override first, then apply prefix
+                    if mounted.tool_names and tool.key in mounted.tool_names:
+                        key = mounted.tool_names[tool.key]
+                    elif mounted.prefix:
                         key = f"{mounted.prefix}_{tool.key}"
+                    else:
+                        key = tool.key
+
+                    if key != tool.key:
                         tool = tool.model_copy(key=key)
                     # Later mounted servers override earlier ones
                     all_tools[key] = tool
@@ -1488,9 +1510,13 @@ class FastMCP(Generic[LifespanResultT]):
                     if not self._should_enable_component(prompt):
                         continue
 
-                    key = prompt.key
+                    # Apply prefix to prompt key
                     if mounted.prefix:
                         key = f"{mounted.prefix}_{prompt.key}"
+                    else:
+                        key = prompt.key
+
+                    if key != prompt.key:
                         prompt = prompt.model_copy(key=key)
                     # Later mounted servers override earlier ones
                     all_prompts[key] = prompt
@@ -1630,7 +1656,20 @@ class FastMCP(Generic[LifespanResultT]):
         # Try mounted servers in reverse order (later wins)
         for mounted in reversed(self._mounted_servers):
             try_name = tool_name
-            if mounted.prefix:
+
+            # First check if tool_name is an overridden name (reverse lookup)
+            if mounted.tool_names:
+                for orig_key, override_name in mounted.tool_names.items():
+                    if override_name == tool_name:
+                        try_name = orig_key
+                        break
+                else:
+                    # Not an override, try standard prefix stripping
+                    if mounted.prefix:
+                        if not tool_name.startswith(f"{mounted.prefix}_"):
+                            continue
+                        try_name = tool_name[len(mounted.prefix) + 1 :]
+            elif mounted.prefix:
                 if not tool_name.startswith(f"{mounted.prefix}_"):
                     continue
                 try_name = tool_name[len(mounted.prefix) + 1 :]
@@ -2649,6 +2688,7 @@ class FastMCP(Generic[LifespanResultT]):
         server: FastMCP[LifespanResultT],
         prefix: str | None = None,
         as_proxy: bool | None = None,
+        tool_names: dict[str, str] | None = None,
     ) -> None:
         """Mount another FastMCP server on this server with an optional prefix.
 
@@ -2693,6 +2733,9 @@ class FastMCP(Generic[LifespanResultT]):
             as_proxy: Whether to treat the mounted server as a proxy. If None (default),
                 automatically determined based on whether the server has a custom lifespan
                 (True if it has a custom lifespan, False otherwise).
+            tool_names: Optional mapping of original tool names to custom names. Use this
+                to override prefixed names. Keys are the original tool names from the
+                mounted server.
         """
         from fastmcp.server.proxy import FastMCPProxy
 
@@ -2713,6 +2756,7 @@ class FastMCP(Generic[LifespanResultT]):
         mounted_server = MountedServer(
             prefix=prefix,
             server=server,
+            tool_names=tool_names,
         )
         self._mounted_servers.append(mounted_server)
 
@@ -2972,6 +3016,7 @@ class FastMCP(Generic[LifespanResultT]):
 class MountedServer:
     prefix: str | None
     server: FastMCP[Any]
+    tool_names: dict[str, str] | None = None
 
 
 def add_resource_prefix(uri: str, prefix: str) -> str:

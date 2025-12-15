@@ -1361,3 +1361,66 @@ class TestDeeplyNestedMount:
             # Tool at level 4 should work
             result = await client.call_tool("l1_l2_l3_deep_tool", {})
             assert result.data == "very deep"
+
+
+class TestToolNameOverrides:
+    """Test tool and prompt name overrides in mount() (issue #2596)."""
+
+    async def test_tool_names_override_applied_in_get_tools(self):
+        """Test that tool_names override is reflected in get_tools()."""
+        sub = FastMCP("Sub")
+
+        @sub.tool
+        def original_tool() -> str:
+            return "test"
+
+        main = FastMCP("Main")
+        main.mount(
+            sub,
+            prefix="prefix",
+            tool_names={"original_tool": "custom_name"},
+        )
+
+        tools = await main.get_tools()
+        assert "custom_name" in tools
+        assert "prefix_original_tool" not in tools
+
+    async def test_tool_names_override_applied_in_list_tools(self):
+        """Test that tool_names override is reflected in list_tools()."""
+        sub = FastMCP("Sub")
+
+        @sub.tool
+        def original_tool() -> str:
+            return "test"
+
+        main = FastMCP("Main")
+        main.mount(
+            sub,
+            prefix="prefix",
+            tool_names={"original_tool": "custom_name"},
+        )
+
+        async with Client(main) as client:
+            tools = await client.list_tools()
+            tool_names = [t.name for t in tools]
+            assert "custom_name" in tool_names
+            assert "prefix_original_tool" not in tool_names
+
+    async def test_tool_call_with_overridden_name(self):
+        """Test that overridden tool can be called by its new name."""
+        sub = FastMCP("Sub")
+
+        @sub.tool
+        def original_tool() -> str:
+            return "success"
+
+        main = FastMCP("Main")
+        main.mount(
+            sub,
+            prefix="prefix",
+            tool_names={"original_tool": "renamed"},
+        )
+
+        async with Client(main) as client:
+            result = await client.call_tool("renamed", {})
+            assert result.data == "success"
