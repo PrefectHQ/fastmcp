@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import inspect
 from collections.abc import Awaitable, Callable
 from pathlib import Path
@@ -31,6 +32,7 @@ from fastmcp.prompts import Prompt, PromptMessage
 from fastmcp.prompts.prompt import PromptArgument
 from fastmcp.prompts.prompt_manager import PromptManager
 from fastmcp.resources import Resource, ResourceTemplate
+from fastmcp.resources.resource import ResourceContent
 from fastmcp.resources.resource_manager import ResourceManager
 from fastmcp.server.context import Context
 from fastmcp.server.dependencies import get_context
@@ -184,7 +186,7 @@ class ProxyResourceManager(ResourceManager, ProxyManagerMixin):
         templates_dict = await self.get_resource_templates()
         return list(templates_dict.values())
 
-    async def read_resource(self, uri: AnyUrl | str) -> str | bytes:
+    async def read_resource(self, uri: AnyUrl | str) -> ResourceContent:
         """Reads a resource, trying local/mounted first, then proxy if not found."""
         try:
             # First try local and mounted resources
@@ -194,10 +196,22 @@ class ProxyResourceManager(ResourceManager, ProxyManagerMixin):
             client = await self._get_client()
             async with client:
                 result = await client.read_resource(uri)
+                if not result:
+                    raise ResourceError(
+                        f"Remote server returned empty content for {uri}"
+                    ) from None
                 if isinstance(result[0], TextResourceContents):
-                    return result[0].text
+                    return ResourceContent(
+                        content=result[0].text,
+                        mime_type=result[0].mimeType,
+                        meta=result[0].meta,
+                    )
                 elif isinstance(result[0], BlobResourceContents):
-                    return result[0].blob
+                    return ResourceContent(
+                        content=base64.b64decode(result[0].blob),
+                        mime_type=result[0].mimeType,
+                        meta=result[0].meta,
+                    )
                 else:
                     raise ResourceError(
                         f"Unsupported content type: {type(result[0])}"
@@ -332,18 +346,18 @@ class ProxyResource(Resource, MirroredComponent):
 
     task_config: TaskConfig = TaskConfig(mode="forbidden")
     _client: Client
-    _value: str | bytes | None = None
+    _cached_content: ResourceContent | None = None
 
     def __init__(
         self,
         client: Client,
         *,
-        _value: str | bytes | None = None,
+        _cached_content: ResourceContent | None = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
         self._client = client
-        self._value = _value
+        self._cached_content = _cached_content
 
     @classmethod
     def from_mcp_resource(
@@ -367,17 +381,27 @@ class ProxyResource(Resource, MirroredComponent):
             _mirrored=True,
         )
 
-    async def read(self) -> str | bytes:
+    async def read(self) -> ResourceContent:
         """Read the resource content from the remote server."""
-        if self._value is not None:
-            return self._value
+        if self._cached_content is not None:
+            return self._cached_content
 
         async with self._client:
             result = await self._client.read_resource(self.uri)
+        if not result:
+            raise ResourceError(f"Remote server returned empty content for {self.uri}")
         if isinstance(result[0], TextResourceContents):
-            return result[0].text
+            return ResourceContent(
+                content=result[0].text,
+                mime_type=result[0].mimeType,
+                meta=result[0].meta,
+            )
         elif isinstance(result[0], BlobResourceContents):
-            return result[0].blob
+            return ResourceContent(
+                content=base64.b64decode(result[0].blob),
+                mime_type=result[0].mimeType,
+                meta=result[0].meta,
+            )
         else:
             raise ResourceError(f"Unsupported content type: {type(result[0])}")
 
@@ -429,10 +453,22 @@ class ProxyTemplate(ResourceTemplate, MirroredComponent):
         async with self._client:
             result = await self._client.read_resource(parameterized_uri)
 
+        if not result:
+            raise ResourceError(
+                f"Remote server returned empty content for {parameterized_uri}"
+            )
         if isinstance(result[0], TextResourceContents):
-            value = result[0].text
+            cached_content = ResourceContent(
+                content=result[0].text,
+                mime_type=result[0].mimeType,
+                meta=result[0].meta,
+            )
         elif isinstance(result[0], BlobResourceContents):
-            value = result[0].blob
+            cached_content = ResourceContent(
+                content=base64.b64decode(result[0].blob),
+                mime_type=result[0].mimeType,
+                meta=result[0].meta,
+            )
         else:
             raise ResourceError(f"Unsupported content type: {type(result[0])}")
 
@@ -446,7 +482,7 @@ class ProxyTemplate(ResourceTemplate, MirroredComponent):
             icons=self.icons,
             meta=self.meta,
             tags=(self.meta or {}).get("_fastmcp", {}).get("tags", []),
-            _value=value,
+            _cached_content=cached_content,
         )
 
 
