@@ -60,7 +60,7 @@ import fastmcp.server
 from fastmcp.exceptions import DisabledError, NotFoundError
 from fastmcp.mcp_config import MCPConfig
 from fastmcp.prompts import Prompt
-from fastmcp.prompts.prompt import FunctionPrompt
+from fastmcp.prompts.prompt import FunctionPrompt, PromptResult
 from fastmcp.prompts.prompt_manager import PromptManager
 from fastmcp.resources.resource import FunctionResource, Resource, ResourceContent
 from fastmcp.resources.resource_manager import ResourceManager
@@ -1781,8 +1781,18 @@ class FastMCP(Generic[LifespanResultT]):
     ) -> GetPromptResult:
         """
         Applies this server's middleware and delegates the filtered call to the manager.
+        Converts PromptResult to GetPromptResult for MCP protocol.
         """
+        result = await self._get_prompt_content_middleware(name, arguments)
+        return result.to_mcp_prompt_result()
 
+    async def _get_prompt_content_middleware(
+        self, name: str, arguments: dict[str, Any] | None = None
+    ) -> PromptResult:
+        """
+        Applies this server's middleware and returns PromptResult.
+        Used internally and by parent servers for mounted prompts.
+        """
         mw_context = MiddlewareContext(
             message=mcp.types.GetPromptRequestParams(name=name, arguments=arguments),
             source="client",
@@ -1797,7 +1807,7 @@ class FastMCP(Generic[LifespanResultT]):
     async def _get_prompt(
         self,
         context: MiddlewareContext[mcp.types.GetPromptRequestParams],
-    ) -> GetPromptResult:
+    ) -> PromptResult:
         name = context.message.name
 
         # Try mounted servers in reverse order (later wins)
@@ -1816,7 +1826,7 @@ class FastMCP(Generic[LifespanResultT]):
                 if not self._should_enable_component(prompt):
                     # Parent filter blocks this prompt, continue searching
                     continue
-                return await mounted.server._get_prompt_middleware(
+                return await mounted.server._get_prompt_content_middleware(
                     try_name, context.message.arguments
                 )
             except NotFoundError:

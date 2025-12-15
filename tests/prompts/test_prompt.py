@@ -16,7 +16,8 @@ class TestRenderPrompt:
             return "Hello, world!"
 
         prompt = Prompt.from_function(fn)
-        assert await prompt.render() == [
+        result = await prompt.render()
+        assert result.messages == [
             PromptMessage(
                 role="user", content=TextContent(type="text", text="Hello, world!")
             )
@@ -27,7 +28,8 @@ class TestRenderPrompt:
             return "Hello, world!"
 
         prompt = Prompt.from_function(fn)
-        assert await prompt.render() == [
+        result = await prompt.render()
+        assert result.messages == [
             PromptMessage(
                 role="user", content=TextContent(type="text", text="Hello, world!")
             )
@@ -38,7 +40,8 @@ class TestRenderPrompt:
             return f"Hello, {name}! You're {age} years old."
 
         prompt = Prompt.from_function(fn)
-        assert await prompt.render(arguments=dict(name="World")) == [
+        result = await prompt.render(arguments=dict(name="World"))
+        assert result.messages == [
             PromptMessage(
                 role="user",
                 content=TextContent(
@@ -53,7 +56,8 @@ class TestRenderPrompt:
                 return f"Hello, {name}!"
 
         prompt = Prompt.from_function(MyPrompt())
-        assert await prompt.render(arguments=dict(name="World")) == [
+        result = await prompt.render(arguments=dict(name="World"))
+        assert result.messages == [
             PromptMessage(
                 role="user", content=TextContent(type="text", text="Hello, World!")
             )
@@ -65,7 +69,8 @@ class TestRenderPrompt:
                 return f"Hello, {name}!"
 
         prompt = Prompt.from_function(MyPrompt())
-        assert await prompt.render(arguments=dict(name="World")) == [
+        result = await prompt.render(arguments=dict(name="World"))
+        assert result.messages == [
             PromptMessage(
                 role="user", content=TextContent(type="text", text="Hello, World!")
             )
@@ -86,7 +91,8 @@ class TestRenderPrompt:
             )
 
         prompt = Prompt.from_function(fn)
-        assert await prompt.render() == [
+        result = await prompt.render()
+        assert result.messages == [
             PromptMessage(
                 role="user", content=TextContent(type="text", text="Hello, world!")
             )
@@ -99,7 +105,8 @@ class TestRenderPrompt:
             )
 
         prompt = Prompt.from_function(fn)
-        assert await prompt.render() == [
+        result = await prompt.render()
+        assert result.messages == [
             PromptMessage(
                 role="assistant", content=TextContent(type="text", text="Hello, world!")
             )
@@ -119,7 +126,8 @@ class TestRenderPrompt:
             return expected
 
         prompt = Prompt.from_function(fn)
-        assert await prompt.render() == expected
+        result = await prompt.render()
+        assert result.messages == expected
 
     async def test_fn_returns_list_of_strings(self):
         expected = [
@@ -131,7 +139,8 @@ class TestRenderPrompt:
             return expected
 
         prompt = Prompt.from_function(fn)
-        assert await prompt.render() == [
+        result = await prompt.render()
+        assert result.messages == [
             PromptMessage(role="user", content=TextContent(type="text", text=t))
             for t in expected
         ]
@@ -153,7 +162,8 @@ class TestRenderPrompt:
             )
 
         prompt = Prompt.from_function(fn)
-        assert await prompt.render() == [
+        result = await prompt.render()
+        assert result.messages == [
             PromptMessage(
                 role="user",
                 content=EmbeddedResource(
@@ -188,7 +198,8 @@ class TestRenderPrompt:
             ]
 
         prompt = Prompt.from_function(fn)
-        assert await prompt.render() == [
+        result = await prompt.render()
+        assert result.messages == [
             PromptMessage(
                 role="user",
                 content=TextContent(type="text", text="Please analyze this file:"),
@@ -227,7 +238,8 @@ class TestRenderPrompt:
             )
 
         prompt = Prompt.from_function(fn)
-        assert await prompt.render() == [
+        result = await prompt.render()
+        assert result.messages == [
             PromptMessage(
                 role="user",
                 content=EmbeddedResource(
@@ -258,7 +270,7 @@ class TestPromptTypeConversion:
         result_from_string = await prompt.render(
             arguments={"numbers": "[1, 2, 3, 4, 5]"}
         )
-        assert result_from_string == [
+        assert result_from_string.messages == [
             PromptMessage(
                 role="user", content=TextContent(type="text", text="The sum is: 15")
             )
@@ -268,7 +280,7 @@ class TestPromptTypeConversion:
         result_from_list_string = await prompt.render(
             arguments={"numbers": "[1, 2, 3, 4, 5]"}
         )
-        assert result_from_list_string == result_from_string
+        assert result_from_list_string.messages == result_from_string.messages
 
     async def test_various_type_conversions(self):
         """Test type conversion for various data types."""
@@ -298,7 +310,7 @@ class TestPromptTypeConversion:
         expected_text = (
             "Alice (25): 3 scores, active=True, metadata keys=['project', 'version']"
         )
-        assert result == [
+        assert result.messages == [
             PromptMessage(
                 role="user", content=TextContent(type="text", text=expected_text)
             )
@@ -329,7 +341,7 @@ class TestPromptTypeConversion:
 
         # This should work with JSON parsing (integer as string)
         result1 = await prompt.render(arguments={"value": "42"})
-        assert result1 == [
+        assert result1.messages == [
             PromptMessage(
                 role="user", content=TextContent(type="text", text="Value: 42")
             )
@@ -337,7 +349,7 @@ class TestPromptTypeConversion:
 
         # This should work with direct validation (already an integer string)
         result2 = await prompt.render(arguments={"value": "123"})
-        assert result2 == [
+        assert result2.messages == [
             PromptMessage(
                 role="user", content=TextContent(type="text", text="Value: 123")
             )
@@ -358,7 +370,7 @@ class TestPromptTypeConversion:
             }
         )
 
-        assert result == [
+        assert result.messages == [
             PromptMessage(
                 role="user",
                 content=TextContent(type="text", text="Hello world (repeated 3 times)"),
