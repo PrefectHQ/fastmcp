@@ -777,7 +777,6 @@ class Context:
 
         # Convert tools to SamplingTools
         sampling_tools = _prepare_tools(tools)
-        has_user_tools = bool(sampling_tools)
 
         # Handle structured output with result_type
         tool_choice: str | None = None
@@ -786,9 +785,9 @@ class Context:
             sampling_tools = list(sampling_tools) if sampling_tools else []
             sampling_tools.append(final_response_tool)
 
-            # If no user tools, force the LLM to call a tool (which is final_response)
-            if not has_user_tools:
-                tool_choice = "required"
+            # Always require tool calls when result_type is set - the LLM must
+            # eventually call final_response (text responses are not accepted)
+            tool_choice = "required"
 
         # Convert messages for the loop
         current_messages: str | Sequence[str | SamplingMessage] = messages
