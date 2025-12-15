@@ -2005,8 +2005,7 @@ class FastMCP(Generic[LifespanResultT]):
             output_schema: Optional JSON schema for the tool's output
             annotations: Optional annotations about the tool's behavior
             exclude_args: Optional list of argument names to exclude from the tool schema.
-                Note: `exclude_args` will be deprecated in FastMCP 2.14 in favor of dependency
-                injection with `Depends()` for better lifecycle management.
+                Deprecated: Use `Depends()` for dependency injection instead.
             meta: Optional meta information about the tool
             enabled: Optional boolean to enable or disable the tool
 

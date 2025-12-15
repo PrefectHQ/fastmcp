@@ -321,11 +321,9 @@ class FunctionTool(Tool):
         """Create a Tool from a function."""
         if exclude_args and fastmcp.settings.deprecation_warnings:
             warnings.warn(
-                "The `exclude_args` parameter will be deprecated in FastMCP 2.14. "
-                "We recommend using dependency injection with `Depends()` instead, which provides "
-                "better lifecycle management and is more explicit. "
-                "`exclude_args` will continue to work until then. "
-                "See https://gofastmcp.com/docs/servers/tools for examples.",
+                "The `exclude_args` parameter is deprecated as of FastMCP 2.14. "
+                "Use dependency injection with `Depends()` instead for better lifecycle management. "
+                "See https://gofastmcp.com/servers/dependencies for examples.",
                 DeprecationWarning,
                 stacklevel=2,
             )

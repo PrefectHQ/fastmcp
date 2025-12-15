@@ -87,10 +87,6 @@ def search_products_implementation(query: str, category: str | None = None) -> l
   Optional list of icon representations for this tool. See [Icons](/servers/icons) for detailed examples
 </ParamField>
 
-<ParamField body="exclude_args" type="list[str] | None">
-  A list of argument names to exclude from the tool schema shown to the LLM. See [Excluding Arguments](#excluding-arguments) for more information
-</ParamField>
-
 <ParamField body="annotations" type="ToolAnnotations | dict | None">
     An optional `ToolAnnotations` object or dictionary to add additional metadata about the tool.
   <Expandable title="ToolAnnotations attributes">
@@ -345,33 +341,28 @@ Field provides several validation and documentation features:
 - `pattern`: Regex pattern for string validation
 - `default`: Default value if parameter is omitted
 
+### Hiding Parameters from the LLM
 
+<VersionBadge version="2.14.0" />
 
-
-### Excluding Arguments
-
-<VersionBadge version="2.6.0" /> 
-
-You can exclude certain arguments from the tool schema shown to the LLM. This is useful for arguments that are injected at runtime (such as `state`, `user_id`, or credentials) and should not be exposed to the LLM or client. Only arguments with default values can be excluded; attempting to exclude a required argument will raise an error.
-
-**Note:** `exclude_args` will be deprecated in FastMCP 2.14 in favor of dependency injection with `Depends()` for better lifecycle management and more explicit dependency handling. `exclude_args` will continue to work until then.
-
-Example with `exclude_args`:
+To inject values at runtime without exposing them to the LLM (such as `user_id`, credentials, or database connections), use dependency injection with `Depends()`. Parameters using `Depends()` are automatically excluded from the tool schema:
 
 ```python
-@mcp.tool(
-    name="get_user_details",
-    exclude_args=["user_id"]
-)
-def get_user_details(user_id: str = None) -> str:
-    # user_id will be injected by the server, not provided by the LLM
-    ...
+from fastmcp import FastMCP
+from fastmcp.dependencies import Depends
+
+mcp = FastMCP()
+
+def get_user_id() -> str:
+    return "user_123"  # Injected at runtime
+
+@mcp.tool
+def get_user_details(user_id: str = Depends(get_user_id)) -> str:
+    # user_id is injected by the server, not provided by the LLM
+    return f"Details for {user_id}"
 ```
 
-With this configuration, `user_id` will not appear in the tool's parameter schema, but can still be set by the server or framework at runtime.
-
-For more complex tool transformations, see [Transforming Tools](/patterns/tool-transformation).
-
+See [Custom Dependencies](/servers/context#custom-dependencies) for more details on dependency injection.
 
 ## Return Values
 
