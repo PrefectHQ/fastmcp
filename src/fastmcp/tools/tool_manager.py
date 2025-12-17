@@ -152,21 +152,19 @@ class ToolManager:
 
     async def call_tool(self, key: str, arguments: dict[str, Any]) -> ToolResult:
         """
-        Internal API for servers: Finds and calls a tool, respecting the
-        filtered protocol path.
+        Internal API for servers: Finds and calls a tool.
+
+        Note: Full error handling (logging, masking) is done at the FastMCP
+        server level. This method provides basic error wrapping for direct usage.
         """
         tool = await self.get_tool(key)
         try:
             return await tool.run(arguments)
-        except ValidationError as e:
-            logger.exception(f"Error validating tool {key!r}: {e}")
-            raise e
-        except ToolError as e:
-            logger.exception(f"Error calling tool {key!r}")
-            raise e
+        except ValidationError:
+            raise
+        except ToolError:
+            raise
         except Exception as e:
-            logger.exception(f"Error calling tool {key!r}")
             if self.mask_error_details:
                 raise ToolError(f"Error calling tool {key!r}") from e
-            else:
-                raise ToolError(f"Error calling tool {key!r}: {e}") from e
+            raise ToolError(f"Error calling tool {key!r}: {e}") from e

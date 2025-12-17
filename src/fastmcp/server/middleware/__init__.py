@@ -1,7 +1,7 @@
 from .middleware import (
+    CallNext,
     Middleware,
     MiddlewareContext,
-    CallNext,
 )
 
 __all__ = [

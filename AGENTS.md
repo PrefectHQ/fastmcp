@@ -133,6 +133,14 @@ async with Client(transport=StreamableHttpTransport(server_url)) as client:
 - Use `# type: ignore[attr-defined]` in tests for MCP results instead of type assertions
 - Each feature needs corresponding tests
 
+### Module Exports
+
+- **Be intentional about re-exports** - don't blindly re-export everything to parent namespaces
+- Core types that define a module's purpose should be exported (e.g., `Middleware` from `fastmcp.server.middleware`)
+- Specialized features can live in submodules (e.g., `fastmcp.server.middleware.dynamic`)
+- Only re-export to `fastmcp.*` for the most fundamental types (e.g., `FastMCP`, `Client`)
+- When in doubt, prefer users importing from the specific submodule over re-exporting
+
 ### Documentation
 
 - Uses Mintlify framework

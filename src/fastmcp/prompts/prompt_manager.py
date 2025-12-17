@@ -107,18 +107,17 @@ class PromptManager:
         arguments: dict[str, Any] | None = None,
     ) -> PromptResult:
         """
-        Internal API for servers: Finds and renders a prompt, respecting the
-        filtered protocol path.
+        Internal API for servers: Finds and renders a prompt.
+
+        Note: Full error handling (logging, masking) is done at the FastMCP
+        server level. This method provides basic error wrapping for direct usage.
         """
         prompt = await self.get_prompt(name)
         try:
             return await prompt._render(arguments)
         except PromptError:
-            logger.exception(f"Error rendering prompt {name!r}")
             raise
         except Exception as e:
-            logger.exception(f"Error rendering prompt {name!r}")
             if self.mask_error_details:
                 raise PromptError(f"Error rendering prompt {name!r}") from e
-            else:
-                raise PromptError(f"Error rendering prompt {name!r}: {e}") from e
+            raise PromptError(f"Error rendering prompt {name!r}: {e}") from e

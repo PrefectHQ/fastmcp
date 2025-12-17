@@ -288,60 +288,43 @@ class ResourceManager:
 
     async def read_resource(self, uri: AnyUrl | str) -> ResourceContent:
         """
-        Internal API for servers: Finds and reads a resource, respecting the
-        filtered protocol path.
+        Internal API for servers: Finds and reads a resource.
+
+        Note: Full error handling (logging, masking) is done at the FastMCP
+        server level. This method provides basic error wrapping for direct usage.
 
         Returns:
-            ResourceContent: The canonical content wrapper. All Resource.read()
-            implementations now return ResourceContent.
+            ResourceContent: The canonical content wrapper.
         """
         uri_str = str(uri)
 
-        # 1. Check local resources first. The server will have already applied its filter.
+        # Check local resources first
         if uri_str in self._resources:
             resource = await self.get_resource(uri_str)
             try:
                 return await resource._read()
-
-            # raise ResourceErrors as-is
-            except ResourceError as e:
-                logger.exception(f"Error reading resource {uri_str!r}")
-                raise e
-
-            # Handle other exceptions
+            except ResourceError:
+                raise
             except Exception as e:
-                logger.exception(f"Error reading resource {uri_str!r}")
                 if self.mask_error_details:
-                    # Mask internal details
                     raise ResourceError(f"Error reading resource {uri_str!r}") from e
-                else:
-                    # Include original error details
-                    raise ResourceError(
-                        f"Error reading resource {uri_str!r}: {e}"
-                    ) from e
+                raise ResourceError(f"Error reading resource {uri_str!r}: {e}") from e
 
-        # 1b. Check local templates if not found in concrete resources
+        # Check local templates if not found in concrete resources
         for key, template in self._templates.items():
             if (params := match_uri_template(uri_str, key)) is not None:
                 try:
                     resource = await template.create_resource(uri_str, params=params)
                     return await resource._read()
-                except ResourceError as e:
-                    logger.exception(
-                        f"Error reading resource from template {uri_str!r}"
-                    )
-                    raise e
+                except ResourceError:
+                    raise
                 except Exception as e:
-                    logger.exception(
-                        f"Error reading resource from template {uri_str!r}"
-                    )
                     if self.mask_error_details:
                         raise ResourceError(
                             f"Error reading resource from template {uri_str!r}"
                         ) from e
-                    else:
-                        raise ResourceError(
-                            f"Error reading resource from template {uri_str!r}: {e}"
-                        ) from e
+                    raise ResourceError(
+                        f"Error reading resource from template {uri_str!r}: {e}"
+                    ) from e
 
         raise NotFoundError(f"Resource {uri_str!r} not found.")

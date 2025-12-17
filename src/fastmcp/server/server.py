@@ -50,6 +50,7 @@ from mcp.types import Resource as SDKResource
 from mcp.types import ResourceTemplate as SDKResourceTemplate
 from mcp.types import Tool as SDKTool
 from pydantic import AnyUrl
+from pydantic import ValidationError as PydanticValidationError
 from starlette.middleware import Middleware as ASGIMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
@@ -57,11 +58,19 @@ from starlette.routing import BaseRoute, Route
 
 import fastmcp
 import fastmcp.server
-from fastmcp.exceptions import DisabledError, NotFoundError
+from fastmcp.exceptions import (
+    DisabledError,
+    NotFoundError,
+    PromptError,
+    ResourceError,
+    ToolError,
+    ValidationError,
+)
 from fastmcp.mcp_config import MCPConfig
 from fastmcp.prompts import Prompt
 from fastmcp.prompts.prompt import FunctionPrompt, PromptResult
 from fastmcp.prompts.prompt_manager import PromptManager
+from fastmcp.providers import Provider
 from fastmcp.resources.resource import FunctionResource, Resource, ResourceContent
 from fastmcp.resources.resource_manager import ResourceManager
 from fastmcp.resources.template import FunctionResourceTemplate, ResourceTemplate
@@ -180,6 +189,7 @@ class FastMCP(Generic[LifespanResultT]):
         icons: list[mcp.types.Icon] | None = None,
         auth: AuthProvider | NotSetT | None = NotSet,
         middleware: Sequence[Middleware] | None = None,
+        providers: Sequence[Provider] | None = None,
         lifespan: LifespanCallable | None = None,
         mask_error_details: bool | None = None,
         tools: Sequence[Tool | Callable[..., Any]] | None = None,
@@ -218,6 +228,7 @@ class FastMCP(Generic[LifespanResultT]):
 
         self._additional_http_routes: list[BaseRoute] = []
         self._mounted_servers: list[MountedServer] = []
+        self._providers: list[Provider] = list(providers or [])
         self._is_mounted: bool = (
             False  # Set to True when this server is mounted on another
         )
@@ -233,6 +244,12 @@ class FastMCP(Generic[LifespanResultT]):
         self._prompt_manager: PromptManager = PromptManager(
             duplicate_behavior=on_duplicate_prompts,
             mask_error_details=mask_error_details,
+        )
+        # Store mask_error_details for execution error handling
+        self._mask_error_details: bool = (
+            mask_error_details
+            if mask_error_details is not None
+            else fastmcp.settings.mask_error_details
         )
         self._tool_serializer: Callable[[Any], str] | None = tool_serializer
 
@@ -898,6 +915,18 @@ class FastMCP(Generic[LifespanResultT]):
     def add_middleware(self, middleware: Middleware) -> None:
         self.middleware.append(middleware)
 
+    def add_provider(self, provider: Provider) -> None:
+        """Add a provider for dynamic tools, resources, and prompts.
+
+        Providers are queried in registration order. The first provider to return
+        a non-None result wins. Static components (registered via decorators)
+        always take precedence over providers.
+
+        Args:
+            provider: A Provider instance that will provide components dynamically.
+        """
+        self._providers.append(provider)
+
     async def get_tools(self) -> dict[str, Tool]:
         """Get all tools (unfiltered), including mounted servers, indexed by key."""
         all_tools = dict(await self._tool_manager.get_tools())
@@ -1215,7 +1244,24 @@ class FastMCP(Generic[LifespanResultT]):
                     raise
                 continue
 
-        return list(all_tools.values())
+        # 3. Get tools from component providers (providers listed first, static wins for execution)
+        provider_tools_list: list[Tool] = []
+        ctx = context.fastmcp_context
+        if ctx is not None:
+            for provider in self._providers:
+                try:
+                    provider_tools = await provider.list_tools(ctx)
+                    for tool in provider_tools:
+                        if self._should_enable_component(tool):
+                            # Don't duplicate if static tool exists with same key
+                            if tool.key not in all_tools:
+                                provider_tools_list.append(tool)
+                except Exception:
+                    logger.exception("Error listing tools from provider")
+
+        # Provider tools come first in the list (for visibility),
+        # but static tools take precedence for execution
+        return provider_tools_list + list(all_tools.values())
 
     async def _list_resources_mcp(self) -> list[SDKResource]:
         """
@@ -1304,7 +1350,24 @@ class FastMCP(Generic[LifespanResultT]):
                     raise
                 continue
 
-        return list(all_resources.values())
+        # 3. Get resources from component providers (providers listed first)
+        provider_resources_list: list[Resource] = []
+        ctx = context.fastmcp_context
+        if ctx is not None:
+            for provider in self._providers:
+                try:
+                    provider_resources = await provider.list_resources(ctx)
+                    for resource in provider_resources:
+                        if self._should_enable_component(resource):
+                            # Don't duplicate if static resource exists with same key
+                            if resource.key not in all_resources:
+                                provider_resources_list.append(resource)
+                except Exception:
+                    logger.exception("Error listing resources from provider")
+
+        # Provider resources come first in the list (for visibility),
+        # but static resources take precedence for read operations
+        return provider_resources_list + list(all_resources.values())
 
     async def _list_resource_templates_mcp(self) -> list[SDKResourceTemplate]:
         """
@@ -1398,7 +1461,21 @@ class FastMCP(Generic[LifespanResultT]):
                     raise
                 continue
 
-        return list(all_templates.values())
+        # 3. Get resource templates from providers (listed first, static wins for execution)
+        provider_templates_list: list[ResourceTemplate] = []
+        ctx = context.fastmcp_context
+        if ctx is not None:
+            for provider in self._providers:
+                try:
+                    provider_templates = await provider.list_resource_templates(ctx)
+                    for template in provider_templates:
+                        if self._should_enable_component(template):
+                            if template.key not in all_templates:
+                                provider_templates_list.append(template)
+                except Exception:
+                    logger.exception("Error listing resource templates from provider")
+
+        return provider_templates_list + list(all_templates.values())
 
     async def _list_prompts_mcp(self) -> list[SDKPrompt]:
         """
@@ -1491,7 +1568,24 @@ class FastMCP(Generic[LifespanResultT]):
                     raise
                 continue
 
-        return list(all_prompts.values())
+        # 3. Get prompts from component providers (providers listed first)
+        provider_prompts_list: list[Prompt] = []
+        ctx = context.fastmcp_context
+        if ctx is not None:
+            for provider in self._providers:
+                try:
+                    provider_prompts = await provider.list_prompts(ctx)
+                    for prompt in provider_prompts:
+                        if self._should_enable_component(prompt):
+                            # Don't duplicate if static prompt exists with same key
+                            if prompt.key not in all_prompts:
+                                provider_prompts_list.append(prompt)
+                except Exception:
+                    logger.exception("Error listing prompts from provider")
+
+        # Provider prompts come first in the list (for visibility),
+        # but static prompts take precedence for render operations
+        return provider_prompts_list + list(all_prompts.values())
 
     async def _call_tool_mcp(
         self, key: str, arguments: dict[str, Any]
@@ -1649,17 +1743,61 @@ class FastMCP(Generic[LifespanResultT]):
             except NotFoundError:
                 continue
 
-        # Try local tools last (mounted servers override local)
+        # Try local tools (static tools take precedence)
         try:
             tool = await self._tool_manager.get_tool(tool_name)
             if self._should_enable_component(tool):
-                return await self._tool_manager.call_tool(
-                    key=tool_name, arguments=context.message.arguments or {}
+                return await self._execute_tool(
+                    tool, tool_name, context.message.arguments or {}
                 )
         except NotFoundError:
             pass
 
+        # Try component providers
+        ctx = context.fastmcp_context
+        if ctx is not None:
+            for provider in self._providers:
+                try:
+                    tool = await provider.get_tool(ctx, tool_name)
+                    if tool is not None and self._should_enable_component(tool):
+                        result = await provider.call_tool(
+                            ctx, tool_name, context.message.arguments or {}
+                        )
+                        if result is not None:
+                            return result
+                except (ValidationError, PydanticValidationError):
+                    # Validation errors are never masked
+                    logger.exception(f"Error validating tool {tool_name!r}")
+                    raise
+                except ToolError:
+                    logger.exception(f"Error calling tool {tool_name!r}")
+                    raise
+                except Exception as e:
+                    logger.exception(f"Error calling tool {tool_name!r} from provider")
+                    if self._mask_error_details:
+                        raise ToolError(f"Error calling tool {tool_name!r}") from e
+                    raise ToolError(f"Error calling tool {tool_name!r}: {e}") from e
+
         raise NotFoundError(f"Unknown tool: {tool_name!r}")
+
+    async def _execute_tool(
+        self, tool: Tool, tool_name: str, arguments: dict[str, Any]
+    ) -> ToolResult:
+        """Run a tool with unified error handling."""
+        try:
+            return await tool.run(arguments)
+        except (ValidationError, PydanticValidationError):
+            # Validation errors are never masked - they indicate client input issues
+            logger.exception(f"Error validating tool {tool_name!r}")
+            raise
+        except ToolError:
+            logger.exception(f"Error calling tool {tool_name!r}")
+            raise
+        except Exception as e:
+            logger.exception(f"Error calling tool {tool_name!r}")
+            if self._mask_error_details:
+                raise ToolError(f"Error calling tool {tool_name!r}") from e
+            raise ToolError(f"Error calling tool {tool_name!r}: {e}") from e
 
     async def _read_resource_mcp(self, uri: AnyUrl | str) -> list[ResourceContent]:
         """
@@ -1740,8 +1878,7 @@ class FastMCP(Generic[LifespanResultT]):
         try:
             resource = await self._resource_manager.get_resource(uri_str)
             if self._should_enable_component(resource):
-                content = await self._resource_manager.read_resource(uri_str)
-                # read_resource() always returns ResourceContent now
+                content = await self._execute_resource(resource, uri_str)
                 # Use mime_type from ResourceContent if set, otherwise from resource
                 if content.mime_type is None:
                     content.mime_type = resource.mime_type
@@ -1749,7 +1886,81 @@ class FastMCP(Generic[LifespanResultT]):
         except NotFoundError:
             pass
 
+        # Try local templates
+        templates = await self._resource_manager.get_resource_templates()
+        for template in templates.values():
+            params = template.matches(uri_str)
+            if params is not None:
+                if self._should_enable_component(template):
+                    resource = await template.create_resource(uri_str, params)
+                    content = await self._execute_resource(resource, uri_str)
+                    return [content]
+
+        # Try component providers (concrete resources)
+        ctx = context.fastmcp_context
+        if ctx is not None:
+            for provider in self._providers:
+                try:
+                    resource = await provider.get_resource(ctx, uri_str)
+                    if resource is not None and self._should_enable_component(resource):
+                        content = await provider.read_resource(ctx, uri_str)
+                        if content is not None:
+                            return [content]
+                except ResourceError:
+                    logger.exception(f"Error reading resource {uri_str!r}")
+                    raise
+                except Exception as e:
+                    logger.exception(
+                        f"Error reading resource {uri_str!r} from provider"
+                    )
+                    if self._mask_error_details:
+                        raise ResourceError(
+                            f"Error reading resource {uri_str!r}"
+                        ) from e
+                    raise ResourceError(
+                        f"Error reading resource {uri_str!r}: {e}"
+                    ) from e
+
+        # Try component providers (templates)
+        if ctx is not None:
+            for provider in self._providers:
+                try:
+                    template = await provider.get_resource_template(ctx, uri_str)
+                    if template is not None and self._should_enable_component(template):
+                        content = await provider.read_resource_template(ctx, uri_str)
+                        if content is not None:
+                            return [content]
+                except ResourceError:
+                    logger.exception(f"Error reading resource {uri_str!r}")
+                    raise
+                except Exception as e:
+                    logger.exception(
+                        f"Error reading resource {uri_str!r} from provider template"
+                    )
+                    if self._mask_error_details:
+                        raise ResourceError(
+                            f"Error reading resource {uri_str!r}"
+                        ) from e
+                    raise ResourceError(
+                        f"Error reading resource {uri_str!r}: {e}"
+                    ) from e
+
         raise NotFoundError(f"Unknown resource: {uri_str!r}")
+
+    async def _execute_resource(
+        self, resource: Resource, uri_str: str
+    ) -> ResourceContent:
+        """Read a resource with unified error handling."""
+        try:
+            return await resource._read()
+        except ResourceError:
+            logger.exception(f"Error reading resource {uri_str!r}")
+            raise
+        except Exception as e:
+            logger.exception(f"Error reading resource {uri_str!r}")
+            if self._mask_error_details:
+                raise ResourceError(f"Error reading resource {uri_str!r}") from e
+            raise ResourceError(f"Error reading resource {uri_str!r}: {e}") from e
 
     async def _get_prompt_mcp(
         self, name: str, arguments: dict[str, Any] | None = None
@@ -1832,17 +2043,53 @@ class FastMCP(Generic[LifespanResultT]):
             except NotFoundError:
                 continue
 
-        # Try local prompts last (mounted servers override local)
+        # Try local prompts (static prompts take precedence)
         try:
             prompt = await self._prompt_manager.get_prompt(name)
             if self._should_enable_component(prompt):
-                return await self._prompt_manager.render_prompt(
-                    name=name, arguments=context.message.arguments
+                return await self._execute_prompt(
+                    prompt, name, context.message.arguments
                 )
         except NotFoundError:
             pass
 
+        # Try component providers
+        ctx = context.fastmcp_context
+        if ctx is not None:
+            for provider in self._providers:
+                try:
+                    prompt = await provider.get_prompt(ctx, name)
+                    if prompt is not None and self._should_enable_component(prompt):
+                        result = await provider.render_prompt(
+                            ctx, name, context.message.arguments
+                        )
+                        if result is not None:
+                            return result
+                except PromptError:
+                    logger.exception(f"Error rendering prompt {name!r}")
+                    raise
+                except Exception as e:
+                    logger.exception(f"Error rendering prompt {name!r} from provider")
+                    if self._mask_error_details:
+                        raise PromptError(f"Error rendering prompt {name!r}") from e
+                    raise PromptError(f"Error rendering prompt {name!r}: {e}") from e
+
         raise NotFoundError(f"Unknown prompt: {name!r}")
+
+    async def _execute_prompt(
+        self, prompt: Prompt, name: str, arguments: dict[str, Any] | None
+    ) -> PromptResult:
+        """Render a prompt with unified error handling."""
+        try:
+            return await prompt._render(arguments)
+        except PromptError:
+            logger.exception(f"Error rendering prompt {name!r}")
+            raise
+        except Exception as e:
+            logger.exception(f"Error rendering prompt {name!r}")
+            if self._mask_error_details:
+                raise PromptError(f"Error rendering prompt {name!r}") from e
+            raise PromptError(f"Error rendering prompt {name!r}: {e}") from e
 
     def add_tool(self, tool: Tool) -> Tool:
         """Add a tool to the server.
