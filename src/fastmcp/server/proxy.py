@@ -280,10 +280,20 @@ class ProxyTool(Tool, MirroredComponent):
     """
 
     task_config: TaskConfig = TaskConfig(mode="forbidden")
+    _backend_name: str | None = None
 
     def __init__(self, client: Client, **kwargs: Any):
         super().__init__(**kwargs)
         self._client = client
+
+    def model_copy(self, **kwargs: Any) -> ProxyTool:
+        """Override to preserve _backend_name when name changes."""
+        update = kwargs.get("update", {})
+        if "name" in update and self._backend_name is None:
+            # First time name is being changed, preserve original for backend calls
+            update = {**update, "_backend_name": self.name}
+            kwargs["update"] = update
+        return super().model_copy(**kwargs)  # type: ignore[return-value]
 
     @classmethod
     def from_mcp_tool(cls, client: Client, mcp_tool: mcp.types.Tool) -> ProxyTool:
@@ -331,7 +341,7 @@ class ProxyTool(Tool, MirroredComponent):
                         )
 
             result = await self._client.call_tool_mcp(
-                name=self.name, arguments=arguments, meta=meta
+                name=self._backend_name or self.name, arguments=arguments, meta=meta
             )
         if result.isError:
             raise ToolError(cast(mcp.types.TextContent, result.content[0]).text)
@@ -351,6 +361,7 @@ class ProxyResource(Resource, MirroredComponent):
     task_config: TaskConfig = TaskConfig(mode="forbidden")
     _client: Client
     _cached_content: ResourceContent | None = None
+    _backend_uri: str | None = None
 
     def __init__(
         self,
@@ -362,6 +373,15 @@ class ProxyResource(Resource, MirroredComponent):
         super().__init__(**kwargs)
         self._client = client
         self._cached_content = _cached_content
+
+    def model_copy(self, **kwargs: Any) -> ProxyResource:
+        """Override to preserve _backend_uri when uri changes."""
+        update = kwargs.get("update", {})
+        if "uri" in update and self._backend_uri is None:
+            # First time uri is being changed, preserve original for backend calls
+            update = {**update, "_backend_uri": str(self.uri)}
+            kwargs["update"] = update
+        return super().model_copy(**kwargs)  # type: ignore[return-value]
 
     @classmethod
     def from_mcp_resource(
@@ -390,10 +410,13 @@ class ProxyResource(Resource, MirroredComponent):
         if self._cached_content is not None:
             return self._cached_content
 
+        backend_uri = self._backend_uri or str(self.uri)
         async with self._client:
-            result = await self._client.read_resource(self.uri)
+            result = await self._client.read_resource(backend_uri)
         if not result:
-            raise ResourceError(f"Remote server returned empty content for {self.uri}")
+            raise ResourceError(
+                f"Remote server returned empty content for {backend_uri}"
+            )
         if isinstance(result[0], TextResourceContents):
             return ResourceContent(
                 content=result[0].text,
@@ -416,10 +439,20 @@ class ProxyTemplate(ResourceTemplate, MirroredComponent):
     """
 
     task_config: TaskConfig = TaskConfig(mode="forbidden")
+    _backend_uri_template: str | None = None
 
     def __init__(self, client: Client, **kwargs: Any):
         super().__init__(**kwargs)
         self._client = client
+
+    def model_copy(self, **kwargs: Any) -> ProxyTemplate:
+        """Override to preserve _backend_uri_template when uri_template changes."""
+        update = kwargs.get("update", {})
+        if "uri_template" in update and self._backend_uri_template is None:
+            # First time uri_template is being changed, preserve original for backend
+            update = {**update, "_backend_uri_template": self.uri_template}
+            kwargs["update"] = update
+        return super().model_copy(**kwargs)  # type: ignore[return-value]
 
     @classmethod
     def from_mcp_template(  # type: ignore[override]
@@ -451,7 +484,8 @@ class ProxyTemplate(ResourceTemplate, MirroredComponent):
         # don't use the provided uri, because it may not be the same as the
         # uri_template on the remote server.
         # quote params to ensure they are valid for the uri_template
-        parameterized_uri = self.uri_template.format(
+        backend_template = self._backend_uri_template or self.uri_template
+        parameterized_uri = backend_template.format(
             **{k: quote(v, safe="") for k, v in params.items()}
         )
         async with self._client:
@@ -497,10 +531,20 @@ class ProxyPrompt(Prompt, MirroredComponent):
 
     task_config: TaskConfig = TaskConfig(mode="forbidden")
     _client: Client
+    _backend_name: str | None = None
 
     def __init__(self, client: Client, **kwargs):
         super().__init__(**kwargs)
         self._client = client
+
+    def model_copy(self, **kwargs: Any) -> ProxyPrompt:
+        """Override to preserve _backend_name when name changes."""
+        update = kwargs.get("update", {})
+        if "name" in update and self._backend_name is None:
+            # First time name is being changed, preserve original for backend calls
+            update = {**update, "_backend_name": self.name}
+            kwargs["update"] = update
+        return super().model_copy(**kwargs)  # type: ignore[return-value]
 
     @classmethod
     def from_mcp_prompt(
@@ -531,7 +575,9 @@ class ProxyPrompt(Prompt, MirroredComponent):
     async def render(self, arguments: dict[str, Any]) -> PromptResult:  # type: ignore[override]
         """Render the prompt by making a call through the client."""
         async with self._client:
-            result = await self._client.get_prompt(self.name, arguments)
+            result = await self._client.get_prompt(
+                self._backend_name or self.name, arguments
+            )
         # Convert GetPromptResult to PromptResult, preserving runtime meta from the result
         # (not the static prompt meta which includes fastmcp tags)
         return PromptResult(

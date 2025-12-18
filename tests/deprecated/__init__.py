@@ -1,4 +1,1 @@
-import pytest
-
-# reset deprecation warnings for this module
-pytestmark = pytest.mark.filterwarnings("default::DeprecationWarning")
+# Tests for deprecated features - deprecation warnings are suppressed via conftest.py

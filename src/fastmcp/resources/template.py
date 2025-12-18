@@ -219,13 +219,8 @@ class ResourceTemplate(FastMCPComponent):
 
     @property
     def key(self) -> str:
-        """
-        The key of the component. This is used for internal bookkeeping
-        and may reflect e.g. prefixes or other identifiers. You should not depend on
-        keys having a certain value, as the same tool loaded from different
-        hierarchies of servers may have different keys.
-        """
-        return self._key or self.uri_template
+        """The lookup key for this template. Returns uri_template."""
+        return self.uri_template
 
 
 class FunctionResourceTemplate(ResourceTemplate):

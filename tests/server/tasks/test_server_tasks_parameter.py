@@ -28,11 +28,12 @@ async def test_server_tasks_true_defaults_all_components():
 
     async with Client(mcp) as client:
         # Verify all task-enabled components are registered with docket
+        # Tools and prompts use .key (which equals name), resources use .key (which is URI)
         docket = mcp.docket
         assert docket is not None
         assert "my_tool" in docket.tasks
         assert "my_prompt" in docket.tasks
-        assert "my_resource" in docket.tasks
+        assert "test://resource" in docket.tasks
 
         # Tool should support background execution
         tool_task = await client.call_tool("my_tool", task=True)
@@ -198,17 +199,18 @@ async def test_mixed_explicit_and_inherited():
 
     async with Client(mcp) as client:
         # Verify docket registration matches task settings
+        # Tools/prompts use .key (name), resources use .key (URI)
         docket = mcp.docket
         assert docket is not None
         # task=True (explicit or inherited) means registered
         assert "inherited_tool" in docket.tasks
         assert "explicit_true_tool" in docket.tasks
         assert "inherited_prompt" in docket.tasks
-        assert "inherited_resource" in docket.tasks
+        assert "test://inherited" in docket.tasks
         # task=False means NOT registered
         assert "explicit_false_tool" not in docket.tasks
         assert "explicit_false_prompt" not in docket.tasks
-        assert "explicit_false_resource" not in docket.tasks
+        assert "test://explicit_false" not in docket.tasks
 
         # Tools
         inherited = await client.call_tool("inherited_tool", task=True)
@@ -339,8 +341,7 @@ async def test_task_with_custom_tool_name():
 async def test_task_with_custom_resource_name():
     """Resources with custom names work correctly as tasks.
 
-    When a resource is registered with a custom name different from the function
-    name, task execution should use the custom name for Docket lookup.
+    Resources are registered/looked up by their .key (URI), not their name.
     """
     mcp = FastMCP("test", tasks=True)
 
@@ -349,10 +350,10 @@ async def test_task_with_custom_resource_name():
         return "result from custom-named resource"
 
     async with Client(mcp) as client:
-        # Verify the resource is registered with its custom name in Docket
+        # Verify the resource is registered with its key (URI) in Docket
         docket = mcp.docket
         assert docket is not None
-        assert "custom-resource-name" in docket.tasks
+        assert "test://resource" in docket.tasks
 
         # Call the resource as a task
         task = await client.read_resource("test://resource", task=True)
@@ -364,8 +365,7 @@ async def test_task_with_custom_resource_name():
 async def test_task_with_custom_template_name():
     """Resource templates with custom names work correctly as tasks.
 
-    When a template is registered with a custom name different from the function
-    name, task execution should use the custom name for Docket lookup.
+    Templates are registered/looked up by their .key (uri_template), not their name.
     """
     mcp = FastMCP("test", tasks=True)
 
@@ -374,10 +374,10 @@ async def test_task_with_custom_template_name():
         return f"result for {item_id}"
 
     async with Client(mcp) as client:
-        # Verify the template is registered with its custom name in Docket
+        # Verify the template is registered with its key (uri_template) in Docket
         docket = mcp.docket
         assert docket is not None
-        assert "custom-template-name" in docket.tasks
+        assert "test://{item_id}" in docket.tasks
 
         # Call the template as a task
         task = await client.read_resource("test://123", task=True)

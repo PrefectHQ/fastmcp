@@ -1335,48 +1335,6 @@ class TestResourcePrefixMounting:
         # Test stripping
         assert remove_resource_prefix(uri, prefix) == expected_strip
 
-    async def test_import_server_with_new_prefix_format(self):
-        """Test that import_server correctly uses the new prefix format."""
-        # Create a server with resources
-        source_server = FastMCP(name="SourceServer")
-
-        @source_server.resource("resource://test-resource")
-        def get_resource():
-            return "Resource content"
-
-        @source_server.resource("resource:///absolute/path")
-        def get_absolute_resource():
-            return "Absolute resource content"
-
-        @source_server.resource("resource://{param}/template")
-        def get_template_resource(param: str):
-            return f"Template resource with {param}"
-
-        # Create target server and import the source server
-        target_server = FastMCP(name="TargetServer")
-        await target_server.import_server(source_server, "imported")
-
-        # Check that the resources were imported with the correct prefixes
-        resources = await target_server.get_resources()
-        templates = await target_server.get_resource_templates()
-
-        assert "resource://imported/test-resource" in resources
-        assert "resource://imported//absolute/path" in resources
-        assert "resource://imported/{param}/template" in templates
-
-        # Verify we can access the resources
-        async with Client(target_server) as client:
-            result = await client.read_resource("resource://imported/test-resource")
-            assert result[0].text == "Resource content"  # type: ignore[attr-defined]
-
-            result = await client.read_resource("resource://imported//absolute/path")
-            assert result[0].text == "Absolute resource content"  # type: ignore[attr-defined]
-
-            result = await client.read_resource(
-                "resource://imported/param-value/template"
-            )
-            assert result[0].text == "Template resource with param-value"  # type: ignore[attr-defined]
-
 
 class TestShouldIncludeComponent:
     def test_no_filters_returns_true(self):

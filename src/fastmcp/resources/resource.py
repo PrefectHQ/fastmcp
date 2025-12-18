@@ -274,13 +274,8 @@ class Resource(FastMCPComponent):
 
     @property
     def key(self) -> str:
-        """
-        The key of the component. This is used for internal bookkeeping
-        and may reflect e.g. prefixes or other identifiers. You should not depend on
-        keys having a certain value, as the same tool loaded from different
-        hierarchies of servers may have different keys.
-        """
-        return self._key or str(self.uri)
+        """The lookup key for this resource. Returns str(uri)."""
+        return str(self.uri)
 
 
 class FunctionResource(Resource):

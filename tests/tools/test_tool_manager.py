@@ -869,27 +869,6 @@ class TestCustomToolNames:
         with pytest.raises(NotFoundError, match="Tool 'original_fn' not found"):
             await manager.get_tool("original_fn")
 
-    async def test_add_tool_object_with_custom_key(self):
-        """Test adding a Tool object with a custom key using add_tool()."""
-
-        def fn(x: int) -> int:
-            return x + 1
-
-        # Create a tool with a specific name
-        tool = Tool.from_function(fn, name="my_tool")
-        manager = ToolManager()
-        # Use model_copy to create a new tool with the custom key
-        tool_with_custom_key = tool.model_copy(key="proxy_tool")
-        manager.add_tool(tool_with_custom_key)
-        # The tool is accessible under the key
-        stored = await manager.get_tool("proxy_tool")
-        assert stored is not None
-        # But the tool's .name is unchanged
-        assert stored.name == "my_tool"
-        # The tool is not accessible under its original name
-        with pytest.raises(NotFoundError, match="Tool 'my_tool' not found"):
-            await manager.get_tool("my_tool")
-
     async def test_call_tool_with_custom_name(self):
         """Test calling a tool added with a custom name."""
 

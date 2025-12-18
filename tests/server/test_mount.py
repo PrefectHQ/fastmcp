@@ -970,11 +970,11 @@ class TestAsProxyKwarg:
         assert lifespan_check == ["start"]
 
 
-class TestResourceNamePrefixing:
-    """Test that resource and resource template names get prefixed when mounted."""
+class TestResourceUriPrefixing:
+    """Test that resource and resource template URIs get prefixed when mounted (names are NOT prefixed)."""
 
-    async def test_resource_name_prefixing(self):
-        """Test that resource names are prefixed when mounted."""
+    async def test_resource_uri_prefixing(self):
+        """Test that resource URIs are prefixed when mounted (names are NOT prefixed)."""
 
         # Create a sub-app with a resource
         sub_app = FastMCP("SubApp")
@@ -993,12 +993,12 @@ class TestResourceNamePrefixing:
         # Should have prefixed key (using path format: resource://prefix/resource_name)
         assert "resource://prefix/my_resource" in resources
 
-        # The resource name should also be prefixed
+        # The resource name should NOT be prefixed (only URI is prefixed)
         resource = resources["resource://prefix/my_resource"]
-        assert resource.name == "prefix_my_resource"
+        assert resource.name == "my_resource"
 
-    async def test_resource_template_name_prefixing(self):
-        """Test that resource template names are prefixed when mounted."""
+    async def test_resource_template_uri_prefixing(self):
+        """Test that resource template URIs are prefixed when mounted (names are NOT prefixed)."""
 
         # Create a sub-app with a resource template
         sub_app = FastMCP("SubApp")
@@ -1017,9 +1017,9 @@ class TestResourceNamePrefixing:
         # Should have prefixed key (using path format: resource://prefix/template_uri)
         assert "resource://prefix/user/{user_id}" in templates
 
-        # The template name should also be prefixed
+        # The template name should NOT be prefixed (only URI template is prefixed)
         template = templates["resource://prefix/user/{user_id}"]
-        assert template.name == "prefix_user_template"
+        assert template.name == "user_template"
 
 
 class TestParentTagFiltering:

@@ -28,7 +28,8 @@ async def test_import_basic_functionality():
     # Verify the original tool still exists in the sub-app
     tool = await main_app._tool_manager.get_tool("sub_sub_tool")
     assert tool is not None
-    assert tool.name == "sub_tool"
+    # import_server creates copies with prefixed names (unlike mount which proxies)
+    assert tool.name == "sub_sub_tool"
     assert isinstance(tool, FunctionTool)
     assert callable(tool.fn)
 
@@ -589,8 +590,8 @@ async def test_import_conflict_resolution_with_prefix():
         assert result.data == "Second app tool"
 
 
-async def test_import_server_resource_name_prefixing():
-    """Test that resource names are prefixed when using import_server."""
+async def test_import_server_resource_uri_prefixing():
+    """Test that resource URIs are prefixed when using import_server (names are NOT prefixed)."""
     # Create a sub-server with a resource
     sub_server = FastMCP("SubServer")
 
@@ -602,14 +603,14 @@ async def test_import_server_resource_name_prefixing():
     main_server = FastMCP("MainServer")
     await main_server.import_server(sub_server, prefix="imported")
 
-    # Get resources and verify name prefixing
+    # Get resources and verify URI prefixing (name should NOT be prefixed)
     resources = await main_server.get_resources()
     resource = resources["resource://imported/test_resource"]
-    assert resource.name == "imported_test_resource"
+    assert resource.name == "test_resource"
 
 
-async def test_import_server_resource_template_name_prefixing():
-    """Test that resource template names are prefixed when using import_server."""
+async def test_import_server_resource_template_uri_prefixing():
+    """Test that resource template URIs are prefixed when using import_server (names are NOT prefixed)."""
     # Create a sub-server with a resource template
     sub_server = FastMCP("SubServer")
 
@@ -621,7 +622,48 @@ async def test_import_server_resource_template_name_prefixing():
     main_server = FastMCP("MainServer")
     await main_server.import_server(sub_server, prefix="imported")
 
-    # Get resource templates and verify name prefixing
+    # Get resource templates and verify URI prefixing (name should NOT be prefixed)
     templates = await main_server.get_resource_templates()
     template = templates["resource://imported/data/{item_id}"]
-    assert template.name == "imported_data_template"
+    assert template.name == "data_template"
+
+
+async def test_import_server_with_new_prefix_format():
+    """Test that import_server correctly uses the new prefix format."""
+    # Create a server with resources
+    source_server = FastMCP(name="SourceServer")
+
+    @source_server.resource("resource://test-resource")
+    def get_resource():
+        return "Resource content"
+
+    @source_server.resource("resource:///absolute/path")
+    def get_absolute_resource():
+        return "Absolute resource content"
+
+    @source_server.resource("resource://{param}/template")
+    def get_template_resource(param: str):
+        return f"Template resource with {param}"
+
+    # Create target server and import the source server
+    target_server = FastMCP(name="TargetServer")
+    await target_server.import_server(source_server, "imported")
+
+    # Check that the resources were imported with the correct prefixes
+    resources = await target_server.get_resources()
+    templates = await target_server.get_resource_templates()
+
+    assert "resource://imported/test-resource" in resources
+    assert "resource://imported//absolute/path" in resources
+    assert "resource://imported/{param}/template" in templates
+
+    # Verify we can access the resources
+    async with Client(target_server) as client:
+        result = await client.read_resource("resource://imported/test-resource")
+        assert result[0].text == "Resource content"  # type: ignore[attr-defined]
+
+        result = await client.read_resource("resource://imported//absolute/path")
+        assert result[0].text == "Absolute resource content"  # type: ignore[attr-defined]
+
+        result = await client.read_resource("resource://imported/param-value/template")
+        assert result[0].text == "Template resource with param-value"  # type: ignore[attr-defined]

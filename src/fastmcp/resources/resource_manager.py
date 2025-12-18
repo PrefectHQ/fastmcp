@@ -154,8 +154,8 @@ class ResourceManager:
 
         Args:
             resource: A Resource instance to add. The resource's .key attribute
-                will be used as the storage key. To overwrite it, call
-                Resource.model_copy(key=new_key) before calling this method.
+                (which is str(uri)) will be used as the storage key. To use a
+                different key, change the uri via model_copy(update={"uri": new_uri}).
         """
         existing = self._resources.get(resource.key)
         if existing:
@@ -203,8 +203,8 @@ class ResourceManager:
 
         Args:
             template: A ResourceTemplate instance to add. The template's .key attribute
-                will be used as the storage key. To overwrite it, call
-                ResourceTemplate.model_copy(key=new_key) before calling this method.
+                (which is uri_template) will be used as the storage key. To use a
+                different key, change uri_template via model_copy(update={"uri_template": new_uri}).
 
         Returns:
             The added template. If a template with the same URI already exists,

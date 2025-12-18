@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Annotated, Any, TypedDict, cast
+from typing import Annotated, Any, TypedDict
 
 from mcp.types import Icon
 from pydantic import BeforeValidator, Field, PrivateAttr
@@ -56,21 +56,16 @@ class FastMCPComponent(FastMCPBaseModel):
         description="Whether the component is enabled.",
     )
 
-    _key: str | None = PrivateAttr()
-
-    def __init__(self, *, key: str | None = None, **kwargs: Any) -> None:
-        super().__init__(**kwargs)
-        self._key = key
-
     @property
     def key(self) -> str:
+        """The lookup key for this component. Returns name by default.
+
+        Subclasses override this to return different identifiers:
+        - Tools/Prompts: name
+        - Resources: str(uri)
+        - Templates: uri_template
         """
-        The key of the component. This is used for internal bookkeeping
-        and may reflect e.g. prefixes or other identifiers. You should not depend on
-        keys having a certain value, as the same tool loaded from different
-        hierarchies of servers may have different keys.
-        """
-        return self._key or self.name
+        return self.name
 
     def get_meta(
         self, include_fastmcp_meta: bool | None = None
@@ -95,29 +90,6 @@ class FastMCPComponent(FastMCPBaseModel):
             meta["_fastmcp"] = fastmcp_meta
 
         return meta or None
-
-    def model_copy(  # type: ignore[override]
-        self,
-        *,
-        update: dict[str, Any] | None = None,
-        deep: bool = False,
-        key: str | None = None,
-    ) -> Self:
-        """
-        Create a copy of the component.
-
-        Args:
-            update: A dictionary of fields to update.
-            deep: Whether to deep copy the component.
-            key: The key to use for the copy.
-        """
-        # `model_copy` has an `update` parameter but it doesn't work for certain private attributes
-        # https://github.com/pydantic/pydantic/issues/12116
-        # So we manually set the private attribute here instead, such as _key
-        copy = super().model_copy(update=update, deep=deep)
-        if key is not None:
-            copy._key = key
-        return cast(Self, copy)
 
     def __eq__(self, other: object) -> bool:
         if type(self) is not type(other):
