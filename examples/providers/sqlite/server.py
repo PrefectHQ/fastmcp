@@ -20,8 +20,9 @@ from typing import Any
 import aiosqlite
 from rich import print
 
-from fastmcp import Client, FastMCP, Provider
+from fastmcp import Client, FastMCP
 from fastmcp.server.context import Context
+from fastmcp.server.providers import Provider
 from fastmcp.tools.tool import Tool, ToolResult
 
 DB_PATH = Path(__file__).parent / "tools.db"

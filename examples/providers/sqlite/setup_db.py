@@ -4,7 +4,7 @@
 """
 Creates and seeds the tools database.
 
-Run with: uv run examples/dynamic_tools_sqlite/setup_db.py
+Run with: uv run examples/providers/sqlite/setup_db.py
 """
 
 import asyncio

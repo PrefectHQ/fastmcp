@@ -12,10 +12,10 @@ This example demonstrates serving MCP tools from a database. Tools can be added,
 
 ```bash
 # Reset the database (optional - tools.db is pre-seeded)
-uv run examples/dynamic_tools_sqlite/setup_db.py
+uv run examples/providers/sqlite/setup_db.py
 
 # Run the server
-uv run fastmcp run examples/dynamic_tools_sqlite/server.py
+uv run fastmcp run examples/providers/sqlite/server.py
 ```
 
 ## How It Works
@@ -50,10 +50,10 @@ While the server is running, you can modify tools in the database:
 
 ```bash
 # Add a new tool
-sqlite3 examples/dynamic_tools_sqlite/tools.db "INSERT INTO tools VALUES ('subtract_numbers', 'Subtract two numbers', '{\"type\":\"object\",\"properties\":{\"a\":{\"type\":\"number\"},\"b\":{\"type\":\"number\"}},\"required\":[\"a\",\"b\"]}', 'subtract', 0, 1)"
+sqlite3 examples/providers/sqlite/tools.db "INSERT INTO tools VALUES ('subtract_numbers', 'Subtract two numbers', '{\"type\":\"object\",\"properties\":{\"a\":{\"type\":\"number\"},\"b\":{\"type\":\"number\"}},\"required\":[\"a\",\"b\"]}', 'subtract', 0, 1)"
 
 # Disable a tool
-sqlite3 examples/dynamic_tools_sqlite/tools.db "UPDATE tools SET enabled = 0 WHERE name = 'divide_numbers'"
+sqlite3 examples/providers/sqlite/tools.db "UPDATE tools SET enabled = 0 WHERE name = 'divide_numbers'"
 ```
 
 The next `list_tools` or `call_tool` request will reflect these changes.

@@ -7,13 +7,13 @@ import pytest
 from mcp.types import AnyUrl, PromptMessage, TextContent
 from mcp.types import Tool as MCPTool
 
-from fastmcp import FastMCP, Provider
+from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.client.client import CallToolResult
 from fastmcp.prompts.prompt import FunctionPrompt, Prompt, PromptResult
 from fastmcp.resources.resource import FunctionResource, Resource, ResourceContent
 from fastmcp.resources.template import FunctionResourceTemplate, ResourceTemplate
-from fastmcp.server.context import Context
+from fastmcp.server.providers import Provider
 from fastmcp.tools.tool import Tool, ToolResult
 
 
@@ -43,15 +43,16 @@ class SimpleToolProvider(Provider):
     """A simple provider that returns a configurable list of tools."""
 
     def __init__(self, tools: list[Tool] | None = None):
+        super().__init__()
         self._tools = tools or []
         self.list_tools_call_count = 0
         self.get_tool_call_count = 0
 
-    async def list_tools(self, context: Context) -> list[Tool]:
+    async def list_tools(self) -> list[Tool]:
         self.list_tools_call_count += 1
         return self._tools
 
-    async def get_tool(self, context: Context, name: str) -> Tool | None:
+    async def get_tool(self, name: str) -> Tool | None:
         self.get_tool_call_count += 1
         return next((t for t in self._tools if t.name == name), None)
 
@@ -60,10 +61,11 @@ class ListOnlyProvider(Provider):
     """A provider that only implements list_tools (uses default get_tool)."""
 
     def __init__(self, tools: list[Tool]):
+        super().__init__()
         self._tools = tools
         self.list_tools_call_count = 0
 
-    async def list_tools(self, context: Context) -> list[Tool]:
+    async def list_tools(self) -> list[Tool]:
         self.list_tools_call_count += 1
         return self._tools
 
@@ -150,8 +152,9 @@ class TestProvider:
             await client.list_tools()
             await client.list_tools()
 
-        # Provider should have been called 3 times
-        assert provider.list_tools_call_count == 3
+        # Provider should have been called 4 times
+        # (1 from get_tasks() during docket registration + 3 from client)
+        assert provider.list_tools_call_count == 4
 
     async def test_call_dynamic_tool(
         self, base_server: FastMCP, dynamic_tools: list[Tool]
@@ -210,11 +213,12 @@ class TestProvider:
         async with Client(base_server) as client:
             await client.call_tool(name="dynamic_multiply", arguments={"a": 2, "b": 3})
 
-        # get_tool is called twice:
-        # 1. Server calls get_tool() to check _should_enable_component filter
-        # 2. Default call_tool() implementation calls get_tool() internally
+        # get_tool is called three times:
+        # 1. Server.get_tool() for task config check calls provider.get_tool()
+        # 2. _call_tool() calls provider.get_tool() to check _should_enable_component
+        # 3. Default call_tool() implementation calls get_tool() internally
         # Key point: list_tools is NOT called during tool execution (efficient lookup)
-        assert provider.get_tool_call_count == 2
+        assert provider.get_tool_call_count == 3
 
     async def test_default_get_tool_falls_back_to_list(self, base_server: FastMCP):
         """Test that BaseToolProvider's default get_tool calls list_tools."""
@@ -298,17 +302,13 @@ class TestProviderClass:
         )
         provider = ListOnlyProvider(tools=[tool])
 
-        # Create a context for direct testing
-        mcp = FastMCP("TestServer")
-        ctx = Context(mcp)
-
         # Default get_tool should find by name
-        found = await provider.get_tool(ctx, "test")
+        found = await provider.get_tool("test")
         assert found is not None
         assert found.name == "test"
 
         # Should return None for unknown names
-        not_found = await provider.get_tool(ctx, "unknown")
+        not_found = await provider.get_tool("unknown")
         assert not_found is None
 
 
@@ -389,6 +389,7 @@ class TestProviderExecutionMethods:
             """Provider that wraps tool execution with custom logic."""
 
             def __init__(self):
+                super().__init__()
                 self.call_count = 0
                 self._tool = SimpleTool(
                     name="custom_tool",
@@ -397,20 +398,20 @@ class TestProviderExecutionMethods:
                     operation="add",
                 )
 
-            async def list_tools(self, context: Context) -> Sequence[Tool]:
+            async def list_tools(self) -> Sequence[Tool]:
                 return [self._tool]
 
-            async def get_tool(self, context: Context, name: str) -> Tool | None:
+            async def get_tool(self, name: str) -> Tool | None:
                 if name == "custom_tool":
                     return self._tool
                 return None
 
             async def call_tool(
-                self, context: Context, name: str, arguments: dict[str, Any]
+                self, name: str, arguments: dict[str, Any]
             ) -> ToolResult | None:
                 # Custom behavior: track calls and modify result
                 self.call_count += 1
-                tool = await self.get_tool(context, name)
+                tool = await self.get_tool(name)
                 if tool is None:
                     return None
                 result = await tool.run(arguments)
@@ -434,7 +435,7 @@ class TestProviderExecutionMethods:
         """Test that default read_resource uses get_resource and reads it."""
 
         class ResourceProvider(Provider):
-            async def list_resources(self, context: Context) -> Sequence[Resource]:
+            async def list_resources(self) -> Sequence[Resource]:
                 return [
                     FunctionResource(
                         uri=AnyUrl("test://data"),
@@ -459,7 +460,7 @@ class TestProviderExecutionMethods:
         class CustomReadProvider(Provider):
             """Provider that transforms resource content."""
 
-            async def list_resources(self, context: Context) -> Sequence[Resource]:
+            async def list_resources(self) -> Sequence[Resource]:
                 return [
                     FunctionResource(
                         uri=AnyUrl("test://data"),
@@ -468,9 +469,7 @@ class TestProviderExecutionMethods:
                     )
                 ]
 
-            async def read_resource(
-                self, context: Context, uri: str
-            ) -> ResourceContent | None:
+            async def read_resource(self, uri: str) -> ResourceContent | None:
                 if uri == "test://data":
                     # Custom behavior: return transformed content
                     return ResourceContent(content="TRANSFORMED")
@@ -490,9 +489,7 @@ class TestProviderExecutionMethods:
         """Test that read_resource_template handles template-based resources."""
 
         class TemplateProvider(Provider):
-            async def list_resource_templates(
-                self, context: Context
-            ) -> Sequence[ResourceTemplate]:
+            async def list_resource_templates(self) -> Sequence[ResourceTemplate]:
                 return [
                     FunctionResourceTemplate.from_function(
                         fn=lambda name: f"content of {name}",
@@ -515,7 +512,7 @@ class TestProviderExecutionMethods:
         """Test that default render_prompt uses get_prompt and renders it."""
 
         class PromptProvider(Provider):
-            async def list_prompts(self, context: Context) -> Sequence[Prompt]:
+            async def list_prompts(self) -> Sequence[Prompt]:
                 return [
                     FunctionPrompt.from_function(
                         fn=lambda name: f"Hello, {name}!",
@@ -540,7 +537,7 @@ class TestProviderExecutionMethods:
         class CustomRenderProvider(Provider):
             """Provider that adds prefix to all prompts."""
 
-            async def list_prompts(self, context: Context) -> Sequence[Prompt]:
+            async def list_prompts(self) -> Sequence[Prompt]:
                 return [
                     FunctionPrompt.from_function(
                         fn=lambda: "original message",
@@ -550,7 +547,7 @@ class TestProviderExecutionMethods:
                 ]
 
             async def render_prompt(
-                self, context: Context, name: str, arguments: dict[str, Any] | None
+                self, name: str, arguments: dict[str, Any] | None
             ) -> PromptResult | None:
                 if name == "test_prompt":
                     # Custom behavior: add prefix

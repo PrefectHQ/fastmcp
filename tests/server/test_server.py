@@ -11,7 +11,7 @@ from fastmcp import Client, FastMCP
 from fastmcp.exceptions import NotFoundError
 from fastmcp.prompts.prompt import FunctionPrompt, Prompt
 from fastmcp.resources import Resource, ResourceContent, ResourceTemplate
-from fastmcp.server.server import (
+from fastmcp.server.providers.mounted import (
     add_resource_prefix,
     has_resource_prefix,
     remove_resource_prefix,
@@ -1329,8 +1329,6 @@ class TestResourcePrefixMounting:
         self, uri, prefix, expected_match, expected_strip
     ):
         """Test that resource prefix utility functions correctly match and strip resource prefixes."""
-        from fastmcp.server.server import has_resource_prefix, remove_resource_prefix
-
         # Test matching
         assert has_resource_prefix(uri, prefix) == expected_match
 

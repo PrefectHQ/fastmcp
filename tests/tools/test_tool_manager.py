@@ -1057,8 +1057,8 @@ class TestMountedComponentsRaiseOnLoadError:
 
         # Create a failing mounted server by corrupting it
         parent_mcp.mount(child_mcp, prefix="child")
-        # Corrupt the parent's mounted servers to make it fail during loading
-        parent_mcp._mounted_servers.append("invalid")  # type: ignore
+        # Corrupt the parent's providers to make it fail during loading
+        parent_mcp._providers.append("invalid")  # type: ignore
 
         # Should not raise, just warn; use server middleware path now
         tools = await parent_mcp._list_tools_middleware()
@@ -1071,13 +1071,13 @@ class TestMountedComponentsRaiseOnLoadError:
 
         # Create a failing mounted server
         parent_mcp.mount(child_mcp, prefix="child")
-        # Corrupt the parent's mounted servers to make it fail during loading
-        parent_mcp._mounted_servers.append("invalid")  # type: ignore
+        # Corrupt the parent's providers to make it fail during loading
+        parent_mcp._providers.append("invalid")  # type: ignore
 
         # Use temporary settings context manager
         with temporary_settings(mounted_components_raise_on_load_error=True):
             # Should raise the exception
             with pytest.raises(
-                AttributeError, match="'str' object has no attribute 'server'"
+                AttributeError, match="'str' object has no attribute 'list_tools'"
             ):
                 await parent_mcp._list_tools_middleware()

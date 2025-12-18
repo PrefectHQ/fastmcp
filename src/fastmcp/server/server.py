@@ -22,7 +22,6 @@ from contextlib import (
     asynccontextmanager,
     suppress,
 )
-from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Generic, Literal, cast, overload
@@ -70,7 +69,6 @@ from fastmcp.mcp_config import MCPConfig
 from fastmcp.prompts import Prompt
 from fastmcp.prompts.prompt import FunctionPrompt, PromptResult
 from fastmcp.prompts.prompt_manager import PromptManager
-from fastmcp.providers import Provider
 from fastmcp.resources.resource import FunctionResource, Resource, ResourceContent
 from fastmcp.resources.resource_manager import ResourceManager
 from fastmcp.resources.template import FunctionResourceTemplate, ResourceTemplate
@@ -83,6 +81,7 @@ from fastmcp.server.http import (
 )
 from fastmcp.server.low_level import LowLevelServer
 from fastmcp.server.middleware import Middleware, MiddlewareContext
+from fastmcp.server.providers import Provider
 from fastmcp.server.tasks.capabilities import get_task_capabilities
 from fastmcp.server.tasks.config import TaskConfig
 from fastmcp.server.tasks.handlers import (
@@ -227,11 +226,7 @@ class FastMCP(Generic[LifespanResultT]):
         self._docket = None
 
         self._additional_http_routes: list[BaseRoute] = []
-        self._mounted_servers: list[MountedServer] = []
         self._providers: list[Provider] = list(providers or [])
-        self._is_mounted: bool = (
-            False  # Set to True when this server is mounted on another
-        )
         self._tool_manager: ToolManager = ToolManager(
             duplicate_behavior=on_duplicate_tools,
             mask_error_details=mask_error_details,
@@ -430,13 +425,6 @@ class FastMCP(Generic[LifespanResultT]):
         server_token = _current_server.set(weakref.ref(self))
 
         try:
-            # For directly mounted servers, the parent's Docket/Worker handles all
-            # task execution. Skip creating our own to avoid race conditions with
-            # multiple workers competing for tasks from the same queue.
-            if self._is_mounted:
-                yield
-                return
-
             # Create Docket instance using configured name and URL
             async with Docket(
                 name=settings.docket.name,
@@ -477,12 +465,35 @@ class FastMCP(Generic[LifespanResultT]):
                     ):
                         docket.register(template.fn)
 
-                # Also register functions from mounted servers so tasks can
-                # execute in the parent's Docket context
-                for mounted in self._mounted_servers:
-                    await self._register_mounted_server_functions(
-                        mounted.server, docket, mounted.prefix, mounted.tool_names
-                    )
+                # Register provider components
+                for provider in self._providers:
+                    try:
+                        tasks = await provider.get_tasks()
+                        for tool in tasks.tools:
+                            named_fn = _create_named_fn_wrapper(tool.fn, tool.key)
+                            docket.register(named_fn)
+                        for resource in tasks.resources:
+                            named_fn = _create_named_fn_wrapper(
+                                resource.fn, resource.name
+                            )
+                            docket.register(named_fn)
+                        for template in tasks.templates:
+                            named_fn = _create_named_fn_wrapper(
+                                template.fn, template.name
+                            )
+                            docket.register(named_fn)
+                        for prompt in tasks.prompts:
+                            named_fn = _create_named_fn_wrapper(prompt.fn, prompt.key)
+                            docket.register(named_fn)
+                    except Exception as e:
+                        provider_name = getattr(
+                            provider, "server", provider
+                        ).__class__.__name__
+                        logger.warning(
+                            f"Failed to register tasks from provider {provider_name!r}: {e}"
+                        )
+                        if fastmcp.settings.mounted_components_raise_on_load_error:
+                            raise
 
                 # Set Docket in ContextVar so CurrentDocket can access it
                 docket_token = _current_docket.set(docket)
@@ -522,81 +533,6 @@ class FastMCP(Generic[LifespanResultT]):
             # Reset server ContextVar
             _current_server.reset(server_token)
 
-    async def _register_mounted_server_functions(
-        self,
-        server: FastMCP,
-        docket: Docket,
-        prefix: str | None,
-        tool_names: dict[str, str] | None = None,
-    ) -> None:
-        """Register task-enabled functions from a mounted server with Docket.
-
-        This enables background task execution for mounted server components
-        through the parent server's Docket context.
-
-        Args:
-            server: The mounted server whose functions to register
-            docket: The Docket instance to register with
-            prefix: The mount prefix to prepend to function names (matches
-                    client-facing tool/prompt names)
-            tool_names: Optional mapping of original tool names to custom names
-        """
-        # Register tools with prefixed names to avoid collisions
-        for tool in server._tool_manager._tools.values():
-            if isinstance(tool, FunctionTool) and tool.task_config.mode != "forbidden":
-                # Apply tool_names override first, then prefix (matches get_tools logic)
-                if tool_names and tool.key in tool_names:
-                    fn_name = tool_names[tool.key]
-                elif prefix:
-                    fn_name = f"{prefix}_{tool.key}"
-                else:
-                    fn_name = tool.key
-                named_fn = _create_named_fn_wrapper(tool.fn, fn_name)
-                docket.register(named_fn)
-
-        # Register prompts with prefixed names
-        for prompt in server._prompt_manager._prompts.values():
-            if (
-                isinstance(prompt, FunctionPrompt)
-                and prompt.task_config.mode != "forbidden"
-            ):
-                fn_name = f"{prefix}_{prompt.key}" if prefix else prompt.key
-                named_fn = _create_named_fn_wrapper(
-                    cast(Callable[..., Awaitable[Any]], prompt.fn), fn_name
-                )
-                docket.register(named_fn)
-
-        # Register resources with prefixed names (use name, not key/URI)
-        for resource in server._resource_manager._resources.values():
-            if (
-                isinstance(resource, FunctionResource)
-                and resource.task_config.mode != "forbidden"
-            ):
-                fn_name = f"{prefix}_{resource.name}" if prefix else resource.name
-                named_fn = _create_named_fn_wrapper(resource.fn, fn_name)
-                docket.register(named_fn)
-
-        # Register resource templates with prefixed names (use name, not key/URI)
-        for template in server._resource_manager._templates.values():
-            if (
-                isinstance(template, FunctionResourceTemplate)
-                and template.task_config.mode != "forbidden"
-            ):
-                fn_name = f"{prefix}_{template.name}" if prefix else template.name
-                named_fn = _create_named_fn_wrapper(template.fn, fn_name)
-                docket.register(named_fn)
-
-        # Recursively register from nested mounted servers with accumulated prefix
-        for nested in server._mounted_servers:
-            nested_prefix = (
-                f"{prefix}_{nested.prefix}"
-                if prefix and nested.prefix
-                else (prefix or nested.prefix)
-            )
-            await self._register_mounted_server_functions(
-                nested.server, docket, nested_prefix, nested.tool_names
-            )
-
     @asynccontextmanager
     async def _lifespan_manager(self) -> AsyncIterator[None]:
         if self._lifespan_result_set:
@@ -611,10 +547,9 @@ class FastMCP(Generic[LifespanResultT]):
             self._lifespan_result_set = True
 
             async with AsyncExitStack[bool | None]() as stack:
-                for server in self._mounted_servers:
-                    await stack.enter_async_context(
-                        cm=server.server._lifespan_manager()
-                    )
+                # Start lifespans for all providers
+                for provider in self._providers:
+                    await stack.enter_async_context(provider.lifespan())
 
                 self._started.set()
                 try:
@@ -806,8 +741,10 @@ class FastMCP(Generic[LifespanResultT]):
 
             # Check for task metadata and route appropriately
             async with fastmcp.server.context.Context(fastmcp=self):
-                prompts = await self.get_prompts()
-                prompt = prompts.get(name)
+                try:
+                    prompt = await self.get_prompt(name)
+                except NotFoundError:
+                    prompt = None
                 if (
                     prompt
                     and self._should_enable_component(prompt)
@@ -928,24 +865,19 @@ class FastMCP(Generic[LifespanResultT]):
         self._providers.append(provider)
 
     async def get_tools(self) -> dict[str, Tool]:
-        """Get all tools (unfiltered), including mounted servers, indexed by key."""
+        """Get all tools (unfiltered), including from providers, indexed by key."""
         all_tools = dict(await self._tool_manager.get_tools())
 
-        for mounted in self._mounted_servers:
+        # Get tools from providers (including MountedProvider)
+        for provider in self._providers:
             try:
-                child_tools = await mounted.server.get_tools()
-                for key, tool in child_tools.items():
-                    # Check for manual override first, then apply prefix
-                    if mounted.tool_names and key in mounted.tool_names:
-                        new_key = mounted.tool_names[key]
-                    elif mounted.prefix:
-                        new_key = f"{mounted.prefix}_{key}"
-                    else:
-                        new_key = key
-                    all_tools[new_key] = tool.model_copy(key=new_key)
+                provider_tools = await provider.list_tools()
+                for tool in provider_tools:
+                    all_tools[tool.key] = tool
             except Exception as e:
+                provider_name = getattr(provider, "server", provider).__class__.__name__
                 logger.warning(
-                    f"Failed to get tools from mounted server {mounted.server.name!r}: {e}"
+                    f"Failed to get tools from provider {provider_name!r}: {e}"
                 )
                 if fastmcp.settings.mounted_components_raise_on_load_error:
                     raise
@@ -954,10 +886,23 @@ class FastMCP(Generic[LifespanResultT]):
         return all_tools
 
     async def get_tool(self, key: str) -> Tool:
-        tools = await self.get_tools()
-        if key not in tools:
-            raise NotFoundError(f"Unknown tool: {key}")
-        return tools[key]
+        """Get a tool by key, checking local tools first then providers."""
+        # Check local tools first
+        try:
+            return await self._tool_manager.get_tool(key)
+        except NotFoundError:
+            pass
+
+        # Try providers
+        for provider in self._providers:
+            try:
+                tool = await provider.get_tool(key)
+                if tool is not None:
+                    return tool
+            except NotFoundError:
+                continue
+
+        raise NotFoundError(f"Unknown tool: {key}")
 
     async def _get_tool_with_task_config(self, key: str) -> Tool | None:
         """Get a tool by key, returning None if not found.
@@ -973,43 +918,56 @@ class FastMCP(Generic[LifespanResultT]):
     async def _get_resource_or_template_or_none(
         self, uri: str
     ) -> Resource | ResourceTemplate | None:
-        """Get a resource or template by URI, searching recursively. Returns None if not found."""
-        try:
-            return await self.get_resource(uri)
-        except NotFoundError:
-            pass
+        """Get a resource or template by URI. Returns None if not found.
 
-        templates = await self.get_resource_templates()
-        for template in templates.values():
+        Returns the original ResourceTemplate (not a Resource created from it)
+        to preserve the registered function for task execution.
+        """
+        # Check local concrete resources first
+        local_resources = await self._resource_manager.get_resources()
+        if uri in local_resources:
+            return local_resources[uri]
+
+        # Check local templates - return the template itself, not a created resource
+        local_templates = await self._resource_manager.get_resource_templates()
+        for template in local_templates.values():
             if template.matches(uri):
                 return template
+
+        # Check providers
+        for provider in self._providers:
+            try:
+                resource = await provider.get_resource(uri)
+                if resource is not None:
+                    return resource
+            except NotFoundError:
+                continue
+
+        # Check provider templates
+        for provider in self._providers:
+            try:
+                template = await provider.get_resource_template(uri)
+                if template is not None:
+                    return template
+            except NotFoundError:
+                continue
 
         return None
 
     async def get_resources(self) -> dict[str, Resource]:
-        """Get all resources (unfiltered), including mounted servers, indexed by key."""
+        """Get all resources (unfiltered), including from providers, indexed by key."""
         all_resources = dict(await self._resource_manager.get_resources())
 
-        for mounted in self._mounted_servers:
+        # Get resources from providers (including MountedProvider)
+        for provider in self._providers:
             try:
-                child_resources = await mounted.server.get_resources()
-                for key, resource in child_resources.items():
-                    new_key = (
-                        add_resource_prefix(key, mounted.prefix)
-                        if mounted.prefix
-                        else key
-                    )
-                    update = (
-                        {"name": f"{mounted.prefix}_{resource.name}"}
-                        if mounted.prefix and resource.name
-                        else {}
-                    )
-                    all_resources[new_key] = resource.model_copy(
-                        key=new_key, update=update
-                    )
+                provider_resources = await provider.list_resources()
+                for resource in provider_resources:
+                    all_resources[resource.key] = resource
             except Exception as e:
+                provider_name = getattr(provider, "server", provider).__class__.__name__
                 logger.warning(
-                    f"Failed to get resources from mounted server {mounted.server.name!r}: {e}"
+                    f"Failed to get resources from provider {provider_name!r}: {e}"
                 )
                 if fastmcp.settings.mounted_components_raise_on_load_error:
                     raise
@@ -1018,36 +976,38 @@ class FastMCP(Generic[LifespanResultT]):
         return all_resources
 
     async def get_resource(self, key: str) -> Resource:
-        resources = await self.get_resources()
-        if key not in resources:
-            raise NotFoundError(f"Unknown resource: {key}")
-        return resources[key]
+        """Get a resource by key, checking local resources first then providers."""
+        # Check local resources first
+        try:
+            return await self._resource_manager.get_resource(key)
+        except NotFoundError:
+            pass
+
+        # Try providers
+        for provider in self._providers:
+            try:
+                resource = await provider.get_resource(key)
+                if resource is not None:
+                    return resource
+            except NotFoundError:
+                continue
+
+        raise NotFoundError(f"Unknown resource: {key}")
 
     async def get_resource_templates(self) -> dict[str, ResourceTemplate]:
-        """Get all resource templates (unfiltered), including mounted servers, indexed by key."""
+        """Get all resource templates (unfiltered), including from providers, indexed by key."""
         all_templates = dict(await self._resource_manager.get_resource_templates())
 
-        for mounted in self._mounted_servers:
+        # Get templates from providers (including MountedProvider)
+        for provider in self._providers:
             try:
-                child_templates = await mounted.server.get_resource_templates()
-                for key, template in child_templates.items():
-                    new_key = (
-                        add_resource_prefix(key, mounted.prefix)
-                        if mounted.prefix
-                        else key
-                    )
-                    update: dict[str, Any] = {}
-                    if mounted.prefix:
-                        if template.name:
-                            update["name"] = f"{mounted.prefix}_{template.name}"
-                        # Update uri_template so matches() works with prefixed URIs
-                        update["uri_template"] = new_key
-                    all_templates[new_key] = template.model_copy(
-                        key=new_key, update=update
-                    )
+                provider_templates = await provider.list_resource_templates()
+                for template in provider_templates:
+                    all_templates[template.key] = template
             except Exception as e:
+                provider_name = getattr(provider, "server", provider).__class__.__name__
                 logger.warning(
-                    f"Failed to get resource templates from mounted server {mounted.server.name!r}: {e}"
+                    f"Failed to get resource templates from provider {provider_name!r}: {e}"
                 )
                 if fastmcp.settings.mounted_components_raise_on_load_error:
                     raise
@@ -1057,24 +1017,37 @@ class FastMCP(Generic[LifespanResultT]):
 
     async def get_resource_template(self, key: str) -> ResourceTemplate:
         """Get a registered resource template by key."""
-        templates = await self.get_resource_templates()
-        if key not in templates:
-            raise NotFoundError(f"Unknown resource template: {key}")
-        return templates[key]
+        # Check local templates first
+        local_templates = await self._resource_manager.get_resource_templates()
+        if key in local_templates:
+            return local_templates[key]
+
+        # Try providers
+        for provider in self._providers:
+            try:
+                # For templates, we use get_resource_template which matches by URI
+                template = await provider.get_resource_template(key)
+                if template is not None:
+                    return template
+            except NotFoundError:
+                continue
+
+        raise NotFoundError(f"Unknown resource template: {key}")
 
     async def get_prompts(self) -> dict[str, Prompt]:
-        """Get all prompts (unfiltered), including mounted servers, indexed by key."""
+        """Get all prompts (unfiltered), including from providers, indexed by key."""
         all_prompts = dict(await self._prompt_manager.get_prompts())
 
-        for mounted in self._mounted_servers:
+        # Get prompts from providers (including MountedProvider)
+        for provider in self._providers:
             try:
-                child_prompts = await mounted.server.get_prompts()
-                for key, prompt in child_prompts.items():
-                    new_key = f"{mounted.prefix}_{key}" if mounted.prefix else key
-                    all_prompts[new_key] = prompt.model_copy(key=new_key)
+                provider_prompts = await provider.list_prompts()
+                for prompt in provider_prompts:
+                    all_prompts[prompt.key] = prompt
             except Exception as e:
+                provider_name = getattr(provider, "server", provider).__class__.__name__
                 logger.warning(
-                    f"Failed to get prompts from mounted server {mounted.server.name!r}: {e}"
+                    f"Failed to get prompts from provider {provider_name!r}: {e}"
                 )
                 if fastmcp.settings.mounted_components_raise_on_load_error:
                     raise
@@ -1083,10 +1056,23 @@ class FastMCP(Generic[LifespanResultT]):
         return all_prompts
 
     async def get_prompt(self, key: str) -> Prompt:
-        prompts = await self.get_prompts()
-        if key not in prompts:
-            raise NotFoundError(f"Unknown prompt: {key}")
-        return prompts[key]
+        """Get a prompt by key, checking local prompts first then providers."""
+        # Check local prompts first
+        try:
+            return await self._prompt_manager.get_prompt(key)
+        except NotFoundError:
+            pass
+
+        # Try providers
+        for provider in self._providers:
+            try:
+                prompt = await provider.get_prompt(key)
+                if prompt is not None:
+                    return prompt
+            except NotFoundError:
+                continue
+
+        raise NotFoundError(f"Unknown prompt: {key}")
 
     def custom_route(
         self,
@@ -1139,22 +1125,15 @@ class FastMCP(Generic[LifespanResultT]):
         return decorator
 
     def _get_additional_http_routes(self) -> list[BaseRoute]:
-        """Get all additional HTTP routes including from mounted servers.
+        """Get all additional HTTP routes including from providers.
 
         Returns a list of all custom HTTP routes from this server and
-        recursively from all mounted servers.
+        from all providers that have HTTP routes (e.g., MountedProvider).
 
         Returns:
             List of Starlette BaseRoute objects
         """
-        routes = list(self._additional_http_routes)
-
-        # Recursively get routes from mounted servers
-        for mounted_server in self._mounted_servers:
-            mounted_routes = mounted_server.server._get_additional_http_routes()
-            routes.extend(mounted_routes)
-
-        return routes
+        return list(self._additional_http_routes)
 
     async def _list_tools_mcp(self) -> list[SDKTool]:
         """
@@ -1204,64 +1183,33 @@ class FastMCP(Generic[LifespanResultT]):
         """
         # 1. Get local tools and filter them
         local_tools = await self._tool_manager.get_tools()
-        filtered_local = [
-            tool for tool in local_tools.values() if self._should_enable_component(tool)
-        ]
+        local_tools_dict: dict[str, Tool] = {
+            tool.key: tool
+            for tool in local_tools.values()
+            if self._should_enable_component(tool)
+        }
 
-        # 2. Get tools from mounted servers
-        # Mounted servers apply their own filtering, but we also apply parent's filtering
-        # Use a dict to implement "later wins" deduplication by key
-        all_tools: dict[str, Tool] = {tool.key: tool for tool in filtered_local}
-
-        for mounted in self._mounted_servers:
+        # 2. Get tools from providers (later providers win for deduplication)
+        provider_tools_dict: dict[str, Tool] = {}
+        for provider in self._providers:
             try:
-                child_tools = await mounted.server._list_tools_middleware()
-                for tool in child_tools:
-                    # Apply parent server's filtering to mounted components
-                    if not self._should_enable_component(tool):
-                        continue
-
-                    # Check for manual override first, then apply prefix
-                    if mounted.tool_names and tool.key in mounted.tool_names:
-                        key = mounted.tool_names[tool.key]
-                    elif mounted.prefix:
-                        key = f"{mounted.prefix}_{tool.key}"
-                    else:
-                        key = tool.key
-
-                    if key != tool.key:
-                        tool = tool.model_copy(key=key)
-                    # Later mounted servers override earlier ones
-                    all_tools[key] = tool
-            except Exception as e:
-                server_name = getattr(
-                    getattr(mounted, "server", None), "name", repr(mounted)
-                )
-                logger.warning(
-                    f"Failed to list tools from mounted server {server_name!r}: {e}"
-                )
+                provider_tools = await provider.list_tools()
+                for tool in provider_tools:
+                    if self._should_enable_component(tool):
+                        # Later providers override earlier ones
+                        provider_tools_dict[tool.key] = tool
+            except Exception:
+                logger.exception("Error listing tools from provider")
                 if fastmcp.settings.mounted_components_raise_on_load_error:
                     raise
-                continue
 
-        # 3. Get tools from component providers (providers listed first, static wins for execution)
-        provider_tools_list: list[Tool] = []
-        ctx = context.fastmcp_context
-        if ctx is not None:
-            for provider in self._providers:
-                try:
-                    provider_tools = await provider.list_tools(ctx)
-                    for tool in provider_tools:
-                        if self._should_enable_component(tool):
-                            # Don't duplicate if static tool exists with same key
-                            if tool.key not in all_tools:
-                                provider_tools_list.append(tool)
-                except Exception:
-                    logger.exception("Error listing tools from provider")
+        # Remove provider tools that conflict with local tools (local wins)
+        for key in local_tools_dict:
+            provider_tools_dict.pop(key, None)
 
         # Provider tools come first in the list (for visibility),
-        # but static tools take precedence for execution
-        return provider_tools_list + list(all_tools.values())
+        # but local tools take precedence for execution
+        return list(provider_tools_dict.values()) + list(local_tools_dict.values())
 
     async def _list_resources_mcp(self) -> list[SDKResource]:
         """
@@ -1311,63 +1259,35 @@ class FastMCP(Generic[LifespanResultT]):
         """
         # 1. Filter local resources
         local_resources = await self._resource_manager.get_resources()
-        filtered_local = [
-            resource
+        local_resources_dict: dict[str, Resource] = {
+            resource.key: resource
             for resource in local_resources.values()
             if self._should_enable_component(resource)
-        ]
-
-        # 2. Get from mounted servers with resource prefix handling
-        # Mounted servers apply their own filtering, but we also apply parent's filtering
-        # Use a dict to implement "later wins" deduplication by key
-        all_resources: dict[str, Resource] = {
-            resource.key: resource for resource in filtered_local
         }
 
-        for mounted in self._mounted_servers:
+        # 2. Get resources from providers (later providers win for deduplication)
+        provider_resources_dict: dict[str, Resource] = {}
+        for provider in self._providers:
             try:
-                child_resources = await mounted.server._list_resources_middleware()
-                for resource in child_resources:
-                    # Apply parent server's filtering to mounted components
-                    if not self._should_enable_component(resource):
-                        continue
-
-                    key = resource.key
-                    if mounted.prefix:
-                        key = add_resource_prefix(resource.key, mounted.prefix)
-                        resource = resource.model_copy(
-                            key=key,
-                            update={"name": f"{mounted.prefix}_{resource.name}"},
-                        )
-                    # Later mounted servers override earlier ones
-                    all_resources[key] = resource
-            except Exception as e:
-                server_name = getattr(
-                    getattr(mounted, "server", None), "name", repr(mounted)
-                )
-                logger.warning(f"Failed to list resources from {server_name!r}: {e}")
+                provider_resources = await provider.list_resources()
+                for resource in provider_resources:
+                    if self._should_enable_component(resource):
+                        # Later providers override earlier ones
+                        provider_resources_dict[resource.key] = resource
+            except Exception:
+                logger.exception("Error listing resources from provider")
                 if fastmcp.settings.mounted_components_raise_on_load_error:
                     raise
-                continue
 
-        # 3. Get resources from component providers (providers listed first)
-        provider_resources_list: list[Resource] = []
-        ctx = context.fastmcp_context
-        if ctx is not None:
-            for provider in self._providers:
-                try:
-                    provider_resources = await provider.list_resources(ctx)
-                    for resource in provider_resources:
-                        if self._should_enable_component(resource):
-                            # Don't duplicate if static resource exists with same key
-                            if resource.key not in all_resources:
-                                provider_resources_list.append(resource)
-                except Exception:
-                    logger.exception("Error listing resources from provider")
+        # Remove provider resources that conflict with local resources (local wins)
+        for key in local_resources_dict:
+            provider_resources_dict.pop(key, None)
 
         # Provider resources come first in the list (for visibility),
-        # but static resources take precedence for read operations
-        return provider_resources_list + list(all_resources.values())
+        # but local resources take precedence for read operations
+        return list(provider_resources_dict.values()) + list(
+            local_resources_dict.values()
+        )
 
     async def _list_resource_templates_mcp(self) -> list[SDKResourceTemplate]:
         """
@@ -1418,64 +1338,33 @@ class FastMCP(Generic[LifespanResultT]):
         """
         # 1. Filter local templates
         local_templates = await self._resource_manager.get_resource_templates()
-        filtered_local = [
-            template
+        local_templates_dict: dict[str, ResourceTemplate] = {
+            template.key: template
             for template in local_templates.values()
             if self._should_enable_component(template)
-        ]
-
-        # 2. Get from mounted servers with resource prefix handling
-        # Mounted servers apply their own filtering, but we also apply parent's filtering
-        # Use a dict to implement "later wins" deduplication by key
-        all_templates: dict[str, ResourceTemplate] = {
-            template.key: template for template in filtered_local
         }
 
-        for mounted in self._mounted_servers:
+        # 2. Get resource templates from providers (later providers win for deduplication)
+        provider_templates_dict: dict[str, ResourceTemplate] = {}
+        for provider in self._providers:
             try:
-                child_templates = (
-                    await mounted.server._list_resource_templates_middleware()
-                )
-                for template in child_templates:
-                    # Apply parent server's filtering to mounted components
-                    if not self._should_enable_component(template):
-                        continue
-
-                    key = template.key
-                    if mounted.prefix:
-                        key = add_resource_prefix(template.key, mounted.prefix)
-                        template = template.model_copy(
-                            key=key,
-                            update={"name": f"{mounted.prefix}_{template.name}"},
-                        )
-                    # Later mounted servers override earlier ones
-                    all_templates[key] = template
-            except Exception as e:
-                server_name = getattr(
-                    getattr(mounted, "server", None), "name", repr(mounted)
-                )
-                logger.warning(
-                    f"Failed to list resource templates from {server_name!r}: {e}"
-                )
+                provider_templates = await provider.list_resource_templates()
+                for template in provider_templates:
+                    if self._should_enable_component(template):
+                        # Later providers override earlier ones
+                        provider_templates_dict[template.key] = template
+            except Exception:
+                logger.exception("Error listing resource templates from provider")
                 if fastmcp.settings.mounted_components_raise_on_load_error:
                     raise
-                continue
 
-        # 3. Get resource templates from providers (listed first, static wins for execution)
-        provider_templates_list: list[ResourceTemplate] = []
-        ctx = context.fastmcp_context
-        if ctx is not None:
-            for provider in self._providers:
-                try:
-                    provider_templates = await provider.list_resource_templates(ctx)
-                    for template in provider_templates:
-                        if self._should_enable_component(template):
-                            if template.key not in all_templates:
-                                provider_templates_list.append(template)
-                except Exception:
-                    logger.exception("Error listing resource templates from provider")
+        # Remove provider templates that conflict with local templates (local wins)
+        for key in local_templates_dict:
+            provider_templates_dict.pop(key, None)
 
-        return provider_templates_list + list(all_templates.values())
+        return list(provider_templates_dict.values()) + list(
+            local_templates_dict.values()
+        )
 
     async def _list_prompts_mcp(self) -> list[SDKPrompt]:
         """
@@ -1526,66 +1415,33 @@ class FastMCP(Generic[LifespanResultT]):
         """
         # 1. Filter local prompts
         local_prompts = await self._prompt_manager.get_prompts()
-        filtered_local = [
-            prompt
+        local_prompts_dict: dict[str, Prompt] = {
+            prompt.key: prompt
             for prompt in local_prompts.values()
             if self._should_enable_component(prompt)
-        ]
-
-        # 2. Get from mounted servers
-        # Mounted servers apply their own filtering, but we also apply parent's filtering
-        # Use a dict to implement "later wins" deduplication by key
-        all_prompts: dict[str, Prompt] = {
-            prompt.key: prompt for prompt in filtered_local
         }
 
-        for mounted in self._mounted_servers:
+        # 2. Get prompts from providers (later providers win for deduplication)
+        provider_prompts_dict: dict[str, Prompt] = {}
+        for provider in self._providers:
             try:
-                child_prompts = await mounted.server._list_prompts_middleware()
-                for prompt in child_prompts:
-                    # Apply parent server's filtering to mounted components
-                    if not self._should_enable_component(prompt):
-                        continue
-
-                    # Apply prefix to prompt key
-                    if mounted.prefix:
-                        key = f"{mounted.prefix}_{prompt.key}"
-                    else:
-                        key = prompt.key
-
-                    if key != prompt.key:
-                        prompt = prompt.model_copy(key=key)
-                    # Later mounted servers override earlier ones
-                    all_prompts[key] = prompt
-            except Exception as e:
-                server_name = getattr(
-                    getattr(mounted, "server", None), "name", repr(mounted)
-                )
-                logger.warning(
-                    f"Failed to list prompts from mounted server {server_name!r}: {e}"
-                )
+                provider_prompts = await provider.list_prompts()
+                for prompt in provider_prompts:
+                    if self._should_enable_component(prompt):
+                        # Later providers override earlier ones
+                        provider_prompts_dict[prompt.key] = prompt
+            except Exception:
+                logger.exception("Error listing prompts from provider")
                 if fastmcp.settings.mounted_components_raise_on_load_error:
                     raise
-                continue
 
-        # 3. Get prompts from component providers (providers listed first)
-        provider_prompts_list: list[Prompt] = []
-        ctx = context.fastmcp_context
-        if ctx is not None:
-            for provider in self._providers:
-                try:
-                    provider_prompts = await provider.list_prompts(ctx)
-                    for prompt in provider_prompts:
-                        if self._should_enable_component(prompt):
-                            # Don't duplicate if static prompt exists with same key
-                            if prompt.key not in all_prompts:
-                                provider_prompts_list.append(prompt)
-                except Exception:
-                    logger.exception("Error listing prompts from provider")
+        # Remove provider prompts that conflict with local prompts (local wins)
+        for key in local_prompts_dict:
+            provider_prompts_dict.pop(key, None)
 
         # Provider prompts come first in the list (for visibility),
-        # but static prompts take precedence for render operations
-        return provider_prompts_list + list(all_prompts.values())
+        # but local prompts take precedence for render operations
+        return list(provider_prompts_dict.values()) + list(local_prompts_dict.values())
 
     async def _call_tool_mcp(
         self, key: str, arguments: dict[str, Any]
@@ -1707,43 +1563,7 @@ class FastMCP(Generic[LifespanResultT]):
         """
         tool_name = context.message.name
 
-        # Try mounted servers in reverse order (later wins)
-        for mounted in reversed(self._mounted_servers):
-            try_name = tool_name
-
-            # First check if tool_name is an overridden name (reverse lookup)
-            if mounted.tool_names:
-                for orig_key, override_name in mounted.tool_names.items():
-                    if override_name == tool_name:
-                        try_name = orig_key
-                        break
-                else:
-                    # Not an override, try standard prefix stripping
-                    if mounted.prefix:
-                        if not tool_name.startswith(f"{mounted.prefix}_"):
-                            continue
-                        try_name = tool_name[len(mounted.prefix) + 1 :]
-            elif mounted.prefix:
-                if not tool_name.startswith(f"{mounted.prefix}_"):
-                    continue
-                try_name = tool_name[len(mounted.prefix) + 1 :]
-
-            try:
-                # First, get the tool to check if parent's filter allows it
-                # Use get_tool() instead of _tool_manager.get_tool() to support
-                # nested mounted servers (tools mounted more than 2 levels deep)
-                tool = await mounted.server.get_tool(try_name)
-                if not self._should_enable_component(tool):
-                    # Parent filter blocks this tool, continue searching
-                    continue
-
-                return await mounted.server._call_tool_middleware(
-                    try_name, context.message.arguments or {}
-                )
-            except NotFoundError:
-                continue
-
-        # Try local tools (static tools take precedence)
+        # Try local tools first (static tools take precedence)
         try:
             tool = await self._tool_manager.get_tool(tool_name)
             if self._should_enable_component(tool):
@@ -1753,30 +1573,28 @@ class FastMCP(Generic[LifespanResultT]):
         except NotFoundError:
             pass
 
-        # Try component providers
-        ctx = context.fastmcp_context
-        if ctx is not None:
-            for provider in self._providers:
-                try:
-                    tool = await provider.get_tool(ctx, tool_name)
-                    if tool is not None and self._should_enable_component(tool):
-                        result = await provider.call_tool(
-                            ctx, tool_name, context.message.arguments or {}
-                        )
-                        if result is not None:
-                            return result
-                except (ValidationError, PydanticValidationError):
-                    # Validation errors are never masked
-                    logger.exception(f"Error validating tool {tool_name!r}")
-                    raise
-                except ToolError:
-                    logger.exception(f"Error calling tool {tool_name!r}")
-                    raise
-                except Exception as e:
-                    logger.exception(f"Error calling tool {tool_name!r} from provider")
-                    if self._mask_error_details:
-                        raise ToolError(f"Error calling tool {tool_name!r}") from e
-                    raise ToolError(f"Error calling tool {tool_name!r}: {e}") from e
+        # Try component providers (first registered wins)
+        for provider in self._providers:
+            try:
+                tool = await provider.get_tool(tool_name)
+                if tool is not None and self._should_enable_component(tool):
+                    result = await provider.call_tool(
+                        tool_name, context.message.arguments or {}
+                    )
+                    if result is not None:
+                        return result
+            except (ValidationError, PydanticValidationError):
+                # Validation errors are never masked
+                logger.exception(f"Error validating tool {tool_name!r}")
+                raise
+            except ToolError:
+                logger.exception(f"Error calling tool {tool_name!r}")
+                raise
+            except Exception as e:
+                logger.exception(f"Error calling tool {tool_name!r} from provider")
+                if self._mask_error_details:
+                    raise ToolError(f"Error calling tool {tool_name!r}") from e
+                raise ToolError(f"Error calling tool {tool_name!r}: {e}") from e
 
         raise NotFoundError(f"Unknown tool: {tool_name!r}")
 
@@ -1851,30 +1669,7 @@ class FastMCP(Generic[LifespanResultT]):
         """
         uri_str = str(context.message.uri)
 
-        # Try mounted servers in reverse order (later wins)
-        for mounted in reversed(self._mounted_servers):
-            key = uri_str
-            if mounted.prefix:
-                if not has_resource_prefix(key, mounted.prefix):
-                    continue
-                key = remove_resource_prefix(key, mounted.prefix)
-
-            # First, get the resource/template to check if parent's filter allows it
-            # Use get_resource_or_template to support nested mounted servers
-            # (resources/templates mounted more than 2 levels deep)
-            resource = await mounted.server._get_resource_or_template_or_none(key)
-            if resource is None:
-                continue
-            if not self._should_enable_component(resource):
-                # Parent filter blocks this resource, continue searching
-                continue
-            try:
-                result = list(await mounted.server._read_resource_middleware(key))
-                return result
-            except NotFoundError:
-                continue
-
-        # Try local resources last (mounted servers override local)
+        # Try local resources first (static resources take precedence)
         try:
             resource = await self._resource_manager.get_resource(uri_str)
             if self._should_enable_component(resource):
@@ -1896,54 +1691,41 @@ class FastMCP(Generic[LifespanResultT]):
                     content = await self._execute_resource(resource, uri_str)
                     return [content]
 
-        # Try component providers (concrete resources)
-        ctx = context.fastmcp_context
-        if ctx is not None:
-            for provider in self._providers:
-                try:
-                    resource = await provider.get_resource(ctx, uri_str)
-                    if resource is not None and self._should_enable_component(resource):
-                        content = await provider.read_resource(ctx, uri_str)
-                        if content is not None:
-                            return [content]
-                except ResourceError:
-                    logger.exception(f"Error reading resource {uri_str!r}")
-                    raise
-                except Exception as e:
-                    logger.exception(
-                        f"Error reading resource {uri_str!r} from provider"
-                    )
-                    if self._mask_error_details:
-                        raise ResourceError(
-                            f"Error reading resource {uri_str!r}"
-                        ) from e
-                    raise ResourceError(
-                        f"Error reading resource {uri_str!r}: {e}"
-                    ) from e
+        # Try component providers (first registered wins) - concrete resources
+        for provider in self._providers:
+            try:
+                resource = await provider.get_resource(uri_str)
+                if resource is not None and self._should_enable_component(resource):
+                    content = await provider.read_resource(uri_str)
+                    if content is not None:
+                        return [content]
+            except ResourceError:
+                logger.exception(f"Error reading resource {uri_str!r}")
+                raise
+            except Exception as e:
+                logger.exception(f"Error reading resource {uri_str!r} from provider")
+                if self._mask_error_details:
+                    raise ResourceError(f"Error reading resource {uri_str!r}") from e
+                raise ResourceError(f"Error reading resource {uri_str!r}: {e}") from e
 
-        # Try component providers (templates)
-        if ctx is not None:
-            for provider in self._providers:
-                try:
-                    template = await provider.get_resource_template(ctx, uri_str)
-                    if template is not None and self._should_enable_component(template):
-                        content = await provider.read_resource_template(ctx, uri_str)
-                        if content is not None:
-                            return [content]
-                except ResourceError:
-                    logger.exception(f"Error reading resource {uri_str!r}")
-                    raise
-                except Exception as e:
-                    logger.exception(
-                        f"Error reading resource {uri_str!r} from provider template"
-                    )
-                    if self._mask_error_details:
-                        raise ResourceError(
-                            f"Error reading resource {uri_str!r}"
-                        ) from e
-                    raise ResourceError(
-                        f"Error reading resource {uri_str!r}: {e}"
-                    ) from e
+        # Try component providers (first registered wins) - templates
+        for provider in self._providers:
+            try:
+                template = await provider.get_resource_template(uri_str)
+                if template is not None and self._should_enable_component(template):
+                    content = await provider.read_resource_template(uri_str)
+                    if content is not None:
+                        return [content]
+            except ResourceError:
+                logger.exception(f"Error reading resource {uri_str!r}")
+                raise
+            except Exception as e:
+                logger.exception(
+                    f"Error reading resource {uri_str!r} from provider template"
+                )
+                if self._mask_error_details:
+                    raise ResourceError(f"Error reading resource {uri_str!r}") from e
+                raise ResourceError(f"Error reading resource {uri_str!r}: {e}") from e
 
         raise NotFoundError(f"Unknown resource: {uri_str!r}")
 
@@ -2021,29 +1803,7 @@ class FastMCP(Generic[LifespanResultT]):
     ) -> PromptResult:
         name = context.message.name
 
-        # Try mounted servers in reverse order (later wins)
-        for mounted in reversed(self._mounted_servers):
-            try_name = name
-            if mounted.prefix:
-                if not name.startswith(f"{mounted.prefix}_"):
-                    continue
-                try_name = name[len(mounted.prefix) + 1 :]
-
-            try:
-                # First, get the prompt to check if parent's filter allows it
-                # Use get_prompt() instead of _prompt_manager.get_prompt() to support
-                # nested mounted servers (prompts mounted more than 2 levels deep)
-                prompt = await mounted.server.get_prompt(try_name)
-                if not self._should_enable_component(prompt):
-                    # Parent filter blocks this prompt, continue searching
-                    continue
-                return await mounted.server._get_prompt_content_middleware(
-                    try_name, context.message.arguments
-                )
-            except NotFoundError:
-                continue
-
-        # Try local prompts (static prompts take precedence)
+        # Try local prompts first (static prompts take precedence)
         try:
             prompt = await self._prompt_manager.get_prompt(name)
             if self._should_enable_component(prompt):
@@ -2053,26 +1813,24 @@ class FastMCP(Generic[LifespanResultT]):
         except NotFoundError:
             pass
 
-        # Try component providers
-        ctx = context.fastmcp_context
-        if ctx is not None:
-            for provider in self._providers:
-                try:
-                    prompt = await provider.get_prompt(ctx, name)
-                    if prompt is not None and self._should_enable_component(prompt):
-                        result = await provider.render_prompt(
-                            ctx, name, context.message.arguments
-                        )
-                        if result is not None:
-                            return result
-                except PromptError:
-                    logger.exception(f"Error rendering prompt {name!r}")
-                    raise
-                except Exception as e:
-                    logger.exception(f"Error rendering prompt {name!r} from provider")
-                    if self._mask_error_details:
-                        raise PromptError(f"Error rendering prompt {name!r}") from e
-                    raise PromptError(f"Error rendering prompt {name!r}: {e}") from e
+        # Try component providers (first registered wins)
+        for provider in self._providers:
+            try:
+                prompt = await provider.get_prompt(name)
+                if prompt is not None and self._should_enable_component(prompt):
+                    result = await provider.render_prompt(
+                        name, context.message.arguments
+                    )
+                    if result is not None:
+                        return result
+            except PromptError:
+                logger.exception(f"Error rendering prompt {name!r}")
+                raise
+            except Exception as e:
+                logger.exception(f"Error rendering prompt {name!r} from provider")
+                if self._mask_error_details:
+                    raise PromptError(f"Error rendering prompt {name!r}") from e
+                raise PromptError(f"Error rendering prompt {name!r}: {e}") from e
 
         raise NotFoundError(f"Unknown prompt: {name!r}")
 
@@ -2928,50 +2686,42 @@ class FastMCP(Generic[LifespanResultT]):
         and prompts are accessible with their original names. Multiple servers can be mounted
         without prefixes, and they will be tried in order until a match is found.
 
-        There are two modes for mounting servers:
-        1. Direct mounting (default when server has no custom lifespan): The parent server
-           directly accesses the mounted server's objects in-memory for better performance.
-           In this mode, no client lifecycle events occur on the mounted server, including
-           lifespan execution.
-
-        2. Proxy mounting (default when server has a custom lifespan): The parent server
-           treats the mounted server as a separate entity and communicates with it via a
-           Client transport. This preserves all client-facing behaviors, including lifespan
-           execution, but with slightly higher overhead.
+        The mounted server's lifespan is executed when the parent server starts, and its
+        middleware chain is invoked for all operations (tool calls, resource reads, prompts).
 
         Args:
             server: The FastMCP server to mount.
             prefix: Optional prefix to use for the mounted server's objects. If None,
                 the server's objects are accessible with their original names.
-            as_proxy: Whether to treat the mounted server as a proxy. If None (default),
-                automatically determined based on whether the server has a custom lifespan
-                (True if it has a custom lifespan, False otherwise).
+            as_proxy: Deprecated. Mounted servers now always have their lifespan and
+                middleware invoked. To create a proxy server, use FastMCP.as_proxy()
+                explicitly before mounting.
             tool_names: Optional mapping of original tool names to custom names. Use this
                 to override prefixed names. Keys are the original tool names from the
                 mounted server.
         """
-        from fastmcp.server.proxy import FastMCPProxy
+        import warnings
 
-        # if as_proxy is not specified and the server has a custom lifespan,
-        # we should treat it as a proxy
-        if as_proxy is None:
-            as_proxy = server._lifespan != default_lifespan
+        from fastmcp.server.providers import MountedProvider
 
-        if as_proxy and not isinstance(server, FastMCPProxy):
-            server = FastMCP.as_proxy(server)
+        if as_proxy is not None:
+            warnings.warn(
+                "as_proxy is deprecated and will be removed in a future version. "
+                "Mounted servers now always have their lifespan and middleware invoked. "
+                "To create a proxy server, use FastMCP.as_proxy() explicitly.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            # Still honor the flag for backward compatibility
+            if as_proxy:
+                from fastmcp.server.proxy import FastMCPProxy
 
-        # Mark the server as mounted so it skips creating its own Docket/Worker.
-        # The parent's Docket handles task execution, avoiding race conditions
-        # with multiple workers competing for tasks from the same queue.
-        server._is_mounted = True
+                if not isinstance(server, FastMCPProxy):
+                    server = FastMCP.as_proxy(server)
 
-        # Delegate mounting to all three managers
-        mounted_server = MountedServer(
-            prefix=prefix,
-            server=server,
-            tool_names=tool_names,
-        )
-        self._mounted_servers.append(mounted_server)
+        # Create a MountedProvider and add it to providers
+        provider = MountedProvider(server, prefix, tool_names)
+        self._providers.append(provider)
 
     async def import_server(
         self,
@@ -2981,6 +2731,10 @@ class FastMCP(Generic[LifespanResultT]):
         """
         Import the MCP objects from another FastMCP server into this one,
         optionally with a given prefix.
+
+        .. deprecated::
+            Use :meth:`mount` instead. ``import_server`` will be removed in a
+            future version.
 
         Note that when a server is *imported*, its objects are immediately
         registered to the importing server. This is a one-time operation and
@@ -3009,6 +2763,16 @@ class FastMCP(Generic[LifespanResultT]):
             prefix: Optional prefix to use for the imported server's objects. If None,
                 objects are imported with their original names.
         """
+        import warnings
+
+        from fastmcp.server.providers.mounted import add_resource_prefix
+
+        warnings.warn(
+            "import_server is deprecated, use mount() instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+
         # Import tools from the server
         for key, tool in (await server.get_tools()).items():
             if prefix:
@@ -3223,131 +2987,3 @@ class FastMCP(Generic[LifespanResultT]):
             return f"{class_name}-{secrets.token_hex(2)}"
         else:
             return f"{class_name}-{name}-{secrets.token_hex(2)}"
-
-
-@dataclass
-class MountedServer:
-    prefix: str | None
-    server: FastMCP[Any]
-    tool_names: dict[str, str] | None = None
-
-
-def add_resource_prefix(uri: str, prefix: str) -> str:
-    """Add a prefix to a resource URI using path formatting (resource://prefix/path).
-
-    Args:
-        uri: The original resource URI
-        prefix: The prefix to add
-
-    Returns:
-        The resource URI with the prefix added
-
-    Examples:
-        ```python
-        add_resource_prefix("resource://path/to/resource", "prefix")
-        "resource://prefix/path/to/resource"
-        ```
-        With absolute path:
-        ```python
-        add_resource_prefix("resource:///absolute/path", "prefix")
-        "resource://prefix//absolute/path"
-        ```
-
-    Raises:
-        ValueError: If the URI doesn't match the expected protocol://path format
-    """
-    if not prefix:
-        return uri
-
-    # Split the URI into protocol and path
-    match = URI_PATTERN.match(uri)
-    if not match:
-        raise ValueError(f"Invalid URI format: {uri}. Expected protocol://path format.")
-
-    protocol, path = match.groups()
-
-    # Add the prefix to the path
-    return f"{protocol}{prefix}/{path}"
-
-
-def remove_resource_prefix(uri: str, prefix: str) -> str:
-    """Remove a prefix from a resource URI.
-
-    Args:
-        uri: The resource URI with a prefix
-        prefix: The prefix to remove
-
-    Returns:
-        The resource URI with the prefix removed
-
-    Examples:
-        ```python
-        remove_resource_prefix("resource://prefix/path/to/resource", "prefix")
-        "resource://path/to/resource"
-        ```
-        With absolute path:
-        ```python
-        remove_resource_prefix("resource://prefix//absolute/path", "prefix")
-        "resource:///absolute/path"
-        ```
-
-    Raises:
-        ValueError: If the URI doesn't match the expected protocol://path format
-    """
-    if not prefix:
-        return uri
-
-    # Split the URI into protocol and path
-    match = URI_PATTERN.match(uri)
-    if not match:
-        raise ValueError(f"Invalid URI format: {uri}. Expected protocol://path format.")
-
-    protocol, path = match.groups()
-
-    # Check if the path starts with the prefix followed by a /
-    prefix_pattern = f"^{re.escape(prefix)}/(.*?)$"
-    path_match = re.match(prefix_pattern, path)
-    if not path_match:
-        return uri
-
-    # Return the URI without the prefix
-    return f"{protocol}{path_match.group(1)}"
-
-
-def has_resource_prefix(uri: str, prefix: str) -> bool:
-    """Check if a resource URI has a specific prefix.
-
-    Args:
-        uri: The resource URI to check
-        prefix: The prefix to look for
-
-    Returns:
-        True if the URI has the specified prefix, False otherwise
-
-    Examples:
-        ```python
-        has_resource_prefix("resource://prefix/path/to/resource", "prefix")
-        True
-        ```
-        With other path:
-        ```python
-        has_resource_prefix("resource://other/path/to/resource", "prefix")
-        False
-        ```
-
-    Raises:
-        ValueError: If the URI doesn't match the expected protocol://path format
-    """
-    if not prefix:
-        return False
-
-    # Split the URI into protocol and path
-    match = URI_PATTERN.match(uri)
-    if not match:
-        raise ValueError(f"Invalid URI format: {uri}. Expected protocol://path format.")
-
-    _, path = match.groups()
-
-    # Check if the path starts with the prefix followed by a /
-    prefix_pattern = f"^{re.escape(prefix)}/"
-    return bool(re.match(prefix_pattern, path))
