@@ -334,3 +334,53 @@ async def test_task_with_custom_tool_name():
         assert not task.returned_immediately
         result = await task
         assert result.data == "result from custom-named tool"
+
+
+async def test_task_with_custom_resource_name():
+    """Resources with custom names work correctly as tasks.
+
+    When a resource is registered with a custom name different from the function
+    name, task execution should use the custom name for Docket lookup.
+    """
+    mcp = FastMCP("test", tasks=True)
+
+    @mcp.resource("test://resource", name="custom-resource-name")
+    async def my_resource_func() -> str:
+        return "result from custom-named resource"
+
+    async with Client(mcp) as client:
+        # Verify the resource is registered with its custom name in Docket
+        docket = mcp.docket
+        assert docket is not None
+        assert "custom-resource-name" in docket.tasks
+
+        # Call the resource as a task
+        task = await client.read_resource("test://resource", task=True)
+        assert not task.returned_immediately
+        result = await task.result()
+        assert result[0].text == "result from custom-named resource"
+
+
+async def test_task_with_custom_template_name():
+    """Resource templates with custom names work correctly as tasks.
+
+    When a template is registered with a custom name different from the function
+    name, task execution should use the custom name for Docket lookup.
+    """
+    mcp = FastMCP("test", tasks=True)
+
+    @mcp.resource("test://{item_id}", name="custom-template-name")
+    async def my_template_func(item_id: str) -> str:
+        return f"result for {item_id}"
+
+    async with Client(mcp) as client:
+        # Verify the template is registered with its custom name in Docket
+        docket = mcp.docket
+        assert docket is not None
+        assert "custom-template-name" in docket.tasks
+
+        # Call the template as a task
+        task = await client.read_resource("test://123", task=True)
+        assert not task.returned_immediately
+        result = await task.result()
+        assert result[0].text == "result for 123"
