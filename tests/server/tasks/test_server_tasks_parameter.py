@@ -308,3 +308,79 @@ async def test_multiple_components_same_name_different_tasks():
         # Prompt inheriting False (mode="forbidden") raises McpError
         with pytest.raises(McpError):
             await client.get_prompt("shared_name_prompt", task=True)
+
+
+async def test_task_with_custom_tool_name():
+    """Tools with custom names work correctly as tasks (issue #2642).
+
+    When a tool is registered with a custom name different from the function
+    name, task execution should use the custom name for Docket lookup.
+    """
+    mcp = FastMCP("test", tasks=True)
+
+    async def my_function() -> str:
+        return "result from custom-named tool"
+
+    mcp.tool(my_function, name="custom-tool-name")
+
+    async with Client(mcp) as client:
+        # Verify the tool is registered with its custom name in Docket
+        docket = mcp.docket
+        assert docket is not None
+        assert "custom-tool-name" in docket.tasks
+
+        # Call the tool as a task using its custom name
+        task = await client.call_tool("custom-tool-name", task=True)
+        assert not task.returned_immediately
+        result = await task
+        assert result.data == "result from custom-named tool"
+
+
+async def test_task_with_custom_resource_name():
+    """Resources with custom names work correctly as tasks.
+
+    When a resource is registered with a custom name different from the function
+    name, task execution should use the custom name for Docket lookup.
+    """
+    mcp = FastMCP("test", tasks=True)
+
+    @mcp.resource("test://resource", name="custom-resource-name")
+    async def my_resource_func() -> str:
+        return "result from custom-named resource"
+
+    async with Client(mcp) as client:
+        # Verify the resource is registered with its custom name in Docket
+        docket = mcp.docket
+        assert docket is not None
+        assert "custom-resource-name" in docket.tasks
+
+        # Call the resource as a task
+        task = await client.read_resource("test://resource", task=True)
+        assert not task.returned_immediately
+        result = await task.result()
+        assert result[0].text == "result from custom-named resource"
+
+
+async def test_task_with_custom_template_name():
+    """Resource templates with custom names work correctly as tasks.
+
+    When a template is registered with a custom name different from the function
+    name, task execution should use the custom name for Docket lookup.
+    """
+    mcp = FastMCP("test", tasks=True)
+
+    @mcp.resource("test://{item_id}", name="custom-template-name")
+    async def my_template_func(item_id: str) -> str:
+        return f"result for {item_id}"
+
+    async with Client(mcp) as client:
+        # Verify the template is registered with its custom name in Docket
+        docket = mcp.docket
+        assert docket is not None
+        assert "custom-template-name" in docket.tasks
+
+        # Call the template as a task
+        task = await client.read_resource("test://123", task=True)
+        assert not task.returned_immediately
+        result = await task.result()
+        assert result[0].text == "result for 123"

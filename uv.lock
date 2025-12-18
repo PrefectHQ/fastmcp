@@ -752,7 +752,7 @@ requires-dist = [
     { name = "platformdirs", specifier = ">=4.0.0" },
     { name = "py-key-value-aio", extras = ["disk", "keyring", "memory"], specifier = ">=0.3.0,<0.4.0" },
     { name = "pydantic", extras = ["email"], specifier = ">=2.11.7" },
-    { name = "pydocket", specifier = ">=0.15.5" },
+    { name = "pydocket", specifier = ">=0.16.0" },
     { name = "pyperclip", specifier = ">=1.9.0" },
     { name = "python-dotenv", specifier = ">=1.1.0" },
     { name = "rich", specifier = ">=13.9.4" },
@@ -1775,7 +1775,7 @@ wheels = [
 
 [[package]]
 name = "pydocket"
-version = "0.15.5"
+version = "0.16.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cloudpickle" },
@@ -1792,9 +1792,9 @@ dependencies = [
     { name = "typer" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/86/77/842e41be3cf3592b971cf42b24cae76e282294f474dc2dbf7cd6808d1b09/pydocket-0.15.5.tar.gz", hash = "sha256:b3af47702a293dd1da2e5e0f8f73f27fd3b3c95e36de72a2f71026d16908d5ba", size = 277245, upload-time = "2025-12-12T22:28:47.32Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/f2/d3/ff57fb8ba8180c621b17270a272ee8821a64962887c42962c5a342ab82a9/pydocket-0.16.0.tar.gz", hash = "sha256:675e829a7ea6e978fdbbe0ace342f24c8ec7cf8ed5980694215418e59ff86005", size = 286316, upload-time = "2025-12-18T15:14:53.139Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/e5/c0/fdbc6e04e3369b90c6bf6567bc62871cf59e88550b94529821500dc807c1/pydocket-0.15.5-py3-none-any.whl", hash = "sha256:ad0d86c9a1bea394e875bcf8c793be2d0a7ebd1891bfe99e2e9eaf99ef0cb42e", size = 58517, upload-time = "2025-12-12T22:28:45.598Z" },
+    { url = "https://files.pythonhosted.org/packages/4e/74/dcf56132e03a24e2591c5f2391902c871e5f1248e0fc175b9f1792e4afaf/pydocket-0.16.0-py3-none-any.whl", hash = "sha256:3d7d0a805bcb68a3a03d96d3c6ba8e607584ed14b0fe3879333a8fff652dda92", size = 61064, upload-time = "2025-12-18T15:14:51.506Z" },
 ]
 
 [[package]]
