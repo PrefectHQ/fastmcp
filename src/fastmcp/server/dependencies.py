@@ -21,6 +21,7 @@ from mcp.server.auth.provider import (
 from mcp.server.lowlevel.server import request_ctx
 from starlette.requests import Request
 
+from fastmcp.exceptions import FastMCPError
 from fastmcp.server.auth import AccessToken
 from fastmcp.server.http import _current_http_request
 from fastmcp.utilities.types import is_class_member_of_type
@@ -188,6 +189,10 @@ async def _resolve_fastmcp_dependencies(
                         resolved[parameter] = await stack.enter_async_context(
                             dependency
                         )
+                    except FastMCPError:
+                        # Let FastMCPError subclasses (ToolError, ResourceError, etc.)
+                        # propagate unchanged so they can be handled appropriately
+                        raise
                     except Exception as error:
                         fn_name = getattr(fn, "__name__", repr(fn))
                         raise RuntimeError(

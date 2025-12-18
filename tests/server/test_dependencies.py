@@ -733,3 +733,47 @@ async def test_resource_template_uri_cannot_match_dependency_name(mcp: FastMCP):
         @mcp.resource("auth://{token}/validate")
         async def validate(token: str = Depends(get_token)) -> str:
             return f"Validating with: {token}"
+
+
+async def test_toolerror_propagates_from_dependency(mcp: FastMCP):
+    """ToolError raised in a dependency should propagate unchanged (issue #2633).
+
+    When a dependency raises ToolError, it should not be wrapped in RuntimeError.
+    This allows developers to use ToolError for validation in dependencies.
+    """
+    from fastmcp.exceptions import ToolError
+
+    def validate_client_id() -> str:
+        raise ToolError("Client ID is required - select a client first")
+
+    @mcp.tool()
+    async def my_tool(client_id: str = Depends(validate_client_id)) -> str:
+        return f"Working with client: {client_id}"
+
+    async with Client(mcp) as client:
+        # ToolError is converted to an error result by the server
+        result = await client.call_tool("my_tool", {}, raise_on_error=False)
+        assert result.is_error
+        # The original error message should be preserved (not wrapped in RuntimeError)
+        assert result.content[0].text == "Client ID is required - select a client first"  # type: ignore[attr-defined]
+
+
+async def test_validation_error_propagates_from_dependency(mcp: FastMCP):
+    """ValidationError raised in a dependency should propagate unchanged."""
+    from fastmcp.exceptions import ValidationError
+
+    def validate_input() -> str:
+        raise ValidationError("Invalid input format")
+
+    @mcp.tool()
+    async def tool_with_validation(val: str = Depends(validate_input)) -> str:
+        return val
+
+    async with Client(mcp) as client:
+        # ValidationError is re-raised by the server and becomes an error result
+        # The original error message should be preserved (not wrapped in RuntimeError)
+        result = await client.call_tool(
+            "tool_with_validation", {}, raise_on_error=False
+        )
+        assert result.is_error
+        assert result.content[0].text == "Invalid input format"  # type: ignore[attr-defined]
