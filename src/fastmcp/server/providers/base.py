@@ -89,6 +89,74 @@ class Provider:
           exceptions are wrapped with optional detail masking.
     """
 
+    def with_transforms(
+        self,
+        *,
+        namespace: str | None = None,
+        tool_renames: dict[str, str] | None = None,
+    ) -> Provider:
+        """Apply transformations to this provider's components.
+
+        Returns a TransformingProvider that wraps this provider and applies
+        the specified transformations. Can be chained - each call creates a
+        new wrapper that composes with the previous.
+
+        Args:
+            namespace: Prefix for tools/prompts ("namespace_name"), path segment
+                for resources ("protocol://namespace/path").
+            tool_renames: Map of original_name → final_name. Tools in this map
+                use the specified name instead of namespace prefixing.
+
+        Returns:
+            A TransformingProvider wrapping this provider.
+
+        Example:
+            ```python
+            # Apply namespace to all components
+            provider = MyProvider().with_transforms(namespace="db")
+            # Tool "greet" becomes "db_greet"
+            # Resource "resource://data" becomes "resource://db/data"
+
+            # Rename specific tools (bypasses namespace for those tools)
+            provider = MyProvider().with_transforms(
+                namespace="api",
+                tool_renames={"verbose_tool_name": "short"}
+            )
+            # "verbose_tool_name" → "short" (explicit rename)
+            # "other_tool" → "api_other_tool" (namespace applied)
+
+            # Stacking composes transformations
+            provider = (
+                MyProvider()
+                .with_transforms(namespace="api")
+                .with_transforms(tool_renames={"api_foo": "bar"})
+            )
+            # "foo" → "api_foo" (inner) → "bar" (outer)
+            ```
+        """
+        from fastmcp.server.providers.transforming import TransformingProvider
+
+        return TransformingProvider(
+            self, namespace=namespace, tool_renames=tool_renames
+        )
+
+    def with_namespace(self, namespace: str) -> Provider:
+        """Shorthand for with_transforms(namespace=...).
+
+        Args:
+            namespace: The namespace to apply.
+
+        Returns:
+            A TransformingProvider wrapping this provider.
+
+        Example:
+            ```python
+            provider = MyProvider().with_namespace("db")
+            # Equivalent to: MyProvider().with_transforms(namespace="db")
+            ```
+        """
+        return self.with_transforms(namespace=namespace)
+
     async def list_tools(self) -> Sequence[Tool]:
         """Return all available tools.
 

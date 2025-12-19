@@ -11,11 +11,6 @@ from fastmcp import Client, FastMCP
 from fastmcp.exceptions import NotFoundError
 from fastmcp.prompts.prompt import FunctionPrompt, Prompt
 from fastmcp.resources import Resource, ResourceContent, ResourceTemplate
-from fastmcp.server.providers.mounted import (
-    add_resource_prefix,
-    has_resource_prefix,
-    remove_resource_prefix,
-)
 from fastmcp.tools import FunctionTool
 from fastmcp.tools.tool import Tool
 
@@ -1104,151 +1099,6 @@ class TestPromptDecorator:
         assert prompt.meta == meta_data
 
 
-class TestResourcePrefixHelpers:
-    @pytest.mark.parametrize(
-        "uri,prefix,expected",
-        [
-            # Normal paths
-            (
-                "resource://path/to/resource",
-                "prefix",
-                "resource://prefix/path/to/resource",
-            ),
-            # Absolute paths (with triple slash)
-            ("resource:///absolute/path", "prefix", "resource://prefix//absolute/path"),
-            # Empty prefix should return the original URI
-            ("resource://path/to/resource", "", "resource://path/to/resource"),
-            # Different protocols
-            ("file://path/to/file", "prefix", "file://prefix/path/to/file"),
-            ("http://example.com/path", "prefix", "http://prefix/example.com/path"),
-            # Prefixes with special characters
-            (
-                "resource://path/to/resource",
-                "pre.fix",
-                "resource://pre.fix/path/to/resource",
-            ),
-            (
-                "resource://path/to/resource",
-                "pre/fix",
-                "resource://pre/fix/path/to/resource",
-            ),
-            # Empty paths
-            ("resource://", "prefix", "resource://prefix/"),
-        ],
-    )
-    def test_add_resource_prefix(self, uri, prefix, expected):
-        """Test that add_resource_prefix correctly adds prefixes to URIs."""
-        result = add_resource_prefix(uri, prefix)
-        assert result == expected
-
-    @pytest.mark.parametrize(
-        "invalid_uri",
-        [
-            "not-a-uri",
-            "resource:no-slashes",
-            "missing-protocol",
-            "http:/missing-slash",
-        ],
-    )
-    def test_add_resource_prefix_invalid_uri(self, invalid_uri):
-        """Test that add_resource_prefix raises ValueError for invalid URIs."""
-        with pytest.raises(ValueError, match="Invalid URI format"):
-            add_resource_prefix(invalid_uri, "prefix")
-
-    @pytest.mark.parametrize(
-        "uri,prefix,expected",
-        [
-            # Normal paths
-            (
-                "resource://prefix/path/to/resource",
-                "prefix",
-                "resource://path/to/resource",
-            ),
-            # Absolute paths (with triple slash)
-            ("resource://prefix//absolute/path", "prefix", "resource:///absolute/path"),
-            # URI without the expected prefix should return the original URI
-            (
-                "resource://other/path/to/resource",
-                "prefix",
-                "resource://other/path/to/resource",
-            ),
-            # Empty prefix should return the original URI
-            ("resource://path/to/resource", "", "resource://path/to/resource"),
-            # Different protocols
-            ("file://prefix/path/to/file", "prefix", "file://path/to/file"),
-            # Prefixes with special characters (that need escaping in regex)
-            (
-                "resource://pre.fix/path/to/resource",
-                "pre.fix",
-                "resource://path/to/resource",
-            ),
-            (
-                "resource://pre/fix/path/to/resource",
-                "pre/fix",
-                "resource://path/to/resource",
-            ),
-            # Empty paths
-            ("resource://prefix/", "prefix", "resource://"),
-        ],
-    )
-    def test_remove_resource_prefix(self, uri, prefix, expected):
-        """Test that remove_resource_prefix correctly removes prefixes from URIs."""
-        result = remove_resource_prefix(uri, prefix)
-        assert result == expected
-
-    @pytest.mark.parametrize(
-        "invalid_uri",
-        [
-            "not-a-uri",
-            "resource:no-slashes",
-            "missing-protocol",
-            "http:/missing-slash",
-        ],
-    )
-    def test_remove_resource_prefix_invalid_uri(self, invalid_uri):
-        """Test that remove_resource_prefix raises ValueError for invalid URIs."""
-        with pytest.raises(ValueError, match="Invalid URI format"):
-            remove_resource_prefix(invalid_uri, "prefix")
-
-    @pytest.mark.parametrize(
-        "uri,prefix,expected",
-        [
-            # URI with prefix
-            ("resource://prefix/path/to/resource", "prefix", True),
-            # URI with another prefix
-            ("resource://other/path/to/resource", "prefix", False),
-            # URI with prefix as a substring but not at path start
-            ("resource://path/prefix/resource", "prefix", False),
-            # Empty prefix
-            ("resource://path/to/resource", "", False),
-            # Different protocols
-            ("file://prefix/path/to/file", "prefix", True),
-            # Prefix with special characters
-            ("resource://pre.fix/path/to/resource", "pre.fix", True),
-            # Empty paths
-            ("resource://prefix/", "prefix", True),
-        ],
-    )
-    def test_has_resource_prefix(self, uri, prefix, expected):
-        """Test that has_resource_prefix correctly identifies prefixes in URIs."""
-        result = has_resource_prefix(uri, prefix)
-        assert result == expected
-
-    @pytest.mark.parametrize(
-        "invalid_uri",
-        [
-            "not-a-uri",
-            "resource:no-slashes",
-            "missing-protocol",
-            "http:/missing-slash",
-        ],
-    )
-    def test_has_resource_prefix_invalid_uri(self, invalid_uri):
-        """Test that has_resource_prefix raises ValueError for invalid URIs."""
-        with pytest.raises(ValueError, match="Invalid URI format"):
-            has_resource_prefix(invalid_uri, "prefix")
-
-
 class TestResourcePrefixMounting:
     """Test resource prefixing in mounted servers."""
 
@@ -1296,44 +1146,6 @@ class TestResourcePrefixMounting:
                 "resource://prefix/param-value/template"
             )
             assert result[0].text == "Template resource with param-value"  # type: ignore[attr-defined]
-
-    @pytest.mark.parametrize(
-        "uri,prefix,expected_match,expected_strip",
-        [
-            # Regular resource
-            (
-                "resource://prefix/path/to/resource",
-                "prefix",
-                True,
-                "resource://path/to/resource",
-            ),
-            # Absolute path
-            (
-                "resource://prefix//absolute/path",
-                "prefix",
-                True,
-                "resource:///absolute/path",
-            ),
-            # Non-matching prefix
-            (
-                "resource://other/path/to/resource",
-                "prefix",
-                False,
-                "resource://other/path/to/resource",
-            ),
-            # Different protocol
-            ("http://prefix/example.com", "prefix", True, "http://example.com"),
-        ],
-    )
-    async def test_mounted_server_matching_and_stripping(
-        self, uri, prefix, expected_match, expected_strip
-    ):
-        """Test that resource prefix utility functions correctly match and strip resource prefixes."""
-        # Test matching
-        assert has_resource_prefix(uri, prefix) == expected_match
-
-        # Test stripping
-        assert remove_resource_prefix(uri, prefix) == expected_strip
 
 
 class TestShouldIncludeComponent:

@@ -25,12 +25,12 @@ Example:
     ```
 """
 
-from fastmcp.server.providers.base import Components, Provider, TaskComponents
-from fastmcp.server.providers.mounted import MountedProvider
+from fastmcp.server.providers.base import Provider
+from fastmcp.server.providers.fastmcp_provider import FastMCPProvider
+from fastmcp.server.providers.transforming import TransformingProvider
 
 __all__ = [
-    "Components",
-    "MountedProvider",
+    "FastMCPProvider",
     "Provider",
-    "TaskComponents",
+    "TransformingProvider",
 ]

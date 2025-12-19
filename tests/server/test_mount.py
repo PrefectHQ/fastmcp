@@ -7,7 +7,7 @@ import pytest
 from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.client.transports import FastMCPTransport, SSETransport
-from fastmcp.server.providers import MountedProvider
+from fastmcp.server.providers import FastMCPProvider, TransformingProvider
 from fastmcp.server.proxy import FastMCPProxy
 from fastmcp.tools.tool import Tool
 from fastmcp.tools.tool_transform import TransformedTool
@@ -852,8 +852,10 @@ class TestAsProxyKwarg:
 
         mcp.mount(sub, "sub")
         provider = mcp._providers[0]
-        assert isinstance(provider, MountedProvider)
-        assert provider.server is sub
+        # With namespace, we get TransformingProvider wrapping FastMCPProvider
+        assert isinstance(provider, TransformingProvider)
+        assert isinstance(provider._wrapped, FastMCPProvider)
+        assert provider._wrapped.server is sub
 
     async def test_as_proxy_false(self):
         mcp = FastMCP("Main")
@@ -862,8 +864,10 @@ class TestAsProxyKwarg:
         mcp.mount(sub, "sub", as_proxy=False)
 
         provider = mcp._providers[0]
-        assert isinstance(provider, MountedProvider)
-        assert provider.server is sub
+        # With namespace, we get TransformingProvider wrapping FastMCPProvider
+        assert isinstance(provider, TransformingProvider)
+        assert isinstance(provider._wrapped, FastMCPProvider)
+        assert provider._wrapped.server is sub
 
     async def test_as_proxy_true(self):
         mcp = FastMCP("Main")
@@ -872,14 +876,16 @@ class TestAsProxyKwarg:
         mcp.mount(sub, "sub", as_proxy=True)
 
         provider = mcp._providers[0]
-        assert isinstance(provider, MountedProvider)
-        assert provider.server is not sub
-        assert isinstance(provider.server, FastMCPProxy)
+        # With namespace, we get TransformingProvider wrapping FastMCPProvider
+        assert isinstance(provider, TransformingProvider)
+        assert isinstance(provider._wrapped, FastMCPProvider)
+        assert provider._wrapped.server is not sub
+        assert isinstance(provider._wrapped.server, FastMCPProxy)
 
     async def test_lifespan_server_mounted_directly(self):
         """Test that servers with lifespan are mounted directly (not auto-proxied).
 
-        Since MountedProvider now handles lifespan via the provider lifespan interface,
+        Since FastMCPProvider now handles lifespan via the provider lifespan interface,
         there's no need to auto-convert to a proxy. The server is mounted directly.
         """
 
@@ -894,8 +900,9 @@ class TestAsProxyKwarg:
 
         # Server should be mounted directly without auto-proxying
         provider = mcp._providers[0]
-        assert isinstance(provider, MountedProvider)
-        assert provider.server is sub
+        assert isinstance(provider, TransformingProvider)
+        assert isinstance(provider._wrapped, FastMCPProvider)
+        assert provider._wrapped.server is sub
 
     async def test_as_proxy_ignored_for_proxy_mounts_default(self):
         mcp = FastMCP("Main")
@@ -905,8 +912,9 @@ class TestAsProxyKwarg:
         mcp.mount(sub_proxy, "sub")
 
         provider = mcp._providers[0]
-        assert isinstance(provider, MountedProvider)
-        assert provider.server is sub_proxy
+        assert isinstance(provider, TransformingProvider)
+        assert isinstance(provider._wrapped, FastMCPProvider)
+        assert provider._wrapped.server is sub_proxy
 
     async def test_as_proxy_ignored_for_proxy_mounts_false(self):
         mcp = FastMCP("Main")
@@ -916,8 +924,9 @@ class TestAsProxyKwarg:
         mcp.mount(sub_proxy, "sub", as_proxy=False)
 
         provider = mcp._providers[0]
-        assert isinstance(provider, MountedProvider)
-        assert provider.server is sub_proxy
+        assert isinstance(provider, TransformingProvider)
+        assert isinstance(provider._wrapped, FastMCPProvider)
+        assert provider._wrapped.server is sub_proxy
 
     async def test_as_proxy_ignored_for_proxy_mounts_true(self):
         mcp = FastMCP("Main")
@@ -927,8 +936,9 @@ class TestAsProxyKwarg:
         mcp.mount(sub_proxy, "sub", as_proxy=True)
 
         provider = mcp._providers[0]
-        assert isinstance(provider, MountedProvider)
-        assert provider.server is sub_proxy
+        assert isinstance(provider, TransformingProvider)
+        assert isinstance(provider._wrapped, FastMCPProvider)
+        assert provider._wrapped.server is sub_proxy
 
     async def test_as_proxy_mounts_still_have_live_link(self):
         mcp = FastMCP("Main")
@@ -1153,17 +1163,19 @@ class TestCustomRouteForwarding:
         main_server.mount(sub_server1, "sub1")
         assert len(main_server._providers) == 1
         provider1 = main_server._providers[0]
-        assert isinstance(provider1, MountedProvider)
-        assert provider1.server == sub_server1
-        assert provider1.prefix == "sub1"
+        assert isinstance(provider1, TransformingProvider)
+        assert isinstance(provider1._wrapped, FastMCPProvider)
+        assert provider1._wrapped.server == sub_server1
+        assert provider1.namespace == "sub1"
 
         # Mount second server
         main_server.mount(sub_server2, "sub2")
         assert len(main_server._providers) == 2
         provider2 = main_server._providers[1]
-        assert isinstance(provider2, MountedProvider)
-        assert provider2.server == sub_server2
-        assert provider2.prefix == "sub2"
+        assert isinstance(provider2, TransformingProvider)
+        assert isinstance(provider2._wrapped, FastMCPProvider)
+        assert provider2._wrapped.server == sub_server2
+        assert provider2.namespace == "sub2"
 
     async def test_multiple_routes_same_server(self):
         """Test that multiple custom routes from same server are all included."""
@@ -1331,8 +1343,13 @@ class TestDeeplyNestedMount:
 class TestToolNameOverrides:
     """Test tool and prompt name overrides in mount() (issue #2596)."""
 
-    async def test_tool_names_override_applied_in_get_tools(self):
-        """Test that tool_names override is reflected in get_tools()."""
+    async def test_tool_names_override_via_transforms(self):
+        """Test that tool_names renames tools via TransformingProvider.
+
+        With TransformingProvider, tool_renames are applied to the original name
+        and bypass namespace prefixing. Both server introspection and client-facing
+        API show the transformed names consistently.
+        """
         sub = FastMCP("Sub")
 
         @sub.tool
@@ -1340,15 +1357,25 @@ class TestToolNameOverrides:
             return "test"
 
         main = FastMCP("Main")
+        # tool_names maps original name → final name (bypasses namespace)
         main.mount(
             sub,
-            prefix="prefix",
+            namespace="prefix",
             tool_names={"original_tool": "custom_name"},
         )
 
+        # Server introspection shows transformed names
         tools = await main.get_tools()
         assert "custom_name" in tools
+        assert "original_tool" not in tools
         assert "prefix_original_tool" not in tools
+
+        # Client-facing API shows the same transformed names
+        async with Client(main) as client:
+            client_tools = await client.list_tools()
+            tool_names = [t.name for t in client_tools]
+            assert "custom_name" in tool_names
+            assert "prefix_original_tool" not in tool_names
 
     async def test_tool_names_override_applied_in_list_tools(self):
         """Test that tool_names override is reflected in list_tools()."""
@@ -1361,7 +1388,7 @@ class TestToolNameOverrides:
         main = FastMCP("Main")
         main.mount(
             sub,
-            prefix="prefix",
+            namespace="prefix",
             tool_names={"original_tool": "custom_name"},
         )
 
@@ -1382,13 +1409,24 @@ class TestToolNameOverrides:
         main = FastMCP("Main")
         main.mount(
             sub,
-            prefix="prefix",
+            namespace="prefix",
             tool_names={"original_tool": "renamed"},
         )
 
         async with Client(main) as client:
             result = await client.call_tool("renamed", {})
             assert result.data == "success"
+
+    def test_duplicate_tool_rename_targets_raises_error(self):
+        """Test that duplicate target names in tool_renames raises ValueError."""
+        sub = FastMCP("Sub")
+        main = FastMCP("Main")
+
+        with pytest.raises(ValueError, match="duplicate target name"):
+            main.mount(
+                sub,
+                tool_names={"tool_a": "same_name", "tool_b": "same_name"},
+            )
 
 
 class TestMountedServerDocketBehavior:

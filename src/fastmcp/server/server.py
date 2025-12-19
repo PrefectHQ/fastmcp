@@ -849,7 +849,7 @@ class FastMCP(Generic[LifespanResultT]):
         """Get all tools (unfiltered), including from providers, indexed by key."""
         all_tools = dict(await self._tool_manager.get_tools())
 
-        # Get tools from providers (including MountedProvider)
+        # Get tools from providers (including FastMCPProvider)
         for provider in self._providers:
             try:
                 provider_tools = await provider.list_tools()
@@ -939,7 +939,7 @@ class FastMCP(Generic[LifespanResultT]):
         """Get all resources (unfiltered), including from providers, indexed by key."""
         all_resources = dict(await self._resource_manager.get_resources())
 
-        # Get resources from providers (including MountedProvider)
+        # Get resources from providers (including FastMCPProvider)
         for provider in self._providers:
             try:
                 provider_resources = await provider.list_resources()
@@ -979,7 +979,7 @@ class FastMCP(Generic[LifespanResultT]):
         """Get all resource templates (unfiltered), including from providers, indexed by key."""
         all_templates = dict(await self._resource_manager.get_resource_templates())
 
-        # Get templates from providers (including MountedProvider)
+        # Get templates from providers (including FastMCPProvider)
         for provider in self._providers:
             try:
                 provider_templates = await provider.list_resource_templates()
@@ -1019,7 +1019,7 @@ class FastMCP(Generic[LifespanResultT]):
         """Get all prompts (unfiltered), including from providers, indexed by key."""
         all_prompts = dict(await self._prompt_manager.get_prompts())
 
-        # Get prompts from providers (including MountedProvider)
+        # Get prompts from providers (including FastMCPProvider)
         for provider in self._providers:
             try:
                 provider_prompts = await provider.list_prompts()
@@ -1109,7 +1109,7 @@ class FastMCP(Generic[LifespanResultT]):
         """Get all additional HTTP routes including from providers.
 
         Returns a list of all custom HTTP routes from this server and
-        from all providers that have HTTP routes (e.g., MountedProvider).
+        from all providers that have HTTP routes (e.g., FastMCPProvider).
 
         Returns:
             List of Starlette BaseRoute objects
@@ -2638,11 +2638,12 @@ class FastMCP(Generic[LifespanResultT]):
     def mount(
         self,
         server: FastMCP[LifespanResultT],
-        prefix: str | None = None,
+        namespace: str | None = None,
         as_proxy: bool | None = None,
         tool_names: dict[str, str] | None = None,
+        prefix: str | None = None,  # deprecated, use namespace
     ) -> None:
-        """Mount another FastMCP server on this server with an optional prefix.
+        """Mount another FastMCP server on this server with an optional namespace.
 
         Unlike importing (with import_server), mounting establishes a dynamic connection
         between servers. When a client interacts with a mounted server's objects through
@@ -2650,40 +2651,53 @@ class FastMCP(Generic[LifespanResultT]):
         This means changes to the mounted server are immediately reflected when accessed
         through the parent.
 
-        When a server is mounted with a prefix:
-        - Tools from the mounted server are accessible with prefixed names.
-          Example: If server has a tool named "get_weather", it will be available as "prefix_get_weather".
-        - Resources are accessible with prefixed URIs.
+        When a server is mounted with a namespace:
+        - Tools from the mounted server are accessible with namespaced names.
+          Example: If server has a tool named "get_weather", it will be available as "namespace_get_weather".
+        - Resources are accessible with namespaced URIs.
           Example: If server has a resource with URI "weather://forecast", it will be available as
-          "weather://prefix/forecast".
-        - Templates are accessible with prefixed URI templates.
+          "weather://namespace/forecast".
+        - Templates are accessible with namespaced URI templates.
           Example: If server has a template with URI "weather://location/{id}", it will be available
-          as "weather://prefix/location/{id}".
-        - Prompts are accessible with prefixed names.
+          as "weather://namespace/location/{id}".
+        - Prompts are accessible with namespaced names.
           Example: If server has a prompt named "weather_prompt", it will be available as
-          "prefix_weather_prompt".
+          "namespace_weather_prompt".
 
-        When a server is mounted without a prefix (prefix=None), its tools, resources, templates,
+        When a server is mounted without a namespace (namespace=None), its tools, resources, templates,
         and prompts are accessible with their original names. Multiple servers can be mounted
-        without prefixes, and they will be tried in order until a match is found.
+        without namespaces, and they will be tried in order until a match is found.
 
         The mounted server's lifespan is executed when the parent server starts, and its
         middleware chain is invoked for all operations (tool calls, resource reads, prompts).
 
         Args:
             server: The FastMCP server to mount.
-            prefix: Optional prefix to use for the mounted server's objects. If None,
+            namespace: Optional namespace to use for the mounted server's objects. If None,
                 the server's objects are accessible with their original names.
             as_proxy: Deprecated. Mounted servers now always have their lifespan and
                 middleware invoked. To create a proxy server, use FastMCP.as_proxy()
                 explicitly before mounting.
             tool_names: Optional mapping of original tool names to custom names. Use this
-                to override prefixed names. Keys are the original tool names from the
+                to override namespaced names. Keys are the original tool names from the
                 mounted server.
+            prefix: Deprecated. Use namespace instead.
         """
         import warnings
 
-        from fastmcp.server.providers import MountedProvider
+        from fastmcp.server.providers.fastmcp_provider import FastMCPProvider
+
+        # Handle deprecated prefix parameter
+        if prefix is not None:
+            warnings.warn(
+                "The 'prefix' parameter is deprecated, use 'namespace' instead",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            if namespace is None:
+                namespace = prefix
+            else:
+                raise ValueError("Cannot specify both 'prefix' and 'namespace'")
 
         if as_proxy is not None:
             warnings.warn(
@@ -2700,8 +2714,12 @@ class FastMCP(Generic[LifespanResultT]):
                 if not isinstance(server, FastMCPProxy):
                     server = FastMCP.as_proxy(server)
 
-        # Create a MountedProvider and add it to providers
-        provider = MountedProvider(server, prefix, tool_names)
+        # Create provider with optional transformations
+        provider: Provider = FastMCPProvider(server)
+        if namespace or tool_names:
+            provider = provider.with_transforms(
+                namespace=namespace, tool_renames=tool_names
+            )
         self._providers.append(provider)
 
     async def import_server(
@@ -2746,13 +2764,19 @@ class FastMCP(Generic[LifespanResultT]):
         """
         import warnings
 
-        from fastmcp.server.providers.mounted import add_resource_prefix
-
         warnings.warn(
             "import_server is deprecated, use mount() instead",
             DeprecationWarning,
             stacklevel=2,
         )
+
+        def add_resource_prefix(uri: str, prefix: str) -> str:
+            """Add prefix to resource URI: protocol://path → protocol://prefix/path."""
+            match = URI_PATTERN.match(uri)
+            if match:
+                protocol, path = match.groups()
+                return f"{protocol}{prefix}/{path}"
+            return uri
 
         # Import tools from the server
         for tool in (await server.get_tools()).values():
