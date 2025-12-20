@@ -1,14 +1,19 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Annotated, Any, TypedDict
+from typing import TYPE_CHECKING, Annotated, Any, TypedDict
 
 from mcp.types import Icon
 from pydantic import BeforeValidator, Field, PrivateAttr
 from typing_extensions import Self, TypeVar
 
 import fastmcp
+from fastmcp.server.tasks.config import TaskConfig
 from fastmcp.utilities.types import FastMCPBaseModel
+
+if TYPE_CHECKING:
+    from docket import Docket
+    from docket.execution import Execution
 
 T = TypeVar("T", default=Any)
 
@@ -55,6 +60,10 @@ class FastMCPComponent(FastMCPBaseModel):
         default=True,
         description="Whether the component is enabled.",
     )
+    task_config: Annotated[
+        TaskConfig,
+        Field(description="Background task execution configuration (SEP-1686)."),
+    ] = Field(default_factory=lambda: TaskConfig(mode="forbidden"))
 
     @property
     def key(self) -> str:
@@ -112,6 +121,36 @@ class FastMCPComponent(FastMCPBaseModel):
     def copy(self) -> Self:  # type: ignore[override]
         """Create a copy of the component."""
         return self.model_copy()
+
+    def register_with_docket(self, docket: Docket) -> None:
+        """Register this component with docket for background execution.
+
+        No-ops if task_config.mode is "forbidden". Subclasses override to
+        register their callable (self.run, self.read, self.render, or self.fn).
+        """
+        # Base implementation: no-op (subclasses override)
+
+    async def add_to_docket(
+        self, docket: Docket, *args: Any, **kwargs: Any
+    ) -> Execution:
+        """Schedule this component for background execution via docket.
+
+        Subclasses override this to handle their specific calling conventions:
+        - Tool: add_to_docket(docket, arguments: dict, **kwargs)
+        - Resource: add_to_docket(docket, **kwargs)
+        - ResourceTemplate: add_to_docket(docket, params: dict, **kwargs)
+        - Prompt: add_to_docket(docket, arguments: dict | None, **kwargs)
+
+        The **kwargs are passed through to docket.add() (e.g., key=task_key).
+        """
+        if self.task_config.mode == "forbidden":
+            raise RuntimeError(
+                f"Cannot add {self.__class__.__name__} '{self.name}' to docket: "
+                f"task_config.mode is 'forbidden'"
+            )
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not implement add_to_docket()"
+        )
 
 
 class MirroredComponent(FastMCPComponent):

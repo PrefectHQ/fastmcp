@@ -5,10 +5,14 @@ from __future__ import annotations
 import inspect
 import re
 from collections.abc import Callable
-from typing import Annotated, Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import parse_qs, unquote
 
 from mcp.types import Annotations, Icon
+
+if TYPE_CHECKING:
+    from docket import Docket
+    from docket.execution import Execution
 from mcp.types import ResourceTemplate as SDKResourceTemplate
 from pydantic import (
     Field,
@@ -222,15 +226,23 @@ class ResourceTemplate(FastMCPComponent):
         """The lookup key for this template. Returns uri_template."""
         return self.uri_template
 
+    def register_with_docket(self, docket: Docket) -> None:
+        """Register this template with docket for background execution."""
+        if self.task_config.mode == "forbidden":
+            return
+        docket.register(self.read, names=[self.key])
+
+    async def add_to_docket(  # type: ignore[override]
+        self, docket: Docket, params: dict[str, Any], **kwargs: Any
+    ) -> Execution:
+        """Schedule this template for background execution via docket."""
+        return await docket.add(self.key, **kwargs)(params)
+
 
 class FunctionResourceTemplate(ResourceTemplate):
     """A template for dynamically creating resources."""
 
     fn: Callable[..., Any]
-    task_config: Annotated[
-        TaskConfig,
-        Field(description="Background task execution configuration (SEP-1686)."),
-    ] = Field(default_factory=lambda: TaskConfig(mode="forbidden"))
 
     async def create_resource(self, uri: str, params: dict[str, Any]) -> Resource:
         """Create a resource from the template with the given parameters."""
@@ -281,6 +293,25 @@ class FunctionResourceTemplate(ResourceTemplate):
             result = await result
 
         return result
+
+    def register_with_docket(self, docket: Docket) -> None:
+        """Register this template with docket for background execution.
+
+        FunctionResourceTemplate registers the underlying function, which has the
+        user's Depends parameters for docket to resolve.
+        """
+        if self.task_config.mode == "forbidden":
+            return
+        docket.register(self.fn, names=[self.key])
+
+    async def add_to_docket(  # type: ignore[override]
+        self, docket: Docket, params: dict[str, Any], **kwargs: Any
+    ) -> Execution:
+        """Schedule this template for background execution via docket.
+
+        FunctionResourceTemplate splats the params dict since .fn expects **kwargs.
+        """
+        return await docket.add(self.key, **kwargs)(**params)
 
     @classmethod
     def from_function(

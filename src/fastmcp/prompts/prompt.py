@@ -6,9 +6,13 @@ import inspect
 import json
 import warnings
 from collections.abc import Awaitable, Callable, Sequence
-from typing import Annotated, Any
+from typing import TYPE_CHECKING, Any
 
 import pydantic_core
+
+if TYPE_CHECKING:
+    from docket import Docket
+    from docket.execution import Execution
 from mcp import GetPromptResult
 from mcp.types import ContentBlock, Icon, PromptMessage, Role, TextContent
 from mcp.types import Prompt as SDKPrompt
@@ -229,15 +233,23 @@ class Prompt(FastMCPComponent):
             result, description=self.description, meta=self.meta
         )
 
+    def register_with_docket(self, docket: Docket) -> None:
+        """Register this prompt with docket for background execution."""
+        if self.task_config.mode == "forbidden":
+            return
+        docket.register(self.render, names=[self.key])
+
+    async def add_to_docket(  # type: ignore[override]
+        self, docket: Docket, arguments: dict[str, Any] | None, **kwargs: Any
+    ) -> Execution:
+        """Schedule this prompt for background execution via docket."""
+        return await docket.add(self.key, **kwargs)(arguments)
+
 
 class FunctionPrompt(Prompt):
     """A prompt that is a function."""
 
     fn: Callable[..., _PromptFnReturn | Awaitable[_PromptFnReturn]]
-    task_config: Annotated[
-        TaskConfig,
-        Field(description="Background task execution configuration (SEP-1686)."),
-    ] = Field(default_factory=lambda: TaskConfig(mode="forbidden"))
 
     @classmethod
     def from_function(
@@ -458,3 +470,22 @@ class FunctionPrompt(Prompt):
         except Exception as e:
             logger.exception(f"Error rendering prompt {self.name}")
             raise PromptError(f"Error rendering prompt {self.name}.") from e
+
+    def register_with_docket(self, docket: Docket) -> None:
+        """Register this prompt with docket for background execution.
+
+        FunctionPrompt registers the underlying function, which has the user's
+        Depends parameters for docket to resolve.
+        """
+        if self.task_config.mode == "forbidden":
+            return
+        docket.register(self.fn, names=[self.key])  # type: ignore[arg-type]
+
+    async def add_to_docket(  # type: ignore[override]
+        self, docket: Docket, arguments: dict[str, Any] | None, **kwargs: Any
+    ) -> Execution:
+        """Schedule this prompt for background execution via docket.
+
+        FunctionPrompt splats the arguments dict since .fn expects **kwargs.
+        """
+        return await docket.add(self.key, **kwargs)(**(arguments or {}))

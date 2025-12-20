@@ -6,9 +6,13 @@ import base64
 import inspect
 import warnings
 from collections.abc import Callable
-from typing import Annotated, Any
+from typing import TYPE_CHECKING, Annotated, Any
 
 import mcp.types
+
+if TYPE_CHECKING:
+    from docket import Docket
+    from docket.execution import Execution
 import pydantic
 import pydantic_core
 from mcp.types import Annotations, Icon
@@ -277,6 +281,18 @@ class Resource(FastMCPComponent):
         """The lookup key for this resource. Returns str(uri)."""
         return str(self.uri)
 
+    def register_with_docket(self, docket: Docket) -> None:
+        """Register this resource with docket for background execution."""
+        if self.task_config.mode == "forbidden":
+            return
+        docket.register(self.read, names=[self.key])
+
+    async def add_to_docket(  # type: ignore[override]
+        self, docket: Docket, **kwargs: Any
+    ) -> Execution:
+        """Schedule this resource for background execution via docket."""
+        return await docket.add(self.key, **kwargs)()
+
 
 class FunctionResource(Resource):
     """A resource that defers data loading by wrapping a function.
@@ -292,10 +308,6 @@ class FunctionResource(Resource):
     """
 
     fn: Callable[..., Any]
-    task_config: Annotated[
-        TaskConfig,
-        Field(description="Background task execution configuration (SEP-1686)."),
-    ] = Field(default_factory=lambda: TaskConfig(mode="forbidden"))
 
     @classmethod
     def from_function(
@@ -366,3 +378,13 @@ class FunctionResource(Resource):
 
         # Convert any value to ResourceContent
         return ResourceContent.from_value(result, mime_type=self.mime_type)
+
+    def register_with_docket(self, docket: Docket) -> None:
+        """Register this resource with docket for background execution.
+
+        FunctionResource registers the underlying function, which has the user's
+        Depends parameters for docket to resolve.
+        """
+        if self.task_config.mode == "forbidden":
+            return
+        docket.register(self.fn, names=[self.key])

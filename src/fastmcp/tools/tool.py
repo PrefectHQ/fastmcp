@@ -46,6 +46,9 @@ from fastmcp.utilities.types import (
 )
 
 if TYPE_CHECKING:
+    from docket import Docket
+    from docket.execution import Execution
+
     from fastmcp.tools.tool_transform import ArgTransform, TransformedTool
 
 logger = get_logger(__name__)
@@ -237,6 +240,18 @@ class Tool(FastMCPComponent):
         """
         raise NotImplementedError("Subclasses must implement run()")
 
+    def register_with_docket(self, docket: Docket) -> None:
+        """Register this tool with docket for background execution."""
+        if self.task_config.mode == "forbidden":
+            return
+        docket.register(self.run, names=[self.key])
+
+    async def add_to_docket(  # type: ignore[override]
+        self, docket: Docket, arguments: dict[str, Any], **kwargs: Any
+    ) -> Execution:
+        """Schedule this tool for background execution via docket."""
+        return await docket.add(self.key, **kwargs)(arguments)
+
     @classmethod
     def from_tool(
         cls,
@@ -274,10 +289,6 @@ class Tool(FastMCPComponent):
 
 class FunctionTool(Tool):
     fn: Callable[..., Any]
-    task_config: Annotated[
-        TaskConfig,
-        Field(description="Background task execution configuration (SEP-1686)."),
-    ] = Field(default_factory=lambda: TaskConfig(mode="forbidden"))
 
     def to_mcp_tool(
         self,
@@ -415,6 +426,25 @@ class FunctionTool(Tool):
             content=unstructured_result,
             structured_content={"result": result} if wrap_result else result,
         )
+
+    def register_with_docket(self, docket: Docket) -> None:
+        """Register this tool with docket for background execution.
+
+        FunctionTool registers the underlying function, which has the user's
+        Depends parameters for docket to resolve.
+        """
+        if self.task_config.mode == "forbidden":
+            return
+        docket.register(self.fn, names=[self.key])
+
+    async def add_to_docket(  # type: ignore[override]
+        self, docket: Docket, arguments: dict[str, Any], **kwargs: Any
+    ) -> Execution:
+        """Schedule this tool for background execution via docket.
+
+        FunctionTool splats the arguments dict since .fn expects **kwargs.
+        """
+        return await docket.add(self.key, **kwargs)(**arguments)
 
 
 def _is_object_schema(schema: dict[str, Any]) -> bool:

@@ -69,9 +69,9 @@ from fastmcp.mcp_config import MCPConfig
 from fastmcp.prompts import Prompt
 from fastmcp.prompts.prompt import FunctionPrompt, PromptResult
 from fastmcp.prompts.prompt_manager import PromptManager
-from fastmcp.resources.resource import FunctionResource, Resource, ResourceContent
+from fastmcp.resources.resource import Resource, ResourceContent
 from fastmcp.resources.resource_manager import ResourceManager
-from fastmcp.resources.template import FunctionResourceTemplate, ResourceTemplate
+from fastmcp.resources.template import ResourceTemplate
 from fastmcp.server.auth import AuthProvider
 from fastmcp.server.event_store import EventStore
 from fastmcp.server.http import (
@@ -416,56 +416,32 @@ class FastMCP(Generic[LifespanResultT]):
                 # Store on server instance for cross-task access (FastMCPTransport)
                 self._docket = docket
 
-                # Register local task-enabled tools/prompts/resources with Docket
-                # Only function-based variants support background tasks
-                # Register components where task execution is not "forbidden"
+                # Register local task-enabled components with Docket
+                # Each component checks task_config internally and no-ops if forbidden
                 for tool in self._tool_manager._tools.values():
-                    if (
-                        isinstance(tool, FunctionTool)
-                        and tool.task_config.mode != "forbidden"
-                    ):
-                        docket.register(tool.fn, names=[tool.key])
+                    tool.register_with_docket(docket)
 
                 for prompt in self._prompt_manager._prompts.values():
-                    if (
-                        isinstance(prompt, FunctionPrompt)
-                        and prompt.task_config.mode != "forbidden"
-                    ):
-                        # task execution requires async fn (validated at creation time)
-                        docket.register(
-                            cast(Callable[..., Awaitable[Any]], prompt.fn),
-                            names=[prompt.key],
-                        )
+                    prompt.register_with_docket(docket)
 
                 for resource in self._resource_manager._resources.values():
-                    if (
-                        isinstance(resource, FunctionResource)
-                        and resource.task_config.mode != "forbidden"
-                    ):
-                        docket.register(resource.fn, names=[resource.key])
+                    resource.register_with_docket(docket)
 
                 for template in self._resource_manager._templates.values():
-                    if (
-                        isinstance(template, FunctionResourceTemplate)
-                        and template.task_config.mode != "forbidden"
-                    ):
-                        docket.register(template.fn, names=[template.key])
+                    template.register_with_docket(docket)
 
                 # Register provider components
                 for provider in self._providers:
                     try:
                         tasks = await provider.get_tasks()
                         for tool in tasks.tools:
-                            docket.register(tool.fn, names=[tool.key])
+                            tool.register_with_docket(docket)
                         for resource in tasks.resources:
-                            docket.register(resource.fn, names=[resource.key])
+                            resource.register_with_docket(docket)
                         for template in tasks.templates:
-                            docket.register(template.fn, names=[template.key])
+                            template.register_with_docket(docket)
                         for prompt in tasks.prompts:
-                            docket.register(
-                                cast(Callable[..., Awaitable[Any]], prompt.fn),
-                                names=[prompt.key],
-                            )
+                            prompt.register_with_docket(docket)
                     except Exception as e:
                         provider_name = getattr(
                             provider, "server", provider
@@ -650,15 +626,11 @@ class FastMCP(Generic[LifespanResultT]):
 
                     # Route to background if task metadata present and mode allows
                     if task_meta and task_mode != "forbidden":
-                        # For FunctionResource/FunctionResourceTemplate, use Docket
-                        if isinstance(
-                            resource,
-                            FunctionResource | FunctionResourceTemplate,
-                        ):
-                            task_meta_dict = task_meta.model_dump(exclude_none=True)
-                            return await handle_resource_as_task(
-                                self, str(uri), resource, task_meta_dict
-                            )
+                        # Resource has task support, use Docket for background execution
+                        task_meta_dict = task_meta.model_dump(exclude_none=True)
+                        return await handle_resource_as_task(
+                            self, str(uri), resource, task_meta_dict
+                        )
 
                     # Forbidden mode: task requested but mode="forbidden"
                     # Raise error since resources don't have isError field
@@ -1480,14 +1452,12 @@ class FastMCP(Generic[LifespanResultT]):
 
                     # Route to background if task metadata present and mode allows
                     if task_meta and task_mode != "forbidden":
-                        # For FunctionTool, use Docket for background execution
-                        if isinstance(tool, FunctionTool):
-                            task_meta_dict = task_meta.model_dump(exclude_none=True)
-                            return await handle_tool_as_task(
-                                self, key, arguments, task_meta_dict
-                            )
-                        # For ProxyTool/mounted tools, proceed with normal execution
-                        # They will forward task metadata to their backend
+                        # Tool has task support, use Docket for background execution
+                        # (ProxyTool has mode="forbidden" and will not enter this branch)
+                        task_meta_dict = task_meta.model_dump(exclude_none=True)
+                        return await handle_tool_as_task(
+                            self, key, arguments, task_meta_dict
+                        )
 
                     # Forbidden mode: task requested but mode="forbidden"
                     # Return error result with returned_immediately=True

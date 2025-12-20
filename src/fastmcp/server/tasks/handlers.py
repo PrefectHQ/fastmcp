@@ -100,11 +100,8 @@ async def handle_tool_as_task(
         await ctx.session.send_notification(notification)  # type: ignore[arg-type]
 
     # Queue function to Docket by key (result storage via execution_ttl)
-    # Use tool.key which matches what was registered - prefixed for mounted tools
-    await docket.add(
-        tool.key,
-        key=task_key,
-    )(**arguments)
+    # Use tool.add_to_docket() which handles calling conventions
+    await tool.add_to_docket(docket, arguments, key=task_key)
 
     # Spawn subscription task to send status notifications (SEP-1686 optional feature)
     from fastmcp.server.tasks.subscriptions import subscribe_to_task_updates
@@ -206,11 +203,8 @@ async def handle_prompt_as_task(
         await ctx.session.send_notification(notification)  # type: ignore[arg-type]
 
     # Queue function to Docket by key (result storage via execution_ttl)
-    # Use prompt.key which matches what was registered - prefixed for mounted prompts
-    await docket.add(
-        prompt.key,
-        key=task_key,
-    )(**(arguments or {}))
+    # Use prompt.add_to_docket() which handles calling conventions
+    await prompt.add_to_docket(docket, arguments, key=task_key)
 
     # Spawn subscription task to send status notifications (SEP-1686 optional feature)
     from fastmcp.server.tasks.subscriptions import subscribe_to_task_updates
@@ -310,20 +304,14 @@ async def handle_resource_as_task(
         await ctx.session.send_notification(notification)  # type: ignore[arg-type]
 
     # Queue function to Docket by key (result storage via execution_ttl)
-    # For templates, extract URI params and pass them to the function
-    from fastmcp.resources.template import FunctionResourceTemplate, match_uri_template
+    # Use add_to_docket() which handles calling conventions
+    from fastmcp.resources.template import ResourceTemplate, match_uri_template
 
-    if isinstance(resource, FunctionResourceTemplate):
+    if isinstance(resource, ResourceTemplate):
         params = match_uri_template(uri, resource.uri_template) or {}
-        await docket.add(
-            resource.key,
-            key=task_key,
-        )(**params)
+        await resource.add_to_docket(docket, params, key=task_key)
     else:
-        await docket.add(
-            resource.key,
-            key=task_key,
-        )()
+        await resource.add_to_docket(docket, key=task_key)
 
     # Spawn subscription task to send status notifications (SEP-1686 optional feature)
     from fastmcp.server.tasks.subscriptions import subscribe_to_task_updates
