@@ -736,6 +736,7 @@ class Client(Generic[ClientTransportT]):
 
         Raises:
             RuntimeError: If called while the client is not connected.
+            McpError: If the request results in a TimeoutError | JSONRPCError
         """
         logger.debug(f"[{self.name}] called list_resources")
 
@@ -750,6 +751,7 @@ class Client(Generic[ClientTransportT]):
 
         Raises:
             RuntimeError: If called while the client is not connected.
+            McpError: If the request results in a TimeoutError | JSONRPCError
         """
         result = await self.list_resources_mcp()
         return result.resources
@@ -765,6 +767,7 @@ class Client(Generic[ClientTransportT]):
 
         Raises:
             RuntimeError: If called while the client is not connected.
+            McpError: If the request results in a TimeoutError | JSONRPCError
         """
         logger.debug(f"[{self.name}] called list_resource_templates")
 
@@ -781,6 +784,7 @@ class Client(Generic[ClientTransportT]):
 
         Raises:
             RuntimeError: If called while the client is not connected.
+            McpError: If the request results in a TimeoutError | JSONRPCError
         """
         result = await self.list_resource_templates_mcp()
         return result.resourceTemplates
@@ -800,6 +804,7 @@ class Client(Generic[ClientTransportT]):
 
         Raises:
             RuntimeError: If called while the client is not connected.
+            McpError: If the request results in a TimeoutError | JSONRPCError
         """
         logger.debug(f"[{self.name}] called read_resource: {uri}")
 
@@ -868,6 +873,7 @@ class Client(Generic[ClientTransportT]):
 
         Raises:
             RuntimeError: If called while the client is not connected.
+            McpError: If the request results in a TimeoutError | JSONRPCError
         """
         if task:
             return await self._read_resource_as_task(uri, task_id, ttl)
@@ -961,6 +967,7 @@ class Client(Generic[ClientTransportT]):
 
         Raises:
             RuntimeError: If called while the client is not connected.
+            McpError: If the request results in a TimeoutError | JSONRPCError
         """
         logger.debug(f"[{self.name}] called list_prompts")
 
@@ -975,6 +982,7 @@ class Client(Generic[ClientTransportT]):
 
         Raises:
             RuntimeError: If called while the client is not connected.
+            McpError: If the request results in a TimeoutError | JSONRPCError
         """
         result = await self.list_prompts_mcp()
         return result.prompts
@@ -999,6 +1007,7 @@ class Client(Generic[ClientTransportT]):
 
         Raises:
             RuntimeError: If called while the client is not connected.
+            McpError: If the request results in a TimeoutError | JSONRPCError
         """
         logger.debug(f"[{self.name}] called get_prompt: {name}")
 
@@ -1081,6 +1090,7 @@ class Client(Generic[ClientTransportT]):
 
         Raises:
             RuntimeError: If called while the client is not connected.
+            McpError: If the request results in a TimeoutError | JSONRPCError
         """
         if task:
             return await self._get_prompt_as_task(name, arguments, task_id, ttl)
@@ -1169,6 +1179,7 @@ class Client(Generic[ClientTransportT]):
 
         Raises:
             RuntimeError: If called while the client is not connected.
+            McpError: If the request results in a TimeoutError | JSONRPCError
         """
         logger.debug(f"[{self.name}] called complete: {ref}")
 
@@ -1196,6 +1207,7 @@ class Client(Generic[ClientTransportT]):
 
         Raises:
             RuntimeError: If called while the client is not connected.
+            McpError: If the request results in a TimeoutError | JSONRPCError
         """
         result = await self.complete_mcp(
             ref=ref, argument=argument, context_arguments=context_arguments
@@ -1213,6 +1225,7 @@ class Client(Generic[ClientTransportT]):
 
         Raises:
             RuntimeError: If called while the client is not connected.
+            McpError: If the request results in a TimeoutError | JSONRPCError
         """
         logger.debug(f"[{self.name}] called list_tools")
 
@@ -1227,6 +1240,7 @@ class Client(Generic[ClientTransportT]):
 
         Raises:
             RuntimeError: If called while the client is not connected.
+            McpError: If the request results in a TimeoutError | JSONRPCError
         """
         result = await self.list_tools_mcp()
         return result.tools
@@ -1262,6 +1276,7 @@ class Client(Generic[ClientTransportT]):
 
         Raises:
             RuntimeError: If called while the client is not connected.
+            McpError: If the tool call requests results in a TimeoutError | JSONRPCError
         """
         logger.debug(f"[{self.name}] called call_tool: {name}")
 
@@ -1415,6 +1430,7 @@ class Client(Generic[ClientTransportT]):
 
         Raises:
             ToolError: If the tool call results in an error.
+            McpError: If the tool call request results in a TimeoutError | JSONRPCError
             RuntimeError: If called while the client is not connected.
         """
         if task:
@@ -1508,6 +1524,7 @@ class Client(Generic[ClientTransportT]):
 
         Raises:
             RuntimeError: If client not connected
+            McpError: If the request results in a TimeoutError | JSONRPCError
         """
         request = GetTaskRequest(params=GetTaskRequestParams(taskId=task_id))
         return await self.session.send_request(
@@ -1529,6 +1546,7 @@ class Client(Generic[ClientTransportT]):
 
         Raises:
             RuntimeError: If client not connected, task not found, or task failed
+            McpError: If the request results in a TimeoutError | JSONRPCError
         """
         request = GetTaskPayloadRequest(
             params=GetTaskPayloadRequestParams(taskId=task_id)
@@ -1563,6 +1581,7 @@ class Client(Generic[ClientTransportT]):
 
         Raises:
             RuntimeError: If client not connected
+            McpError: If the request results in a TimeoutError | JSONRPCError
         """
         # Send protocol request
         params = PaginatedRequestParams(cursor=cursor, limit=limit)
@@ -1602,6 +1621,7 @@ class Client(Generic[ClientTransportT]):
 
         Raises:
             RuntimeError: If task doesn't exist
+            McpError: If the request results in a TimeoutError | JSONRPCError
         """
         request = CancelTaskRequest(params=CancelTaskRequestParams(taskId=task_id))
         return await self.session.send_request(
