@@ -168,7 +168,7 @@ class TestFastMCPComponentDocketMethods:
         component = FastMCPComponent(name="test")
         mock_docket = MagicMock()
 
-        with pytest.raises(RuntimeError, match="task_config.mode is 'forbidden'"):
+        with pytest.raises(RuntimeError, match="task execution not supported"):
             await component.add_to_docket(mock_docket)
 
     async def test_add_to_docket_raises_not_implemented_when_allowed(self):

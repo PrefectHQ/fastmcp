@@ -184,6 +184,7 @@ class TestResourceTemplate:
 
         assert isinstance(resource, FunctionResource)
         result = await resource.read()
+        assert isinstance(result, ResourceContent)
         assert isinstance(result.content, str)
         data = json.loads(result.content)
         assert data == {"key": "foo", "value": 123}
@@ -207,6 +208,7 @@ class TestResourceTemplate:
 
         assert isinstance(resource, FunctionResource)
         result = await resource.read()
+        assert isinstance(result, ResourceContent)
         assert result.content == "Hello, world!"
 
     async def test_async_binary_resource(self):
@@ -228,6 +230,7 @@ class TestResourceTemplate:
 
         assert isinstance(resource, FunctionResource)
         result = await resource.read()
+        assert isinstance(result, ResourceContent)
         assert result.content == b"test"
 
     async def test_basemodel_conversion(self):
@@ -253,6 +256,7 @@ class TestResourceTemplate:
 
         assert isinstance(resource, FunctionResource)
         result = await resource.read()
+        assert isinstance(result, ResourceContent)
         assert isinstance(result.content, str)
         data = json.loads(result.content)
         assert data == {"key": "foo", "value": 123}
@@ -283,6 +287,7 @@ class TestResourceTemplate:
 
         assert isinstance(resource, FunctionResource)
         result = await resource.read()
+        assert isinstance(result, ResourceContent)
         assert result.content == '"hello"'
 
     async def test_wildcard_param_can_create_resource(self):
@@ -393,6 +398,7 @@ class TestResourceTemplate:
 
         assert isinstance(resource, FunctionResource)
         result = await resource.read()
+        assert isinstance(result, ResourceContent)
         assert result.content == "X was foo"
 
 
@@ -679,6 +685,7 @@ class TestContextHandling:
 
             assert isinstance(resource, FunctionResource)
             result = await resource.read()
+            assert isinstance(result, ResourceContent)
             assert result.content == "42"
 
     async def test_context_optional(self):
@@ -705,6 +712,7 @@ class TestContextHandling:
 
             assert isinstance(resource, FunctionResource)
             result = await resource.read()
+            assert isinstance(result, ResourceContent)
             assert result.content == "42"
 
     async def test_context_with_functools_wraps_decorator(self):

@@ -59,6 +59,14 @@ class TaskConfig:
         """
         return cls(mode="optional" if value else "forbidden")
 
+    def supports_tasks(self) -> bool:
+        """Check if this component supports task execution.
+
+        Returns:
+            True if mode is "optional" or "required", False if "forbidden".
+        """
+        return self.mode != "forbidden"
+
     def validate_function(self, fn: Callable[..., Any], name: str) -> None:
         """Validate that function is compatible with this task config.
 
@@ -72,7 +80,7 @@ class TaskConfig:
         Raises:
             ValueError: If task execution is enabled but function is sync.
         """
-        if self.mode == "forbidden":
+        if not self.supports_tasks():
             return
 
         # Unwrap callable classes and staticmethods

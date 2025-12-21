@@ -60,7 +60,7 @@ async def check_background_task(
         )
 
     # Enforce mode="forbidden" - cannot be called with task metadata
-    if task_config.mode == "forbidden" and task_meta:
+    if not task_config.supports_tasks() and task_meta:
         raise McpError(
             ErrorData(
                 code=METHOD_NOT_FOUND,

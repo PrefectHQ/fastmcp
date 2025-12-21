@@ -307,7 +307,7 @@ class Tool(FastMCPComponent):
 
     def register_with_docket(self, docket: Docket) -> None:
         """Register this tool with docket for background execution."""
-        if self.task_config.mode == "forbidden":
+        if not self.task_config.supports_tasks():
             return
         docket.register(self.run, names=[self.key])
 
@@ -388,8 +388,8 @@ class FunctionTool(Tool):
         )
 
         # Add task execution mode per SEP-1686
-        # Only set execution if not overridden and mode is not "forbidden"
-        if self.task_config.mode != "forbidden" and "execution" not in overrides:
+        # Only set execution if not overridden and task execution is supported
+        if self.task_config.supports_tasks() and "execution" not in overrides:
             mcp_tool.execution = ToolExecution(taskSupport=self.task_config.mode)
 
         return mcp_tool
@@ -483,7 +483,7 @@ class FunctionTool(Tool):
         FunctionTool registers the underlying function, which has the user's
         Depends parameters for docket to resolve.
         """
-        if self.task_config.mode == "forbidden":
+        if not self.task_config.supports_tasks():
             return
         docket.register(self.fn, names=[self.key])
 

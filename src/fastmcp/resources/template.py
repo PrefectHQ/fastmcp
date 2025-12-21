@@ -270,7 +270,7 @@ class ResourceTemplate(FastMCPComponent):
 
     def register_with_docket(self, docket: Docket) -> None:
         """Register this template with docket for background execution."""
-        if self.task_config.mode == "forbidden":
+        if not self.task_config.supports_tasks():
             return
         docket.register(self.read, names=[self.key])
 
@@ -384,7 +384,7 @@ class FunctionResourceTemplate(ResourceTemplate):
         FunctionResourceTemplate registers the underlying function, which has the
         user's Depends parameters for docket to resolve.
         """
-        if self.task_config.mode == "forbidden":
+        if not self.task_config.supports_tasks():
             return
         docket.register(self.fn, names=[self.key])
 

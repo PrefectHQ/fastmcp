@@ -294,7 +294,7 @@ class Prompt(FastMCPComponent):
 
     def register_with_docket(self, docket: Docket) -> None:
         """Register this prompt with docket for background execution."""
-        if self.task_config.mode == "forbidden":
+        if not self.task_config.supports_tasks():
             return
         docket.register(self.render, names=[self.key])
 
@@ -519,7 +519,7 @@ class FunctionPrompt(Prompt):
         FunctionPrompt registers the underlying function, which has the user's
         Depends parameters for docket to resolve.
         """
-        if self.task_config.mode == "forbidden":
+        if not self.task_config.supports_tasks():
             return
         docket.register(self.fn, names=[self.key])  # type: ignore[arg-type]
 

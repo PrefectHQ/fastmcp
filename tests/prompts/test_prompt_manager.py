@@ -6,7 +6,12 @@ import pytest
 from fastmcp import Context, FastMCP
 from fastmcp.exceptions import NotFoundError, PromptError
 from fastmcp.prompts import Prompt
-from fastmcp.prompts.prompt import FunctionPrompt, PromptMessage, TextContent
+from fastmcp.prompts.prompt import (
+    FunctionPrompt,
+    PromptMessage,
+    PromptResult,
+    TextContent,
+)
 from fastmcp.prompts.prompt_manager import PromptManager
 from fastmcp.utilities.tests import caplog_for_fastmcp
 from tests.conftest import get_fn_name
@@ -165,6 +170,7 @@ class TestRenderPrompt:
         prompt = Prompt.from_function(fn)
         manager.add_prompt(prompt)
         result = await manager.render_prompt("fn")
+        assert isinstance(result, PromptResult)
         assert result.description == "An example prompt."
         assert result.messages == [
             PromptMessage(
@@ -183,6 +189,7 @@ class TestRenderPrompt:
         prompt = Prompt.from_function(fn)
         manager.add_prompt(prompt)
         result = await manager.render_prompt("fn", arguments={"name": "World"})
+        assert isinstance(result, PromptResult)
         assert result.description == "An example prompt."
         assert result.messages == [
             PromptMessage(
@@ -204,6 +211,7 @@ class TestRenderPrompt:
         prompt = Prompt.from_function(MyPrompt())
         manager.add_prompt(prompt)
         result = await manager.render_prompt("MyPrompt", arguments={"name": "World"})
+        assert isinstance(result, PromptResult)
         assert result.description == "A callable object that can be used as a prompt."
         assert result.messages == [
             PromptMessage(
@@ -225,6 +233,7 @@ class TestRenderPrompt:
         prompt = Prompt.from_function(MyPrompt())
         manager.add_prompt(prompt)
         result = await manager.render_prompt("MyPrompt", arguments={"name": "World"})
+        assert isinstance(result, PromptResult)
         assert result.description == "A callable object that can be used as a prompt."
         assert result.messages == [
             PromptMessage(
@@ -402,6 +411,7 @@ class TestContextHandling:
         async with context:
             result = await prompt.render(arguments={"x": 42})
 
+        assert isinstance(result, PromptResult)
         assert len(result.messages) == 1
         assert result.messages[0].content.text == "42"  # type: ignore[attr-defined]
 
@@ -424,6 +434,7 @@ class TestContextHandling:
                 arguments={"x": 42},
             )
 
+        assert isinstance(result, PromptResult)
         assert len(result.messages) == 1
         assert result.messages[0].content.text == "42"  # type: ignore[attr-defined]
 
@@ -461,4 +472,5 @@ class TestContextHandling:
 
         async with context:
             result = await prompt.render(arguments={"topic": "cats"})
+            assert isinstance(result, PromptResult)
             assert result.messages[0].content.text == "Write about cats"  # type: ignore[attr-defined]

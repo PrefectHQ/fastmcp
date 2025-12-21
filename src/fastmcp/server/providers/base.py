@@ -255,23 +255,23 @@ class Provider:
             tools=[
                 t
                 for t in all_tools
-                if isinstance(t, FunctionTool) and t.task_config.mode != "forbidden"
+                if isinstance(t, FunctionTool) and t.task_config.supports_tasks()
             ],
             resources=[
                 r
                 for r in all_resources
-                if isinstance(r, FunctionResource) and r.task_config.mode != "forbidden"
+                if isinstance(r, FunctionResource) and r.task_config.supports_tasks()
             ],
             templates=[
                 t
                 for t in all_templates
                 if isinstance(t, FunctionResourceTemplate)
-                and t.task_config.mode != "forbidden"
+                and t.task_config.supports_tasks()
             ],
             prompts=[
                 p
                 for p in all_prompts
-                if isinstance(p, FunctionPrompt) and p.task_config.mode != "forbidden"
+                if isinstance(p, FunctionPrompt) and p.task_config.supports_tasks()
             ],
         )
 

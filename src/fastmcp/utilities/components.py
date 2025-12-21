@@ -143,10 +143,10 @@ class FastMCPComponent(FastMCPBaseModel):
 
         The **kwargs are passed through to docket.add() (e.g., key=task_key).
         """
-        if self.task_config.mode == "forbidden":
+        if not self.task_config.supports_tasks():
             raise RuntimeError(
                 f"Cannot add {self.__class__.__name__} '{self.name}' to docket: "
-                f"task_config.mode is 'forbidden'"
+                f"task execution not supported"
             )
         raise NotImplementedError(
             f"{self.__class__.__name__} does not implement add_to_docket()"

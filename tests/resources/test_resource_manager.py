@@ -304,6 +304,7 @@ class TestResourceManager:
         resource = await manager.get_resource(AnyUrl("greet://world"))
         assert isinstance(resource, FunctionResource)
         result = await resource.read()
+        assert isinstance(result, ResourceContent)
         assert result.content == "Hello, world!"
 
     async def test_get_unknown_resource(self):
@@ -481,6 +482,7 @@ class TestQueryOnlyTemplates:
 
         # Should also work via read_resource
         result = await manager.read_resource("data://config")
+        assert isinstance(result, ResourceContent)
         assert result.content == "Config in json format"
 
     async def test_template_with_only_query_params_with_query_string(self):
@@ -506,6 +508,7 @@ class TestQueryOnlyTemplates:
 
         # Should also work via read_resource
         result = await manager.read_resource("data://config?format=xml")
+        assert isinstance(result, ResourceContent)
         assert result.content == "Config in xml format"
 
     async def test_template_with_only_multiple_query_params(self):
@@ -524,14 +527,17 @@ class TestQueryOnlyTemplates:
 
         # No query params - use all defaults
         result = await manager.read_resource("data://items")
+        assert isinstance(result, ResourceContent)
         assert result.content == "Data in json (limit: 10)"
 
         # Partial query params
         result = await manager.read_resource("data://items?format=xml")
+        assert isinstance(result, ResourceContent)
         assert result.content == "Data in xml (limit: 10)"
 
         # All query params
         result = await manager.read_resource("data://items?format=xml&limit=20")
+        assert isinstance(result, ResourceContent)
         assert result.content == "Data in xml (limit: 20)"
 
     async def test_has_resource_with_query_only_template(self):

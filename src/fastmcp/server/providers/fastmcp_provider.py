@@ -570,22 +570,22 @@ class FastMCPProvider(Provider):
         tools: list[Tool] = [
             t
             for t in self.server._tool_manager._tools.values()
-            if t.task_config.mode != "forbidden"
+            if t.task_config.supports_tasks()
         ]
         resources: list[Resource] = [
             r
             for r in self.server._resource_manager._resources.values()
-            if r.task_config.mode != "forbidden"
+            if r.task_config.supports_tasks()
         ]
         templates: list[ResourceTemplate] = [
             t
             for t in self.server._resource_manager._templates.values()
-            if t.task_config.mode != "forbidden"
+            if t.task_config.supports_tasks()
         ]
         prompts: list[Prompt] = [
             p
             for p in self.server._prompt_manager._prompts.values()
-            if p.task_config.mode != "forbidden"
+            if p.task_config.supports_tasks()
         ]
 
         # Recursively get tasks from nested providers
