@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 from docket.execution import ExecutionState
 from mcp.types import TaskStatusNotification, TaskStatusNotificationParams
 
-from fastmcp.server.tasks.protocol import DOCKET_TO_MCP_STATE
+from fastmcp.server.tasks.requests import DOCKET_TO_MCP_STATE
 from fastmcp.utilities.logging import get_logger
 
 if TYPE_CHECKING:

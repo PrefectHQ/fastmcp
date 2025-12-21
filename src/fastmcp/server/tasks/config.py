@@ -15,6 +15,11 @@ from typing import Any, Literal
 # Task execution modes per SEP-1686 / MCP ToolExecution.taskSupport
 TaskMode = Literal["forbidden", "optional", "required"]
 
+# Default values for task metadata (single source of truth)
+DEFAULT_POLL_INTERVAL = timedelta(seconds=5)  # Default poll interval
+DEFAULT_POLL_INTERVAL_MS = int(DEFAULT_POLL_INTERVAL.total_seconds() * 1000)
+DEFAULT_TTL_MS = 60_000  # Default TTL in milliseconds
+
 
 @dataclass
 class TaskConfig:
@@ -47,7 +52,7 @@ class TaskConfig:
     """
 
     mode: TaskMode = "optional"
-    poll_interval: timedelta = timedelta(seconds=5)
+    poll_interval: timedelta = DEFAULT_POLL_INTERVAL
 
     @classmethod
     def from_bool(cls, value: bool) -> TaskConfig:

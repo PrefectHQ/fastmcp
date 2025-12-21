@@ -606,7 +606,7 @@ class FastMCP(Generic[LifespanResultT]):
             ServerResult,
         )
 
-        from fastmcp.server.tasks.protocol import (
+        from fastmcp.server.tasks.requests import (
             tasks_cancel_handler,
             tasks_get_handler,
             tasks_list_handler,
