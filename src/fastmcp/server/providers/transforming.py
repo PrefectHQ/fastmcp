@@ -9,13 +9,13 @@ from __future__ import annotations
 import re
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
-from fastmcp.prompts.prompt import Prompt, PromptResult
-from fastmcp.resources.resource import Resource, ResourceContent
+from fastmcp.prompts.prompt import Prompt
+from fastmcp.resources.resource import Resource
 from fastmcp.resources.template import ResourceTemplate
 from fastmcp.server.providers.base import Provider, TaskComponents
-from fastmcp.tools.tool import Tool, ToolResult
+from fastmcp.tools.tool import Tool
 
 if TYPE_CHECKING:
     from fastmcp.prompts.prompt import FunctionPrompt
@@ -74,7 +74,7 @@ class TransformingProvider(Provider):
                 use the specified name instead of namespace prefixing.
         """
         super().__init__()
-        self._wrapped = provider
+        self._wrapped: Provider = provider
         self.namespace = namespace
         self.tool_renames = tool_renames or {}
 
@@ -186,15 +186,6 @@ class TransformingProvider(Provider):
             return tool.model_copy(update={"name": name})
         return None
 
-    async def call_tool(
-        self, name: str, arguments: dict[str, Any]
-    ) -> ToolResult | None:
-        """Call tool by transformed name."""
-        original = self._reverse_tool_name(name)
-        if original is None:
-            return None
-        return await self._wrapped.call_tool(original, arguments)
-
     # -------------------------------------------------------------------------
     # Resource methods
     # -------------------------------------------------------------------------
@@ -216,13 +207,6 @@ class TransformingProvider(Provider):
         if resource:
             return resource.model_copy(update={"uri": uri})
         return None
-
-    async def read_resource(self, uri: str) -> ResourceContent | None:
-        """Read resource by transformed URI."""
-        original = self._reverse_resource_uri(uri)
-        if original is None:
-            return None
-        return await self._wrapped.read_resource(original)
 
     # -------------------------------------------------------------------------
     # Resource template methods
@@ -252,13 +236,6 @@ class TransformingProvider(Provider):
             )
         return None
 
-    async def read_resource_template(self, uri: str) -> ResourceContent | None:
-        """Read resource template by transformed URI."""
-        original = self._reverse_resource_uri(uri)
-        if original is None:
-            return None
-        return await self._wrapped.read_resource_template(original)
-
     # -------------------------------------------------------------------------
     # Prompt methods
     # -------------------------------------------------------------------------
@@ -280,15 +257,6 @@ class TransformingProvider(Provider):
         if prompt:
             return prompt.model_copy(update={"name": name})
         return None
-
-    async def render_prompt(
-        self, name: str, arguments: dict[str, Any] | None
-    ) -> PromptResult | None:
-        """Render prompt by transformed name."""
-        original = self._reverse_prompt_name(name)
-        if original is None:
-            return None
-        return await self._wrapped.render_prompt(original, arguments)
 
     # -------------------------------------------------------------------------
     # Task registration

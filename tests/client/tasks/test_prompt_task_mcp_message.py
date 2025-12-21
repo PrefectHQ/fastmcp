@@ -4,6 +4,7 @@ Regression test for: PromptMessage object has no attribute 'to_mcp'
 """
 
 import mcp.types
+from mcp.types import TextContent
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
@@ -25,7 +26,8 @@ async def test_prompt_task_with_mcp_prompt_message():
     async with Client(mcp_server) as client:
         task = await client.get_prompt("greeting", {"name": "World"}, task=True)
         result = await task.result()
-        assert "Hello World" in result.messages[0].content.text  # type: ignore[attr-defined]
+        assert isinstance(result.messages[0].content, TextContent)
+        assert "Hello World" in result.messages[0].content.text
 
 
 async def test_prompt_task_with_multiple_mcp_prompt_messages():
@@ -53,5 +55,7 @@ async def test_prompt_task_with_multiple_mcp_prompt_messages():
         task = await client.get_prompt("conversation", {"topic": "space"}, task=True)
         result = await task.result()
         assert len(result.messages) == 2
-        assert "Tell me about space" in result.messages[0].content.text  # type: ignore[attr-defined]
-        assert "space is fascinating" in result.messages[1].content.text  # type: ignore[attr-defined]
+        assert isinstance(result.messages[0].content, TextContent)
+        assert "Tell me about space" in result.messages[0].content.text
+        assert isinstance(result.messages[1].content, TextContent)
+        assert "space is fascinating" in result.messages[1].content.text

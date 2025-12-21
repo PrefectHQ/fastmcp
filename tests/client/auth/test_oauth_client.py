@@ -2,6 +2,7 @@ from urllib.parse import urlparse
 
 import httpx
 import pytest
+from mcp.types import TextResourceContents
 
 from fastmcp.client import Client
 from fastmcp.client.auth import OAuth
@@ -103,7 +104,8 @@ async def test_read_resource(client_with_headless_oauth: Client):
     """Test that we can read a resource."""
     async with client_with_headless_oauth:
         resource = await client_with_headless_oauth.read_resource("resource://test")
-        assert resource[0].text == "Hello from authenticated resource!"  # type: ignore[attr-defined]
+        assert isinstance(resource[0], TextResourceContents)
+        assert resource[0].text == "Hello from authenticated resource!"
 
 
 async def test_oauth_server_metadata_discovery(streamable_http_server: str):

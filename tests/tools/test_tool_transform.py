@@ -129,7 +129,8 @@ async def test_hidden_arg_without_default_uses_parent_default(add_tool):
     assert sorted(new_tool.parameters["properties"]) == ["old_x"]
     # Should pass old_x=3 and let parent use its default old_y=10
     result = await new_tool.run(arguments={"old_x": 3})
-    assert result.content[0].text == "13"  # type: ignore[attr-defined]
+    assert isinstance(result.content[0], TextContent)
+    assert result.content[0].text == "13"
     assert result.structured_content == {"result": 13}
 
 
@@ -155,7 +156,8 @@ async def test_mixed_hidden_args_with_custom_function(add_tool):
     assert sorted(new_tool.parameters["properties"]) == ["visible_x"]
     # Should pass visible_x=7 as old_x=7 and old_y=25 to parent
     result = await new_tool.run(arguments={"visible_x": 7})
-    assert result.content[0].text == "32"  # type: ignore[attr-defined]
+    assert isinstance(result.content[0], TextContent)
+    assert result.content[0].text == "32"
     assert result.structured_content == {"result": 32}
 
 
@@ -238,7 +240,8 @@ async def test_forward_with_argument_mapping(add_tool):
     )
 
     result = await new_tool.run(arguments={"new_x": 2, "new_y": 3})
-    assert result.content[0].text == "5"  # type: ignore[attr-defined]
+    assert isinstance(result.content[0], TextContent)
+    assert result.content[0].text == "5"
     assert result.structured_content == {"result": 5}
 
 
@@ -279,18 +282,21 @@ async def test_forward_raw_without_argument_mapping(add_tool):
     )
 
     result = await new_tool.run(arguments={"new_x": 2, "new_y": 3})
-    assert result.content[0].text == "5"  # type: ignore[attr-defined]
+    assert isinstance(result.content[0], TextContent)
+    assert result.content[0].text == "5"
     assert result.structured_content == {"result": 5}
 
 
 async def test_custom_fn_with_kwargs_and_no_transform_args(add_tool):
     async def custom_fn(extra: int, **kwargs) -> int:
         sum = await forward(**kwargs)
-        return int(sum.content[0].text) + extra  # type: ignore[attr-defined]
+        assert isinstance(sum.content[0], TextContent)
+        return int(sum.content[0].text) + extra
 
     new_tool = Tool.from_tool(add_tool, transform_fn=custom_fn)
     result = await new_tool.run(arguments={"extra": 1, "old_x": 2, "old_y": 3})
-    assert result.content[0].text == "6"  # type: ignore[attr-defined]
+    assert isinstance(result.content[0], TextContent)
+    assert result.content[0].text == "6"
     assert result.structured_content == {"result": 6}
     assert new_tool.parameters["required"] == IsList(
         "extra", "old_x", check_order=False
@@ -308,7 +314,8 @@ async def test_fn_with_kwargs_passes_through_original_args(add_tool):
 
     new_tool = Tool.from_tool(add_tool, transform_fn=custom_fn)
     result = await new_tool.run(arguments={"new_y": 2, "old_y": 3})
-    assert result.content[0].text == "5"  # type: ignore[attr-defined]
+    assert isinstance(result.content[0], TextContent)
+    assert result.content[0].text == "5"
     assert result.structured_content == {"result": 5}
 
 
@@ -327,7 +334,8 @@ async def test_fn_with_kwargs_receives_transformed_arg_names(add_tool):
         transform_args={"old_x": ArgTransform(name="new_x")},
     )
     result = await new_tool.run(arguments={"new_x": 2, "old_y": 3})
-    assert result.content[0].text == "5"  # type: ignore[attr-defined]
+    assert isinstance(result.content[0], TextContent)
+    assert result.content[0].text == "5"
     assert result.structured_content == {"result": 5}
 
 
@@ -350,7 +358,8 @@ async def test_fn_with_kwargs_handles_partial_explicit_args(add_tool):
     result = await new_tool.run(
         arguments={"new_x": 3, "old_y": 7, "some_other_param": "test"}
     )
-    assert result.content[0].text == "10"  # type: ignore[attr-defined]
+    assert isinstance(result.content[0], TextContent)
+    assert result.content[0].text == "10"
     assert result.structured_content == {"result": 10}
 
 
@@ -369,7 +378,8 @@ async def test_fn_with_kwargs_mixed_mapped_and_unmapped_args(add_tool):
         transform_args={"old_x": ArgTransform(name="new_x")},
     )  # only map 'a'
     result = await new_tool.run(arguments={"new_x": 1, "old_y": 5})
-    assert result.content[0].text == "6"  # type: ignore[attr-defined]
+    assert isinstance(result.content[0], TextContent)
+    assert result.content[0].text == "6"
     assert result.structured_content == {"result": 6}
 
 
@@ -393,7 +403,8 @@ async def test_fn_with_kwargs_dropped_args_not_in_kwargs(add_tool):
     )  # drop 'old_y'
     result = await new_tool.run(arguments={"new_x": 8})
     # 8 + 10 (default value of b in parent)
-    assert result.content[0].text == "18"  # type: ignore[attr-defined]
+    assert isinstance(result.content[0], TextContent)
+    assert result.content[0].text == "18"
 
 
 async def test_forward_outside_context_raises_error():
@@ -531,18 +542,21 @@ async def test_tool_transform_chaining(add_tool):
     tool2 = Tool.from_tool(tool1, transform_args={"x": ArgTransform(name="final_x")})
 
     result = await tool2.run(arguments={"final_x": 5})
-    assert result.content[0].text == "15"  # type: ignore[attr-defined]
+    assert isinstance(result.content[0], TextContent)
+    assert result.content[0].text == "15"
 
     # Transform tool1 with custom function that handles all parameters
     async def custom(final_x: int, **kwargs) -> str:
         result = await forward(final_x=final_x, **kwargs)
-        return f"custom {result.content[0].text}"  # Extract text from content # type: ignore[attr-defined]
+        assert isinstance(result.content[0], TextContent)
+        return f"custom {result.content[0].text}"  # Extract text from content
 
     tool3 = Tool.from_tool(
         tool1, transform_fn=custom, transform_args={"x": ArgTransform(name="final_x")}
     )
     result = await tool3.run(arguments={"final_x": 3, "old_y": 5})
-    assert result.content[0].text == "custom 8"  # type: ignore[attr-defined]
+    assert isinstance(result.content[0], TextContent)
+    assert result.content[0].text == "custom 8"
 
 
 class MyModel(BaseModel):
@@ -670,7 +684,8 @@ async def test_arg_transform_precedence_over_function_with_kwargs():
     # Function signature has different types/defaults than ArgTransform
     async def custom_fn(x: str = "function_default", **kwargs) -> str:
         result = await forward(x=x, **kwargs)
-        return f"custom: {result.content[0].text}"  # type: ignore[attr-defined]
+        assert isinstance(result.content[0], TextContent)
+        return f"custom: {result.content[0].text}"
 
     tool = Tool.from_tool(
         base,
@@ -697,7 +712,8 @@ async def test_arg_transform_precedence_over_function_with_kwargs():
     # Test it works at runtime
     result = await tool.run(arguments={"y": "test"})
     # Should use ArgTransform default of 42
-    assert "42: test" in result.content[0].text  # type: ignore[attr-defined]
+    assert isinstance(result.content[0], TextContent)
+    assert "42: test" in result.content[0].text
 
 
 def test_arg_transform_combined_attributes():
@@ -742,7 +758,8 @@ async def test_arg_transform_type_precedence_runtime():
         # Convert string back to int for the original function
         result = await forward_raw(x=int(x), y=y)
         # Extract the text from the result
-        result_text = result.content[0].text  # type: ignore[attr-defined]
+        assert isinstance(result.content[0], TextContent)
+        result_text = result.content[0].text
         return f"String input '{x}' converted to result: {result_text}"
 
     tool = Tool.from_tool(
@@ -754,8 +771,9 @@ async def test_arg_transform_type_precedence_runtime():
 
     # Test it works with string input
     result = await tool.run(arguments={"x": "5", "y": 3})
-    assert "String input '5'" in result.content[0].text  # type: ignore[attr-defined]
-    assert "result: 8" in result.content[0].text  # type: ignore[attr-defined]
+    assert isinstance(result.content[0], TextContent)
+    assert "String input '5'" in result.content[0].text
+    assert "result: 8" in result.content[0].text
 
 
 class TestProxy:
@@ -790,7 +808,8 @@ class TestProxy:
         async with Client(proxy_server) as client:
             # The tool should be registered with its transformed name
             result = await client.call_tool("add_transformed", {"new_x": 1, "old_y": 2})
-            assert result.content[0].text == "3"  # type: ignore[attr-defined]
+            assert isinstance(result.content[0], TextContent)
+            assert result.content[0].text == "3"
 
 
 async def test_arg_transform_default_factory():
@@ -813,7 +832,8 @@ async def test_arg_transform_default_factory():
 
     # Should work without providing timestamp (gets value from factory)
     result = await new_tool.run(arguments={"x": 42})
-    assert result.content[0].text == "42_12345.0"  # type: ignore[attr-defined]
+    assert isinstance(result.content[0], TextContent)
+    assert result.content[0].text == "42_12345.0"
 
 
 async def test_arg_transform_default_factory_called_each_time():
@@ -841,11 +861,13 @@ async def test_arg_transform_default_factory_called_each_time():
 
     # First call
     result1 = await new_tool.run(arguments={"x": 1})
-    assert result1.content[0].text == "1_1"  # type: ignore[attr-defined]
+    assert isinstance(result1.content[0], TextContent)
+    assert result1.content[0].text == "1_1"
 
     # Second call should get a different value
     result2 = await new_tool.run(arguments={"x": 2})
-    assert result2.content[0].text == "2_2"  # type: ignore[attr-defined]
+    assert isinstance(result2.content[0], TextContent)
+    assert result2.content[0].text == "2_2"
 
 
 async def test_arg_transform_hidden_with_default_factory():
@@ -870,7 +892,8 @@ async def test_arg_transform_hidden_with_default_factory():
 
     # Should pass hidden request_id with factory value
     result = await new_tool.run(arguments={"x": 42})
-    assert result.content[0].text == "42_req_123"  # type: ignore[attr-defined]
+    assert isinstance(result.content[0], TextContent)
+    assert result.content[0].text == "42_req_123"
 
 
 async def test_arg_transform_default_and_factory_raises_error():
@@ -907,7 +930,8 @@ async def test_arg_transform_required_true():
 
     # Should work when parameter is provided
     result = await new_tool.run(arguments={"optional_param": 100})
-    assert result.content[0].text == "value: 100"  # type: ignore
+    assert isinstance(result.content[0], TextContent)
+    assert result.content[0].text == "value: 100"
 
     # Should fail when parameter is not provided
     with pytest.raises(TypeError, match="Missing required argument"):
@@ -925,9 +949,10 @@ async def test_arg_transform_required_false():
         ValueError,
         match="Cannot specify 'required=False'. Set a default value instead.",
     ):
+        # Intentionally passing invalid argument to test error handling
         Tool.from_tool(
             base_tool,
-            transform_args={"required_param": ArgTransform(required=False, default=99)},  # type: ignore
+            transform_args={"required_param": ArgTransform(required=False, default=99)},  # type: ignore[arg-type]
         )
 
 
@@ -954,7 +979,8 @@ async def test_arg_transform_required_with_rename():
 
     # Should work with new name
     result = await new_tool.run(arguments={"new_param": 200})
-    assert result.content[0].text == "value: 200"  # type: ignore
+    assert isinstance(result.content[0], TextContent)
+    assert result.content[0].text == "value: 200"
 
 
 async def test_arg_transform_required_true_with_default_raises_error():
@@ -996,7 +1022,8 @@ async def test_arg_transform_required_no_change():
 
     # Should work as expected
     result = await new_tool.run(arguments={"req": 1})
-    assert result.content[0].text == "values: 1, 42"  # type: ignore
+    assert isinstance(result.content[0], TextContent)
+    assert result.content[0].text == "values: 1, 42"
 
 
 async def test_arg_transform_hide_and_required_raises_error():
@@ -1033,7 +1060,8 @@ class TestEnableDisable:
             assert {tool.name for tool in tools} == {"new_add"}
 
             result = await client.call_tool("new_add", {"x": 1, "y": 2})
-            assert result.content[0].text == "3"  # type: ignore[attr-defined]
+            assert isinstance(result.content[0], TextContent)
+            assert result.content[0].text == "3"
 
             with pytest.raises(ToolError):
                 await client.call_tool("add", {"x": 1, "y": 2})
@@ -1109,7 +1137,8 @@ class TestTransformToolOutputSchema:
         result = await new_tool.run({"x": 5})
         # Even with output_schema=None, structured content should be generated via fallback logic
         assert result.structured_content == {"result": "Result: 5"}
-        assert result.content[0].text == "Result: 5"  # type: ignore[attr-defined]
+        assert isinstance(result.content[0], TextContent)
+        assert result.content[0].text == "Result: 5"
 
     def test_transform_with_explicit_output_schema_dict(self, base_string_tool):
         """Test that explicit output schema overrides parent."""
@@ -1130,14 +1159,16 @@ class TestTransformToolOutputSchema:
         result = await new_tool.run({"x": 10})
         # Non-object explicit schemas disable structured content
         assert result.structured_content is None
-        assert result.content[0].text == "Result: 10"  # type: ignore[attr-defined]
+        assert isinstance(result.content[0], TextContent)
+        assert result.content[0].text == "Result: 10"
 
     def test_transform_with_custom_function_inferred_schema(self, base_dict_tool):
         """Test that custom function's output schema is inferred."""
 
         async def custom_fn(x: int) -> str:
             result = await forward(x=x)
-            return f"Custom: {result.content[0].text}"  # type: ignore[attr-defined]
+            assert isinstance(result.content[0], TextContent)
+            return f"Custom: {result.content[0].text}"
 
         new_tool = Tool.from_tool(base_dict_tool, transform_fn=custom_fn)
 
@@ -1155,7 +1186,8 @@ class TestTransformToolOutputSchema:
 
         async def custom_fn(x: int) -> str:
             result = await forward(x=x)
-            return f"Custom: {result.content[0].text}"  # type: ignore[attr-defined]
+            assert isinstance(result.content[0], TextContent)
+            return f"Custom: {result.content[0].text}"
 
         new_tool = Tool.from_tool(base_dict_tool, transform_fn=custom_fn)
 
@@ -1202,7 +1234,8 @@ class TestTransformToolOutputSchema:
         # Object types should not be wrapped
         expected_schema = TypeAdapter(dict[str, int]).json_schema()
         assert new_tool.output_schema == expected_schema
-        assert "x-fastmcp-wrap-result" not in new_tool.output_schema  # type: ignore[attr-defined]
+        assert isinstance(new_tool.output_schema, dict)
+        assert "x-fastmcp-wrap-result" not in new_tool.output_schema
 
         result = await new_tool.run({"x": 4})
         # Direct value, not wrapped
@@ -1215,7 +1248,8 @@ class TestTransformToolOutputSchema:
         result = await new_tool.run({"x": 7})
         # Should wrap because parent schema has wrap marker
         assert result.structured_content == {"result": "Result: 7"}
-        assert "x-fastmcp-wrap-result" in new_tool.output_schema  # type: ignore[attr-defined]
+        assert isinstance(new_tool.output_schema, dict)
+        assert "x-fastmcp-wrap-result" in new_tool.output_schema
 
     def test_transform_chained_output_schema_inheritance(self, base_string_tool):
         """Test output schema inheritance through multiple transformations."""
@@ -1260,14 +1294,16 @@ class TestTransformToolOutputSchema:
         # Test ToolResult return
         result2 = await new_tool.run({"x": 2})
         assert result2.structured_content == {"custom_value": 2}
-        assert result2.content[0].text == "Custom: 2"  # type: ignore[attr-defined]
+        assert isinstance(result2.content[0], TextContent)
+        assert result2.content[0].text == "Custom: 2"
 
     def test_transform_output_schema_with_arg_transforms(self, base_string_tool):
         """Test that output schema works correctly with argument transformations."""
 
         async def custom_fn(new_x: int) -> dict[str, str]:
             result = await forward(new_x=new_x)
-            return {"transformed": result.content[0].text}  # type: ignore[attr-defined]
+            assert isinstance(result.content[0], TextContent)
+            return {"transformed": result.content[0].text}
 
         new_tool = Tool.from_tool(
             base_string_tool,
@@ -1299,7 +1335,9 @@ class TestTransformToolOutputSchema:
         assert result_explicit_none.structured_content == {
             "result": "Result: 5"
         }  # Generated via fallback logic
-        assert result_default.content[0].text == result_explicit_none.content[0].text  # type: ignore[attr-defined]
+        assert isinstance(result_default.content[0], TextContent)
+        assert isinstance(result_explicit_none.content[0], TextContent)
+        assert result_default.content[0].text == result_explicit_none.content[0].text
 
     async def test_transform_output_schema_with_tool_result_return(
         self, base_string_tool
@@ -1320,7 +1358,8 @@ class TestTransformToolOutputSchema:
 
         result = await new_tool.run({"x": 6})
         # Should use ToolResult content directly
-        assert result.content[0].text == "Direct: 6"  # type: ignore[attr-defined]
+        assert isinstance(result.content[0], TextContent)
+        assert result.content[0].text == "Direct: 6"
         assert result.structured_content == {"direct_value": 6, "doubled": 12}
 
 

@@ -9,6 +9,7 @@ strict_input_validation=False, the default).
 import json
 
 import pytest
+from mcp.types import TextContent
 from pydantic import BaseModel
 
 from fastmcp import Client, FastMCP
@@ -59,7 +60,8 @@ class TestStringToIntegerCoercion:
         async with Client(mcp) as client:
             # String integers should be coerced to integers
             result = await client.call_tool("add_numbers", {"a": "10", "b": "20"})
-            assert result.content[0].text == "30"  # type: ignore[attr-defined]
+            assert isinstance(result.content[0], TextContent)
+            assert result.content[0].text == "30"
 
     async def test_default_is_not_strict(self):
         """By default, strict_input_validation should be False."""
@@ -73,7 +75,8 @@ class TestStringToIntegerCoercion:
         async with Client(mcp) as client:
             # Should work with string integers by default
             result = await client.call_tool("multiply", {"x": "5", "y": "3"})
-            assert result.content[0].text == "15"  # type: ignore[attr-defined]
+            assert isinstance(result.content[0], TextContent)
+            assert result.content[0].text == "15"
 
     async def test_string_float_coercion(self):
         """Test that string floats are also coerced."""
@@ -88,7 +91,8 @@ class TestStringToIntegerCoercion:
             result = await client.call_tool(
                 "calculate_area", {"length": "10.5", "width": "20.0"}
             )
-            assert result.content[0].text == "210.0"  # type: ignore[attr-defined]
+            assert isinstance(result.content[0], TextContent)
+            assert result.content[0].text == "210.0"
 
     async def test_invalid_coercion_still_fails(self):
         """Even without strict validation, truly invalid inputs should fail."""
@@ -122,8 +126,9 @@ class TestPydanticModelArguments:
                 "create_user",
                 {"profile": {"name": "Alice", "age": 30, "email": "alice@example.com"}},
             )
-            assert "Alice" in result.content[0].text  # type: ignore[attr-defined]
-            assert "30" in result.content[0].text  # type: ignore[attr-defined]
+            assert isinstance(result.content[0], TextContent)
+            assert "Alice" in result.content[0].text
+            assert "30" in result.content[0].text
 
     async def test_pydantic_model_with_stringified_json_no_strict(self):
         """Test if stringified JSON is accepted for Pydantic models without strict validation."""
@@ -144,7 +149,8 @@ class TestPydanticModelArguments:
             try:
                 result = await client.call_tool("create_user", {"profile": stringified})
                 # If this succeeds, we're handling stringified JSON
-                assert "Bob" in result.content[0].text  # type: ignore[attr-defined]
+                assert isinstance(result.content[0], TextContent)
+                assert "Bob" in result.content[0].text
                 stringified_json_works = True
             except Exception as e:
                 # If this fails, we're not handling stringified JSON
@@ -182,8 +188,9 @@ class TestPydanticModelArguments:
                     }
                 },
             )
-            assert "Charlie" in result.content[0].text  # type: ignore[attr-defined]
-            assert "35" in result.content[0].text  # type: ignore[attr-defined]
+            assert isinstance(result.content[0], TextContent)
+            assert "Charlie" in result.content[0].text
+            assert "35" in result.content[0].text
 
     async def test_pydantic_model_strict_validation(self):
         """With strict validation, Pydantic models should enforce exact types."""
@@ -292,7 +299,8 @@ class TestEdgeCases:
             result = await client.call_tool(
                 "format_message", {"text": "hi", "repeat": "3"}
             )
-            assert result.content[0].text == "hihihi"  # type: ignore[attr-defined]
+            assert isinstance(result.content[0], TextContent)
+            assert result.content[0].text == "hihihi"
 
     async def test_none_values(self):
         """Test handling of None values."""
@@ -305,7 +313,8 @@ class TestEdgeCases:
 
         async with Client(mcp) as client:
             result = await client.call_tool("process_optional", {"value": None})
-            assert "None" in result.content[0].text  # type: ignore[attr-defined]
+            assert isinstance(result.content[0], TextContent)
+            assert "None" in result.content[0].text
 
     async def test_empty_string_to_int(self):
         """Empty strings should fail conversion to int."""
@@ -332,11 +341,13 @@ class TestEdgeCases:
         async with Client(mcp) as client:
             # String "true" should be coerced to boolean
             result = await client.call_tool("toggle", {"enabled": "true"})
-            assert "enabled" in result.content[0].text.lower()  # type: ignore[attr-defined]
+            assert isinstance(result.content[0], TextContent)
+            assert "enabled" in result.content[0].text.lower()
 
             # String "false" should be coerced to boolean
             result = await client.call_tool("toggle", {"enabled": "false"})
-            assert "disabled" in result.content[0].text.lower()  # type: ignore[attr-defined]
+            assert isinstance(result.content[0], TextContent)
+            assert "disabled" in result.content[0].text.lower()
 
     async def test_list_of_integers_with_string_elements(self):
         """Test lists containing string representations of integers."""
@@ -350,4 +361,5 @@ class TestEdgeCases:
         async with Client(mcp) as client:
             # List with string integers
             result = await client.call_tool("sum_numbers", {"numbers": ["1", "2", "3"]})
-            assert result.content[0].text == "6"  # type: ignore[attr-defined]
+            assert isinstance(result.content[0], TextContent)
+            assert result.content[0].text == "6"

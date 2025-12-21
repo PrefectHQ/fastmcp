@@ -1,6 +1,7 @@
 from typing import Any
 
-from mcp.types import ToolAnnotations
+from mcp.types import Tool as MCPTool
+from mcp.types import ToolAnnotations, ToolExecution
 
 from fastmcp import Client, FastMCP
 from fastmcp.tools.tool import Tool
@@ -234,8 +235,9 @@ async def test_task_execution_auto_populated_for_task_enabled_tool():
         tools_result = await client.list_tools()
         assert len(tools_result) == 1
         assert tools_result[0].name == "background_tool"
-        assert tools_result[0].execution is not None
-        assert tools_result[0].execution.taskSupport == "optional"  # type: ignore[attr-defined]
+        assert isinstance(tools_result[0], MCPTool)
+        assert isinstance(tools_result[0].execution, ToolExecution)
+        assert tools_result[0].execution.taskSupport == "optional"
 
 
 async def test_task_execution_omitted_for_task_disabled_tool():

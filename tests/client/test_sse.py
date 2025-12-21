@@ -4,6 +4,7 @@ import sys
 
 import pytest
 from mcp import McpError
+from mcp.types import TextResourceContents
 
 from fastmcp.client import Client
 from fastmcp.client.transports import SSETransport
@@ -75,7 +76,8 @@ async def test_http_headers(sse_server: str):
         transport=SSETransport(sse_server, headers={"X-DEMO-HEADER": "ABC"})
     ) as client:
         raw_result = await client.read_resource("request://headers")
-        json_result = json.loads(raw_result[0].text)  # type: ignore[attr-defined]
+        assert isinstance(raw_result[0], TextResourceContents)
+        json_result = json.loads(raw_result[0].text)
         assert "x-demo-header" in json_result
         assert json_result["x-demo-header"] == "ABC"
 

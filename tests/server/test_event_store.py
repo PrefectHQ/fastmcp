@@ -233,5 +233,6 @@ class TestEventStoreIntegration:
         await event_store.replay_events_after(event_id, callback)
 
         assert len(replayed) == 1
-        assert replayed[0].message.root.method == "tools/call"  # type: ignore[attr-defined]
-        assert replayed[0].message.root.id == "request-456"  # type: ignore[attr-defined]
+        assert isinstance(replayed[0].message.root, JSONRPCRequest)
+        assert replayed[0].message.root.method == "tools/call"
+        assert replayed[0].message.root.id == "request-456"

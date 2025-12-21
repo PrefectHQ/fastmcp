@@ -8,6 +8,7 @@ import pytest
 
 from fastmcp import Client, FastMCP
 from fastmcp.client.transports import StreamableHttpTransport
+from fastmcp.server.auth.providers.jwt import JWTVerifier
 from fastmcp.server.auth.providers.scalekit import ScalekitProvider
 from fastmcp.utilities.tests import HeadlessOAuth, run_server_async
 
@@ -125,16 +126,10 @@ class TestScalekitProvider:
         )
 
         # Check that JWT verifier uses the correct endpoints
-        assert (
-            provider.token_verifier.jwks_uri  # type: ignore[attr-defined]
-            == "https://my-env.scalekit.com/keys"
-        )
-        assert (
-            provider.token_verifier.issuer == "https://my-env.scalekit.com"  # type: ignore[attr-defined]
-        )
-        assert (
-            provider.token_verifier.audience is None  # type: ignore[attr-defined]
-        )
+        assert isinstance(provider.token_verifier, JWTVerifier)
+        assert provider.token_verifier.jwks_uri == "https://my-env.scalekit.com/keys"
+        assert provider.token_verifier.issuer == "https://my-env.scalekit.com"
+        assert provider.token_verifier.audience is None
 
     def test_required_scopes_hooks_into_verifier(self):
         """Token verifier should enforce required scopes when provided."""
@@ -145,7 +140,8 @@ class TestScalekitProvider:
             required_scopes=["read"],
         )
 
-        assert provider.token_verifier.required_scopes == ["read"]  # type: ignore[attr-defined]
+        assert isinstance(provider.token_verifier, JWTVerifier)
+        assert provider.token_verifier.required_scopes == ["read"]
 
     def test_authorization_servers_configuration(self):
         """Test that authorization servers are configured correctly."""

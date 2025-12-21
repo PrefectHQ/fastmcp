@@ -5,7 +5,7 @@ from typing import Any
 import mcp.types as mt
 import pytest
 from mcp import McpError
-from mcp.types import ErrorData
+from mcp.types import ErrorData, TextContent
 
 from fastmcp import Client, FastMCP
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
@@ -138,7 +138,8 @@ async def test_middleware_receives_initialization():
 
         # Test that the tool still works
         result = await client.call_tool("test_tool", {"x": 42})
-        assert result.content[0].text == "Result: 42"  # type: ignore[attr-defined]
+        assert isinstance(result.content[0], TextContent)
+        assert result.content[0].text == "Result: 42"
 
 
 async def test_client_detection_middleware():
@@ -245,7 +246,8 @@ async def test_initialization_middleware_with_state_sharing():
 
         # Call a tool - state should be accessible
         result = await client.call_tool("test_tool", {})
-        assert result.content[0].text == "success"  # type: ignore[attr-defined]
+        assert isinstance(result.content[0], TextContent)
+        assert result.content[0].text == "success"
 
         # State should have been accessible during tool call
         # Note: State is request-scoped, so it won't persist across requests

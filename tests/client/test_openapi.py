@@ -2,6 +2,7 @@ import json
 
 import pytest
 from fastapi import FastAPI, Request
+from mcp.types import TextResourceContents
 
 from fastmcp import Client, FastMCP
 from fastmcp.client.transports import SSETransport, StreamableHttpTransport
@@ -70,14 +71,16 @@ async def proxy_server(shttp_server: str):
 async def test_fastapi_client_headers_streamable_http_resource(shttp_server: str):
     async with Client(transport=StreamableHttpTransport(shttp_server)) as client:
         result = await client.read_resource("resource://get_headers_headers_get")
-        headers = json.loads(result[0].text)  # type: ignore[attr-defined]
+        assert isinstance(result[0], TextResourceContents)
+        headers = json.loads(result[0].text)
         assert headers["x-server-header"] == "test-abc"
 
 
 async def test_fastapi_client_headers_sse_resource(sse_server: str):
     async with Client(transport=SSETransport(sse_server)) as client:
         result = await client.read_resource("resource://get_headers_headers_get")
-        headers = json.loads(result[0].text)  # type: ignore[attr-defined]
+        assert isinstance(result[0], TextResourceContents)
+        headers = json.loads(result[0].text)
         assert headers["x-server-header"] == "test-abc"
 
 
@@ -100,7 +103,8 @@ async def test_client_headers_sse_resource(sse_server: str):
         transport=SSETransport(sse_server, headers={"X-TEST": "test-123"})
     ) as client:
         result = await client.read_resource("resource://get_headers_headers_get")
-        headers = json.loads(result[0].text)  # type: ignore[attr-defined]
+        assert isinstance(result[0], TextResourceContents)
+        headers = json.loads(result[0].text)
         assert headers["x-test"] == "test-123"
 
 
@@ -109,7 +113,8 @@ async def test_client_headers_shttp_resource(shttp_server: str):
         transport=StreamableHttpTransport(shttp_server, headers={"X-TEST": "test-123"})
     ) as client:
         result = await client.read_resource("resource://get_headers_headers_get")
-        headers = json.loads(result[0].text)  # type: ignore[attr-defined]
+        assert isinstance(result[0], TextResourceContents)
+        headers = json.loads(result[0].text)
         assert headers["x-test"] == "test-123"
 
 
@@ -120,7 +125,8 @@ async def test_client_headers_sse_resource_template(sse_server: str):
         result = await client.read_resource(
             "resource://get_header_by_name_headers/x-test"
         )
-        header = json.loads(result[0].text)  # type: ignore[attr-defined]
+        assert isinstance(result[0], TextResourceContents)
+        header = json.loads(result[0].text)
         assert header == "test-123"
 
 
@@ -131,7 +137,8 @@ async def test_client_headers_shttp_resource_template(shttp_server: str):
         result = await client.read_resource(
             "resource://get_header_by_name_headers/x-test"
         )
-        header = json.loads(result[0].text)  # type: ignore[attr-defined]
+        assert isinstance(result[0], TextResourceContents)
+        header = json.loads(result[0].text)
         assert header == "test-123"
 
 
@@ -160,7 +167,8 @@ async def test_client_overrides_server_headers(shttp_server: str):
         )
     ) as client:
         result = await client.read_resource("resource://get_headers_headers_get")
-        headers = json.loads(result[0].text)  # type: ignore[attr-defined]
+        assert isinstance(result[0], TextResourceContents)
+        headers = json.loads(result[0].text)
         assert headers["x-server-header"] == "test-client"
 
 
@@ -176,7 +184,8 @@ async def test_client_with_excluded_header_is_ignored(sse_server: str):
         )
     ) as client:
         result = await client.read_resource("resource://get_headers_headers_get")
-        headers = json.loads(result[0].text)  # type: ignore[attr-defined]
+        assert isinstance(result[0], TextResourceContents)
+        headers = json.loads(result[0].text)
         assert headers["not-host"] == "1.2.3.4"
         assert headers["host"] == "fastapi"
 
@@ -188,5 +197,6 @@ async def test_client_headers_proxy(proxy_server: str):
     """
     async with Client(transport=StreamableHttpTransport(proxy_server)) as client:
         result = await client.read_resource("resource://get_headers_headers_get")
-        headers = json.loads(result[0].text)  # type: ignore[attr-defined]
+        assert isinstance(result[0], TextResourceContents)
+        headers = json.loads(result[0].text)
         assert headers["x-server-header"] == "test-abc"

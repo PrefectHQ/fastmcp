@@ -136,7 +136,9 @@ class TestAddTools:
     def test_add_noncallable_tool(self):
         manager = ToolManager()
         with pytest.raises(TypeError, match="not a callable object"):
-            tool = Tool.from_function(1)  # type: ignore
+            assert isinstance(1, int)  # Intentionally passing invalid type
+            # Intentionally passing invalid type to test error handling
+            tool = Tool.from_function(1)  # type: ignore[arg-type]
             manager.add_tool(tool)
 
     def test_add_lambda(self):
@@ -407,7 +409,8 @@ class TestCallTools:
         manager.add_tool(tool)
         result = await manager.call_tool("add", {"a": 1, "b": 2})
 
-        assert result.content[0].text == "3"  # type: ignore[attr-defined]
+        assert isinstance(result.content[0], TextContent)
+        assert result.content[0].text == "3"
         assert result.structured_content == {"result": 3}
 
     async def test_call_async_tool(self):
@@ -419,7 +422,8 @@ class TestCallTools:
         tool = Tool.from_function(double)
         manager.add_tool(tool)
         result = await manager.call_tool("double", {"n": 5})
-        assert result.content[0].text == "10"  # type: ignore[attr-defined]
+        assert isinstance(result.content[0], TextContent)
+        assert result.content[0].text == "10"
         assert result.structured_content == {"result": 10}
 
     async def test_call_tool_callable_object(self):
@@ -434,7 +438,8 @@ class TestCallTools:
         tool = Tool.from_function(Adder())
         manager.add_tool(tool)
         result = await manager.call_tool("Adder", {"x": 1, "y": 2})
-        assert result.content[0].text == "3"  # type: ignore[attr-defined]
+        assert isinstance(result.content[0], TextContent)
+        assert result.content[0].text == "3"
         assert result.structured_content == {"result": 3}
 
     async def test_call_tool_callable_object_async(self):
@@ -449,7 +454,8 @@ class TestCallTools:
         tool = Tool.from_function(Adder())
         manager.add_tool(tool)
         result = await manager.call_tool("Adder", {"x": 1, "y": 2})
-        assert result.content[0].text == "3"  # type: ignore[attr-defined]
+        assert isinstance(result.content[0], TextContent)
+        assert result.content[0].text == "3"
         assert result.structured_content == {"result": 3}
 
     async def test_call_tool_with_default_args(self):
@@ -462,7 +468,8 @@ class TestCallTools:
         manager.add_tool(tool)
         result = await manager.call_tool("add", {"a": 1})
 
-        assert result.content[0].text == "2"  # type: ignore[attr-defined]
+        assert isinstance(result.content[0], TextContent)
+        assert result.content[0].text == "2"
         assert result.structured_content == {"result": 2}
 
     async def test_call_tool_with_missing_args(self):
@@ -511,7 +518,8 @@ class TestCallTools:
         result = await manager.call_tool(
             "add_transformed", {"a_transformed": 1, "b_transformed": 2}
         )
-        assert result.content[0].text == "3"  # type: ignore[attr-defined]
+        assert isinstance(result.content[0], TextContent)
+        assert result.content[0].text == "3"
         assert result.structured_content == {"result": 3}
 
     async def test_call_tool_with_list_int_input(self):
@@ -523,7 +531,8 @@ class TestCallTools:
         manager.add_tool(tool)
 
         result = await manager.call_tool("sum_vals", {"vals": [1, 2, 3]})
-        assert result.content[0].text == "6"  # type: ignore[attr-defined]
+        assert isinstance(result.content[0], TextContent)
+        assert result.content[0].text == "6"
         assert result.structured_content == {"result": 6}
 
     async def test_call_tool_with_list_str_or_str_input(self):
@@ -536,11 +545,13 @@ class TestCallTools:
 
         # Try both with plain python object and with JSON list
         result = await manager.call_tool("concat_strs", {"vals": ["a", "b", "c"]})
-        assert result.content[0].text == "abc"  # type: ignore[attr-defined]
+        assert isinstance(result.content[0], TextContent)
+        assert result.content[0].text == "abc"
         assert result.structured_content == {"result": "abc"}
 
         result = await manager.call_tool("concat_strs", {"vals": "a"})
-        assert result.content[0].text == "a"  # type: ignore[attr-defined]
+        assert isinstance(result.content[0], TextContent)
+        assert result.content[0].text == "a"
         assert result.structured_content == {"result": "a"}
 
     async def test_call_tool_with_complex_model(self):
@@ -596,7 +607,8 @@ class TestCallTools:
             return {"key": "value", "number": 123}
 
         result = await manager.call_tool("get_data", {})
-        assert result.content[0].text == 'CUSTOM:{"key": "value", "number": 123}'  # type: ignore[attr-defined]
+        assert isinstance(result.content[0], TextContent)
+        assert result.content[0].text == 'CUSTOM:{"key": "value", "number": 123}'
         assert result.structured_content == {"key": "value", "number": 123}
 
     async def test_call_tool_with_list_result_custom_serializer(self):
@@ -653,10 +665,8 @@ class TestCallTools:
             return uuid_result
 
         result = await manager.call_tool("get_data", {})
-        assert (
-            result.content[0].text  # type: ignore[attr-defined]
-            == pydantic_core.to_json(uuid_result).decode()
-        )
+        assert isinstance(result.content[0], TextContent)
+        assert result.content[0].text == pydantic_core.to_json(uuid_result).decode()
         assert result.structured_content == {"result": str(uuid_result)}
 
 
@@ -727,7 +737,8 @@ class TestContextHandling:
 
         async with context:
             result = await manager.call_tool("tool_with_context", {"x": 42})
-            assert result.content[0].text == "42"  # type: ignore[attr-defined]
+            assert isinstance(result.content[0], TextContent)
+            assert result.content[0].text == "42"
             assert result.structured_content == {"result": "42"}
 
     async def test_context_injection_async(self):
@@ -746,7 +757,8 @@ class TestContextHandling:
 
         async with context:
             result = await manager.call_tool("async_tool", {"x": 42})
-            assert result.content[0].text == "42"  # type: ignore[attr-defined]
+            assert isinstance(result.content[0], TextContent)
+            assert result.content[0].text == "42"
             assert result.structured_content == {"result": "42"}
 
     async def test_context_optional(self):
@@ -765,7 +777,8 @@ class TestContextHandling:
 
         async with context:
             result = await manager.call_tool("tool_with_context", {"x": 42})
-            assert result.content[0].text == "42"  # type: ignore[attr-defined]
+            assert isinstance(result.content[0], TextContent)
+            assert result.content[0].text == "42"
             assert result.structured_content == {"result": 42}
 
     def test_parameterized_context_parameter_detection(self):
@@ -882,7 +895,8 @@ class TestCustomToolNames:
 
         # Tool should be callable by its custom name
         result = await manager.call_tool("custom_multiply", {"a": 5, "b": 3})
-        assert result.content[0].text == "15"  # type: ignore[attr-defined]
+        assert isinstance(result.content[0], TextContent)
+        assert result.content[0].text == "15"
         assert result.structured_content == {"result": 15}
 
         # Original name should not be registered
@@ -1037,7 +1051,8 @@ class TestMountedComponentsRaiseOnLoadError:
         # Create a failing mounted server by corrupting it
         parent_mcp.mount(child_mcp, namespace="child")
         # Corrupt the parent's providers to make it fail during loading
-        parent_mcp._providers.append("invalid")  # type: ignore
+        assert isinstance(parent_mcp._providers, list)
+        parent_mcp._providers.append("invalid")  # type: ignore[arg-type]
 
         # Should not raise, just warn; use server middleware path now
         tools = await parent_mcp._list_tools_middleware()
@@ -1051,7 +1066,8 @@ class TestMountedComponentsRaiseOnLoadError:
         # Create a failing mounted server
         parent_mcp.mount(child_mcp, namespace="child")
         # Corrupt the parent's providers to make it fail during loading
-        parent_mcp._providers.append("invalid")  # type: ignore
+        assert isinstance(parent_mcp._providers, list)
+        parent_mcp._providers.append("invalid")  # type: ignore[arg-type]
 
         # Use temporary settings context manager
         with temporary_settings(mounted_components_raise_on_load_error=True):

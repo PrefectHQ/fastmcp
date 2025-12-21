@@ -6,7 +6,7 @@ import pytest
 from anyio import create_task_group
 from dirty_equals import Contains
 from mcp import McpError
-from mcp.types import Icon
+from mcp.types import Icon, TextContent, TextResourceContents
 from pydantic import AnyUrl
 
 from fastmcp import FastMCP
@@ -132,7 +132,7 @@ def test_as_proxy_with_url():
     assert isinstance(proxy, FastMCPProxy)
     client = cast(Client, proxy.client_factory())
     assert isinstance(client.transport, StreamableHttpTransport)
-    assert client.transport.url == "http://example.com/mcp/"  # type: ignore[attr-defined]
+    assert client.transport.url == "http://example.com/mcp/"
 
 
 async def test_proxy_with_async_client_factory():
@@ -147,7 +147,7 @@ async def test_proxy_with_async_client_factory():
     client = await proxy.client_factory()  # type: ignore[misc]
     assert isinstance(client, Client)
     assert isinstance(client.transport, StreamableHttpTransport)
-    assert client.transport.url == "http://example.com/mcp/"  # type: ignore[attr-defined]
+    assert client.transport.url == "http://example.com/mcp/"
 
 
 class TestTools:
@@ -231,7 +231,8 @@ class TestTools:
         async with Client(proxy_server) as client:
             result = await client.call_tool("tool_with_meta", {"value": "test"})
 
-        assert result.content[0].text == "Result: test"  # type: ignore[attr-defined]
+        assert isinstance(result.content[0], TextContent)
+        assert result.content[0].text == "Result: test"
         assert result.meta == {"custom_key": "custom_value", "processed": True}
 
     async def test_proxy_can_overwrite_proxied_tool(self, proxy_server):
@@ -315,7 +316,8 @@ class TestResources:
     async def test_read_resource(self, proxy_server: FastMCPProxy):
         async with Client(proxy_server) as client:
             result = await client.read_resource("resource://wave")
-        assert result[0].text == "👋"  # type: ignore[attr-defined]
+        assert isinstance(result[0], TextResourceContents)
+        assert result[0].text == "👋"
 
     async def test_read_resource_same_as_original(self, fastmcp_server, proxy_server):
         async with Client(fastmcp_server) as client:
@@ -327,7 +329,8 @@ class TestResources:
     async def test_read_json_resource(self, proxy_server: FastMCPProxy):
         async with Client(proxy_server) as client:
             result = await client.read_resource("data://users")
-        assert json.loads(result[0].text) == USERS  # type: ignore[attr-defined]
+        assert isinstance(result[0], TextResourceContents)
+        assert json.loads(result[0].text) == USERS
 
     async def test_read_resource_returns_none_if_not_found(self, proxy_server):
         with pytest.raises(
@@ -347,7 +350,8 @@ class TestResources:
 
         async with Client(proxy_server) as client:
             result = await client.read_resource("resource://wave")
-        assert result[0].text == "Overwritten wave! 🌊"  # type: ignore[attr-defined]
+        assert isinstance(result[0], TextResourceContents)
+        assert result[0].text == "Overwritten wave! 🌊"
 
     async def test_proxy_errors_if_overwritten_resource_is_disabled(self, proxy_server):
         """
@@ -420,7 +424,8 @@ class TestResourceTemplates:
     async def test_read_resource_template(self, proxy_server: FastMCPProxy, id: int):
         async with Client(proxy_server) as client:
             result = await client.read_resource(f"data://user/{id}")
-        assert json.loads(result[0].text) == USERS[id - 1]  # type: ignore[attr-defined]
+        assert isinstance(result[0], TextResourceContents)
+        assert json.loads(result[0].text) == USERS[id - 1]
 
     async def test_read_resource_template_same_as_original(
         self, fastmcp_server, proxy_server
@@ -447,7 +452,8 @@ class TestResourceTemplates:
 
         async with Client(proxy_server) as client:
             result = await client.read_resource("data://user/1")
-        user_data = json.loads(result[0].text)  # type: ignore[attr-defined]
+        assert isinstance(result[0], TextResourceContents)
+        user_data = json.loads(result[0].text)
         assert user_data["name"] == "Overwritten User"
         assert user_data["extra"] == "data"
 
@@ -537,7 +543,8 @@ class TestPrompts:
         async with Client(proxy_server) as client:
             result = await client.get_prompt("welcome", {"name": "Alice"})
         assert result.messages[0].role == "user"
-        assert result.messages[0].content.text == "Welcome to FastMCP, Alice!"  # type: ignore[attr-defined]
+        assert isinstance(result.messages[0].content, TextContent)
+        assert result.messages[0].content.text == "Welcome to FastMCP, Alice!"
 
     async def test_proxy_can_overwrite_proxied_prompt(self, proxy_server):
         """
@@ -553,8 +560,9 @@ class TestPrompts:
                 "welcome", {"name": "Alice", "extra": "colleague"}
             )
         assert result.messages[0].role == "user"
+        assert isinstance(result.messages[0].content, TextContent)
         assert (
-            result.messages[0].content.text  # type: ignore[attr-defined]
+            result.messages[0].content.text
             == "Overwritten welcome, Alice! You are my colleague."
         )
 

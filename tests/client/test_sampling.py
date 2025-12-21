@@ -8,7 +8,7 @@ from pydantic_core import to_json
 
 from fastmcp import Client, Context, FastMCP
 from fastmcp.client.sampling import RequestContext, SamplingMessage, SamplingParams
-from fastmcp.server.sampling import SamplingTool
+from fastmcp.server.sampling import SamplingResult, SamplingTool
 from fastmcp.utilities.types import Image
 
 
@@ -19,12 +19,16 @@ def fastmcp_server():
     @mcp.tool
     async def simple_sample(message: str, context: Context) -> str:
         result = await context.sample("Hello, world!")
-        return result.text  # type: ignore[attr-defined]
+        assert isinstance(result, SamplingResult)
+        assert result.text is not None
+        return result.text
 
     @mcp.tool
     async def sample_with_system_prompt(message: str, context: Context) -> str:
         result = await context.sample("Hello, world!", system_prompt="You love FastMCP")
-        return result.text  # type: ignore[attr-defined]
+        assert isinstance(result, SamplingResult)
+        assert result.text is not None
+        return result.text
 
     @mcp.tool
     async def sample_with_messages(message: str, context: Context) -> str:
@@ -39,7 +43,9 @@ def fastmcp_server():
                 ),
             ]
         )
-        return result.text  # type: ignore[attr-defined]
+        assert isinstance(result, SamplingResult)
+        assert result.text is not None
+        return result.text
 
     @mcp.tool
     async def sample_with_image(image_bytes: bytes, context: Context) -> str:
@@ -57,7 +63,9 @@ def fastmcp_server():
                 ),
             ]
         )
-        return result.text  # type: ignore[attr-defined]
+        assert isinstance(result, SamplingResult)
+        assert result.text is not None
+        return result.text
 
     return mcp
 
@@ -476,7 +484,8 @@ class TestAutomaticToolLoop:
         assert tool_result is not None
         assert tool_result.isError is True
         # Content is list of TextContent objects
-        error_text = tool_result.content[0].text  # type: ignore[union-attr]
+        assert isinstance(tool_result.content[0], TextContent)
+        error_text = tool_result.content[0].text
         assert "Unknown tool" in error_text
         assert result.data == "Handled error"
 
@@ -549,7 +558,8 @@ class TestAutomaticToolLoop:
         assert tool_result is not None
         assert tool_result.isError is True
         # Content is list of TextContent objects
-        error_text = tool_result.content[0].text  # type: ignore[union-attr]
+        assert isinstance(tool_result.content[0], TextContent)
+        error_text = tool_result.content[0].text
         assert "Tool failed intentionally" in error_text
         assert result.data == "Handled error"
 
@@ -597,7 +607,8 @@ class TestSamplingResultType:
                 result_type=MathResult,
             )
             # result.result should be a MathResult object
-            return f"{result.result.answer}: {result.result.explanation}"  # type: ignore[attr-defined]
+            assert isinstance(result.result, MathResult)
+            return f"{result.result.answer}: {result.result.explanation}"
 
         async with Client(mcp) as client:
             result = await client.call_tool("math_tool", {})
@@ -675,7 +686,8 @@ class TestSamplingResultType:
                 tools=[search],
                 result_type=SearchResult,
             )
-            return f"{result.result.summary} - {len(result.result.sources)} sources"  # type: ignore[attr-defined]
+            assert isinstance(result.result, SearchResult)
+            return f"{result.result.summary} - {len(result.result.sources)} sources"
 
         async with Client(mcp) as client:
             result = await client.call_tool("research", {})
@@ -741,7 +753,8 @@ class TestSamplingResultType:
                 messages="Give me a number",
                 result_type=StrictResult,
             )
-            return str(result.result.value)  # type: ignore[attr-defined]
+            assert isinstance(result.result, StrictResult)
+            return str(result.result.value)
 
         async with Client(mcp) as client:
             result = await client.call_tool("validate_tool", {})
@@ -765,7 +778,8 @@ class TestSamplingResultType:
                 break
         assert tool_result is not None
         assert tool_result.isError is True
-        error_text = tool_result.content[0].text  # type: ignore[union-attr]
+        assert isinstance(tool_result.content[0], TextContent)
+        error_text = tool_result.content[0].text
         assert "Validation error" in error_text
 
         # Final result should be correct

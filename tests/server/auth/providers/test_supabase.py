@@ -9,6 +9,7 @@ import pytest
 
 from fastmcp import Client, FastMCP
 from fastmcp.client.transports import StreamableHttpTransport
+from fastmcp.server.auth.providers.jwt import JWTVerifier
 from fastmcp.server.auth.providers.supabase import SupabaseProvider
 from fastmcp.utilities.tests import HeadlessOAuth, run_server_in_process
 
@@ -81,14 +82,13 @@ class TestSupabaseProvider:
         )
 
         # Check that JWT verifier uses the correct endpoints
+        assert isinstance(provider.token_verifier, JWTVerifier)
         assert (
-            provider.token_verifier.jwks_uri  # type: ignore[attr-defined]
+            provider.token_verifier.jwks_uri
             == "https://abc123.supabase.co/auth/v1/.well-known/jwks.json"
         )
-        assert (
-            provider.token_verifier.issuer == "https://abc123.supabase.co/auth/v1"  # type: ignore[attr-defined]
-        )
-        assert provider.token_verifier.algorithm == "ES256"  # type: ignore[attr-defined]
+        assert provider.token_verifier.issuer == "https://abc123.supabase.co/auth/v1"
+        assert provider.token_verifier.algorithm == "ES256"
 
     def test_jwt_verifier_with_required_scopes(self):
         """Test that JWT verifier respects required_scopes."""
@@ -98,7 +98,8 @@ class TestSupabaseProvider:
             required_scopes=["openid", "email"],
         )
 
-        assert provider.token_verifier.required_scopes == ["openid", "email"]  # type: ignore[attr-defined]
+        assert isinstance(provider.token_verifier, JWTVerifier)
+        assert provider.token_verifier.required_scopes == ["openid", "email"]
 
     def test_authorization_servers_configured(self):
         """Test that authorization servers list is configured correctly."""
@@ -125,7 +126,8 @@ class TestSupabaseProvider:
             algorithm=algorithm,
         )
 
-        assert provider.token_verifier.algorithm == algorithm  # type: ignore[attr-defined]
+        assert isinstance(provider.token_verifier, JWTVerifier)
+        assert provider.token_verifier.algorithm == algorithm
 
     def test_algorithm_default_es256(self):
         """Test that algorithm defaults to ES256 when not specified."""
@@ -134,7 +136,8 @@ class TestSupabaseProvider:
             base_url="https://myserver.com",
         )
 
-        assert provider.token_verifier.algorithm == "ES256"  # type: ignore[attr-defined]
+        assert isinstance(provider.token_verifier, JWTVerifier)
+        assert provider.token_verifier.algorithm == "ES256"
 
     def test_algorithm_from_env_var(self):
         """Test that algorithm can be configured via environment variable."""
@@ -148,7 +151,8 @@ class TestSupabaseProvider:
         ):
             provider = SupabaseProvider()
 
-            assert provider.token_verifier.algorithm == "RS256"  # type: ignore[attr-defined]
+            assert isinstance(provider.token_verifier, JWTVerifier)
+            assert provider.token_verifier.algorithm == "RS256"
 
 
 def run_mcp_server(host: str, port: int) -> None:

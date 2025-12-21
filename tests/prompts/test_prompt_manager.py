@@ -413,7 +413,8 @@ class TestContextHandling:
 
         assert isinstance(result, PromptResult)
         assert len(result.messages) == 1
-        assert result.messages[0].content.text == "42"  # type: ignore[attr-defined]
+        assert isinstance(result.messages[0].content, TextContent)
+        assert result.messages[0].content.text == "42"
 
     async def test_context_optional(self):
         """Test that context is optional when rendering prompts."""
@@ -436,7 +437,8 @@ class TestContextHandling:
 
         assert isinstance(result, PromptResult)
         assert len(result.messages) == 1
-        assert result.messages[0].content.text == "42"  # type: ignore[attr-defined]
+        assert isinstance(result.messages[0].content, TextContent)
+        assert result.messages[0].content.text == "42"
 
     async def test_annotated_context_parameter_detection(self):
         """Test that annotated context parameters are properly detected in
@@ -473,4 +475,5 @@ class TestContextHandling:
         async with context:
             result = await prompt.render(arguments={"topic": "cats"})
             assert isinstance(result, PromptResult)
-            assert result.messages[0].content.text == "Write about cats"  # type: ignore[attr-defined]
+            assert isinstance(result.messages[0].content, TextContent)
+            assert result.messages[0].content.text == "Write about cats"

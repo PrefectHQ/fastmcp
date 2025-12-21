@@ -179,7 +179,8 @@ class TestResourceOperations:
 
         async with Client(main) as client:
             result = await client.read_resource("resource://data")
-            assert result[0].text == "content"  # type: ignore[attr-defined]
+            assert isinstance(result[0], mt.TextResourceContents)
+            assert result[0].text == "content"
 
 
 class TestResourceTemplateOperations:
@@ -225,7 +226,8 @@ class TestResourceTemplateOperations:
 
         async with Client(main) as client:
             result = await client.read_resource("resource://123/data")
-            assert result[0].text == "data for 123"  # type: ignore[attr-defined]
+            assert isinstance(result[0], mt.TextResourceContents)
+            assert result[0].text == "data for 123"
 
 
 class TestPromptOperations:
@@ -277,7 +279,8 @@ class TestPromptOperations:
 
         async with Client(main) as client:
             result = await client.get_prompt("greet", {"name": "World"})
-            assert result.messages[0].content.text == "Hello, World!"  # type: ignore[attr-defined]
+            assert isinstance(result.messages[0].content, mt.TextContent)
+            assert result.messages[0].content.text == "Hello, World!"
 
 
 class TestServerReference:
@@ -359,7 +362,8 @@ class TestMiddlewareChain:
 
         async with Client(parent) as client:
             result = await client.read_resource("data://c/gc/value")
-            assert result[0].text == "result"  # type: ignore[attr-defined]
+            assert isinstance(result[0], mt.TextResourceContents)
+            assert result[0].text == "result"
 
         assert calls == [
             "parent:before",
@@ -394,7 +398,8 @@ class TestMiddlewareChain:
 
         async with Client(parent) as client:
             result = await client.get_prompt("c_gc_greet", {"name": "World"})
-            assert result.messages[0].content.text == "Hello, World!"  # type: ignore[attr-defined]
+            assert isinstance(result.messages[0].content, mt.TextContent)
+            assert result.messages[0].content.text == "Hello, World!"
 
         assert calls == [
             "parent:before",
@@ -429,7 +434,8 @@ class TestMiddlewareChain:
 
         async with Client(parent) as client:
             result = await client.read_resource("item://c/gc/42")
-            assert result[0].text == "item-42"  # type: ignore[attr-defined]
+            assert isinstance(result[0], mt.TextResourceContents)
+            assert result[0].text == "item-42"
 
         assert calls == [
             "parent:before",

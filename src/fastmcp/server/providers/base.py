@@ -31,11 +31,12 @@ from __future__ import annotations
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from typing import Any
 
-from fastmcp.prompts.prompt import Prompt
-from fastmcp.resources.resource import Resource
+from fastmcp.prompts.prompt import Prompt, PromptResult
+from fastmcp.resources.resource import Resource, ResourceContent
 from fastmcp.resources.template import ResourceTemplate
-from fastmcp.tools.tool import Tool
+from fastmcp.tools.tool import Tool, ToolResult
 
 
 @dataclass
@@ -227,6 +228,83 @@ class Provider:
         """
         prompts = await self.list_prompts()
         return next((p for p in prompts if p.name == name), None)
+
+    # -------------------------------------------------------------------------
+    # Execution methods (optional - default implementations delegate to components)
+    # -------------------------------------------------------------------------
+
+    async def call_tool(
+        self, name: str, arguments: dict[str, Any]
+    ) -> ToolResult | None:
+        """Call a tool by name.
+
+        Default implementation gets the tool and calls its run() method.
+        Override for custom execution logic.
+
+        Returns:
+            ToolResult if the tool was found and executed, None otherwise.
+        """
+        tool = await self.get_tool(name)
+        if tool is None:
+            return None
+        return await tool.run(arguments)
+
+    async def read_resource(self, uri: str) -> ResourceContent | None:
+        """Read a resource by URI.
+
+        Default implementation gets the resource and calls its read() method.
+        Override for custom execution logic.
+
+        Returns:
+            ResourceContent if the resource was found and read, None otherwise.
+        """
+        resource = await self.get_resource(uri)
+        if resource is None:
+            return None
+        result = await resource.read()
+        if isinstance(result, ResourceContent):
+            return result
+        return ResourceContent.from_value(result)
+
+    async def read_resource_template(self, uri: str) -> ResourceContent | None:
+        """Read a resource template by URI.
+
+        Default implementation gets the template, extracts parameters from the URI,
+        and calls its read() method with those parameters.
+        Override for custom execution logic.
+
+        Returns:
+            ResourceContent if the template was found and read, None otherwise.
+        """
+        template = await self.get_resource_template(uri)
+        if template is None:
+            return None
+        params = template.matches(uri)
+        if params is None:
+            return None
+        result = await template.read(params)
+        if isinstance(result, ResourceContent):
+            return result
+        return ResourceContent.from_value(result)
+
+    async def render_prompt(
+        self, name: str, arguments: dict[str, Any] | None
+    ) -> PromptResult | None:
+        """Render a prompt by name.
+
+        Default implementation gets the prompt and calls its render() method.
+        Override for custom execution logic.
+
+        Returns:
+            PromptResult if the prompt was found and rendered, None otherwise.
+        """
+        prompt = await self.get_prompt(name)
+        if prompt is None:
+            return None
+        result = await prompt.render(arguments)
+        if isinstance(result, PromptResult):
+            return result
+        return PromptResult.from_value(result)
 
     # -------------------------------------------------------------------------
     # Task registration

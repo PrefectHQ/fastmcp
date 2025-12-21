@@ -30,6 +30,7 @@ class TestWorkerCommand:
     def test_worker_command_parsing(self):
         """Test that worker command parses arguments correctly."""
         command, bound, _ = tasks_app.parse_args(["worker", "server.py"])
+        assert callable(command)
         assert command.__name__ == "worker"  # type: ignore[attr-defined]
         assert bound.arguments["server_spec"] == "server.py"
 

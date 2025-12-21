@@ -1,6 +1,6 @@
 from dataclasses import asdict, dataclass
 from enum import Enum
-from typing import Literal
+from typing import Any, Literal, cast
 
 import pytest
 from mcp.types import ElicitRequestFormParams, ElicitRequestParams
@@ -36,7 +36,9 @@ def fastmcp_server():
             response_type=Person,
         )
         if result.action == "accept":
-            return f"Hello, {result.data.name}!"  # type: ignore[attr-defined]
+            assert isinstance(result, AcceptedElicitation)
+            assert isinstance(result.data, Person)
+            return f"Hello, {result.data.name}!"
         else:
             return "No name provided."
 
@@ -128,7 +130,9 @@ async def test_elicitation_cancel_action():
         if result.action == "cancel":
             return "Request was canceled"
         elif result.action == "accept":
-            return f"Age: {result.data}"  # type: ignore[attr-defined]
+            assert isinstance(result, AcceptedElicitation)
+            assert isinstance(result.data, int)
+            return f"Age: {result.data}"
         else:
             return "No response provided"
 
@@ -146,9 +150,11 @@ class TestScalarResponseTypes:
         mcp = FastMCP("TestServer")
 
         @mcp.tool
-        async def my_tool(context: Context) -> None:
+        async def my_tool(context: Context) -> dict[str, Any]:
             result = await context.elicit(message="", response_type=None)
-            return result.data  # type: ignore[attr-defined]
+            assert isinstance(result, AcceptedElicitation)
+            assert isinstance(result.data, dict)
+            return cast(dict[str, Any], result.data)
 
         async def elicitation_handler(
             message, response_type, params: ElicitRequestParams, ctx
@@ -167,9 +173,13 @@ class TestScalarResponseTypes:
         mcp = FastMCP("TestServer")
 
         @mcp.tool
-        async def my_tool(context: Context) -> None:
+        async def my_tool(context: Context) -> dict[str, Any]:
             result = await context.elicit(message="", response_type=None)
-            return result.data  # type: ignore[attr-defined]
+            assert result.action == "accept"
+            assert isinstance(result, AcceptedElicitation)
+            accepted = cast(AcceptedElicitation[dict[str, Any]], result)
+            assert isinstance(accepted.data, dict)
+            return accepted.data
 
         async def elicitation_handler(
             message, response_type, params: ElicitRequestParams, ctx
@@ -185,9 +195,13 @@ class TestScalarResponseTypes:
         mcp = FastMCP("TestServer")
 
         @mcp.tool
-        async def my_tool(context: Context) -> None:
+        async def my_tool(context: Context) -> dict[str, Any]:
             result = await context.elicit(message="", response_type=None)
-            return result.data  # type: ignore[attr-defined]
+            assert result.action == "accept"
+            assert isinstance(result, AcceptedElicitation)
+            accepted = cast(AcceptedElicitation[dict[str, Any]], result)
+            assert isinstance(accepted.data, dict)
+            return accepted.data
 
         async def elicitation_handler(message, response_type, params, ctx):
             return ElicitResult(action="accept", content={"value": "hello"})
@@ -205,7 +219,9 @@ class TestScalarResponseTypes:
         @mcp.tool
         async def my_tool(context: Context) -> str:
             result = await context.elicit(message="", response_type=str)
-            return result.data  # type: ignore[attr-defined]
+            assert isinstance(result, AcceptedElicitation)
+            assert isinstance(result.data, str)
+            return result.data
 
         async def elicitation_handler(message, response_type, params, ctx):
             return ElicitResult(action="accept", content={"value": "hello"})
@@ -221,7 +237,9 @@ class TestScalarResponseTypes:
         @mcp.tool
         async def my_tool(context: Context) -> int:
             result = await context.elicit(message="", response_type=int)
-            return result.data  # type: ignore[attr-defined]
+            assert isinstance(result, AcceptedElicitation)
+            assert isinstance(result.data, int)
+            return result.data
 
         async def elicitation_handler(message, response_type, params, ctx):
             return ElicitResult(action="accept", content={"value": 42})
@@ -237,7 +255,9 @@ class TestScalarResponseTypes:
         @mcp.tool
         async def my_tool(context: Context) -> float:
             result = await context.elicit(message="", response_type=float)
-            return result.data  # type: ignore[attr-defined]
+            assert isinstance(result, AcceptedElicitation)
+            assert isinstance(result.data, float)
+            return result.data
 
         async def elicitation_handler(message, response_type, params, ctx):
             return ElicitResult(action="accept", content={"value": 3.14})
@@ -253,7 +273,9 @@ class TestScalarResponseTypes:
         @mcp.tool
         async def my_tool(context: Context) -> bool:
             result = await context.elicit(message="", response_type=bool)
-            return result.data  # type: ignore[attr-defined]
+            assert isinstance(result, AcceptedElicitation)
+            assert isinstance(result.data, bool)
+            return result.data
 
         async def elicitation_handler(message, response_type, params, ctx):
             return ElicitResult(action="accept", content={"value": True})
@@ -268,8 +290,12 @@ class TestScalarResponseTypes:
 
         @mcp.tool
         async def my_tool(context: Context) -> Literal["x", "y"]:
-            result = await context.elicit(message="", response_type=Literal["x", "y"])  # type: ignore
-            return result.data  # type: ignore[attr-defined]
+            # Literal types work at runtime but type checker doesn't recognize them in overloads
+            result = await context.elicit(message="", response_type=Literal["x", "y"])  # type: ignore[arg-type]
+            assert isinstance(result, AcceptedElicitation)
+            accepted = cast(AcceptedElicitation[Literal["x", "y"]], result)
+            assert isinstance(accepted.data, str)
+            return accepted.data
 
         async def elicitation_handler(message, response_type, params, ctx):
             return ElicitResult(action="accept", content={"value": "x"})
@@ -289,7 +315,9 @@ class TestScalarResponseTypes:
         @mcp.tool
         async def my_tool(context: Context) -> ResponseEnum:
             result = await context.elicit(message="", response_type=ResponseEnum)
-            return result.data  # type: ignore[attr-defined]
+            assert isinstance(result, AcceptedElicitation)
+            assert isinstance(result.data, ResponseEnum)
+            return result.data
 
         async def elicitation_handler(message, response_type, params, ctx):
             return ElicitResult(action="accept", content={"value": "x"})
@@ -305,7 +333,9 @@ class TestScalarResponseTypes:
         @mcp.tool
         async def my_tool(context: Context) -> str:
             result = await context.elicit(message="", response_type=["x", "y"])
-            return result.data  # type: ignore[attr-defined]
+            assert isinstance(result, AcceptedElicitation)
+            assert isinstance(result.data, str)
+            return result.data
 
         async def elicitation_handler(message, response_type, params, ctx):
             return ElicitResult(action="accept", content={"value": "x"})
@@ -417,10 +447,19 @@ async def test_structured_response_type(
         assert isinstance(result, AcceptedElicitation)
 
         if result.action == "accept":
+            assert isinstance(result, AcceptedElicitation)
             if isinstance(result.data, dict):
-                return f"User: {result.data['name']}, age: {result.data['age']}"  # type: ignore[index]
+                data_dict = cast(dict[str, Any], result.data)
+                name = data_dict.get("name")
+                age = data_dict.get("age")
+                assert name is not None
+                assert age is not None
+                return f"User: {name}, age: {age}"
             else:
-                return f"User: {result.data.name}, age: {result.data.age}"  # type: ignore[attr-defined]
+                # result.data is a structured type (UserInfo, UserInfoTypedDict, or UserInfoPydantic)
+                assert hasattr(result.data, "name")
+                assert hasattr(result.data, "age")
+                return f"User: {result.data.name}, age: {result.data.age}"
         return "No user info provided"
 
     async def elicitation_handler(message, response_type, params, ctx):
@@ -467,7 +506,9 @@ async def test_all_primitive_field_types():
     @mcp.tool
     async def get_data(context: Context) -> Data:
         result = await context.elicit(message="Enter data", response_type=Data)
-        return result.data  # type: ignore[attr-defined]
+        assert isinstance(result, AcceptedElicitation)
+        assert isinstance(result.data, Data)
+        return result.data
 
     async def elicitation_handler(message, response_type, params, ctx):
         return ElicitResult(
@@ -738,7 +779,9 @@ async def test_dict_based_titled_single_select():
             },
         )
         if result.action == "accept":
-            return result.data  # type: ignore[attr-defined]
+            assert isinstance(result, AcceptedElicitation)
+            assert isinstance(result.data, str)
+            return result.data
         return "declined"
 
     async def elicitation_handler(message, response_type, params, ctx):
@@ -760,7 +803,9 @@ async def test_list_list_multi_select_untitled():
             response_type=[["bug", "feature", "documentation"]],
         )
         if result.action == "accept":
-            return ",".join(result.data)  # type: ignore[attr-defined]
+            assert isinstance(result, AcceptedElicitation)
+            assert isinstance(result.data, list)
+            return ",".join(result.data)
         return "declined"
 
     async def elicitation_handler(message, response_type, params, ctx):
@@ -796,7 +841,9 @@ async def test_list_dict_multi_select_titled():
             ],
         )
         if result.action == "accept":
-            return ",".join(result.data)  # type: ignore[attr-defined]
+            assert isinstance(result, AcceptedElicitation)
+            assert isinstance(result.data, list)
+            return ",".join(result.data)
         return "declined"
 
     async def elicitation_handler(message, response_type, params, ctx):
@@ -857,7 +904,9 @@ async def test_list_enum_multi_select_direct():
             response_type=list[Priority],  # Type annotation for multi-select
         )
         if result.action == "accept":
-            priorities = result.data  # type: ignore[attr-defined]
+            assert isinstance(result, AcceptedElicitation)
+            assert isinstance(result.data, list)
+            priorities = result.data
             return ",".join(
                 [p.value if isinstance(p, Priority) else str(p) for p in priorities]
             )

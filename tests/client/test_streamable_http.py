@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, call
 
 import pytest
 from mcp import McpError
+from mcp.types import TextResourceContents
 
 from fastmcp import Context
 from fastmcp.client import Client
@@ -170,7 +171,8 @@ async def test_http_headers(streamable_http_server: str):
         )
     ) as client:
         raw_result = await client.read_resource("request://headers")
-        json_result = json.loads(raw_result[0].text)  # type: ignore[attr-defined]
+        assert isinstance(raw_result[0], TextResourceContents)
+        json_result = json.loads(raw_result[0].text)
         assert "x-demo-header" in json_result
         assert json_result["x-demo-header"] == "ABC"
 

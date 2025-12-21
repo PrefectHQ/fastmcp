@@ -4,7 +4,7 @@ from collections.abc import Sequence
 from typing import Any
 
 import pytest
-from mcp.types import AnyUrl
+from mcp.types import AnyUrl, TextContent
 from mcp.types import Tool as MCPTool
 
 from fastmcp import FastMCP
@@ -169,8 +169,9 @@ class TestProvider:
             )
 
         assert result.structured_content is not None
-        assert result.structured_content["result"] == 42  # type: ignore[attr-defined]
-        assert result.structured_content["operation"] == "multiply"  # type: ignore[attr-defined]
+        assert isinstance(result.structured_content, dict)
+        assert result.structured_content["result"] == 42
+        assert result.structured_content["operation"] == "multiply"
 
     async def test_call_dynamic_tool_with_config(
         self, base_server: FastMCP, dynamic_tools: list[Tool]
@@ -186,7 +187,8 @@ class TestProvider:
 
         assert result.structured_content is not None
         # 5 + 3 + 100 (value offset) = 108
-        assert result.structured_content["result"] == 108  # type: ignore[attr-defined]
+        assert isinstance(result.structured_content, dict)
+        assert result.structured_content["result"] == 108
 
     async def test_call_static_tool_still_works(
         self, base_server: FastMCP, dynamic_tools: list[Tool]
@@ -201,7 +203,8 @@ class TestProvider:
             )
 
         assert result.structured_content is not None
-        assert result.structured_content["result"] == 15  # type: ignore[attr-defined]
+        assert isinstance(result.structured_content, dict)
+        assert result.structured_content["result"] == 15
 
     async def test_call_tool_uses_get_tool_for_efficient_lookup(
         self, base_server: FastMCP, dynamic_tools: list[Tool]
@@ -280,7 +283,8 @@ class TestProvider:
             )
 
         assert result.structured_content is not None
-        assert result.structured_content["result"] == 7  # type: ignore[attr-defined]
+        assert isinstance(result.structured_content, dict)
+        assert result.structured_content["result"] == 7
 
 
 class TestProviderClass:
@@ -379,7 +383,8 @@ class TestProviderExecutionMethods:
             result = await client.call_tool("test_tool", {"a": 1, "b": 2})
 
         assert result.structured_content is not None
-        assert result.structured_content["result"] == 3  # type: ignore[attr-defined]
+        assert isinstance(result.structured_content, dict)
+        assert result.structured_content["result"] == 3
 
     async def test_read_resource_default_implementation(self):
         """Test that default read_resource uses get_resource and reads it."""
@@ -448,4 +453,5 @@ class TestProviderExecutionMethods:
             result = await client.get_prompt("greeting", {"name": "World"})
 
         assert len(result.messages) == 1
-        assert result.messages[0].content.text == "Hello, World!"  # type: ignore[attr-defined]
+        assert isinstance(result.messages[0].content, TextContent)
+        assert result.messages[0].content.text == "Hello, World!"

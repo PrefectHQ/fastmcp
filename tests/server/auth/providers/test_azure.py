@@ -10,6 +10,7 @@ from mcp.shared.auth import OAuthClientInformationFull
 from pydantic import AnyUrl
 
 from fastmcp.server.auth.providers.azure import OIDC_SCOPES, AzureProvider
+from fastmcp.server.auth.providers.jwt import JWTVerifier
 
 
 class TestAzureProvider:
@@ -404,12 +405,13 @@ class TestAzureProvider:
             provider._upstream_token_endpoint
             == "https://login.microsoftonline.com/test-tenant/oauth2/v2.0/token"
         )
+        assert isinstance(provider._token_validator, JWTVerifier)
         assert (
-            provider._token_validator.issuer  # type: ignore[attr-defined]
+            provider._token_validator.issuer
             == "https://login.microsoftonline.com/test-tenant/v2.0"
         )
         assert (
-            provider._token_validator.jwks_uri  # type: ignore[attr-defined]
+            provider._token_validator.jwks_uri
             == "https://login.microsoftonline.com/test-tenant/discovery/v2.0/keys"
         )
 
@@ -432,12 +434,13 @@ class TestAzureProvider:
             provider._upstream_token_endpoint
             == "https://login.microsoftonline.us/gov-tenant-id/oauth2/v2.0/token"
         )
+        assert isinstance(provider._token_validator, JWTVerifier)
         assert (
-            provider._token_validator.issuer  # type: ignore[attr-defined]
+            provider._token_validator.issuer
             == "https://login.microsoftonline.us/gov-tenant-id/v2.0"
         )
         assert (
-            provider._token_validator.jwks_uri  # type: ignore[attr-defined]
+            provider._token_validator.jwks_uri
             == "https://login.microsoftonline.us/gov-tenant-id/discovery/v2.0/keys"
         )
 
@@ -464,12 +467,13 @@ class TestAzureProvider:
                 provider._upstream_token_endpoint
                 == "https://login.microsoftonline.us/env-tenant-id/oauth2/v2.0/token"
             )
+            assert isinstance(provider._token_validator, JWTVerifier)
             assert (
-                provider._token_validator.issuer  # type: ignore[attr-defined]
+                provider._token_validator.issuer
                 == "https://login.microsoftonline.us/env-tenant-id/v2.0"
             )
             assert (
-                provider._token_validator.jwks_uri  # type: ignore[attr-defined]
+                provider._token_validator.jwks_uri
                 == "https://login.microsoftonline.us/env-tenant-id/discovery/v2.0/keys"
             )
 

@@ -1,6 +1,8 @@
 import json
 from urllib.parse import quote
 
+from mcp.types import TextContent, TextResourceContents
+
 from fastmcp.client.client import Client
 from fastmcp.server.server import FastMCP
 from fastmcp.tools.tool import FunctionTool, Tool
@@ -328,7 +330,8 @@ async def test_import_with_proxy_prompts():
 
     async with Client(main_app) as client:
         result = await client.get_prompt("api_greeting", {"name": "World"})
-        assert result.messages[0].content.text == "Hello, World from API!"  # type: ignore[attr-defined]
+        assert isinstance(result.messages[0].content, TextContent)
+        assert result.messages[0].content.text == "Hello, World from API!"
         assert result.description == "Example greeting prompt."
 
 
@@ -357,7 +360,8 @@ async def test_import_with_proxy_resources():
     # Access the resource through the main app with the prefixed key
     async with Client(main_app) as client:
         result = await client.read_resource("config://api/settings")
-        content = json.loads(result[0].text)  # type: ignore[attr-defined]
+        assert isinstance(result[0], TextResourceContents)
+        content = json.loads(result[0].text)
         assert content["api_key"] == "12345"
         assert content["base_url"] == "https://api.example.com"
 
@@ -387,7 +391,8 @@ async def test_import_with_proxy_resource_templates():
     quoted_email = quote("john@example.com", safe="")
     async with Client(main_app) as client:
         result = await client.read_resource(f"user://api/{quoted_name}/{quoted_email}")
-        content = json.loads(result[0].text)  # type: ignore[attr-defined]
+        assert isinstance(result[0], TextResourceContents)
+        content = json.loads(result[0].text)
         assert content["name"] == "John Doe"
         assert content["email"] == "john@example.com"
 
@@ -430,16 +435,19 @@ async def test_import_with_no_prefix():
 
         # Test resource
         resource_result = await client.read_resource("data://config")
-        assert resource_result[0].text == "Sub resource data"  # type: ignore[attr-defined]
+        assert isinstance(resource_result[0], TextResourceContents)
+        assert resource_result[0].text == "Sub resource data"
 
         # Test template
         template_result = await client.read_resource("users://123/info")
-        assert template_result[0].text == "Sub template for user 123"  # type: ignore[attr-defined]
+        assert isinstance(template_result[0], TextResourceContents)
+        assert template_result[0].text == "Sub template for user 123"
 
         # Test prompt
         prompt_result = await client.get_prompt("sub_prompt", {})
         assert prompt_result.messages is not None
-        assert prompt_result.messages[0].content.text == "Sub prompt content"  # type: ignore[attr-defined]
+        assert isinstance(prompt_result.messages[0].content, TextContent)
+        assert prompt_result.messages[0].content.text == "Sub prompt content"
 
 
 async def test_import_conflict_resolution_tools():
@@ -497,7 +505,8 @@ async def test_import_conflict_resolution_resources():
         assert resource_uris.count("shared://data") == 1  # Should only appear once
 
         result = await client.read_resource("shared://data")
-        assert result[0].text == "Second app data"  # type: ignore[attr-defined]
+        assert isinstance(result[0], TextResourceContents)
+        assert result[0].text == "Second app data"
 
 
 async def test_import_conflict_resolution_templates():
@@ -528,7 +537,8 @@ async def test_import_conflict_resolution_templates():
         )  # Should only appear once
 
         result = await client.read_resource("users://123/profile")
-        assert result[0].text == "Second app user 123"  # type: ignore[attr-defined]
+        assert isinstance(result[0], TextResourceContents)
+        assert result[0].text == "Second app user 123"
 
 
 async def test_import_conflict_resolution_prompts():
@@ -558,7 +568,8 @@ async def test_import_conflict_resolution_prompts():
 
         result = await client.get_prompt("shared_prompt", {})
         assert result.messages is not None
-        assert result.messages[0].content.text == "Second app prompt"  # type: ignore[attr-defined]
+        assert isinstance(result.messages[0].content, TextContent)
+        assert result.messages[0].content.text == "Second app prompt"
 
 
 async def test_import_conflict_resolution_with_prefix():
@@ -660,10 +671,13 @@ async def test_import_server_with_new_prefix_format():
     # Verify we can access the resources
     async with Client(target_server) as client:
         result = await client.read_resource("resource://imported/test-resource")
-        assert result[0].text == "Resource content"  # type: ignore[attr-defined]
+        assert isinstance(result[0], TextResourceContents)
+        assert result[0].text == "Resource content"
 
         result = await client.read_resource("resource://imported//absolute/path")
-        assert result[0].text == "Absolute resource content"  # type: ignore[attr-defined]
+        assert isinstance(result[0], TextResourceContents)
+        assert result[0].text == "Absolute resource content"
 
         result = await client.read_resource("resource://imported/param-value/template")
-        assert result[0].text == "Template resource with param-value"  # type: ignore[attr-defined]
+        assert isinstance(result[0], TextResourceContents)
+        assert result[0].text == "Template resource with param-value"

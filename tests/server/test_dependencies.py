@@ -755,7 +755,8 @@ async def test_toolerror_propagates_from_dependency(mcp: FastMCP):
         result = await client.call_tool("my_tool", {}, raise_on_error=False)
         assert result.is_error
         # The original error message should be preserved (not wrapped in RuntimeError)
-        assert result.content[0].text == "Client ID is required - select a client first"  # type: ignore[attr-defined]
+        assert isinstance(result.content[0], TextContent)
+        assert result.content[0].text == "Client ID is required - select a client first"
 
 
 async def test_validation_error_propagates_from_dependency(mcp: FastMCP):
@@ -776,4 +777,5 @@ async def test_validation_error_propagates_from_dependency(mcp: FastMCP):
             "tool_with_validation", {}, raise_on_error=False
         )
         assert result.is_error
-        assert result.content[0].text == "Invalid input format"  # type: ignore[attr-defined]
+        assert isinstance(result.content[0], TextContent)
+        assert result.content[0].text == "Invalid input format"

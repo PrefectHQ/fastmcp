@@ -1569,7 +1569,6 @@ class TestFieldsWithDefaults:
         generated_type = json_schema_to_type(schema)
         validator = TypeAdapter(generated_type)
         result = validator.validate_python({})
-
         assert result.flag is False  # type: ignore[attr-defined]
 
     def test_field_with_default_accepts_explicit_value(self):
@@ -1582,5 +1581,4 @@ class TestFieldsWithDefaults:
         generated_type = json_schema_to_type(schema)
         validator = TypeAdapter(generated_type)
         result = validator.validate_python({"flag": True})
-
         assert result.flag is True  # type: ignore[attr-defined]
