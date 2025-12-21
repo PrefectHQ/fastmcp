@@ -7,6 +7,7 @@ Tests that the server correctly enforces task execution modes:
 """
 
 import pytest
+from mcp.shared.exceptions import McpError
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
@@ -104,9 +105,8 @@ class TestToolModeEnforcement:
         return mcp
 
     async def test_required_mode_without_task_returns_error(self, server):
-        """Required mode returns error when called without task metadata."""
+        """Required mode raises error when called without task metadata."""
         async with Client(server) as client:
-            # The server returns isError=True, which the client converts to ToolError
             with pytest.raises(ToolError) as exc_info:
                 await client.call_tool("required_tool", {})
 
@@ -180,7 +180,6 @@ class TestResourceModeEnforcement:
 
     async def test_required_resource_without_task_returns_error(self, server):
         """Required mode returns error when read without task metadata."""
-        from mcp.shared.exceptions import McpError
         from mcp.types import METHOD_NOT_FOUND
 
         async with Client(server) as client:
@@ -233,7 +232,6 @@ class TestPromptModeEnforcement:
 
     async def test_required_prompt_without_task_returns_error(self, server):
         """Required mode returns error when called without task metadata."""
-        from mcp.shared.exceptions import McpError
         from mcp.types import METHOD_NOT_FOUND
 
         async with Client(server) as client:

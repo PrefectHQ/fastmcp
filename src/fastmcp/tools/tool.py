@@ -240,6 +240,13 @@ class Tool(FastMCPComponent):
         """
         raise NotImplementedError("Subclasses must implement run()")
 
+    def convert_result(self, raw_value: Any) -> ToolResult:
+        """Convert a raw return value to ToolResult.
+
+        Subclasses should override this to handle their specific conversion logic.
+        """
+        raise NotImplementedError("Subclasses must implement convert_result()")
+
     def register_with_docket(self, docket: Docket) -> None:
         """Register this tool with docket for background execution."""
         if self.task_config.mode == "forbidden":
@@ -393,22 +400,30 @@ class FunctionTool(Tool):
         if inspect.isawaitable(result):
             result = await result
 
-        if isinstance(result, ToolResult):
-            return result
+        return self.convert_result(result)
 
-        unstructured_result = _convert_to_content(result, serializer=self.serializer)
+    def convert_result(self, raw_value: Any) -> ToolResult:
+        """Convert a raw return value to ToolResult.
+
+        This handles the same conversion logic as run(), but works on
+        already-executed raw values (e.g., from Docket background execution).
+        """
+        if isinstance(raw_value, ToolResult):
+            return raw_value
+
+        unstructured_result = _convert_to_content(raw_value, serializer=self.serializer)
 
         if self.output_schema is None:
             # Do not produce a structured output for MCP Content Types
-            if isinstance(result, ContentBlock | Audio | Image | File) or (
-                isinstance(result, list | tuple)
-                and any(isinstance(item, ContentBlock) for item in result)
+            if isinstance(raw_value, ContentBlock | Audio | Image | File) or (
+                isinstance(raw_value, list | tuple)
+                and any(isinstance(item, ContentBlock) for item in raw_value)
             ):
                 return ToolResult(content=unstructured_result)
 
             # Otherwise, try to serialize the result as a dict
             try:
-                structured_content = pydantic_core.to_jsonable_python(result)
+                structured_content = pydantic_core.to_jsonable_python(raw_value)
                 if isinstance(structured_content, dict):
                     return ToolResult(
                         content=unstructured_result,
@@ -424,7 +439,7 @@ class FunctionTool(Tool):
 
         return ToolResult(
             content=unstructured_result,
-            structured_content={"result": result} if wrap_result else result,
+            structured_content={"result": raw_value} if wrap_result else raw_value,
         )
 
     def register_with_docket(self, docket: Docket) -> None:

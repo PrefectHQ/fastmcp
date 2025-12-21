@@ -376,8 +376,15 @@ class FunctionResource(Resource):
         if isinstance(result, Resource):
             return await result.read()
 
-        # Convert any value to ResourceContent
-        return ResourceContent.from_value(result, mime_type=self.mime_type)
+        return self.convert_result(result)
+
+    def convert_result(self, raw_value: Any) -> ResourceContent:
+        """Convert a raw return value to ResourceContent.
+
+        This handles the same conversion logic as read(), but works on
+        already-executed raw values (e.g., from Docket background execution).
+        """
+        return ResourceContent.from_value(raw_value, mime_type=self.mime_type)
 
     def register_with_docket(self, docket: Docket) -> None:
         """Register this resource with docket for background execution.

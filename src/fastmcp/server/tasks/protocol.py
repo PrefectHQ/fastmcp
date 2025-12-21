@@ -20,11 +20,6 @@ from mcp.types import (
     ListTasksResult,
 )
 
-from fastmcp.server.tasks.converters import (
-    convert_prompt_result,
-    convert_resource_result,
-    convert_tool_result,
-)
 from fastmcp.server.tasks.keys import parse_task_key
 
 if TYPE_CHECKING:
@@ -230,20 +225,58 @@ async def tasks_result_handler(server: FastMCP, params: dict[str, Any]) -> Any:
         # Parse task key to get type and component info
         key_parts = parse_task_key(task_key)
         task_type = key_parts["task_type"]
+        component_id = key_parts["component_identifier"]
 
-        # Convert based on task type (pass client_task_id for metadata)
+        # Build related-task metadata
+        related_task_meta = {
+            "modelcontextprotocol.io/related-task": {
+                "taskId": client_task_id,
+            }
+        }
+
+        # Convert based on task type using component.convert_result() + to_mcp_result()
         if task_type == "tool":
-            return await convert_tool_result(
-                server, raw_value, key_parts["component_identifier"], client_task_id
-            )
+            tool = await server.get_tool(component_id)
+            fastmcp_result = tool.convert_result(raw_value)
+            mcp_result = fastmcp_result.to_mcp_result()
+            # Ensure we have a CallToolResult and add metadata
+            if isinstance(mcp_result, mcp.types.CallToolResult):
+                mcp_result._meta = related_task_meta  # type: ignore[attr-defined]
+            elif isinstance(mcp_result, tuple):
+                content, structured_content = mcp_result
+                mcp_result = mcp.types.CallToolResult(
+                    content=content,
+                    structuredContent=structured_content,
+                    _meta=related_task_meta,
+                )
+            else:
+                mcp_result = mcp.types.CallToolResult(
+                    content=mcp_result, _meta=related_task_meta
+                )
+            return mcp_result
+
         elif task_type == "prompt":
-            return await convert_prompt_result(
-                server, raw_value, key_parts["component_identifier"], client_task_id
-            )
+            prompt = await server.get_prompt(component_id)
+            fastmcp_result = prompt.convert_result(raw_value)
+            mcp_result = fastmcp_result.to_mcp_prompt_result()
+            mcp_result._meta = related_task_meta  # type: ignore[attr-defined]
+            return mcp_result
+
         elif task_type == "resource":
-            return await convert_resource_result(
-                server, raw_value, key_parts["component_identifier"], client_task_id
+            # Convert raw value to ResourceContent (handles str, bytes, ResourceContent)
+            from fastmcp.resources.resource import ResourceContent
+
+            if isinstance(raw_value, ResourceContent):
+                resource_content = raw_value
+            else:
+                resource_content = ResourceContent.from_value(raw_value)
+
+            mcp_content = resource_content.to_mcp_resource_contents(component_id)
+            return mcp.types.ReadResourceResult(
+                contents=[mcp_content],
+                _meta=related_task_meta,
             )
+
         else:
             raise McpError(
                 ErrorData(

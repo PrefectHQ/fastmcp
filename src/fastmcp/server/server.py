@@ -84,11 +84,6 @@ from fastmcp.server.middleware import Middleware, MiddlewareContext
 from fastmcp.server.providers import Provider
 from fastmcp.server.tasks.capabilities import get_task_capabilities
 from fastmcp.server.tasks.config import TaskConfig
-from fastmcp.server.tasks.handlers import (
-    handle_prompt_as_task,
-    handle_resource_as_task,
-    handle_tool_as_task,
-)
 from fastmcp.settings import Settings
 from fastmcp.tools.tool import FunctionTool, Tool, ToolResult
 from fastmcp.tools.tool_manager import ToolManager
@@ -569,175 +564,39 @@ class FastMCP(Generic[LifespanResultT]):
         )
 
     def _setup_handlers(self) -> None:
-        """Set up core MCP protocol handlers."""
+        """Set up core MCP protocol handlers.
+
+        We override the SDK's default handlers for tools/call, resources/read,
+        and prompts/get to add task-augmented execution support (SEP-1686).
+
+        The SDK's decorators have different capabilities:
+        - call_tool: Supports CreateTaskResult returns AND validate_input
+        - read_resource: Does NOT support CreateTaskResult
+        - get_prompt: Does NOT support CreateTaskResult
+
+        So we use the SDK decorator for tools (to get input validation), but
+        register custom handlers for resources and prompts.
+        """
         self._mcp_server.list_tools()(self._list_tools_mcp)
         self._mcp_server.list_resources()(self._list_resources_mcp)
         self._mcp_server.list_resource_templates()(self._list_resource_templates_mcp)
         self._mcp_server.list_prompts()(self._list_prompts_mcp)
+
+        # Tools: SDK decorator provides validate_input + CreateTaskResult support
         self._mcp_server.call_tool(validate_input=self.strict_input_validation)(
             self._call_tool_mcp
         )
-        # Register custom read_resource handler (SDK decorator doesn't support CreateTaskResult)
-        self._setup_read_resource_handler()
-        # Register custom get_prompt handler (SDK decorator doesn't support CreateTaskResult)
-        self._setup_get_prompt_handler()
-        # Register custom SEP-1686 task protocol handlers
+
+        # Resources/Prompts: Custom handlers (SDK decorators don't support CreateTaskResult)
+        self._mcp_server.request_handlers[mcp.types.ReadResourceRequest] = (
+            self._read_resource_handler
+        )
+        self._mcp_server.request_handlers[mcp.types.GetPromptRequest] = (
+            self._get_prompt_handler
+        )
+
+        # Register SEP-1686 task protocol handlers
         self._setup_task_protocol_handlers()
-
-    def _setup_read_resource_handler(self) -> None:
-        """
-        Set up custom read_resource handler that supports task-augmented responses.
-
-        The SDK's read_resource decorator doesn't support CreateTaskResult returns,
-        so we register a custom handler that checks request_context.experimental.is_task.
-        """
-
-        async def handler(req: mcp.types.ReadResourceRequest) -> mcp.types.ServerResult:
-            uri = req.params.uri
-
-            # Check for task metadata via SDK's request context
-            task_meta = None
-            try:
-                ctx = self._mcp_server.request_context
-                if ctx.experimental.is_task:
-                    task_meta = ctx.experimental.task_metadata
-            except (AttributeError, LookupError):
-                pass
-
-            # Check for task metadata and route appropriately
-            async with fastmcp.server.context.Context(fastmcp=self):
-                # Get resource including from mounted servers
-                resource = await self._get_resource_or_template_or_none(str(uri))
-                if (
-                    resource
-                    and self._should_enable_component(resource)
-                    and hasattr(resource, "task_config")
-                ):
-                    task_mode = resource.task_config.mode  # type: ignore[union-attr]
-
-                    # Enforce mode="required" - must have task metadata
-                    if task_mode == "required" and not task_meta:
-                        raise McpError(
-                            ErrorData(
-                                code=METHOD_NOT_FOUND,
-                                message=f"Resource '{uri}' requires task-augmented execution",
-                            )
-                        )
-
-                    # Route to background if task metadata present and mode allows
-                    if task_meta and task_mode != "forbidden":
-                        # Resource has task support, use Docket for background execution
-                        task_meta_dict = task_meta.model_dump(exclude_none=True)
-                        return await handle_resource_as_task(
-                            self, str(uri), resource, task_meta_dict
-                        )
-
-                    # Forbidden mode: task requested but mode="forbidden"
-                    # Raise error since resources don't have isError field
-                    if task_meta and task_mode == "forbidden":
-                        raise McpError(
-                            ErrorData(
-                                code=METHOD_NOT_FOUND,
-                                message=f"Resource '{uri}' does not support task-augmented execution",
-                            )
-                        )
-
-            # Synchronous execution
-            result = await self._read_resource_mcp(uri)
-
-            # Graceful degradation: if we got here with task_meta, something went wrong
-            # (This should be unreachable now that forbidden raises)
-            if task_meta:
-                mcp_contents = [item.to_mcp_resource_contents(uri) for item in result]
-                return mcp.types.ServerResult(
-                    mcp.types.ReadResourceResult(
-                        contents=mcp_contents,
-                        _meta={
-                            "modelcontextprotocol.io/task": {
-                                "returned_immediately": True
-                            }
-                        },
-                    )
-                )
-
-            # Convert to proper ServerResult
-            if isinstance(result, mcp.types.ServerResult):
-                return result
-
-            mcp_contents = [item.to_mcp_resource_contents(uri) for item in result]
-            return mcp.types.ServerResult(
-                mcp.types.ReadResourceResult(contents=mcp_contents)
-            )
-
-        self._mcp_server.request_handlers[mcp.types.ReadResourceRequest] = handler
-
-    def _setup_get_prompt_handler(self) -> None:
-        """
-        Set up custom get_prompt handler that supports task-augmented responses.
-
-        The SDK's get_prompt decorator doesn't support CreateTaskResult returns,
-        so we register a custom handler that checks request_context.experimental.is_task.
-        """
-
-        async def handler(req: mcp.types.GetPromptRequest) -> mcp.types.ServerResult:
-            name = req.params.name
-            arguments = req.params.arguments
-
-            # Check for task metadata via SDK's request context
-            task_meta = None
-            try:
-                ctx = self._mcp_server.request_context
-                if ctx.experimental.is_task:
-                    task_meta = ctx.experimental.task_metadata
-            except (AttributeError, LookupError):
-                pass
-
-            # Check for task metadata and route appropriately
-            async with fastmcp.server.context.Context(fastmcp=self):
-                try:
-                    prompt = await self.get_prompt(name)
-                except NotFoundError:
-                    prompt = None
-                if (
-                    prompt
-                    and self._should_enable_component(prompt)
-                    and hasattr(prompt, "task_config")
-                    and prompt.task_config
-                ):
-                    task_mode = prompt.task_config.mode  # type: ignore[union-attr]
-
-                    # Enforce mode="required" - must have task metadata
-                    if task_mode == "required" and not task_meta:
-                        raise McpError(
-                            ErrorData(
-                                code=METHOD_NOT_FOUND,
-                                message=f"Prompt '{name}' requires task-augmented execution",
-                            )
-                        )
-
-                    # Route to background if task metadata present and mode allows
-                    if task_meta and task_mode != "forbidden":
-                        task_meta_dict = task_meta.model_dump(exclude_none=True)
-                        result = await handle_prompt_as_task(
-                            self, name, arguments, task_meta_dict
-                        )
-                        return mcp.types.ServerResult(result)
-
-                    # Forbidden mode: task requested but mode="forbidden"
-                    # Raise error since prompts don't have isError field
-                    if task_meta and task_mode == "forbidden":
-                        raise McpError(
-                            ErrorData(
-                                code=METHOD_NOT_FOUND,
-                                message=f"Prompt '{name}' does not support task-augmented execution",
-                            )
-                        )
-
-            # Synchronous execution
-            result = await self._get_prompt_mcp(name, arguments)
-            return mcp.types.ServerResult(result)
-
-        self._mcp_server.request_handlers[mcp.types.GetPromptRequest] = handler
 
     def _setup_task_protocol_handlers(self) -> None:
         """Register SEP-1686 task protocol handlers with SDK."""
@@ -1402,6 +1261,7 @@ class FastMCP(Generic[LifespanResultT]):
         list[ContentBlock]
         | tuple[list[ContentBlock], dict[str, Any]]
         | mcp.types.CallToolResult
+        | mcp.types.CreateTaskResult
     ):
         """
         Handle MCP 'callTool' requests.
@@ -1415,6 +1275,8 @@ class FastMCP(Generic[LifespanResultT]):
         Returns:
             List of MCP Content objects containing the tool results
         """
+        from fastmcp.server.tasks.handlers import handle_tool_as_task
+
         logger.debug(
             f"[{self.name}] Handler called: call_tool %s with %s", key, arguments
         )
@@ -1453,7 +1315,6 @@ class FastMCP(Generic[LifespanResultT]):
                     # Route to background if task metadata present and mode allows
                     if task_meta and task_mode != "forbidden":
                         # Tool has task support, use Docket for background execution
-                        # (ProxyTool has mode="forbidden" and will not enter this branch)
                         task_meta_dict = task_meta.model_dump(exclude_none=True)
                         return await handle_tool_as_task(
                             self, key, arguments, task_meta_dict
@@ -1484,6 +1345,135 @@ class FastMCP(Generic[LifespanResultT]):
                 raise NotFoundError(f"Unknown tool: {key}") from e
             except NotFoundError as e:
                 raise NotFoundError(f"Unknown tool: {key}") from e
+
+    async def _read_resource_handler(
+        self, req: mcp.types.ReadResourceRequest
+    ) -> mcp.types.ServerResult:
+        """Handle resources/read requests with task-augmented execution support.
+
+        This is a custom handler because the SDK's read_resource decorator
+        does not support returning CreateTaskResult for background tasks.
+        """
+        from fastmcp.server.tasks.handlers import handle_resource_as_task
+
+        uri = req.params.uri
+
+        # Check for task metadata via SDK's request context
+        task_meta = None
+        try:
+            ctx = self._mcp_server.request_context
+            if ctx.experimental.is_task:
+                task_meta = ctx.experimental.task_metadata
+        except (AttributeError, LookupError):
+            pass
+
+        async with fastmcp.server.context.Context(fastmcp=self):
+            # Get resource including from mounted servers
+            resource = await self._get_resource_or_template_or_none(str(uri))
+            if (
+                resource
+                and self._should_enable_component(resource)
+                and hasattr(resource, "task_config")
+            ):
+                task_mode = resource.task_config.mode  # type: ignore[union-attr]
+
+                # Enforce mode="required" - must have task metadata
+                if task_mode == "required" and not task_meta:
+                    raise McpError(
+                        ErrorData(
+                            code=METHOD_NOT_FOUND,
+                            message=f"Resource '{uri}' requires task-augmented execution",
+                        )
+                    )
+
+                # Route to background if task metadata present and mode allows
+                if task_meta and task_mode != "forbidden":
+                    task_meta_dict = task_meta.model_dump(exclude_none=True)
+                    result = await handle_resource_as_task(
+                        self, str(uri), resource, task_meta_dict
+                    )
+                    return mcp.types.ServerResult(result)
+
+                # Forbidden mode: task requested but mode="forbidden"
+                if task_meta and task_mode == "forbidden":
+                    raise McpError(
+                        ErrorData(
+                            code=METHOD_NOT_FOUND,
+                            message=f"Resource '{uri}' does not support task-augmented execution",
+                        )
+                    )
+
+            # Synchronous execution
+            contents = await self._read_resource_mcp(uri)
+            mcp_contents = [item.to_mcp_resource_contents(uri) for item in contents]
+            return mcp.types.ServerResult(
+                mcp.types.ReadResourceResult(contents=mcp_contents)
+            )
+
+    async def _get_prompt_handler(
+        self, req: mcp.types.GetPromptRequest
+    ) -> mcp.types.ServerResult:
+        """Handle prompts/get requests with task-augmented execution support.
+
+        This is a custom handler because the SDK's get_prompt decorator
+        does not support returning CreateTaskResult for background tasks.
+        """
+        from fastmcp.server.tasks.handlers import handle_prompt_as_task
+
+        name = req.params.name
+        arguments = req.params.arguments
+
+        # Check for task metadata via SDK's request context
+        task_meta = None
+        try:
+            ctx = self._mcp_server.request_context
+            if ctx.experimental.is_task:
+                task_meta = ctx.experimental.task_metadata
+        except (AttributeError, LookupError):
+            pass
+
+        async with fastmcp.server.context.Context(fastmcp=self):
+            try:
+                prompt = await self.get_prompt(name)
+            except NotFoundError:
+                prompt = None
+            if (
+                prompt
+                and self._should_enable_component(prompt)
+                and hasattr(prompt, "task_config")
+                and prompt.task_config
+            ):
+                task_mode = prompt.task_config.mode  # type: ignore[union-attr]
+
+                # Enforce mode="required" - must have task metadata
+                if task_mode == "required" and not task_meta:
+                    raise McpError(
+                        ErrorData(
+                            code=METHOD_NOT_FOUND,
+                            message=f"Prompt '{name}' requires task-augmented execution",
+                        )
+                    )
+
+                # Route to background if task metadata present and mode allows
+                if task_meta and task_mode != "forbidden":
+                    task_meta_dict = task_meta.model_dump(exclude_none=True)
+                    result = await handle_prompt_as_task(
+                        self, name, arguments, task_meta_dict
+                    )
+                    return mcp.types.ServerResult(result)
+
+                # Forbidden mode: task requested but mode="forbidden"
+                if task_meta and task_mode == "forbidden":
+                    raise McpError(
+                        ErrorData(
+                            code=METHOD_NOT_FOUND,
+                            message=f"Prompt '{name}' does not support task-augmented execution",
+                        )
+                    )
+
+            # Synchronous execution
+            result = await self._get_prompt_mcp(name, arguments)
+            return mcp.types.ServerResult(result)
 
     async def _call_tool_middleware(
         self,
