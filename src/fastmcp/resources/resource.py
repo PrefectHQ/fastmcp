@@ -231,13 +231,35 @@ class Resource(FastMCPComponent):
         """
         raise NotImplementedError("Subclasses must implement read()")
 
-    async def _read(self) -> ResourceContent:
-        """Internal API that always returns ResourceContent.
+    def convert_result(self, raw_value: Any) -> ResourceContent:
+        """Convert a raw return value to ResourceContent.
 
-        This method calls read() and wraps str/bytes results in ResourceContent.
-        ResourceManager and other internal code should call this method instead
-        of read() directly.
+        Handles ResourceContent passthrough and converts raw values using mime_type.
         """
+        return ResourceContent.from_value(raw_value, mime_type=self.mime_type)
+
+    async def _read(self) -> ResourceContent | mcp.types.CreateTaskResult:
+        """Server entry point that handles task routing.
+
+        This allows ANY Resource subclass to support background execution by setting
+        task_config.mode to "supported" or "required". The server calls this
+        method instead of read() directly.
+
+        Subclasses can override this to customize task routing behavior.
+        For example, FastMCPProviderResource overrides to delegate to child
+        middleware without submitting to Docket.
+        """
+        from fastmcp.server.dependencies import _docket_fn_key
+        from fastmcp.server.tasks.routing import check_background_task
+
+        key = _docket_fn_key.get() or self.key
+        task_result = await check_background_task(
+            component=self, task_type="resource", key=key
+        )
+        if task_result:
+            return task_result
+
+        # Synchronous execution
         result = await self.read()
         if isinstance(result, ResourceContent):
             return result
@@ -250,7 +272,7 @@ class Resource(FastMCPComponent):
                 DeprecationWarning,
                 stacklevel=2,
             )
-        return ResourceContent.from_value(result, mime_type=self.mime_type)
+        return self.convert_result(result)
 
     def to_mcp_resource(
         self,
@@ -288,10 +310,25 @@ class Resource(FastMCPComponent):
         docket.register(self.read, names=[self.key])
 
     async def add_to_docket(  # type: ignore[override]
-        self, docket: Docket, **kwargs: Any
+        self,
+        docket: Docket,
+        *,
+        fn_key: str | None = None,
+        task_key: str | None = None,
+        **kwargs: Any,
     ) -> Execution:
-        """Schedule this resource for background execution via docket."""
-        return await docket.add(self.key, **kwargs)()
+        """Schedule this resource for background execution via docket.
+
+        Args:
+            docket: The Docket instance
+            fn_key: Function lookup key in Docket registry (defaults to self.key)
+            task_key: Redis storage key for the result
+            **kwargs: Additional kwargs passed to docket.add()
+        """
+        lookup_key = fn_key or self.key
+        if task_key:
+            kwargs["key"] = task_key
+        return await docket.add(lookup_key, **kwargs)()
 
 
 class FunctionResource(Resource):
@@ -377,14 +414,6 @@ class FunctionResource(Resource):
             return await result.read()
 
         return self.convert_result(result)
-
-    def convert_result(self, raw_value: Any) -> ResourceContent:
-        """Convert a raw return value to ResourceContent.
-
-        This handles the same conversion logic as read(), but works on
-        already-executed raw values (e.g., from Docket background execution).
-        """
-        return ResourceContent.from_value(raw_value, mime_type=self.mime_type)
 
     def register_with_docket(self, docket: Docket) -> None:
         """Register this resource with docket for background execution.

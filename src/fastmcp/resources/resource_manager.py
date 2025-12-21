@@ -7,6 +7,7 @@ import warnings
 from collections.abc import Callable
 from typing import Any
 
+import mcp.types
 from pydantic import AnyUrl
 
 from fastmcp import settings
@@ -286,7 +287,9 @@ class ResourceManager:
 
         raise NotFoundError(f"Unknown resource: {uri_str}")
 
-    async def read_resource(self, uri: AnyUrl | str) -> ResourceContent:
+    async def read_resource(
+        self, uri: AnyUrl | str
+    ) -> ResourceContent | mcp.types.CreateTaskResult:
         """
         Internal API for servers: Finds and reads a resource.
 
@@ -294,7 +297,8 @@ class ResourceManager:
         server level. This method provides basic error wrapping for direct usage.
 
         Returns:
-            ResourceContent: The canonical content wrapper.
+            ResourceContent for synchronous execution, or CreateTaskResult if
+            the resource was submitted to Docket for background execution.
         """
         uri_str = str(uri)
 

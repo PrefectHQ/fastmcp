@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -21,7 +22,6 @@ import aiosqlite
 from rich import print
 
 from fastmcp import Client, FastMCP
-from fastmcp.server.context import Context
 from fastmcp.server.providers import Provider
 from fastmcp.tools.tool import Tool, ToolResult
 
@@ -72,16 +72,17 @@ class SQLiteToolProvider(Provider):
     """
 
     def __init__(self, db_path: str):
+        super().__init__()
         self.db_path = db_path
 
-    async def list_tools(self, context: Context) -> list[Tool]:
+    async def list_tools(self) -> Sequence[Tool]:
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute("SELECT * FROM tools WHERE enabled = 1") as cursor:
                 rows = await cursor.fetchall()
                 return [self._make_tool(row) for row in rows]
 
-    async def get_tool(self, context: Context, name: str) -> Tool | None:
+    async def get_tool(self, name: str) -> Tool | None:
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute(

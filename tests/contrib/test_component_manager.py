@@ -42,7 +42,7 @@ class TestComponentManagementRoutes:
     def mcp(self, mounted_mcp):
         """Create a FastMCP server with test tools, resources, and prompts."""
         mcp = FastMCP("TestServer")
-        mcp.mount(mounted_mcp, prefix="sub")
+        mcp.mount(mounted_mcp, namespace="sub")
         set_up_component_manager(server=mcp)
 
         # Add a test tool

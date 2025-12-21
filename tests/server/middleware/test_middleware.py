@@ -506,7 +506,7 @@ class TestNestedMiddlewareHooks:
         recording_middleware: RecordingMiddleware,
         nested_middleware: RecordingMiddleware,
     ):
-        mcp_server.mount(nested_mcp_server, prefix="nested")
+        mcp_server.mount(nested_mcp_server, namespace="nested")
 
         async with Client(mcp_server) as client:
             await client.call_tool("add", {"a": 1, "b": 2})
@@ -526,7 +526,7 @@ class TestNestedMiddlewareHooks:
         recording_middleware: RecordingMiddleware,
         nested_middleware: RecordingMiddleware,
     ):
-        mcp_server.mount(nested_mcp_server, prefix="nested")
+        mcp_server.mount(nested_mcp_server, namespace="nested")
 
         async with Client(mcp_server) as client:
             await client.call_tool("nested_add", {"a": 1, "b": 2})
@@ -550,7 +550,7 @@ class TestNestedMiddlewareHooks:
         recording_middleware: RecordingMiddleware,
         nested_middleware: RecordingMiddleware,
     ):
-        mcp_server.mount(nested_mcp_server, prefix="nested")
+        mcp_server.mount(nested_mcp_server, namespace="nested")
 
         async with Client(mcp_server) as client:
             await client.read_resource("resource://test")
@@ -570,7 +570,7 @@ class TestNestedMiddlewareHooks:
         recording_middleware: RecordingMiddleware,
         nested_middleware: RecordingMiddleware,
     ):
-        mcp_server.mount(nested_mcp_server, prefix="nested")
+        mcp_server.mount(nested_mcp_server, namespace="nested")
 
         async with Client(mcp_server) as client:
             await client.read_resource("resource://nested/test")
@@ -594,7 +594,7 @@ class TestNestedMiddlewareHooks:
         recording_middleware: RecordingMiddleware,
         nested_middleware: RecordingMiddleware,
     ):
-        mcp_server.mount(nested_mcp_server, prefix="nested")
+        mcp_server.mount(nested_mcp_server, namespace="nested")
 
         async with Client(mcp_server) as client:
             await client.read_resource("resource://test-template/1")
@@ -614,7 +614,7 @@ class TestNestedMiddlewareHooks:
         recording_middleware: RecordingMiddleware,
         nested_middleware: RecordingMiddleware,
     ):
-        mcp_server.mount(nested_mcp_server, prefix="nested")
+        mcp_server.mount(nested_mcp_server, namespace="nested")
 
         async with Client(mcp_server) as client:
             await client.read_resource("resource://nested/test-template/1")
@@ -638,7 +638,7 @@ class TestNestedMiddlewareHooks:
         recording_middleware: RecordingMiddleware,
         nested_middleware: RecordingMiddleware,
     ):
-        mcp_server.mount(nested_mcp_server, prefix="nested")
+        mcp_server.mount(nested_mcp_server, namespace="nested")
 
         async with Client(mcp_server) as client:
             await client.get_prompt("test_prompt", {"x": "test"})
@@ -658,7 +658,7 @@ class TestNestedMiddlewareHooks:
         recording_middleware: RecordingMiddleware,
         nested_middleware: RecordingMiddleware,
     ):
-        mcp_server.mount(nested_mcp_server, prefix="nested")
+        mcp_server.mount(nested_mcp_server, namespace="nested")
 
         async with Client(mcp_server) as client:
             await client.get_prompt("nested_test_prompt", {"x": "test"})
@@ -682,7 +682,7 @@ class TestNestedMiddlewareHooks:
         recording_middleware: RecordingMiddleware,
         nested_middleware: RecordingMiddleware,
     ):
-        mcp_server.mount(nested_mcp_server, prefix="nested")
+        mcp_server.mount(nested_mcp_server, namespace="nested")
 
         async with Client(mcp_server) as client:
             await client.list_tools()
@@ -706,7 +706,7 @@ class TestNestedMiddlewareHooks:
         recording_middleware: RecordingMiddleware,
         nested_middleware: RecordingMiddleware,
     ):
-        mcp_server.mount(nested_mcp_server, prefix="nested")
+        mcp_server.mount(nested_mcp_server, namespace="nested")
 
         async with Client(mcp_server) as client:
             await client.list_resources()
@@ -730,7 +730,7 @@ class TestNestedMiddlewareHooks:
         recording_middleware: RecordingMiddleware,
         nested_middleware: RecordingMiddleware,
     ):
-        mcp_server.mount(nested_mcp_server, prefix="nested")
+        mcp_server.mount(nested_mcp_server, namespace="nested")
 
         async with Client(mcp_server) as client:
             await client.list_resource_templates()

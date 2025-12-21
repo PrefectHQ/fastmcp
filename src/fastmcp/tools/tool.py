@@ -241,11 +241,69 @@ class Tool(FastMCPComponent):
         raise NotImplementedError("Subclasses must implement run()")
 
     def convert_result(self, raw_value: Any) -> ToolResult:
-        """Convert a raw return value to ToolResult.
+        """Convert a raw result to ToolResult.
 
-        Subclasses should override this to handle their specific conversion logic.
+        Handles ToolResult passthrough and converts raw values using the tool's
+        attributes (serializer, output_schema) for proper conversion.
         """
-        raise NotImplementedError("Subclasses must implement convert_result()")
+        if isinstance(raw_value, ToolResult):
+            return raw_value
+
+        content = _convert_to_content(raw_value, serializer=self.serializer)
+
+        # Skip structured content for ContentBlock types only if no output_schema
+        # (if output_schema exists, MCP SDK requires structured_content)
+        if self.output_schema is None and (
+            isinstance(raw_value, ContentBlock | Audio | Image | File)
+            or (
+                isinstance(raw_value, list | tuple)
+                and any(isinstance(item, ContentBlock) for item in raw_value)
+            )
+        ):
+            return ToolResult(content=content)
+
+        try:
+            structured = pydantic_core.to_jsonable_python(raw_value)
+        except pydantic_core.PydanticSerializationError:
+            return ToolResult(content=content)
+
+        if self.output_schema is None:
+            # No schema - only use structured_content for dicts
+            if isinstance(structured, dict):
+                return ToolResult(content=content, structured_content=structured)
+            return ToolResult(content=content)
+
+        # Has output_schema - wrap if x-fastmcp-wrap-result is set
+        wrap_result = self.output_schema.get("x-fastmcp-wrap-result")
+        return ToolResult(
+            content=content,
+            structured_content={"result": structured} if wrap_result else structured,
+        )
+
+    async def _run(
+        self, arguments: dict[str, Any]
+    ) -> ToolResult | mcp.types.CreateTaskResult:
+        """Server entry point that handles task routing.
+
+        This allows ANY Tool subclass to support background execution by setting
+        task_config.mode to "supported" or "required". The server calls this
+        method instead of run() directly.
+
+        Subclasses can override this to customize task routing behavior.
+        For example, FastMCPProviderTool overrides to delegate to child
+        middleware without submitting to Docket.
+        """
+        from fastmcp.server.dependencies import _docket_fn_key
+        from fastmcp.server.tasks.routing import check_background_task
+
+        key = _docket_fn_key.get() or self.key
+        task_result = await check_background_task(
+            component=self, task_type="tool", key=key, arguments=arguments
+        )
+        if task_result:
+            return task_result
+
+        return await self.run(arguments)
 
     def register_with_docket(self, docket: Docket) -> None:
         """Register this tool with docket for background execution."""
@@ -254,10 +312,27 @@ class Tool(FastMCPComponent):
         docket.register(self.run, names=[self.key])
 
     async def add_to_docket(  # type: ignore[override]
-        self, docket: Docket, arguments: dict[str, Any], **kwargs: Any
+        self,
+        docket: Docket,
+        arguments: dict[str, Any],
+        *,
+        fn_key: str | None = None,
+        task_key: str | None = None,
+        **kwargs: Any,
     ) -> Execution:
-        """Schedule this tool for background execution via docket."""
-        return await docket.add(self.key, **kwargs)(arguments)
+        """Schedule this tool for background execution via docket.
+
+        Args:
+            docket: The Docket instance
+            arguments: Tool arguments
+            fn_key: Function lookup key in Docket registry (defaults to self.key)
+            task_key: Redis storage key for the result
+            **kwargs: Additional kwargs passed to docket.add()
+        """
+        lookup_key = fn_key or self.key
+        if task_key:
+            kwargs["key"] = task_key
+        return await docket.add(lookup_key, **kwargs)(arguments)
 
     @classmethod
     def from_tool(
@@ -402,46 +477,6 @@ class FunctionTool(Tool):
 
         return self.convert_result(result)
 
-    def convert_result(self, raw_value: Any) -> ToolResult:
-        """Convert a raw return value to ToolResult.
-
-        This handles the same conversion logic as run(), but works on
-        already-executed raw values (e.g., from Docket background execution).
-        """
-        if isinstance(raw_value, ToolResult):
-            return raw_value
-
-        unstructured_result = _convert_to_content(raw_value, serializer=self.serializer)
-
-        if self.output_schema is None:
-            # Do not produce a structured output for MCP Content Types
-            if isinstance(raw_value, ContentBlock | Audio | Image | File) or (
-                isinstance(raw_value, list | tuple)
-                and any(isinstance(item, ContentBlock) for item in raw_value)
-            ):
-                return ToolResult(content=unstructured_result)
-
-            # Otherwise, try to serialize the result as a dict
-            try:
-                structured_content = pydantic_core.to_jsonable_python(raw_value)
-                if isinstance(structured_content, dict):
-                    return ToolResult(
-                        content=unstructured_result,
-                        structured_content=structured_content,
-                    )
-
-            except pydantic_core.PydanticSerializationError:
-                pass
-
-            return ToolResult(content=unstructured_result)
-
-        wrap_result = self.output_schema.get("x-fastmcp-wrap-result")
-
-        return ToolResult(
-            content=unstructured_result,
-            structured_content={"result": raw_value} if wrap_result else raw_value,
-        )
-
     def register_with_docket(self, docket: Docket) -> None:
         """Register this tool with docket for background execution.
 
@@ -453,13 +488,29 @@ class FunctionTool(Tool):
         docket.register(self.fn, names=[self.key])
 
     async def add_to_docket(  # type: ignore[override]
-        self, docket: Docket, arguments: dict[str, Any], **kwargs: Any
+        self,
+        docket: Docket,
+        arguments: dict[str, Any],
+        *,
+        fn_key: str | None = None,
+        task_key: str | None = None,
+        **kwargs: Any,
     ) -> Execution:
         """Schedule this tool for background execution via docket.
 
         FunctionTool splats the arguments dict since .fn expects **kwargs.
+
+        Args:
+            docket: The Docket instance
+            arguments: Tool arguments
+            fn_key: Function lookup key in Docket registry (defaults to self.key)
+            task_key: Redis storage key for the result
+            **kwargs: Additional kwargs passed to docket.add()
         """
-        return await docket.add(self.key, **kwargs)(**arguments)
+        lookup_key = fn_key or self.key
+        if task_key:
+            kwargs["key"] = task_key
+        return await docket.add(lookup_key, **kwargs)(**arguments)
 
 
 def _is_object_schema(schema: dict[str, Any]) -> bool:

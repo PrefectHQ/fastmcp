@@ -4,6 +4,8 @@ import warnings
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+import mcp.types
+
 from fastmcp import settings
 from fastmcp.exceptions import NotFoundError, PromptError
 from fastmcp.prompts.prompt import (
@@ -105,12 +107,16 @@ class PromptManager:
         self,
         name: str,
         arguments: dict[str, Any] | None = None,
-    ) -> PromptResult:
+    ) -> PromptResult | mcp.types.CreateTaskResult:
         """
         Internal API for servers: Finds and renders a prompt.
 
         Note: Full error handling (logging, masking) is done at the FastMCP
         server level. This method provides basic error wrapping for direct usage.
+
+        Returns:
+            PromptResult for synchronous execution, or CreateTaskResult if
+            the prompt was submitted to Docket for background execution.
         """
         prompt = await self.get_prompt(name)
         try:

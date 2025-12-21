@@ -6,14 +6,20 @@ on mounted child servers through a parent server.
 """
 
 import asyncio
+from collections.abc import Sequence
 
+import mcp.types as mt
 import pytest
 from docket import Docket
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
+from fastmcp.prompts.prompt import PromptResult
+from fastmcp.resources.resource import ResourceContent
 from fastmcp.server.dependencies import CurrentDocket, CurrentFastMCP
+from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.server.tasks import TaskConfig
+from fastmcp.tools.tool import ToolResult
 
 
 @pytest.fixture(autouse=True)
@@ -83,7 +89,7 @@ def parent_server(child_server):
         return value * 10
 
     # Mount child with prefix
-    parent.mount(child_server, prefix="child")
+    parent.mount(child_server, namespace="child")
 
     return parent
 
@@ -303,7 +309,7 @@ class TestMountedTaskDependencies:
             return f"docket available: {docket is not None}"
 
         parent = FastMCP("dep-parent")
-        parent.mount(child, prefix="child")
+        parent.mount(child, namespace="child")
 
         async with Client(parent) as client:
             task = await client.call_tool("child_tool_with_docket", {}, task=True)
@@ -324,7 +330,7 @@ class TestMountedTaskDependencies:
             return f"server name: {server.name}"
 
         parent = FastMCP("server-dep-parent")
-        parent.mount(child, prefix="child")
+        parent.mount(child, namespace="child")
 
         async with Client(parent) as client:
             task = await client.call_tool("child_tool_with_server", {}, task=True)
@@ -353,8 +359,8 @@ class TestMultipleMounts:
             return a - b
 
         parent = FastMCP("multi-parent")
-        parent.mount(child1, prefix="math1")
-        parent.mount(child2, prefix="math2")
+        parent.mount(child1, namespace="math1")
+        parent.mount(child2, namespace="math2")
 
         async with Client(parent) as client:
             task1 = await client.call_tool("math1_add", {"a": 10, "b": 5}, task=True)
@@ -386,8 +392,8 @@ class TestMountedFunctionNameCollisions:
             return value * 3  # Triple
 
         parent = FastMCP("parent")
-        parent.mount(child1, prefix="c1")
-        parent.mount(child2, prefix="c2")
+        parent.mount(child1, namespace="c1")
+        parent.mount(child2, namespace="c2")
 
         async with Client(parent) as client:
             # Both should execute their own implementation
@@ -433,8 +439,8 @@ class TestMountedFunctionNameCollisions:
         async def deep_tool() -> str:
             return "deep"
 
-        child.mount(grandchild, prefix="gc")
-        parent.mount(child, prefix="child")
+        child.mount(grandchild, namespace="gc")
+        parent.mount(child, namespace="child")
 
         async with Client(parent) as client:
             # Tool should be accessible and execute correctly
@@ -496,7 +502,7 @@ class TestMountedTaskConfigModes:
     def parent_with_modes(self, child_with_modes):
         """Create a parent server with the child mounted."""
         parent = FastMCP("parent-modes")
-        parent.mount(child_with_modes, prefix="child")
+        parent.mount(child_with_modes, namespace="child")
         return parent
 
     async def test_optional_mode_sync_through_mount(self, parent_with_modes):
@@ -548,3 +554,223 @@ class TestMountedTaskConfigModes:
             result = await task.result()
             # Result is available but may indicate error or sync execution
             assert result is not None
+
+
+# -----------------------------------------------------------------------------
+# Middleware classes for tracing tests
+# -----------------------------------------------------------------------------
+
+
+class ToolTracingMiddleware(Middleware):
+    """Middleware that traces tool calls."""
+
+    def __init__(self, name: str, calls: list[str]):
+        super().__init__()
+        self._name = name
+        self._calls = calls
+
+    async def on_call_tool(
+        self,
+        context: MiddlewareContext[mt.CallToolRequestParams],
+        call_next: CallNext[mt.CallToolRequestParams, ToolResult],
+    ) -> ToolResult:
+        self._calls.append(f"{self._name}:before")
+        result = await call_next(context)
+        self._calls.append(f"{self._name}:after")
+        return result
+
+
+class ResourceTracingMiddleware(Middleware):
+    """Middleware that traces resource reads."""
+
+    def __init__(self, name: str, calls: list[str]):
+        super().__init__()
+        self._name = name
+        self._calls = calls
+
+    async def on_read_resource(
+        self,
+        context: MiddlewareContext[mt.ReadResourceRequestParams],
+        call_next: CallNext[mt.ReadResourceRequestParams, Sequence[ResourceContent]],
+    ) -> Sequence[ResourceContent]:
+        self._calls.append(f"{self._name}:before")
+        result = await call_next(context)
+        self._calls.append(f"{self._name}:after")
+        return result
+
+
+class PromptTracingMiddleware(Middleware):
+    """Middleware that traces prompt gets."""
+
+    def __init__(self, name: str, calls: list[str]):
+        super().__init__()
+        self._name = name
+        self._calls = calls
+
+    async def on_get_prompt(
+        self,
+        context: MiddlewareContext[mt.GetPromptRequestParams],
+        call_next: CallNext[mt.GetPromptRequestParams, PromptResult],
+    ) -> PromptResult:
+        self._calls.append(f"{self._name}:before")
+        result = await call_next(context)
+        self._calls.append(f"{self._name}:after")
+        return result
+
+
+class TestMiddlewareWithMountedTasks:
+    """Test that middleware runs at all levels when executing background tasks.
+
+    For background tasks, middleware runs during task submission (wrapping the MCP
+    request handling that queues to Docket). The actual function execution happens
+    later in the Docket worker, after the middleware chain completes.
+    """
+
+    async def test_tool_middleware_runs_with_background_task(self):
+        """Middleware runs at parent, child, and grandchild levels for tool tasks."""
+        calls: list[str] = []
+
+        grandchild = FastMCP("Grandchild")
+
+        @grandchild.tool(task=True)
+        async def compute(x: int) -> int:
+            calls.append("grandchild:tool")
+            return x * 2
+
+        grandchild.add_middleware(ToolTracingMiddleware("grandchild", calls))
+
+        child = FastMCP("Child")
+        child.mount(grandchild, namespace="gc")
+        child.add_middleware(ToolTracingMiddleware("child", calls))
+
+        parent = FastMCP("Parent")
+        parent.mount(child, namespace="c")
+        parent.add_middleware(ToolTracingMiddleware("parent", calls))
+
+        async with Client(parent) as client:
+            task = await client.call_tool("c_gc_compute", {"x": 5}, task=True)
+            result = await task.result()
+            assert result.data == 10
+
+        # Middleware runs during task submission (before/after queuing to Docket)
+        # Function executes later in Docket worker
+        assert calls == [
+            "parent:before",
+            "child:before",
+            "grandchild:before",
+            "grandchild:after",
+            "child:after",
+            "parent:after",
+            "grandchild:tool",  # Executes in Docket after middleware completes
+        ]
+
+    async def test_resource_middleware_runs_with_background_task(self):
+        """Middleware runs at parent, child, and grandchild levels for resource tasks."""
+        calls: list[str] = []
+
+        grandchild = FastMCP("Grandchild")
+
+        @grandchild.resource("data://value", task=True)
+        async def get_data() -> str:
+            calls.append("grandchild:resource")
+            return "result"
+
+        grandchild.add_middleware(ResourceTracingMiddleware("grandchild", calls))
+
+        child = FastMCP("Child")
+        child.mount(grandchild, namespace="gc")
+        child.add_middleware(ResourceTracingMiddleware("child", calls))
+
+        parent = FastMCP("Parent")
+        parent.mount(child, namespace="c")
+        parent.add_middleware(ResourceTracingMiddleware("parent", calls))
+
+        async with Client(parent) as client:
+            task = await client.read_resource("data://c/gc/value", task=True)
+            result = await task.result()
+            assert result[0].text == "result"
+
+        # Middleware runs during task submission, function in Docket
+        assert calls == [
+            "parent:before",
+            "child:before",
+            "grandchild:before",
+            "grandchild:after",
+            "child:after",
+            "parent:after",
+            "grandchild:resource",
+        ]
+
+    async def test_prompt_middleware_runs_with_background_task(self):
+        """Middleware runs at parent, child, and grandchild levels for prompt tasks."""
+        calls: list[str] = []
+
+        grandchild = FastMCP("Grandchild")
+
+        @grandchild.prompt(task=True)
+        async def greet(name: str) -> str:
+            calls.append("grandchild:prompt")
+            return f"Hello, {name}!"
+
+        grandchild.add_middleware(PromptTracingMiddleware("grandchild", calls))
+
+        child = FastMCP("Child")
+        child.mount(grandchild, namespace="gc")
+        child.add_middleware(PromptTracingMiddleware("child", calls))
+
+        parent = FastMCP("Parent")
+        parent.mount(child, namespace="c")
+        parent.add_middleware(PromptTracingMiddleware("parent", calls))
+
+        async with Client(parent) as client:
+            task = await client.get_prompt("c_gc_greet", {"name": "World"}, task=True)
+            result = await task.result()
+            assert result.messages[0].content.text == "Hello, World!"
+
+        # Middleware runs during task submission, function in Docket
+        assert calls == [
+            "parent:before",
+            "child:before",
+            "grandchild:before",
+            "grandchild:after",
+            "child:after",
+            "parent:after",
+            "grandchild:prompt",
+        ]
+
+    async def test_resource_template_middleware_runs_with_background_task(self):
+        """Middleware runs at all levels for resource template tasks."""
+        calls: list[str] = []
+
+        grandchild = FastMCP("Grandchild")
+
+        @grandchild.resource("item://{id}", task=True)
+        async def get_item(id: str) -> str:
+            calls.append("grandchild:template")
+            return f"item-{id}"
+
+        grandchild.add_middleware(ResourceTracingMiddleware("grandchild", calls))
+
+        child = FastMCP("Child")
+        child.mount(grandchild, namespace="gc")
+        child.add_middleware(ResourceTracingMiddleware("child", calls))
+
+        parent = FastMCP("Parent")
+        parent.mount(child, namespace="c")
+        parent.add_middleware(ResourceTracingMiddleware("parent", calls))
+
+        async with Client(parent) as client:
+            task = await client.read_resource("item://c/gc/42", task=True)
+            result = await task.result()
+            assert result[0].text == "item-42"
+
+        # Middleware runs during task submission, function in Docket
+        assert calls == [
+            "parent:before",
+            "child:before",
+            "grandchild:before",
+            "grandchild:after",
+            "child:after",
+            "parent:after",
+            "grandchild:template",
+        ]

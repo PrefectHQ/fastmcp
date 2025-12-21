@@ -185,7 +185,9 @@ class ProxyResourceManager(ResourceManager, ProxyManagerMixin):
         templates_dict = await self.get_resource_templates()
         return list(templates_dict.values())
 
-    async def read_resource(self, uri: AnyUrl | str) -> ResourceContent:
+    async def read_resource(
+        self, uri: AnyUrl | str
+    ) -> ResourceContent | mcp.types.CreateTaskResult:
         """Reads a resource, trying local/mounted first, then proxy if not found."""
         try:
             # First try local and mounted resources
@@ -256,7 +258,7 @@ class ProxyPromptManager(PromptManager, ProxyManagerMixin):
         self,
         name: str,
         arguments: dict[str, Any] | None = None,
-    ) -> PromptResult:
+    ) -> PromptResult | mcp.types.CreateTaskResult:
         """Renders a prompt, trying local/mounted first, then proxy if not found."""
         try:
             # First try local and mounted prompts

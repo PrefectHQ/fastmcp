@@ -8,6 +8,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 from urllib.parse import parse_qs, unquote
 
+import mcp.types
 from mcp.types import Annotations, Icon
 
 if TYPE_CHECKING:
@@ -20,7 +21,7 @@ from pydantic import (
     validate_call,
 )
 
-from fastmcp.resources.resource import Resource
+from fastmcp.resources.resource import Resource, ResourceContent
 from fastmcp.server.dependencies import get_context, without_injected_parameters
 from fastmcp.server.tasks.config import TaskConfig
 from fastmcp.utilities.components import FastMCPComponent
@@ -176,6 +177,47 @@ class ResourceTemplate(FastMCPComponent):
             "Subclasses must implement read() or override create_resource()"
         )
 
+    def convert_result(self, raw_value: Any) -> ResourceContent:
+        """Convert a raw return value to ResourceContent.
+
+        Handles ResourceContent passthrough and converts raw values using mime_type.
+        """
+        return ResourceContent.from_value(raw_value, mime_type=self.mime_type)
+
+    async def _read(
+        self, uri: str, params: dict[str, Any]
+    ) -> ResourceContent | mcp.types.CreateTaskResult:
+        """Server entry point that handles task routing.
+
+        This allows ANY ResourceTemplate subclass to support background execution
+        by setting task_config.mode to "supported" or "required". The server calls
+        this method instead of create_resource()/read() directly.
+
+        Subclasses can override this to customize task routing behavior.
+        For example, FastMCPProviderResourceTemplate overrides to delegate to child
+        middleware without submitting to Docket.
+        """
+        from fastmcp.server.dependencies import _docket_fn_key
+        from fastmcp.server.tasks.routing import check_background_task
+
+        # Templates need pattern check: only use contextvar if it contains '{'
+        key = _docket_fn_key.get()
+        if not key or "{" not in key:
+            key = self.key
+        task_result = await check_background_task(
+            component=self, task_type="template", key=key, arguments=params
+        )
+        if task_result:
+            return task_result
+
+        # Synchronous execution - create resource and read directly
+        # Call resource.read() not resource._read() to avoid task routing on ephemeral resource
+        resource = await self.create_resource(uri, params)
+        result = await resource.read()
+        if isinstance(result, ResourceContent):
+            return result
+        return resource.convert_result(result)
+
     async def create_resource(self, uri: str, params: dict[str, Any]) -> Resource:
         """Create a resource from the template with the given parameters.
 
@@ -233,16 +275,58 @@ class ResourceTemplate(FastMCPComponent):
         docket.register(self.read, names=[self.key])
 
     async def add_to_docket(  # type: ignore[override]
-        self, docket: Docket, params: dict[str, Any], **kwargs: Any
+        self,
+        docket: Docket,
+        params: dict[str, Any],
+        *,
+        fn_key: str | None = None,
+        task_key: str | None = None,
+        **kwargs: Any,
     ) -> Execution:
-        """Schedule this template for background execution via docket."""
-        return await docket.add(self.key, **kwargs)(params)
+        """Schedule this template for background execution via docket.
+
+        Args:
+            docket: The Docket instance
+            params: Template parameters
+            fn_key: Function lookup key in Docket registry (defaults to self.key)
+            task_key: Redis storage key for the result
+            **kwargs: Additional kwargs passed to docket.add()
+        """
+        lookup_key = fn_key or self.key
+        if task_key:
+            kwargs["key"] = task_key
+        return await docket.add(lookup_key, **kwargs)(params)
 
 
 class FunctionResourceTemplate(ResourceTemplate):
     """A template for dynamically creating resources."""
 
     fn: Callable[..., Any]
+
+    async def _read(
+        self, uri: str, params: dict[str, Any]
+    ) -> ResourceContent | mcp.types.CreateTaskResult:
+        """Optimized server entry point that skips ephemeral resource creation.
+
+        For FunctionResourceTemplate, we can call read() directly instead of
+        creating a temporary resource, which is more efficient.
+        """
+        from fastmcp.server.dependencies import _docket_fn_key
+        from fastmcp.server.tasks.routing import check_background_task
+
+        # Templates need pattern check: only use contextvar if it contains '{'
+        key = _docket_fn_key.get()
+        if not key or "{" not in key:
+            key = self.key
+        task_result = await check_background_task(
+            component=self, task_type="template", key=key, arguments=params
+        )
+        if task_result:
+            return task_result
+
+        # Synchronous execution - call read() directly, skip resource creation
+        result = await self.read(arguments=params)
+        return self.convert_result(result)
 
     async def create_resource(self, uri: str, params: dict[str, Any]) -> Resource:
         """Create a resource from the template with the given parameters."""
@@ -305,13 +389,29 @@ class FunctionResourceTemplate(ResourceTemplate):
         docket.register(self.fn, names=[self.key])
 
     async def add_to_docket(  # type: ignore[override]
-        self, docket: Docket, params: dict[str, Any], **kwargs: Any
+        self,
+        docket: Docket,
+        params: dict[str, Any],
+        *,
+        fn_key: str | None = None,
+        task_key: str | None = None,
+        **kwargs: Any,
     ) -> Execution:
         """Schedule this template for background execution via docket.
 
         FunctionResourceTemplate splats the params dict since .fn expects **kwargs.
+
+        Args:
+            docket: The Docket instance
+            params: Template parameters
+            fn_key: Function lookup key in Docket registry (defaults to self.key)
+            task_key: Redis storage key for the result
+            **kwargs: Additional kwargs passed to docket.add()
         """
-        return await docket.add(self.key, **kwargs)(**params)
+        lookup_key = fn_key or self.key
+        if task_key:
+            kwargs["key"] = task_key
+        return await docket.add(lookup_key, **kwargs)(**params)
 
     @classmethod
     def from_function(

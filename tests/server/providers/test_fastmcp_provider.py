@@ -1,8 +1,73 @@
 """Tests for FastMCPProvider."""
 
+from collections.abc import Sequence
+
+import mcp.types as mt
+
 from fastmcp import FastMCP
 from fastmcp.client import Client
+from fastmcp.prompts.prompt import PromptResult
+from fastmcp.resources.resource import ResourceContent
+from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.server.providers import FastMCPProvider
+from fastmcp.tools.tool import ToolResult
+
+
+class ToolTracingMiddleware(Middleware):
+    """Middleware that traces tool calls."""
+
+    def __init__(self, name: str, calls: list[str]):
+        super().__init__()
+        self._name = name
+        self._calls = calls
+
+    async def on_call_tool(
+        self,
+        context: MiddlewareContext[mt.CallToolRequestParams],
+        call_next: CallNext[mt.CallToolRequestParams, ToolResult],
+    ) -> ToolResult:
+        self._calls.append(f"{self._name}:before")
+        result = await call_next(context)
+        self._calls.append(f"{self._name}:after")
+        return result
+
+
+class ResourceTracingMiddleware(Middleware):
+    """Middleware that traces resource reads."""
+
+    def __init__(self, name: str, calls: list[str]):
+        super().__init__()
+        self._name = name
+        self._calls = calls
+
+    async def on_read_resource(
+        self,
+        context: MiddlewareContext[mt.ReadResourceRequestParams],
+        call_next: CallNext[mt.ReadResourceRequestParams, Sequence[ResourceContent]],
+    ) -> Sequence[ResourceContent]:
+        self._calls.append(f"{self._name}:before")
+        result = await call_next(context)
+        self._calls.append(f"{self._name}:after")
+        return result
+
+
+class PromptTracingMiddleware(Middleware):
+    """Middleware that traces prompt gets."""
+
+    def __init__(self, name: str, calls: list[str]):
+        super().__init__()
+        self._name = name
+        self._calls = calls
+
+    async def on_get_prompt(
+        self,
+        context: MiddlewareContext[mt.GetPromptRequestParams],
+        call_next: CallNext[mt.GetPromptRequestParams, PromptResult],
+    ) -> PromptResult:
+        self._calls.append(f"{self._name}:before")
+        result = await call_next(context)
+        self._calls.append(f"{self._name}:after")
+        return result
 
 
 class TestToolOperations:
@@ -231,3 +296,147 @@ class TestServerReference:
         provider = FastMCPProvider(server)
 
         assert provider.server.name == "MyServer"
+
+
+class TestMiddlewareChain:
+    """Test that middleware runs at each level of mounted servers."""
+
+    async def test_tool_middleware_three_levels(self):
+        """Middleware runs at parent, child, and grandchild levels for tools."""
+        calls: list[str] = []
+
+        grandchild = FastMCP("Grandchild")
+
+        @grandchild.tool
+        async def compute(x: int) -> int:
+            calls.append("grandchild:tool")
+            return x * 2
+
+        grandchild.add_middleware(ToolTracingMiddleware("grandchild", calls))
+
+        child = FastMCP("Child")
+        child.mount(grandchild, namespace="gc")
+        child.add_middleware(ToolTracingMiddleware("child", calls))
+
+        parent = FastMCP("Parent")
+        parent.mount(child, namespace="c")
+        parent.add_middleware(ToolTracingMiddleware("parent", calls))
+
+        async with Client(parent) as client:
+            result = await client.call_tool("c_gc_compute", {"x": 5})
+            assert result.data == 10
+
+        assert calls == [
+            "parent:before",
+            "child:before",
+            "grandchild:before",
+            "grandchild:tool",
+            "grandchild:after",
+            "child:after",
+            "parent:after",
+        ]
+
+    async def test_resource_middleware_three_levels(self):
+        """Middleware runs at parent, child, and grandchild levels for resources."""
+        calls: list[str] = []
+
+        grandchild = FastMCP("Grandchild")
+
+        @grandchild.resource("data://value")
+        async def get_data() -> str:
+            calls.append("grandchild:resource")
+            return "result"
+
+        grandchild.add_middleware(ResourceTracingMiddleware("grandchild", calls))
+
+        child = FastMCP("Child")
+        child.mount(grandchild, namespace="gc")
+        child.add_middleware(ResourceTracingMiddleware("child", calls))
+
+        parent = FastMCP("Parent")
+        parent.mount(child, namespace="c")
+        parent.add_middleware(ResourceTracingMiddleware("parent", calls))
+
+        async with Client(parent) as client:
+            result = await client.read_resource("data://c/gc/value")
+            assert result[0].text == "result"  # type: ignore[attr-defined]
+
+        assert calls == [
+            "parent:before",
+            "child:before",
+            "grandchild:before",
+            "grandchild:resource",
+            "grandchild:after",
+            "child:after",
+            "parent:after",
+        ]
+
+    async def test_prompt_middleware_three_levels(self):
+        """Middleware runs at parent, child, and grandchild levels for prompts."""
+        calls: list[str] = []
+
+        grandchild = FastMCP("Grandchild")
+
+        @grandchild.prompt
+        async def greet(name: str) -> str:
+            calls.append("grandchild:prompt")
+            return f"Hello, {name}!"
+
+        grandchild.add_middleware(PromptTracingMiddleware("grandchild", calls))
+
+        child = FastMCP("Child")
+        child.mount(grandchild, namespace="gc")
+        child.add_middleware(PromptTracingMiddleware("child", calls))
+
+        parent = FastMCP("Parent")
+        parent.mount(child, namespace="c")
+        parent.add_middleware(PromptTracingMiddleware("parent", calls))
+
+        async with Client(parent) as client:
+            result = await client.get_prompt("c_gc_greet", {"name": "World"})
+            assert result.messages[0].content.text == "Hello, World!"  # type: ignore[attr-defined]
+
+        assert calls == [
+            "parent:before",
+            "child:before",
+            "grandchild:before",
+            "grandchild:prompt",
+            "grandchild:after",
+            "child:after",
+            "parent:after",
+        ]
+
+    async def test_resource_template_middleware_three_levels(self):
+        """Middleware runs at all levels for resource templates."""
+        calls: list[str] = []
+
+        grandchild = FastMCP("Grandchild")
+
+        @grandchild.resource("item://{id}")
+        async def get_item(id: str) -> str:
+            calls.append("grandchild:template")
+            return f"item-{id}"
+
+        grandchild.add_middleware(ResourceTracingMiddleware("grandchild", calls))
+
+        child = FastMCP("Child")
+        child.mount(grandchild, namespace="gc")
+        child.add_middleware(ResourceTracingMiddleware("child", calls))
+
+        parent = FastMCP("Parent")
+        parent.mount(child, namespace="c")
+        parent.add_middleware(ResourceTracingMiddleware("parent", calls))
+
+        async with Client(parent) as client:
+            result = await client.read_resource("item://c/gc/42")
+            assert result[0].text == "item-42"  # type: ignore[attr-defined]
+
+        assert calls == [
+            "parent:before",
+            "child:before",
+            "grandchild:before",
+            "grandchild:template",
+            "grandchild:after",
+            "child:after",
+            "parent:after",
+        ]

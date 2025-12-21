@@ -1035,7 +1035,7 @@ class TestMountedComponentsRaiseOnLoadError:
         child_mcp = FastMCP("FailingChildServer")
 
         # Create a failing mounted server by corrupting it
-        parent_mcp.mount(child_mcp, prefix="child")
+        parent_mcp.mount(child_mcp, namespace="child")
         # Corrupt the parent's providers to make it fail during loading
         parent_mcp._providers.append("invalid")  # type: ignore
 
@@ -1049,7 +1049,7 @@ class TestMountedComponentsRaiseOnLoadError:
         child_mcp = FastMCP("FailingChildServer")
 
         # Create a failing mounted server
-        parent_mcp.mount(child_mcp, prefix="child")
+        parent_mcp.mount(child_mcp, namespace="child")
         # Corrupt the parent's providers to make it fail during loading
         parent_mcp._providers.append("invalid")  # type: ignore
 

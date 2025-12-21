@@ -40,6 +40,16 @@ _current_server: ContextVar[weakref.ref[FastMCP] | None] = ContextVar(  # type: 
     "server", default=None
 )
 
+# ContextVar for propagating task metadata through the async call stack
+# When set, indicates this call should be executed as a background task
+_task_metadata: ContextVar[dict[str, Any] | None] = ContextVar(
+    "task_metadata", default=None
+)
+
+# ContextVar for the component's Docket function lookup key (with namespace prefix)
+# Used by Tool._run(), Resource._read(), Prompt._render() to find the registered function
+_docket_fn_key: ContextVar[str | None] = ContextVar("docket_fn_key", default=None)
+
 __all__ = [
     "AccessToken",
     "CurrentContext",
@@ -52,6 +62,7 @@ __all__ = [
     "get_http_headers",
     "get_http_request",
     "get_server",
+    "get_task_metadata",
     "resolve_dependencies",
     "without_injected_parameters",
 ]
@@ -264,6 +275,16 @@ def get_context() -> Context:
     if context is None:
         raise RuntimeError("No active context found.")
     return context
+
+
+def get_task_metadata() -> dict[str, Any] | None:
+    """Get the current task metadata from the context.
+
+    Returns:
+        The task metadata dict if this is a background task request,
+        or None if this is a normal execution.
+    """
+    return _task_metadata.get()
 
 
 class _CurrentContext(Dependency):

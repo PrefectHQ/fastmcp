@@ -77,7 +77,7 @@ class TestBasicMount:
             return "This is from the sub app"
 
         # Mount with empty prefix but without deprecated separators
-        main_app.mount(sub_app, prefix=prefix)
+        main_app.mount(sub_app, namespace=prefix)
 
         tools = await main_app.get_tools()
         # With empty prefix, the tool should keep its original name
@@ -1222,8 +1222,8 @@ class TestDeeplyNestedMount:
         def multiply(a: int, b: int) -> int:
             return a * b
 
-        middle.mount(leaf, prefix="leaf")
-        root.mount(middle, prefix="middle")
+        middle.mount(leaf, namespace="leaf")
+        root.mount(middle, namespace="middle")
 
         async with Client(root) as client:
             # Tool at level 2 should work
@@ -1248,8 +1248,8 @@ class TestDeeplyNestedMount:
         def middle_data() -> str:
             return "middle data"
 
-        middle.mount(leaf, prefix="leaf")
-        root.mount(middle, prefix="middle")
+        middle.mount(leaf, namespace="leaf")
+        root.mount(middle, namespace="middle")
 
         async with Client(root) as client:
             # Resource at level 2 should work
@@ -1274,8 +1274,8 @@ class TestDeeplyNestedMount:
         def middle_item(id: str) -> str:
             return f"middle item {id}"
 
-        middle.mount(leaf, prefix="leaf")
-        root.mount(middle, prefix="middle")
+        middle.mount(leaf, namespace="leaf")
+        root.mount(middle, namespace="middle")
 
         async with Client(root) as client:
             # Resource template at level 2 should work
@@ -1300,8 +1300,8 @@ class TestDeeplyNestedMount:
         def middle_prompt(name: str) -> str:
             return f"Hello from middle: {name}"
 
-        middle.mount(leaf, prefix="leaf")
-        root.mount(middle, prefix="middle")
+        middle.mount(leaf, namespace="leaf")
+        root.mount(middle, namespace="middle")
 
         async with Client(root) as client:
             # Prompt at level 2 should work
@@ -1325,9 +1325,9 @@ class TestDeeplyNestedMount:
         def deep_tool() -> str:
             return "very deep"
 
-        level2.mount(level3, prefix="l3")
-        level1.mount(level2, prefix="l2")
-        root.mount(level1, prefix="l1")
+        level2.mount(level3, namespace="l3")
+        level1.mount(level2, namespace="l2")
+        root.mount(level1, namespace="l1")
 
         async with Client(root) as client:
             # Verify tool is listed
