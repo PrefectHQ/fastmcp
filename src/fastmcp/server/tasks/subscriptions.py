@@ -29,6 +29,7 @@ async def subscribe_to_task_updates(
     task_key: str,
     session: ServerSession,
     docket: Docket,
+    poll_interval_ms: int = 5000,
 ) -> None:
     """Subscribe to Docket execution events and send MCP notifications.
 
@@ -41,6 +42,7 @@ async def subscribe_to_task_updates(
         task_key: Internal Docket execution key (includes session, type, component)
         session: MCP ServerSession for sending notifications
         docket: Docket instance for subscribing to execution events
+        poll_interval_ms: Poll interval in milliseconds to include in notifications
     """
     try:
         execution = await docket.get_execution(task_key)
@@ -58,6 +60,7 @@ async def subscribe_to_task_updates(
                     task_key=task_key,
                     docket=docket,
                     state=event["state"],  # type: ignore[typeddict-item]
+                    poll_interval_ms=poll_interval_ms,
                 )
             elif event["type"] == "progress":
                 # Send notification when progress message changes
@@ -67,6 +70,7 @@ async def subscribe_to_task_updates(
                     task_key=task_key,
                     docket=docket,
                     execution=execution,
+                    poll_interval_ms=poll_interval_ms,
                 )
 
     except Exception as e:
@@ -79,6 +83,7 @@ async def _send_status_notification(
     task_key: str,
     docket: Docket,
     state: ExecutionState,
+    poll_interval_ms: int = 5000,
 ) -> None:
     """Send notifications/tasks/status to client.
 
@@ -91,6 +96,7 @@ async def _send_status_notification(
         task_key: Internal task key (for metadata lookup)
         docket: Docket instance
         state: Docket execution state (enum)
+        poll_interval_ms: Poll interval in milliseconds
     """
     # Map Docket state to MCP status
     mcp_status = DOCKET_TO_MCP_STATE.get(state, "failed")
@@ -127,7 +133,7 @@ async def _send_status_notification(
         "createdAt": created_at,
         "lastUpdatedAt": datetime.now(timezone.utc).isoformat(),
         "ttl": 60000,
-        "pollInterval": 1000,
+        "pollInterval": poll_interval_ms,
     }
 
     if status_message:
@@ -149,6 +155,7 @@ async def _send_progress_notification(
     task_key: str,
     docket: Docket,
     execution: Execution,
+    poll_interval_ms: int = 5000,
 ) -> None:
     """Send notifications/tasks/status when progress updates.
 
@@ -158,6 +165,7 @@ async def _send_progress_notification(
         task_key: Internal task key
         docket: Docket instance
         execution: Execution object with current progress
+        poll_interval_ms: Poll interval in milliseconds
     """
     # Sync execution to get latest progress
     await execution.sync()
@@ -192,7 +200,7 @@ async def _send_progress_notification(
         "createdAt": created_at,
         "lastUpdatedAt": datetime.now(timezone.utc).isoformat(),
         "ttl": 60000,
-        "pollInterval": 1000,
+        "pollInterval": poll_interval_ms,
         "statusMessage": execution.progress.message,
     }
 

@@ -1,10 +1,11 @@
-"""Tests for TaskConfig mode enforcement (SEP-1686).
+"""Tests for TaskConfig (SEP-1686).
 
-Tests that the server correctly enforces task execution modes:
-- "forbidden": No task support, error if client requests task
-- "optional": Supports both sync and task execution
-- "required": Requires task execution, error if client doesn't request task
+Tests for TaskConfig:
+- Mode enforcement (forbidden, optional, required)
+- Poll interval configuration
 """
+
+from datetime import timedelta
 
 import pytest
 from mcp.shared.exceptions import McpError
@@ -352,3 +353,41 @@ class TestSyncFunctionValidation:
         tool = await mcp._tool_manager.get_tool("sync_tool")
         assert isinstance(tool, Tool)
         assert tool.task_config.mode == "forbidden"
+
+
+class TestPollIntervalConfiguration:
+    """Test poll_interval configuration in TaskConfig."""
+
+    async def test_default_poll_interval_is_5_seconds(self):
+        """Default poll_interval should be 5 seconds."""
+        config = TaskConfig()
+        assert config.poll_interval == timedelta(seconds=5)
+
+    async def test_custom_poll_interval_preserved(self):
+        """Custom poll_interval should be preserved in TaskConfig."""
+        config = TaskConfig(poll_interval=timedelta(seconds=10))
+        assert config.poll_interval == timedelta(seconds=10)
+
+    async def test_tool_inherits_poll_interval(self):
+        """Tool should inherit poll_interval from TaskConfig."""
+        mcp = FastMCP("test", tasks=False)
+
+        @mcp.tool(task=TaskConfig(mode="optional", poll_interval=timedelta(seconds=2)))
+        async def my_tool() -> str:
+            return "ok"
+
+        tool = await mcp._tool_manager.get_tool("my_tool")
+        assert isinstance(tool, Tool)
+        assert tool.task_config.poll_interval == timedelta(seconds=2)
+
+    async def test_task_true_uses_default_poll_interval(self):
+        """task=True should use default 5 second poll_interval."""
+        mcp = FastMCP("test", tasks=False)
+
+        @mcp.tool(task=True)
+        async def my_tool() -> str:
+            return "ok"
+
+        tool = await mcp._tool_manager.get_tool("my_tool")
+        assert isinstance(tool, Tool)
+        assert tool.task_config.poll_interval == timedelta(seconds=5)

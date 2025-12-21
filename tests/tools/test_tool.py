@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import Annotated, Any
 
 import pytest
@@ -54,7 +55,10 @@ class TestToolFromFunction:
                     "x-fastmcp-wrap-result": True,
                 },
                 "fn": HasName("add"),
-                "task_config": {"mode": "forbidden"},
+                "task_config": {
+                    "mode": "forbidden",
+                    "poll_interval": timedelta(seconds=5),
+                },
             }
         )
 
@@ -102,7 +106,10 @@ class TestToolFromFunction:
                     "x-fastmcp-wrap-result": True,
                 },
                 "fn": HasName("fetch_data"),
-                "task_config": {"mode": "forbidden"},
+                "task_config": {
+                    "mode": "forbidden",
+                    "poll_interval": timedelta(seconds=5),
+                },
             }
         )
 
@@ -136,7 +143,10 @@ class TestToolFromFunction:
                     "type": "object",
                     "x-fastmcp-wrap-result": True,
                 },
-                "task_config": {"mode": "forbidden"},
+                "task_config": {
+                    "mode": "forbidden",
+                    "poll_interval": timedelta(seconds=5),
+                },
             }
         )
 
@@ -170,7 +180,10 @@ class TestToolFromFunction:
                     "type": "object",
                     "x-fastmcp-wrap-result": True,
                 },
-                "task_config": {"mode": "forbidden"},
+                "task_config": {
+                    "mode": "forbidden",
+                    "poll_interval": timedelta(seconds=5),
+                },
             }
         )
 
@@ -213,7 +226,10 @@ class TestToolFromFunction:
                 },
                 "output_schema": {"additionalProperties": True, "type": "object"},
                 "fn": HasName("create_user"),
-                "task_config": {"mode": "forbidden"},
+                "task_config": {
+                    "mode": "forbidden",
+                    "poll_interval": timedelta(seconds=5),
+                },
             }
         )
 
@@ -275,7 +291,10 @@ class TestToolFromFunction:
                     "required": ["x"],
                     "type": "object",
                 },
-                "task_config": {"mode": "forbidden"},
+                "task_config": {
+                    "mode": "forbidden",
+                    "poll_interval": timedelta(seconds=5),
+                },
             }
         )
 
@@ -308,7 +327,10 @@ class TestToolFromFunction:
                     "required": ["_a", "_b"],
                     "type": "object",
                 },
-                "task_config": {"mode": "forbidden"},
+                "task_config": {
+                    "mode": "forbidden",
+                    "poll_interval": timedelta(seconds=5),
+                },
             }
         )
 
@@ -363,7 +385,10 @@ class TestToolFromFunction:
                     "type": "object",
                     "x-fastmcp-wrap-result": True,
                 },
-                "task_config": {"mode": "forbidden"},
+                "task_config": {
+                    "mode": "forbidden",
+                    "poll_interval": timedelta(seconds=5),
+                },
             }
         )
 

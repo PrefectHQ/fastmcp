@@ -94,6 +94,32 @@ The boolean shortcuts map to these modes:
 - `task=True` → `TaskConfig(mode="optional")`
 - `task=False` → `TaskConfig(mode="forbidden")`
 
+### Poll Interval
+
+<VersionBadge version="2.15.0" />
+
+When clients poll for task status, the server tells them how frequently to check back. By default, FastMCP suggests a 5-second interval, but you can customize this per component:
+
+```python
+from datetime import timedelta
+from fastmcp import FastMCP
+from fastmcp.server.tasks import TaskConfig
+
+mcp = FastMCP("MyServer")
+
+# Poll every 2 seconds for a fast-completing task
+@mcp.tool(task=TaskConfig(mode="optional", poll_interval=timedelta(seconds=2)))
+async def quick_task() -> str:
+    return "Done quickly"
+
+# Poll every 30 seconds for a long-running task
+@mcp.tool(task=TaskConfig(mode="optional", poll_interval=timedelta(seconds=30)))
+async def slow_task() -> str:
+    return "Eventually done"
+```
+
+Shorter intervals give clients faster feedback but increase server load. Longer intervals reduce load but delay status updates.
+
 ### Server-Wide Default
 
 To enable background task support for all components by default, pass `tasks=True` to the constructor. Individual decorators can still override this with `task=False`.

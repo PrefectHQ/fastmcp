@@ -71,17 +71,27 @@ async def tasks_get_handler(server: FastMCP, params: dict[str, Any]) -> GetTaskR
                 )
             )
 
-        # Look up full task key and creation timestamp from Redis
+        # Look up task metadata from Redis
         redis_key = f"fastmcp:task:{session_id}:{client_task_id}"
         created_at_key = f"fastmcp:task:{session_id}:{client_task_id}:created_at"
+        poll_interval_key = f"fastmcp:task:{session_id}:{client_task_id}:poll_interval"
         async with docket.redis() as redis:
             task_key_bytes = await redis.get(redis_key)
             created_at_bytes = await redis.get(created_at_key)
+            poll_interval_bytes = await redis.get(poll_interval_key)
 
         task_key = None if task_key_bytes is None else task_key_bytes.decode("utf-8")
         created_at = (
             None if created_at_bytes is None else created_at_bytes.decode("utf-8")
         )
+        try:
+            poll_interval_ms = (
+                int(poll_interval_bytes.decode("utf-8"))
+                if poll_interval_bytes
+                else 5000  # Default to 5 seconds
+            )
+        except (ValueError, UnicodeDecodeError):
+            poll_interval_ms = 5000
 
         if task_key is None:
             # Task not found - raise error per MCP protocol
@@ -129,7 +139,7 @@ async def tasks_get_handler(server: FastMCP, params: dict[str, Any]) -> GetTaskR
             createdAt=created_at,  # type: ignore[arg-type]
             lastUpdatedAt=datetime.now(timezone.utc),
             ttl=60000,
-            pollInterval=1000,
+            pollInterval=poll_interval_ms,
             statusMessage=status_message,
         )
 
@@ -344,17 +354,27 @@ async def tasks_cancel_handler(
                 )
             )
 
-        # Look up full task key and creation timestamp from Redis
+        # Look up task metadata from Redis
         redis_key = f"fastmcp:task:{session_id}:{client_task_id}"
         created_at_key = f"fastmcp:task:{session_id}:{client_task_id}:created_at"
+        poll_interval_key = f"fastmcp:task:{session_id}:{client_task_id}:poll_interval"
         async with docket.redis() as redis:
             task_key_bytes = await redis.get(redis_key)
             created_at_bytes = await redis.get(created_at_key)
+            poll_interval_bytes = await redis.get(poll_interval_key)
 
         task_key = None if task_key_bytes is None else task_key_bytes.decode("utf-8")
         created_at = (
             None if created_at_bytes is None else created_at_bytes.decode("utf-8")
         )
+        try:
+            poll_interval_ms = (
+                int(poll_interval_bytes.decode("utf-8"))
+                if poll_interval_bytes
+                else 5000  # Default to 5 seconds
+            )
+        except (ValueError, UnicodeDecodeError):
+            poll_interval_ms = 5000
 
         if task_key is None:
             raise McpError(
@@ -386,6 +406,6 @@ async def tasks_cancel_handler(
             createdAt=created_at or datetime.now(timezone.utc).isoformat(),
             lastUpdatedAt=datetime.now(timezone.utc),
             ttl=60_000,
-            pollInterval=1000,
+            pollInterval=poll_interval_ms,
             statusMessage="Task cancelled",
         )

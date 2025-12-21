@@ -77,15 +77,18 @@ async def submit_to_docket(
     # Build full task key with embedded metadata
     task_key = build_task_key(session_id, server_task_id, task_type, key)
 
-    # Store task key mapping and creation timestamp in Redis for protocol handlers
+    # Store task metadata in Redis for protocol handlers
     redis_key = f"fastmcp:task:{session_id}:{server_task_id}"
     created_at_key = f"fastmcp:task:{session_id}:{server_task_id}:created_at"
+    poll_interval_key = f"fastmcp:task:{session_id}:{server_task_id}:poll_interval"
     ttl_seconds = int(
         docket.execution_ttl.total_seconds() + TASK_MAPPING_TTL_BUFFER_SECONDS
     )
+    poll_interval_ms = int(component.task_config.poll_interval.total_seconds() * 1000)
     async with docket.redis() as redis:
         await redis.set(redis_key, task_key, ex=ttl_seconds)
         await redis.set(created_at_key, created_at.isoformat(), ex=ttl_seconds)
+        await redis.set(poll_interval_key, str(poll_interval_ms), ex=ttl_seconds)
 
     # Send notifications/tasks/created per SEP-1686 (mandatory)
     # Send BEFORE queuing to avoid race where task completes before notification
@@ -126,6 +129,7 @@ async def submit_to_docket(
                 task_key,
                 ctx.session,
                 docket,
+                poll_interval_ms,
             )
 
     # Return CreateTaskResult with proper Task object
@@ -137,6 +141,6 @@ async def submit_to_docket(
             createdAt=created_at,
             lastUpdatedAt=created_at,
             ttl=int(docket.execution_ttl.total_seconds() * 1000),
-            pollInterval=1000,
+            pollInterval=poll_interval_ms,
         )
     )

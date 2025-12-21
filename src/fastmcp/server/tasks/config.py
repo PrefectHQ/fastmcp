@@ -9,6 +9,7 @@ from __future__ import annotations
 import inspect
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import Any, Literal
 
 # Task execution modes per SEP-1686 / MCP ToolExecution.taskSupport
@@ -46,6 +47,7 @@ class TaskConfig:
     """
 
     mode: TaskMode = "optional"
+    poll_interval: timedelta = timedelta(seconds=5)
 
     @classmethod
     def from_bool(cls, value: bool) -> TaskConfig:
