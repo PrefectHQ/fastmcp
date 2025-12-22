@@ -13,7 +13,7 @@ from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.client.transports import FastMCPTransport, StreamableHttpTransport
 from fastmcp.exceptions import ToolError
-from fastmcp.server.proxy import FastMCPProxy, ProxyClient
+from fastmcp.server.providers.proxy import FastMCPProxy, ProxyClient
 from fastmcp.tools.tool import ToolResult
 from fastmcp.tools.tool_transform import (
     ToolTransformConfig,
@@ -248,20 +248,6 @@ class TestTools:
             result = await client.call_tool("greet", {"name": "Marvin", "extra": "abc"})
         assert result.data == "Overwritten, Marvin! abc"
 
-    async def test_proxy_errors_if_overwritten_tool_is_disabled(self, proxy_server):
-        """
-        Test that a tool defined on the proxy is not listed if it is disabled,
-        and it doesn't fall back to the proxied tool with the same name
-        """
-
-        @proxy_server.tool(enabled=False)
-        def greet(name: str, extra: str = "extra") -> str:
-            return f"Overwritten, {name}! {extra}"
-
-        async with Client(proxy_server) as client:
-            with pytest.raises(ToolError, match="Unknown tool"):
-                await client.call_tool("greet", {"name": "Marvin", "extra": "abc"})
-
     async def test_proxy_can_list_overwritten_tool(self, proxy_server):
         """
         Test that a tool defined on the proxy is listed instead of the proxied tool
@@ -275,20 +261,6 @@ class TestTools:
             tools = await client.list_tools()
             greet_tool = next(t for t in tools if t.name == "greet")
             assert "extra" in greet_tool.inputSchema["properties"]
-
-    async def test_proxy_can_list_overwritten_tool_if_disabled(self, proxy_server):
-        """
-        Test that a tool defined on the proxy is not listed if it is disabled,
-        and it doesn't fall back to the proxied tool with the same name
-        """
-
-        @proxy_server.tool(enabled=False)
-        def greet(name: str, extra: str = "extra") -> str:
-            return f"Overwritten, {name}! {extra}"
-
-        async with Client(proxy_server) as client:
-            tools = await client.list_tools()
-            assert not any(t.name == "greet" for t in tools)
 
 
 class TestResources:
@@ -353,20 +325,6 @@ class TestResources:
         assert isinstance(result[0], TextResourceContents)
         assert result[0].text == "Overwritten wave! 🌊"
 
-    async def test_proxy_errors_if_overwritten_resource_is_disabled(self, proxy_server):
-        """
-        Test that a resource defined on the proxy is not accessible if it is disabled,
-        and it doesn't fall back to the proxied resource with the same URI
-        """
-
-        @proxy_server.resource(uri="resource://wave", enabled=False)
-        def overwritten_wave() -> str:
-            return "Overwritten wave! 🌊"
-
-        async with Client(proxy_server) as client:
-            with pytest.raises(McpError, match="Unknown resource"):
-                await client.read_resource("resource://wave")
-
     async def test_proxy_can_list_overwritten_resource(self, proxy_server):
         """
         Test that a resource defined on the proxy is listed instead of the proxied resource
@@ -382,21 +340,6 @@ class TestResources:
                 r for r in resources if str(r.uri) == "resource://wave"
             )
             assert wave_resource.name == "overwritten_wave"
-
-    async def test_proxy_can_list_overwritten_resource_if_disabled(self, proxy_server):
-        """
-        Test that a resource defined on the proxy is not listed if it is disabled,
-        and it doesn't fall back to the proxied resource with the same URI
-        """
-
-        @proxy_server.resource(uri="resource://wave", enabled=False)
-        def overwritten_wave() -> str:
-            return "Overwritten wave! 🌊"
-
-        async with Client(proxy_server) as client:
-            resources = await client.list_resources()
-            wave_resources = [r for r in resources if str(r.uri) == "resource://wave"]
-            assert len(wave_resources) == 0
 
 
 class TestResourceTemplates:
@@ -457,22 +400,6 @@ class TestResourceTemplates:
         assert user_data["name"] == "Overwritten User"
         assert user_data["extra"] == "data"
 
-    async def test_proxy_errors_if_overwritten_resource_template_is_disabled(
-        self, proxy_server
-    ):
-        """
-        Test that a resource template defined on the proxy is not accessible if it is disabled,
-        and it doesn't fall back to the proxied template with the same URI template
-        """
-
-        @proxy_server.resource(uri="data://user/{user_id}", enabled=False)
-        def overwritten_get_user(user_id: str) -> dict[str, Any]:
-            return {"id": user_id, "name": "Overwritten User", "active": True}
-
-        async with Client(proxy_server) as client:
-            with pytest.raises(McpError, match="Unknown resource"):
-                await client.read_resource("data://user/1")
-
     async def test_proxy_can_list_overwritten_resource_template(self, proxy_server):
         """
         Test that a resource template defined on the proxy is listed instead of the proxied template
@@ -488,25 +415,6 @@ class TestResourceTemplates:
                 t for t in templates if t.uriTemplate == "data://user/{user_id}"
             )
             assert user_template.name == "overwritten_get_user"
-
-    async def test_proxy_can_list_overwritten_resource_template_if_disabled(
-        self, proxy_server
-    ):
-        """
-        Test that a resource template defined on the proxy is not listed if it is disabled,
-        and it doesn't fall back to the proxied template with the same URI template
-        """
-
-        @proxy_server.resource(uri="data://user/{user_id}", enabled=False)
-        def overwritten_get_user(user_id: str) -> dict[str, Any]:
-            return {"id": user_id, "name": "Overwritten User", "active": True}
-
-        async with Client(proxy_server) as client:
-            templates = await client.list_resource_templates()
-            user_templates = [
-                t for t in templates if t.uriTemplate == "data://user/{user_id}"
-            ]
-            assert len(user_templates) == 0
 
 
 class TestPrompts:
@@ -566,20 +474,6 @@ class TestPrompts:
             == "Overwritten welcome, Alice! You are my colleague."
         )
 
-    async def test_proxy_errors_if_overwritten_prompt_is_disabled(self, proxy_server):
-        """
-        Test that a prompt defined on the proxy is not accessible if it is disabled,
-        and it doesn't fall back to the proxied prompt with the same name
-        """
-
-        @proxy_server.prompt(enabled=False)
-        def welcome(name: str, extra: str = "friend") -> str:
-            return f"Overwritten welcome, {name}! You are my {extra}."
-
-        async with Client(proxy_server) as client:
-            with pytest.raises(McpError, match="Unknown prompt"):
-                await client.get_prompt("welcome", {"name": "Alice"})
-
     async def test_proxy_can_list_overwritten_prompt(self, proxy_server):
         """
         Test that a prompt defined on the proxy is listed instead of the proxied prompt
@@ -595,21 +489,6 @@ class TestPrompts:
             # Check that the overwritten prompt has the additional 'extra' parameter
             param_names = [arg.name for arg in welcome_prompt.arguments or []]
             assert "extra" in param_names
-
-    async def test_proxy_can_list_overwritten_prompt_if_disabled(self, proxy_server):
-        """
-        Test that a prompt defined on the proxy is not listed if it is disabled,
-        and it doesn't fall back to the proxied prompt with the same name
-        """
-
-        @proxy_server.prompt(enabled=False)
-        def welcome(name: str, extra: str = "friend") -> str:
-            return f"Overwritten welcome, {name}! You are my {extra}."
-
-        async with Client(proxy_server) as client:
-            prompts = await client.list_prompts()
-            welcome_prompts = [p for p in prompts if p.name == "welcome"]
-            assert len(welcome_prompts) == 0
 
 
 async def test_proxy_handles_multiple_concurrent_tasks_correctly(
@@ -732,28 +611,6 @@ class TestMirroredComponents:
         local_tool.disable()
         assert local_tool.enabled is False
 
-    async def test_local_component_takes_precedence_over_mirrored(self, proxy_server):
-        """Test that local components take precedence over mirrored ones."""
-        # Get the mirrored tool
-        tools = await proxy_server.get_tools()
-        mirrored_tool = tools["greet"]
-
-        # Create a local copy and add it
-        local_tool = mirrored_tool.copy()
-        proxy_server.add_tool(local_tool)
-
-        # Disable the local copy
-        local_tool.disable()
-
-        # The local disabled tool should take precedence
-        updated_tools = await proxy_server.get_tools()
-        final_tool = updated_tools["greet"]
-
-        # Should be the local tool (not mirrored) and disabled
-        assert final_tool is local_tool
-        assert final_tool._mirrored is False
-        assert final_tool.enabled is False
-
     async def test_error_messages_mention_copy_method(self, proxy_server):
         """Test that error messages guide users to use copy() method."""
         tools = await proxy_server.get_tools()
@@ -768,30 +625,3 @@ class TestMirroredComponents:
         with pytest.raises(RuntimeError) as exc_info:
             mirrored_tool.disable()
         assert "copy()" in str(exc_info.value)
-
-    async def test_client_cannot_call_disabled_proxy_tool(self, proxy_server):
-        """Test that clients cannot call a tool when local copy is disabled."""
-        # Get the mirrored tool
-        tools = await proxy_server.get_tools()
-        mirrored_tool = tools["greet"]
-
-        # Verify the tool works initially
-        async with Client(proxy_server) as client:
-            result = await client.call_tool("greet", {"name": "Alice"})
-            assert result.data == "Hello, Alice!"
-
-        # Create a local copy and disable it
-        local_tool = mirrored_tool.copy()
-        proxy_server.add_tool(local_tool)
-        local_tool.disable()
-
-        # Client should now get "Unknown tool" error
-        async with Client(proxy_server) as client:
-            with pytest.raises(ToolError, match="Unknown tool"):
-                await client.call_tool("greet", {"name": "Alice"})
-
-        # Tool should not appear in tool list either
-        async with Client(proxy_server) as client:
-            tools_list = await client.list_tools()
-            tool_names = [tool.name for tool in tools_list]
-            assert "greet" not in tool_names

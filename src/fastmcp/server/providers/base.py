@@ -40,16 +40,6 @@ from fastmcp.tools.tool import Tool, ToolResult
 
 
 @dataclass
-class Components:
-    """Collection of MCP components."""
-
-    tools: Sequence[Tool] = ()
-    resources: Sequence[Resource] = ()
-    templates: Sequence[ResourceTemplate] = ()
-    prompts: Sequence[Prompt] = ()
-
-
-@dataclass
 class TaskComponents:
     """Collection of components eligible for background task execution.
 

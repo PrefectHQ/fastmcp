@@ -17,7 +17,7 @@ from mcp.types import TextContent, TextResourceContents
 from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.client.transports import FastMCPTransport
-from fastmcp.server.proxy import ProxyClient
+from fastmcp.server.providers.proxy import ProxyClient
 
 
 @pytest.fixture

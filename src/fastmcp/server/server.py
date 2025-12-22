@@ -99,7 +99,7 @@ if TYPE_CHECKING:
     from fastmcp.server.openapi import ComponentFn as OpenAPIComponentFn
     from fastmcp.server.openapi import FastMCPOpenAPI, RouteMap
     from fastmcp.server.openapi import RouteMapFn as OpenAPIRouteMapFn
-    from fastmcp.server.proxy import FastMCPProxy
+    from fastmcp.server.providers.proxy import FastMCPProxy
     from fastmcp.tools.tool import ToolResultSerializerType
 
 logger = get_logger(__name__)
@@ -2631,7 +2631,7 @@ class FastMCP(Generic[LifespanResultT]):
             )
             # Still honor the flag for backward compatibility
             if as_proxy:
-                from fastmcp.server.proxy import FastMCPProxy
+                from fastmcp.server.providers.proxy import FastMCPProxy
 
                 if not isinstance(server, FastMCPProxy):
                     server = FastMCP.as_proxy(server)
@@ -2836,7 +2836,7 @@ class FastMCP(Generic[LifespanResultT]):
         `fastmcp.client.Client` constructor.
         """
         from fastmcp.client.client import Client
-        from fastmcp.server.proxy import FastMCPProxy, ProxyClient
+        from fastmcp.server.providers.proxy import FastMCPProxy, ProxyClient
 
         if isinstance(backend, Client):
             client = backend

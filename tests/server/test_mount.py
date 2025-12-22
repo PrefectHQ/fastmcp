@@ -9,7 +9,7 @@ from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.client.transports import FastMCPTransport, SSETransport
 from fastmcp.server.providers import FastMCPProvider, TransformingProvider
-from fastmcp.server.proxy import FastMCPProxy
+from fastmcp.server.providers.proxy import FastMCPProxy
 from fastmcp.tools.tool import Tool
 from fastmcp.tools.tool_transform import TransformedTool
 from fastmcp.utilities.tests import caplog_for_fastmcp

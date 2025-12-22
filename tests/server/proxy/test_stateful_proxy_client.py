@@ -8,7 +8,7 @@ from fastmcp import Client, Context, FastMCP
 from fastmcp.client.logging import LogMessage
 from fastmcp.client.transports import FastMCPTransport
 from fastmcp.exceptions import ToolError
-from fastmcp.server.proxy import FastMCPProxy, StatefulProxyClient
+from fastmcp.server.providers.proxy import FastMCPProxy, StatefulProxyClient
 from fastmcp.utilities.tests import find_available_port
 
 

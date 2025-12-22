@@ -10,7 +10,7 @@ from fastmcp.mcp_config import (
     MCPConfig,
     MCPServerTypes,
 )
-from fastmcp.server.proxy import FastMCPProxy, ProxyClient
+from fastmcp.server.providers.proxy import FastMCPProxy, ProxyClient
 from fastmcp.server.server import FastMCP
 
 

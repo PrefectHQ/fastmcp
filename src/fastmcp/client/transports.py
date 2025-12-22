@@ -1016,7 +1016,7 @@ class MCPConfigTransport(ClientTransport):
             ):
                 self._underlying_transports.append(transport)
                 self._composite_server.mount(
-                    server, prefix=name if name_as_prefix else None
+                    server, namespace=name if name_as_prefix else None
                 )
 
             self.transport = FastMCPTransport(mcp=self._composite_server)

@@ -25,12 +25,27 @@ Example:
     ```
 """
 
+from typing import TYPE_CHECKING
+
 from fastmcp.server.providers.base import Provider
 from fastmcp.server.providers.fastmcp_provider import FastMCPProvider
 from fastmcp.server.providers.transforming import TransformingProvider
 
+if TYPE_CHECKING:
+    from fastmcp.server.providers.proxy import ProxyProvider as ProxyProvider
+
 __all__ = [
     "FastMCPProvider",
     "Provider",
+    "ProxyProvider",
     "TransformingProvider",
 ]
+
+
+def __getattr__(name: str):
+    """Lazy import for ProxyProvider to avoid circular imports."""
+    if name == "ProxyProvider":
+        from fastmcp.server.providers.proxy import ProxyProvider
+
+        return ProxyProvider
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

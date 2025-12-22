@@ -17,7 +17,7 @@ from fastmcp.client.logging import LogMessage
 from fastmcp.client.sampling import RequestContext, SamplingMessage, SamplingParams
 from fastmcp.exceptions import ToolError
 from fastmcp.server.elicitation import AcceptedElicitation
-from fastmcp.server.proxy import ProxyClient
+from fastmcp.server.providers.proxy import ProxyClient
 
 
 @pytest.fixture
@@ -402,7 +402,7 @@ class TestProxyClient:
 
     async def test_client_factory_creates_fresh_sessions(self, fastmcp_server: FastMCP):
         """Test that the client factory pattern creates fresh sessions for each request."""
-        from fastmcp.server.proxy import FastMCPProxy
+        from fastmcp.server.providers.proxy import FastMCPProxy
 
         # Create a disconnected client (should use fresh sessions per request)
         base_client = Client(fastmcp_server)
