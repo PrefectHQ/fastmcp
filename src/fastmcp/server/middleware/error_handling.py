@@ -87,7 +87,7 @@ class ErrorHandlingMiddleware(Middleware):
             return error
 
         # Map common exceptions to appropriate MCP error codes
-        error_type = type(error)
+        error_type = type(error.__cause__) if error.__cause__ else type(error)
 
         if error_type in (ValueError, TypeError):
             return McpError(

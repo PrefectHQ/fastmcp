@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from mcp import McpError
 
-from fastmcp.exceptions import NotFoundError
+from fastmcp.exceptions import NotFoundError, ToolError
 from fastmcp.server.middleware.error_handling import (
     ErrorHandlingMiddleware,
     RetryMiddleware,
@@ -214,6 +214,23 @@ class TestErrorHandlingMiddleware:
         assert exc_info.value.error.code == -32602
         assert "Invalid params: test error" in exc_info.value.error.message
         assert "Error in test_method: ValueError: test error" in caplog.text
+
+    async def test_on_message_error_transform_tool_error(self, mock_context, caplog):
+        """Test error handling with transformation and cause type."""
+        middleware = ErrorHandlingMiddleware()
+        tool_error = ToolError("test error")
+        tool_error.__cause__ = ValueError()
+        mock_call_next = AsyncMock(side_effect=tool_error)
+
+        with caplog_for_fastmcp(caplog):
+            with caplog.at_level(logging.ERROR):
+                with pytest.raises(McpError) as exc_info:
+                    await middleware.on_message(mock_context, mock_call_next)
+
+        assert isinstance(exc_info.value, McpError)
+        assert exc_info.value.error.code == -32602
+        assert "Invalid params: test error" in exc_info.value.error.message
+        assert "Error in test_method: ToolError: test error" in caplog.text
 
     def test_get_error_stats(self, mock_context):
         """Test getting error statistics."""
