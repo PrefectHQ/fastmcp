@@ -1,4 +1,4 @@
-"""Comprehensive tests for OpenAPI new implementation."""
+"""Comprehensive tests for OpenAPIProvider implementation."""
 
 import json
 from unittest.mock import AsyncMock, Mock
@@ -7,8 +7,21 @@ import httpx
 import pytest
 from httpx import Response
 
+from fastmcp import FastMCP
 from fastmcp.client import Client
-from fastmcp.server.openapi import FastMCPOpenAPI
+from fastmcp.server.providers.openapi import OpenAPIProvider
+
+
+def create_openapi_server(
+    openapi_spec: dict,
+    client,
+    name: str = "OpenAPI Server",
+) -> FastMCP:
+    """Helper to create a FastMCP server with OpenAPIProvider."""
+    provider = OpenAPIProvider(openapi_spec=openapi_spec, client=client)
+    mcp = FastMCP(name)
+    mcp.add_provider(provider)
+    return mcp
 
 
 class TestOpenAPIComprehensive:
@@ -357,16 +370,17 @@ class TestOpenAPIComprehensive:
     ):
         """Test server initialization with comprehensive spec."""
         async with httpx.AsyncClient(base_url="https://api.example.com") as client:
-            server = FastMCPOpenAPI(
+            provider = OpenAPIProvider(
                 openapi_spec=comprehensive_openapi_spec,
                 client=client,
-                name="Comprehensive Test Server",
             )
+            server = FastMCP("Comprehensive Test Server")
+            server.add_provider(provider)
 
             # Should initialize successfully
             assert server.name == "Comprehensive Test Server"
-            assert hasattr(server, "_director")
-            assert hasattr(server, "_spec")
+            assert hasattr(provider, "_director")
+            assert hasattr(provider, "_spec")
 
             # Test with in-memory client
             async with Client(server) as mcp_client:
@@ -389,7 +403,7 @@ class TestOpenAPIComprehensive:
     async def test_openapi_31_compatibility(self, openapi_31_spec):
         """Test that OpenAPI 3.1 specs work correctly."""
         async with httpx.AsyncClient(base_url="https://api.example.com") as client:
-            server = FastMCPOpenAPI(
+            server = create_openapi_server(
                 openapi_spec=openapi_31_spec,
                 client=client,
                 name="OpenAPI 3.1 Test",
@@ -405,7 +419,7 @@ class TestOpenAPIComprehensive:
     async def test_parameter_collision_handling(self, comprehensive_openapi_spec):
         """Test that parameter collisions are handled correctly."""
         async with httpx.AsyncClient(base_url="https://api.example.com") as client:
-            server = FastMCPOpenAPI(
+            server = create_openapi_server(
                 openapi_spec=comprehensive_openapi_spec,
                 client=client,
             )
@@ -436,7 +450,7 @@ class TestOpenAPIComprehensive:
     async def test_deep_object_parameters(self, comprehensive_openapi_spec):
         """Test deepObject parameter handling."""
         async with httpx.AsyncClient(base_url="https://api.example.com") as client:
-            server = FastMCPOpenAPI(
+            server = create_openapi_server(
                 openapi_spec=comprehensive_openapi_spec,
                 client=client,
             )
@@ -480,7 +494,7 @@ class TestOpenAPIComprehensive:
 
         mock_client.send = AsyncMock(return_value=mock_response)
 
-        server = FastMCPOpenAPI(
+        server = create_openapi_server(
             openapi_spec=comprehensive_openapi_spec,
             client=mock_client,
         )
@@ -517,7 +531,7 @@ class TestOpenAPIComprehensive:
 
         mock_client.send = AsyncMock(return_value=mock_response)
 
-        server = FastMCPOpenAPI(
+        server = create_openapi_server(
             openapi_spec=comprehensive_openapi_spec,
             client=mock_client,
         )
@@ -561,7 +575,7 @@ class TestOpenAPIComprehensive:
 
         mock_client.send = AsyncMock(return_value=mock_response)
 
-        server = FastMCPOpenAPI(
+        server = create_openapi_server(
             openapi_spec=comprehensive_openapi_spec,
             client=mock_client,
         )
@@ -608,7 +622,7 @@ class TestOpenAPIComprehensive:
         mock_response.raise_for_status = raise_for_status
         mock_client.send = AsyncMock(return_value=mock_response)
 
-        server = FastMCPOpenAPI(
+        server = create_openapi_server(
             openapi_spec=comprehensive_openapi_spec,
             client=mock_client,
         )
@@ -625,7 +639,7 @@ class TestOpenAPIComprehensive:
     async def test_schema_refs_resolution(self, comprehensive_openapi_spec):
         """Test that schema references are resolved correctly."""
         async with httpx.AsyncClient(base_url="https://api.example.com") as client:
-            server = FastMCPOpenAPI(
+            server = create_openapi_server(
                 openapi_spec=comprehensive_openapi_spec,
                 client=client,
             )
@@ -646,7 +660,7 @@ class TestOpenAPIComprehensive:
     async def test_optional_vs_required_parameters(self, comprehensive_openapi_spec):
         """Test handling of optional vs required parameters."""
         async with httpx.AsyncClient(base_url="https://api.example.com") as client:
-            server = FastMCPOpenAPI(
+            server = create_openapi_server(
                 openapi_spec=comprehensive_openapi_spec,
                 client=client,
             )
@@ -674,11 +688,11 @@ class TestOpenAPIComprehensive:
         """Test that server initialization is fast (no code generation latency)."""
         import time
 
-        # Time the server creation
+        # Time the provider creation
         start_time = time.time()
 
         async with httpx.AsyncClient(base_url="https://api.example.com") as client:
-            server = FastMCPOpenAPI(
+            provider = OpenAPIProvider(
                 openapi_spec=comprehensive_openapi_spec,
                 client=client,
             )
@@ -689,7 +703,7 @@ class TestOpenAPIComprehensive:
         initialization_time = end_time - start_time
         assert initialization_time < 0.1  # Should be under 100ms
 
-        # Verify server was created correctly
-        assert server is not None
-        assert hasattr(server, "_director")
-        assert hasattr(server, "_spec")
+        # Verify provider was created correctly
+        assert provider is not None
+        assert hasattr(provider, "_director")
+        assert hasattr(provider, "_spec")

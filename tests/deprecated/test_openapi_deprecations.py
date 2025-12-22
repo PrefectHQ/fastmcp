@@ -1,5 +1,6 @@
 """Tests for OpenAPI-related deprecations in 2.14."""
 
+import importlib
 import warnings
 
 import pytest
@@ -37,19 +38,23 @@ class TestExperimentalOpenAPIImportDeprecation:
 
     def test_experimental_server_openapi_import_warns(self):
         """Importing from fastmcp.experimental.server.openapi should warn."""
+        import fastmcp.experimental.server.openapi
+
         with pytest.warns(
             DeprecationWarning,
             match=r"Importing from fastmcp\.experimental\.server\.openapi is deprecated",
         ):
-            from fastmcp.experimental.server.openapi import FastMCPOpenAPI  # noqa: F401
+            importlib.reload(fastmcp.experimental.server.openapi)
 
     def test_experimental_utilities_openapi_import_warns(self):
         """Importing from fastmcp.experimental.utilities.openapi should warn."""
+        import fastmcp.experimental.utilities.openapi
+
         with pytest.warns(
             DeprecationWarning,
             match=r"Importing from fastmcp\.experimental\.utilities\.openapi is deprecated",
         ):
-            from fastmcp.experimental.utilities.openapi import HTTPRoute  # noqa: F401
+            importlib.reload(fastmcp.experimental.utilities.openapi)
 
     def test_experimental_imports_resolve_to_same_classes(self):
         """Experimental imports should resolve to the same classes as main imports."""

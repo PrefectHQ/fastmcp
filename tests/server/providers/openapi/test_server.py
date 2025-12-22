@@ -1,14 +1,15 @@
-"""Unit tests for FastMCPOpenAPI server."""
+"""Unit tests for OpenAPIProvider."""
 
 import httpx
 import pytest
 
+from fastmcp import FastMCP
 from fastmcp.client import Client
-from fastmcp.server.openapi import FastMCPOpenAPI
+from fastmcp.server.providers.openapi import OpenAPIProvider
 
 
-class TestFastMCPOpenAPIBasicFunctionality:
-    """Test basic FastMCPOpenAPI server functionality."""
+class TestOpenAPIProviderBasicFunctionality:
+    """Test basic OpenAPIProvider functionality."""
 
     @pytest.fixture
     def simple_openapi_spec(self):
@@ -90,37 +91,34 @@ class TestFastMCPOpenAPIBasicFunctionality:
             },
         }
 
-    def test_server_initialization(self, simple_openapi_spec):
-        """Test server initialization with OpenAPI spec."""
+    def test_provider_initialization(self, simple_openapi_spec):
+        """Test provider initialization with OpenAPI spec."""
         client = httpx.AsyncClient(base_url="https://api.example.com")
+        provider = OpenAPIProvider(openapi_spec=simple_openapi_spec, client=client)
 
-        server = FastMCPOpenAPI(
-            openapi_spec=simple_openapi_spec, client=client, name="Test Server"
-        )
-
-        assert server.name == "Test Server"
         # Should have initialized RequestDirector successfully
-        assert hasattr(server, "_director")
-        assert hasattr(server, "_spec")
+        assert hasattr(provider, "_director")
+        assert hasattr(provider, "_spec")
 
-    def test_server_initialization_with_custom_name(self, simple_openapi_spec):
-        """Test server initialization with custom name."""
+    def test_server_with_provider(self, simple_openapi_spec):
+        """Test server initialization with OpenAPIProvider."""
         client = httpx.AsyncClient(base_url="https://api.example.com")
+        provider = OpenAPIProvider(openapi_spec=simple_openapi_spec, client=client)
 
-        server = FastMCPOpenAPI(openapi_spec=simple_openapi_spec, client=client)
+        mcp = FastMCP("Test Server")
+        mcp.add_provider(provider)
 
-        # Should use default name
-        assert server.name == "OpenAPI FastMCP"
+        assert mcp.name == "Test Server"
 
-    async def test_server_creates_tools_from_spec(self, simple_openapi_spec):
-        """Test that server creates tools from OpenAPI spec."""
+    async def test_provider_creates_tools_from_spec(self, simple_openapi_spec):
+        """Test that provider creates tools from OpenAPI spec."""
         async with httpx.AsyncClient(base_url="https://api.example.com") as client:
-            server = FastMCPOpenAPI(
-                openapi_spec=simple_openapi_spec, client=client, name="Test Server"
-            )
+            provider = OpenAPIProvider(openapi_spec=simple_openapi_spec, client=client)
 
-            # Test with in-memory client
-            async with Client(server) as mcp_client:
+            mcp = FastMCP("Test Server")
+            mcp.add_provider(provider)
+
+            async with Client(mcp) as mcp_client:
                 tools = await mcp_client.list_tools()
 
                 # Should have created tools for both operations
@@ -130,60 +128,37 @@ class TestFastMCPOpenAPIBasicFunctionality:
                 assert "get_user" in tool_names
                 assert "create_user" in tool_names
 
-    async def test_server_tool_execution_fallback_to_http(self, simple_openapi_spec):
-        """Test tool execution falls back to HTTP when callables aren't available."""
-        # Use a mock client that will be used for HTTP fallback
+    async def test_provider_tool_execution(self, simple_openapi_spec):
+        """Test tool execution uses RequestDirector."""
         mock_client = httpx.AsyncClient()
+        provider = OpenAPIProvider(openapi_spec=simple_openapi_spec, client=mock_client)
 
-        server = FastMCPOpenAPI(
-            openapi_spec=simple_openapi_spec, client=mock_client, name="Test Server"
-        )
+        mcp = FastMCP("Test Server")
+        mcp.add_provider(provider)
 
-        # With new architecture, tools are always created using RequestDirector
-
-        async with Client(server) as mcp_client:
+        async with Client(mcp) as mcp_client:
             tools = await mcp_client.list_tools()
 
-            # Should still have tools even without callables
+            # Should have tools using RequestDirector
             assert len(tools) == 2
 
-            # Tools should be OpenAPITool instances using RequestDirector
-            # We'll just verify they exist and are callable
             get_user_tool = next(tool for tool in tools if tool.name == "get_user")
             assert get_user_tool is not None
             assert get_user_tool.description is not None
 
-    def test_server_request_director_initialization(self, simple_openapi_spec):
-        """Test that server initializes RequestDirector successfully."""
+    def test_provider_with_timeout(self, simple_openapi_spec):
+        """Test provider initialization with timeout setting."""
         client = httpx.AsyncClient(base_url="https://api.example.com")
-
-        # This should not raise an exception
-        server = FastMCPOpenAPI(
-            openapi_spec=simple_openapi_spec, client=client, name="Test Server"
-        )
-
-        # Server should be created successfully
-        assert server is not None
-        assert server.name == "Test Server"
-        # RequestDirector and Spec should be initialized
-        assert hasattr(server, "_director")
-        assert hasattr(server, "_spec")
-
-    def test_server_with_timeout(self, simple_openapi_spec):
-        """Test server initialization with timeout setting."""
-        client = httpx.AsyncClient(base_url="https://api.example.com")
-
-        server = FastMCPOpenAPI(
+        provider = OpenAPIProvider(
             openapi_spec=simple_openapi_spec,
             client=client,
-            name="Test Server",
             timeout=30.0,
         )
 
-        assert server._timeout == 30.0
+        assert provider._timeout == 30.0
 
-    def test_server_with_empty_spec(self):
-        """Test server with minimal OpenAPI spec."""
+    def test_provider_with_empty_spec(self):
+        """Test provider with minimal OpenAPI spec."""
         minimal_spec = {
             "openapi": "3.0.0",
             "info": {"title": "Empty API", "version": "1.0.0"},
@@ -191,19 +166,14 @@ class TestFastMCPOpenAPIBasicFunctionality:
         }
 
         client = httpx.AsyncClient(base_url="https://api.example.com")
+        provider = OpenAPIProvider(openapi_spec=minimal_spec, client=client)
 
-        server = FastMCPOpenAPI(
-            openapi_spec=minimal_spec, client=client, name="Empty Server"
-        )
-
-        assert server.name == "Empty Server"
         # Should handle empty paths gracefully
-        assert hasattr(server, "_director")
-        assert hasattr(server, "_spec")
+        assert hasattr(provider, "_director")
+        assert hasattr(provider, "_spec")
 
     async def test_clean_schema_output_no_unused_defs(self):
         """Test that unused schema definitions are removed from tool schemas."""
-        # Create a spec with unused HTTPValidationError-like definitions
         spec_with_unused_defs = {
             "openapi": "3.0.0",
             "info": {"title": "Test API", "version": "1.0.0"},
@@ -264,7 +234,6 @@ class TestFastMCPOpenAPIBasicFunctionality:
             },
             "components": {
                 "schemas": {
-                    # This should be removed since it's not referenced
                     "HTTPValidationError": {
                         "properties": {
                             "detail": {
@@ -299,20 +268,20 @@ class TestFastMCPOpenAPIBasicFunctionality:
         }
 
         async with httpx.AsyncClient(base_url="https://api.example.com") as client:
-            server = FastMCPOpenAPI(
-                openapi_spec=spec_with_unused_defs, client=client, name="Test Server"
+            provider = OpenAPIProvider(
+                openapi_spec=spec_with_unused_defs, client=client
             )
+            mcp = FastMCP("Test Server")
+            mcp.add_provider(provider)
 
-            async with Client(server) as mcp_client:
+            async with Client(mcp) as mcp_client:
                 tools = await mcp_client.list_tools()
 
-                assert len(tools) == 1  # Only the POST operation
+                assert len(tools) == 1
                 tool = tools[0]
 
-                # Verify tool has clean schemas without unused $defs
                 assert tool.name == "create_user"
 
-                # Input schema should not have $defs since no references are used
                 expected_input_schema = {
                     "type": "object",
                     "properties": {
@@ -323,7 +292,6 @@ class TestFastMCPOpenAPIBasicFunctionality:
                 }
                 assert tool.inputSchema == expected_input_schema
 
-                # Output schema should not have $defs since no references are used
                 expected_output_schema = {
                     "type": "object",
                     "properties": {

@@ -1,16 +1,29 @@
-"""Performance comparison between legacy and new OpenAPI implementations."""
+"""Performance tests for OpenAPIProvider implementation."""
 
+import gc
 import time
 
 import httpx
 import pytest
 
-from fastmcp.server.openapi import FastMCPOpenAPI
-from fastmcp.server.openapi import FastMCPOpenAPI as LegacyFastMCPOpenAPI
+from fastmcp import FastMCP
+from fastmcp.server.providers.openapi import OpenAPIProvider
 
 
-class TestPerformanceComparison:
-    """Compare performance between legacy and new implementations."""
+def create_openapi_server(
+    openapi_spec: dict,
+    client,
+    name: str = "OpenAPI Server",
+) -> FastMCP:
+    """Helper to create a FastMCP server with OpenAPIProvider."""
+    provider = OpenAPIProvider(openapi_spec=openapi_spec, client=client)
+    mcp = FastMCP(name)
+    mcp.add_provider(provider)
+    return mcp
+
+
+class TestPerformance:
+    """Test performance of OpenAPIProvider implementation."""
 
     @pytest.fixture
     def comprehensive_spec(self):
@@ -153,94 +166,83 @@ class TestPerformanceComparison:
             },
         }
 
-    def test_server_initialization_performance(self, comprehensive_spec):
-        """Test that new implementation is significantly faster than legacy."""
+    def test_provider_initialization_performance(self, comprehensive_spec):
+        """Test that provider initialization is fast (serverless requirement)."""
         num_iterations = 5
 
-        # Measure legacy implementation
-        legacy_times = []
+        # Measure provider initialization
+        times = []
         for _ in range(num_iterations):
             client = httpx.AsyncClient(base_url="https://api.example.com")
             start_time = time.time()
-            server = LegacyFastMCPOpenAPI(
+            provider = OpenAPIProvider(
                 openapi_spec=comprehensive_spec,
                 client=client,
-                name="Legacy Performance Test",
             )
-            # Ensure server is fully initialized
-            assert server is not None
+            # Ensure provider is fully initialized
+            assert provider is not None
             end_time = time.time()
-            legacy_times.append(end_time - start_time)
+            times.append(end_time - start_time)
 
-        # Measure new implementation
-        new_times = []
-        for _ in range(num_iterations):
-            client = httpx.AsyncClient(base_url="https://api.example.com")
-            start_time = time.time()
-            server = FastMCPOpenAPI(
-                openapi_spec=comprehensive_spec,
-                client=client,
-                name="New Performance Test",
-            )
-            # Ensure server is fully initialized
-            assert server is not None
-            end_time = time.time()
-            new_times.append(end_time - start_time)
-
-        # Calculate averages
-        legacy_avg = sum(legacy_times) / len(legacy_times)
-        new_avg = sum(new_times) / len(new_times)
-
-        print(f"Legacy implementation average: {legacy_avg:.4f}s")
-        print(f"New implementation average: {new_avg:.4f}s")
-        print(f"Speedup: {legacy_avg / new_avg:.2f}x")
-
-        # Both implementations should be very fast for moderate specs
-        # The key achievement is eliminating the 100-200ms latency issue for serverless
+        avg_time = sum(times) / len(times)
         max_acceptable_time = 0.1  # 100ms
 
-        print(f"Legacy performance: {'✓' if legacy_avg < max_acceptable_time else '✗'}")
-        print(f"New performance: {'✓' if new_avg < max_acceptable_time else '✗'}")
+        print(f"Average initialization time: {avg_time:.4f}s")
+        print(f"Performance: {'✓' if avg_time < max_acceptable_time else '✗'}")
 
-        # New implementation should be under 100ms for reasonable specs (serverless requirement)
-        assert new_avg < max_acceptable_time, (
-            f"New implementation should initialize in under 100ms, got {new_avg:.4f}s"
+        # Should initialize in under 100ms for serverless requirements
+        assert avg_time < max_acceptable_time, (
+            f"Provider should initialize in under 100ms, got {avg_time:.4f}s"
         )
 
-        # Legacy might be slightly faster or slower on small specs, but both should be fast
-        # The real improvement shows up with larger specs where code generation was the bottleneck
-        assert legacy_avg < max_acceptable_time, (
-            f"Legacy should also be fast on small specs, got {legacy_avg:.4f}s"
+    def test_server_initialization_performance(self, comprehensive_spec):
+        """Test that full server initialization is fast."""
+        num_iterations = 5
+
+        times = []
+        for _ in range(num_iterations):
+            client = httpx.AsyncClient(base_url="https://api.example.com")
+            start_time = time.time()
+            server = create_openapi_server(
+                openapi_spec=comprehensive_spec,
+                client=client,
+                name="Performance Test",
+            )
+            # Ensure server is fully initialized
+            assert server is not None
+            end_time = time.time()
+            times.append(end_time - start_time)
+
+        avg_time = sum(times) / len(times)
+        max_acceptable_time = 0.1  # 100ms
+
+        print(f"Average server initialization time: {avg_time:.4f}s")
+
+        assert avg_time < max_acceptable_time, (
+            f"Server should initialize in under 100ms, got {avg_time:.4f}s"
         )
 
-    def test_functionality_identical_after_optimization(self, comprehensive_spec):
+    def test_functionality_after_optimization(self, comprehensive_spec):
         """Verify that performance optimization doesn't break functionality."""
         client = httpx.AsyncClient(base_url="https://api.example.com")
 
-        # Create both servers
-        legacy_server = LegacyFastMCPOpenAPI(
+        server = create_openapi_server(
             openapi_spec=comprehensive_spec,
             client=client,
-            name="Legacy Server",
-        )
-        new_server = FastMCPOpenAPI(
-            openapi_spec=comprehensive_spec,
-            client=client,
-            name="New Server",
+            name="Test Server",
         )
 
-        # Both should have the same number of tools
-        legacy_tool_count = len(legacy_server._tool_manager._tools)
-        new_tool_count = len(new_server._tool_manager._tools)
+        # Get tools from the provider
+        def get_provider_tools(server):
+            for provider in server._providers:
+                if hasattr(provider, "_tools"):
+                    return provider._tools
+            return {}
 
-        assert legacy_tool_count == new_tool_count
-        assert legacy_tool_count == 6  # 6 operations in the spec
+        tools = get_provider_tools(server)
 
-        # Tool names should be identical
-        legacy_tool_names = set(legacy_server._tool_manager._tools.keys())
-        new_tool_names = set(new_server._tool_manager._tools.keys())
-
-        assert legacy_tool_names == new_tool_names
+        # Should have 6 operations in the spec
+        assert len(tools) == 6
 
         # Expected operations
         expected_operations = {
@@ -251,20 +253,25 @@ class TestPerformanceComparison:
             "delete_user",
             "search_users",
         }
-        assert legacy_tool_names == expected_operations
+        assert set(tools.keys()) == expected_operations
 
     def test_memory_efficiency(self, comprehensive_spec):
-        """Test that new implementation doesn't significantly increase memory usage."""
-        import gc
+        """Test that implementation doesn't significantly increase memory usage."""
 
-        # This is a basic test - in practice you'd use more sophisticated memory profiling
+        # Helper to get tools from provider
+        def get_provider_tools(server):
+            for provider in server._providers:
+                if hasattr(provider, "_tools"):
+                    return provider._tools
+            return {}
+
         gc.collect()  # Clean up before baseline
         baseline_refs = len(gc.get_objects())
 
         servers = []
         for i in range(10):
             client = httpx.AsyncClient(base_url="https://api.example.com")
-            server = FastMCPOpenAPI(
+            server = create_openapi_server(
                 openapi_spec=comprehensive_spec,
                 client=client,
                 name=f"Memory Test Server {i}",
@@ -273,12 +280,11 @@ class TestPerformanceComparison:
 
         # Servers should all be functional
         assert len(servers) == 10
-        assert all(len(s._tool_manager._tools) == 6 for s in servers)
+        assert all(len(get_provider_tools(s)) == 6 for s in servers)
 
-        # Memory usage shouldn't explode (this is a basic check)
-        gc.collect()  # Clean up
+        # Memory usage shouldn't explode
+        gc.collect()
         current_refs = len(gc.get_objects())
-        # Allow reasonable memory growth but not exponential
         growth_ratio = current_refs / max(baseline_refs, 1)
         assert growth_ratio < 3.0, (
             f"Memory usage grew by {growth_ratio}x, which seems excessive"

@@ -1,10 +1,23 @@
-"""Tests for OpenAPI feature support in openapi_new."""
+"""Tests for OpenAPI feature support in OpenAPIProvider."""
 
 import httpx
 import pytest
 
+from fastmcp import FastMCP
 from fastmcp.client import Client
-from fastmcp.server.openapi import FastMCPOpenAPI
+from fastmcp.server.providers.openapi import OpenAPIProvider
+
+
+def create_openapi_server(
+    openapi_spec: dict,
+    client,
+    name: str = "OpenAPI Server",
+) -> FastMCP:
+    """Helper to create a FastMCP server with OpenAPIProvider."""
+    provider = OpenAPIProvider(openapi_spec=openapi_spec, client=client)
+    mcp = FastMCP(name)
+    mcp.add_provider(provider)
+    return mcp
 
 
 class TestParameterHandling:
@@ -127,7 +140,7 @@ class TestParameterHandling:
     async def test_query_parameters_in_tools(self, parameter_spec):
         """Test that query parameters are properly included in tool parameters."""
         async with httpx.AsyncClient(base_url="https://api.example.com") as client:
-            server = FastMCPOpenAPI(
+            server = create_openapi_server(
                 openapi_spec=parameter_spec, client=client, name="Parameter Test Server"
             )
 
@@ -175,7 +188,7 @@ class TestParameterHandling:
     async def test_path_parameters_in_tools(self, parameter_spec):
         """Test that path parameters are properly included in tool parameters."""
         async with httpx.AsyncClient(base_url="https://api.example.com") as client:
-            server = FastMCPOpenAPI(
+            server = create_openapi_server(
                 openapi_spec=parameter_spec, client=client, name="Parameter Test Server"
             )
 
@@ -280,7 +293,7 @@ class TestRequestBodyHandling:
     async def test_request_body_properties_in_tool(self, request_body_spec):
         """Test that request body properties are included in tool parameters."""
         async with httpx.AsyncClient(base_url="https://api.example.com") as client:
-            server = FastMCPOpenAPI(
+            server = create_openapi_server(
                 openapi_spec=request_body_spec,
                 client=client,
                 name="Request Body Test Server",
@@ -381,7 +394,7 @@ class TestResponseSchemas:
     async def test_tool_has_output_schema(self, response_schema_spec):
         """Test that tools have output schemas from response definitions."""
         async with httpx.AsyncClient(base_url="https://api.example.com") as client:
-            server = FastMCPOpenAPI(
+            server = create_openapi_server(
                 openapi_spec=response_schema_spec,
                 client=client,
                 name="Response Schema Test Server",

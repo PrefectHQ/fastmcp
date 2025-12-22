@@ -1,10 +1,23 @@
-"""Tests for parameter collision handling in openapi_new."""
+"""Tests for parameter collision handling in OpenAPIProvider."""
 
 import httpx
 import pytest
 
+from fastmcp import FastMCP
 from fastmcp.client import Client
-from fastmcp.server.openapi import FastMCPOpenAPI
+from fastmcp.server.providers.openapi import OpenAPIProvider
+
+
+def create_openapi_server(
+    openapi_spec: dict,
+    client,
+    name: str = "OpenAPI Server",
+) -> FastMCP:
+    """Helper to create a FastMCP server with OpenAPIProvider."""
+    provider = OpenAPIProvider(openapi_spec=openapi_spec, client=client)
+    mcp = FastMCP(name)
+    mcp.add_provider(provider)
+    return mcp
 
 
 class TestParameterCollisions:
@@ -121,7 +134,7 @@ class TestParameterCollisions:
     async def test_path_body_collision_handling(self, collision_spec):
         """Test that path and body parameters with same name are handled correctly."""
         async with httpx.AsyncClient(base_url="https://api.example.com") as client:
-            server = FastMCPOpenAPI(
+            server = create_openapi_server(
                 openapi_spec=collision_spec, client=client, name="Collision Test Server"
             )
 
@@ -161,7 +174,7 @@ class TestParameterCollisions:
     async def test_query_header_collision_handling(self, collision_spec):
         """Test that query and header parameters with same name are handled correctly."""
         async with httpx.AsyncClient(base_url="https://api.example.com") as client:
-            server = FastMCPOpenAPI(
+            server = create_openapi_server(
                 openapi_spec=collision_spec, client=client, name="Collision Test Server"
             )
 
@@ -191,7 +204,7 @@ class TestParameterCollisions:
     async def test_collision_resolution_maintains_functionality(self, collision_spec):
         """Test that collision resolution doesn't break basic tool functionality."""
         async with httpx.AsyncClient(base_url="https://api.example.com") as client:
-            server = FastMCPOpenAPI(
+            server = create_openapi_server(
                 openapi_spec=collision_spec, client=client, name="Collision Test Server"
             )
 

@@ -1,35 +1,55 @@
-"""OpenAPI server implementation for FastMCP - refactored for better maintainability."""
+"""OpenAPI server implementation for FastMCP.
 
-# Import from server
-from .server import FastMCPOpenAPI
+.. deprecated::
+    This module is deprecated. Import from fastmcp.server.providers.openapi instead.
 
-# Import from routing
-from .routing import (
-    MCPType,
-    RouteMap,
-    RouteMapFn,
-    ComponentFn,
-    DEFAULT_ROUTE_MAPPINGS,
-    _determine_route_type,
+The recommended approach is to use OpenAPIProvider with FastMCP:
+
+    from fastmcp import FastMCP
+    from fastmcp.server.providers.openapi import OpenAPIProvider
+    import httpx
+
+    client = httpx.AsyncClient(base_url="https://api.example.com")
+    provider = OpenAPIProvider(openapi_spec=spec, client=client)
+
+    mcp = FastMCP("My API Server")
+    mcp.add_provider(provider)
+
+FastMCPOpenAPI is still available but deprecated.
+"""
+
+import warnings
+
+warnings.warn(
+    "fastmcp.server.openapi is deprecated. "
+    "Import from fastmcp.server.providers.openapi instead.",
+    DeprecationWarning,
+    stacklevel=2,
 )
 
-# Import from components
-from .components import (
-    OpenAPITool,
-    OpenAPIResource,
-    OpenAPIResourceTemplate,
+# Re-export from new canonical location
+from fastmcp.server.providers.openapi import (  # noqa: E402
+    ComponentFn as ComponentFn,
+    MCPType as MCPType,
+    OpenAPIProvider as OpenAPIProvider,
+    OpenAPIResource as OpenAPIResource,
+    OpenAPIResourceTemplate as OpenAPIResourceTemplate,
+    OpenAPITool as OpenAPITool,
+    RouteMap as RouteMap,
+    RouteMapFn as RouteMapFn,
 )
 
-# Export public symbols - maintaining backward compatibility
+# Keep FastMCPOpenAPI for backwards compat (it has its own deprecation warning)
+from fastmcp.server.openapi.server import FastMCPOpenAPI as FastMCPOpenAPI  # noqa: E402
+
 __all__ = [
-    "DEFAULT_ROUTE_MAPPINGS",
     "ComponentFn",
     "FastMCPOpenAPI",
     "MCPType",
+    "OpenAPIProvider",
     "OpenAPIResource",
     "OpenAPIResourceTemplate",
     "OpenAPITool",
     "RouteMap",
     "RouteMapFn",
-    "_determine_route_type",
 ]

@@ -6,7 +6,7 @@ from mcp.types import TextResourceContents
 
 from fastmcp import Client, FastMCP
 from fastmcp.client.transports import SSETransport, StreamableHttpTransport
-from fastmcp.server.openapi import MCPType, RouteMap
+from fastmcp.server.providers.openapi import MCPType, RouteMap
 from fastmcp.utilities.tests import run_server_async
 
 

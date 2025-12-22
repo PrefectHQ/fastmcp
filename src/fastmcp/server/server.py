@@ -52,6 +52,7 @@ from starlette.middleware import Middleware as ASGIMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
 from starlette.routing import BaseRoute, Route
+from typing_extensions import Self
 
 import fastmcp
 import fastmcp.server
@@ -96,9 +97,9 @@ if TYPE_CHECKING:
     from fastmcp.client.client import FastMCP1Server
     from fastmcp.client.sampling import SamplingHandler
     from fastmcp.client.transports import ClientTransport, ClientTransportT
-    from fastmcp.server.openapi import ComponentFn as OpenAPIComponentFn
-    from fastmcp.server.openapi import FastMCPOpenAPI, RouteMap
-    from fastmcp.server.openapi import RouteMapFn as OpenAPIRouteMapFn
+    from fastmcp.server.providers.openapi import ComponentFn as OpenAPIComponentFn
+    from fastmcp.server.providers.openapi import RouteMap
+    from fastmcp.server.providers.openapi import RouteMapFn as OpenAPIRouteMapFn
     from fastmcp.server.providers.proxy import FastMCPProxy
     from fastmcp.tools.tool import ToolResultSerializerType
 
@@ -2748,19 +2749,36 @@ class FastMCP(Generic[LifespanResultT]):
         cls,
         openapi_spec: dict[str, Any],
         client: httpx.AsyncClient,
+        name: str = "OpenAPI Server",
         route_maps: list[RouteMap] | None = None,
         route_map_fn: OpenAPIRouteMapFn | None = None,
         mcp_component_fn: OpenAPIComponentFn | None = None,
         mcp_names: dict[str, str] | None = None,
         tags: set[str] | None = None,
+        timeout: float | None = None,
         **settings: Any,
-    ) -> FastMCPOpenAPI:
+    ) -> Self:
         """
         Create a FastMCP server from an OpenAPI specification.
-        """
-        from .openapi import FastMCPOpenAPI
 
-        return FastMCPOpenAPI(
+        Args:
+            openapi_spec: OpenAPI schema as a dictionary
+            client: httpx AsyncClient for making HTTP requests
+            name: Name for the MCP server
+            route_maps: Optional list of RouteMap objects defining route mappings
+            route_map_fn: Optional callable for advanced route type mapping
+            mcp_component_fn: Optional callable for component customization
+            mcp_names: Optional dictionary mapping operationId to component names
+            tags: Optional set of tags to add to all components
+            timeout: Optional timeout (in seconds) for all requests
+            **settings: Additional settings passed to FastMCP
+
+        Returns:
+            A FastMCP server with an OpenAPIProvider attached.
+        """
+        from .providers.openapi import OpenAPIProvider
+
+        provider = OpenAPIProvider(
             openapi_spec=openapi_spec,
             client=client,
             route_maps=route_maps,
@@ -2768,8 +2786,11 @@ class FastMCP(Generic[LifespanResultT]):
             mcp_component_fn=mcp_component_fn,
             mcp_names=mcp_names,
             tags=tags,
-            **settings,
+            timeout=timeout,
         )
+        server = cls(name=name, **settings)
+        server.add_provider(provider)
+        return server
 
     @classmethod
     def from_fastapi(
@@ -2782,12 +2803,28 @@ class FastMCP(Generic[LifespanResultT]):
         mcp_names: dict[str, str] | None = None,
         httpx_client_kwargs: dict[str, Any] | None = None,
         tags: set[str] | None = None,
+        timeout: float | None = None,
         **settings: Any,
-    ) -> FastMCPOpenAPI:
+    ) -> Self:
         """
         Create a FastMCP server from a FastAPI application.
+
+        Args:
+            app: FastAPI application instance
+            name: Name for the MCP server (defaults to app.title)
+            route_maps: Optional list of RouteMap objects defining route mappings
+            route_map_fn: Optional callable for advanced route type mapping
+            mcp_component_fn: Optional callable for component customization
+            mcp_names: Optional dictionary mapping operationId to component names
+            httpx_client_kwargs: Optional kwargs passed to httpx.AsyncClient
+            tags: Optional set of tags to add to all components
+            timeout: Optional timeout (in seconds) for all requests
+            **settings: Additional settings passed to FastMCP
+
+        Returns:
+            A FastMCP server with an OpenAPIProvider attached.
         """
-        from .openapi import FastMCPOpenAPI
+        from .providers.openapi import OpenAPIProvider
 
         if httpx_client_kwargs is None:
             httpx_client_kwargs = {}
@@ -2798,19 +2835,21 @@ class FastMCP(Generic[LifespanResultT]):
             **httpx_client_kwargs,
         )
 
-        name = name or app.title
+        server_name = name or app.title
 
-        return FastMCPOpenAPI(
+        provider = OpenAPIProvider(
             openapi_spec=app.openapi(),
             client=client,
-            name=name,
             route_maps=route_maps,
             route_map_fn=route_map_fn,
             mcp_component_fn=mcp_component_fn,
             mcp_names=mcp_names,
             tags=tags,
-            **settings,
+            timeout=timeout,
         )
+        server = cls(name=server_name, **settings)
+        server.add_provider(provider)
+        return server
 
     @classmethod
     def as_proxy(

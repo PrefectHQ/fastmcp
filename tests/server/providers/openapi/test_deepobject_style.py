@@ -1,10 +1,23 @@
-"""Tests for deepObject style parameter handling in openapi_new."""
+"""Tests for deepObject style parameter handling in OpenAPIProvider."""
 
 import httpx
 import pytest
 
+from fastmcp import FastMCP
 from fastmcp.client import Client
-from fastmcp.server.openapi import FastMCPOpenAPI
+from fastmcp.server.providers.openapi import OpenAPIProvider
+
+
+def create_openapi_server(
+    openapi_spec: dict,
+    client,
+    name: str = "OpenAPI Server",
+) -> FastMCP:
+    """Helper to create a FastMCP server with OpenAPIProvider."""
+    provider = OpenAPIProvider(openapi_spec=openapi_spec, client=client)
+    mcp = FastMCP(name)
+    mcp.add_provider(provider)
+    return mcp
 
 
 class TestDeepObjectStyle:
@@ -177,7 +190,7 @@ class TestDeepObjectStyle:
     async def test_deepobject_style_parsing_from_spec(self, deepobject_spec):
         """Test that deepObject style parameters are correctly parsed from OpenAPI spec."""
         async with httpx.AsyncClient(base_url="https://api.example.com") as client:
-            server = FastMCPOpenAPI(
+            server = create_openapi_server(
                 openapi_spec=deepobject_spec,
                 client=client,
                 name="DeepObject Test Server",
@@ -210,7 +223,7 @@ class TestDeepObjectStyle:
     async def test_deepobject_explode_true_handling(self, deepobject_spec):
         """Test deepObject with explode=true parameter handling."""
         async with httpx.AsyncClient(base_url="https://api.example.com") as client:
-            server = FastMCPOpenAPI(
+            server = create_openapi_server(
                 openapi_spec=deepobject_spec,
                 client=client,
                 name="DeepObject Test Server",
@@ -235,7 +248,7 @@ class TestDeepObjectStyle:
     async def test_deepobject_explode_false_handling(self, deepobject_spec):
         """Test deepObject with explode=false parameter handling."""
         async with httpx.AsyncClient(base_url="https://api.example.com") as client:
-            server = FastMCPOpenAPI(
+            server = create_openapi_server(
                 openapi_spec=deepobject_spec,
                 client=client,
                 name="DeepObject Test Server",
@@ -263,7 +276,7 @@ class TestDeepObjectStyle:
     async def test_nested_object_structure_in_request_body(self, deepobject_spec):
         """Test nested object structures in request body are preserved."""
         async with httpx.AsyncClient(base_url="https://api.example.com") as client:
-            server = FastMCPOpenAPI(
+            server = create_openapi_server(
                 openapi_spec=deepobject_spec,
                 client=client,
                 name="DeepObject Test Server",
@@ -307,7 +320,7 @@ class TestDeepObjectStyle:
     async def test_deepobject_tool_functionality(self, deepobject_spec):
         """Test that tools with deepObject parameters maintain basic functionality."""
         async with httpx.AsyncClient(base_url="https://api.example.com") as client:
-            server = FastMCPOpenAPI(
+            server = create_openapi_server(
                 openapi_spec=deepobject_spec,
                 client=client,
                 name="DeepObject Test Server",
