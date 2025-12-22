@@ -10,9 +10,7 @@ Example:
 
     client = httpx.AsyncClient(base_url="https://api.example.com")
     provider = OpenAPIProvider(openapi_spec=spec, client=client)
-
-    mcp = FastMCP("API Server")
-    mcp.add_provider(provider)
+    mcp = FastMCP("API Server", providers=[provider])
     ```
 """
 

@@ -101,10 +101,8 @@ class SQLiteToolProvider(Provider):
         )
 
 
-mcp = FastMCP("DynamicToolsServer")
-
 provider = SQLiteToolProvider(db_path=str(DB_PATH))
-mcp.add_provider(provider)
+mcp = FastMCP("DynamicToolsServer", providers=[provider])
 
 
 @mcp.tool

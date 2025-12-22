@@ -2788,9 +2788,7 @@ class FastMCP(Generic[LifespanResultT]):
             tags=tags,
             timeout=timeout,
         )
-        server = cls(name=name, **settings)
-        server.add_provider(provider)
-        return server
+        return cls(name=name, providers=[provider], **settings)
 
     @classmethod
     def from_fastapi(
@@ -2847,9 +2845,7 @@ class FastMCP(Generic[LifespanResultT]):
             tags=tags,
             timeout=timeout,
         )
-        server = cls(name=server_name, **settings)
-        server.add_provider(provider)
-        return server
+        return cls(name=server_name, providers=[provider], **settings)
 
     @classmethod
     def as_proxy(

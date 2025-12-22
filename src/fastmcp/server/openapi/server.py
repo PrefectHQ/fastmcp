@@ -8,9 +8,7 @@ This class is deprecated. Use FastMCP with OpenAPIProvider instead:
 
     client = httpx.AsyncClient(base_url="https://api.example.com")
     provider = OpenAPIProvider(openapi_spec=spec, client=client)
-
-    mcp = FastMCP("My API Server")
-    mcp.add_provider(provider)
+    mcp = FastMCP("My API Server", providers=[provider])
 """
 
 from __future__ import annotations
@@ -55,9 +53,7 @@ class FastMCPOpenAPI(FastMCP):
 
         client = httpx.AsyncClient(base_url="https://api.example.com")
         provider = OpenAPIProvider(openapi_spec=spec, client=client)
-
-        mcp = FastMCP("API Server")
-        mcp.add_provider(provider)
+        mcp = FastMCP("API Server", providers=[provider])
         ```
     """
 
@@ -94,8 +90,7 @@ class FastMCPOpenAPI(FastMCP):
         warnings.warn(
             "FastMCPOpenAPI is deprecated. Use FastMCP with OpenAPIProvider instead:\n"
             "    provider = OpenAPIProvider(openapi_spec=spec, client=client)\n"
-            "    mcp = FastMCP('name')\n"
-            "    mcp.add_provider(provider)",
+            "    mcp = FastMCP('name', providers=[provider])",
             DeprecationWarning,
             stacklevel=2,
         )
