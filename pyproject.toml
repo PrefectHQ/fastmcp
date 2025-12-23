@@ -73,7 +73,7 @@ dev = [
     "pytest-timeout>=2.4.0",
     "pytest-xdist>=3.6.1",
     "ruff>=0.12.8",
-    "ty==0.0.1a31",
+    "ty==0.0.5",
     "prek>=0.2.12",
 ]
 
@@ -137,13 +137,6 @@ exclude = ["**/node_modules", "**/__pycache__", ".venv", ".git", "dist"]
 python-version = "3.10"
 
 [tool.ty.rules]
-# Rules with too many errors to fix right now (40+ each)
-no-matching-overload = "ignore" # 126 errors
-unknown-argument = "ignore"     # 61 errors
-
-# Rules with moderate errors that need more investigation
-call-non-callable = "ignore" # 7 errors
-
 # NOTE: ty currently doesn't support type narrowing with isinstance() on unions
 # See: https://github.com/astral-sh/ty/issues/122 and https://github.com/astral-sh/ty/issues/1113
 # Some code uses `# ty: ignore[invalid-argument-type]` for this limitation.
@@ -178,6 +171,19 @@ extend-select = [
     "RUF", # Ruff-specific
     "SIM", # flake8-simplify
 ]
+
+[tool.basedpyright]
+pythonVersion = "3.10"
+typeCheckingMode = "standard"
+reportMissingTypeStubs = false
+reportUnknownParameterType = false
+reportUnknownArgumentType = false
+reportUnknownMemberType = false
+reportUnknownVariableType = false
+reportPrivateUsage = false
+reportUnnecessaryIsInstance = false
+reportUnnecessaryComparison = false
+reportConstantRedefinition = false
 
 [tool.codespell]
 ignore-words-list = "asend,shttp,te"

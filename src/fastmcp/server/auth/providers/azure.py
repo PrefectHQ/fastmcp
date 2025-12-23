@@ -233,6 +233,11 @@ class AzureProvider(OAuthProxy):
             )
             raise ValueError(msg)
 
+        if not settings.base_url:
+            raise ValueError(
+                "base_url is required - set via parameter or FASTMCP_SERVER_AUTH_AZURE_BASE_URL"
+            )
+
         # Apply defaults
         self.identifier_uri = settings.identifier_uri or f"api://{settings.client_id}"
         self.additional_authorize_scopes = settings.additional_authorize_scopes or []

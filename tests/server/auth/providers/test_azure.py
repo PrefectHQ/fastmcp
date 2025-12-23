@@ -133,18 +133,30 @@ class TestAzureProvider:
                     required_scopes=[],
                 )
 
+    def test_init_missing_base_url_raises_error(self):
+        """Test that missing base_url raises ValueError."""
+        with patch.dict(os.environ, {}, clear=True):
+            with pytest.raises(ValueError, match="base_url is required"):
+                AzureProvider(
+                    client_id="test_client",
+                    client_secret="test_secret",
+                    tenant_id="test-tenant",
+                    required_scopes=["read"],
+                    jwt_signing_key="test-secret",
+                )
+
     def test_init_defaults(self):
         """Test that default values are applied correctly."""
         provider = AzureProvider(
             client_id="test_client",
             client_secret="test_secret",
             tenant_id="test-tenant",
+            base_url="https://myserver.com",
             required_scopes=["read"],
             jwt_signing_key="test-secret",
         )
 
         # Check defaults
-        assert provider.base_url is None
         assert provider._redirect_path == "/auth/callback"
         # Azure provider defaults are set but we can't easily verify them without accessing internals
 
@@ -179,6 +191,7 @@ class TestAzureProvider:
             client_id="test_client",
             client_secret="test_secret",
             tenant_id="organizations",
+            base_url="https://myserver.com",
             required_scopes=["read"],
             jwt_signing_key="test-secret",
         )
@@ -190,6 +203,7 @@ class TestAzureProvider:
             client_id="test_client",
             client_secret="test_secret",
             tenant_id="consumers",
+            base_url="https://myserver.com",
             required_scopes=["read"],
             jwt_signing_key="test-secret",
         )
@@ -203,6 +217,7 @@ class TestAzureProvider:
             client_id="test_client",
             client_secret="test_secret",
             tenant_id="test-tenant",
+            base_url="https://myserver.com",
             required_scopes=[
                 "read",
                 "write",
@@ -227,6 +242,7 @@ class TestAzureProvider:
             client_id="test_client",
             client_secret="test_secret",
             tenant_id="test-tenant",
+            base_url="https://myserver.com",
             required_scopes=["read"],
             jwt_signing_key="test-secret",
         )
@@ -240,6 +256,7 @@ class TestAzureProvider:
             client_id="test_client",
             client_secret="test_secret",
             tenant_id="my-tenant",
+            base_url="https://myserver.com",
             identifier_uri="api://my-api",
             required_scopes=[".default"],
             jwt_signing_key="test-secret",
@@ -393,6 +410,7 @@ class TestAzureProvider:
             client_id="test_client",
             client_secret="test_secret",
             tenant_id="test-tenant",
+            base_url="https://myserver.com",
             required_scopes=["read"],
             jwt_signing_key="test-secret",
         )
@@ -421,6 +439,7 @@ class TestAzureProvider:
             client_id="test_client",
             client_secret="test_secret",
             tenant_id="gov-tenant-id",
+            base_url="https://myserver.com",
             required_scopes=["read"],
             base_authority="login.microsoftonline.us",
             jwt_signing_key="test-secret",
@@ -452,6 +471,7 @@ class TestAzureProvider:
                 "FASTMCP_SERVER_AUTH_AZURE_CLIENT_ID": "env-client-id",
                 "FASTMCP_SERVER_AUTH_AZURE_CLIENT_SECRET": "env-secret",
                 "FASTMCP_SERVER_AUTH_AZURE_TENANT_ID": "env-tenant-id",
+                "FASTMCP_SERVER_AUTH_AZURE_BASE_URL": "https://myserver.com",
                 "FASTMCP_SERVER_AUTH_AZURE_REQUIRED_SCOPES": "read",
                 "FASTMCP_SERVER_AUTH_AZURE_BASE_AUTHORITY": "login.microsoftonline.us",
                 "FASTMCP_SERVER_AUTH_AZURE_JWT_SIGNING_KEY": "test-secret",
@@ -483,6 +503,7 @@ class TestAzureProvider:
             client_id="test_client",
             client_secret="test_secret",
             tenant_id="organizations",
+            base_url="https://myserver.com",
             required_scopes=["read"],
             base_authority="login.microsoftonline.us",
             jwt_signing_key="test-secret",
@@ -498,6 +519,7 @@ class TestAzureProvider:
             client_id="test_client",
             client_secret="test_secret",
             tenant_id="test-tenant",
+            base_url="https://myserver.com",
             identifier_uri="api://my-api",
             required_scopes=["read", "write"],
             jwt_signing_key="test-secret",
@@ -516,6 +538,7 @@ class TestAzureProvider:
             client_id="test_client",
             client_secret="test_secret",
             tenant_id="test-tenant",
+            base_url="https://myserver.com",
             identifier_uri="api://my-api",
             required_scopes=["read"],
             jwt_signing_key="test-secret",
@@ -536,6 +559,7 @@ class TestAzureProvider:
             client_id="test_client",
             client_secret="test_secret",
             tenant_id="test-tenant",
+            base_url="https://myserver.com",
             identifier_uri="api://my-api",
             required_scopes=["read"],
             additional_authorize_scopes=[
@@ -566,6 +590,7 @@ class TestAzureProvider:
             client_id="test_client",
             client_secret="test_secret",
             tenant_id="test-tenant",
+            base_url="https://myserver.com",
             identifier_uri="api://my-api",
             required_scopes=["read"],
             additional_authorize_scopes=["User.Read", "openid"],
@@ -590,6 +615,7 @@ class TestAzureProvider:
             client_id="test_client",
             client_secret="test_secret",
             tenant_id="test-tenant",
+            base_url="https://myserver.com",
             identifier_uri="api://my-api",
             required_scopes=["read"],
             additional_authorize_scopes=["User.Read"],
@@ -613,6 +639,7 @@ class TestAzureProvider:
             client_id="test_client",
             client_secret="test_secret",
             tenant_id="test-tenant",
+            base_url="https://myserver.com",
             identifier_uri="api://my-api",
             required_scopes=["read"],
             jwt_signing_key="test-secret",
@@ -634,6 +661,7 @@ class TestAzureProvider:
             client_id="test_client",
             client_secret="test_secret",
             tenant_id="test-tenant",
+            base_url="https://myserver.com",
             identifier_uri="api://my-api",
             required_scopes=["read"],
             additional_authorize_scopes=["User.Read", "openid"],
@@ -653,6 +681,7 @@ class TestAzureProvider:
             client_id="test_client",
             client_secret="test_secret",
             tenant_id="test-tenant",
+            base_url="https://myserver.com",
             identifier_uri="api://my-api",
             required_scopes=["read"],
             jwt_signing_key="test-secret",
@@ -671,6 +700,7 @@ class TestAzureProvider:
             client_id="test_client",
             client_secret="test_secret",
             tenant_id="test-tenant",
+            base_url="https://myserver.com",
             identifier_uri="api://my-api",
             required_scopes=["read"],
             additional_authorize_scopes=["User.Read", "openid"],
@@ -697,6 +727,7 @@ class TestAzureProvider:
             client_id="test_client",
             client_secret="test_secret",
             tenant_id="test-tenant",
+            base_url="https://myserver.com",
             identifier_uri="api://my-api",
             required_scopes=["read"],
             jwt_signing_key="test-secret",
@@ -736,6 +767,7 @@ class TestOIDCScopeHandling:
             client_id="test_client",
             client_secret="test_secret",
             tenant_id="test-tenant",
+            base_url="https://myserver.com",
             identifier_uri="api://my-api",
             required_scopes=["read"],
             jwt_signing_key="test-secret",
@@ -754,6 +786,7 @@ class TestOIDCScopeHandling:
             client_id="test_client",
             client_secret="test_secret",
             tenant_id="test-tenant",
+            base_url="https://myserver.com",
             identifier_uri="api://my-api",
             required_scopes=["read"],
             jwt_signing_key="test-secret",
@@ -778,6 +811,7 @@ class TestOIDCScopeHandling:
             client_id="test_client",
             client_secret="test_secret",
             tenant_id="test-tenant",
+            base_url="https://myserver.com",
             identifier_uri="api://my-api",
             required_scopes=["read"],
             jwt_signing_key="test-secret",
@@ -795,6 +829,7 @@ class TestOIDCScopeHandling:
             client_id="test_client",
             client_secret="test_secret",
             tenant_id="test-tenant",
+            base_url="https://myserver.com",
             identifier_uri="api://my-api",
             required_scopes=["read"],
             jwt_signing_key="test-secret",
@@ -819,6 +854,7 @@ class TestOIDCScopeHandling:
             client_id="test_client",
             client_secret="test_secret",
             tenant_id="test-tenant",
+            base_url="https://myserver.com",
             identifier_uri="api://my-api",
             required_scopes=["read", "openid", "profile"],
             jwt_signing_key="test-secret",
@@ -833,6 +869,7 @@ class TestOIDCScopeHandling:
             client_id="test_client",
             client_secret="test_secret",
             tenant_id="test-tenant",
+            base_url="https://myserver.com",
             identifier_uri="api://my-api",
             required_scopes=["openid", "profile"],
             jwt_signing_key="test-secret",
@@ -847,6 +884,7 @@ class TestOIDCScopeHandling:
             client_id="test_client",
             client_secret="test_secret",
             tenant_id="test-tenant",
+            base_url="https://myserver.com",
             identifier_uri="api://my-api",
             required_scopes=["read", "openid", "profile"],
             jwt_signing_key="test-secret",
@@ -868,6 +906,7 @@ class TestOIDCScopeHandling:
             client_id="test_client",
             client_secret="test_secret",
             tenant_id="test-tenant",
+            base_url="https://myserver.com",
             identifier_uri="api://my-api",
             required_scopes=["read"],
             jwt_signing_key="test-secret",

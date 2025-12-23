@@ -1021,7 +1021,7 @@ class OAuthProxy(OAuthProvider):
         # Store transaction data for IdP callback processing
         if client.client_id is None:
             raise AuthorizeError(
-                error="invalid_client",  # type: ignore[arg-type]
+                error="invalid_client",  # type: ignore[arg-type]  # "invalid_client" is valid OAuth error but not in Literal type
                 error_description="Client ID is required",
             )
         transaction = OAuthTransaction(
@@ -1104,7 +1104,7 @@ class OAuthProxy(OAuthProvider):
         # Create authorization code object with PKCE challenge
         if client.client_id is None:
             raise AuthorizeError(
-                error="invalid_client",  # type: ignore[arg-type]
+                error="invalid_client",  # type: ignore[arg-type]  # "invalid_client" is valid OAuth error but not in Literal type
                 error_description="Client ID is required",
             )
         return AuthorizationCode(
@@ -1393,7 +1393,7 @@ class OAuthProxy(OAuthProvider):
 
         try:
             logger.debug("Refreshing upstream token (jti=%s)", refresh_jti[:8])
-            token_response: dict[str, Any] = await oauth_client.refresh_token(  # type: ignore[misc]
+            token_response: dict[str, Any] = await oauth_client.refresh_token(  # type: ignore[assignment]
                 url=self._upstream_token_endpoint,
                 refresh_token=upstream_token_set.refresh_token,
                 scope=" ".join(upstream_scopes) if upstream_scopes else None,
@@ -1802,7 +1802,7 @@ class OAuthProxy(OAuthProvider):
 
                 idp_tokens: dict[str, Any] = await oauth_client.fetch_token(
                     **token_params
-                )  # type: ignore[misc]
+                )  # type: ignore[assignment]
 
                 logger.debug(
                     f"Successfully exchanged IdP code for tokens (transaction: {txn_id}, PKCE: {bool(proxy_code_verifier)})"

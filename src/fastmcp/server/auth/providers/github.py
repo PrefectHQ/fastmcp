@@ -262,6 +262,10 @@ class GitHubProvider(OAuthProxy):
             raise ValueError(
                 "client_secret is required - set via parameter or FASTMCP_SERVER_AUTH_GITHUB_CLIENT_SECRET"
             )
+        if not settings.base_url:
+            raise ValueError(
+                "base_url is required - set via parameter or FASTMCP_SERVER_AUTH_GITHUB_BASE_URL"
+            )
 
         # Apply defaults
 

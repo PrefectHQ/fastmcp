@@ -637,7 +637,7 @@ def get_access_token() -> AccessToken | None:
             scopes=access_token_as_dict["scopes"],
             # Optional fields
             expires_at=access_token_as_dict.get("expires_at"),
-            resource_owner=access_token_as_dict.get("resource_owner"),
+            resource_owner=access_token_as_dict.get("resource_owner"),  # type: ignore[call-arg]  # Optional field in MCP SDK
             claims=access_token_as_dict.get("claims"),
         )
     except Exception as e:

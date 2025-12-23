@@ -68,7 +68,7 @@ async def test_depends_with_async_function(mcp: FastMCP):
         return 42
 
     @mcp.tool()
-    async def greet_user(name: str, user_id: int = Depends(get_user_id)) -> str:
+    async def greet_user(name: str, user_id: int = Depends(get_user_id)) -> str:  # type: ignore[assignment]
         return f"Hello {name}, your ID is {user_id}"
 
     async with Client(mcp) as client:
@@ -93,7 +93,7 @@ async def test_depends_with_async_context_manager(mcp: FastMCP):
             cleanup_called = True
 
     @mcp.tool()
-    async def query_db(sql: str, db: str = Depends(get_database)) -> str:
+    async def query_db(sql: str, db: str = Depends(get_database)) -> str:  # type: ignore[assignment]
         return f"Executing '{sql}' on {db}"
 
     async with Client(mcp) as client:
@@ -202,7 +202,7 @@ async def test_sync_tool_with_async_dependency(mcp: FastMCP):
         return "loaded_config"
 
     @mcp.tool()
-    def process_data(value: int, config: str = Depends(fetch_config)) -> str:
+    def process_data(value: int, config: str = Depends(fetch_config)) -> str:  # type: ignore[assignment]
         return f"Processing {value} with {config}"
 
     async with Client(mcp) as client:
@@ -392,7 +392,8 @@ async def test_async_tool_context_manager_stays_open(mcp: FastMCP):
 
     @mcp.tool()
     async def query_data(
-        query: str, connection: Connection = Depends(get_connection)
+        query: str,
+        connection: Connection = Depends(get_connection),  # type: ignore[assignment]
     ) -> str:
         assert connection.is_open
         return f"open={connection.is_open}"
@@ -408,7 +409,7 @@ async def test_async_resource_context_manager_stays_open(mcp: FastMCP):
     """Test that context manager dependencies stay open during async resource execution."""
 
     @mcp.resource("data://config")
-    async def load_config(connection: Connection = Depends(get_connection)) -> str:
+    async def load_config(connection: Connection = Depends(get_connection)) -> str:  # type: ignore[assignment]
         assert connection.is_open
         return f"open={connection.is_open}"
 
@@ -424,7 +425,8 @@ async def test_async_resource_template_context_manager_stays_open(mcp: FastMCP):
 
     @mcp.resource("user://{user_id}")
     async def get_user(
-        user_id: str, connection: Connection = Depends(get_connection)
+        user_id: str,
+        connection: Connection = Depends(get_connection),  # type: ignore[assignment]
     ) -> str:
         assert connection.is_open
         return f"open={connection.is_open},user={user_id}"
@@ -441,7 +443,8 @@ async def test_async_prompt_context_manager_stays_open(mcp: FastMCP):
 
     @mcp.prompt()
     async def research_prompt(
-        topic: str, connection: Connection = Depends(get_connection)
+        topic: str,
+        connection: Connection = Depends(get_connection),  # type: ignore[assignment]
     ) -> str:
         assert connection.is_open
         return f"open={connection.is_open},topic={topic}"
@@ -484,7 +487,8 @@ async def test_connection_dependency_excluded_from_tool_schema(mcp: FastMCP):
 
     @mcp.tool()
     async def with_connection(
-        name: str, connection: Connection = Depends(get_connection)
+        name: str,
+        connection: Connection = Depends(get_connection),  # type: ignore[assignment]
     ) -> str:
         return name
 
@@ -509,7 +513,8 @@ async def test_sync_tool_context_manager_stays_open(mcp: FastMCP):
 
     @mcp.tool()
     async def query_sync(
-        query: str, connection: Connection = Depends(get_sync_connection)
+        query: str,
+        connection: Connection = Depends(get_sync_connection),  # type: ignore[assignment]
     ) -> str:
         assert connection.is_open
         return f"open={connection.is_open}"
@@ -535,7 +540,7 @@ async def test_sync_resource_context_manager_stays_open(mcp: FastMCP):
             conn.is_open = False
 
     @mcp.resource("data://sync")
-    async def load_sync(connection: Connection = Depends(get_sync_connection)) -> str:
+    async def load_sync(connection: Connection = Depends(get_sync_connection)) -> str:  # type: ignore[assignment]
         assert connection.is_open
         return f"open={connection.is_open}"
 
@@ -561,7 +566,8 @@ async def test_sync_resource_template_context_manager_stays_open(mcp: FastMCP):
 
     @mcp.resource("item://{item_id}")
     async def get_item(
-        item_id: str, connection: Connection = Depends(get_sync_connection)
+        item_id: str,
+        connection: Connection = Depends(get_sync_connection),  # type: ignore[assignment]
     ) -> str:
         assert connection.is_open
         return f"open={connection.is_open},item={item_id}"
@@ -588,7 +594,8 @@ async def test_sync_prompt_context_manager_stays_open(mcp: FastMCP):
 
     @mcp.prompt()
     async def sync_prompt(
-        topic: str, connection: Connection = Depends(get_sync_connection)
+        topic: str,
+        connection: Connection = Depends(get_sync_connection),  # type: ignore[assignment]
     ) -> str:
         assert connection.is_open
         return f"open={connection.is_open},topic={topic}"

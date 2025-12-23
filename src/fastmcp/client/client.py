@@ -1573,7 +1573,7 @@ class Client(Generic[ClientTransportT]):
             McpError: If the request results in a TimeoutError | JSONRPCError
         """
         # Send protocol request
-        params = PaginatedRequestParams(cursor=cursor, limit=limit)
+        params = PaginatedRequestParams(cursor=cursor, limit=limit)  # type: ignore[call-arg]  # Optional field in MCP SDK
         request = ListTasksRequest(params=params)
         server_response = await self.session.send_request(
             request=request,  # type: ignore[invalid-argument-type]

@@ -116,7 +116,7 @@ class ToolResult:
             return CallToolResult(
                 structuredContent=self.structured_content,
                 content=self.content,
-                _meta=self.meta,
+                _meta=self.meta,  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field
             )
         if self.structured_content is None:
             return self.content
@@ -190,7 +190,7 @@ class Tool(FastMCPComponent):
             icons=overrides.get("icons", self.icons),
             annotations=overrides.get("annotations", self.annotations),
             execution=overrides.get("execution", self.execution),
-            _meta=overrides.get(
+            _meta=overrides.get(  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field
                 "_meta", self.get_meta(include_fastmcp_meta=include_fastmcp_meta)
             ),
         )

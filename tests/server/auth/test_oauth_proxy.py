@@ -451,7 +451,7 @@ class TestOAuthProxyAuthorization:
             client_id="test-client",
             client_secret="test-secret",
             redirect_uris=[AnyUrl("http://localhost:54321/callback")],
-            jwt_signing_key="test-secret",
+            jwt_signing_key="test-secret",  # type: ignore[call-arg]  # Optional field in MCP SDK
         )
 
         # Register client first (required for consent flow)
@@ -462,7 +462,6 @@ class TestOAuthProxyAuthorization:
             redirect_uri_provided_explicitly=True,
             state="client-state-123",
             code_challenge="challenge-abc",
-            code_challenge_method="S256",
             scopes=["read", "write"],
         )
 
@@ -946,7 +945,6 @@ class TestOAuthProxyE2E:
             redirect_uri_provided_explicitly=True,
             state="client-state",
             code_challenge="client_challenge_value",
-            code_challenge_method="S256",
             scopes=["read"],
         )
 

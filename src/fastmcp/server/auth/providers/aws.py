@@ -197,6 +197,10 @@ class AWSCognitoProvider(OIDCProxy):
             raise ValueError(
                 "client_secret is required - set via parameter or FASTMCP_SERVER_AUTH_AWS_COGNITO_CLIENT_SECRET"
             )
+        if not settings.base_url:
+            raise ValueError(
+                "base_url is required - set via parameter or FASTMCP_SERVER_AUTH_AWS_COGNITO_BASE_URL"
+            )
 
         # Apply defaults
         required_scopes_final = settings.required_scopes or ["openid"]

@@ -113,7 +113,6 @@ async def _start_flow(
         redirect_uri_provided_explicitly=True,
         state="client-state-xyz",
         code_challenge="challenge",
-        code_challenge_method="S256",
         scopes=["read"],
     )
     consent_url = await proxy.authorize(
@@ -155,7 +154,6 @@ class TestServerSideStorage:
             redirect_uri_provided_explicitly=True,
             state="client-state-123",
             code_challenge="challenge-abc",
-            code_challenge_method="S256",
             scopes=["read", "write"],
         )
 
@@ -208,7 +206,6 @@ class TestServerSideStorage:
                 redirect_uri_provided_explicitly=True,
                 state="client-state",
                 code_challenge="challenge-xyz",
-                code_challenge_method="S256",
                 scopes=["read"],
             )
 
@@ -288,7 +285,6 @@ class TestServerSideStorage:
             redirect_uri_provided_explicitly=True,
             state="test-state",
             code_challenge="test-challenge",
-            code_challenge_method="S256",
             scopes=["read"],
         )
 
@@ -485,7 +481,6 @@ class TestStoragePersistence:
             redirect_uri_provided_explicitly=True,
             state="persist-state",
             code_challenge="persist-challenge",
-            code_challenge_method="S256",
             scopes=["read"],
         )
 
@@ -523,7 +518,6 @@ class TestStoragePersistence:
             redirect_uri_provided_explicitly=True,
             state="pydantic-state",
             code_challenge="pydantic-challenge",
-            code_challenge_method="S256",
             scopes=["read", "write"],
         )
 

@@ -267,6 +267,10 @@ class DiscordProvider(OAuthProxy):
             raise ValueError(
                 "client_secret is required - set via parameter or FASTMCP_SERVER_AUTH_DISCORD_CLIENT_SECRET"
             )
+        if not settings.base_url:
+            raise ValueError(
+                "base_url is required - set via parameter or FASTMCP_SERVER_AUTH_DISCORD_BASE_URL"
+            )
 
         # Apply defaults
         timeout_seconds_final = settings.timeout_seconds or 10

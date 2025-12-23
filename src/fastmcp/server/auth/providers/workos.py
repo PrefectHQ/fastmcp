@@ -234,6 +234,10 @@ class WorkOSProvider(OAuthProxy):
             raise ValueError(
                 "authkit_domain is required - set via parameter or FASTMCP_SERVER_AUTH_WORKOS_AUTHKIT_DOMAIN"
             )
+        if not settings.base_url:
+            raise ValueError(
+                "base_url is required - set via parameter or FASTMCP_SERVER_AUTH_WORKOS_BASE_URL"
+            )
 
         # Apply defaults and ensure authkit_domain is a full URL
         authkit_domain_str = settings.authkit_domain

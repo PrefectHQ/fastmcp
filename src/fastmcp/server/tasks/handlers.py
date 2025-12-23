@@ -96,7 +96,7 @@ async def submit_to_docket(
         jsonrpc="2.0",
         method="notifications/tasks/created",
         params={},  # Empty params per spec
-        _meta={  # taskId in _meta per spec
+        _meta={  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field
             "modelcontextprotocol.io/related-task": {
                 "taskId": server_task_id,
             }

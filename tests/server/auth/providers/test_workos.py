@@ -126,17 +126,28 @@ class TestWorkOSProvider:
         assert parsed.netloc == "localhost:8080"
         assert parsed.path == "/oauth2/authorize"
 
+    def test_init_missing_base_url_raises_error(self):
+        """Test that missing base_url raises ValueError."""
+        with patch.dict(os.environ, {}, clear=True):
+            with pytest.raises(ValueError, match="base_url is required"):
+                WorkOSProvider(
+                    client_id="test_client",
+                    client_secret="test_secret",
+                    authkit_domain="https://test.authkit.app",
+                    jwt_signing_key="test-secret",
+                )
+
     def test_init_defaults(self):
         """Test that default values are applied correctly."""
         provider = WorkOSProvider(
             client_id="test_client",
             client_secret="test_secret",
             authkit_domain="https://test.authkit.app",
+            base_url="https://myserver.com",
             jwt_signing_key="test-secret",
         )
 
         # Check defaults
-        assert provider.base_url is None
         assert provider._redirect_path == "/auth/callback"
         # WorkOS provider has no default scopes but we can't easily verify without accessing internals
 

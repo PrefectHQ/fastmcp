@@ -119,6 +119,7 @@ class TestGitHubProvider:
             {
                 "FASTMCP_SERVER_AUTH_GITHUB_CLIENT_ID": "env_client_id",
                 "FASTMCP_SERVER_AUTH_GITHUB_CLIENT_SECRET": "env_secret",
+                "FASTMCP_SERVER_AUTH_GITHUB_BASE_URL": "https://env-example.com",
                 "FASTMCP_SERVER_AUTH_GITHUB_JWT_SIGNING_KEY": "test-secret",
             },
         ):
@@ -147,16 +148,26 @@ class TestGitHubProvider:
             with pytest.raises(ValueError, match="client_secret is required"):
                 GitHubProvider(client_id="test_client")
 
+    def test_init_missing_base_url_raises_error(self):
+        """Test that missing base_url raises ValueError."""
+        with patch.dict(os.environ, {}, clear=True):
+            with pytest.raises(ValueError, match="base_url is required"):
+                GitHubProvider(
+                    client_id="test_client",
+                    client_secret="test_secret",
+                    jwt_signing_key="test-secret",
+                )
+
     def test_init_defaults(self):
         """Test that default values are applied correctly."""
         provider = GitHubProvider(
             client_id="test_client",
             client_secret="test_secret",
+            base_url="https://example.com",
             jwt_signing_key="test-secret",
         )
 
         # Check defaults
-        assert provider.base_url is None
         assert provider._redirect_path == "/auth/callback"
         # The required_scopes should be passed to the token verifier
         assert provider._token_validator.required_scopes == ["user"]

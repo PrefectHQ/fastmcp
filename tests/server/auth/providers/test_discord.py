@@ -70,16 +70,26 @@ class TestDiscordProvider:
             with pytest.raises(ValueError, match="client_secret is required"):
                 DiscordProvider(client_id="env_client_id")
 
+    def test_init_missing_base_url_raises_error(self):
+        """Test that missing base_url raises ValueError."""
+        with patch.dict(os.environ, {}, clear=True):
+            with pytest.raises(ValueError, match="base_url is required"):
+                DiscordProvider(
+                    client_id="env_client_id",
+                    client_secret="GOCSPX-test123",
+                    jwt_signing_key="test-secret",
+                )
+
     def test_init_defaults(self):
         """Test that default values are applied correctly."""
         provider = DiscordProvider(
             client_id="env_client_id",
             client_secret="GOCSPX-test123",
+            base_url="https://myserver.com",
             jwt_signing_key="test-secret",
         )
 
         # Check defaults
-        assert provider.base_url is None
         assert provider._redirect_path == "/auth/callback"
 
     def test_oauth_endpoints_configured_correctly(self):
@@ -108,6 +118,7 @@ class TestDiscordProvider:
         provider = DiscordProvider(
             client_id="env_client_id",
             client_secret="GOCSPX-test123",
+            base_url="https://myserver.com",
             required_scopes=[
                 "identify",
                 "email",

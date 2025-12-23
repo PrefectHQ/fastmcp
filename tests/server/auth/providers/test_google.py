@@ -70,16 +70,26 @@ class TestGoogleProvider:
             with pytest.raises(ValueError, match="client_secret is required"):
                 GoogleProvider(client_id="123456789.apps.googleusercontent.com")
 
+    def test_init_missing_base_url_raises_error(self):
+        """Test that missing base_url raises ValueError."""
+        with patch.dict(os.environ, {}, clear=True):
+            with pytest.raises(ValueError, match="base_url is required"):
+                GoogleProvider(
+                    client_id="123456789.apps.googleusercontent.com",
+                    client_secret="GOCSPX-test123",
+                    jwt_signing_key="test-secret",
+                )
+
     def test_init_defaults(self):
         """Test that default values are applied correctly."""
         provider = GoogleProvider(
             client_id="123456789.apps.googleusercontent.com",
             client_secret="GOCSPX-test123",
+            base_url="https://myserver.com",
             jwt_signing_key="test-secret",
         )
 
         # Check defaults
-        assert provider.base_url is None
         assert provider._redirect_path == "/auth/callback"
         # Google provider has ["openid"] as default but we can't easily verify without accessing internals
 
@@ -109,6 +119,7 @@ class TestGoogleProvider:
         provider = GoogleProvider(
             client_id="123456789.apps.googleusercontent.com",
             client_secret="GOCSPX-test123",
+            base_url="https://myserver.com",
             required_scopes=[
                 "openid",
                 "https://www.googleapis.com/auth/userinfo.email",
@@ -125,6 +136,7 @@ class TestGoogleProvider:
         provider = GoogleProvider(
             client_id="123456789.apps.googleusercontent.com",
             client_secret="GOCSPX-test123",
+            base_url="https://myserver.com",
             jwt_signing_key="test-secret",
         )
 
@@ -139,6 +151,7 @@ class TestGoogleProvider:
         provider = GoogleProvider(
             client_id="123456789.apps.googleusercontent.com",
             client_secret="GOCSPX-test123",
+            base_url="https://myserver.com",
             jwt_signing_key="test-secret",
             extra_authorize_params={"prompt": "select_account"},
         )
@@ -153,6 +166,7 @@ class TestGoogleProvider:
         provider = GoogleProvider(
             client_id="123456789.apps.googleusercontent.com",
             client_secret="GOCSPX-test123",
+            base_url="https://myserver.com",
             jwt_signing_key="test-secret",
             extra_authorize_params={"login_hint": "user@example.com"},
         )

@@ -111,7 +111,7 @@ class PromptResult(FastMCPBaseModel):
         return GetPromptResult(
             description=self.description,
             messages=self.messages,
-            _meta=self.meta,
+            _meta=self.meta,  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field
         )
 
 
@@ -160,7 +160,7 @@ class Prompt(FastMCPComponent):
             arguments=arguments,
             title=overrides.get("title", self.title),
             icons=overrides.get("icons", self.icons),
-            _meta=overrides.get(
+            _meta=overrides.get(  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field
                 "_meta", self.get_meta(include_fastmcp_meta=include_fastmcp_meta)
             ),
         )

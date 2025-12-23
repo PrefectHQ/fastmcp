@@ -246,11 +246,14 @@ class FastMCP(Generic[LifespanResultT]):
         # if auth is `NotSet`, try to create a provider from the environment
         if auth is NotSet:
             if fastmcp.settings.server_auth is not None:
-                # server_auth_class returns the class itself
-                auth = fastmcp.settings.server_auth_class()
+                # server_auth_class returns the class itself, not an instance
+                auth_class = cast(
+                    type[AuthProvider], fastmcp.settings.server_auth_class
+                )
+                auth = auth_class()
             else:
                 auth = None
-        self.auth: AuthProvider | None = cast(AuthProvider | None, auth)
+        self.auth: AuthProvider | None = auth
 
         if tools:
             for tool in tools:
@@ -1859,7 +1862,11 @@ class FastMCP(Generic[LifespanResultT]):
         meta: dict[str, Any] | None = None,
         enabled: bool | None = None,
         task: bool | TaskConfig | None = None,
-    ) -> Callable[[AnyFunction], FunctionTool] | FunctionTool:
+    ) -> (
+        Callable[[AnyFunction], FunctionTool]
+        | FunctionTool
+        | partial[Callable[[AnyFunction], FunctionTool] | FunctionTool]
+    ):
         """Decorator to register a tool.
 
         Tools can optionally request a Context object by adding a parameter with the
@@ -2241,7 +2248,11 @@ class FastMCP(Generic[LifespanResultT]):
         enabled: bool | None = None,
         meta: dict[str, Any] | None = None,
         task: bool | TaskConfig | None = None,
-    ) -> Callable[[AnyFunction], FunctionPrompt] | FunctionPrompt:
+    ) -> (
+        Callable[[AnyFunction], FunctionPrompt]
+        | FunctionPrompt
+        | partial[Callable[[AnyFunction], FunctionPrompt] | FunctionPrompt]
+    ):
         """Decorator to register a prompt.
 
         Prompts can optionally request a Context object by adding a parameter with the
@@ -2490,7 +2501,7 @@ class FastMCP(Generic[LifespanResultT]):
             async with self._lifespan_manager():
                 config = uvicorn.Config(app, host=host, port=port, **config_kwargs)
                 server = uvicorn.Server(config)
-                path = app.state.path.lstrip("/")  # type: ignore
+                path = getattr(app.state, "path", "").lstrip("/")
                 logger.info(
                     f"Starting MCP server {self.name!r} with transport {transport!r} on http://{host}:{port}/{path}"
                 )
@@ -2897,7 +2908,8 @@ class FastMCP(Generic[LifespanResultT]):
 
                 client_factory = fresh_client_factory
         else:
-            base_client = ProxyClient(backend)  # type: ignore
+            # backend is not a Client, so it's compatible with ProxyClient.__init__
+            base_client = ProxyClient(cast(Any, backend))
 
             # Fresh client created from transport - use fresh sessions per request
             def proxy_client_factory():

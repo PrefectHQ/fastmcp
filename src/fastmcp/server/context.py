@@ -680,7 +680,7 @@ class Context:
                 if mask_error_details is not None
                 else settings.mask_error_details
             )
-            tool_results = await run_sampling_tools(
+            tool_results: list[SamplingMessageContentBlock] = await run_sampling_tools(  # type: ignore[assignment]
                 step_tool_calls, tool_map, mask_error_details=effective_mask
             )
 
@@ -688,7 +688,7 @@ class Context:
                 current_messages.append(
                     SamplingMessage(
                         role="user",
-                        content=tool_results,  # type: ignore[arg-type]
+                        content=tool_results,
                     )
                 )
 
@@ -912,10 +912,50 @@ class Context:
     """When response_type is a list of strings, the accepted elicitation will
     contain the selected string response"""
 
+    @overload
     async def elicit(
         self,
         message: str,
-        response_type: type[T] | list[str] | dict[str, dict[str, str]] | None = None,
+        response_type: dict[str, dict[str, str]],
+    ) -> AcceptedElicitation[str] | DeclinedElicitation | CancelledElicitation: ...
+
+    """When response_type is a dict mapping keys to title dicts, the accepted
+    elicitation will contain the selected key"""
+
+    @overload
+    async def elicit(
+        self,
+        message: str,
+        response_type: list[list[str]],
+    ) -> (
+        AcceptedElicitation[list[str]] | DeclinedElicitation | CancelledElicitation
+    ): ...
+
+    """When response_type is a list containing a list of strings (multi-select),
+    the accepted elicitation will contain a list of selected strings"""
+
+    @overload
+    async def elicit(
+        self,
+        message: str,
+        response_type: list[dict[str, dict[str, str]]],
+    ) -> (
+        AcceptedElicitation[list[str]] | DeclinedElicitation | CancelledElicitation
+    ): ...
+
+    """When response_type is a list containing a dict mapping keys to title dicts
+    (multi-select with titles), the accepted elicitation will contain a list of
+    selected keys"""
+
+    async def elicit(
+        self,
+        message: str,
+        response_type: type[T]
+        | list[str]
+        | dict[str, dict[str, str]]
+        | list[list[str]]
+        | list[dict[str, dict[str, str]]]
+        | None = None,
     ) -> (
         AcceptedElicitation[T]
         | AcceptedElicitation[dict[str, Any]]

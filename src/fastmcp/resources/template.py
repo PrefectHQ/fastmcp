@@ -245,7 +245,7 @@ class ResourceTemplate(FastMCPComponent):
             title=overrides.get("title", self.title),
             icons=overrides.get("icons", self.icons),
             annotations=overrides.get("annotations", self.annotations),
-            _meta=overrides.get(
+            _meta=overrides.get(  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field
                 "_meta", self.get_meta(include_fastmcp_meta=include_fastmcp_meta)
             ),
         )
