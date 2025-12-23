@@ -470,12 +470,9 @@ class FastMCP(Generic[LifespanResultT]):
                             try:
                                 yield
                             finally:
-                                # Cancel worker task on exit with timeout to prevent hanging
                                 worker_task.cancel()
-                                with suppress(
-                                    asyncio.CancelledError, asyncio.TimeoutError
-                                ):
-                                    await asyncio.wait_for(worker_task, timeout=2.0)
+                                with suppress(asyncio.CancelledError):
+                                    await worker_task
                         finally:
                             _current_worker.reset(worker_token)
                 finally:

@@ -172,3 +172,46 @@ async def test_task_cancellation_workflow(endpoint_server):
         # Task should be in cancelled state
         status = await task.status()
         assert status.status == "cancelled"
+
+
+async def test_task_cancellation_interrupts_running_coroutine(endpoint_server):
+    """Task cancellation actually interrupts the running coroutine.
+
+    This verifies that when a task is cancelled, the underlying asyncio
+    coroutine receives CancelledError rather than continuing to completion.
+    Requires pydocket >= 0.16.2.
+
+    See: https://github.com/jlowin/fastmcp/issues/2679
+    """
+    started = asyncio.Event()
+    was_interrupted = asyncio.Event()
+    completed_normally = asyncio.Event()
+
+    @endpoint_server.tool(task=True)
+    async def interruptible_tool() -> str:
+        started.set()
+        try:
+            await asyncio.sleep(60)
+            completed_normally.set()
+            return "completed"
+        except asyncio.CancelledError:
+            was_interrupted.set()
+            raise
+
+    async with Client(endpoint_server) as client:
+        task = await client.call_tool("interruptible_tool", {}, task=True)
+
+        # Wait for the tool to actually start executing
+        await asyncio.wait_for(started.wait(), timeout=5.0)
+
+        # Cancel the task
+        await task.cancel()
+
+        # Wait for cancellation to propagate
+        await asyncio.wait_for(was_interrupted.wait(), timeout=5.0)
+
+        # The coroutine should have been interrupted, not completed normally
+        assert was_interrupted.is_set(), "Task was not interrupted by cancellation"
+        assert not completed_normally.is_set(), (
+            "Task completed instead of being cancelled"
+        )

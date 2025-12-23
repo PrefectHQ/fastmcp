@@ -5,10 +5,15 @@ from pathlib import Path
 
 import pytest
 
+import fastmcp
 from fastmcp.client import Client
 from fastmcp.client.client import CallToolResult
-from fastmcp.client.transports import (
-    UvStdioTransport,
+from fastmcp.client.transports import StdioTransport, UvStdioTransport
+
+# Detect if running from dev install to use local source instead of PyPI
+_is_dev_install = "dev" in fastmcp.__version__
+_fastmcp_src_dir = (
+    Path(__file__).parent.parent.parent.parent if _is_dev_install else None
 )
 
 
@@ -79,15 +84,32 @@ async def test_uv_transport_module():
         main_file = module_dir / "__main__.py"
         _ = main_file.write_text(main_script)
 
-        client: Client[UvStdioTransport] = Client(
-            transport=UvStdioTransport(
+        # In dev installs, use --with-editable to install local source.
+        # In releases, use --with to install from PyPI.
+        if _is_dev_install and _fastmcp_src_dir:
+            transport: StdioTransport = StdioTransport(
+                command="uv",
+                args=[
+                    "run",
+                    "--directory",
+                    tmpdir,
+                    "--with-editable",
+                    str(_fastmcp_src_dir),
+                    "--module",
+                    "my_module",
+                ],
+                keep_alive=False,
+            )
+        else:
+            transport = UvStdioTransport(
                 with_packages=["fastmcp"],
                 command="my_module",
                 module=True,
                 project_directory=Path(tmpdir),
                 keep_alive=False,
             )
-        )
+
+        client: Client[StdioTransport] = Client(transport=transport)
 
         async with client:
             result: CallToolResult = await client.call_tool("add", {"x": 1, "y": 2})
